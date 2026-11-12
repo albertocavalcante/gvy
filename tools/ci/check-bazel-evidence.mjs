@@ -51,6 +51,9 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
   if (Buffer.byteLength(text, 'utf8') > MAX_BEP_BYTES) { fail('BEP exceeds 256 MiB limit'); return result; }
   const seen = new Set();
   const pending = new Set();
+  const testResults = new Map();
+  const testSummaries = new Map();
+  const testIdentity = id => eventKey({ label: id?.label, configuration: id?.configuration ?? null });
   let started = 0;
   let finished = 0;
   let metadata = 0;
@@ -121,6 +124,14 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
       else { result.targets.aborted++; fail('Aborted build event'); }
     }
     if (event.testResult) {
+      const identity = testIdentity(event.id.testResult);
+      const observed = testResults.get(identity) ?? { attempts: 0, cached: 0 };
+      observed.attempts++;
+      const local = event.testResult.cachedLocally;
+      const remote = event.testResult.executionInfo?.cachedRemotely;
+      if ([local, remote].some(value => value !== undefined && typeof value !== 'boolean')) fail('Invalid test cache evidence');
+      if (local === true || remote === true) observed.cached++;
+      testResults.set(identity, observed);
       result.tests.attempts++;
       if (event.testResult.cachedLocally) result.tests.locallyCachedAttempts++;
       if (event.testResult.executionInfo?.cachedRemotely) result.tests.remotelyCachedAttempts++;
@@ -129,6 +140,10 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
     }
     if (event.testSummary) {
       const summary = event.testSummary;
+      const runs = summary.totalRunCount;
+      const cached = summary.totalNumCached ?? 0;
+      if (!Number.isSafeInteger(runs) || runs < 1 || !Number.isSafeInteger(cached) || cached < 0 || cached > runs) fail('Invalid or empty test execution counts');
+      testSummaries.set(testIdentity(event.id.testSummary), { runs, cached });
       result.tests.summaries.push({
         label: event.id.testSummary?.label ?? 'unknown', status: summary.overallStatus ?? 'NO_STATUS',
         runs: summary.totalRunCount ?? 0, cachedRuns: summary.totalNumCached ?? 0,
@@ -150,6 +165,15 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
   if (metadata !== 1) fail('Expected one build metadata event');
   if (terminal !== 1) fail('Missing final lastMessage');
   if (pending.size) fail(`${pending.size} announced events missing`);
+  // Bazel 9 emits TestResult witnesses for both executed and cached shard attempts.
+  // A complete graph containing only a PASSED summary does not prove execution.
+  for (const [identity, summary] of testSummaries) {
+    const observed = testResults.get(identity);
+    if (!observed || observed.attempts !== summary.runs || observed.cached !== summary.cached) fail('Test summary lacks matching execution/cache evidence');
+  }
+  for (const identity of testResults.keys()) {
+    if (!testSummaries.has(identity)) fail('Test execution lacks a matching summary');
+  }
   result.complete = !malformed && started === 1 && finished === 1 && terminal === 1 && pending.size === 0;
   if (context?.command === 'test' && result.bazelExitCode === 0 && !result.tests.summaries.length) fail('Successful test invocation has no test summaries');
   if (result.timing.started && result.timing.finished) {

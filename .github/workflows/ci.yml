@@ -747,6 +747,7 @@ jobs:
       contents: read
     env:
       CARGO_BUILD_JOBS: 2
+      CARGO_TERM_COLOR: never
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -754,13 +755,27 @@ jobs:
           persist-credentials: false
       - name: Provision pinned Rust toolchain and WASM target
         working-directory: editors/zed
+        shell: bash
         run: |
-          rustup toolchain install --no-self-update
-          rustup show active-toolchain
+          set -euo pipefail
+          (
+            set -e
+            rustup toolchain install --no-self-update
+            rustup show active-toolchain
+          ) 2>&1 | tee "$RUNNER_TEMP/zed-rustup.log"
+          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-rustup.log"
       - name: Check Rust adapter
-        run: make zed-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          make zed-check 2>&1 | tee "$RUNNER_TEMP/zed-check.log"
+          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-check.log"
       - name: Build WASM adapter
-        run: make zed-build
+        shell: bash
+        run: |
+          set -euo pipefail
+          make zed-build 2>&1 | tee "$RUNNER_TEMP/zed-build.log"
+          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-build.log"
 
   validate:
     name: Validation Check

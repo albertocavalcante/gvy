@@ -69,6 +69,7 @@ interface TestControllerMock {
     get: sinon.SinonStub;
     delete: sinon.SinonStub;
     replace: sinon.SinonStub;
+    forEach: sinon.SinonStub;
   };
   createRunProfile: sinon.SinonStub;
   resolveHandler?: (item: unknown) => Promise<void>;
@@ -127,6 +128,11 @@ describe("GroovyTestController", () => {
         replace: sandbox.stub().callsFake(() => {
           testItemsMock.clear();
         }),
+        forEach: sandbox
+          .stub()
+          .callsFake((callback: (item: unknown) => void) => {
+            testItemsMock.forEach(callback);
+          }),
       },
       createRunProfile: sandbox.stub(),
       resolveHandler: undefined,
@@ -613,6 +619,53 @@ describe("GroovyTestController", () => {
       await clock.tickAsync(300);
       sinon.assert.notCalled(testServiceMock.discoverTestsInWorkspace);
     });
+
+    for (const command of ["runAll", "runCurrentFile"] as const) {
+      it(`runs ${command} after slow discovery overtakes a queued refresh`, async () => {
+        const uri = "file:///workspace/ExampleSpec.groovy";
+        const suite = "example.ExampleSpec";
+        const otherSuite = "example.OtherSpec";
+        let complete!: (suites: unknown[]) => void;
+        testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+        );
+        vscodeMock.window.activeTextEditor = {
+          document: { uri: vscodeMock.Uri.parse(uri) },
+        };
+        createController().refreshTests();
+        const registration = vscodeMock.commands.registerCommand
+          .getCalls()
+          .find((call) => call.args[0] === `groovy.test.${command}`);
+        assert.ok(registration);
+
+        const run = registration.args[1]();
+        sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+        await clock.tickAsync(300);
+        complete([
+          { suite, uri, line: 1, tests: [{ test: "works", line: 2 }] },
+          {
+            suite: otherSuite,
+            uri: "file:///workspace/OtherSpec.groovy",
+            line: 1,
+            tests: [],
+          },
+        ]);
+        await run;
+
+        sinon.assert.calledOnce(executionServiceMock.runTests);
+        sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+        const request = executionServiceMock.runTests.firstCall.args[0];
+        assert.deepStrictEqual(
+          request.include.map((item: { id: string }) => item.id),
+          command === "runAll" ? [suite, otherSuite] : [suite],
+        );
+        sinon.assert.notCalled(vscodeMock.window.showInformationMessage);
+        sinon.assert.notCalled(vscodeMock.window.showWarningMessage);
+        assert.strictEqual(clock.countTimers(), 0);
+      });
+    }
 
     it("cancels queued discovery and rejects new refreshes after disposal", async () => {
       createController().refreshTests();

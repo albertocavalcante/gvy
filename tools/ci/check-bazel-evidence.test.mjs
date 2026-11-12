@@ -47,6 +47,52 @@ test('binds complete evidence to source, run, invocation and command and reports
   assert.equal(result.timing.elapsedMillis, 1000);
 });
 
+test('requires positive test execution evidence even for cached passing summaries', () => {
+  const coherent = values => {
+    values[0].children = values.slice(1).map(event => event.id);
+    return values;
+  };
+  for (const projected of [false, true]) {
+    const check = values => {
+      let text = serialize(coherent(values));
+      if (projected) {
+        try { text = projectBep(text, context); }
+        catch (error) {
+          assert.match(error.message, /Invalid numeric evidence field/);
+          return { ok: false };
+        }
+      }
+      return evaluateEvidence(text, context, 0);
+    };
+    const absent = events().filter(event => !event.testResult);
+    assert.equal(check(absent).ok, false, 'a cached summary alone cannot prove an attempt');
+    for (const count of [undefined, 0, -1, 0.5, '1', 2]) {
+      const values = events();
+      values[5].testSummary.totalRunCount = count;
+      assert.equal(check(values).ok, false, `unobserved or invalid run count ${count}`);
+    }
+    for (const count of [-1, 0, 0.5, '1', 2]) {
+      const values = events();
+      values[5].testSummary.totalNumCached = count;
+      assert.equal(check(values).ok, false, `invalid cache count ${count}`);
+    }
+    const otherTarget = events();
+    otherTarget[4].id.testResult.label = '//other:test';
+    assert.equal(check(otherTarget).ok, false, 'unrelated results cannot satisfy a summary');
+    const otherConfiguration = events();
+    otherConfiguration[4].id.testResult.configuration = { id: 'other' };
+    assert.equal(check(otherConfiguration).ok, false, 'a different configuration cannot satisfy a summary');
+    for (const cached of ['fresh', 'local', 'remote']) {
+      const values = events();
+      delete values[4].testResult.cachedLocally;
+      values[5].testSummary.totalNumCached = cached === 'fresh' ? 0 : 1;
+      if (cached === 'local') values[4].testResult.cachedLocally = true;
+      if (cached === 'remote') values[4].testResult.executionInfo = { cachedRemotely: true };
+      assert.equal(check(values).ok, true, `${cached} attempt remains valid`);
+    }
+  }
+});
+
 test('fails closed for missing, malformed, truncated and incomplete event streams', () => {
   for (const text of ['', '{', serialize(events()).slice(0, -12), serialize(events().slice(0, -1))]) {
     assert.equal(evaluateEvidence(text, context, 0).ok, false);

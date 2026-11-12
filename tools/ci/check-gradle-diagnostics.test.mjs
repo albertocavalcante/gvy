@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { collectDiagnostics, checkGradleDiagnostics } from './check-gradle-diagnostics.mjs';
+import { collectDiagnostics, checkGradleDiagnostics, loadNativeDiagnosticPolicy, validateNativeDiagnosticPolicy } from './check-gradle-diagnostics.mjs';
 import { evaluate } from './bazel-diagnostics.mjs';
 
 const now = new Date('2026-11-11T00:00:00Z');
@@ -22,6 +22,42 @@ const exception = {
 };
 const check = (log, extra = {}) => checkGradleDiagnostics({
   log, commandExitCode: 0, captureExitCode: 0, exceptions: [], now, ...extra,
+});
+
+test('proof-required exceptions remain unexpected in the generic evaluator', () => {
+  const conditional = { ...exception, requiresProof: 'native-provisioning-v1' };
+  const result = check(`> Configure project :\n${warning}\nBUILD SUCCESSFUL in 1s\n`, { exceptions: [conditional] });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.unexpected, [diagnostic]);
+  assert.deepEqual(result.accepted, []);
+});
+
+test('conditional policy rejects absent, duplicate, expired and unrecognized metadata even without diagnostics', () => {
+  const valid = loadNativeDiagnosticPolicy(now);
+  for (const entries of [[], [valid[0], valid[0]], [{ ...valid[0], expires: '2026-01-01' }, valid[1]],
+    [{ ...valid[0], requiresProof: 'unknown' }, valid[1]], [{ ...valid[0], extra: true }, valid[1]]]) {
+    assert.throws(() => validateNativeDiagnosticPolicy(entries, now));
+  }
+  assert.deepEqual(validateNativeDiagnosticPolicy(valid, now), valid);
+});
+
+test('summary schema requires bound hashes and completed proof for conditional acceptance', () => {
+  const schema = JSON.parse(readFileSync(new URL('./check-gradle-diagnostics.schema.json', import.meta.url)));
+  const accepted = schema.allOf.find(rule => rule.if?.properties?.accepted);
+  assert.equal(accepted.if.properties.accepted.type, 'array');
+  assert.equal(accepted.if.properties.accepted.contains.type, 'object');
+  assert.deepEqual(accepted.if.properties.accepted.contains.required, ['requiresProof']);
+  assert.deepEqual(accepted.then.required, ['nativeProvisioning']);
+  assert.equal(accepted.then.properties.nativeProvisioning.properties.complete.const, true);
+  const incomplete = schema.allOf.find(rule => rule.if?.properties?.nativeProvisioning);
+  assert.equal(incomplete.then.properties.ok.const, false);
+  const complete = schema.properties.nativeProvisioning.allOf[0];
+  assert.equal(complete.if.properties.complete.const, true);
+  for (const field of ['preflightSha256', 'preliminaryDiagnosticsSha256', 'proofSha256']) {
+    assert.equal(complete.then.properties[field].$ref, '#/$defs/hash');
+  }
+  assert.equal(schema.$defs.hash.type, 'string');
+  assert.equal(schema.$defs.hash.pattern, '^[a-f0-9]{64}$');
 });
 
 test('a warning from an otherwise successful command fails', () => {

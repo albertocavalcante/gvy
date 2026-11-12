@@ -41,6 +41,7 @@ const events = [
   { id: { structuredCommandLine: { commandLineLabel: 'original' } }, structuredCommandLine: { sections: [{ options: [canary] }] } },
   { id: { optionsParsed: {} }, optionsParsed: { cmdLine: [canary] } },
   { id: { actionCompleted: { primaryOutput: 'out' } }, action: { success: !code, type: 'KotlinCompile', commandLine: [canary] } },
+  { id: { testResult: { label: '//common:test', run: 1, shard: 1, attempt: 1 } }, testResult: { status: code ? 'FAILED' : 'PASSED' } },
   { id: { testSummary: { label: '//common:test' } }, testSummary: { overallStatus: code ? 'FAILED' : 'PASSED', totalRunCount: 1 } },
   { id: { buildFinished: {} }, finished: { exitCode: { code } } },
   { id: { buildToolLogs: {} }, buildToolLogs: { log: [{ contents: canary }] }, lastMessage: true },

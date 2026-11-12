@@ -101,6 +101,13 @@ Native launcher payload and Linux/macOS Native builds also use this wrapper, wit
 artifacts. Their JDK 21/native-compiler processes are outside the Linux/JDK 17 numeric sampler contract; tool
 diagnostics and original command/capture status remain required. The caller requires the reusable workflow to succeed.
 
+The opt-in Native provisioning guard uses a fresh job-owned directory and records preflight, unapproved diagnostics,
+verification and a final verdict. Its two exact Kotlin 2.3.0 overwrite warnings remain unexpected unless the matching
+proof succeeds; their owned, expiring conditional debt remains visible even when absent. The isolated directory contains
+provisioning writes but does not prove that only the installer's lock existed at the warning boundary or establish full
+compiler integrity. Actual Native and packaged-payload tests remain required. See
+[#1603](https://github.com/albertocavalcante/gvy/issues/1603).
+
 First-party deprecated Kotlin DSL delegates and the old test-listener closure are migrated. Plugin deprecations have
 exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspected upstream versions, adoption
 candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These

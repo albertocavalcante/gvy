@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -31,7 +32,7 @@ else {
   chmodSync(executable, 0o755);
   writeFileSync(join(dir, 'git'), `#!${process.execPath}
 import { readdirSync, writeFileSync } from 'node:fs';
-if (process.argv[2] === 'rev-parse') console.log('${sha}');
+if (process.argv[2] === 'rev-parse' || (process.argv[2] === '-C' && process.argv[4] === 'rev-parse')) console.log('${sha}');
 else if (process.argv[2] === 'status') {
   if (process.env.FAKE_CAPTURE_FAILURE) {
     for (const path of readdirSync('reports')) writeFileSync('reports/' + path + '/console.log', 'blocked capture');
@@ -78,6 +79,83 @@ test('wrapper captures both streams in unique reports and forces full plain warn
   }
 });
 
+for (const scenario of [
+  { name: 'no warning', warning: false, status: 0 },
+  { name: 'one eligible warning', warning: true, status: 0 },
+  { name: 'missing proof', warning: true, status: 1, failure: 'FAKE_NO_PROOF' },
+  { name: 'occupied verdict', warning: true, status: 1, failure: 'FAKE_OCCUPIED_VERDICT' },
+  { name: 'other warning', warning: true, status: 1, failure: 'FAKE_EXTRA_WARNING' },
+  { name: 'original exit seven', warning: true, status: 7, failure: 'FAKE_EXIT_7' },
+]) {
+  test(`Native wrapper verifies synthetic ${scenario.name} before acceptance`, t => {
+    const { warning } = scenario;
+    const host = process.platform === 'darwin' && process.arch === 'arm64' ? ['macosArm64', 'macos-arm64', 'macos-aarch64'] :
+      process.platform === 'linux' && process.arch === 'x64' ? ['linuxX64', 'linux-x64', 'linux-x86_64'] : null;
+    if (!host) return t.skip('Supported Native wrapper host required');
+    const f = fixture(t);
+    const temp = realpathSync(mkdtempSync(join(tmpdir(), 'gvy-native-wrapper-')));
+    t.after(() => rmSync(temp, { recursive: true, force: true }));
+    mkdirSync(join(f.dir, 'gradle'));
+    writeFileSync(join(f.dir, 'gradle', 'libs.versions.toml'), '[versions]\nkotlin = "2.3.0"\n');
+    const event = join(f.dir, 'event.json');
+    writeFileSync(event, '{}');
+    writeFileSync(f.executable, `#!${process.execPath}
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const data = process.env.KONAN_DATA_DIR;
+writeFileSync('child.json', JSON.stringify({ data, args: process.argv.slice(2) }));
+const home = join(data, 'kotlin-native-prebuilt-${host[2]}-2.3.0');
+mkdirSync(join(home, 'bin'), { recursive: true });
+mkdirSync(join(home, 'konan', 'lib'), { recursive: true });
+if (!process.env.FAKE_NO_PROOF) writeFileSync(join(home, 'provisioned.ok'), '');
+for (const name of ['konanc', 'kotlinc-native']) writeFileSync(join(home, 'bin', name), 'fixture', { mode: 0o755 });
+writeFileSync(join(home, 'konan', 'konan.properties'), 'fixture');
+writeFileSync(join(home, 'konan', 'lib', 'kotlin-native-compiler-embeddable.jar'), 'fixture');
+if (process.env.FAKE_OCCUPIED_VERDICT) {
+  const report = join(process.env.FAKE_REPORT_ROOT, readdirSync(process.env.FAKE_REPORT_ROOT)[0]);
+  writeFileSync(join(report, 'native-provisioning-final-verdict.json'), 'occupied');
+}
+if (${warning}) console.log('Kotlin/Native bundle directory ' + home + ' is not empty. Native bundle files will be overwritten.');
+if (process.env.FAKE_EXTRA_WARNING) console.log('warning: unexpected failure');
+console.log('BUILD ' + (process.env.FAKE_EXIT_7 ? 'FAILED' : 'SUCCESSFUL') + ' in 1s');
+if (process.env.FAKE_EXIT_7) process.exitCode = 7;
+`);
+    chmodSync(f.executable, 0o755);
+    const env = { ...f.env, RUNNER_TEMP: temp, GITHUB_SHA: sha, GITHUB_EVENT_PATH: event,
+      GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1' };
+    if (scenario.failure) env[scenario.failure] = '1';
+    const reportRoot = join(temp, 'reports');
+    env.FAKE_REPORT_ROOT = reportRoot;
+    const result = spawnSync(process.execPath, [runner, '--report-root', reportRoot, '--producer', `launcher-${host[1]}`,
+      '--native-provisioning', host[0], ':launcher:test'], { cwd: f.dir, env, encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.status, scenario.status, result.stderr);
+    const dir = join(reportRoot, readdirSync(reportRoot)[0]);
+    const report = JSON.parse(readFileSync(join(dir, 'diagnostics.json'), 'utf8'));
+    const child = JSON.parse(readFileSync(join(f.dir, 'child.json'), 'utf8'));
+    if (scenario.failure) {
+      assert.equal(report.ok, false);
+      assert.equal(report.nativeProvisioning.complete, false);
+      assert.equal(report.accepted.filter(entry => entry.requiresProof).length, 0);
+      assert.ok(report.unexpected.some(entry => entry.includes('kotlin-native-prebuilt')));
+      return;
+    }
+    const preliminary = JSON.parse(readFileSync(join(dir, 'native-provisioning-unapproved-diagnostics.json'), 'utf8'));
+    const proof = JSON.parse(readFileSync(join(dir, 'native-provisioning-verification.json'), 'utf8'));
+    const verdict = JSON.parse(readFileSync(join(dir, 'native-provisioning-final-verdict.json'), 'utf8'));
+    assert.equal(report.ok, true);
+    assert.equal(report.nativeProvisioning.complete, true);
+    assert.equal(report.accepted.filter(entry => entry.requiresProof).length, Number(warning));
+    assert.equal(preliminary.unexpected.length, Number(warning));
+    assert.equal(proof.preliminaryDiagnosticsSha256, createHash('sha256').update(readFileSync(join(dir, 'native-provisioning-unapproved-diagnostics.json'))).digest('hex'));
+    assert.equal(verdict.diagnosticsSha256, createHash('sha256').update(readFileSync(join(dir, 'diagnostics.json'))).digest('hex'));
+    assert.equal(verdict.proofSha256, createHash('sha256').update(readFileSync(join(dir, 'native-provisioning-verification.json'))).digest('hex'));
+    assert.equal(child.data, proof.konanDataDir);
+    assert.equal(child.args.filter(arg => arg.startsWith('-Pkonan.data.dir=')).length, 1);
+    assert.ok(child.args.includes(`-Pkonan.data.dir=${child.data}`));
+    assert.deepEqual(child.args.slice(-3), ['--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
+  });
+}
+
 test('a zero-exit warning fails and original command failure is retained with its warning', t => {
   for (const mode of ['warning', 'failure', 'truncated']) {
     const f = fixture(t);
@@ -87,6 +165,46 @@ test('a zero-exit warning fails and original command failure is retained with it
     assert.equal(summary.ok, false);
     if (mode === 'truncated') assert.equal(summary.complete, false);
     else assert.deepEqual(summary.unexpected, ['[task :gls:compileKotlin] w: gls/src/Foo.kt:4:3 New compiler warning']);
+  }
+});
+
+test('ordinary wrapper never accepts the conditional Native warning', t => {
+  const f = fixture(t);
+  writeFileSync(f.executable, `#!${process.execPath}
+console.log('Kotlin/Native bundle directory /tmp/.konan/kotlin-native-prebuilt-linux-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.');
+console.log('BUILD SUCCESSFUL in 1s');
+`);
+  chmodSync(f.executable, 0o755);
+  assert.equal(f.run().status, 1);
+  const report = f.summaries()[0];
+  assert.equal(report.unexpected.length, 1);
+  assert.equal(report.accepted.length, 0);
+  assert.equal(report.exceptions.filter(entry => entry.requiresProof).length, 2);
+});
+
+test('Native wrapper rejects malformed options before starting the child', t => {
+  const f = fixture(t);
+  for (const options of [
+    ['--native-provisioning'], ['--native-provisioning', '--producer'],
+    ['--native-provisioning', 'linuxX64', '--native-provisioning', 'linuxX64', 'test'],
+    ['test', '--native-provisioning', 'linuxX64'],
+    ['--native-provisioning', 'linuxX64', 'test', '-Pkonan.data.dir=/other'],
+  ]) {
+    const result = spawnSync(process.execPath, [runner, '--report-root', f.reportRoot, '--producer', 'launcher-linux-x64', ...options],
+      { encoding: 'utf8', cwd: f.dir, env: f.env, timeout: 10000 });
+    assert.equal(result.status, 2);
+    assert.throws(() => readFileSync(join(f.dir, 'args.json')));
+  }
+});
+
+test('Native provisioning rejects numeric memory profiles before starting Gradle', t => {
+  for (const setting of [{ GVY_GRADLE_MEMORY_PROBE: 'true' }, { GVY_GRADLE_MEMORY_PROFILE: 'nightly' }]) {
+    const f = fixture(t);
+    const result = spawnSync(process.execPath, [runner, '--report-root', f.reportRoot, '--producer', 'launcher-linux-x64',
+      '--native-provisioning', 'linuxX64', 'test'], { cwd: f.dir, env: { ...f.env, ...setting }, encoding: 'utf8', timeout: 10000 });
+    assert.notEqual(result.status, 0);
+    assert.throws(() => readFileSync(join(f.dir, 'args.json')));
+    assert.match(f.summaries()[0].errors.join(' '), /does not support numeric memory observation/);
   }
 });
 
@@ -279,6 +397,10 @@ test('Nightly watches observer runtime, test, schema and JVM-profile inputs', ()
     'tools/ci/gradle-memory-options.mjs', 'tools/ci/gradle-memory-options.test.mjs',
     'tools/ci/gradle-memory-probe.mjs', 'tools/ci/gradle-memory-probe.test.mjs',
     'tools/ci/run-gradle.mjs', 'tools/ci/run-gradle.test.mjs', 'tools/ci/run-gradle.schema.json', 'gradle.properties',
+    'tools/ci/check-gradle-diagnostics.mjs', 'tools/ci/check-gradle-diagnostics.test.mjs', 'tools/ci/check-gradle-diagnostics.schema.json',
+    'tools/ci/gradle-diagnostics.json', 'tools/ci/read-evidence.mjs', 'tools/ci/read-evidence.test.mjs',
+    'tools/ci/bazel-diagnostics.mjs', 'tools/ci/bazel-diagnostics.test.mjs',
+    'tools/ci/native-provisioning.mjs', 'tools/ci/native-provisioning.test.mjs', 'tools/ci/native-provisioning-diagnostics.json',
   ];
   assert.deepEqual(inputs.filter(path => !watched(path)), [], 'Nightly must exercise every observer/profile input');
   for (const unrelated of ['README.md', '.github/workflows/native.yml', 'editors/zed/src/lib.rs']) {

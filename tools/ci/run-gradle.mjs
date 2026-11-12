@@ -6,7 +6,8 @@ import { constants } from 'node:os';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { finished } from 'node:stream/promises';
 import { isDeepStrictEqual } from 'node:util';
-import { checkGradleDiagnostics, renderSummary } from './check-gradle-diagnostics.mjs';
+import { checkGradleDiagnostics, loadNativeDiagnosticPolicy, renderSummary } from './check-gradle-diagnostics.mjs';
+import { prepareNativeProvisioning, verifyNativeProvisioning } from './native-provisioning.mjs';
 import { effectiveGradleJvmArgs, gradleMemoryPlan, gradleMemoryObservationProfile } from './gradle-memory-options.mjs';
 import { startGradleMemoryProbe } from './gradle-memory-probe.mjs';
 import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
@@ -14,16 +15,20 @@ import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 function parseArgs(args) {
   const options = {};
   let index = 0;
-  while (['--report-root', '--producer'].includes(args[index])) {
+  while (['--report-root', '--producer', '--native-provisioning'].includes(args[index])) {
     const key = args[index];
-    if (Object.hasOwn(options, key) || !args[index + 1]) throw new Error('Missing or duplicate Gradle wrapper option');
+    if (Object.hasOwn(options, key) || !args[index + 1] || args[index + 1].startsWith('--')) throw new Error('Missing or duplicate Gradle wrapper option');
     options[key] = args[index + 1];
     index += 2;
   }
   if (!options['--report-root'] || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(options['--producer'] ?? '') || index === args.length) {
     throw new Error('Usage: run-gradle.mjs --report-root DIR --producer NAME GRADLE_ARGS...');
   }
-  return { reportRoot: options['--report-root'], producer: options['--producer'], gradleArgs: args.slice(index) };
+  if (args.slice(index).includes('--native-provisioning')) throw new Error('Native provisioning option must precede Gradle arguments');
+  if (options['--native-provisioning'] && args.slice(index).some(arg => /^-P(?:konan\.data\.dir|kotlin\.native\.home)(?:=|$)/.test(arg))) {
+    throw new Error('Native provisioning cannot override its data directory or home');
+  }
+  return { reportRoot: options['--report-root'], producer: options['--producer'], nativeTarget: options['--native-provisioning'], gradleArgs: args.slice(index) };
 }
 
 function git(args) {
@@ -81,11 +86,11 @@ function memoryPrivateDirectory(reportRoot) {
   }
 }
 
-async function capture(args, dir) {
+async function capture(args, dir, childEnv = {}) {
   let captureExitCode = 0;
   const streams = ['stdout.log', 'stderr.log', 'console.log'].map(name => createWriteStream(join(dir, name), { flags: 'wx' }));
   const settled = streams.map(stream => finished(stream).catch(() => { captureExitCode = 1; }));
-  const child = spawn('./gradlew', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('./gradlew', args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...childEnv } });
   // Multiple pipe sinks preserve backpressure without retaining output in memory.
   child.stdout.pipe(streams[0]);
   child.stdout.pipe(streams[2], { end: false });
@@ -120,6 +125,8 @@ async function main(args) {
   let status = { commandExitCode: 2, captureExitCode: 0, commandSignal: null };
   let bytes;
   let exceptions;
+  let conditional;
+  let nativePlan;
   const memoryRequired = process.env.GVY_GRADLE_MEMORY_PROBE === 'true';
   const memoryPath = join(dir, 'memory.json');
   let memoryProbe = null;
@@ -129,11 +136,20 @@ async function main(args) {
   let memoryComplete = false;
   const errors = [];
   try {
-    exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8'));
+    conditional = loadNativeDiagnosticPolicy();
+    exceptions = [...JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8')), ...conditional];
     context = createContext(invocationId);
     writeFileSync(join(dir, 'context.json'), `${JSON.stringify(context, null, 2)}\n`, { flag: 'wx' });
     worktreeDirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));
     const gradleArgs = [...options.gradleArgs];
+    if (options.nativeTarget) {
+      if (memoryRequired || process.env.GVY_GRADLE_MEMORY_PROFILE !== undefined) {
+        throw new Error('Native provisioning does not support numeric memory observation');
+      }
+      nativePlan = prepareNativeProvisioning({ context, producer: options.producer, target: options.nativeTarget,
+        sourceRoot: process.cwd(), runnerTemp: process.env.RUNNER_TEMP, producerDir: dir, invocationId });
+      gradleArgs.push(...nativePlan.gradleArgs);
+    }
     if (!['true', 'false', undefined].includes(process.env.GVY_GRADLE_MEMORY_PROBE)) throw new Error('Invalid memory observation opt-in');
     const memoryProfile = gradleMemoryObservationProfile(process.env.GVY_GRADLE_MEMORY_PROFILE);
     if (process.env.GVY_GRADLE_MEMORY_PROFILE !== undefined && !memoryRequired) {
@@ -154,7 +170,7 @@ async function main(args) {
       memoryProbe = startGradleMemoryProbe({ ...memoryProfile, ownerArgument: memoryPlan.ownerArgument, identity: memoryPlan.identity,
         reportPath: memoryPath });
     }
-    status = await capture([...gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir);
+    status = await capture([...gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir, nativePlan?.childEnv);
     // Oversize logs stay intact as artifacts; evidence fails instead of truncating.
     bytes = readEvidenceBytes(join(dir, 'console.log'), 128 * 1024 * 1024);
   } catch (error) { errors.push(error.message); }
@@ -189,11 +205,40 @@ async function main(args) {
   result.errors.push(...errors);
   result.ok &&= errors.length === 0 && context !== null;
   result.complete &&= errors.length === 0 && context !== null;
+  if (options.nativeTarget) {
+    try {
+      if (!nativePlan) throw new Error('Native provisioning preparation unavailable');
+      const proof = verifyNativeProvisioning({ plan: nativePlan, context, producer: options.producer, rawBytes: bytes, preliminaryDiagnostics: result });
+      const admitted = proof.eligibleDiagnostics.map(diagnostic => {
+        const entry = conditional.find(item => item.diagnostic === diagnostic);
+        if (!entry || !result.unexpected.includes(diagnostic)) throw new Error('Native diagnostic policy mismatch');
+        return entry;
+      });
+      const proofBytes = readEvidenceBytes(join(dir, 'native-provisioning-verification.json'), 2 * 1024 * 1024);
+      const unexpected = result.unexpected.filter(value => !proof.eligibleDiagnostics.includes(value));
+      const nativeProvisioning = { schemaVersion: 1, required: true, complete: true,
+        preflightSha256: nativePlan.preflightSha256, preliminaryDiagnosticsSha256: proof.preliminaryDiagnosticsSha256,
+        proofSha256: createHash('sha256').update(proofBytes).digest('hex') };
+      const candidate = { ...result, unexpected, accepted: [...result.accepted, ...admitted], nativeProvisioning,
+        ok: result.complete && result.commandExitCode === 0 && result.captureExitCode === 0 && result.errors.length === 0 && unexpected.length === 0 };
+      const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+      writeFileSync(join(dir, 'native-provisioning-final-verdict.json'), `${JSON.stringify({ schemaVersion: 1,
+        diagnosticsSha256: createHash('sha256').update(candidateBytes).digest('hex'), proofSha256: nativeProvisioning.proofSha256 }, null, 2)}\n`, { flag: 'wx', mode: 0o400 });
+      Object.assign(result, candidate);
+    } catch (error) {
+      result.errors.push(`Native provisioning proof failed: ${error.message}`);
+      result.ok = false;
+      result.complete = false;
+      result.nativeProvisioning = { schemaVersion: 1, required: true, complete: false,
+        preflightSha256: nativePlan?.preflightSha256 ?? null, preliminaryDiagnosticsSha256: null, proofSha256: null };
+    }
+  }
   writeFileSync(join(dir, 'raw.log'), bytes ?? '');
   const summary = renderSummary(result);
+  const resultBytes = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
+  writeFileSync(join(dir, 'diagnostics.json'), resultBytes);
+  writeFileSync(join(dir, 'summary.json'), resultBytes);
   writeFileSync(join(dir, 'summary.md'), summary);
-  writeFileSync(join(dir, 'diagnostics.json'), `${JSON.stringify(result, null, 2)}\n`);
-  writeFileSync(join(dir, 'summary.json'), `${JSON.stringify(result, null, 2)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   console.log(`Gradle evidence ${result.ok ? 'passed' : 'failed'}: ${dir}`);
   process.exitCode = status.commandExitCode !== 0 ? status.commandExitCode : result.ok ? 0 : 1;

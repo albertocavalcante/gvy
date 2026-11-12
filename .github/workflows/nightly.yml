@@ -12,6 +12,11 @@ on:
       - tools/ci/gradle-memory-options*
       - tools/ci/gradle-memory-probe*
       - tools/ci/run-gradle*
+      - tools/ci/check-gradle-diagnostics*
+      - tools/ci/gradle-diagnostics.json
+      - tools/ci/read-evidence*
+      - tools/ci/bazel-diagnostics*
+      - tools/ci/native-provisioning*
       - gradle.properties
 
 permissions:

@@ -7,6 +7,23 @@ import { evaluate } from './bazel-diagnostics.mjs';
 
 export const schemaVersion = 1;
 
+export function validateNativeDiagnosticPolicy(entries, now = new Date()) {
+  evaluate([], entries, now);
+  const expected = ['linux-x86_64', 'macos-aarch64'].map(platform =>
+    `[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-${platform}-2.3.0 is not empty. Native bundle files will be overwritten.`);
+  const fields = ['diagnostic', 'owner', 'issue', 'reason', 'nextAction', 'acceptance', 'expires', 'requiresProof'];
+  if (entries.length !== 2 || entries.some(entry => entry.requiresProof !== 'native-provisioning-v1' ||
+      Object.keys(entry).some(key => !fields.includes(key))) ||
+      !expected.every(diagnostic => entries.some(entry => entry.diagnostic === diagnostic))) {
+    throw new Error('Invalid Native conditional diagnostic policy');
+  }
+  return entries;
+}
+
+export function loadNativeDiagnosticPolicy(now = new Date()) {
+  return validateNativeDiagnosticPolicy(JSON.parse(readFileSync(new URL('./native-provisioning-diagnostics.json', import.meta.url), 'utf8')), now);
+}
+
 function plain(log) {
   return log.replace(/\x1b\[[0-9;]*m/g, '').replaceAll('\r\n', '\n');
 }
@@ -155,7 +172,12 @@ export function checkGradleDiagnostics({ log, commandExitCode, captureExitCode, 
   const complete = errors.length === 0;
   let policy = { ok: false, unexpected: diagnostics, accepted: [], exceptions: [] };
   try {
-    policy = evaluate(diagnostics, exceptions, now);
+    evaluate([], exceptions, now); // Validate all entries, including conditional debt.
+    if (exceptions.some(entry => entry.requiresProof !== undefined && entry.requiresProof !== 'native-provisioning-v1')) {
+      throw new Error('Unknown conditional proof kind');
+    }
+    const unconditional = exceptions.filter(entry => entry.requiresProof === undefined);
+    policy = { ...evaluate(diagnostics, unconditional, now), exceptions };
   } catch (error) {
     errors.push(`Diagnostic policy: ${error.message}`);
   }
@@ -182,7 +204,8 @@ export function renderSummary(result) {
   }
   return [
     '## Gradle diagnostic accountability', '',
-    `**${result.ok ? 'PASS' : 'FAIL'}** (${escape(result.producer)}): ${result.diagnostics.length} diagnostics; ${result.unexpected.length} unexpected; evidence ${result.complete ? 'complete' : 'incomplete'}.`, '',
+    `**${result.ok ? 'PASS' : 'FAIL'}** (${escape(result.producer)}): ${result.diagnostics.length} diagnostics; ${result.unexpected.length} unexpected; ${result.accepted.filter(entry => entry.requiresProof).length} accepted with Native proof; evidence ${result.complete ? 'complete' : 'incomplete'}.`, '',
+    ...(result.nativeProvisioning ? [`Native provisioning proof: ${result.nativeProvisioning.complete ? 'verified' : 'failed'}.`, ''] : []),
     `Original command exit: ${result.commandExitCode}; log capture exit: ${result.captureExitCode}.`, '',
     ...(result.memoryProbe ? [
       `Required numeric daemon memory observation: ${result.memoryProbe.complete ? 'complete' : 'incomplete'} (memory.json). Sampled maxima are observations, not guaranteed peaks.`, '',
@@ -227,6 +250,8 @@ function main(args) {
   } catch (error) { errors.push(`Cannot read Gradle log: ${error.code ?? error.message}`); }
   try { exceptions = JSON.parse(readFileSync(options.baseline, 'utf8')); }
   catch (error) { errors.push(`Cannot read diagnostic policy: ${error.message}`); }
+  try { exceptions = [...exceptions, ...loadNativeDiagnosticPolicy()]; }
+  catch (error) { errors.push(`Cannot read Native conditional diagnostic policy: ${error.message}`); }
   const exitCode = value => /^\d+$/.test(value) ? Number(value) : undefined;
   const result = checkGradleDiagnostics({
     log, commandExitCode: exitCode(options['exit-code']), captureExitCode: exitCode(options['capture-exit-code']),

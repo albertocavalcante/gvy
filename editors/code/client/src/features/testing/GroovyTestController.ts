@@ -347,6 +347,11 @@ export class GroovyTestController {
       return false;
     }
 
+    // Immediate discovery supersedes a queued refresh, which would invalidate it.
+    if (this.refreshTimeout) {
+      clearTimeout(this.refreshTimeout);
+      this.refreshTimeout = undefined;
+    }
     const discoveryVersion = ++this.discoveryVersion;
     try {
       const suites = await this.testService.discoverTestsInWorkspace(
