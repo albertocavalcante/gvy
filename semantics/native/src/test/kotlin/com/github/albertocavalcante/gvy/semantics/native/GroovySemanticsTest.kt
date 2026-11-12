@@ -23,8 +23,8 @@ import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
@@ -555,15 +555,17 @@ class GroovySemanticsTest {
     fun `concurrent access to cache is thread-safe`() {
         val semantics = GroovySemantics(stubSolver)
         val modules = listOf(parse("def x = 'string'"), parse("def y = 42"))
-        runWorkers(modules.map { module ->
-            {
-                @Suppress("MagicNumber")
-                repeat(100) {
-                    semantics.inject(module)
-                    assertTrue(semantics.getContext(module) != null)
+        runWorkers(
+            modules.map { module ->
+                {
+                    @Suppress("MagicNumber")
+                    repeat(100) {
+                        semantics.inject(module)
+                        assertTrue(semantics.getContext(module) != null)
+                    }
                 }
-            }
-        })
+            },
+        )
         val decl1 = findNode<DeclarationExpression>(modules[0])!!
         assertEquals(TypeConstants.STRING, semantics.resolveType(decl1.rightExpression, modules[0]))
         val decl2 = findNode<DeclarationExpression>(modules[1])!!

@@ -170,8 +170,10 @@ class GroovySemantics(
     )
     fun resolveType(node: ASTNode): SemanticType {
         try {
-            val context = findContext(node)
+            // Legacy API cannot identify the node's module, so it keeps its original first-module behavior.
+            val module = synchronized(contextCache) { contextCache.keys.firstOrNull() }
                 ?: return SemanticType.Unknown("Node not in injected module")
+            val context = acquireContext(module)
             return calculatorRegistry.calculate(node, context)
         } finally {
             currentModule.remove()
@@ -269,14 +271,6 @@ class GroovySemantics(
         }
     }
 
-    private fun findContext(@Suppress("UNUSED_PARAMETER") node: ASTNode): NativeTypeContext? {
-        // Find which module this node belongs to
-        // TODO: Walk up using parent logic if we had it.
-        // For now, we assume single module injection and return the first one.
-        val module = synchronized(contextCache) { contextCache.keys.firstOrNull() } ?: return null
-        return acquireContext(module)
-    }
-
     /**
      * Get the type context for a module.
      * Ensures the module is injected first.
@@ -284,7 +278,5 @@ class GroovySemantics(
      * @param module The module to get context for
      * @return The NativeTypeContext, or null if injection failed
      */
-    fun getContext(module: ModuleNode): NativeTypeContext? {
-        return acquireContext(module)
-    }
+    fun getContext(module: ModuleNode): NativeTypeContext? = acquireContext(module)
 }
