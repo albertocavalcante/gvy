@@ -1,6 +1,6 @@
 # Kotlin serialization migration
 
-Status: gvy-owned migrations complete; LSP4J replacement remains deferred in
+Status: gvy-owned migrations complete; replacement readiness work is active, while LSP4J replacement remains deferred in
 [#1704](https://github.com/albertocavalcante/gvy/issues/1704). Initialization/configuration work closed
 [#704](https://github.com/albertocavalcante/gvy/issues/704). These steps support the existing
 [Quality Bar](../docs/quality-bar.md); they do not introduce another product roadmap.
@@ -81,6 +81,22 @@ duplicate resources. These limits do not justify changing current behavior durin
   Follow [CI accountability](../docs/ci-diagnostics.md); do not suppress new findings or substitute an unrelated head's
   result. Match documentation-only validation to [CONTRIBUTING](../CONTRIBUTING.md#validate-your-changes).
 
+## Replacement readiness
+
+The gvy integration owner is establishing wire fixtures for completion data and test code-lens command arguments at the
+LSP4J adapter boundary. These fixtures do not establish packaged-server stdio or socket coverage; that remains a gate in
+[#1704](https://github.com/albertocavalcante/gvy/issues/1704). Independent literal fixtures must cover the packaged
+server and lifecycle before the production runtime can change.
+
+The library maintainers own the corresponding readiness work in their existing repositories:
+
+- [jsonrpc4k #49](https://github.com/albertocavalcante/jsonrpc4k/issues/49): JSON-RPC conformance, full-duplex dispatch,
+  cancellation, resource ownership and bounded decoding.
+- [LSP4K #2](https://github.com/albertocavalcante/lsp4k/issues/2): public initialization, lifecycle, capabilities and
+  the response shapes required by gvy, validated through public client/server APIs.
+- [BSP4K #15](https://github.com/albertocavalcante/bsp4k/issues/15): BSP integration readiness, including real-consumer
+  initialization, targets, task notifications and shutdown before retiring BSP4J.
+
 ## TODO: replace LSP4J with LSP4K when ready
 
 **TODO(#1704): migrate gvy's language-server protocol types and runtime from LSP4J to Alberto's LSP4K once its required
@@ -98,5 +114,5 @@ Retire the temporary adapters and unused declarations only when their callers ha
 graph and packaged server before claiming complete Gson removal.
 
 Remaining debt owner: gvy maintainers for integration and dependency retirement; LSP4K/jsonrpc4k maintainers for library
-capability gaps. Next action and acceptance criteria are tracked in #1704. Changes to those libraries are outside this
-gvy migration batch.
+capability gaps. Next action and acceptance criteria are tracked in #1704. Changes to those libraries were outside the
+original preparatory gvy migration batch; their maintainers now own readiness work in the linked repositories.
