@@ -58,6 +58,12 @@ class ScenarioExecutor internal constructor(
         execution.run(definition.scenario.name) { execute(definition, execution) }
     }
 
+    /**
+     * Executes named assert checks and returns an immutable report. Other check-bearing steps do not yet accept
+     * named metadata. Operational failures without an established origin are reported as Unclassified; runner
+     * integration is responsible for distinguishing transport failures and interpreting known failures.
+     * An empty observation plan records no product verification. Unconfirmed cleanup may still be running.
+     */
     fun executeWithOutcome(definition: ScenarioDefinition): ScenarioOutcome {
         val authored = checks(definition)
         require(definition.scenario.xfail == null) { "Scenario-level xfail cannot be combined with named outcomes" }
