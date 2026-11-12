@@ -19,7 +19,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 1
       JDK_JAVA_OPTIONS: '-Xmx512m'
-      JAVA_TOOL_OPTIONS: '-Xmx512m'
+      JAVA_TOOL_OPTIONS: '-Xmx512m -Dorg.gradle.deprecation.trace=true'
       GRADLE_OPTS: >-
         -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC"
         -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
@@ -179,17 +179,23 @@ jobs:
           pnpm --dir editors/code run compile
           pnpm --dir editors/code test
           editors/code/node_modules/.bin/prettier --check editors/code/client/src/test/integration/implementation.test.ts
-          direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 \
+          candidate_sha=$(git rev-parse HEAD)
+          gradle_evidence="$RUNNER_TEMP/gvy-preparation-gradle-evidence"
+          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "$gradle_evidence" --producer preparation-lint-fix \
+              lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           boundary_script="$GITHUB_WORKSPACE/support/.publication/boundary-controls.sh"
-          printf '%s  %s\n' '4f4ee9d8508f7b33ba73cd65bd408ad9dc7cbdff30980591f95851b2fff40618' "$boundary_script" | sha256sum -c -
+          printf '%s  %s\n' '2d6d75c1b718c858af29cbca00acc0407dc90f04aa7db23ac905281e11b1049f' "$boundary_script" | sha256sum -c -
           bash "$boundary_script" "$EXPECTED_TREE" \
               "$GITHUB_WORKSPACE/support/.publication/negative-control.patch" \
               "$GITHUB_WORKSPACE/support/.publication/negative-control-spec.json" \
               "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof"
-          direnv exec . ./gradlew :gls:test \
+          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "$gradle_evidence" --producer preparation-terminal-native \
+              :gls:test \
               --tests '*.DiagnosticsRequestHandlerTest' \
               --tests '*.DiagnosticsRequestRegistrationTest' \
               --tests '*.DiagnosticsOrchestratorTest' \
@@ -198,7 +204,10 @@ jobs:
               :tests:e2eTest --tests '*.DiagnosticsTerminalProtocolTest' \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
-              2>&1 | tee "$RUNNER_TEMP/gvy-diagnostics-native.log"
+              --console=plain
+          native_reports=("$gradle_evidence"/preparation-terminal-native-*/console.log)
+          [[ "${#native_reports[@]}" -eq 1 && -f "${native_reports[0]}" ]]
+          cp "${native_reports[0]}" "$RUNNER_TEMP/gvy-diagnostics-native.log"
           git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/gvy-staged-paths"
@@ -217,12 +226,18 @@ jobs:
               esac
           done <"$RUNNER_TEMP/gvy-staged-paths"
           git commit -m 'feat(lsp): expose version-bound diagnostics completion' 2>&1 | tee "$RUNNER_TEMP/gvy-commit-hooks.log"
+          node tools/ci/check-gradle-diagnostics.mjs \
+              --log "$RUNNER_TEMP/gvy-commit-hooks.log" --exit-code 0 --capture-exit-code 0 \
+              --producer preparation-hooks --baseline tools/ci/gradle-diagnostics.json \
+              --report "$RUNNER_TEMP/gvy-hook-diagnostics" --root "$PWD"
           [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
           git diff --exit-code && git diff --cached --quiet
           test -z "$(git status --porcelain --untracked-files=all)"
           mkdir "$RUNNER_TEMP/gvy-publication-proof"
           cp -R "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof" "$RUNNER_TEMP/gvy-publication-proof/red-negative"
+          cp -R "$gradle_evidence" "$RUNNER_TEMP/gvy-publication-proof/gradle-evidence"
+          cp -R "$RUNNER_TEMP/gvy-hook-diagnostics" "$RUNNER_TEMP/gvy-publication-proof/hook-diagnostics"
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
           cp "$RUNNER_TEMP/gvy-commit-hooks.log" "$RUNNER_TEMP/gvy-publication-proof/"
@@ -264,5 +279,8 @@ jobs:
             candidate/tests/lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt
             ${{ runner.temp }}/gvy-diagnostics-native.log
             ${{ runner.temp }}/gvy-diagnostics-boundary-red-proof/
+            ${{ runner.temp }}/gvy-preparation-gradle-evidence/
+            ${{ runner.temp }}/gvy-hook-diagnostics/
+            ${{ runner.temp }}/gvy-commit-hooks.log
           if-no-files-found: warn
           retention-days: 7

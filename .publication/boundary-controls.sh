@@ -9,7 +9,7 @@ negative_patch=${2:?}
 negative_spec=${3:?}
 proof_dir=${4:?}
 printf '%s  %s\n' 'cbb784d585e9718b72a929aa23ac0d51bc6375402f01d2d028725b04da930094' "${negative_patch}" | sha256sum -c -
-printf '%s  %s\n' 'dfb1f9026219ad8b50019bb9f875cf46b4fd45693166741883532e9035c076a3' "${negative_spec}" | sha256sum -c -
+printf '%s  %s\n' '8e9dda712102f19810a67c0df8646821f4fb0f83152773cc2083ab3b754fbb23' "${negative_spec}" | sha256sum -c -
 negative_bytes=$(stat -c %s "${negative_patch}")
 [[ ${negative_bytes} -le 8192 ]]
 spec_tree=$(jq -er '.greenTree' "${negative_spec}")
@@ -40,6 +40,7 @@ direnv exec . ./gradlew :gls:test \
     --tests '*DiagnosticsRequestRegistrationTest.shutdown*' \
     --no-daemon --no-parallel --max-workers=1 \
     '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
+    --console=plain --warning-mode=all -Dorg.gradle.deprecation.trace=true \
     2>&1 | tee "${proof_dir}/gvy-diagnostics-boundary-red.log"
 pipeline_status=("${PIPESTATUS[@]}")
 native_status=${pipeline_status[0]}
@@ -56,6 +57,27 @@ git apply --reverse "${negative_patch}"
 git diff --exit-code
 index_tree=$(git write-tree)
 [[ ${index_tree} == "${expected_tree}" ]]
+node --input-type=module - "${proof_dir}" "${native_status}" "${capture_status}" <<'JSREDDIAGNOSTICS'
+import assert from 'node:assert/strict';
+import { isUtf8 } from 'node:buffer';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { checkGradleDiagnostics, loadNativeDiagnosticPolicy } from './tools/ci/check-gradle-diagnostics.mjs';
+const [proof, commandCode, captureCode] = process.argv.slice(2);
+const bytes = readFileSync(join(proof, 'gvy-diagnostics-boundary-red.log'));
+const exceptions = [...JSON.parse(readFileSync('tools/ci/gradle-diagnostics.json', 'utf8')), ...loadNativeDiagnosticPolicy()];
+const result = checkGradleDiagnostics({ log: bytes.toString('utf8'), commandExitCode: Number(commandCode),
+    captureExitCode: Number(captureCode), encodingValid: isUtf8(bytes), exceptions, rootDir: process.cwd() });
+assert.equal(result.complete, true);
+assert.equal(result.ok, false);
+assert.notEqual(result.commandExitCode, 0);
+assert.equal(result.captureExitCode, 0);
+assert.deepEqual(result.errors, [`Gradle command failed with exit ${Number(commandCode)}`]);
+assert.deepEqual(result.unexpected, []);
+result.log = { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+writeFileSync(join(proof, 'canonical-gradle-diagnostics.json'), JSON.stringify(result, null, 2) + '\n');
+JSREDDIAGNOSTICS
 python3 - "${proof_dir}" "${native_status}" "${capture_status}" <<'PYREDRESULT'
 import hashlib, json, pathlib, sys, xml.etree.ElementTree as ET
 proof = pathlib.Path(sys.argv[1])
