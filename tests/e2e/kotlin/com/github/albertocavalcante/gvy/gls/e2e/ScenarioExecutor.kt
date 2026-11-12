@@ -91,11 +91,9 @@ class ScenarioExecutor internal constructor(
                 }
             }
             null
-        } catch (failure: VirtualMachineError) {
-            throw failure
-        } catch (failure: ThreadDeath) {
-            throw failure
-        } catch (failure: LinkageError) {
+        } catch (failure: AssertionError) {
+            failure
+        } catch (failure: Error) {
             throw failure
         } catch (failure: InterruptedException) {
             Thread.currentThread().interrupt()

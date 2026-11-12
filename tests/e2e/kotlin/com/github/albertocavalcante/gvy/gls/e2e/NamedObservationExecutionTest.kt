@@ -124,6 +124,16 @@ class NamedObservationExecutionTest {
     }
 
     @Test
+    fun `non assertion errors propagate instead of becoming outcomes`() {
+        val fatal = LinkageError("fatal failure")
+        every { factory.start(any(), any()) } throws fatal
+        val scenario = Scenario(name = "fatal", steps = listOf(ScenarioStep.Initialized))
+
+        assertThatThrownBy { ScenarioExecutor(factory).executeWithOutcome(ScenarioDefinition(scenario)) }
+            .isSameAs(fatal)
+    }
+
+    @Test
     fun `shared execution and cleanup throwable keeps both failure origins`() {
         val shared = IOException("shared transport and cleanup failure")
         every { factory.start(any(), any()) } throws shared
