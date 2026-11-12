@@ -149,6 +149,15 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `matcher and reason size limits are enforced at preflight`() {
+        XfailOutcome.validateDeclaration(xfail.copy(match = "a".repeat(256), reason = "r".repeat(512)))
+        assertThatThrownBy { XfailOutcome.validateDeclaration(xfail.copy(match = "a".repeat(257))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { XfailOutcome.validateDeclaration(xfail.copy(reason = "r".repeat(513))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `passing scenario is reported as fixed`() {
         assertThat(classify(failure = null))
             .isEqualTo(XfailDecision.Fixed("gvy#42 appears fixed: remove xfail from demo.yaml"))
