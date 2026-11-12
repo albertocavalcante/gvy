@@ -13,12 +13,22 @@ internal enum class EditorPositionEncoding { UTF8, UTF16, UTF32 }
 internal object EditorTextEdits {
     fun apply(text: CharSequence, edits: List<TextEdit>, encoding: EditorPositionEncoding): String {
         val lines = lines(text)
-        val resolved = edits.mapIndexed { index, edit ->
+        val authored = edits.mapIndexed { index, edit ->
             val range = requireNotNull(edit.range) { "Text edit requires a range" }
-            val start = offset(text, lines, requireNotNull(range.start), encoding)
-            val end = offset(text, lines, requireNotNull(range.end), encoding)
+            AuthoredEdit(key(requireNotNull(range.start)), key(requireNotNull(range.end)),
+                requireNotNull(edit.newText) { "Text edit requires newText" }, index)
+        }
+        val offsets = mutableMapOf<PositionKey, Int>()
+        val byLine = authored.flatMap { listOf(it.start, it.end) }.groupBy { it.line }
+        for ((lineNumber, positions) in byLine) {
+            require(lineNumber in lines.indices) { "Text edit line is out of range" }
+            resolveLine(text, lines[lineNumber], positions, encoding, offsets)
+        }
+        val resolved = authored.map {
+            val start = offsets.getValue(it.start)
+            val end = offsets.getValue(it.end)
             require(start <= end) { "Text edit range is reversed" }
-            ResolvedEdit(start, end, requireNotNull(edit.newText) { "Text edit requires newText" }, index)
+            ResolvedEdit(start, end, it.text, it.index)
         }.sortedWith(compareBy<ResolvedEdit> { it.start }.thenBy { it.index })
 
         val result = StringBuilder(text.length)
@@ -33,6 +43,12 @@ internal object EditorTextEdits {
         }
         result.append(text, cursor, text.length)
         return result.toString()
+    }
+
+    private fun key(position: Position): PositionKey {
+        require(position.line >= 0) { "Text edit line is negative" }
+        require(position.character >= 0) { "Text edit character is negative" }
+        return PositionKey(position.line, position.character)
     }
 
     private fun lines(text: CharSequence): List<Line> {
@@ -51,24 +67,22 @@ internal object EditorTextEdits {
         return result
     }
 
-    private fun offset(text: CharSequence, lines: List<Line>, position: Position, encoding: EditorPositionEncoding): Int {
-        require(position.line >= 0 && position.line < lines.size) { "Text edit line is out of range" }
-        require(position.character >= 0) { "Text edit character is negative" }
-        val line = lines[position.line]
-        val boundaries = line.boundaries ?: boundaries(text, line, encoding).also { line.boundaries = it }
-        val target = position.character.toLong()
-        val index = boundaries.binarySearchBy(target) { it.units }
-        if (index >= 0) return boundaries[index].offset
-        // LSP positions beyond a line's length refer to the end of that line.
-        if (target > boundaries.last().units) return line.end
-        throw IllegalArgumentException("Text edit splits an encoded character")
-    }
-
-    private fun boundaries(text: CharSequence, line: Line, encoding: EditorPositionEncoding): List<Boundary> {
-        val result = mutableListOf(Boundary(0, line.start))
+    private fun resolveLine(
+        text: CharSequence,
+        line: Line,
+        positions: List<PositionKey>,
+        encoding: EditorPositionEncoding,
+        offsets: MutableMap<PositionKey, Int>,
+    ) {
+        val targets = positions.distinct().sortedBy { it.character }
+        var targetIndex = 0
         var at = line.start
         var units = 0L
-        while (at < line.end) {
+        while (at < line.end && targetIndex < targets.size) {
+            while (targetIndex < targets.size && targets[targetIndex].character.toLong() == units) {
+                offsets[targets[targetIndex++]] = at
+            }
+            if (targetIndex == targets.size) break
             val first = text[at]
             val width = if (first.isHighSurrogate()) {
                 require(at + 1 < line.end && text[at + 1].isLowSurrogate()) { "Unpaired high surrogate" }
@@ -88,17 +102,16 @@ internal object EditorTextEdits {
                 EditorPositionEncoding.UTF16 -> width
                 EditorPositionEncoding.UTF32 -> 1
             }
+            require(targets[targetIndex].character.toLong() >= units + count) { "Text edit splits an encoded character" }
             units += count
             at += width
-            result.add(Boundary(units, at))
         }
-        return result
+        // LSP positions beyond a line's length refer to the end of that line.
+        while (targetIndex < targets.size) offsets[targets[targetIndex++]] = line.end
     }
 
-    private class Line(val start: Int, val end: Int) {
-        var boundaries: List<Boundary>? = null
-    }
-    private data class Boundary(val units: Long, val offset: Int)
-
+    private data class Line(val start: Int, val end: Int)
+    private data class PositionKey(val line: Int, val character: Int)
+    private data class AuthoredEdit(val start: PositionKey, val end: PositionKey, val text: String, val index: Int)
     private data class ResolvedEdit(val start: Int, val end: Int, val text: String, val index: Int)
 }
