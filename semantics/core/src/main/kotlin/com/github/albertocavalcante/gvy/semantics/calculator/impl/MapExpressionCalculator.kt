@@ -59,8 +59,8 @@ class MapExpressionCalculator : TypeCalculator<Any> {
             }
         }
 
-        val keyLub = if (keyTypes.isNotEmpty()) TypeLub.lub(keyTypes) else TypeConstants.OBJECT
-        val valueLub = if (valueTypes.isNotEmpty()) TypeLub.lub(valueTypes) else TypeConstants.OBJECT
+        val keyLub = if (keyTypes.isNotEmpty()) TypeLub.referenceLub(keyTypes) else TypeConstants.OBJECT
+        val valueLub = if (valueTypes.isNotEmpty()) TypeLub.referenceLub(valueTypes) else TypeConstants.OBJECT
 
         return SemanticType.Known("java.util.LinkedHashMap", listOf(keyLub, valueLub)).right()
     }

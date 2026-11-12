@@ -43,7 +43,7 @@ class ListExpressionCalculator : TypeCalculator<Any> {
             }
         }
 
-        val lub = TypeLub.lub(elementTypes)
+        val lub = TypeLub.referenceLub(elementTypes)
         return SemanticType.Known("java.util.ArrayList", listOf(lub)).right()
     }
 

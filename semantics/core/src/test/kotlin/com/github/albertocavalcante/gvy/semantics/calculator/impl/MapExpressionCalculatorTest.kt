@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.testContext
@@ -8,7 +10,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
+import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
 
 class MapExpressionCalculatorTest {
 
@@ -20,6 +25,96 @@ class MapExpressionCalculatorTest {
 
     val stringType = SemanticType.Known("java.lang.String", emptyList())
     val intType = SemanticType.Known("java.lang.Integer", emptyList())
+
+    @TestFactory
+    fun `map keys and values use boxed reference type arguments`(): List<DynamicTest> = listOf(
+        PrimitiveKind.BOOLEAN to "java.lang.Boolean",
+        PrimitiveKind.BYTE to "java.lang.Byte",
+        PrimitiveKind.CHAR to "java.lang.Character",
+        PrimitiveKind.SHORT to "java.lang.Short",
+        PrimitiveKind.INT to "java.lang.Integer",
+        PrimitiveKind.LONG to "java.lang.Long",
+        PrimitiveKind.FLOAT to "java.lang.Float",
+        PrimitiveKind.DOUBLE to "java.lang.Double",
+        PrimitiveKind.VOID to "java.lang.Object",
+    ).map { (kind, expected) ->
+        dynamicTest("$kind -> $expected") {
+            val primitive = SemanticType.Primitive(kind)
+            val node = MockMapExpression(listOf(MockMapEntry("key", "value")))
+            val context = mockContext(mapOf("key" to primitive, "value" to primitive))
+
+            val result = MapExpressionCalculator().calculateResult(node, context)
+
+            val boxed = SemanticType.Known(expected)
+            assertEquals(SemanticType.Known("java.util.LinkedHashMap", listOf(boxed, boxed)), result.getOrNull())
+        }
+    }
+
+    @Test
+    fun `map primitive array keys and values remain primitive arrays`() {
+        val array = SemanticType.Array(TypeConstants.INT)
+        val node = MockMapExpression(listOf(MockMapEntry("key", "value")))
+
+        val result = MapExpressionCalculator().calculateResult(
+            node,
+            mockContext(mapOf("key" to array, "value" to array)),
+        )
+
+        assertEquals(SemanticType.Known("java.util.LinkedHashMap", listOf(array, array)), result.getOrNull())
+    }
+
+    @Test
+    fun `null-only map keys and values use legal Object arguments`() {
+        val node = MockMapExpression(listOf(MockMapEntry("key", "value")))
+        val context = mockContext(mapOf("key" to SemanticType.Null, "value" to SemanticType.Null))
+
+        val result = MapExpressionCalculator().calculateResult(node, context)
+
+        assertEquals(
+            SemanticType.Known("java.util.LinkedHashMap", listOf(TypeConstants.OBJECT, TypeConstants.OBJECT)),
+            result.getOrNull(),
+        )
+    }
+
+    @Test
+    fun `mixed integer and long map entries use Number for both axes without coercing values`() {
+        val node = MockMapExpression(listOf(MockMapEntry("key1", "value1"), MockMapEntry("key2", "value2")))
+        val context = mockContext(
+            mapOf(
+                "key1" to TypeConstants.INT,
+                "value1" to TypeConstants.INT,
+                "key2" to TypeConstants.LONG,
+                "value2" to TypeConstants.LONG,
+            ),
+        )
+
+        val result = MapExpressionCalculator().calculateResult(node, context)
+
+        assertEquals(
+            SemanticType.Known("java.util.LinkedHashMap", listOf(TypeConstants.NUMBER, TypeConstants.NUMBER)),
+            result.getOrNull(),
+        )
+    }
+
+    @Test
+    fun `already boxed mixed numeric map values use Number`() {
+        val node = MockMapExpression(listOf(MockMapEntry("key1", "value1"), MockMapEntry("key2", "value2")))
+        val context = mockContext(
+            mapOf(
+                "key1" to stringType,
+                "key2" to stringType,
+                "value1" to intType,
+                "value2" to SemanticType.Known("java.lang.Long"),
+            ),
+        )
+
+        val result = MapExpressionCalculator().calculateResult(node, context)
+
+        assertEquals(
+            SemanticType.Known("java.util.LinkedHashMap", listOf(stringType, TypeConstants.NUMBER)),
+            result.getOrNull(),
+        )
+    }
 
     @Test
     fun `should calculate Map of String to Integer`() {

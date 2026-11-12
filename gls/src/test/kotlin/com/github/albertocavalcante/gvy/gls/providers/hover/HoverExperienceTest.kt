@@ -30,6 +30,28 @@ class HoverExperienceTest {
     }
 
     @Test
+    fun `native hover uses boxed Integer arguments for list and map literal cards`(): Unit = runBlocking {
+        val source = "def values = [1, 2, 3]\ndef lookup = [a: 1, b: 2]"
+
+        val list = hover(source, Position(0, 5), EngineType.Native)
+        val map = hover(source, Position(1, 5), EngineType.Native)
+
+        assertContains(list.contents.right.value, "ArrayList<Integer> values")
+        assertContains(map.contents.right.value, "LinkedHashMap<String, Integer> lookup")
+    }
+
+    @Test
+    fun `native hover uses Number for mixed numeric collection values without claiming coercion`(): Unit = runBlocking {
+        val source = "def values = [1, 2L]\ndef lookup = [a: 1, b: 2L]"
+
+        val list = hover(source, Position(0, 5), EngineType.Native)
+        val map = hover(source, Position(1, 5), EngineType.Native)
+
+        assertContains(list.contents.right.value, "ArrayList<Number> values")
+        assertContains(map.contents.right.value, "LinkedHashMap<String, Number> lookup")
+    }
+
+    @Test
     fun `native hover highlights the reference rather than its declaration`(): Unit = runBlocking {
         val hover = hover("def greeting = 'hello'\nprintln greeting", Position(1, 10), EngineType.Native)
 
