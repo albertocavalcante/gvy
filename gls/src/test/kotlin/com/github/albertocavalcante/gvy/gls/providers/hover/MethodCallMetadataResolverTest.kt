@@ -9,7 +9,6 @@ import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import io.mockk.every
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassHelper
-import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -21,7 +20,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.lang.reflect.Modifier
 
 class MethodCallMetadataResolverTest {
 
@@ -138,7 +136,7 @@ class MethodCallMetadataResolverTest {
     fun `resolves classpath method when GDK not found`() {
         // Setup: Create a mock method call
         val call = mockCall()
-        val classExpr = ClassExpression(ClassNode("demo.Factory", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE))
+        val classExpr = ClassExpression(ClassHelper.make("demo.Factory"))
         val args = ArgumentListExpression(listOf(ConstantExpression(42)))
 
         every { call.methodAsString } returns "valueOf"

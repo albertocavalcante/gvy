@@ -23,6 +23,7 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.SourceUnit
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Modifier
@@ -35,6 +36,7 @@ import kotlin.test.assertNull
 class MethodCallHoverResolutionTest {
     private val classpath = mockk<ClasspathService> {
         every { getMethods(any()) } returns emptyList()
+        every { loadClass(any()) } returns null
     }
     private val gdk = mockk<GroovyGdkProvider> {
         every { getMethodsForType(any()) } returns emptyList()
@@ -47,6 +49,77 @@ class MethodCallHoverResolutionTest {
         every { formatSemanticType(any()) } returns "demo.Repository"
     }
     private val resolver = MethodCallMetadataResolver(classpath, gdk, semantic)
+
+    interface CustomMarker
+
+    class CustomArgument : CustomMarker
+
+    interface BinaryContract {
+        fun accept(value: String): String
+    }
+
+    abstract class BinaryReceiver : BinaryContract {
+        fun accept(value: Any): String = value.toString()
+    }
+
+    @Test
+    fun `reflected interface overload uses actual classpath type metadata`() {
+        val marker = reflected("accept", listOf("CustomMarker")).copy(
+            qualifiedParameters = listOf(CustomMarker::class.java.name),
+        )
+        val generic = reflected("accept", listOf("Object")).copy(qualifiedParameters = listOf("java.lang.Object"))
+        every { classpath.getMethods("demo.Repository") } returns listOf(generic, marker)
+        every { classpath.loadClass(CustomMarker::class.java.name) } returns CustomMarker::class.java
+        val argument = VariableExpression("argument", ClassHelper.make(CustomArgument::class.java))
+
+        val metadata = assertNotNull(resolver.resolveMethodCall(call("accept", argument), null))
+
+        assertContains(metadata.signature, "CustomMarker")
+    }
+
+    @Test
+    fun `unavailable reflected parameter identity declines the whole overload set`() {
+        val marker = reflected("accept", listOf("CustomMarker")).copy(
+            qualifiedParameters = listOf(CustomMarker::class.java.name),
+        )
+        val generic = reflected("accept", listOf("Object")).copy(qualifiedParameters = listOf("java.lang.Object"))
+        every { classpath.getMethods("demo.Repository") } returns listOf(generic, marker)
+        val argument = VariableExpression("argument", ClassHelper.make(CustomArgument::class.java))
+
+        assertNull(resolver.resolveMethodCall(call("accept", argument), null))
+    }
+
+    @Test
+    fun `unavailable GDK parameter identity declines the whole extension overload set`() {
+        val generic = GdkExtensionMethod("accept", "String", listOf("Object"), listOf("value"), "GDK", "generic")
+        val marker = generic.copy(parameterTypes = listOf("CustomMarker"))
+        every { gdk.getQualifiedMethodsForType("demo.Repository") } returns listOf(
+            QualifiedGdkMethod(generic, listOf("java.lang.Object")),
+            QualifiedGdkMethod(marker, listOf(CustomMarker::class.java.name)),
+        )
+        val argument = VariableExpression("argument", ClassHelper.make(CustomArgument::class.java))
+
+        assertNull(resolver.resolveMethodCall(call("accept", argument), null))
+    }
+
+    @Test
+    fun `inferred binary receiver and inherited interface owner retain their actual hierarchy`() {
+        val receiverName = BinaryReceiver::class.java.name
+        val generic = reflected("accept", listOf("Object")).copy(
+            declaringClass = receiverName,
+            qualifiedParameters = listOf("java.lang.Object"),
+        )
+        val specific = reflected("accept", listOf("String")).copy(declaringClass = BinaryContract::class.java.name)
+        every { semantic.resolveType(any(), any()) } returns SemanticType.Known(receiverName)
+        every { classpath.getMethods(receiverName) } returns listOf(generic, specific)
+        every { classpath.loadClass(receiverName) } returns BinaryReceiver::class.java
+        every { classpath.loadClass(BinaryContract::class.java.name) } returns BinaryContract::class.java
+
+        val metadata = assertNotNull(resolver.resolveMethodCall(call("accept", ConstantExpression("text")), null))
+
+        assertEquals(BinaryContract::class.java.name, metadata.declaringClass)
+        assertContains(metadata.signature, "String accept(String")
+    }
 
     @Test
     fun `declared receiver method takes precedence over a GDK extension`() {
@@ -123,6 +196,31 @@ class MethodCallHoverResolutionTest {
         assertContains(metadata.signature, "String create(String currency =")
         assertContains(metadata.signature, "USD")
         assertEquals("demo.Repository", metadata.declaringClass)
+    }
+
+    @Test
+    fun `source receiver shadows a stale binary method with the same class name`() {
+        val source = ClassNode("demo.Repository", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        every { classpath.getMethods("demo.Repository") } returns listOf(reflected("removed", emptyList()))
+        val expression = call("removed", receiver = VariableExpression("repository", source))
+
+        assertNull(resolver.resolveMethodCall(expression, null))
+    }
+
+    @Test
+    fun `private specific source overload does not misreport the public Object overload`() {
+        val expression = sourceAccessCall(Modifier.PRIVATE)
+
+        assertNull(expression.methodTarget)
+        assertNull(resolver.resolveMethodCall(expression, null))
+    }
+
+    @Test
+    fun `protected specific source overload does not misreport the public Object overload`() {
+        val expression = sourceAccessCall(Modifier.PROTECTED)
+
+        assertNull(expression.methodTarget)
+        assertNull(resolver.resolveMethodCall(expression, null))
     }
 
     @Test
@@ -298,6 +396,46 @@ class MethodCallHoverResolutionTest {
         receiver: Expression = VariableExpression("repository"),
     ): MethodCallExpression = MethodCallExpression(receiver, name, ArgumentListExpression(arguments.toList())).apply {
         isImplicitThis = false
+    }
+
+    private fun sourceAccessCall(visibility: Int): MethodCallExpression {
+        val owner = ClassNode("demo.Repository", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        owner.addMethod(
+            MethodNode(
+                "pick",
+                visibility,
+                ClassHelper.STRING_TYPE,
+                arrayOf(Parameter(ClassHelper.STRING_TYPE, "text")),
+                null,
+                null,
+            ),
+        )
+        owner.addMethod(
+            MethodNode(
+                "pick",
+                Modifier.PUBLIC,
+                ClassHelper.OBJECT_TYPE,
+                arrayOf(Parameter(ClassHelper.OBJECT_TYPE, "value")),
+                null,
+                null,
+            ),
+        )
+        val expression = call("pick", ConstantExpression("text"), receiver = VariableExpression("other", owner))
+        owner.addMethod(
+            MethodNode(
+                "run",
+                Modifier.PUBLIC,
+                ClassHelper.OBJECT_TYPE,
+                arrayOf(Parameter(owner, "other")),
+                null,
+                ExpressionStatement(expression),
+            ),
+        )
+        val extension = GdkExtensionMethod("pick", "Object", listOf("Object"), listOf("value"), "GDK", "fallback")
+        every { gdk.getQualifiedMethodsForType(owner.name) } returns listOf(
+            QualifiedGdkMethod(extension, listOf("java.lang.Object")),
+        )
+        return expression
     }
 
     private fun reflected(name: String, parameters: List<String>): ReflectedMethod = ReflectedMethod(

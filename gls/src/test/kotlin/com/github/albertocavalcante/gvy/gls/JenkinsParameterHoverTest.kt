@@ -341,12 +341,12 @@ class JenkinsParameterHoverTest {
     @Test
     fun `a declarative hover range covers the name, not the whole block`(): Unit = runBlocking {
         val code = "pipeline {\n    agent any\n    stages {\n    }\n}"
-        val pipeline = hoverAt(code, line = 0, character = 2)
-        val stages = hoverAt(code, line = 2, character = 6)
+        val pipeline = assertNotNull(hoverAt(code, line = 0, character = 2))
+        val stages = assertNotNull(hoverAt(code, line = 2, character = 6))
 
-        assertTrue(pipeline?.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
+        assertTrue(pipeline.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
         assertEquals(Range(Position(0, 0), Position(0, 8)), pipeline.range)
-        assertEquals(Range(Position(2, 4), Position(2, 10)), stages?.range)
+        assertEquals(Range(Position(2, 4), Position(2, 10)), stages.range)
     }
 
     /** Guard: passes with or without the strategy (the ordinary hover never mentions the Jenkins env docs). */

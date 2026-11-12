@@ -55,14 +55,18 @@ class MethodCallMetadataResolver(
     ): MethodMetadata? {
         // Source ASTs retain defaults and Groovydoc. Binary members use the reflected snapshot below,
         // which preserves source parameter names/documentation rather than compiler-generated arg0 names.
-        val methods = receiver.takeIf { it.redirect().isPrimaryClassNode }?.getMethods(name).orEmpty().filter {
-            (it.isPublic || call.isImplicitThis) && (call.objectExpression !is ClassExpression || it.isStatic)
+        val sourceReceiver = receiver.redirect().isPrimaryClassNode
+        // Removing non-public overloads before ranking can fabricate a less-specific public target.
+        val methods = receiver.takeIf { sourceReceiver }?.getMethods(name).orEmpty().filter {
+            call.objectExpression !is ClassExpression || it.isStatic
         }
         val nativeMatches = HoverMethodSelection.select(receiver, methods, arguments)
-        return if (nativeMatches.isNotEmpty()) {
-            nativeMatches.singleOrNull()?.toHoverMetadata()
-        } else {
-            resolveExternal(call, receiver, arguments, name)
+        // Current source, including its inherited methods, shadows binary outputs with the same class name.
+        return when {
+            nativeMatches.isNotEmpty() -> nativeMatches.singleOrNull()?.takeIf { it.isPublic }?.toHoverMetadata()
+            sourceReceiver && call.objectExpression is ClassExpression -> null
+            sourceReceiver -> resolveExtension(receiver, arguments, name)
+            else -> resolveExternal(call, receiver, arguments, name)
         }
     }
 
@@ -75,22 +79,29 @@ class MethodCallMetadataResolver(
         val reflected = classpathService.getMethods(receiver.name).filter {
             it.name == name && it.isPublic && (call.objectExpression !is ClassExpression || it.isStatic)
         }
-        val reflectedNodes = reflected.map { it.toMethodNode() }
-        val reflectedMatches = HoverMethodSelection.select(receiver, reflectedNodes, arguments)
+        // Groovy's owner distance is zero for equal receiver/owner names. Inherited owners need their
+        // real hierarchy as well as the parameter types' hierarchy to rank overloads correctly.
+        val matchingReceiver = if (reflected.all { it.declaringClass == receiver.name }) {
+            receiver
+        } else {
+            metadataType(receiver) ?: return null
+        }
+        val reflectedNodes = reflected.map { it.toMethodNode(matchingReceiver) ?: return null }
+        val reflectedMatches = HoverMethodSelection.select(matchingReceiver, reflectedNodes, arguments)
         return when {
             reflectedMatches.isNotEmpty() -> reflectedMatches.singleOrNull()?.let { selected ->
                 reflected[reflectedNodes.indexOf(selected)].toMethodMetadata()
             }
 
             call.objectExpression is ClassExpression -> null
-            else -> resolveExtension(receiver, arguments, name)
+            else -> resolveExtension(matchingReceiver, arguments, name)
         }
     }
 
     private fun resolveExtension(receiver: ClassNode, arguments: List<Expression>, name: String): MethodMetadata? {
         val extensions = gdkProvider.getQualifiedMethodsForType(receiver.name).filter { it.display.name == name }
         val extensionNodes = extensions.map {
-            methodNode(it.display.name, it.qualifiedParameters, receiver, Modifier.PUBLIC)
+            methodNode(it.display.name, it.qualifiedParameters, receiver, Modifier.PUBLIC) ?: return null
         }
         val extension = HoverMethodSelection.select(receiver, extensionNodes, arguments).singleOrNull() ?: return null
         return extensions[extensionNodes.indexOf(extension)].display.toMethodMetadata()
@@ -118,28 +129,39 @@ class MethodCallMetadataResolver(
         }
     }
 
-    private fun ReflectedMethod.toMethodNode(): MethodNode = methodNode(
-        name,
-        qualifiedParameters,
-        ClassHelper.make(declaringClass),
-        Modifier.PUBLIC or if (isStatic) Modifier.STATIC else 0,
-    )
+    private fun ReflectedMethod.toMethodNode(receiver: ClassNode): MethodNode? {
+        val declaredOwner = ClassHelper.make(declaringClass)
+        val owner = if (declaringClass == receiver.name) declaredOwner else metadataType(declaredOwner) ?: return null
+        return methodNode(name, qualifiedParameters, owner, Modifier.PUBLIC or if (isStatic) Modifier.STATIC else 0)
+    }
 
-    private fun methodNode(name: String, types: List<String>, owner: ClassNode, modifiers: Int): MethodNode =
-        MethodNode(
+    private fun methodNode(name: String, types: List<String>, owner: ClassNode, modifiers: Int): MethodNode? {
+        val parameters = types.mapIndexed { index, type ->
+            Parameter(parameterType(type) ?: return null, "arg$index")
+        }
+        return MethodNode(
             name,
             modifiers,
             ClassHelper.OBJECT_TYPE,
-            types.mapIndexed { index, type -> Parameter(parameterType(type), "arg$index") }.toTypedArray(),
+            parameters.toTypedArray(),
             null,
             null,
         ).apply { declaringClass = owner }
-
-    private fun parameterType(type: String): ClassNode = when {
-        type.endsWith("[]") -> parameterType(type.removeSuffix("[]")).makeArray()
-        type.endsWith("...") -> parameterType(type.removeSuffix("...")).makeArray()
-        else -> ClassHelper.make(type)
     }
+
+    private fun parameterType(type: String): ClassNode? = when {
+        type.endsWith("[]") -> parameterType(type.removeSuffix("[]"))?.makeArray()
+        type.endsWith("...") -> parameterType(type.removeSuffix("..."))?.makeArray()
+        else -> metadataType(ClassHelper.make(type))
+    }
+
+    private fun metadataType(type: ClassNode): ClassNode? =
+        if (type.redirect().isResolved || type.redirect().isPrimaryClassNode) {
+            type
+        } else {
+            // Retain a distinct reference per erased snapshot while borrowing complete class/interface metadata.
+            classpathService.loadClass(type.name)?.let { ClassHelper.make(it).plainNodeReference }
+        }
 
     private fun GdkExtensionMethod.toMethodMetadata(): MethodMetadata = MethodMetadata(
         signature = "$returnType $name(${displayParameterTypes.mapIndexed { index, type ->
