@@ -160,8 +160,26 @@ describe("TestFeature", () => {
   });
 
   describe("generateTest command", () => {
+    it("rejects non-file command sources before document or native access", async () => {
+      new TestFeatureModule.TestFeature();
+
+      await registerCommandStub.firstCall.args[1]({
+        scheme: "memfs",
+        fsPath: "/project/MyClass.groovy",
+      });
+
+      assert.strictEqual(openTextDocumentStub.called, false);
+      assert.strictEqual(executeCommandStub.called, false);
+      assert.strictEqual(fsStatStub.called, false);
+      assert.strictEqual(exclusiveWriteFileStub.called, false);
+      assert.strictEqual(showErrorMessageStub.calledOnce, true);
+    });
+
     it("preserves a destination created after the existence check", async () => {
-      const sourceUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const sourceUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const userContent = "user content created while generation was pending";
       let destinationContent: string | undefined;
 
@@ -210,7 +228,10 @@ describe("TestFeature", () => {
     });
 
     it("should use async vscode.workspace.fs.stat to check file existence", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example\nclass MyClass {}",
@@ -269,7 +290,10 @@ describe("TestFeature", () => {
     });
 
     it("should use async vscode.workspace.fs.createDirectory to create test directory", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example\nclass MyClass {}",
@@ -322,7 +346,10 @@ describe("TestFeature", () => {
     });
 
     it("creates the initial contents without permitting replacement", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example\nclass MyClass {}",
@@ -380,6 +407,7 @@ describe("TestFeature", () => {
     for (const outcome of ["refused", "rejected"] as const) {
       it(`does not open a generated document when creation is ${outcome}`, async () => {
         const sourceUri = {
+          scheme: "file",
           fsPath: "/project/src/main/groovy/MyClass.groovy",
         };
         fsStatStub.rejects(
@@ -424,7 +452,10 @@ describe("TestFeature", () => {
     });
 
     it("should show warning when test file already exists", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example\nclass MyClass {}",
@@ -470,7 +501,10 @@ describe("TestFeature", () => {
     });
 
     it("should handle errors during file operations", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example\nclass MyClass {}",
@@ -518,7 +552,10 @@ describe("TestFeature", () => {
     });
 
     it("should show error when no symbols found", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "// Empty file",
@@ -552,7 +589,10 @@ describe("TestFeature", () => {
     });
 
     it("should show error when no class found", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example",
@@ -605,7 +645,10 @@ describe("TestFeature", () => {
     });
 
     it("should open the generated test file after creation", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const mockUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
       const mockDocument = {
         uri: mockUri,
         getText: () => "package com.example\nclass MyClass {}",

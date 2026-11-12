@@ -24,6 +24,12 @@ export class TestFeature implements vscode.Disposable {
             );
             return;
           }
+          if (targetUri.scheme !== "file") {
+            vscode.window.showErrorMessage(
+              "Test generation requires a file on the extension host filesystem.",
+            );
+            return;
+          }
           await this.generateTest(targetUri);
         },
       ),
