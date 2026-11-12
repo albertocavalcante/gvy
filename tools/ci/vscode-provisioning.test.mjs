@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -15,8 +15,10 @@ import { auditEditorProvisioning, invokeIntegrationOnce, provisioningContext } f
 import { validateVscodeTestInputs, vscodeTestConfigurations, vscodeTestVersion } from '../../editors/code/tools/vscode-test-config.mjs';
 
 const context = { repository: 'albertocavalcante/gvy', headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: 2, workflow: 'Extension CI', jobKey: 'validate', matrix: 'ubuntu-24.04', runnerOS: 'Linux', runnerArch: 'X64', invocationId: '11111111-1111-4111-8111-111111111111' };
-const delivered = { version: vscodeTestVersion, commit: 'c'.repeat(40), arch: 'x64', platform: 'linux-x64', expectedCommit: 'c'.repeat(40), commitSource: 'sdk-new-install-progress' };
-const successfulPhases = ['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'provisioned', 'verification', 'verified'];
+const releaseMetadata = { version: vscodeTestVersion, platform: 'linux-x64', quality: 'stable', commit: 'c'.repeat(40), archiveSha256: 'e'.repeat(64) };
+const delivered = { version: vscodeTestVersion, commit: 'c'.repeat(40), arch: 'x64', platform: 'linux-x64', expectedCommit: 'c'.repeat(40), archiveSha256: 'e'.repeat(64), commitSource: 'vscode-update-api-exact-version' };
+const verified = { expected: { ...releaseMetadata, arch: 'x64' }, observed: { version: vscodeTestVersion, commit: 'c'.repeat(40), arch: 'x64' }, metadataSource: 'vscode-update-api-exact-version', sdkProgressRevision: 'c'.repeat(40), matched: true };
+const successfulPhases = ['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'provisioned', 'verification', 'release-metadata', 'runtime-probe', 'verified'];
 const manifest = { engines: { vscode: `^${vscodeTestVersion}` }, devDependencies: { '@types/vscode': `^${vscodeTestVersion}` } };
 class TimeoutError extends Error { constructor() { super(resolutionTimeoutMessage); } }
 const reportAttempt = (number, outcome = 'success') => ({
@@ -25,6 +27,7 @@ const reportAttempt = (number, outcome = 'success') => ({
   errorLogs: outcome === 'success' ? [] : [{ phase: 'version-resolution', bytes: 1, sha256: digest('E') }],
   error: outcome === 'success' ? null : { code: outcome, messageSha256: outcome === 'version-resolution-timeout' ? digest(resolutionTimeoutMessage) : null },
   delivery: outcome === 'success' ? delivered : null,
+  verification: outcome === 'success' ? verified : null,
   capture: outcome === 'success' ? emptyCapture() : { ...emptyCapture(), stderrBytes: 1, stderrSha256: digest('E') }, cleanupComplete: true,
 });
 
@@ -109,17 +112,65 @@ function successfulSdk() {
 }
 async function workerCase(overrides = {}, probe = async () => ({ ...delivered, arch: 'x64' })) {
   const messages = [];
-  const inputs = { context, sdkVersion: '3.1.0', cliVersion: '0.0.15', manifest, configurations: vscodeTestConfigurations({}),
+  const inputs = { context, sdkVersion: '3.1.0', cliVersion: '0.0.15', proxyAgentVersion: '7.0.6', fetchRelease: async () => releaseMetadata, manifest, configurations: vscodeTestConfigurations({}),
     platform: downloadPlatform(context), cachePath: resolve('PRIVATE-cache'), budgetMs: 80000, sdk: successfulSdk(), ...overrides };
   await runSdkProvisioning(async () => inputs, message => messages.push(message), probe);
   return { messages, result: messages.findLast(message => message.type === 'result') };
 }
 
-test('worker verifies delivered version and SDK progress commit without publishing private SDK fields', async () => {
+test('worker verifies delivered runtime against exact-release metadata without publishing private SDK fields', async () => {
   const value = await workerCase();
   assert.equal(value.result.outcome, 'success'); assert.deepEqual(value.result.delivery, delivered);
   assert.ok(!JSON.stringify(value.messages).includes('PRIVATE.invalid'));
   assert.deepEqual(value.messages.filter(message => message.type === 'phase').map(message => message.phase), successfulPhases);
+});
+
+test('exact-release metadata supplies expected runtime identity while a different SDK service revision remains informational', async () => {
+  const sdk = successfulSdk();
+  const download = sdk.download;
+  sdk.download = options => download({ ...options, reporter: { ...options.reporter, report(event) {
+    options.reporter.report(event.stage === 'newInstallComplete' ? { ...event, commitHash: 'd'.repeat(40) } : event);
+  } } });
+  const expected = { version: vscodeTestVersion, platform: 'linux-x64', quality: 'stable', commit: delivered.commit, archiveSha256: 'e'.repeat(64) };
+  const value = await workerCase({ sdk, fetchRelease: async () => expected });
+  assert.equal(value.result.outcome, 'success');
+  assert.equal(value.result.verification.expected.commit, delivered.commit);
+  assert.equal(value.result.verification.sdkProgressRevision, 'd'.repeat(40));
+  assert.equal(value.result.verification.observed.commit, delivered.commit);
+  assert.equal(value.result.verification.matched, true);
+});
+
+test('metadata failures never retry SDK provisioning and safe mismatched identities remain distinct from verified delivery', async () => {
+  let probes = 0;
+  for (const patch of [{ version: '1.145.0' }, { platform: 'darwin' }, { quality: 'insider' }, { commit: 'bad' }, { archiveSha256: 'bad' }, { raw: 'PRIVATE' }]) {
+    const value = await workerCase({ fetchRelease: async () => ({ ...releaseMetadata, ...patch }) }, async () => { probes++; return { ...delivered }; });
+    assert.equal(value.result.outcome, 'verification-error');
+    assert.equal(value.result.verification, null);
+    assert.equal(value.result.delivery, null);
+  }
+  assert.equal(probes, 0);
+  const timeout = await workerCase({ fetchRelease: async () => { throw new TimeoutError(); } });
+  assert.equal(timeout.result.outcome, 'verification-error');
+  assert.equal(timeout.messages.filter(message => message.type === 'phase').at(-1).phase, 'release-metadata');
+  for (const patch of [{ version: '1.145.0' }, { commit: 'd'.repeat(40) }, { arch: 'arm64' }]) {
+    const value = await workerCase({}, async () => ({ version: vscodeTestVersion, commit: delivered.commit, arch: 'x64', ...patch }));
+    assert.equal(value.result.outcome, 'verification-error'); assert.equal(value.result.delivery, null);
+    assert.deepEqual(value.result.verification.observed, { version: vscodeTestVersion, commit: delivered.commit, arch: 'x64', ...patch });
+    assert.equal(value.result.verification.matched, false);
+    assert.ok(!JSON.stringify(value.result).includes('PRIVATE'));
+  }
+});
+
+test('metadata and CLI share the remaining verification budget and an exhausted metadata request cannot invoke the probe', async () => {
+  let metadataBudget, probeBudget;
+  const value = await workerCase({ fetchRelease: async input => { metadataBudget = input.budgetMs; await new Promise(resolve => setTimeout(resolve, 10)); return releaseMetadata; } },
+    async (sdk, executable, platform, budget) => { probeBudget = budget; return { ...delivered }; });
+  assert.equal(value.result.outcome, 'success');
+  assert.ok(probeBudget < metadataBudget && metadataBudget <= provisioningLimits.verifyMs);
+  let probes = 0;
+  const expired = await workerCase({ budgetMs: 20, fetchRelease: async () => { await new Promise(resolve => setTimeout(resolve, 30)); return releaseMetadata; } },
+    async () => { probes++; return { ...delivered }; });
+  assert.equal(expired.result.outcome, 'verification-error'); assert.equal(probes, 0);
 });
 
 test('pinned SDK ZIP extraction starts before the remaining download events without regressing phase evidence', async () => {
@@ -137,7 +188,7 @@ test('pinned SDK ZIP extraction starts before the remaining download events with
   assert.equal(value.result.outcome, 'success');
   const events = value.messages.filter(message => message.type === 'phase').map(message => ({ phase: message.phase, elapsedMs: 0 }));
   assert.doesNotThrow(() => validatePhases(events));
-  assert.deepEqual(events.map(event => event.phase), ['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'archive-extraction', 'provisioned', 'verification', 'verified']);
+  assert.deepEqual(events.map(event => event.phase), ['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'archive-extraction', 'provisioned', 'verification', 'release-metadata', 'runtime-probe', 'verified']);
 });
 
 test('only the exact SDK timeout before resolved-version evidence is classified as retryable', async () => {
@@ -195,6 +246,9 @@ test('public evidence rejects stale identities, unknown fields, malformed phases
     value => { value.context.matrix = 'other'; }, value => { value.rawDetails = 'PRIVATE'; },
     value => { value.provisioning.attempts[0].phases[0].phase = 'unknown'; },
     value => { value.provisioning.attempts[0].errorLogs.push({ phase: 'verification', bytes: 1, sha256: 'bad' }); },
+    value => { value.provisioning.attempts[0].verification.rawDetails = 'PRIVATE'; },
+    value => { value.provisioning.attempts[0].verification.observed.commit = 'd'.repeat(40); },
+    value => { value.provisioning.attempts[0].verification.expected.archiveSha256 = 'bad'; },
     value => { value.tools.sdk = '3.2.0'; }, value => { value.limits.totalMs++; },
     value => { value.provisioning.attempts.push(reportAttempt(2)); }, value => { value.ok = true; },
   ];
@@ -243,7 +297,7 @@ process.on('message',()=>{}); ${body}\n});\n`);
 }
 const inputFor = root => ({ context, number: 1, budgetMs: 3000, editorRoot: root, cachePath: join(root, 'child-pid.txt'), platform: 'linux-x64', token: randomUUID() });
 const successBody = `for(const phase of ${JSON.stringify(successfulPhases)}) send({type:'phase',phase});
-send({type:'result',outcome:'success',captureComplete:true,error:null,delivery:${JSON.stringify(delivered)},executable:input.cachePath});`;
+send({type:'result',outcome:'success',captureComplete:true,error:null,delivery:${JSON.stringify(delivered)},verification:${JSON.stringify(verified)},executable:input.cachePath});`;
 
 test('actual owned worker protocol terminates its session and rejects malformed or unexpected output', async t => {
   const root = fixture(t);
@@ -253,6 +307,18 @@ test('actual owned worker protocol terminates its session and rejects malformed 
     assert.equal(result.result.cleanupComplete, true);
     assert.ok(!JSON.stringify(result.result).includes('PRIVATE'));
   }
+});
+
+test('actual child preserves SDK-recognized private proxy settings while excluding tokens and Node injection', async t => {
+  const root = fixture(t);
+  const ca = join(root, 'extra-cas.pem'); writeFileSync(ca, '');
+  const values = { npm_config_proxy: 'http://PRIVATE-proxy.invalid:8080', npm_config_https_proxy: 'http://PRIVATE-secure-proxy.invalid:8080',
+    NODE_EXTRA_CA_CERTS: ca, GITHUB_TOKEN: 'PRIVATE-token', GH_TOKEN: 'PRIVATE-other-token', NODE_OPTIONS: '--require PRIVATE-injection' };
+  const script = workerScript(root, `if(process.env.npm_config_proxy!==${JSON.stringify(values.npm_config_proxy)} || process.env.npm_config_https_proxy!==${JSON.stringify(values.npm_config_https_proxy)} || process.env.NODE_EXTRA_CA_CERTS!==${JSON.stringify(ca)} || process.env.GITHUB_TOKEN!==undefined || process.env.GH_TOKEN!==undefined || process.env.NODE_OPTIONS!==undefined) throw new Error('private-child-environment-mismatch'); ${successBody}`);
+  const value = await withEnvironment(values, () => launchProvisioningAttempt(inputFor(root), { script, logDir: join(root, 'proxy-control'), consoleOutput: false }));
+  assert.equal(value.result.outcome, 'success');
+  assert.ok(!JSON.stringify(value.result).includes('PRIVATE'));
+  assert.equal(value.result.capture.stdoutBytes, 0); assert.equal(value.result.capture.stderrBytes, 0);
 });
 
 test('dripping output cannot extend the watchdog and only the owned child tree is terminated', async t => {
@@ -274,6 +340,27 @@ process.on('SIGTERM',()=>{}); setInterval(()=>process.stdout.write('.'),20);`);
     try { process.kill(ownedPid, 0); await new Promise(resolve => setTimeout(resolve, 25)); } catch { alive = false; }
   }
   assert.equal(alive, false, 'owned grandchild must stop');
+});
+
+test('unexpected worker exit never claims unproven descendant cleanup or stops an unrelated sibling', async t => {
+  const root = fixture(t);
+  const sibling = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  t.after(() => sibling.kill('SIGKILL'));
+  const input = inputFor(root);
+  const script = workerScript(root, `send({type:'phase',phase:'configuration'});
+const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); writeFileSync(input.cachePath,String(child.pid)); process.exit(3);`);
+  const value = await launchProvisioningAttempt(input, { script, logDir: join(root, 'early-exit'), consoleOutput: false });
+  const ownedPid = Number(readFileSync(input.cachePath, 'utf8'));
+  t.after(() => { try { process.kill(ownedPid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } });
+  assert.doesNotThrow(() => process.kill(sibling.pid, 0));
+  if (process.platform === 'win32') {
+    assert.equal(value.result.cleanupComplete, false, 'a dead leader cannot prove Windows descendant cleanup');
+    assert.equal(value.result.outcome, 'cleanup-incomplete');
+    assert.doesNotThrow(() => process.kill(ownedPid, 0));
+  } else {
+    assert.equal(value.result.outcome, value.result.cleanupComplete ? 'invalid-evidence' : 'cleanup-incomplete', JSON.stringify(value.result));
+    if (value.result.cleanupComplete) assert.throws(() => process.kill(ownedPid, 0), { code: 'ESRCH' });
+  }
 });
 
 test('integration runner assertions are invoked once and their original failure is retained', async t => {
@@ -302,7 +389,7 @@ test('actual timeout recovery retains each failed attempt and its original priva
   const raw = `Error: ${resolutionTimeoutMessage}\nPRIVATE original SDK stack\n`;
   const timeoutBody = `for(const phase of ['configuration','version-resolution']) send({type:'phase',phase});
 const raw=${JSON.stringify(raw)}; send({type:'error-log',phase:'version-resolution',bytes:Buffer.byteLength(raw),sha256:hash(raw)});
-process.stderr.write(raw,()=>send({type:'result',outcome:'version-resolution-timeout',captureComplete:true,error:{code:'version-resolution-timeout',messageSha256:hash(${JSON.stringify(resolutionTimeoutMessage)})},delivery:null,executable:null}));`;
+process.stderr.write(raw,()=>send({type:'result',outcome:'version-resolution-timeout',captureComplete:true,error:{code:'version-resolution-timeout',messageSha256:hash(${JSON.stringify(resolutionTimeoutMessage)})},delivery:null,verification:null,executable:null}));`;
   for (const persistent of [false, true]) {
     const script = workerScript(root, persistent ? timeoutBody : `if(input.number===1){${timeoutBody}}else{${successBody}}`);
     const result = await provisionWithBudget(context, async ({ number, budgetMs }) => {
@@ -376,6 +463,8 @@ async function auditFixture(t, action, provisioned = true) {
     const attempt = reportAttempt(1, provisioned ? 'success' : 'version-resolution-timeout');
     attempt.contextSha256 = digest(JSON.stringify(actualContext));
     if (attempt.delivery) attempt.delivery = { ...attempt.delivery, platform: downloadPlatform(actualContext), arch: actualContext.runnerArch === 'ARM64' ? 'arm64' : 'x64' };
+    if (attempt.verification) attempt.verification = { ...verified, expected: { ...verified.expected, platform: downloadPlatform(actualContext), arch: actualContext.runnerArch === 'ARM64' ? 'arm64' : 'x64' },
+      observed: { ...verified.observed, arch: actualContext.runnerArch === 'ARM64' ? 'arm64' : 'x64' } };
     const report = createProvisioningReport(actualContext, { ok: provisioned, attempts: [attempt], elapsedMs: 1, error: provisioned ? null : 'version-resolution-timeout' });
     const reportRoot = join(root, 'public');
     const privateRoot = join(root, 'gvy-vscode-private', actualContext.invocationId);
@@ -406,7 +495,8 @@ test('post-test audit publishes only allowlisted identity and hashes, and keeps 
       const report = JSON.parse(text);
       assert.equal(report.ok, mode === 'success');
       assert.equal(report.integration.state, ['provisioning-failed', 'uninvoked'].includes(mode) ? 'unexecuted' : 'invoked');
-      assert.match(readFileSync(join(data.root, 'output.txt'), 'utf8'), /^safe=true\n$/);
+      const expectedOutput = ['success', 'assertion-failed'].includes(mode) ? 'safe=true\neditor_logs_valid=true\n' : 'safe=true\n';
+      assert.equal(readFileSync(join(data.root, 'output.txt'), 'utf8'), expectedOutput);
     }, mode !== 'provisioning-failed');
   }
 });
@@ -458,6 +548,54 @@ test('unsafe prior log roots and quarantine collisions fail before any runner in
     assert.equal(existsSync(join(data.privateRoot, 'integration.json')), false);
     if (mode === 'linked-root') assert.equal(readFileSync(join(target, 'original.log'), 'utf8'), 'PRIVATE original');
     if (mode === 'linked-file' || mode === 'quarantine-collision') assert.equal(readFileSync(target, 'utf8'), 'PRIVATE original');
+  });
+});
+
+test('post-invocation replacement of the log root or parent cannot pass audit or authorize raw upload', async t => {
+  for (const mode of ['regular-file', 'linked-root', 'linked-parent']) await t.test(mode, async child => auditFixture(child, async data => {
+    const profile = join(data.root, 'profile');
+    const logs = join(profile, 'logs');
+    const spawnChild = () => {
+      const process = new EventEmitter(); process.kill = () => true;
+      setImmediate(() => { writeFileSync(join(logs, 'current.log'), 'PRIVATE original editor bytes'); process.emit('close', 0, null); });
+      return process;
+    };
+    await invokeIntegrationOnce(data.report.context, join(data.privateRoot, 'integration.json'), '/unused/test-cli.mjs', {}, spawnChild, logs);
+    let preserved;
+    if (mode === 'linked-parent') {
+      const target = join(data.root, 'preserved-profile'); renameSync(profile, target); symlinkSync(target, profile, 'junction');
+      preserved = join(target, 'logs', 'current.log');
+    } else {
+      const target = join(data.root, 'preserved-logs'); renameSync(logs, target); preserved = join(target, 'current.log');
+      if (mode === 'regular-file') writeFileSync(logs, 'PRIVATE replacement file');
+      else symlinkSync(target, logs, 'junction');
+    }
+    assert.throws(() => auditEditorProvisioning(data.reportRoot, logs));
+    assert.equal(existsSync(join(data.reportRoot, 'result.json')), false);
+    assert.ok(!readFileSync(join(data.root, 'output.txt'), 'utf8').includes('editor_logs_valid=true'));
+    assert.equal(readFileSync(preserved, 'utf8'), 'PRIVATE original editor bytes');
+  }));
+});
+
+test('actual raw-log upload predicates require positive audit evidence while valid assertion failures retain their logs', async t => {
+  const workflow = readFileSync(new URL('../../.github/workflows/extension.yml', import.meta.url), 'utf8');
+  const predicates = [...workflow.matchAll(/      - name: Upload failed editor logs\n        if: ([^\n]+)/g)].map(match => match[1]);
+  assert.equal(predicates.length, 3);
+  for (const predicate of predicates) {
+    assert.match(predicate, /failure\(\)/);
+    assert.match(predicate, /steps\.editor_integration\.outputs\.invoked == 'true'/);
+    assert.match(predicate, /steps\.vscode_audit\.outputs\.editor_logs_valid == 'true'/);
+  }
+  await auditFixture(t, async data => {
+    const spawnChild = () => {
+      const process = new EventEmitter(); process.kill = () => true;
+      setImmediate(() => { writeFileSync(join(data.logs, 'current.log'), 'PRIVATE failed assertion log'); process.emit('close', 7, null); });
+      return process;
+    };
+    assert.equal(await invokeIntegrationOnce(data.report.context, join(data.privateRoot, 'integration.json'), '/unused/test-cli.mjs', {}, spawnChild, data.logs), false);
+    assert.equal(auditEditorProvisioning(data.reportRoot, data.logs), false);
+    assert.match(readFileSync(join(data.root, 'output.txt'), 'utf8'), /editor_logs_valid=true\n/);
+    assert.equal(JSON.parse(readFileSync(join(data.reportRoot, 'result.json'), 'utf8')).integration.outcome, 'failure');
   });
 });
 

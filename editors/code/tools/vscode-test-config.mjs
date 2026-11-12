@@ -4,6 +4,7 @@
 export const vscodeTestVersion = "1.144.0";
 export const vscodeTestSdkVersion = "3.1.0";
 export const vscodeTestCliVersion = "0.0.15";
+export const vscodeTestProxyAgentVersion = "7.0.6";
 export const vscodeTestIdleTimeout = 15000;
 
 export function vscodeTestConfigurations(env = process.env) {

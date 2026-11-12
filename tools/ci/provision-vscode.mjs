@@ -166,7 +166,13 @@ export async function invokeIntegrationOnce(context, markerPath, cli, env, spawn
 }
 
 export function countEditorLogs(root) {
+  const path = resolve(root);
+  require(root === path, 'noncanonical-editor-log-root');
+  const parent = dirname(path);
+  require(lstatSync(parent).isDirectory() && !lstatSync(parent).isSymbolicLink() && realpathSync(parent) === parent, 'linked-editor-log-parent');
   if (!existsSync(root)) return 0;
+  const rootInfo = lstatSync(root);
+  require(rootInfo.isDirectory() && !rootInfo.isSymbolicLink() && realpathSync(root) === root, 'invalid-editor-log-root');
   const pending = [root]; let entries = 0; let files = 0;
   while (pending.length) {
     const path = pending.pop();
@@ -230,7 +236,10 @@ export function auditEditorProvisioning(reportRoot, editorLogsRoot = join(editor
   validateProvisioningReport(data.report, data.context);
   writeNew(join(reportRoot, 'result.json'), data.report);
   // The upload names only this audited projection, never this directory or raw logs.
-  if (process.env.GITHUB_OUTPUT) writeFileSync(process.env.GITHUB_OUTPUT, 'safe=true\n', { flag: 'a' });
+  if (process.env.GITHUB_OUTPUT) {
+    const logsValid = data.report.integration.state === 'invoked' && data.report.integration.editorLogs.present;
+    writeFileSync(process.env.GITHUB_OUTPUT, `safe=true\n${logsValid ? 'editor_logs_valid=true\n' : ''}`, { flag: 'a' });
+  }
   const phase = data.report.integration.state === 'unexecuted' ? 'integration unexecuted; editor logs not expected' :
     data.report.integration.editorLogs.present ? 'integration invoked; editor logs present' : 'integration invoked; required editor logs missing';
   console.log(`VS Code evidence ${data.report.ok ? 'passed' : 'failed'}: ${phase}.`);

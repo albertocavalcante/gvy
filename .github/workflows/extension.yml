@@ -180,7 +180,7 @@ jobs:
           retention-days: 14
 
       - name: Upload failed editor logs
-        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' }}
+        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' && steps.vscode_audit.outputs.editor_logs_valid == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: editor-logs-linux
@@ -348,7 +348,7 @@ jobs:
           retention-days: 14
 
       - name: Upload failed editor logs
-        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' }}
+        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' && steps.vscode_audit.outputs.editor_logs_valid == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: editor-logs-${{ matrix.os }}
@@ -481,7 +481,7 @@ jobs:
           retention-days: 14
 
       - name: Upload failed editor logs
-        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' }}
+        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' && steps.vscode_audit.outputs.editor_logs_valid == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: editor-logs-package

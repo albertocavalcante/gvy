@@ -3,7 +3,7 @@
 import { performance } from 'node:perf_hooks';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { vscodeTestVersion, vscodeTestSdkVersion, vscodeTestCliVersion, vscodeTestIdleTimeout } from '../../editors/code/tools/vscode-test-config.mjs';
+import { vscodeTestVersion, vscodeTestSdkVersion, vscodeTestCliVersion, vscodeTestProxyAgentVersion, vscodeTestIdleTimeout } from '../../editors/code/tools/vscode-test-config.mjs';
 
 export const provisioningLimits = Object.freeze({ totalMs: 180000, attemptMs: 80000, backoffMs: 5000, killMs: 2000, verifyMs: 10000, captureBytes: 128 * 1024 });
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -37,14 +37,15 @@ export function downloadPlatform(context) {
   return context.runnerOS === 'Windows' ? `win32-${arch}-archive` : context.runnerOS === 'macOS' ? (arch === 'arm64' ? 'darwin-arm64' : 'darwin') : `linux-${arch}`;
 }
 
-export const phases = Object.freeze(['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'archive-extraction', 'sdk-archive-retry', 'sdk-error', 'cache-hit', 'provisioned', 'verification', 'verified']);
+export const phases = Object.freeze(['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'archive-extraction', 'sdk-archive-retry', 'sdk-error', 'cache-hit', 'provisioned', 'verification', 'release-metadata', 'runtime-probe', 'verified']);
 const transitions = {
   configuration: ['version-resolution'], 'version-resolution': ['version-resolved'],
   'version-resolved': ['archive-resolution', 'cache-hit', 'sdk-archive-retry', 'sdk-error'],
   'archive-resolution': ['archive-transfer', 'sdk-archive-retry', 'sdk-error'],
   'archive-transfer': ['archive-extraction', 'provisioned', 'sdk-archive-retry', 'sdk-error'],
   'archive-extraction': ['provisioned', 'sdk-archive-retry', 'sdk-error'],
-  'sdk-archive-retry': ['archive-resolution'], provisioned: ['verification'], verification: ['verified'],
+  'sdk-archive-retry': ['archive-resolution'], provisioned: ['verification'], verification: ['release-metadata'],
+  'release-metadata': ['runtime-probe'], 'runtime-probe': ['verified'],
 };
 const outcomes = ['success', 'version-resolution-timeout', 'configuration-error', 'provisioning-error', 'verification-error', 'invalid-evidence', 'deadline-exceeded', 'capture-limit', 'cleanup-incomplete', 'unexpected-output'];
 
@@ -64,8 +65,28 @@ export function emptyCapture() {
   return { stdoutBytes: 0, stdoutSha256: emptyDigest, stderrBytes: 0, stderrSha256: emptyDigest, complete: true };
 }
 
+export function validateReleaseMetadata(value, context) {
+  keys(value, ['version', 'platform', 'quality', 'commit', 'archiveSha256']);
+  require(value.version === vscodeTestVersion && value.platform === downloadPlatform(context) && value.quality === 'stable' && commit(value.commit) && hash(value.archiveSha256), 'invalid-release-metadata');
+  return value;
+}
+
+export function validateVerification(value, context) {
+  keys(value, ['expected', 'observed', 'metadataSource', 'sdkProgressRevision', 'matched']);
+  keys(value.expected, ['version', 'platform', 'quality', 'commit', 'archiveSha256', 'arch']);
+  const { arch, ...release } = value.expected;
+  validateReleaseMetadata(release, context);
+  require(arch === (context.runnerArch === 'ARM64' ? 'arm64' : 'x64') && value.metadataSource === 'vscode-update-api-exact-version' &&
+    (value.sdkProgressRevision === null || commit(value.sdkProgressRevision)), 'invalid-verification-evidence');
+  keys(value.observed, ['version', 'commit', 'arch']);
+  require(typeof value.observed.version === 'string' && /^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$/.test(value.observed.version) &&
+    commit(value.observed.commit) && ['x64', 'arm64'].includes(value.observed.arch), 'invalid-verification-evidence');
+  require(value.matched === (value.observed.version === release.version && value.observed.commit === release.commit && value.observed.arch === arch), 'inconsistent-verification-verdict');
+  return value;
+}
+
 export function validateAttempt(attempt, context, expectedNumber) {
-  keys(attempt, ['number', 'contextSha256', 'outcome', 'elapsedMs', 'phases', 'errorLogs', 'error', 'delivery', 'capture', 'cleanupComplete']);
+  keys(attempt, ['number', 'contextSha256', 'outcome', 'elapsedMs', 'phases', 'errorLogs', 'error', 'delivery', 'verification', 'capture', 'cleanupComplete']);
   require(attempt.number === expectedNumber && attempt.contextSha256 === digest(JSON.stringify(context)), 'stale-attempt-evidence');
   require(outcomes.includes(attempt.outcome) && integer(attempt.elapsedMs, provisioningLimits.totalMs) && typeof attempt.cleanupComplete === 'boolean', 'invalid-evidence');
   validatePhases(attempt.phases);
@@ -82,12 +103,18 @@ export function validateAttempt(attempt, context, expectedNumber) {
     require(outcomes.includes(attempt.error.code) && attempt.error.code !== 'success' && (attempt.error.messageSha256 === null || hash(attempt.error.messageSha256)), 'invalid-error-evidence');
   }
   if (attempt.delivery !== null) {
-    keys(attempt.delivery, ['version', 'commit', 'arch', 'platform', 'expectedCommit', 'commitSource']);
+    keys(attempt.delivery, ['version', 'commit', 'arch', 'platform', 'expectedCommit', 'archiveSha256', 'commitSource']);
     require(attempt.delivery.version === vscodeTestVersion && commit(attempt.delivery.commit) && attempt.delivery.commit === attempt.delivery.expectedCommit &&
       attempt.delivery.arch === (context.runnerArch === 'ARM64' ? 'arm64' : 'x64') && attempt.delivery.platform === downloadPlatform(context) &&
-      attempt.delivery.commitSource === 'sdk-new-install-progress', 'invalid-delivery-evidence');
+      hash(attempt.delivery.archiveSha256) && attempt.delivery.commitSource === 'vscode-update-api-exact-version', 'invalid-delivery-evidence');
   }
-  if (attempt.outcome === 'success') require(attempt.phases.at(-1).phase === 'verified' && attempt.delivery !== null && attempt.error === null && attempt.cleanupComplete && attempt.capture.complete, 'incomplete-success-evidence');
+  if (attempt.verification !== null) {
+    validateVerification(attempt.verification, context);
+    require(['runtime-probe', 'verified'].includes(attempt.phases.at(-1).phase), 'invalid-verification-phase');
+  }
+  if (attempt.outcome === 'success') require(attempt.phases.at(-1).phase === 'verified' && attempt.delivery !== null && attempt.verification?.matched &&
+    attempt.delivery.commit === attempt.verification.observed.commit && attempt.delivery.archiveSha256 === attempt.verification.expected.archiveSha256 &&
+    attempt.error === null && attempt.cleanupComplete && attempt.capture.complete, 'incomplete-success-evidence');
   else require(attempt.error?.code === attempt.outcome && attempt.delivery === null, 'invalid-error-evidence');
   if (attempt.outcome === 'capture-limit') require(!attempt.capture.complete, 'invalid-capture-evidence');
   if (attempt.outcome === 'version-resolution-timeout') {
@@ -117,7 +144,7 @@ export async function provisionWithBudget(context, attempt, { now = () => perfor
       // evidence. This row explicitly claims neither capture nor cleanup.
       result = { number, contextSha256: digest(JSON.stringify(context)), outcome: 'invalid-evidence', elapsedMs: 0,
         phases: [{ phase: 'configuration', elapsedMs: 0 }], errorLogs: [], error: { code: 'invalid-evidence', messageSha256: null },
-        delivery: null, capture: { ...emptyCapture(), complete: false }, cleanupComplete: false };
+        delivery: null, verification: null, capture: { ...emptyCapture(), complete: false }, cleanupComplete: false };
     }
     attempts.push(result);
     if (now() >= deadline) return { ok: false, attempts, elapsedMs: Math.ceil(now() - started), error: 'deadline-exceeded' };
@@ -131,7 +158,7 @@ export async function provisionWithBudget(context, attempt, { now = () => perfor
 export function createProvisioningReport(context, result) {
   const report = {
     schemaVersion: 1, context, requested: { version: vscodeTestVersion, platform: downloadPlatform(context) },
-    tools: { sdk: vscodeTestSdkVersion, cli: vscodeTestCliVersion }, limits: provisioningLimits,
+    tools: { sdk: vscodeTestSdkVersion, cli: vscodeTestCliVersion, proxyAgent: vscodeTestProxyAgentVersion }, limits: provisioningLimits,
     provisioning: result, integration: { state: 'unexecuted', outcome: null, editorLogs: null }, ok: false,
   };
   validateProvisioningReport(report, context);
@@ -143,7 +170,7 @@ export function validateProvisioningReport(report, expectedContext) {
   validateProvisioningContext(report.context);
   require(report.schemaVersion === 1 && isDeepStrictEqual(report.context, expectedContext), 'stale-provisioning-evidence');
   require(isDeepStrictEqual(report.requested, { version: vscodeTestVersion, platform: downloadPlatform(expectedContext) }) &&
-    isDeepStrictEqual(report.tools, { sdk: vscodeTestSdkVersion, cli: vscodeTestCliVersion }) && isDeepStrictEqual(report.limits, provisioningLimits), 'invalid-provisioning-policy');
+    isDeepStrictEqual(report.tools, { sdk: vscodeTestSdkVersion, cli: vscodeTestCliVersion, proxyAgent: vscodeTestProxyAgentVersion }) && isDeepStrictEqual(report.limits, provisioningLimits), 'invalid-provisioning-policy');
   const result = report.provisioning;
   keys(result, ['ok', 'attempts', 'elapsedMs', 'error']);
   require(Array.isArray(result.attempts) && result.attempts.length <= 2 && integer(result.elapsedMs, provisioningLimits.totalMs + provisioningLimits.killMs) && typeof result.ok === 'boolean', 'invalid-provisioning-evidence');
