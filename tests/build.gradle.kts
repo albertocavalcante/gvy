@@ -249,6 +249,8 @@ val harnessTest =
             "ScenarioSchemaTest",
             "ScenarioCatalogTest",
             "BoundedWireCaptureTest",
+            "SdkResponseProjectionTest",
+            "SymbolSignatureScenarioAssertionsTest",
         ).forEach { filter.includeTestsMatching("*.$it") }
 
         jvmArgumentProviders.add(
