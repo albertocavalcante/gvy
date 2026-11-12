@@ -1,9 +1,5 @@
 name: repro-hover-method-call-doc
 description: Hover on a call to a workspace static method shows its signature and Groovydoc
-xfail:
-  issue: 1527
-  reason: hover on a workspace method call shows the call summary, with no target signature or Groovydoc
-  match: 'Actual: ".*Method Call'
 workspace:
   fixture: empty-workspace
   files:
@@ -25,9 +21,7 @@ workspace:
           }
       }
 steps:
-  - initialize:
-      initializationOptions:
-        groovy.languageServer.engine: native
+  - initialize: {}
   - initialized: {}
   - waitNotification:
       method: groovy/status

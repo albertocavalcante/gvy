@@ -16,21 +16,21 @@ import kotlin.test.assertTrue
 class ServerConfigurationDefaultsTest {
 
     @Test
-    fun `default configuration uses Core engine`() {
+    fun `default configuration uses Native engine`() {
         val config = ServerConfiguration()
-        assertEquals(EngineType.Core, config.parserEngine)
+        assertEquals(EngineType.Native, config.parserEngine)
     }
 
     @Test
-    fun `fromMap with null returns default configuration with Core engine`() {
+    fun `fromMap with null returns default configuration with Native engine`() {
         val config = ServerConfiguration.fromMap(null)
-        assertEquals(EngineType.Core, config.parserEngine)
+        assertEquals(EngineType.Native, config.parserEngine)
     }
 
     @Test
-    fun `fromMap with empty map uses Core engine via fromString`() {
+    fun `fromMap with empty map uses Native engine via fromString`() {
         val config = ServerConfiguration.fromMap(emptyMap())
-        assertEquals(EngineType.Core, config.parserEngine)
+        assertEquals(EngineType.Native, config.parserEngine)
     }
 
     @Test
@@ -70,19 +70,19 @@ class ServerConfigurationDefaultsTest {
     }
 
     @Test
-    fun `fromMap returns Core for unknown engine values`() {
+    fun `fromMap returns Native for unknown engine values`() {
         val config = ServerConfiguration.fromMap(
             mapOf("groovy.languageServer.engine" to "unknown_engine"),
         )
-        assertEquals(EngineType.Core, config.parserEngine)
+        assertEquals(EngineType.Native, config.parserEngine)
     }
 
     @Test
-    fun `fromMap returns Core when engine key is missing`() {
+    fun `fromMap returns Native when engine key is missing`() {
         val config = ServerConfiguration.fromMap(
             mapOf("groovy.some.other.setting" to "value"),
         )
-        assertEquals(EngineType.Core, config.parserEngine)
+        assertEquals(EngineType.Native, config.parserEngine)
     }
 
     @Test

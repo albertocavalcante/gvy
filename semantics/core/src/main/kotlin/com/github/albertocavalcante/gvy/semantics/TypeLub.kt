@@ -34,6 +34,24 @@ object TypeLub {
     fun lub(type1: SemanticType, type2: SemanticType): SemanticType = lub(listOf(type1, type2))
 
     /**
+     * Common reference type for collection literal type arguments, where values are stored without
+     * arithmetic or GString coercion. Box only top-level primitives: an `int[]` is already a reference.
+     * Null adds no type constraint; empty/null-only or uncertain inputs conservatively use Object.
+     * Scalar expression and arithmetic inference must keep using [lub].
+     */
+    fun referenceLub(types: List<SemanticType>): SemanticType {
+        val references = types.filter { it != SemanticType.Null }.map(::collectionReferenceType)
+        return when {
+            references.isEmpty() -> TypeConstants.OBJECT
+            references.all { it == references.first() } -> references.first()
+            references.all { it is SemanticType.Known } -> findCommonAncestor(
+                references.filterIsInstance<SemanticType.Known>(),
+            )
+            else -> TypeConstants.OBJECT
+        }
+    }
+
+    /**
      * Internal method to resolve LUB for non-trivial cases.
      * Tries strategies in order:
      * 1. Groovy-specific GString logic
@@ -43,23 +61,6 @@ object TypeLub {
     private fun computeComplexLub(types: List<SemanticType>): SemanticType = checkGStringLub(types)
         ?: checkNumericLub(types)
         ?: computeFallbackLub(types)
-
-    /**
-     * Handles specific Groovy rule: GString + String = String.
-     */
-    private fun checkGStringLub(types: List<SemanticType>): SemanticType? {
-        if (types.size != 2) return null
-
-        val names = types.mapNotNull {
-            if (it is SemanticType.Known) it.fqn else null
-        }.toSet()
-
-        if (names == setOf(TypeConstants.STRING.fqn, TypeConstants.GSTRING.fqn)) {
-            return TypeConstants.STRING
-        }
-
-        return null
-    }
 
     /**
      * Checks if types can form a valid numeric LUB.
@@ -374,6 +375,42 @@ object TypeLub {
         PrimitiveKind.DOUBLE -> PRECEDENCE_DOUBLE
         PrimitiveKind.BOOLEAN -> PRECEDENCE_BOOLEAN
     }
+}
+
+/**
+ * Handles specific Groovy rule: GString + String = String.
+ */
+private fun checkGStringLub(types: List<SemanticType>): SemanticType? {
+    if (types.size != 2) return null
+
+    val names = types.mapNotNull {
+        if (it is SemanticType.Known) it.fqn else null
+    }.toSet()
+
+    if (names == setOf(TypeConstants.STRING.fqn, TypeConstants.GSTRING.fqn)) {
+        return TypeConstants.STRING
+    }
+
+    return null
+}
+
+private fun collectionReferenceType(type: SemanticType): SemanticType = when (type) {
+    is SemanticType.Primitive -> boxedCollectionPrimitive(type.kind)
+    is SemanticType.Known, is SemanticType.Array -> type
+    is SemanticType.Dynamic, is SemanticType.Unknown, is SemanticType.Union, SemanticType.Null -> TypeConstants.OBJECT
+}
+
+private fun boxedCollectionPrimitive(kind: PrimitiveKind): SemanticType.Known = when (kind) {
+    PrimitiveKind.BOOLEAN -> SemanticType.Known("java.lang.Boolean")
+    PrimitiveKind.BYTE -> SemanticType.Known("java.lang.Byte")
+    PrimitiveKind.CHAR -> SemanticType.Known("java.lang.Character")
+    PrimitiveKind.SHORT -> SemanticType.Known("java.lang.Short")
+    PrimitiveKind.INT -> SemanticType.Known("java.lang.Integer")
+    PrimitiveKind.LONG -> SemanticType.Known("java.lang.Long")
+    PrimitiveKind.FLOAT -> SemanticType.Known("java.lang.Float")
+    PrimitiveKind.DOUBLE -> SemanticType.Known("java.lang.Double")
+    // A void expression has no value to box; do not invent a Void-valued collection.
+    PrimitiveKind.VOID -> TypeConstants.OBJECT
 }
 
 private fun computePrimitiveLub(primitives: List<SemanticType.Primitive>): SemanticType {

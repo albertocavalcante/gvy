@@ -47,6 +47,17 @@ normally `127.0.0.1`. For IPv6 loopback, select `--host ::1` and configure the c
 Binding to a non-loopback address, such as `--host 0.0.0.0` in a container, exposes the unauthenticated server to the
 network. Use it only on trusted networks.
 
+## Hover
+
+Source builds default to the native hover engine. It reuses the compiled document, including project types, Groovy
+extension methods, and available Groovydoc. Hover follows the current open buffer; a request interrupted by an edit is
+rejected instead of displaying stale information. Missing or ambiguous information produces a minimal card rather than a
+guessed target.
+
+In VS Code, `groovy.languageServer.engine` selects the engine. Existing explicit `core` settings remain supported;
+select `native` and restart the language server to use compiler-backed hover. Other LSP clients can pass
+`"groovy.languageServer.engine": "native"` in initialization options. Released versions may use an earlier default.
+
 ## Check support and troubleshoot
 
 - Check [LSP feature support](feature-support.md) for protocol methods and known limits.

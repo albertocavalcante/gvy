@@ -1,9 +1,5 @@
 name: repro-hover-class-expression
 description: Hover on a class used as an expression (`Money` in `Money.of(2.5)`) shows a class card, not the raw AST node
-xfail:
-  issue: 1526
-  reason: hover on a ClassExpression prints the Kotlin toString of the AST node with an identity hash
-  match: 'ClassExpression@'
 workspace:
   fixture: empty-workspace
   files:
@@ -25,9 +21,7 @@ workspace:
           }
       }
 steps:
-  - initialize:
-      initializationOptions:
-        groovy.languageServer.engine: native
+  - initialize: {}
   - initialized: {}
   - waitNotification:
       method: groovy/status

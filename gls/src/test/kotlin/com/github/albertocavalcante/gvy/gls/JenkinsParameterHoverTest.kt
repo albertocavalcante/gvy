@@ -50,6 +50,16 @@ class JenkinsParameterHoverTest {
 
     private var documents = 0
 
+    @Test
+    fun `parameter hover range stays on the key after a supplementary character`(): Unit = runBlocking {
+        val line = "    sh(script: '😀', returnStdout: true)"
+        val start = line.indexOf("returnStdout")
+        val hover = hoverAt("node {\n$line\n}", line = 1, character = start + 2)
+
+        assertTrue(isParameterHover(hover?.contents?.right?.value))
+        assertEquals(Range(Position(1, start), Position(1, start + "returnStdout".length)), hover?.range)
+    }
+
     private suspend fun hoverAt(content: String, line: Int, character: Int, name: String = "Jenkinsfile"): Hover? {
         val uri = "file:///tmp/jenkins-test/hover${documents++}/$name"
         openDocument(uri, content)
@@ -331,12 +341,12 @@ class JenkinsParameterHoverTest {
     @Test
     fun `a declarative hover range covers the name, not the whole block`(): Unit = runBlocking {
         val code = "pipeline {\n    agent any\n    stages {\n    }\n}"
-        val pipeline = hoverAt(code, line = 0, character = 2)
-        val stages = hoverAt(code, line = 2, character = 6)
+        val pipeline = assertNotNull(hoverAt(code, line = 0, character = 2))
+        val stages = assertNotNull(hoverAt(code, line = 2, character = 6))
 
-        assertTrue(pipeline?.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
+        assertTrue(pipeline.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
         assertEquals(Range(Position(0, 0), Position(0, 8)), pipeline.range)
-        assertEquals(Range(Position(2, 4), Position(2, 10)), stages?.range)
+        assertEquals(Range(Position(2, 4), Position(2, 10)), stages.range)
     }
 
     /** Guard: passes with or without the strategy (the ordinary hover never mentions the Jenkins env docs). */

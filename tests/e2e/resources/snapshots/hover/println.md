@@ -1,5 +1,9 @@
+### Method Call
+
 ```groovy
-println(...)
+println(opa)
 ```
 
-*(Method call)*
+**Method**: println
+**Receiver**: this
+**Arguments**: opa

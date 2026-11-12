@@ -1,11 +1,5 @@
-# Known failure: hover on a `def` variable shows no inferred type.
-# Tracked by https://github.com/albertocavalcante/gvy/issues/432.
 name: hover-type-inference
 description: Hover on def variables shows inferred types.
-xfail:
-  issue: 432
-  reason: hover on def variables does not show the inferred type
-  match: '(?s)Actual:.*\(Variable\)'
 workspace:
   fixture: empty-workspace
 steps:
@@ -55,7 +49,7 @@ steps:
         - jsonPath: $.contents.value
           expect:
             type: CONTAINS
-            value: "Integer" # Check if it infers Integer
+            value: "int num" # Native compiler type for the integer literal
 
   # Hover on 'list'
   - request:

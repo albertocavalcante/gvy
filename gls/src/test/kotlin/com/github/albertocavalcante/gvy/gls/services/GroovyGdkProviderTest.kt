@@ -76,6 +76,33 @@ class GroovyGdkProviderTest {
     }
 
     @Test
+    fun `GDK varargs display keeps the declared ellipsis and erased array identity`() {
+        val groupBy = assertNotNull(
+            gdkProvider.getQualifiedMethodsForType("java.lang.Iterable").find {
+                it.display.name == "groupBy" && it.qualifiedParameters == listOf("java.lang.Object[]")
+            },
+        )
+
+        assertThat(groupBy.display.parameterTypes).containsExactly("Object[]")
+        assertThat(groupBy.display.displayParameterTypes).containsExactly("Object...")
+        assertThat(groupBy.qualifiedParameters).containsExactly("java.lang.Object[]")
+    }
+
+    @Test
+    fun `GDK fixed array display keeps source brackets without inferring varargs`() {
+        val printf = assertNotNull(
+            gdkProvider.getQualifiedMethodsForType("java.lang.Object").find {
+                it.display.name == "printf" &&
+                    it.qualifiedParameters == listOf("java.lang.String", "java.lang.Object[]")
+            },
+        )
+
+        assertThat(printf.display.parameterTypes).containsExactly("String", "Object[]")
+        assertThat(printf.display.displayParameterTypes).containsExactly("String", "Object[]")
+        assertThat(printf.qualifiedParameters).containsExactly("java.lang.String", "java.lang.Object[]")
+    }
+
+    @Test
     fun `should handle class hierarchy`() {
         // ArrayList should get methods from List, Collection, and Iterable
         val arrayListMethods = gdkProvider.getMethodsForType("java.util.ArrayList")

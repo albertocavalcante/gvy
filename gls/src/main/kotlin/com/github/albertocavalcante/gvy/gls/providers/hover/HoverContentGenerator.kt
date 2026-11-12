@@ -26,6 +26,7 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallDisplayFor
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
@@ -35,6 +36,7 @@ import org.codehaus.groovy.ast.PackageNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
@@ -97,6 +99,7 @@ class HoverContentGenerator(
     }
 
     private fun MarkdownBuilder.renderExpressionNode(node: ASTNode, moduleNode: ModuleNode?) = when (node) {
+        is ClassExpression -> renderClassExpression(node)
         is VariableExpression -> renderVariableExpression(node, moduleNode, semanticResolver)
         is DeclarationExpression -> renderDeclarationExpression(node, moduleNode, semanticResolver)
         is MethodCallExpression -> renderMethodCallExpression(node, moduleNode, methodCallMetadataResolver)
@@ -111,6 +114,17 @@ class HoverContentGenerator(
         else -> defaultRender(node)
     }
 
+    private fun MarkdownBuilder.renderClassExpression(node: ClassExpression) {
+        if (ClassHelper.isPrimitiveType(node.type)) {
+            section("Primitive Type") {
+                code("groovy") { node.type.name }
+            }
+        } else {
+            renderClassNode(node.type.redirect())
+            keyValue("Qualified Name" to node.type.name)
+        }
+    }
+
     private fun MarkdownBuilder.renderMetadataNode(node: ASTNode) = when (node) {
         is ImportNode -> renderImportNode(node)
         is PackageNode -> renderPackageNode(node)
@@ -119,9 +133,13 @@ class HoverContentGenerator(
     }
 
     private fun MarkdownBuilder.defaultRender(node: ASTNode) {
-        section("AST Node") {
-            text(node::class.java.simpleName)
-            code { node.toString() }
+        section("Expression") {
+            val preview = node.text
+            if (preview.isNotBlank() && !preview.startsWith("<not implemented yet")) {
+                code { preview.take(MAX_EXPRESSION_PREVIEW_LENGTH) }
+            } else {
+                text("No additional symbol information is available.")
+            }
         }
     }
 
@@ -129,10 +147,26 @@ class HoverContentGenerator(
     private fun ASTNode.isDeclarationNode(): Boolean = this is MethodNode || this is ClassNode ||
         this is FieldNode || this is PropertyNode || this is Parameter
 
-    private fun ASTNode.isExpressionNode(): Boolean = this is VariableExpression || this is MethodCallExpression ||
-        this is ConstructorCallExpression || this is PropertyExpression || this is BinaryExpression ||
-        this is DeclarationExpression || this is ClosureExpression || this is ListExpression ||
-        this is MapExpression || this is ConstantExpression || this is GStringExpression
+    private fun ASTNode.isExpressionNode(): Boolean = when (this) {
+        is VariableExpression,
+        is MethodCallExpression,
+        is ConstructorCallExpression,
+        is PropertyExpression,
+        is BinaryExpression,
+        is DeclarationExpression,
+        is ClosureExpression,
+        is ListExpression,
+        is MapExpression,
+        is ConstantExpression,
+        is GStringExpression,
+        is ClassExpression,
+        -> true
+        else -> false
+    }
 
     private fun ASTNode.isMetadataNode(): Boolean = this is ImportNode || this is PackageNode || this is AnnotationNode
+
+    private companion object {
+        const val MAX_EXPRESSION_PREVIEW_LENGTH = 240
+    }
 }

@@ -317,7 +317,7 @@ export function buildServerSettingsMap(): Record<string, unknown> {
 
     "groovy.languageServer.engine": config.get<"core" | "native">(
       "languageServer.engine",
-      "core",
+      "native",
     ),
 
     "groovy.compilation.mode": config.get<"workspace" | "single-file">(

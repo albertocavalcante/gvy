@@ -342,6 +342,13 @@ class SignatureFormatterTest {
     }
 
     @Test
+    fun `formatParameter preserves quoted string default values`() {
+        val param = Parameter(ClassHelper.STRING_TYPE, "currency", ConstantExpression("USD"))
+
+        assertEquals("String currency = 'USD'", SignatureFormatter.formatParameter(param))
+    }
+
+    @Test
     fun `formatParameter - disable default values option`() {
         val param = Parameter(ClassHelper.int_TYPE, "count")
         param.initialExpression = ConstantExpression(10)

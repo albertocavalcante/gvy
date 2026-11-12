@@ -13,13 +13,21 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.WorkspaceFolder
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
+import java.util.concurrent.TimeUnit
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class GroovyLanguageServerTest {
+
+    @TempDir
+    lateinit var workspace: Path
 
     private lateinit var server: GroovyLanguageServer
     private lateinit var mockClient: SynchronizingTestLanguageClient
@@ -29,6 +37,11 @@ class GroovyLanguageServerTest {
         server = GroovyLanguageServer()
         mockClient = SynchronizingTestLanguageClient()
         server.connect(mockClient)
+    }
+
+    @AfterEach
+    fun cleanup() {
+        server.shutdown().get(30, TimeUnit.SECONDS)
     }
 
     @Test
@@ -84,9 +97,9 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test hover returns content`(): Unit = runBlocking {
+    fun `hover for a missing document returns quiet markdown`(): Unit = runBlocking {
         val params = HoverParams().apply {
-            textDocument = TextDocumentIdentifier("file:///test.groovy")
+            textDocument = TextDocumentIdentifier(workspace.resolve("Missing.groovy").toUri().toString())
             position = Position(5, 10)
         }
 
@@ -98,8 +111,34 @@ class GroovyLanguageServerTest {
 
         val content = result.contents.right
         assertEquals(MarkupKind.MARKDOWN, content.kind)
-        // The new hover implementation returns "No information available" when no AST node is found
-        assertTrue(content.value.contains("No information available") || content.value.contains("groovy"))
+        assertTrue(content.value.isBlank(), content.value)
+    }
+
+    @Test
+    fun `default server hover includes the compiled symbol type`(): Unit = runBlocking {
+        server.initialize(
+            InitializeParams().apply {
+                workspaceFolders = listOf(WorkspaceFolder(workspace.toUri().toString(), "hover"))
+                capabilities = ClientCapabilities()
+            },
+        ).get(30, TimeUnit.SECONDS)
+        server.initialized(InitializedParams())
+
+        val uri = workspace.resolve("Inference.groovy").toUri().toString()
+        server.textDocumentService.didOpen(
+            DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, "def count = 42")),
+        )
+        mockClient.awaitSuccessfulCompilation(uri)
+
+        val result = assertNotNull(
+            server.textDocumentService.hover(HoverParams(TextDocumentIdentifier(uri), Position(0, 5)))
+                .get(30, TimeUnit.SECONDS),
+        )
+
+        assertTrue(result.contents.isRight)
+        val content = assertNotNull(result.contents.right)
+        assertEquals(MarkupKind.MARKDOWN, content.kind)
+        assertContains(content.value, "int count")
     }
 
     @Test

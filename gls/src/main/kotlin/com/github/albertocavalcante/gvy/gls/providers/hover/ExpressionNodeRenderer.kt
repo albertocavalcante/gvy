@@ -99,7 +99,7 @@ internal object ExpressionNodeRenderer {
 
             // Try to resolve the property type
             val propertyType = node.type.displayName()
-            if (propertyType != "java.lang.Object") {
+            if (node.type.name != "java.lang.Object") {
                 keyValue("Property Type" to propertyType)
             }
         }

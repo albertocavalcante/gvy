@@ -52,5 +52,5 @@ internal class HoverRequestHandler(
         ResponseError(ResponseErrorCode.ContentModified, "Document changed during hover: $uri", null),
     )
 
-    private fun emptyHover() = Hover(MarkupContent(MarkupKind.MARKDOWN, "_No information available (Not Compiled)_"))
+    private fun emptyHover() = Hover(MarkupContent(MarkupKind.MARKDOWN, ""))
 }

@@ -213,6 +213,34 @@ class HoverProviderTest {
     }
 
     @Test
+    fun `documented method renders its summary once and formats Groovydoc tags`(): Unit = runTest {
+        val source = """
+            class Calculator {
+                /**
+                 * Combines input values using {@code String}.
+                 * @param value the input value
+                 * @return the combined result
+                 */
+                String combine(String value) { value }
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///formatted-docs.groovy")
+        documentProvider.put(uri, source)
+        assertTrue(compilationService.compile(uri, source).isSuccess)
+
+        val hover = assertNotNull(hoverProvider.provideHover(uri.toString(), Position(6, 15)))
+
+        val content = hover.contents.right.value
+        assertEquals(1, Regex("Combines input values").findAll(content).count(), content)
+        assertTrue(content.contains("`String`"), content)
+        assertTrue(content.contains("#### Parameters"), content)
+        assertTrue(content.contains("#### Returns"), content)
+        assertFalse(content.contains("/**"), content)
+        assertFalse(content.contains("@param"), content)
+        assertFalse(content.contains("{@code"), content)
+    }
+
+    @Test
     fun `provideHover includes GroovyDoc documentation in response`(): Unit = runTest {
         val groovyCode = """
 class Calculator {
@@ -533,29 +561,18 @@ class Calculator {
         """.trimIndent()
 
         val uri = URI.create("file:///test.groovy")
-        val result = compilationService.compile(uri, groovyCode)
+        compilationService.compile(uri, groovyCode)
+        val declaration = groovyCode.lines()[1]
 
-        // Test hover on parameter name
-        val paramHover = hoverProvider.provideHover(uri.toString(), Position(1, 20)) // On "name"
+        val paramHover = assertNotNull(
+            hoverProvider.provideHover(uri.toString(), Position(1, declaration.indexOf("name") + 1)),
+        )
+        assertTrue(paramHover.contents.right.value.contains("String name"))
 
-        if (paramHover != null) {
-            val content = paramHover.contents.right
-            assertTrue(
-                content.value.contains("String name") ||
-                    content.value.contains("name"),
-            )
-        }
-
-        // Test hover on parameter with default value
-        val defaultParamHover = hoverProvider.provideHover(uri.toString(), Position(1, 27)) // On "age"
-
-        if (defaultParamHover != null) {
-            val content = defaultParamHover.contents.right
-            assertTrue(
-                content.value.contains("int age") ||
-                    content.value.contains("age"),
-            )
-        }
+        val defaultParamHover = assertNotNull(
+            hoverProvider.provideHover(uri.toString(), Position(1, declaration.indexOf("age") + 1)),
+        )
+        assertTrue(defaultParamHover.contents.right.value.contains("int age"))
     }
 
     @Test
