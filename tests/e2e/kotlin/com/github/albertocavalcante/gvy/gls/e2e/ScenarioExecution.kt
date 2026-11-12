@@ -41,7 +41,7 @@ internal class ScenarioExecution(
         }
     }
 
-    fun run(name: String, action: () -> Unit) {
+    fun run(name: String, onExecutorClose: ((Throwable?) -> Unit)? = null, action: () -> Unit) {
         checkActive()
         val start = System.nanoTime()
         val executor =
@@ -55,7 +55,15 @@ internal class ScenarioExecution(
             if (failure == null) Result.success(Unit) else Result.failure(failure.completionCause())
         }
         AutoCloseable {
-            AutoCloseable { if (cancelled.get()) reportCleanupFailure(completion) }.use { executor.close() }
+            AutoCloseable { if (cancelled.get()) reportCleanupFailure(completion) }.use {
+                try {
+                    executor.close()
+                    onExecutorClose?.invoke(null)
+                } catch (failure: Throwable) {
+                    onExecutorClose?.invoke(failure)
+                    throw failure
+                }
+            }
         }.use {
             val result = try {
                 val remaining = (timeoutNanos - (System.nanoTime() - start)).coerceAtLeast(0)

@@ -33,11 +33,13 @@ data class ObservationCounts(
 /** Cleanup is independent of the product observations. */
 sealed interface CleanupOutcome {
     data object Succeeded : CleanupOutcome
-    data class Failed(val detail: String) : CleanupOutcome
+
+    /** A known cleanup failure can coexist with unconfirmed cleanup of other resources. */
+    data class Failed(val detail: String, val confirmed: Boolean = true) : CleanupOutcome
     data class Unconfirmed(val detail: String) : CleanupOutcome
 }
 
-enum class ScenarioFailureKind { Specification, Product, Transport }
+enum class ScenarioFailureKind { Specification, Product, Transport, Unclassified }
 enum class ScenarioFailurePhase { Setup, Execution }
 
 sealed interface ScenarioCompletion {
