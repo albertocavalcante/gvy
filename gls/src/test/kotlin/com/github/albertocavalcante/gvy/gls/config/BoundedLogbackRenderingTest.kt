@@ -142,6 +142,52 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
+    fun `oversized escaped message retains root and cause identity`() = withEncoder { encoder ->
+        val failure = IllegalStateException("root failure", IllegalArgumentException("cause failure"))
+        val input = event("{}", arrayOf("\u0000".repeat(100_000))).apply {
+            setThrowableProxy(ThrowableProxy(failure))
+        }
+
+        val bytes = encoder.encode(input)
+        val output = bytes.toString(Charsets.UTF_8)
+
+        assertTrue(bytes.size <= 65_536)
+        assertTrue(output.contains("java.lang.IllegalStateException"))
+        assertTrue(output.contains("java.lang.IllegalArgumentException"))
+        assertTrue(output.contains("[truncated]"))
+    }
+
+    @Test
+    fun `oversized root frames cannot hide cause identity`() = withEncoder { encoder ->
+        val failure = IllegalStateException("root failure", IllegalArgumentException("cause failure")).apply {
+            stackTrace = Array(128) {
+                StackTraceElement("X".repeat(2_000), "method", "Example.groovy", it)
+            }
+        }
+        val input = event("failure", emptyArray()).apply { setThrowableProxy(ThrowableProxy(failure)) }
+
+        val bytes = encoder.encode(input)
+        val output = bytes.toString(Charsets.UTF_8)
+
+        assertTrue(bytes.size <= 65_536)
+        assertTrue(output.contains("java.lang.IllegalStateException"))
+        assertTrue(output.contains("java.lang.IllegalArgumentException"))
+        assertTrue(output.contains("[truncated]"))
+    }
+
+    @Test
+    fun `native frames retain the native method label`() = withEncoder { encoder ->
+        val failure = IllegalStateException("native failure").apply {
+            stackTrace = arrayOf(StackTraceElement("example.Native", "invoke", null, -2))
+        }
+        val input = event("failure", emptyArray()).apply { setThrowableProxy(ThrowableProxy(failure)) }
+
+        val output = encoder.encode(input).toString(Charsets.UTF_8)
+
+        assertTrue(output.contains("example.Native.invoke(Native Method)"))
+    }
+
+    @Test
     fun `cyclic and oversized throwable graphs produce bounded output`() = withEncoder { encoder ->
         val first = IllegalStateException("first")
         val second = IllegalArgumentException("second")

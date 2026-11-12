@@ -36,9 +36,31 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         if (record.full) {
             record.markTruncated()
         } else {
-            event.throwableProxy?.let { renderThrowable(record, it, ThrowableState(), "", 0) }
+            event.throwableProxy?.let {
+                renderExceptionSummary(record, it)
+                renderThrowable(record, it, ThrowableState(), "", 0)
+            }
         }
         return record.finish()
+    }
+
+    // Preserve bounded failure identity before potentially voluminous stack frames.
+    private fun renderExceptionSummary(record: RecordBuffer, root: IThrowableProxy) {
+        val visited = IdentityHashMap<IThrowableProxy, Boolean>()
+        var current: IThrowableProxy? = root
+        var count = 0
+        record.append("\nExceptions: ")
+        while (current != null && count < MAX_DEPTH && !record.full) {
+            if (visited.put(current, true) != null) {
+                record.markTruncated()
+                return
+            }
+            if (count > 0) record.append(" -> ")
+            record.append(safe(current.className ?: "", METADATA_BYTES))
+            current = current.cause
+            count++
+        }
+        if (current != null) record.markTruncated()
     }
 
     private fun renderThrowable(
@@ -75,10 +97,14 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
             record.append(".")
             record.append(safe(element.methodName, FIELD_BYTES))
             record.append("(")
-            record.append(safe(element.fileName ?: "Unknown Source", FIELD_BYTES))
-            if (element.lineNumber >= 0) {
-                record.append(":")
-                record.append(element.lineNumber.toString())
+            if (element.isNativeMethod) {
+                record.append("Native Method")
+            } else {
+                record.append(safe(element.fileName ?: "Unknown Source", FIELD_BYTES))
+                if (element.lineNumber >= 0) {
+                    record.append(":")
+                    record.append(element.lineNumber.toString())
+                }
             }
             record.append(")")
         }
@@ -135,7 +161,7 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault())
         const val METADATA_BYTES = 256
         const val FIELD_BYTES = 1_024
-        const val MESSAGE_BYTES = 65_536
+        const val MESSAGE_BYTES = 8_192
         const val LOGGER_CHARS = 36
         const val MAX_DEPTH = 8
         const val MAX_NODES = 32
