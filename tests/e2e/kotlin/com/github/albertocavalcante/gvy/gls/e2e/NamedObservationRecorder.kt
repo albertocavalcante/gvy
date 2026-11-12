@@ -23,11 +23,11 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
         }
         val status = when {
             check.xfail == null && failure == null -> ObservationStatus.Passed
-            check.xfail == null -> ObservationStatus.Failed(failure.toString())
+            check.xfail == null -> ObservationStatus.Failed(failure!!.stackTraceToString())
             else -> when (val decision = XfailOutcome.classify(check.xfail, source, failure)) {
                 is XfailDecision.Expected -> ObservationStatus.KnownFailure(check.xfail.issue)
                 is XfailDecision.Fixed -> ObservationStatus.UnexpectedPass(check.xfail.issue)
-                is XfailDecision.Unexpected -> ObservationStatus.Failed(decision.failure.toString())
+                is XfailDecision.Unexpected -> ObservationStatus.Failed(decision.failure.stackTraceToString())
             }
         }
         synchronized(this) { if (!sealed) observed.add(ObservationResult(id, status)) }
@@ -50,7 +50,7 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
     @Synchronized fun finish(failure: Throwable?): ScenarioOutcome {
         sealed = true
         val cleanup = when {
-            cleanupFailures.isNotEmpty() -> CleanupOutcome.Failed(cleanupFailures.joinToString("; "))
+            cleanupFailures.isNotEmpty() -> CleanupOutcome.Failed(cleanupFailures.joinToString("\n") { it.stackTraceToString() })
             failure == null && workspaceClosed && sessionClosed -> CleanupOutcome.Succeeded
             else -> CleanupOutcome.Unconfirmed("Scenario resources did not finish cleanup before reporting")
         }
