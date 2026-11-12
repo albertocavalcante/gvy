@@ -49,6 +49,36 @@
       "id": "codenarc-final-newline-position",
       "path": "diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/CodeNarcDiagnosticProvider.kt",
       "anchor": "val finalCodeNarcLine = sourceLines.lastIndex"
+    },
+    {
+      "id": "vscode-test-floor",
+      "path": "editors/code/tools/vscode-test-config.mjs",
+      "anchor": "export const vscodeTestVersion"
+    },
+    {
+      "id": "vscode-metadata-timeout",
+      "path": "tools/ci/vscode-provisioning-policy.mjs",
+      "anchor": "export function isResolutionTimeout"
+    },
+    {
+      "id": "vscode-provisioning-sdk",
+      "path": "tools/ci/vscode-provisioning-worker.mjs",
+      "anchor": "export async function runSdkProvisioning"
+    },
+    {
+      "id": "vscode-provisioning-cli",
+      "path": "tools/ci/provision-vscode.mjs",
+      "anchor": "export async function invokeEditorTests"
+    },
+    {
+      "id": "vscode-provisioning-process",
+      "path": "tools/ci/vscode-provisioning-process.mjs",
+      "anchor": "export async function launchProvisioningAttempt"
+    },
+    {
+      "id": "vscode-release-metadata",
+      "path": "tools/ci/vscode-release-metadata.mjs",
+      "anchor": "export async function fetchExactVscodeRelease"
     }
   ],
   "records": [
@@ -524,7 +554,7 @@
       "sources": [
         {
           "id": "manual:release-nightly-channel",
-          "sha256": "39d5f3c026261d440075f51a1dbe24cac934da2d767117fd894f62e5cfb59312"
+          "sha256": "daa1d5401114cded88bb506ae58890399b67720b4089cf2f4b01c2e3d0bef81a"
         },
         {
           "id": "manual:release-nightly-discovery",
@@ -558,6 +588,63 @@
         {
           "id": "manual:codenarc-final-newline-position",
           "sha256": "7e2fd5b9f4c1ab17be7e6cc5266c3e7da7750ee59bc420fc425ac2980feed983"
+        }
+      ]
+    },
+    {
+      "id": "vscode-version-resolution",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1882",
+      "responsibleScope": "gvy CI and editor test infrastructure maintainers",
+      "lastVerified": "2026-11-12",
+      "reviewDue": "2026-11-19",
+      "reason": "Pinned editor provisioning can time out during fixed-version metadata validation before integration starts. Its progress commit field is also insufficient for runtime identity. Keep the bounded source-specific metadata, private proxy and lifecycle adapter owned while preserving original failed attempts and all assertions outside the retry.",
+      "upstreamStatus": "Inspected @vscode/test-electron 3.1.0 awaits fixed-version metadata before resolvedVersion and before archive retries, with an idle-based 15000ms timeout. Its newInstallComplete.commitHash reads the update-service x-source-commit response header; official VS Code CLI exact-version JSON instead maps response.version to Release.commit and runtime CLI prints product.version/product.commit. The SDK public reporter does not expose the validated transfer hash. @vscode/test-cli 0.0.15 can download again during dependency installation despite an installed path. Original transport root cause remains unproven; no replacement SDK was installed or executed.",
+      "upstreamTrigger": "Evaluate supported SDK/CLI release-identity and bounded provisioning APIs, including exact-version/platform/quality metadata and private proxy/CA routing, without assertion retries, silent direct routing or an unbounded download path.",
+      "verification": "Original actual 8aeedf3fc90d47cdf8d83646f442ac64401fcf92 run 43248043868 attempt 1 / macOS job 131289089094 passed 887 unit tests then failed at Resolving version after 15000ms before editor integration; retained 152230-byte log SHA256 110b751d06f504aed55cc2ef8017c3935223279c416d25747a137e4b041b7ad5. Candidate 0cbad583f0a55b11bd1c9c725d0d3af1861dec9d later failed its post-probe comparison in run 43265880210 attempt 1 / Linux job 131349988335; retained 162146-byte log SHA256 308a538f64edaf14de7bb465d2d4a1435a757660e0a7dc8c954fae404122d1f2 and audited failure artifact 13966477197. Nightly run 43265879993 / job 131349349730 also retained an audited verification failure with integration unexecuted. That candidate discarded compared commit/architecture values, so later API observations cannot reconstruct the failed comparisons. Bounded later official observations show x-source-commit also on the service homepage while exact-version JSON supplies a different release commit with platform-specific advertised SHA256. Pinned Rust/runtime source establishes the corrected identity contract. Local controls cover bounded metadata projection and routing, safe expected/observed identities, fail-fast units, fresh canonical log evidence, and truthful owned cleanup. After unexpected Windows worker exit, descendant cleanup is unproven and cleanup-incomplete blocks retry/integration; no job-object guarantee is claimed. SDK transfer validation is separate from the advertised metadata digest; no actual-transfer digest equality is claimed. Fresh final three-platform, packaged and Nightly validation remains required. Failed Windows synchronous probes can lose a command-wrapper ancestry before parent taskkill. A separate worker scope proof and missing-final runtime-probe handling conservatively retain cleanup-incomplete independently of capture completeness; native wrapper/grandchild timeout and overflow controls are required. Separately reported release-list invalid-JSON responses in run 43271317984 Windows job 131372148990 and packaged job 131372148853 are a distinct API/transport symptom and do not qualify for the exact timeout retry. Actual published 0cba external CodeQL check 131350579619 reported a marker check-before-open race and incomplete-escaping pattern in an intentional duplicate-key fixture. The source correction atomically claims before profile side effects, retains unexecuted preparation-failure evidence, and constructs the malformed fixture without replacement/escaping. Fresh final external security acceptance remains required.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/issues/1882",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43248043868/job/131289089094",
+        "https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L461-L579",
+        "https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/request.ts#L21-L84",
+        "https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/platform/desktop.mts#L128-L164",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43265880210/job/131349988335",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43265879993/job/131349349730",
+        "https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L335-L341",
+        "https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/util.ts#L108-L125",
+        "https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/cli/src/update_service.rs#L75-L109",
+        "https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/src/vs/code/node/cli.ts#L104-L106",
+        "https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/src/vs/platform/environment/node/argv.ts#L558-L559",
+        "https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processspawnsynccommand-args-options",
+        "https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43271317984/job/131372148990",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43271317984/job/131372148853"
+      ],
+      "nextAction": "Review complete final Linux/macOS/Windows, packaged-extension and Nightly evidence after fresh main composition, including proxy/CA inheritance, exact release-identity projection, original failed attempts, native link/early-exit cleanup controls and remaining diagnostics. By the review date, reassess supported SDK/CLI metadata and proxy-agent APIs and whether Windows crash containment needs an owned native scope. Preserve fixed-origin routing, bounded evidence and console masking boundaries. Prepare upstream reports only for human approval. Include failed nested-probe ancestry and missing-final races when evaluating a stronger owned Windows process scope; do not treat successful parent taskkill as proof after an intermediate wrapper was lost.",
+      "removalCriteria": "Remove or replace this source-specific adapter only after supported APIs pass timeout recovery/persistent failure and negative controls with a finite total budget, exact release/version/platform identity plus strict delivered CLI comparison, explicit independent checksum semantics, private proxy/CA routing with no direct fallback, truthful cleanup and no assertion retry. Obtain fresh native-platform, packaged and Nightly evidence and resolve any required stronger Windows crash-containment contract before retiring the guard. Original failed results remain retained.",
+      "sources": [
+        {
+          "id": "manual:vscode-test-floor",
+          "sha256": "a9d0b9c5c8af99fa8023ddbccdef6b637e3d8dbe7828fbe8c767565f6504d451"
+        },
+        {
+          "id": "manual:vscode-metadata-timeout",
+          "sha256": "939c3cff577b01c6d75303dfc5ea61eab7add77004bb74b2bb95bcb000eaca16"
+        },
+        {
+          "id": "manual:vscode-provisioning-sdk",
+          "sha256": "eb3610f1cbf7b69bf5f07de620c539158d22f9c8dc0f2469fa7cff4b5a353eee"
+        },
+        {
+          "id": "manual:vscode-provisioning-cli",
+          "sha256": "5cf64230d3b095f96b415b7a031a23d577a33c36a05a6c5c178afd94edd1b800"
+        },
+        {
+          "id": "manual:vscode-provisioning-process",
+          "sha256": "cb9e1483aa2ac6400b256ed0915503210c72e0bb6f0f57216784f7d3d922c958"
+        },
+        {
+          "id": "manual:vscode-release-metadata",
+          "sha256": "bad31400dda4a0b41bf6e599eb01abf0422866c779b2e088ab84106c124022d5"
         }
       ]
     }
