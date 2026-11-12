@@ -8,7 +8,12 @@ const MAX_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024;
 const PROBE_TIMEOUT_MS = 5000;
 const PROBE_OUTPUT_LIMIT = 64 * 1024;
 
-/** Probe only fixed commands. Output is discarded and never included in evidence. */
+/**
+ * Probe fixed commands from trusted tool installations that do not spawn descendants.
+ * Output is discarded. On timeout the direct child is killed and owned pipes are
+ * closed; this does not guarantee cleanup of descendants that inherited those pipes.
+ * A supported status means only that the fixed command exited successfully.
+ */
 export function probeTool(tool, { executable = tool, timeoutMs = PROBE_TIMEOUT_MS, environment = process.env } = {}) {
   const injectedOptions = ['JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS', '_JAVA_OPTIONS'];
   if (injectedOptions.some((name) => environment[name])) {
@@ -109,7 +114,8 @@ async function outputEvidenceInner(root) {
   return { writable, freeSpace: availableBytes === null ? 'unknown' : 'supported', availableBytes, capacity: 'unknown', parentPolicy: 'trusted_required' };
 }
 
-// A stalled filesystem operation must not hold the CLI open waiting for a result.
+// This bounds the result wait only: Node cannot cancel a blocked OS filesystem call,
+// and that call may still prevent the process from exiting.
 async function bounded(operation, fallback) {
   let timer;
   try {
@@ -120,6 +126,11 @@ async function bounded(operation, fallback) {
   } finally { clearTimeout(timer); }
 }
 
+/**
+ * Report probe availability, not operational readiness. A supported file hash or
+ * command does not verify JAR compatibility, JFR recording, disk capacity for a
+ * run, or build-slot availability. The output directory must have a trusted parent.
+ */
 export async function inspectPrerequisites({ artifact, outputRoot, probe = probeTool }) {
   const safeProbe = async (tool) => {
     try {
