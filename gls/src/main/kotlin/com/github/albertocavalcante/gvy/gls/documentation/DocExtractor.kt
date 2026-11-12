@@ -30,6 +30,10 @@ import java.util.Properties
 object DocExtractor {
     private val logger = KotlinLogging.logger {}
 
+    /** Documentation retained by the compiler belongs to the declaration, including cross-file references. */
+    fun extractAttachedDocumentation(node: AnnotatedNode): Documentation =
+        node.groovydoc?.content?.takeIf { it.isNotBlank() }?.let(::parseDocComment) ?: Documentation.EMPTY
+
     /**
      * Extract documentation for a specific AST node from the source text.
      *

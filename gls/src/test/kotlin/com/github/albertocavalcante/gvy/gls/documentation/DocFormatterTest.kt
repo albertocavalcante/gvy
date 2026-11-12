@@ -7,6 +7,32 @@ import kotlin.test.assertTrue
 class DocFormatterTest {
 
     @Test
+    fun `summary already present at the beginning of description is shown only once`() {
+        val doc = Documentation(
+            summary = "Combines input values",
+            description = "Combines input values. Further details explain the result.",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        assertEquals(1, Regex("Combines input values").findAll(result).count(), result)
+        assertTrue(result.contains("Further details explain the result."), result)
+    }
+
+    @Test
+    fun `distinct summary sharing a word prefix with description is retained`() {
+        val doc = Documentation(
+            summary = "Read",
+            description = "Reader configuration controls the input format.",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        assertTrue(result.startsWith("Read\n\n"), result)
+        assertTrue(result.contains("Reader configuration controls the input format."), result)
+    }
+
+    @Test
     fun `formats documentation with inline tags in summary`() {
         val doc = Documentation(
             summary = "Use {@code String.valueOf()} to convert values.",

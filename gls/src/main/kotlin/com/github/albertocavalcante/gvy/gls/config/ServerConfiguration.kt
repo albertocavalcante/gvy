@@ -13,7 +13,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity
  */
 data class ServerConfiguration(
     val compilationMode: CompilationMode = CompilationMode.WORKSPACE,
-    val parserEngine: EngineType = EngineType.Core,
+    val parserEngine: EngineType = EngineType.Native,
     val incrementalThreshold: Int = 50,
     val maxWorkspaceFiles: Int = 500,
     val maxNumberOfProblems: Int = 100,

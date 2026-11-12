@@ -20,9 +20,9 @@ class EngineConfigurationExtendedTest {
     @Test
     fun `EngineType fromString handles whitespace in input`() {
         // Leading/trailing whitespace should not match (case-sensitive to pattern)
-        assertEquals(EngineType.Core, EngineType.fromString(" native"))
-        assertEquals(EngineType.Core, EngineType.fromString("native "))
-        assertEquals(EngineType.Core, EngineType.fromString(" core "))
+        assertEquals(EngineType.Native, EngineType.fromString(" native"))
+        assertEquals(EngineType.Native, EngineType.fromString("native "))
+        assertEquals(EngineType.Native, EngineType.fromString(" core "))
     }
 
     @Test

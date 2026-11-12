@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Companion.GDK_CLASSES
+import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
@@ -85,6 +86,7 @@ class GroovyGdkProvider(
                 parameterNames = parameterNames,
                 originClass = clazz.simpleName,
                 doc = "Groovy GDK method from ${clazz.simpleName}",
+                displayParameterTypes = method.displayParameterTypes().drop(1),
             )
 
             cache.compute(selfType) { _, list ->
@@ -188,6 +190,7 @@ class GroovyGdkProvider(
 /** A GDK method with simple-name display types and its qualified erased parameter identity. */
 internal data class QualifiedGdkMethod(val display: GdkExtensionMethod, val qualifiedParameters: List<String>)
 
+/** Erased simple parameter identities stay separate from source display (`Object[]` versus `Object...`). */
 data class GdkExtensionMethod(
     val name: String,
     val returnType: String,
@@ -195,6 +198,7 @@ data class GdkExtensionMethod(
     val parameterNames: List<String>,
     val originClass: String,
     val doc: String,
+    val displayParameterTypes: List<String> = parameterTypes,
 ) {
     // Backward compatibility
     @Deprecated(

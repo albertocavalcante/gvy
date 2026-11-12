@@ -106,7 +106,7 @@ class EngineFactoryTest {
     }
 
     @Test
-    fun `create respects default configuration which is Core`() {
+    fun `create respects default configuration which is Native`() {
         val config = EngineConfiguration() // Uses default
 
         val engine = EngineFactory.create(
@@ -117,7 +117,7 @@ class EngineFactoryTest {
             sourceNavigator = null,
         )
 
-        assertIs<CoreLanguageEngine>(engine)
+        assertIs<NativeLanguageEngine>(engine)
     }
 
     @Test

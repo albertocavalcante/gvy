@@ -26,6 +26,19 @@ describe("server settings map", () => {
     });
   });
 
+  it("uses compiled native hover by default and preserves an explicit engine", () => {
+    assert.strictEqual(
+      client.buildServerSettingsMap()["groovy.languageServer.engine"],
+      "native",
+    );
+
+    configured["languageServer.engine"] = "core";
+    assert.strictEqual(
+      client.buildServerSettingsMap()["groovy.languageServer.engine"],
+      "core",
+    );
+  });
+
   it("sends the contributed default compilation cache limit", () => {
     assert.strictEqual(
       client.buildServerSettingsMap()["groovy.compilation.cacheMaxEntries"],

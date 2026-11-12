@@ -26,11 +26,6 @@ internal object DeclarationNodeRenderer {
                 "Modifiers" to modifiersString(node),
                 "Owner" to (node.declaringClass?.nameWithoutPackage ?: "unknown"),
             )
-            node.groovydoc?.let { doc ->
-                if (doc.content.isNotBlank()) {
-                    markdown(doc.content)
-                }
-            }
         }
     }
 

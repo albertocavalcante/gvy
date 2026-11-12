@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.mockk.every
 import io.mockk.mockk
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -14,14 +15,17 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.syntax.Token
 import org.eclipse.lsp4j.MarkupKind
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -95,6 +99,77 @@ class HoverContentGeneratorTest {
         assertTrue(contents.contains("class MyClass"))
         assertTrue(contents.contains("- myMethod()"))
         assertTrue(contents.contains("- String myField"))
+    }
+
+    @Test
+    fun `class reference shows the referenced class and qualified name without AST details`() {
+        val classNode = ClassNode("demo.money.Money", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        val expression = ClassExpression(classNode)
+
+        val result = generator.generateHover(expression)
+
+        assertTrue(result.isSuccess)
+        val contents = result.getOrNull()!!.contents.right.value
+        assertTrue(contents.contains("class Money"), contents)
+        assertTrue(contents.contains("demo.money.Money"), contents)
+        assertFalse(contents.contains("ClassExpression@"), contents)
+        assertFalse(contents.contains("AST Node"), contents)
+    }
+
+    @Test
+    fun `JDK nested class reference uses a stable class card`() {
+        val expression = ClassExpression(ClassHelper.make("java.util.Map\$Entry"))
+
+        val contents = generator.generateHover(expression).getOrNull()!!.contents.right.value
+
+        assertTrue(contents.contains("Entry"), contents)
+        assertTrue(contents.contains("java.util.Map\$Entry"), contents)
+        assertFalse(contents.contains("ClassExpression@"), contents)
+    }
+
+    @Test
+    fun `unsupported node fallback never exposes object identity`() {
+        val node = object : ASTNode() {
+            override fun getText(): String = "receiver?.value"
+            override fun toString(): String = "ASTNode@a683702"
+        }
+
+        val contents = generator.generateHover(node).getOrNull()!!.contents.right.value
+
+        assertTrue(contents.contains("receiver?.value"), contents)
+        assertFalse(contents.contains("ASTNode@"), contents)
+    }
+
+    @Test
+    fun `unresolved property does not claim Object is its inferred type`() {
+        val expression = PropertyExpression(VariableExpression("config"), "value")
+
+        val contents = generator.generateHover(expression).getOrNull()!!.contents.right.value
+
+        assertTrue(contents.contains("config.value"), contents)
+        assertFalse(contents.contains("**Property Type**"), contents)
+    }
+
+    @Test
+    fun `resolved property displays its actual type`() {
+        val expression = PropertyExpression(VariableExpression("config"), "value").apply {
+            type = ClassHelper.STRING_TYPE
+        }
+
+        val contents = generator.generateHover(expression).getOrNull()!!.contents.right.value
+
+        assertTrue(contents.contains("**Property Type**: String"), contents)
+    }
+
+    @Test
+    fun `domain class named Object remains visible as a property type`() {
+        val expression = PropertyExpression(VariableExpression("config"), "value").apply {
+            type = ClassNode("demo.Object", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        }
+
+        val contents = generator.generateHover(expression).getOrNull()!!.contents.right.value
+
+        assertTrue(contents.contains("**Property Type**: Object"), contents)
     }
 
     @Test

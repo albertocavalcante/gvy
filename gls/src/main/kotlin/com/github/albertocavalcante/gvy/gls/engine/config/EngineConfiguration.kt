@@ -12,7 +12,7 @@ sealed interface EngineType {
 
     /**
      * Native engine using Groovy compiler's AST.
-     * This is the legacy implementation.
+     * Reuses the compiled document and its project classpath for hover.
      */
     data object Native : EngineType {
         override val id: String = "native"
@@ -20,7 +20,7 @@ sealed interface EngineType {
 
     /**
      * Core engine using groovyparser-core's custom AST.
-     * This is the default implementation with cleaner AST and better type inference.
+     * Available as an explicit alternative to the default compiler-backed engine.
      */
     data object Core : EngineType {
         override val id: String = "core"
@@ -36,16 +36,16 @@ sealed interface EngineType {
 
     companion object {
         /**
-         * Parse engine type from string, defaulting to [Core].
+         * Parse engine type from string, defaulting to [Native].
          *
          * @param value Engine type string (case-insensitive), e.g. "native", "core"
-         * @return Corresponding [EngineType], or [Core] for unknown/null values
+         * @return Corresponding [EngineType], or [Native] for unknown/null values
          */
         fun fromString(value: String?): EngineType = when (value?.lowercase()) {
             "native" -> Native
             "core" -> Core
             "openrewrite" -> OpenRewrite
-            else -> Core // Default to Core for null or unknown values
+            else -> Native
         }
 
         /** All available engine types. */
@@ -59,7 +59,10 @@ sealed interface EngineType {
  * @property type The parser engine type to use
  * @property features Feature flags for engine-specific behavior
  */
-data class EngineConfiguration(val type: EngineType = EngineType.Core, val features: EngineFeatures = EngineFeatures())
+data class EngineConfiguration(
+    val type: EngineType = EngineType.Native,
+    val features: EngineFeatures = EngineFeatures(),
+)
 
 /**
  * Feature flags for engine-specific behavior.

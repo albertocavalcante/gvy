@@ -50,6 +50,16 @@ class JenkinsParameterHoverTest {
 
     private var documents = 0
 
+    @Test
+    fun `parameter hover range stays on the key after a supplementary character`(): Unit = runBlocking {
+        val line = "    sh(script: '😀', returnStdout: true)"
+        val start = line.indexOf("returnStdout")
+        val hover = hoverAt("node {\n$line\n}", line = 1, character = start + 2)
+
+        assertTrue(isParameterHover(hover?.contents?.right?.value))
+        assertEquals(Range(Position(1, start), Position(1, start + "returnStdout".length)), hover?.range)
+    }
+
     private suspend fun hoverAt(content: String, line: Int, character: Int, name: String = "Jenkinsfile"): Hover? {
         val uri = "file:///tmp/jenkins-test/hover${documents++}/$name"
         openDocument(uri, content)

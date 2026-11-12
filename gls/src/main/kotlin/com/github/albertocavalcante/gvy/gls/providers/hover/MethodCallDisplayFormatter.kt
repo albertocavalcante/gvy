@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
-import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
 import com.github.albertocavalcante.gvy.semantics.native.displayName
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -51,18 +50,14 @@ internal object MethodCallDisplayFormatter {
                 "Arguments" to arguments.ifBlank { "none" },
             )
 
-            val methodTarget = node.nodeMetaData["targetMethod"] as? MethodNode
-            if (methodTarget != null) {
+            val methodTarget = node.methodTarget ?: node.getNodeMetaData<Any>("targetMethod") as? MethodNode
+            val metadata = methodTarget?.toHoverMetadata()
+                ?: methodCallMetadataResolver?.resolveMethodCall(node, moduleNode)
+            if (metadata != null) {
                 markdown("**Resolved Target**")
-                code("groovy") { SignatureFormatter.formatMethod(methodTarget) }
-                keyValue("Owner" to (methodTarget.declaringClass?.nameWithoutPackage ?: "unknown"))
-            } else {
-                // Fallback: try classpath/GDK resolution with module context
-                methodCallMetadataResolver?.resolveMethodCall(node, moduleNode)?.let { metadata ->
-                    markdown("**Resolved Target**")
-                    code("groovy") { metadata.signature }
-                    keyValue("Owner" to metadata.declaringClass)
-                }
+                code("groovy") { metadata.signature }
+                keyValue("Owner" to metadata.declaringClass)
+                metadata.documentation?.takeIf { it.isNotBlank() }?.let { markdown(it) }
             }
         }
     }

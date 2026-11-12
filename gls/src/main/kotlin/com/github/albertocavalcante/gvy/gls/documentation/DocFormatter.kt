@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
  * Formats documentation into markdown suitable for hover display.
  */
 object DocFormatter {
+    private val punctuation = Regex("""\p{P}""")
 
     /**
      * Format documentation as markdown for display in hover.
@@ -52,12 +53,20 @@ object DocFormatter {
     }
 
     private fun MarkdownBuilder.addSummarySection(doc: Documentation) {
-        if (doc.summary.isNotBlank()) {
-            text(InlineTagRenderer.render(doc.summary))
+        val summary = InlineTagRenderer.render(doc.summary).trim()
+        val description = InlineTagRenderer.render(doc.description).trim()
+        // Extracted summaries are the first sentence of the description, often without its punctuation.
+        val summaryPrefix = summary.trimEnd('.', '?', '!')
+        val boundary = description.getOrNull(summaryPrefix.length)
+        val summaryInDescription = description.isNotBlank() &&
+            description.startsWith(summaryPrefix) &&
+            (boundary == null || boundary.isWhitespace() || punctuation.matches(boundary.toString()))
+        if (summary.isNotBlank() && !summaryInDescription) {
+            text(summary)
         }
 
-        if (doc.description.isNotBlank() && doc.description != doc.summary) {
-            text(InlineTagRenderer.render(doc.description))
+        if (description.isNotBlank()) {
+            text(description)
         }
     }
 

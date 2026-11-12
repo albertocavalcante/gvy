@@ -609,8 +609,8 @@
             "core",
             "native"
           ],
-          "default": "core",
-          "description": "Select the parser engine to use (Core: GroovyParser, Native: Groovy 3)."
+          "default": "native",
+          "description": "Select the hover engine. Native reuses the Groovy compiler's project types and documentation; Core uses a separate parser. Restart the language server after changing this setting."
         },
         "groovy.server.vmargs": {
           "scope": "machine",

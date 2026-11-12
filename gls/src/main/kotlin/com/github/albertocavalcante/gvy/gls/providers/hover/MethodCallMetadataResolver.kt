@@ -1,20 +1,28 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
+import com.github.albertocavalcante.gvy.gls.documentation.DocExtractor
+import com.github.albertocavalcante.gvy.gls.documentation.DocFormatter
+import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.GdkExtensionMethod
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
+import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.semantics.SemanticType
+import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.slf4j.LoggerFactory
+import java.lang.reflect.Modifier
 
-/**
- * Resolves method call metadata from classpath and GDK when AST metadata is unavailable.
- * Provides fallback hover information for method calls that don't have compile-time metadata.
- */
+/** Resolves proven method targets; ambiguous or dynamic calls keep their honest call summary. */
 class MethodCallMetadataResolver(
     private val classpathService: ClasspathService,
     private val gdkProvider: GroovyGdkProvider,
@@ -22,9 +30,6 @@ class MethodCallMetadataResolver(
 ) {
     private val logger = LoggerFactory.getLogger(MethodCallMetadataResolver::class.java)
 
-    /**
-     * Represents resolved method metadata for hover display.
-     */
     data class MethodMetadata(
         val signature: String,
         val declaringClass: String,
@@ -32,104 +37,133 @@ class MethodCallMetadataResolver(
         val documentation: String?,
     )
 
-    /**
-     * Attempts to resolve method call metadata from GDK or classpath.
-     *
-     * @param call The method call expression to resolve
-     * @param moduleNode The module node containing the method call (optional)
-     * @return Resolved metadata if found, null otherwise
-     */
     fun resolveMethodCall(call: MethodCallExpression, moduleNode: ModuleNode?): MethodMetadata? {
-        val methodName = call.methodAsString
-        if (methodName.isNullOrBlank()) {
-            logger.debug("Method name is null or blank")
-            return null
-        }
-
-        val receiverType = resolveReceiverType(call, moduleNode) ?: return null
-
-        // Get argument count from method call for better overload resolution
-        val argCount = when (val args = call.arguments) {
-            is ArgumentListExpression -> args.expressions.size
-            is TupleExpression -> args.expressions.size
-            else -> null
-        }
-
-        // 1. Try GDK first (higher priority for Groovy extension methods)
-        gdkProvider.getMethodsForType(receiverType)
-            .find { it.name == methodName && (argCount == null || it.parameterTypes.size == argCount) }
-            ?.let { return it.toMethodMetadata() }
-
-        // 2. Then classpath
-        classpathService.getMethods(receiverType)
-            .find { it.name == methodName && it.isPublic && (argCount == null || it.parameters.size == argCount) }
-            ?.let { return it.toMethodMetadata() }
-
-        return null
+        val name = call.methodAsString?.takeIf { it.isNotBlank() } ?: return null
+        val target = call.methodTarget ?: call.getNodeMetaData<Any>("targetMethod") as? MethodNode
+        if (target != null) return target.toHoverMetadata()
+        if (call.isSpreadSafe) return null
+        val receiver = resolveReceiver(call, moduleNode) ?: return null
+        val arguments = (call.arguments as? TupleExpression)?.expressions ?: return null
+        return resolveOnReceiver(call, receiver, arguments, name)
     }
 
-    /**
-     * Resolves the receiver type of a method call.
-     */
-    // TODO(#650): This logic is duplicated in MethodResolutionStrategy. Extract to shared utility.
-    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/650
-    private fun resolveReceiverType(call: MethodCallExpression, moduleNode: ModuleNode?): String? {
-        // Handle static calls (e.g., ClassName.method())
-        val objectExpr = call.objectExpression
-        if (objectExpr is ClassExpression) {
-            return objectExpr.type.name
+    private fun resolveOnReceiver(
+        call: MethodCallExpression,
+        receiver: ClassNode,
+        arguments: List<Expression>,
+        name: String,
+    ): MethodMetadata? {
+        // Source ASTs retain defaults and Groovydoc. Binary members use the reflected snapshot below,
+        // which preserves source parameter names/documentation rather than compiler-generated arg0 names.
+        val methods = receiver.takeIf { it.redirect().isPrimaryClassNode }?.getMethods(name).orEmpty().filter {
+            (it.isPublic || call.isImplicitThis) && (call.objectExpression !is ClassExpression || it.isStatic)
         }
+        val nativeMatches = HoverMethodSelection.select(receiver, methods, arguments)
+        return if (nativeMatches.isNotEmpty()) {
+            nativeMatches.singleOrNull()?.toHoverMetadata()
+        } else {
+            resolveExternal(call, receiver, arguments, name)
+        }
+    }
 
-        // Handle implicit this
+    private fun resolveExternal(
+        call: MethodCallExpression,
+        receiver: ClassNode,
+        arguments: List<Expression>,
+        name: String,
+    ): MethodMetadata? {
+        val reflected = classpathService.getMethods(receiver.name).filter {
+            it.name == name && it.isPublic && (call.objectExpression !is ClassExpression || it.isStatic)
+        }
+        val reflectedNodes = reflected.map { it.toMethodNode() }
+        val reflectedMatches = HoverMethodSelection.select(receiver, reflectedNodes, arguments)
+        return when {
+            reflectedMatches.isNotEmpty() -> reflectedMatches.singleOrNull()?.let { selected ->
+                reflected[reflectedNodes.indexOf(selected)].toMethodMetadata()
+            }
+
+            call.objectExpression is ClassExpression -> null
+            else -> resolveExtension(receiver, arguments, name)
+        }
+    }
+
+    private fun resolveExtension(receiver: ClassNode, arguments: List<Expression>, name: String): MethodMetadata? {
+        val extensions = gdkProvider.getQualifiedMethodsForType(receiver.name).filter { it.display.name == name }
+        val extensionNodes = extensions.map {
+            methodNode(it.display.name, it.qualifiedParameters, receiver, Modifier.PUBLIC)
+        }
+        val extension = HoverMethodSelection.select(receiver, extensionNodes, arguments).singleOrNull() ?: return null
+        return extensions[extensionNodes.indexOf(extension)].display.toMethodMetadata()
+    }
+
+    private fun resolveReceiver(call: MethodCallExpression, module: ModuleNode?): ClassNode? {
         if (call.isImplicitThis) {
-            return null // Would need AST traversal to find enclosing class
+            // A lexical class does not establish a closure's owner/delegate dispatch target.
+            return null
         }
-
-        // Try to resolve the type of the receiver expression
-        return try {
-            val semanticType = semanticResolver.resolveType(objectExpr, moduleNode)
-            semanticResolver.formatSemanticType(semanticType)
-        } catch (e: Exception) {
-            logger.debug("Failed to resolve receiver type for method call", e)
+        val expression = call.objectExpression
+        if (expression is ClassExpression) return expression.type
+        val declared = expression.type
+        if (!ClassHelper.isDynamicTyped(declared) && declared.name != "java.lang.Object") return declared
+        return runCatching {
+            when (val type = semanticResolver.resolveType(expression, module)) {
+                is SemanticType.Known -> module?.classes?.find { it.name == type.fqn } ?: ClassHelper.make(type.fqn)
+                is SemanticType.Dynamic, is SemanticType.Unknown -> null
+                else -> ClassHelper.make(semanticResolver.formatSemanticType(type))
+            }
+        }.getOrElse { error ->
+            rethrowIfCancellationOrError(error)
+            logger.debug("Failed to resolve receiver type for method call", error)
             null
         }
     }
 
-    /**
-     * Converts a GDK extension method to method metadata.
-     */
-    // TODO(#650): Parameter name handling logic is duplicated in toMethodMetadata extensions.
-    //   Consider extracting to shared utility for consistent parameter formatting.
-    private fun GdkExtensionMethod.toMethodMetadata(): MethodMetadata {
-        // Use mapIndexed to avoid truncation when parameterNames.size < parameterTypes.size
-        val params = parameterTypes.mapIndexed { i, type ->
-            val paramName = parameterNames.getOrNull(i) ?: "arg$i"
-            "$type $paramName"
-        }.joinToString(", ")
-        val signature = "$returnType $name($params)"
-        return MethodMetadata(
-            signature = signature,
-            declaringClass = originClass,
-            returnType = returnType,
-            documentation = doc,
-        )
+    private fun ReflectedMethod.toMethodNode(): MethodNode = methodNode(
+        name,
+        qualifiedParameters,
+        ClassHelper.make(declaringClass),
+        Modifier.PUBLIC or if (isStatic) Modifier.STATIC else 0,
+    )
+
+    private fun methodNode(name: String, types: List<String>, owner: ClassNode, modifiers: Int): MethodNode =
+        MethodNode(
+            name,
+            modifiers,
+            ClassHelper.OBJECT_TYPE,
+            types.mapIndexed { index, type -> Parameter(parameterType(type), "arg$index") }.toTypedArray(),
+            null,
+            null,
+        ).apply { declaringClass = owner }
+
+    private fun parameterType(type: String): ClassNode = when {
+        type.endsWith("[]") -> parameterType(type.removeSuffix("[]")).makeArray()
+        type.endsWith("...") -> parameterType(type.removeSuffix("...")).makeArray()
+        else -> ClassHelper.make(type)
     }
 
-    /**
-     * Converts a classpath method to method metadata.
-     */
-    private fun com.github.albertocavalcante.gvy.gls.services.ReflectedMethod.toMethodMetadata(): MethodMetadata {
-        // Use mapIndexed to avoid truncation when parameterNames.size < parameters.size
-        val params = displayParameters.mapIndexed { i, type ->
-            val paramName = parameterNames.getOrNull(i) ?: "arg$i"
-            "$type $paramName"
-        }.joinToString(", ")
-        val signature = "$returnType $name($params)"
-        return MethodMetadata(
-            signature = signature,
-            declaringClass = declaringClass,
-            returnType = returnType,
-            documentation = doc,
-        )
-    }
+    private fun GdkExtensionMethod.toMethodMetadata(): MethodMetadata = MethodMetadata(
+        signature = "$returnType $name(${displayParameterTypes.mapIndexed { index, type ->
+            "$type ${parameterNames.getOrNull(index) ?: "arg$index"}"
+        }.joinToString(", ")})",
+        declaringClass = originClass,
+        returnType = returnType,
+        documentation = doc,
+    )
+
+    private fun ReflectedMethod.toMethodMetadata(): MethodMetadata = MethodMetadata(
+        signature = "$returnType $name(${displayParameters.mapIndexed { index, type ->
+            "$type ${parameterNames.getOrNull(index) ?: "arg$index"}"
+        }.joinToString(", ")})",
+        declaringClass = declaringClass,
+        returnType = returnType,
+        documentation = doc,
+    )
 }
+
+internal fun MethodNode.toHoverMetadata(): MethodCallMetadataResolver.MethodMetadata =
+    MethodCallMetadataResolver.MethodMetadata(
+        SignatureFormatter.formatMethod(this),
+        declaringClass?.name ?: "unknown",
+        returnType.name,
+        DocFormatter.formatAsMarkdown(DocExtractor.extractAttachedDocumentation(this)).takeIf { it.isNotBlank() },
+    )

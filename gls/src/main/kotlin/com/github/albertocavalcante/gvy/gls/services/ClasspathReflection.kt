@@ -37,6 +37,7 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 doc = "JDK/Classpath method from ${clazz.simpleName}",
                 declaringClass = method.declaringClass.name,
                 displayParameters = method.displayParameterTypes(),
+                qualifiedParameters = method.parameterTypes.map { it.typeName },
             )
         }
     }.getOrElse { throwable ->

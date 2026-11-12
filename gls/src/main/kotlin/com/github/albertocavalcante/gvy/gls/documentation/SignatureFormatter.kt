@@ -8,6 +8,8 @@ import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.GenericsType
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.runtime.FormatHelper
 import java.lang.reflect.Modifier
 
 /**
@@ -203,7 +205,16 @@ object SignatureFormatter {
         // Default value
         if (options.showDefaultValues && param.hasInitialExpression()) {
             append(" = ")
-            append(param.initialExpression.text)
+            val initial = param.initialExpression
+            append(
+                if (initial is ConstantExpression &&
+                    initial.value is String
+                ) {
+                    FormatHelper.inspect(initial.value)
+                } else {
+                    initial.text
+                },
+            )
         }
     }
 
