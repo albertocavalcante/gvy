@@ -130,8 +130,11 @@ object XfailOutcome {
         var current: Throwable? = root
         var nodes = 0
         var messageCount = 0
-        while (current != null && seen.add(current)) {
-            if (++nodes > MAX_CAUSE_NODES) throw InspectionIncomplete("cause chain exceeds $MAX_CAUSE_NODES nodes")
+        while (current != null) {
+            if (current in seen) break
+            if (nodes == MAX_CAUSE_NODES) throw InspectionIncomplete("cause chain exceeds $MAX_CAUSE_NODES nodes")
+            seen.add(current)
+            nodes++
             val node = current
             val suppressed = inspectValue { node.suppressed }
             if (suppressed.isNotEmpty()) return Inspection("", "", null, true)
