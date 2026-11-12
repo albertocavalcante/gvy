@@ -149,6 +149,20 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `interruption during classification propagates and restores the interrupt flag`() {
+        val interrupted = InterruptedException("stop")
+        val failure = object : AssertionError() {
+            override val message: String get() = throw interrupted
+        }
+        try {
+            assertThatThrownBy { classify(xfail.copy(match = "anything"), failure) }.isSameAs(interrupted)
+            assertThat(Thread.currentThread().isInterrupted).isTrue()
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
     fun `ambiguous repetition uses bounded linear matcher`() {
         val failure = AssertionError("a".repeat(8_000) + "b")
         assertThat(classify(xfail.copy(match = "(a+)+$"), failure))
