@@ -19,6 +19,16 @@
       "id": "openrewrite-literals",
       "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/OpenRewriteFormatter.kt",
       "anchor": "private fun literalSpellingRestorer"
+    },
+    {
+      "id": "copybara-action-runtime",
+      "path": ".github/workflows/mirror-vscode-groovy.yml",
+      "anchor": "uses: olivr/copybara-action@042b4395839f3a374a6455b541e29e40c949d717"
+    },
+    {
+      "id": "copybara-codenarc-runtime",
+      "path": ".github/workflows/sync-rewrite-codenarc.yml",
+      "anchor": "uses: olivr/copybara-action@042b4395839f3a374a6455b541e29e40c949d717"
     }
   ],
   "records": [
@@ -436,6 +446,35 @@
         {
           "id": "manual:openrewrite-literals",
           "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
+        }
+      ]
+    },
+    {
+      "id": "copybara-action-runtime",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+      "responsibleScope": "gvy CI and mirroring maintainers",
+      "lastVerified": "2026-11-12",
+      "reviewDue": "2026-11-19",
+      "reason": "The mirror emits a legacy action-runtime annotation and Node DEP0040 punycode deprecation. Its action also pulls a mutable latest container, leaving runtime compatibility and reproducibility debt.",
+      "upstreamStatus": "Latest stable v1.2.5 and inspected upstream main both resolve to 042b4395839f3a374a6455b541e29e40c949d717 and declare node12. The observed runner annotation instead says Node20 is forced onto Node24; the mechanism is not established. No supported stable Node24 action upgrade was found.",
+      "upstreamTrigger": "A supported action release declares Node24 and removes the deprecated dependency, or an equivalent owned replacement has verified runtime and container pins.",
+      "verification": "Original main run43204913065/job131137524268 at99ee759adaa337e8bc1427218adf7861763f7057 completed successfully but emitted one exact Node20 forced-to-Node24 annotation for olivr/copybara-action@042b4395839f3a374a6455b541e29e40c949d717 and one [DEP0040] punycode deprecation. Its raw log records docker pull olivr/copybara:latest. Official stable tag and current main manifest were inspected; source inspection does not establish a warning-free replacement. This is an owned review deadline and drift gate, not warning suppression or proof of clean mirroring. The manual sync-rewrite-codenarc workflow uses the same exact action pin and is covered by the source/deadline record; it was not executed in this observed push, so no runtime result is claimed for it.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/actions/runs/43204913065/job/131137524268",
+        "https://github.com/Olivr/copybara-action/releases/tag/v1.2.5",
+        "https://github.com/Olivr/copybara-action/blob/042b4395839f3a374a6455b541e29e40c949d717/action.yml",
+        "https://github.com/albertocavalcante/gvy/issues/1603"
+      ],
+      "nextAction": "Replace or upgrade the legacy action with a supported pinned runtime and immutable container digest. Validate the existing transforms, deploy-key scope, normal sync, dry-run and opt-in force behavior without increasing credentials or silently replacing destination history. Cover both the VS Code mirror and manual CodeNarc sync; do not run an unapproved upstream publication as a validation shortcut.",
+      "removalCriteria": "Fresh exact-source mirror validation preserves the configured destination and transforms, passes a read-only dry-run and the authorized normal sync, and emits neither the action-runtime annotation nor DEP0040. Verify immutable runtime/container pins before deleting this record.",
+      "sources": [
+        {
+          "id": "manual:copybara-action-runtime",
+          "sha256": "c818bd99e6c19467c8f012102abbb35e00e545f897c6845722f3927acedb4557"
+        },
+        {
+          "id": "manual:copybara-codenarc-runtime",
+          "sha256": "e70380ed6d914f98ab7aba6a86e9a3681ffb59616ceced8635a3843b41d030ce"
         }
       ]
     }

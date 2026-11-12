@@ -22,7 +22,7 @@ jobs:
         scope: albertocavalcante/gvy
         identity: release-please
     # An installation token (unlike GITHUB_TOKEN) makes the release PR run CI and the v* tag run release.yml.
-    - uses: googleapis/release-please-action@64d83e95d898ede84e4555719aba555c3244d469
+    - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
       with:
         token: ${{ steps.octo-sts.outputs.token }}
         config-file: tools/release-please/config.json

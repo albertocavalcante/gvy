@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, chmodSync, symlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -364,13 +367,17 @@ test('report descriptor refuses existing files and symlinks and writes a private
 });
 
 test('real fake-tool subprocesses receive bounded JVM args and stop promptly without touching the daemon', async t => {
-  const f = fixture(t);
+  const f = fixture(t, [record()], false); let probe;
+  t.after(async () => {
+    try { await probe?.stop(); }
+    finally { rmSync(f.dir, { recursive: true, force: true }); }
+  });
   const executable = join(f.dir, 'fake-jstat');
   const started = join(f.dir, 'started');
-  writeFileSync(executable, `#!${process.execPath} --max-old-space-size=64\nimport { writeFileSync } from 'node:fs';\nif (process.argv[2] !== '-J-Xmx64m') process.exit(3);\nwriteFileSync(${JSON.stringify(started)}, 'started');\nprocess.on('SIGTERM', () => process.exit(0));\nsetInterval(() => {}, 1000);\n`);
+  writeFileSync(executable, `#!${process.execPath} --max-old-space-size=64\nimport { writeFileSync, renameSync } from 'node:fs';\nif (process.argv[2] !== '-J-Xmx64m') process.exit(3);\nprocess.on('SIGTERM', () => process.exit(0));\nwriteFileSync(${JSON.stringify(started + '.tmp')}, 'started');\nrenameSync(${JSON.stringify(started + '.tmp')}, ${JSON.stringify(started)});\nsetInterval(() => {}, 1000);\n`);
   chmodSync(executable, 0o755);
   const io = { ...f.io, jstatPath: executable }; delete io.runTool;
-  const probe = startGradleMemoryProbe(f.options, io);
+  probe = startGradleMemoryProbe(f.options, io);
   for (let attempt = 0; attempt < 200; attempt++) {
     try { readFileSync(started); break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -424,13 +431,23 @@ test('real tool stderr, output overflow, nonzero exit and timeout fail without r
 });
 
 test('stop escalates only its own unresponsive tool and awaits its exit', async t => {
-  const f = fixture(t); const executable = join(f.dir, 'fake-jstat'); const started = join(f.dir, 'started');
-  writeFileSync(executable, `#!${process.execPath} --max-old-space-size=64\nimport { writeFileSync } from 'node:fs';\nprocess.on('SIGTERM', () => {});\nwriteFileSync(${JSON.stringify(started)}, String(process.pid));\nsetInterval(() => {}, 1000);\n`);
+  const f = fixture(t, [record()], false); let probe;
+  t.after(async () => {
+    try { await probe?.stop(); }
+    finally { rmSync(f.dir, { recursive: true, force: true }); }
+  });
+  const executable = join(f.dir, 'fake-jstat'); const started = join(f.dir, 'started');
+  // Publish only a complete marker: open/create alone is not a readiness signal.
+  writeFileSync(executable, `#!${process.execPath} --max-old-space-size=64\nimport { writeFileSync, renameSync } from 'node:fs';\nprocess.on('SIGTERM', () => {});\nwriteFileSync(${JSON.stringify(started + '.tmp')}, String(process.pid));\nrenameSync(${JSON.stringify(started + '.tmp')}, ${JSON.stringify(started)});\nsetInterval(() => {}, 1000);\n`);
   chmodSync(executable, 0o755);
   const io = { ...f.io, jstatPath: executable }; delete io.runTool;
-  const probe = startGradleMemoryProbe(f.options, io);
+  probe = startGradleMemoryProbe(f.options, io);
   for (let attempt = 0; attempt < 200; attempt++) { try { readFileSync(started); break; } catch {} await sleep(10, new AbortController().signal); }
-  const pid = Number(readFileSync(started)); const before = performance.now();
+  const text = readFileSync(started, 'utf8');
+  assert.match(text, /^[1-9][0-9]*$/, 'Tool fixture must publish a complete positive PID');
+  const pid = Number(text);
+  assert.ok(Number.isSafeInteger(pid) && pid > 0);
+  const before = performance.now();
   const result = await probe.stop();
   assert.ok(performance.now() - before < 1500);
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
