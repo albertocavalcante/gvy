@@ -397,7 +397,11 @@ class FixtureEnvironmentTests(unittest.TestCase):
         (template / "hooks").mkdir(parents=True)
         (template / "hooks/sentinel").write_bytes(b"caller-owned template sentinel\n")
         hook = template / "hooks/post-index-change"
-        hook.write_bytes(b'#!/bin/sh\nprintf "hook ran\\n" >> "$GVY_OWNED_HOOK_LOG"\n')
+        hook.write_bytes(
+            b"#!/bin/sh\n"
+            b': "${GVY_OWNED_HOOK_LOG:?owned hook log is required}"\n'
+            b'printf "hook ran\\n" >>"${GVY_OWNED_HOOK_LOG}"\n'
+        )
         hook.chmod(hook.stat().st_mode | 0o111)
         config = caller.base / "caller.gitconfig"
         config.write_text(f'[init]\n\ttemplateDir = "{template.as_posix()}"\n', encoding="utf-8")
