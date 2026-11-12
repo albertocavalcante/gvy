@@ -107,8 +107,8 @@ class XfailOutcomeTest {
     }
 
     @Test
-    fun `unsupported nested repetition fails before classification`() {
-        assertThatThrownBy { classify(xfail.copy(match = "(a+)+"), AssertionError("aaa")) }
+    fun `unsupported lookbehind fails before classification`() {
+        assertThatThrownBy { classify(xfail.copy(match = "(?<=a)b"), AssertionError("ab")) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
