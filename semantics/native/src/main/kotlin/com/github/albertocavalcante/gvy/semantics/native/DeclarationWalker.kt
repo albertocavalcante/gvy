@@ -53,12 +53,7 @@ data class BlockDeclarations(val variables: List<DeclarationInfo>)
 /**
  * Shared helper for walking BlockStatements and extracting variable declarations.
  *
- * This centralizes the "walk declarations in a block to find variables" logic that was
- * previously duplicated between:
- * - [GroovySemantics.populateScopeFromBlock]
- * - [SymbolExtractor.extractVariableSymbols]
- *
- * It also supports capturing map literal key metadata for completion features.
+ * This supports symbol extraction and capturing map literal key metadata for completion features.
  */
 object DeclarationWalker {
 
