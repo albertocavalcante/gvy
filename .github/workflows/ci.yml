@@ -42,19 +42,19 @@ jobs:
         run: |
           set -euo pipefail
           payload="$GITHUB_WORKSPACE/support/.publication/candidate.patch.gz"
-          [[ "$(stat -c %s "$payload")" == 99077 ]]
-          printf '%s  %s\n' 419d92096b65614b0659f05444f66aa0d36b83ac03e07699be11b680d70e0a91 "$payload" | sha256sum -c -
+          [[ "$(stat -c %s "$payload")" == 103598 ]]
+          printf '%s  %s\n' 12b0bc39a485a2acd06737f7178f644f2b88c4db71d628aead859f6b5b2cfda7 "$payload" | sha256sum -c -
           python3 - "$payload" "$RUNNER_TEMP/candidate.patch" <<'PY'
           import gzip, pathlib, sys
           with gzip.open(sys.argv[1], 'rb') as source:
-              data = source.read(500214)
-          assert len(data) == 500213
+              data = source.read(526397)
+          assert len(data) == 526396
           pathlib.Path(sys.argv[2]).write_bytes(data)
           PY
-          printf '%s  %s\n' 534504d980a0a957f1492bc973e2ecec039443ea92f8251f8591711657743551 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
+          printf '%s  %s\n' 6de3397bf207307be48e0732a2b4b0d718eacb4fe8d1bc3322f5c5dbb7f02353 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
           git apply --check --index "$RUNNER_TEMP/candidate.patch"
           git apply --index "$RUNNER_TEMP/candidate.patch"
-          [[ "$(git write-tree)" == b6a66bda87b702591e79434c65e4258fa89300b9 ]]
+          [[ "$(git write-tree)" == dfe4dca968c32e51b1b4fecb0f896b982ee2c8ec ]]
           git diff --quiet
           git diff --cached --check
       - name: Set up JDK
@@ -106,7 +106,7 @@ jobs:
           set -e
           printf 'node_exit=%s capture_exit=%s\n' "${statuses[0]}" "${statuses[1]}" > "$RUNNER_TEMP/receipt-proof/node-status.txt"
           (( statuses[0] == 0 && statuses[1] == 0 ))
-          for line in '# tests 165' '# pass 165' '# fail 0' '# cancelled 0' '# skipped 0' '# todo 0'; do grep -Fx "$line" "$RUNNER_TEMP/receipt-proof/node.tap" >/dev/null; done
+          for line in '# tests 170' '# pass 170' '# fail 0' '# cancelled 0' '# skipped 0' '# todo 0'; do grep -Fx "$line" "$RUNNER_TEMP/receipt-proof/node.tap" >/dev/null; done
       - name: Compile and run focused Kotlin controls
         working-directory: candidate
         shell: bash
@@ -114,7 +114,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/receipt-proof"
           set +e
-          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-kotlin :tests:harnessTest --rerun --tests '*PublicOutcomeVisibilityTest' --tests '*RequestWaitTest' --tests '*XfailOutcomeTest' --tests '*AgentRunEvidenceCollectorTest' --tests '*AgentRunObserverTest' --tests '*AgentOutcomeJsonTest' --tests '*NamedObservationExecutionTest' --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-kotlin :tests:harnessTest --rerun --tests '*PublicOutcomeVisibilityTest' --tests '*RequestWaitTest' --tests '*XfailOutcomeTest' --tests '*AgentRunEvidenceCollectorTest' --tests '*AgentRunObserverTest' --tests '*AgentOutcomeJsonTest' --tests '*NamedObservationExecutionTest' --tests '*PackagedLaunchTest' --tests '*PackagedSessionFactoryTest' --tests '*SessionResourcesTest' --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/kotlin-exit.txt"
@@ -126,10 +126,10 @@ jobs:
           import json, pathlib, shutil, sys, xml.etree.ElementTree as ET
           root = pathlib.Path(sys.argv[1]); destination = pathlib.Path(sys.argv[2])
           prefix = 'com.github.albertocavalcante.gvy.gls.e2e.'
-          expected = {prefix + name for name in ('RequestWaitTest', 'XfailOutcomeTest', 'AgentRunEvidenceCollectorTest', 'AgentRunObserverTest', 'AgentOutcomeJsonTest', 'NamedObservationExecutionTest')}
+          expected = {prefix + name for name in ('RequestWaitTest', 'XfailOutcomeTest', 'AgentRunEvidenceCollectorTest', 'AgentRunObserverTest', 'AgentOutcomeJsonTest', 'NamedObservationExecutionTest', 'PackagedLaunchTest', 'PackagedSessionFactoryTest', 'SessionResourcesTest')}
           expected.add(prefix + 'visibility.PublicOutcomeVisibilityTest')
           files = list(root.glob('TEST-*.xml'))
-          assert {path.name for path in files} == {'TEST-' + name + '.xml' for name in expected} and len(files) == 7
+          assert {path.name for path in files} == {'TEST-' + name + '.xml' for name in expected} and len(files) == 10
           inventory = {}
           for path in files:
               assert path.stat().st_size <= 1048576
@@ -146,6 +146,9 @@ jobs:
               prefix + 'XfailOutcomeTest': ['IO interruption from a failure getter propagates while socket timeout remains incomplete'],
               prefix + 'AgentRunEvidenceCollectorTest': ['wrapped socket timeout is unavailable without setting interrupt'],
               prefix + 'AgentOutcomeJsonTest': ['private cancellation and cleanup omit throwable content'],
+              prefix + 'PackagedLaunchTest': ['preparation preserves interruption and restores its flag after cleanup', 'dirty expected source does not retain arbitrary hash content'],
+              prefix + 'PackagedSessionFactoryTest': ['packaged launch forwards the isolated Jenkins cache root before the jar', 'private launch sanitizes socket timeout without marking interrupt'],
+              prefix + 'SessionResourcesTest': ['interrupted construction still closes acquired resources before restoring cancellation'],
               prefix + 'visibility.PublicOutcomeVisibilityTest': ['public result evidence is accessible to callers'],
           }
           for name, fragments in controls.items():
@@ -159,12 +162,12 @@ jobs:
           set -euo pipefail
           # The checkout has the reviewed patch staged. This 12-hex tree-derived token is a
           # synthetic test identity, not an artifact source stamp or compiler attestation.
-          [[ "$(git write-tree)" == b6a66bda87b702591e79434c65e4258fa89300b9 ]]
+          [[ "$(git write-tree)" == dfe4dca968c32e51b1b4fecb0f896b982ee2c8ec ]]
           git diff --cached --quiet && exit 1
           java_path=$(readlink -f "$(command -v java)")
           java_hash=$(sha256sum "$java_path" | cut -d' ' -f1)
           set +e
-          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=b6a66bda87b7 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=dfe4dca968c3 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/prepare-exit.txt"
@@ -176,7 +179,7 @@ jobs:
           import { createHash } from 'node:crypto';
           import { inspectPreparedClasspath } from './tools/perf/prepared-classpath.mjs';
           const bytes = await fs.readFile(process.env.MANIFEST);
-          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: 'b6a66bda87b7', javaSha256: process.env.JAVA_HASH };
+          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: 'dfe4dca968c3', javaSha256: process.env.JAVA_HASH };
           if ((await inspectPreparedClasspath(options)).status !== 'verified') throw Error('Gradle/Node classpath hashes differ');
           if ((await inspectPreparedClasspath({ ...options, javaSha256: '0'.repeat(64) })).status !== 'unavailable') throw Error('Java mismatch accepted');
           const entry = JSON.parse(bytes).entries.find(e => e.kind === 'directory' && e.path.startsWith(process.cwd() + '/tests/build/'));
