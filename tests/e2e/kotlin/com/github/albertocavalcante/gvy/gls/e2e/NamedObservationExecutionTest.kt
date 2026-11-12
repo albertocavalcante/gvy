@@ -124,7 +124,7 @@ class NamedObservationExecutionTest {
         val shared = IOException("shared transport and cleanup failure")
         every { factory.start(any(), any()) } throws shared
         every { WorkspaceFixture.cleanup(workspace) } throws shared
-        val scenario = Scenario(name = "shared failure", steps = listOf(ScenarioStep.Initialized()))
+        val scenario = Scenario(name = "shared failure", steps = listOf(ScenarioStep.Initialized))
 
         val outcome = ScenarioExecutor(factory).executeWithOutcome(ScenarioDefinition(scenario))
 
