@@ -43,10 +43,12 @@ kt_test(
     resources = glob([
         "src/test/resources/**/*.txt",
         "src/test/resources/**/*.xml",
-    ]),
+    ]) + ["//tools/test-logging:logback_test_config"],
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
         "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:ch_qos_logback_logback_core",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_apache_maven_maven_model",
@@ -57,5 +59,6 @@ kt_test(
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_api",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
+        "@maven//:org_slf4j_slf4j_api",
     ],
 )

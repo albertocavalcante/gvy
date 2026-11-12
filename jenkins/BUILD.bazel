@@ -35,10 +35,12 @@ kt_test(
     associates = [":jenkins"],
     # Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache (expanded by the launcher).
     jvm_flags = ["-Dgroovy.lsp.jenkins.stubsCacheRoot=${TEST_TMPDIR}/jenkins-stubs-cache"],
-    resources = glob(["src/test/resources/**/*"]),
+    resources = glob(["src/test/resources/**/*"]) + ["//tools/test-logging:logback_test_config"],
     test_packages = ["com.github.albertocavalcante.gvy.jenkins"],
     deps = [
         "//dsl/gdsl",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:ch_qos_logback_logback_core",
         "@maven//:io_ktor_ktor_client_core_jvm",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_ktor_ktor_http_jvm",
@@ -53,5 +55,6 @@ kt_test(
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_ow2_asm_asm",
+        "@maven//:org_slf4j_slf4j_api",
     ],
 )

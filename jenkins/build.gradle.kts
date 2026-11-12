@@ -38,6 +38,10 @@ dependencies {
     api(project(":build-tool"))
 
     // Testing
+    testImplementation(libs.slf4j.api)
+    testCompileOnly(libs.logback.classic)
+    testCompileOnly("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
+    testRuntimeOnly(libs.logback.classic)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
@@ -49,6 +53,11 @@ dependencies {
 
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)
+}
+
+// This policy is test-only; it is not packaged in the reusable library.
+sourceSets.named("test") {
+    resources.srcDir(rootProject.file("tools/test-logging/src/test/resources"))
 }
 
 tasks.test {

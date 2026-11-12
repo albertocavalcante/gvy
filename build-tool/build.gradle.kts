@@ -34,6 +34,10 @@ dependencies {
     implementation(libs.maven.resolver.supplier)
 
     // Testing
+    testImplementation(libs.slf4j.api)
+    testCompileOnly(libs.logback.classic)
+    testCompileOnly("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
+    testRuntimeOnly(libs.logback.classic)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.junit.jupiter)
@@ -69,6 +73,11 @@ abstract class ScopedGradleTestArguments : CommandLineArgumentProvider {
             installation.orNull?.let { "-Dgvy.gradle.scoped.test.installation=${it.asFile.absolutePath}" },
             "-Dgvy.gradle.scoped.test.home=${userHome.get().asFile.absolutePath}",
         )
+}
+
+// This policy is test-only; it is not packaged in the reusable library.
+sourceSets.named("test") {
+    resources.srcDir(rootProject.file("tools/test-logging/src/test/resources"))
 }
 
 tasks.test {
