@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import org.assertj.core.api.Assertions.assertThat
@@ -77,12 +80,23 @@ class SymbolSignatureScenarioAssertionsTest {
         }
 
     @Test
+    @Suppress("DEPRECATION") // Exercise the server's legacy SymbolInformation union variant.
     fun `missing workspace class matches its xfail while a wrong kind remains unexpected`() {
         val fixture = ScenarioAssertionFixture("workspace-symbols.yaml", workspaceRoot, "symbolResult")
         val missing = Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(emptyList())
         assertThat(fixture.classifyFailure(missing)).isInstanceOf(XfailDecision.Expected::class.java)
-        val wrongKind = mapOf("left" to listOf(mapOf("name" to "UniqueController", "kind" to "Variable")))
-        assertThat(fixture.classifyFailure(wrongKind)).isInstanceOf(XfailDecision.Unexpected::class.java)
+        val symbol = SymbolInformation().apply {
+            name = "UniqueController"
+            kind = SymbolKind.Variable
+            location = Location(
+                fixture.context.workspace.resolveUri("src/main/groovy/Symbols.groovy"),
+                Range(Position(0, 0), Position(2, 1)),
+            )
+        }
+        val wrongKind = Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(listOf(symbol))
+        val decision = fixture.classifyFailure(wrongKind)
+        assertThat(decision).isInstanceOf(XfailDecision.Unexpected::class.java)
+        assertThat((decision as XfailDecision.Unexpected).failure).hasMessageContaining(".kind")
     }
 
     @TestFactory

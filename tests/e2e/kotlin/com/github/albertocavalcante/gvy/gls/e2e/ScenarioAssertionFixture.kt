@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.jayway.jsonpath.Configuration
@@ -33,14 +36,14 @@ internal class ScenarioAssertionFixture(file: String, root: Path, source: String
     }
 
     fun accepts(response: Any?) {
-        val node = context.normalizeResponse(method, JsonBridge.wrapJavaObject(response))
+        val node = SdkResponseProjection.project(response)
         assertion.checks.forEach { check ->
-            assertThat(context.evaluateCheck(node, check)).describedAs(check.jsonPath).isTrue()
+            assertThat(context.evaluateCheck(node, check)).describedAs("$method ${check.jsonPath}").isTrue()
         }
     }
 
     fun rejects(response: Any?) {
-        val node = context.normalizeResponse(method, JsonBridge.wrapJavaObject(response))
+        val node = SdkResponseProjection.project(response)
         assertThat(assertion.checks.all { context.evaluateCheck(node, it, quiet = true) })
             .describedAs("The YAML oracle must reject the mutant response: %s", node)
             .isFalse()

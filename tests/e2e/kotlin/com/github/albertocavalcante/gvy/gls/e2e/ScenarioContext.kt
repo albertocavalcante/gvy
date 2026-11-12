@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.github.albertocavalcante.gvy.gls.e2e.JsonBridge.toJavaObject
@@ -315,44 +318,6 @@ class ScenarioContext internal constructor(
             update = update,
         )
         return true
-    }
-
-    fun normalizeResponse(method: String, response: JsonElement): JsonElement {
-        if (response !is JsonObject) {
-            return response
-        }
-
-        // Normalize Either-style responses into a consistent shape
-        val leftNode = response["left"]
-        val rightNode = response["right"]
-        val hasLeft = leftNode != null && leftNode !is JsonNull
-        val hasRight = rightNode != null && rightNode !is JsonNull
-
-        val size = response.size
-
-        if (hasLeft && !hasRight && size == (if (response.containsKey("right")) 2 else 1)) {
-            return if (leftNode is JsonArray) {
-                buildJsonObject {
-                    put("dataOrigin", "left")
-                    put("items", leftNode)
-                }
-            } else {
-                leftNode
-            }
-        }
-
-        if (hasRight && !hasLeft && size == (if (response.containsKey("left")) 2 else 1)) {
-            return if (rightNode is JsonArray) {
-                buildJsonObject {
-                    put("dataOrigin", "right")
-                    put("items", rightNode)
-                }
-            } else {
-                rightNode
-            }
-        }
-
-        return response
     }
 
     companion object {
