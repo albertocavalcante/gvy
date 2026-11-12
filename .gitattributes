@@ -20,7 +20,7 @@ tests/e2e/resources/snapshots/** text eol=lf
 /LICENSES/Apache-2.0.txt text eol=lf
 /LICENSES/MIT.txt text eol=lf
 
-# Immutable imported snapshots retain their original bytes, including line endings.
+# Frozen corpus inputs retain their original bytes, including line endings.
 /tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy -text
 /tools/perf/bench/corpus/fixtures/upstream/geb-gradle-bootstrap/build.gradle -text
 /tools/perf/bench/corpus/fixtures/upstream/groovy-benchmark-driver/bench.groovy -text
@@ -42,3 +42,4 @@ tests/e2e/resources/snapshots/** text eol=lf
 /tools/perf/bench/corpus/licenses/pipeline-examples/LICENSE.txt -text
 /tools/perf/bench/corpus/licenses/spock/LICENSE -text
 /tools/perf/bench/corpus/licenses/spock/NOTICE -text
+/tools/perf/bench/corpus/manifest.json -text
