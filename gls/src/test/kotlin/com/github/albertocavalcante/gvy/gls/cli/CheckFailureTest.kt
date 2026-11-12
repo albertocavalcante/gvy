@@ -202,9 +202,10 @@ class CheckFailureTest {
     fun `workspace dependency warning is incomplete with its reason`(@TempDir dir: File) {
         val file = File(dir, "good.groovy").apply { writeText("") }
         val output = File(dir, "warning.sarif")
+        val status = ResolutionStatus.Warning("ZERO_DEPENDENCIES", "declared dependencies unavailable")
         val command = GlsCommand(FormatCommand(), CheckCommand(
             analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
-            dependencyStatus = { ResolutionStatus.Warning("ZERO_DEPENDENCIES", "declared dependencies unavailable") },
+            dependencyStatus = { status },
             startWorkspace = { _, _ -> },
         ))
         assertFailsWith<ProgramResult> {
@@ -214,7 +215,8 @@ class CheckFailureTest {
         }
         val json = output.readText()
         assertTrue(json.contains("executionSuccessful\": false"), json)
-        assertTrue(json.contains("ZERO_DEPENDENCIES") && json.contains("declared dependencies unavailable"), json)
+        assertTrue(json.contains("ZERO_DEPENDENCIES"), json)
+        assertTrue(json.contains("declared dependencies unavailable"), json)
         assertTrue(json.contains("workspace"), json)
     }
 

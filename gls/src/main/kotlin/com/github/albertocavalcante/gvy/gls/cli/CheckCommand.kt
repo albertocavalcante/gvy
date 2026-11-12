@@ -123,9 +123,13 @@ class CheckCommand internal constructor(
         val outcomes = runBlocking {
             files.map { file ->
                 val result = checkFile(file, service)
-                if (workspaceFailure == null) result else result.copy(
-                    failures = result.failures + FileFailure("workspace", workspaceFailure),
-                )
+                if (workspaceFailure == null) {
+                    result
+                } else {
+                    result.copy(
+                        failures = result.failures + FileFailure("workspace", workspaceFailure),
+                    )
+                }
             }
         }
 
@@ -149,13 +153,17 @@ class CheckCommand internal constructor(
     private suspend fun checkFile(file: File, service: GroovyTextDocumentService): FileOutcome =
         runCatching { analyze(file, service) }.fold(
             onSuccess = { result ->
-                FileOutcome(file, result.diagnostics, result.failures.map { failure ->
-                    FileFailure(
-                        "provider:${failure.providerId}",
-                        "Provider ${failure.providerId} failed (${failure.exceptionType}): " +
-                            (failure.message ?: "no details"),
-                    )
-                })
+                FileOutcome(
+                    file,
+                    result.diagnostics,
+                    result.failures.map { failure ->
+                        FileFailure(
+                            "provider:${failure.providerId}",
+                            "Provider ${failure.providerId} failed (${failure.exceptionType}): " +
+                                (failure.message ?: "no details"),
+                        )
+                    },
+                )
             },
             onFailure = { failure ->
                 when (failure) {
