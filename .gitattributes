@@ -25,6 +25,9 @@ tests/e2e/resources/snapshots/** text eol=lf
 /LICENSES/Apache-2.0.txt text eol=lf
 /LICENSES/MIT.txt text eol=lf
 
+# Frozen authored expectations retain their exact declaration identity.
+/tools/perf/bench/corpus/authored.json -text
+
 # Frozen corpus inputs retain their original bytes, including line endings.
 /tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy -text
 /tools/perf/bench/corpus/fixtures/upstream/geb-gradle-bootstrap/build.gradle -text
