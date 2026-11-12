@@ -27,14 +27,7 @@ class ScenarioRunnerTest {
 
         return definitions.map { definition ->
             DynamicTest.dynamicTest(XfailOutcome.displayName(definition.scenario)) {
-                val xfail = definition.scenario.xfail
-                if (xfail == null) {
-                    executor.execute(definition)
-                } else {
-                    XfailOutcome.run(xfail, Path.of(definition.source).fileName.toString()) {
-                        executor.execute(definition)
-                    }
-                }
+                ScenarioRunnerExecution.run(definition, executor)
             }
         }
     }
