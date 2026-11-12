@@ -375,7 +375,7 @@ class BindExportTests(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-        self.assertEqual(b"../private config with spaces.sky\n", result.stdout)
+        self.assertEqual(b"../private config with spaces.sky" + os.linesep.encode(), result.stdout)
         self.assertEqual(b"", result.stderr)
 
     def test_cli_failure_has_no_stdout_or_output(self) -> None:
