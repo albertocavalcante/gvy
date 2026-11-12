@@ -125,6 +125,19 @@ invocation identity, raw capture/hash and the local diagnostic verdict; the fail
 This producer explicitly disables the numeric daemon sampler. It supplies no numeric memory, total-RSS or Native
 provisioning evidence.
 
+Dependency reporting exposes two additional serialization consumers of the pinned Native bundle and Hot Reload plain
+enum attributes. Their
+[captured task and resolver provenance](../tools/ci/fixtures/gradle-dependency-resolution-provenance.json) anchors two
+exact, owned exceptions in [#1603](https://github.com/albertocavalcante/gvy/issues/1603), expiring on 2026-12-11. The
+complete report keeps inspecting its configurations, and summaries retain both tracked warnings. A different task,
+attribute, type, message or resolver call site remains unexpected.
+
+Gradle 10 rejects these attribute types; serialization also cannot preserve extra enum state. The inspected current
+constants carry no extra instance state, and no current state loss was observed. Inspected KGP 2.4.21 still declares a
+plain Native enum. Hot Reload 1.3.0-rc01 implements `Named`, but compatible gvy/Compose adoption and desktop/reload
+validation remain pending. Source inspection and offline policy replay do not establish candidate integration or a fresh
+successful producer run.
+
 The source graph contract requires every job in `ci.yml` to appear in the readiness policy and terminal `validate.needs`
 list. It supports reviewed plain job keys and immediate fields, checks the terminal one-line `needs` syntax and verifies
 the dependency-update job's exact applicability wiring. Unsupported declarations in those boundaries fail for deliberate
