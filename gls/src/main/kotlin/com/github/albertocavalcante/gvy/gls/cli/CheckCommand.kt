@@ -16,11 +16,14 @@ import com.github.ajalt.mordant.rendering.TextColors.brightYellow
 import com.github.ajalt.mordant.rendering.TextColors.cyan
 import com.github.ajalt.mordant.rendering.TextColors.green
 import com.github.ajalt.mordant.terminal.Terminal
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.diagnostics.sarif.SarifRuleRegistry
 import com.github.albertocavalcante.gvy.diagnostics.sarif.SarifWriter
 import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.Diagnostic
@@ -29,6 +32,7 @@ import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.WorkspaceFolder
 import java.io.File
+import java.util.concurrent.ExecutionException
 
 private val logger = KotlinLogging.logger {}
 
@@ -39,7 +43,16 @@ private val logger = KotlinLogging.logger {}
  * - TEXT: Human-readable colored output (default)
  * - SARIF: SARIF 2.1.0 format for GitHub Code Scanning integration
  */
-class CheckCommand : CliktCommand(name = "check") {
+class CheckCommand internal constructor(
+    private val analyze: suspend (File, GroovyTextDocumentService) -> DiagnosticsCollectionResult,
+    private val dependencyStatus: (GroovyLanguageServer) -> ResolutionStatus? = { it.waitForDependencyStatus() },
+    private val startWorkspace: (GroovyLanguageServer, InitializeParams) -> Unit = { server, params ->
+        server.initialize(params).get()
+        server.initialized(InitializedParams())
+    },
+    private val stopServer: (GroovyLanguageServer) -> Unit = { it.shutdown().get() },
+) : CliktCommand(name = "check") {
+    constructor() : this(analyze = { file, service -> service.diagnoseResult(file.toURI(), file.readText()) })
     override fun help(context: Context) = "Run diagnostics on specified files"
 
     private val workspace by option("-w", "--workspace")
@@ -60,138 +73,151 @@ class CheckCommand : CliktCommand(name = "check") {
 
     override fun run() {
         val server = GroovyLanguageServer()
-        try {
-            initializeWorkspace(server)
-            checkFiles(server)
-        } finally {
-            server.shutdown().get()
+        AutoCloseable { stopServer(server) }.use {
+            val workspaceFailure = runCatching { initializeWorkspace(server) }.getOrElse { failure ->
+                val cause = (failure as? ExecutionException)?.cause ?: failure
+                when (cause) {
+                    is CancellationException -> throw cause
+                    is InterruptedException -> throw cause
+                    is Exception -> "Workspace initialization failed: ${cause.message ?: cause.javaClass.name}"
+                    else -> throw cause
+                }
+            }
+            checkFiles(server, workspaceFailure)
         }
     }
 
-    private fun initializeWorkspace(server: GroovyLanguageServer) {
-        val ws = workspace ?: return
+    private fun initializeWorkspace(server: GroovyLanguageServer): String? {
+        val ws = workspace ?: return null
 
         val params = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder(ws.toURI().toString(), ws.name))
             capabilities = ClientCapabilities()
         }
 
-        server.initialize(params).get()
-        server.initialized(InitializedParams())
+        startWorkspace(server, params)
 
-        // Only show progress messages for text output
         if (format == OutputFormat.TEXT) {
             terminal.println(cyan("Resolving dependencies for ${ws.absolutePath}..."))
-            if (server.waitForDependencies()) {
-                terminal.println(green("Dependencies resolved successfully."))
-            } else {
-                terminal.println(
-                    brightYellow(
-                        "Warning: Dependency resolution failed or timed out. " +
-                            "Checking with limited context.",
-                    ),
-                )
-            }
-        } else {
-            // Still wait for dependencies, just don't print
-            server.waitForDependencies()
         }
+        val failure = when (val status = dependencyStatus(server)) {
+            ResolutionStatus.Success -> null
+            is ResolutionStatus.Warning ->
+                "Workspace dependency resolution incomplete (${status.code}): ${status.message}"
+            is ResolutionStatus.Failed -> "Workspace dependency resolution failed (${status.code}): ${status.message}"
+            null -> "Workspace dependency resolution failed or timed out"
+        }
+        if (format == OutputFormat.TEXT && failure == null) {
+            terminal.println(green("Dependencies resolved successfully."))
+        }
+        return failure
     }
 
-    private fun checkFiles(server: GroovyLanguageServer) {
+    private fun checkFiles(server: GroovyLanguageServer, workspaceFailure: String?) {
         val service = server.getTextDocumentService() as? GroovyTextDocumentService
         if (service == null) {
             logger.error { "Failed to retrieve GroovyTextDocumentService" }
             throw ProgramResult(1)
         }
 
-        // Collect all diagnostics per file
-        val allDiagnostics = mutableMapOf<File, List<Diagnostic>>()
-        var hasErrors = false
-
-        runBlocking {
-            for (file in files) {
-                val diagnostics = checkFile(file, service)
-                if (diagnostics != null) {
-                    allDiagnostics[file] = diagnostics
-                    if (diagnostics.any { it.severity == DiagnosticSeverity.Error }) {
-                        hasErrors = true
-                    }
+        val outcomes = runBlocking {
+            files.map { file ->
+                val result = checkFile(file, service)
+                if (workspaceFailure == null) {
+                    result
+                } else {
+                    result.copy(
+                        failures = result.failures + FileFailure("workspace", workspaceFailure),
+                    )
                 }
             }
         }
 
-        // Output results based on format
         when (format) {
-            OutputFormat.TEXT -> outputText(allDiagnostics)
-            OutputFormat.SARIF -> outputSarif(allDiagnostics)
+            OutputFormat.TEXT -> outputText(outcomes)
+            OutputFormat.SARIF -> outputSarif(outcomes)
         }
 
-        // Exit with error code if there were errors
-        if (hasErrors) {
+        if (outcomes.any { outcome ->
+                outcome.failures.isNotEmpty() || outcome.diagnostics.any { it.severity == DiagnosticSeverity.Error }
+            }
+        ) {
             throw ProgramResult(1)
         }
     }
 
-    private suspend fun checkFile(file: File, service: GroovyTextDocumentService): List<Diagnostic>? {
-        val result = runCatching {
-            val uri = file.toURI()
-            val content = file.readText()
-            service.diagnose(uri, content)
-        }
+    private data class FileFailure(val id: String, val message: String)
 
-        return result
-            .onFailure { e ->
-                @Suppress("TooGenericExceptionCaught")
-                if (e is Exception) {
-                    logger.error(e) { "Error checking file ${file.path}" }
-                } else {
-                    throw e
+    private data class FileOutcome(val file: File, val diagnostics: List<Diagnostic>, val failures: List<FileFailure>)
+
+    private suspend fun checkFile(file: File, service: GroovyTextDocumentService): FileOutcome =
+        runCatching { analyze(file, service) }.fold(
+            onSuccess = { result ->
+                FileOutcome(
+                    file,
+                    result.diagnostics,
+                    result.failures.map { failure ->
+                        FileFailure(
+                            "provider:${failure.providerId}",
+                            "Provider ${failure.providerId} failed (${failure.exceptionType}): " +
+                                (failure.message ?: "no details"),
+                        )
+                    },
+                )
+            },
+            onFailure = { failure ->
+                when (failure) {
+                    is CancellationException -> throw failure
+                    is InterruptedException -> throw failure
+                    is Exception -> {
+                        logger.error(failure) { "Error checking file ${file.path}" }
+                        FileOutcome(
+                            file,
+                            emptyList(),
+                            listOf(
+                                FileFailure(
+                                    "analysis",
+                                    "${failure.javaClass.name}: ${failure.message ?: "no details"}",
+                                ),
+                            ),
+                        )
+                    }
+                    else -> throw failure
                 }
-            }
-            .getOrNull()
-    }
-
-    private fun outputText(allDiagnostics: Map<File, List<Diagnostic>>) {
-        for ((file, diagnostics) in allDiagnostics) {
-            if (diagnostics.isEmpty()) {
-                terminal.println(green("OK: ${file.path}"))
-            } else {
-                diagnostics.forEach { diagnostic ->
-                    terminal.println(formatDiagnosticLine(file, diagnostic))
-                }
-            }
-        }
-    }
-
-    private fun outputSarif(allDiagnostics: Map<File, List<Diagnostic>>) {
-        val writer = SarifWriter(
-            toolName = "groovy-lsp",
-            toolVersion = getVersion(),
+            },
         )
 
-        // Register known rules
+    private fun outputText(outcomes: List<FileOutcome>) {
+        for (outcome in outcomes) {
+            if (outcome.diagnostics.isEmpty() && outcome.failures.isEmpty()) {
+                terminal.println(green("OK: ${outcome.file.path}"))
+            }
+            outcome.diagnostics.forEach { diagnostic ->
+                terminal.println(formatDiagnosticLine(outcome.file, diagnostic))
+            }
+            outcome.failures.forEach { failure ->
+                terminal.println(brightRed("FAILED: ${outcome.file.path}: ${failure.message}"))
+            }
+        }
+    }
+
+    private fun outputSarif(outcomes: List<FileOutcome>) {
+        val writer = SarifWriter(toolName = "groovy-lsp", toolVersion = getVersion())
         SarifRuleRegistry.getAllRules().forEach { writer.registerRule(it) }
-
-        // Add all diagnostics
-        for ((file, diagnostics) in allDiagnostics) {
+        for (outcome in outcomes) {
             val relativePath = workspace?.let { ws ->
-                file.relativeToOrSelf(ws).invariantSeparatorsPath
-            } ?: file.invariantSeparatorsPath
-
-            writer.addDiagnostics(relativePath, diagnostics)
+                outcome.file.relativeToOrSelf(ws).invariantSeparatorsPath
+            } ?: outcome.file.invariantSeparatorsPath
+            writer.addFileCheck(outcome.file.toURI().toASCIIString(), outcome.failures.map { it.id })
+            writer.addDiagnostics(relativePath, outcome.diagnostics)
+            outcome.failures.forEach { writer.addExecutionFailure(relativePath, it.message) }
         }
 
-        // Output SARIF JSON
         val json = writer.toJson(prettyPrint = true)
-
         val outputFile = output
         if (outputFile != null) {
             outputFile.writeText(json)
-            if (format == OutputFormat.SARIF) {
-                // Don't pollute SARIF output with extra messages
-                logger.info { "SARIF output written to ${outputFile.absolutePath}" }
-            }
+            logger.info { "SARIF output written to ${outputFile.absolutePath}" }
         } else {
             println(json)
         }

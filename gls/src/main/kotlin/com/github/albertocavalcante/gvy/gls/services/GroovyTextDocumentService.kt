@@ -449,17 +449,33 @@ class GroovyTextDocumentService(
      * Public method to get diagnostics for a file, useful for CLI "check" command.
      */
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
-        // One immutable configuration applies throughout this request.
         val configuration = serverConfiguration
+        return diagnoseResult(uri, content, configuration).diagnostics
+            .take(configuration.maxNumberOfProblems.coerceAtLeast(0))
+    }
+
+    /** Collect all diagnostics and retain provider failures for callers that require complete analysis. */
+    suspend fun diagnoseResult(uri: URI, content: String): DiagnosticsCollectionResult =
+        diagnoseResult(uri, content, serverConfiguration)
+
+    private suspend fun diagnoseResult(
+        uri: URI,
+        content: String,
+        configuration: ServerConfiguration,
+    ): DiagnosticsCollectionResult {
+        // One immutable configuration applies throughout this request.
         val diagnosticsService = createDiagnosticsService(configuration)
         val result = compilationService.compile(uri, content)
+        check(result.parseCompleted) {
+            "Compilation did not complete: ${result.diagnostics.joinToString { it.message }}"
+        }
         val parserEnabled = configuration.diagnosticConfig.isProviderEnabled(
             "parser",
             enabledByDefault = true,
         )
         val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
-        val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return (parserDiagnostics + extraDiagnostics).take(configuration.maxNumberOfProblems.coerceAtLeast(0))
+        val collected = diagnosticsService.collectDiagnostics(uri, content, result)
+        return collected.copy(diagnostics = parserDiagnostics + collected.diagnostics)
     }
 
     fun refreshOpenDocuments() {

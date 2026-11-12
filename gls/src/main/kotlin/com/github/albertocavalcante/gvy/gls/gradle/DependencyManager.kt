@@ -3,6 +3,8 @@ package com.github.albertocavalcante.gvy.gls.gradle
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.BuildToolFileWatcher
 import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
@@ -23,6 +25,12 @@ import java.util.concurrent.atomic.AtomicReference
 private const val PROGRESS_CONNECTING = 25
 private const val PROGRESS_RESOLVING = 75
 private const val PROGRESS_COMPLETE = 100
+
+private fun resolutionFailure(error: Exception): ResolutionStatus.Failed = ResolutionStatus.Failed(
+    ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
+    error.message ?: "Resolution failed",
+    error,
+)
 
 /**
  * Asynchronous dependency resolution with retryable failures and publication fenced by attempt identity.
@@ -52,6 +60,7 @@ class DependencyManager(
     private val logger = KotlinLogging.logger {}
     private val lock = Any()
     private val state = AtomicReference(State.NOT_STARTED)
+    private val publishedStatusRef = AtomicReference<ResolutionStatus?>(null)
     private val dependencies = AtomicReference<List<Path>>(emptyList())
     private val sourceDirs = AtomicReference<List<Path>>(emptyList())
     private var generation = 0L
@@ -92,6 +101,7 @@ class DependencyManager(
             generation++
             resolutionJob?.cancel()
             currentWorkspaceRoot = workspaceRoot
+            publishedStatusRef.set(null)
             state.set(State.IN_PROGRESS)
             val attempt =
                 Attempt(generation, Request(workspaceRoot, onProgress, onComplete, onError), enableFileWatching)
@@ -130,21 +140,25 @@ class DependencyManager(
                     dependencies.set(resolution.dependencies)
                     sourceDirs.set(resolution.sourceDirectories)
                 }
-                state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED)
                 request.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
                 request.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished")
             }
             withContext(Dispatchers.Default) {
-                notifyCurrent(attempt) { request.onComplete(resolution) }
+                notifyCurrent(attempt) {
+                    request.onComplete(resolution)
+                    if (generation == attempt.generation) {
+                        publishedStatusRef.set(resolution.status)
+                        state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED)
+                    }
+                }
             }
         } catch (e: CancellationException) {
-            notifyCurrent(attempt) {
-                if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
-            }
+            notifyCurrent(attempt) { if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED) }
             throw e
         } catch (e: Exception) {
             notifyCurrent(attempt) {
                 logger.error(e) { "Dependency resolution failed for ${request.workspaceRoot}" }
+                publishedStatusRef.set(resolutionFailure(e))
                 state.set(State.FAILED)
             }
             withContext(Dispatchers.Default) {
@@ -231,6 +245,10 @@ class DependencyManager(
     fun getCurrentDependencies(): List<Path> = dependencies.get()
     fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
     fun getState(): State = state.get()
+
+    /** Terminal attempt status; success is visible only after workspace publication. */
+    val publishedStatus: ResolutionStatus?
+        get() = publishedStatusRef.get()
     fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot
     fun getCurrentBuildToolName(): String? = currentBuildToolName
     fun isDependenciesReady(): Boolean = state.get() == State.COMPLETED
@@ -250,6 +268,7 @@ class DependencyManager(
             cancel()
             dependencies.set(emptyList())
             sourceDirs.set(emptyList())
+            publishedStatusRef.set(null)
             state.set(State.NOT_STARTED)
             currentWorkspaceRoot = null
             currentBuildToolName = null

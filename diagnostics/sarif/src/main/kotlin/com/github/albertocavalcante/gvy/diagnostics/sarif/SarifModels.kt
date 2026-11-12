@@ -33,7 +33,15 @@ data class SarifRun(
     val tool: SarifTool,
     val results: List<SarifResult> = emptyList(),
     val invocations: List<SarifInvocation>? = null,
+    val properties: SarifRunProperties? = null,
 )
+
+/** gvy-specific completion records in the SARIF run property bag. */
+@Serializable
+data class SarifRunProperties(val gvyFileChecks: List<SarifFileCheck>)
+
+@Serializable
+data class SarifFileCheck(val uri: String, val status: String, val failureIds: List<String> = emptyList())
 
 /**
  * Tool information including driver and optional extensions.
@@ -163,8 +171,13 @@ data class SarifLogicalLocation(
 @Serializable
 data class SarifInvocation(
     val executionSuccessful: Boolean,
+    val toolExecutionNotifications: List<SarifNotification>? = null,
     val commandLine: String? = null,
     val workingDirectory: SarifArtifactLocation? = null,
     val startTimeUtc: String? = null,
     val endTimeUtc: String? = null,
 )
+
+/** An operational failure encountered during tool execution. */
+@Serializable
+data class SarifNotification(val message: SarifMessage, val locations: List<SarifLocation>? = null)

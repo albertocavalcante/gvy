@@ -52,6 +52,40 @@ class SarifWriterTest {
     }
 
     @Test
+    fun `file completion is represented in the SARIF run property bag`() {
+        val writer = SarifWriter()
+        writer.addFileCheck("file:///clean%20file.groovy", emptyList())
+        writer.addFileCheck("file:///failed.groovy", listOf("provider:codenarc"))
+
+        val output = writer.build()
+        val properties = assertNotNull(output.runs.single().properties)
+        assertEquals(
+            listOf(
+                SarifFileCheck("file:///clean%20file.groovy", "complete", emptyList()),
+                SarifFileCheck("file:///failed.groovy", "incomplete", listOf("provider:codenarc")),
+            ),
+            properties.gvyFileChecks,
+        )
+        assertTrue(output.runs.single().results.isEmpty())
+        assertTrue(writer.toJson(false).contains("\"gvyFileChecks\""))
+    }
+
+    @Test
+    fun `execution failures are notifications rather than source diagnostics`() {
+        val writer = SarifWriter()
+        writer.addExecutionFailure("bad.groovy", "provider unavailable")
+
+        val run = writer.build().runs.single()
+        assertTrue(run.results.isEmpty())
+        val invocation = assertNotNull(run.invocations).single()
+        assertEquals(false, invocation.executionSuccessful)
+        val notification = assertNotNull(invocation.toolExecutionNotifications).single()
+        assertEquals("provider unavailable", notification.message.text)
+        val location = assertNotNull(notification.locations).single()
+        assertEquals("bad.groovy", assertNotNull(location.physicalLocation).artifactLocation.uri)
+    }
+
+    @Test
     fun `should map diagnostic severities correctly`() {
         assertEquals(SarifLevel.ERROR, DiagnosticSeverity.Error.toSarifLevel())
         assertEquals(SarifLevel.WARNING, DiagnosticSeverity.Warning.toSarifLevel())

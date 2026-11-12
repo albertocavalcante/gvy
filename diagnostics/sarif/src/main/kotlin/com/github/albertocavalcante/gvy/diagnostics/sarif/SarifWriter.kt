@@ -19,6 +19,8 @@ class SarifWriter(
     private val toolVersion: String? = null,
     private val toolUri: String = "https://github.com/albertocavalcante/gvy",
 ) {
+    private val fileChecks = mutableListOf<SarifFileCheck>()
+    private val notifications = mutableListOf<SarifNotification>()
     private val results = mutableListOf<SarifResult>()
     private val rules = mutableMapOf<String, SarifRule>()
     private val ruleIndices = mutableMapOf<String, Int>()
@@ -64,6 +66,23 @@ class SarifWriter(
         diagnostics.forEach { addDiagnostic(filePath, it) }
     }
 
+    /** Records whether all requested analysis completed for a file. */
+    fun addFileCheck(fileUri: String, failureIds: List<String>) {
+        fileChecks.add(SarifFileCheck(fileUri, if (failureIds.isEmpty()) "complete" else "incomplete", failureIds))
+    }
+
+    /** Records a failure without representing it as a source-code diagnostic. */
+    fun addExecutionFailure(filePath: String, message: String) {
+        notifications.add(
+            SarifNotification(
+                message = SarifMessage(message),
+                locations = listOf(
+                    SarifLocation(physicalLocation = SarifPhysicalLocation(SarifArtifactLocation(filePath))),
+                ),
+            ),
+        )
+    }
+
     /**
      * Registers a rule with full metadata.
      * Call this before adding diagnostics if you have rule details.
@@ -89,6 +108,10 @@ class SarifWriter(
         val run = SarifRun(
             tool = SarifTool(driver = driver),
             results = results,
+            properties = fileChecks.takeIf { it.isNotEmpty() }?.let(::SarifRunProperties),
+            invocations = notifications.takeIf { it.isNotEmpty() }?.let {
+                listOf(SarifInvocation(executionSuccessful = false, toolExecutionNotifications = it))
+            },
         )
 
         return SarifOutput(runs = listOf(run))

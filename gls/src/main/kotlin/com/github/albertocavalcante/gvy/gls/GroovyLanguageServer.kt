@@ -384,4 +384,6 @@ class GroovyLanguageServer(
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)
+
+    fun waitForDependencyStatus(timeoutSeconds: Long = 60) = startupManager.waitForDependencyStatus(timeoutSeconds)
 }
