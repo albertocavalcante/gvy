@@ -62,6 +62,10 @@ runtime DLL import was observed. A separate fresh Kotlin/Native 2.3.0 installati
 tasks and passed four Native tests. Its actual extracted SDK satisfied the proposed private-root/child permission
 checks. These local experiments are not a substitute for review and CI on the final integrated workflow.
 
+That fresh Windows SDK data directory contained 31,357 files totaling 2.61 GB in logical file bytes after the Native
+test run. This measures local build-toolchain and cache files. Launcher and bundled-JVM distribution sizes still need
+separate measurements.
+
 ## What this means for the bundled runtime
 
 Direct main-class launch via `-cp` also failed for a Unicode JAR path on Zulu 21.0.12.1/ACP 1252. Both ASCII controls
