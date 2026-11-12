@@ -93,10 +93,12 @@ test("falls back to JAVA_HOME, then searches PATH", (t) => {
   );
 });
 
-test("uses a sibling gvy.jar through an executable symlink on PATH", (t) => {
+test("uses a canonical sibling JAR through executable and directory symlinks", (t) => {
   const { root, env } = fixture(t);
+  const physicalInstall = path.join(root, "physical installation");
+  fs.mkdirSync(physicalInstall);
   const install = path.join(root, "installation");
-  fs.mkdirSync(install);
+  fs.symlinkSync(physicalInstall, install, "dir");
   const installedLauncher = path.join(install, "gvy");
   fs.copyFileSync(launcher, installedLauncher);
   fs.chmodSync(installedLauncher, 0o755);
@@ -112,10 +114,11 @@ test("uses a sibling gvy.jar through an executable symlink on PATH", (t) => {
     cwd: root,
     timeout: 10000,
   });
+  assert.ifError(result.error);
   assert.equal(result.status, 37);
   assert.equal(
     result.stdout.toString(),
-    ["-Xmx2g", "-jar", jar, "version", ""].join("\0"),
+    ["-Xmx2g", "-jar", fs.realpathSync(jar), "version", ""].join("\0"),
   );
 });
 
