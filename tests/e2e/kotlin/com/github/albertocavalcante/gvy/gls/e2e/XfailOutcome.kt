@@ -89,16 +89,14 @@ object XfailOutcome {
         else -> false
     }
 
-    private fun hasSuppressedFailure(failure: Throwable): Boolean {
+    private fun causeChain(failure: Throwable): Sequence<Throwable> {
         val visited = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
-        var current: Throwable? = failure
-        while (current != null && visited.add(current)) {
-            if (current.suppressed.isNotEmpty()) return true
-            current = current.cause
-        }
-        return false
+        return generateSequence(failure) { it.cause }.takeWhile { visited.add(it) }
     }
 
+    private fun hasSuppressedFailure(failure: Throwable): Boolean =
+        causeChain(failure).any { it.suppressed.isNotEmpty() }
+
     private fun messageChain(failure: Throwable): String =
-        generateSequence(failure) { it.cause }.mapNotNull { it.message }.joinToString("\n")
+        causeChain(failure).mapNotNull { it.message }.joinToString("\n")
 }
