@@ -451,6 +451,46 @@ class GroovySemanticsTest {
     }
 
     @Test
+    fun `continuous workspace changes fail rather than retry forever or return stale types`() {
+        val version = AtomicLong()
+        val lookup = object : MemberLookup {
+            override val version: Long get() = version.get()
+            override fun findField(classFqn: String, fieldName: String): MemberInfo? = null
+            override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? = null
+            override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = emptyList()
+        }
+        val calculator = object : TypeCalculator<DeclarationExpression> {
+            override val nodeType = DeclarationExpression::class
+            override fun calculate(node: DeclarationExpression, context: TypeContext): SemanticType {
+                version.incrementAndGet()
+                return TypeConstants.INT
+            }
+        }
+        val registry = TypeCalculatorRegistry.builder().register(calculator).build()
+        val semantics = GroovySemantics(stubSolver, registry, lookup)
+        val module = parse("def x = 1")
+        assertThrows(IllegalStateException::class.java) { semantics.getContext(module) }
+        assertEquals(3L, version.get())
+    }
+
+    @Test
+    fun `interrupted context acquisition propagates cancellation`() {
+        val semantics = GroovySemantics(stubSolver)
+        val module = parse("def x = 1")
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val task = executor.submit {
+                Thread.currentThread().interrupt()
+                semantics.getContext(module)
+            }
+            val failure = assertThrows(ExecutionException::class.java) { task.get(30, TimeUnit.SECONDS) }
+            assertTrue(failure.cause is java.util.concurrent.CancellationException)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `deprecated lookup rebuilds a collected context for a live injected module`() {
         val semantics = GroovySemantics(stubSolver)
         val module = parse("def x = 'value'")

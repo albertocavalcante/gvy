@@ -18,6 +18,7 @@ import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import java.lang.ref.WeakReference
 import java.util.Collections.synchronizedMap
 import java.util.WeakHashMap
+import java.util.concurrent.CancellationException
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -37,6 +38,10 @@ class GroovySemantics(
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
     private val workspaceMemberLookup: MemberLookup? = null,
 ) {
+    private companion object {
+        const val MAX_CONTEXT_BUILD_ATTEMPTS = 3
+    }
+
     // Weak values break the context -> scope -> module back-reference. A caller owns a context for
     // the duration of its operation; entries can be rebuilt when nobody holds the previous context.
     private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, WeakReference<NativeTypeContext>>())
@@ -57,7 +62,8 @@ class GroovySemantics(
     }
 
     private fun acquireContext(module: ModuleNode): NativeTypeContext {
-        while (true) {
+        repeat(MAX_CONTEXT_BUILD_ATTEMPTS) {
+            if (Thread.currentThread().isInterrupted) throw CancellationException("Semantic context build interrupted")
             val workspaceVersion = workspaceMemberLookup?.version ?: 0L
             synchronized(contextCache) {
                 val cached = contextCache[module]?.get()
@@ -74,6 +80,7 @@ class GroovySemantics(
             )
             populateScriptVariables(module, scope, context)
             populateClassMethodVariables(module, scope, context)
+            if (Thread.currentThread().isInterrupted) throw CancellationException("Semantic context build interrupted")
 
             val published = synchronized(contextCache) {
                 if ((workspaceMemberLookup?.version ?: 0L) != workspaceVersion) {
@@ -91,6 +98,7 @@ class GroovySemantics(
             }
             if (published != null) return published
         }
+        error("Workspace changed repeatedly while building semantic context")
     }
 
     private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
