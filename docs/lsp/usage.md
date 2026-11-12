@@ -47,6 +47,20 @@ normally `127.0.0.1`. For IPv6 loopback, select `--host ::1` and configure the c
 Binding to a non-loopback address, such as `--host 0.0.0.0` in a container, exposes the unauthenticated server to the
 network. Use it only on trusted networks.
 
+## Check files from the command line
+
+Run diagnostics without starting an editor:
+
+```bash
+java -Xmx2g -jar gls.jar check Example.groovy
+java -Xmx2g -jar gls.jar check --workspace . --format sarif --output results.sarif Example.groovy
+```
+
+The command exits nonzero for source errors or incomplete analysis. TEXT identifies failed files and providers; SARIF
+records execution failures as notifications while retaining diagnostics produced by successful analysis. With
+`--workspace`, dependency resolution must succeed for the check to be complete. Without it, the command checks the
+specified files without resolving a workspace's dependencies.
+
 ## Check support and troubleshoot
 
 - Check [LSP feature support](feature-support.md) for protocol methods and known limits.

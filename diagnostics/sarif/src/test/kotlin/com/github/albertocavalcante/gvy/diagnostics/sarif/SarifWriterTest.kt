@@ -58,11 +58,12 @@ class SarifWriterTest {
 
         val run = writer.build().runs.single()
         assertTrue(run.results.isEmpty())
-        val invocation = run.invocations!!.single()
+        val invocation = assertNotNull(run.invocations).single()
         assertEquals(false, invocation.executionSuccessful)
-        val notification = invocation.toolExecutionNotifications!!.single()
+        val notification = assertNotNull(invocation.toolExecutionNotifications).single()
         assertEquals("provider unavailable", notification.message.text)
-        assertEquals("bad.groovy", notification.locations!!.single().physicalLocation!!.artifactLocation.uri)
+        val location = assertNotNull(notification.locations).single()
+        assertEquals("bad.groovy", assertNotNull(location.physicalLocation).artifactLocation.uri)
     }
 
     @Test

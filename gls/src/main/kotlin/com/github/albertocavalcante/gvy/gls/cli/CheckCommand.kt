@@ -68,7 +68,7 @@ class CheckCommand internal constructor(
         val server = GroovyLanguageServer()
         try {
             val workspaceReady = initializeWorkspace(server)
-            checkFiles(server, true)
+            checkFiles(server, workspaceReady)
         } finally {
             server.shutdown().get()
         }
@@ -125,7 +125,10 @@ class CheckCommand internal constructor(
             OutputFormat.SARIF -> outputSarif(outcomes)
         }
 
-        if (outcomes.any { it.failures.isNotEmpty() || it.diagnostics.any { d -> d.severity == DiagnosticSeverity.Error } }) {
+        if (outcomes.any { outcome ->
+                outcome.failures.isNotEmpty() || outcome.diagnostics.any { it.severity == DiagnosticSeverity.Error }
+            }
+        ) {
             throw ProgramResult(1)
         }
     }

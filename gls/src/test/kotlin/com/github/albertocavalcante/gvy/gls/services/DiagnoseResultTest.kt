@@ -12,6 +12,10 @@ import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 import java.io.IOException
 import java.net.URI
@@ -42,6 +46,38 @@ class DiagnoseResultTest {
         val compilation = compilation(CompilationResult.failure(emptyList()))
         val service = service(compilation, mockk())
         assertFailsWith<IllegalStateException> { service.diagnoseResult(uri, source) }
+    }
+
+    @Test
+    fun `different compiled source cannot establish a diagnostic result`(): Unit = runBlocking {
+        val compilation = compilation(CompilationResult(true, null, emptyList(), "different", parseCompleted = true))
+        val service = service(compilation, mockk())
+        assertFailsWith<IllegalArgumentException> { service.diagnoseResult(uri, source) }
+    }
+
+    @Test
+    fun `complete collection retains errors beyond the legacy display limit`(): Unit = runBlocking {
+        val warning = Diagnostic(Range(Position(0, 0), Position(0, 1)), "warning").apply {
+            severity = DiagnosticSeverity.Warning
+        }
+        val error = Diagnostic(Range(Position(0, 0), Position(0, 1)), "error").apply {
+            severity = DiagnosticSeverity.Error
+        }
+        val compilation = compilation(CompilationResult(true, null, listOf(warning, error), source, true))
+        val config = ServerConfiguration().let {
+            it.copy(
+                maxNumberOfProblems = 1,
+                diagnosticConfig = it.diagnosticConfig.copy(
+                    disabledProviders = setOf("codenarc", "custom-rules", "unused-imports"),
+                ),
+            )
+        }
+        val service = GroovyTextDocumentService(
+            CoroutineScope(currentCoroutineContext()), compilation, GroovyTextDocumentServiceOptions(serverConfiguration = config),
+        )
+
+        assertEquals(listOf(warning, error), service.diagnoseResult(uri, source).diagnostics)
+        assertEquals(listOf(warning), service.diagnose(uri, source))
     }
 
     private suspend fun service(

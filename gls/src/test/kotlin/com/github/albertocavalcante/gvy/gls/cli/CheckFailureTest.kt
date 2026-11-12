@@ -127,6 +127,16 @@ class CheckFailureTest {
     }
 
     @Test
+    fun `file only checks do not wait for workspace dependencies`(@TempDir dir: File) {
+        val file = File(dir, "good.groovy").apply { writeText("class Good {}") }
+        val command = GlsCommand(FormatCommand(), CheckCommand(
+            analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
+            dependenciesReady = { error("no workspace should be resolved") },
+        ))
+        command.parse(listOf("check", file.path))
+    }
+
+    @Test
     fun `cancellation propagates`(@TempDir dir: File) {
         val file = File(dir, "cancel.groovy").apply { writeText("") }
         val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ -> throw CancellationException("cancelled") }))

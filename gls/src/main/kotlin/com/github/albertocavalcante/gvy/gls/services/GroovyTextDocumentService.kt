@@ -448,12 +448,22 @@ class GroovyTextDocumentService(
     /**
      * Public method to get diagnostics for a file, useful for CLI "check" command.
      */
-    suspend fun diagnose(uri: URI, content: String): List<Diagnostic> = diagnoseResult(uri, content).diagnostics
-
-    /** Collect diagnostics and retain provider failures for callers that require complete analysis. */
-    suspend fun diagnoseResult(uri: URI, content: String): DiagnosticsCollectionResult {
-        // One immutable configuration applies throughout this request.
+    suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
         val configuration = serverConfiguration
+        return diagnoseResult(uri, content, configuration).diagnostics
+            .take(configuration.maxNumberOfProblems.coerceAtLeast(0))
+    }
+
+    /** Collect all diagnostics and retain provider failures for callers that require complete analysis. */
+    suspend fun diagnoseResult(uri: URI, content: String): DiagnosticsCollectionResult =
+        diagnoseResult(uri, content, serverConfiguration)
+
+    private suspend fun diagnoseResult(
+        uri: URI,
+        content: String,
+        configuration: ServerConfiguration,
+    ): DiagnosticsCollectionResult {
+        // One immutable configuration applies throughout this request.
         val diagnosticsService = createDiagnosticsService(configuration)
         val result = compilationService.compile(uri, content)
         check(result.parseCompleted) {
@@ -465,10 +475,7 @@ class GroovyTextDocumentService(
         )
         val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
         val collected = diagnosticsService.collectDiagnostics(uri, content, result)
-        return collected.copy(
-            diagnostics = (parserDiagnostics + collected.diagnostics)
-                .take(configuration.maxNumberOfProblems.coerceAtLeast(0)),
-        )
+        return collected.copy(diagnostics = parserDiagnostics + collected.diagnostics)
     }
 
     fun refreshOpenDocuments() {

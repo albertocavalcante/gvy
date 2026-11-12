@@ -70,7 +70,9 @@ class SarifWriter(
         notifications.add(
             SarifNotification(
                 message = SarifMessage(message),
-                locations = listOf(SarifLocation(physicalLocation = SarifPhysicalLocation(SarifArtifactLocation(filePath)))),
+                locations = listOf(
+                    SarifLocation(physicalLocation = SarifPhysicalLocation(SarifArtifactLocation(filePath))),
+                ),
             ),
         )
     }
