@@ -52,7 +52,7 @@ jobs:
         run: |
           node --version
           node -e 'if (Number(process.versions.node.split(".")[0]) < 24) { console.error("Node 24 or newer is required"); process.exit(1); }'
-          node --test tools/logging/fixtures.test.mjs
+          node --test tools/logging/fixtures.test.mjs tools/logging/server-baseline.test.mjs
 
   check-file-size:
     runs-on: ubuntu-latest
