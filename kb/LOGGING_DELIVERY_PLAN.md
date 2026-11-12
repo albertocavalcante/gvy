@@ -79,7 +79,8 @@ Issue states below were checked while preparing this plan. Recheck issue bodies,
 
 | Existing item                                                 | This plan's contribution                       | Closure boundary                                                                                                              |
 | ------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [#1409](https://github.com/albertocavalcante/gvy/issues/1409) | L01: DEBUG-safe AST logging                    | Do not close on a helper rename; exercise incomplete classpaths and actual traversal.                                         |
+| [#1409](https://github.com/albertocavalcante/gvy/issues/1409) | L01: DEBUG-safe AST logging                    | Closed after #1749 and #1804; the remaining semantic hierarchy investigation is tracked in #1831.                             |
+| [#1831](https://github.com/albertocavalcante/gvy/issues/1831) | L01: unavailable hierarchy semantics           | Investigate reachability and unknown outcomes before L03 enables DEBUG more broadly.                                          |
 | [#1270](https://github.com/albertocavalcante/gvy/issues/1270) | L02/L03: typing volume and real namespaces     | Its historical XML description has drifted; current configurator remains wrong. Close only after volume and routing evidence. |
 | [#1559](https://github.com/albertocavalcante/gvy/issues/1559) | L04: JUL bridge                                | Both builds and packaged startup must be verified.                                                                            |
 | [#1272](https://github.com/albertocavalcante/gvy/issues/1272) | L18: packaged logging proof                    | Also contains Gradle task discovery; logging coverage alone does not close the whole issue.                                   |
@@ -235,8 +236,9 @@ hide fatal errors raised by actual semantic work under a broad logging catch.
 Fail first with a ClassNode/decompiled-superclass fixture whose hierarchy access fails, then exercise the actual visitor
 and class-enumeration paths at INFO/DEBUG/TRACE, including cyclic hierarchies and the #1409 incomplete-classpath case.
 Assert equivalent traversal/index/degraded results and no logging-only hierarchy accesses. Restore process-wide logger
-state in tests. Gate: #1409 acceptance is demonstrated before L03 makes DEBUG effective more broadly. Rollback: an
-isolated revert restores the former diagnostic details; no model/schema change is involved.
+state in tests. Gate: the relevant unresolved hierarchy behavior in #1831 has explicit acceptance before L03 makes DEBUG
+effective more broadly. Closure of #1409 and finite fallback controls alone do not meet this gate. Rollback: an isolated
+revert restores the former diagnostic details; no model/schema change is involved.
 
 ### L02: Remove routine analysis chatter and eager work
 
@@ -674,15 +676,15 @@ status tick.
 
 ### Shipped slices
 
-Verified on 2026-11-12 UTC. All three PRs received complete independent Terra review at the publication heads below. The
-coordinator verified their squash commits in `origin/main`, automatic remote-head deletion, clean/unlocked Mini worktree
-removal and exact local-branch deletion. Main's unrelated edits were preserved. Private raw validation logs remain
-outside Git.
+Verified on 2026-11-12 UTC. These PRs received complete independent review at the publication heads below. The
+coordinator verified their squash commits in `origin/main`. Private raw validation logs remain outside Git.
 
 | Slice | Publication                                                                                                      | Result and remaining boundary                                                                                                                                                                                                                                                                                      |
 | ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | L00a  | [#1743](https://github.com/albertocavalcante/gvy/pull/1743), `test/logging-baseline`, Terra client author        | Four frozen-fixture tests pass on hosted Node 24.22.2; root lintFix and final workflow/Gradle/E2E/extension checks pass. Full application/editor baseline and cost measurements remain open.                                                                                                                       |
-| L01a  | [#1749](https://github.com/albertocavalcante/gvy/pull/1749), `fix/parser-debug-observation`, Terra server author | Actual visitor/tracker logging-only failures have independent failing controls and nine green focused tests; native lint, hooks and final Gradle/Bazel/E2E/extension checks pass. Real incomplete-classpath semantic recovery remains an L03 prerequisite; #1409 stays open.                                       |
+| L01a  | [#1749](https://github.com/albertocavalcante/gvy/pull/1749), `fix/parser-debug-observation`, Terra server author | Actual visitor/tracker logging-only failures have independent failing controls and nine green focused tests; native lint, hooks and final Gradle/Bazel/E2E/extension checks pass. The separate semantic hierarchy investigation is tracked in #1831.                                                               |
+| L00b  | [#1794](https://github.com/albertocavalcante/gvy/pull/1794), server measurement driver                           | The driver and its stream/protocol controls are shipped. The immutable baseline observed no version-matched first diagnostics publication; the terminal method was unavailable, and shutdown returned an object. This is a protocol-deviation observation, not a full baseline or latency comparison.              |
+| L01b  | [#1804](https://github.com/albertocavalcante/gvy/pull/1804), incomplete-classpath fallback controls              | Two generated-JAR cases reach the existing conversion fallback at INFO, DEBUG and TRACE; the Spock control withholds a table edit with a missing superclass and its healthy control offers one. These tests do not prove every post-compile hierarchy path safe.                                                   |
 | L08a  | [#1753](https://github.com/albertocavalcante/gvy/pull/1753), `fix/vscode-bounded-lines`, Terra client author     | Server streams retain bounded UTF-8 records and preserve known severity on truncation; 684 unit tests, root lintFix and final Bazel/platform extension checks pass. Main Gradle/E2E were intentionally path-filtered. Test-process loss handling is separate #1764; dedicated packaged logging proof remains open. |
 
 <details>
@@ -695,8 +697,16 @@ outside Git.
   retained and object dependencies checked.
 - L08a: base `c8fc588a0cd7f23438a692ebb040b65fb7909bf0`; reviewed head `59842250a4332e0b3b1f5a174f77312829e97293`;
   squash `2cf71142638198975d3248f5d8ea33ac63c0fda9`; Mini slot w6 removed. All six merged blobs match the reviewed head.
-  Dependent #1764 was retargeted to main before parent-head deletion; its final rebase, review and CI remain required.
-  The clean finished Air clone used for both root lintFix checks was also removed.
+  Dependent #1764 was retargeted to main before parent-head deletion; its final target-drift review and remaining
+  canonical validation still apply. The clean finished Air clone used for both root lintFix checks was also removed.
+- L00b: reviewed head `9d5e5593cadb6805c60db40e4c21f2a6f84b3d18`; squash `c92e43281d8e5808ca74f944ddaa8576fd2e9344`. The
+  original JAR's shutdown deviation remains tracked in #1793; terminal diagnostics completion remains tracked in #1754.
+  The original receipt cannot be made conformant retroactively. The Mini worktree and local and remote branches were
+  removed after landing.
+- L01b: reviewed head `3b56b99c9a0ce720677a5f16cc1134c5f7c7009c`; squash `826f36b8362571d6a803b06f83554966c8cbb43e`.
+  This is tests-only and does not add semantic recovery. The Mini worktree and local and remote branches were removed.
+  The Air clone remains because the test-backend parity clone borrows its objects; remove it only after the borrower is
+  finished or repacked and object independence is verified.
 
 Final-head CI and diagnostic details are in each PR. The JVM/Bazel reviews retain the existing exact exceptions in
 #1599/#1601/#1607; other inherited tool/runtime diagnostics have explicit ownership in
@@ -711,20 +721,48 @@ failures. Neither passing those runs nor documenting their debt closes those iss
   existing compilation-failure fallback at INFO, DEBUG and TRACE on the tested revision. The third-party case withholds
   a Spock table edit while its complete-classpath control offers one; the preserved case permits a later clean parse.
   These results do not establish that every lazy hierarchy access is safe: investigate the separate
-  `compiledChainStatus` concern and unknown/degraded semantics before L03 enables DEBUG more broadly. The complete
-  three-state caller audit remains part of #1409's acceptance.
-- **Test-runtime parity needs a separate PR:** CI found Gradle test JVMs in build-tool and Jenkins modules emitting
-  SLF4J's no-provider/NOP advisory, while Bazel supplies a backend. Missing logs undermine diagnostic assertions. The
-  logging owner will inventory test classpaths, coordinate shared build declarations with the CI owner, and add a
-  test-only backend and explicit test policy. Acceptance requires real WARN/ERROR capture, working DEBUG overrides,
-  Gradle/Bazel parity and no production binding added to reusable libraries. Exact reproductions and tracking belong to
-  #1603; suppressing the advisory or accepting NOP is not a fix.
+  `compiledChainStatus` concern and unknown/degraded semantics before L03 enables DEBUG more broadly. Parser and Spock
+  maintainers own that separate investigation in [#1831](https://github.com/albertocavalcante/gvy/issues/1831); no
+  post-compilation crash has been demonstrated by these controls.
+- **Test-runtime parity needs a separate PR:** Gradle test-result XML from
+  [#1821's CI run](https://github.com/albertocavalcante/gvy/actions/runs/43176649844) contains SLF4J's no-provider
+  advisory in eight test files across `build-tool`, `jenkins`, `reports/api`, `reports/coverage`, `reports/results`, and
+  `tools/jenkins-extractor`. This establishes those occurrences, not an exhaustive inventory of all modules. Separate
+  fail-first worker controls in `build-tool` and `jenkins` each observed `NOPLoggerFactory`; the proposed test-only fix
+  has not yet run green. The Bazel Kotlin test macro supplies a backend, but the Gradle and Bazel declarations currently
+  use different Logback versions. The logging owner will coordinate shared build declarations with the CI owner.
+  Acceptance requires real WARN/ERROR capture, working DEBUG overrides, demonstrated Gradle/Bazel behavioral parity and
+  no production binding or configuration added to reusable libraries. Worker-resource, packaging and Bazel validation
+  remain open. Exact reproductions and tracking belong to #1603; suppressing the advisory or accepting NOP is not a fix.
 - **Healthy Maven report freshness is unresolved:** [#1767](https://github.com/albertocavalcante/gvy/issues/1767)
   records how an older Surefire report can misstate a successful current run. The L08b candidate in #1764 is being
   reviewed to prevent failed/lost executions and unrelated selections from accepting those results; it does not prove
   freshness for healthy executions. The extension/test API owner must add current-run report provenance and regressions
   for unchanged stale reports; the linked source TODO is assigned to the following L11 change. This issue remains open
   until observable current-run results are proven.
+
+### Pending slices and dependencies
+
+Status checked on 2026-11-12 UTC; recheck the actual heads and checks before acting.
+
+- **L02a / #1758:** draft head `427dbebab86e6d98378b37b504b5c721f6b76046` reduces routine analysis logging and bounds
+  the TRACE class inventory. Its prior CI observed Gradle metaspace retirement. A separate first-superclass guard
+  control is prepared but has not been run; it is not evidence of a reproduced end-to-end classpath failure. Rebase
+  after the CI resource work in #1646 lands, demonstrate the control before a fix, and review and validate the resulting
+  head. Per-node and recursive DEBUG volume remains L02b work.
+- **L08b / #1764:** draft head `b0f2bb8e2046a92809182ddccb508d49847a71e5` bounds test-process output and handles
+  incomplete results. It has independent review and hosted checks; the canonical root lintFix and final target-drift
+  check remain pending. Packaged navigation does not itself exercise the changed test-run route. #1767 remains open.
+- **L05a / #1792:** draft head `67b3d0e1bff475ac90e9a77a6ab82fc1b4ff6d49` supplies pure rendering helpers and the shared
+  fixture, not the default Logback boundary. Prior CI observed metaspace retirement. Rebase and validate against the
+  merged #1646 resource changes; #1646 remains unmerged and its current nightly-pair check failed. L05b remains
+  separate, and its prepared tests have not demonstrated a failing baseline.
+- **L09a:** a reviewed client diagnostics sink and lifecycle slice is prepared but uncommitted. Its Node controls do not
+  replace canonical checks, the #1792 fixture prerequisite, publication, or review of the published head. L09 also
+  covers feature-command failures and safe test-launch metadata; the prepared slice does not complete that packet.
+- **L11 / #1786:** draft head `096451b38c24f3c1a0969de6eb6397d955d41c64` addresses aliases and progress output. Rebase
+  after #1764, integrate the L09 routing prerequisite, use an isolated verified dependency tree, and repeat controls,
+  review and checks. A TODO for #1767 does not establish current-run Maven report provenance.
 
 The milestone is complete only when L00-L19 are satisfied, actual user-visible failures and volume are verified in the
 packaged client, baseline/final evidence is reviewable, and remaining limitations have the explicit ownership above. Any
