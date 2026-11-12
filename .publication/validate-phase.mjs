@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
+const [phase, receiptPath] = process.argv.slice(2);
+if (!['red','green'].includes(phase)) throw Error('invalid phase');
+const r=JSON.parse(fs.readFileSync(receiptPath,'utf8'))[phase];
+const run=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
+if (run('write-tree')!==r.tree) throw Error('tree mismatch');
+const names=execFileSync('git',['diff','--cached','--name-only','-z'],{encoding:'utf8'}).split('\0').filter(Boolean);
+if (JSON.stringify(names.sort())!==JSON.stringify([...r.paths].sort())) throw Error('path mismatch');
+const changed=execFileSync('git',['status','--porcelain=v1','-z','--untracked-files=all'],{encoding:'utf8'}).split('\0').filter(Boolean);
+if (changed.some(x=>x.length<4 || /[RC]/.test(x.slice(0,2)) || !r.paths.includes(x.slice(3)))) throw Error('scope mismatch');
