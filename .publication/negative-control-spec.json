@@ -1,0 +1,26 @@
+{
+  "greenTree": "47e649280393633e5ab8c405cc1494d5676fef8b",
+  "negativeTree": "54e4b27c77dbf82ca0a9c35bfcfaea9cfdd67865",
+  "patchSha256": "cbb784d585e9718b72a929aa23ac0d51bc6375402f01d2d028725b04da930094",
+  "patchBytes": 1754,
+  "sourceSha256": {
+    "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandler.kt": "4b1a21949f8683549c68a604aaca9d67e8b4d17cbcf4935dda4e2deb15bcab6b",
+    "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt": "f0f9ccdcda6c186f282af134991cc8ba10428fa0e85fda99bd0b06a792cd167f"
+  },
+  "expectedTests": 7,
+  "expectedFailures": 5,
+  "expectedErrors": 0,
+  "expectedSkips": 0,
+  "expectedFailureNames": [
+    "long zero coefficient",
+    "long exponent",
+    "65 character exact integer",
+    "terminal diagnostics reject requests before initialization()",
+    "shutdown rejects terminal requests before queued cleanup begins()"
+  ],
+  "expectedPositiveNames": [
+    "long nonzero coefficient",
+    "long fractional coefficient"
+  ],
+  "scope": "Only remove numeric-length guard and await lifecycle guard; all SDK raw-type/exactness handling remains. Bounded4096-character inputs. No global mutation or private runner grants."
+}

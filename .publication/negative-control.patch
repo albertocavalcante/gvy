@@ -1,0 +1,29 @@
+diff --git a/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt b/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt
+index 3b09644e2..5d09e8d7c 100644
+--- a/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt
++++ b/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt
+@@ -388,10 +388,6 @@ class GroovyLanguageServer(
+ 
+     @JsonRequest("groovy/awaitDiagnostics")
+     fun awaitDiagnostics(params: JsonElement?): CompletableFuture<DiagnosticsRunResult> {
+-        val error = customRequestLifecycleError()
+-        if (error != null) {
+-            return CompletableFuture.failedFuture(ResponseErrorException(error))
+-        }
+         return diagnosticsRequestHandler.awaitDiagnostics(params)
+     }
+ 
+diff --git a/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandler.kt b/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandler.kt
+index 7816f515f..c0609d8b8 100644
+--- a/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandler.kt
++++ b/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandler.kt
+@@ -54,9 +54,6 @@ internal class DiagnosticsRequestHandler(
+         }
+         // Bound coefficient parsing before allocating a BigDecimal from the retained JSON lexeme.
+         val literal = value.asString
+-        if (literal.length > MAX_VERSION_NUMBER_LENGTH) {
+-            invalidParams("The document version number exceeds 64 characters")
+-        }
+         return try {
+             literal.toBigDecimal().intValueExact()
+         } catch (_: NumberFormatException) {

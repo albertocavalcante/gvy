@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: Diagnostics exact wire parameter validation
+name: Diagnostics boundary guard validation
 on:
   workflow_dispatch:
 permissions:
@@ -183,10 +183,18 @@ jobs:
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          boundary_script="$GITHUB_WORKSPACE/support/.publication/boundary-controls.sh"
+          printf '%s  %s\n' '4f4ee9d8508f7b33ba73cd65bd408ad9dc7cbdff30980591f95851b2fff40618' "$boundary_script" | sha256sum -c -
+          bash "$boundary_script" "$EXPECTED_TREE" \
+              "$GITHUB_WORKSPACE/support/.publication/negative-control.patch" \
+              "$GITHUB_WORKSPACE/support/.publication/negative-control-spec.json" \
+              "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof"
           direnv exec . ./gradlew :gls:test \
               --tests '*.DiagnosticsRequestHandlerTest' \
               --tests '*.DiagnosticsRequestRegistrationTest' \
               --tests '*.DiagnosticsOrchestratorTest' \
+              --tests '*.RuntimeFactsWireTest' \
+              --tests '*.ParentProcessWatchdogTest' \
               :tests:e2eTest --tests '*.DiagnosticsTerminalProtocolTest' \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
@@ -214,6 +222,7 @@ jobs:
           git diff --exit-code && git diff --cached --quiet
           test -z "$(git status --porcelain --untracked-files=all)"
           mkdir "$RUNNER_TEMP/gvy-publication-proof"
+          cp -R "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof" "$RUNNER_TEMP/gvy-publication-proof/red-negative"
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
           cp "$RUNNER_TEMP/gvy-commit-hooks.log" "$RUNNER_TEMP/gvy-publication-proof/"
@@ -254,5 +263,6 @@ jobs:
             candidate/gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestRegistrationTest.kt
             candidate/tests/lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt
             ${{ runner.temp }}/gvy-diagnostics-native.log
+            ${{ runner.temp }}/gvy-diagnostics-boundary-red-proof/
           if-no-files-found: warn
           retention-days: 7
