@@ -163,7 +163,7 @@ export function createProvisioningReport(context, result) {
   const report = {
     schemaVersion: 1, context, requested: { version: vscodeTestVersion, platform: downloadPlatform(context) },
     tools: { sdk: vscodeTestSdkVersion, cli: vscodeTestCliVersion, proxyAgent: vscodeTestProxyAgentVersion }, limits: provisioningLimits,
-    provisioning: result, integration: { state: 'unexecuted', outcome: null, editorLogs: null }, ok: false,
+    provisioning: result, integration: { state: 'unexecuted', preparation: 'unexecuted', outcome: null, editorLogs: null }, ok: false,
   };
   validateProvisioningReport(report, context);
   return report;
@@ -182,11 +182,12 @@ export function validateProvisioningReport(report, expectedContext) {
   if (result.attempts.length === 2) require(result.attempts[0].outcome === 'version-resolution-timeout', 'unapproved-retry');
   require(result.error === null || outcomes.includes(result.error), 'invalid-provisioning-evidence');
   require(result.ok === (result.error === null && result.attempts.at(-1)?.outcome === 'success' && result.elapsedMs < provisioningLimits.totalMs), 'inconsistent-provisioning-verdict');
-  keys(report.integration, ['state', 'outcome', 'editorLogs']);
+  keys(report.integration, ['state', 'preparation', 'outcome', 'editorLogs']);
   require(['unexecuted', 'invoked'].includes(report.integration.state), 'invalid-integration-evidence');
-  if (report.integration.state === 'unexecuted') require(report.integration.outcome === null && report.integration.editorLogs === null, 'invalid-integration-evidence');
+  if (report.integration.state === 'unexecuted') require(['unexecuted', 'failed'].includes(report.integration.preparation) &&
+    (report.integration.preparation !== 'failed' || result.ok) && report.integration.outcome === null && report.integration.editorLogs === null, 'invalid-integration-evidence');
   else {
-    require(result.ok && ['success', 'failure'].includes(report.integration.outcome), 'invalid-integration-evidence');
+    require(result.ok && report.integration.preparation === 'ready' && ['success', 'failure'].includes(report.integration.outcome), 'invalid-integration-evidence');
     keys(report.integration.editorLogs, ['fresh', 'priorFiles', 'present', 'files']);
     require(report.integration.editorLogs.fresh === true && integer(report.integration.editorLogs.priorFiles, 5000) &&
       typeof report.integration.editorLogs.present === 'boolean' && integer(report.integration.editorLogs.files, 5000) && report.integration.editorLogs.present === (report.integration.editorLogs.files > 0), 'invalid-integration-evidence');

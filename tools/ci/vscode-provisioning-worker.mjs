@@ -36,8 +36,8 @@ export function probeVscodeVersion(sdk, executable, platform, timeoutMs) {
     // warnings. Only its byte counts and hashes enter the public projection.
     const stdout = result.stdout ?? Buffer.alloc(0), stderr = result.stderr ?? Buffer.alloc(0);
     const incomplete = result.error?.code === 'ENOBUFS' || stdout.length > 4096 || stderr.length > 4096;
-    probeEvidence.set(error, { incomplete, bytes: Buffer.concat([
-      Buffer.from(`${code}: status=${result.status}; signal=${result.signal}; incomplete=${incomplete}\n${result.error?.stack ?? ''}\nstdout bytes=${stdout.length} sha256=${digest(stdout)}:\n`),
+    probeEvidence.set(error, { incomplete, probeScopeIntact: process.platform !== 'win32', bytes: Buffer.concat([
+      Buffer.from(`${code}: status=${result.status}; signal=${result.signal}; incomplete=${incomplete}; probeScopeIntact=${process.platform !== 'win32'}\n${result.error?.stack ?? ''}\nstdout bytes=${stdout.length} sha256=${digest(stdout)}:\n`),
       stdout.subarray(0, 4096), Buffer.from(`\nstderr bytes=${stderr.length} sha256=${digest(stderr)}:\n`), stderr.subarray(0, 4096), Buffer.from('\n'),
     ]) });
     throw error;
@@ -58,6 +58,7 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
   let verification = null;
   let init;
   let captureComplete = true;
+  let probeScopeIntact = true;
   const phase = value => {
     if (observed.at(-1) === value) return;
     try { validatePhases([...observed, value].map(phase => ({ phase, elapsedMs: 0 }))); }
@@ -68,6 +69,7 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
   const logError = error => {
     const probe = probeEvidence.get(error);
     if (probe?.incomplete) captureComplete = false;
+    if (probe?.probeScopeIntact === false) probeScopeIntact = false;
     const originalHash = error?.code === 'VSCODE_RELEASE_METADATA_ERROR' && /^[a-f0-9]{64}$/.test(error.originalErrorSha256 ?? '') ? `originalErrorSha256=${error.originalErrorSha256}\n` : '';
     const bytes = probe?.bytes ?? Buffer.from(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n${originalHash}`);
     require(bytes.length <= 16 * 1024, 'error-evidence-limit');
@@ -145,14 +147,14 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
       matched: delivered.version === expected.version && delivered.commit === expected.commit && delivered.arch === expectedArch }, init.context);
     require(verification.matched, `delivered-version-mismatch: expected version=${expected.version} commit=${expected.commit} arch=${expectedArch}; observed version=${delivered.version} commit=${delivered.commit} arch=${delivered.arch}`);
     phase('verified');
-    output({ type: 'result', outcome: 'success', captureComplete, error: null, delivery: { version: delivered.version, commit: delivered.commit, arch: delivered.arch, platform: init.platform,
+    output({ type: 'result', outcome: 'success', captureComplete, probeScopeIntact, error: null, delivery: { version: delivered.version, commit: delivered.commit, arch: delivered.arch, platform: init.platform,
       expectedCommit: expected.commit, advertisedArchiveSha256: expected.archiveSha256, commitSource: 'vscode-update-api-exact-version' }, verification, executable });
   } catch (error) {
     logError(error);
     const outcome = !captureComplete ? 'capture-limit' : isResolutionTimeout(error, observed) ? 'version-resolution-timeout' :
       fatal ? 'invalid-evidence' : observed.at(-1) === 'configuration' ? 'configuration-error' :
         ['verification', 'release-metadata', 'runtime-probe'].includes(observed.at(-1)) ? 'verification-error' : 'provisioning-error';
-    output({ type: 'result', outcome, captureComplete, error: { code: outcome, messageSha256: error instanceof Error ? digest(error.message) : null }, delivery: null, verification, executable: null });
+    output({ type: 'result', outcome, captureComplete, probeScopeIntact, error: { code: outcome, messageSha256: error instanceof Error ? digest(error.message) : null }, delivery: null, verification, executable: null });
   }
 }
 

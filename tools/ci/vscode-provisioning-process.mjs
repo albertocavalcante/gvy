@@ -93,7 +93,7 @@ export async function launchProvisioningAttempt(input, { logDir, script = worker
         if (!sameKeys(message, [...base, 'phase', 'bytes', 'sha256']) || errorLogs.length >= 8 || message.phase !== events.at(-1)?.phase || !Number.isSafeInteger(message.bytes) || message.bytes < 1 || message.bytes > 16 * 1024 || !/^[a-f0-9]{64}$/.test(message.sha256)) throw new Error();
         errorLogs.push({ phase: message.phase, bytes: message.bytes, sha256: message.sha256 });
       } else if (message.type === 'result') {
-        if (!sameKeys(message, [...base, 'outcome', 'captureComplete', 'error', 'delivery', 'verification', 'executable']) || typeof message.captureComplete !== 'boolean' || (message.executable !== null && (typeof message.executable !== 'string' || message.executable.length > 4096 || !isAbsolute(message.executable) || /[\0\r\n]/.test(message.executable)))) throw new Error();
+        if (!sameKeys(message, [...base, 'outcome', 'captureComplete', 'probeScopeIntact', 'error', 'delivery', 'verification', 'executable']) || typeof message.captureComplete !== 'boolean' || typeof message.probeScopeIntact !== 'boolean' || (message.executable !== null && (typeof message.executable !== 'string' || message.executable.length > 4096 || !isAbsolute(message.executable) || /[\0\r\n]/.test(message.executable)))) throw new Error();
         final = message;
         // The reviewed worker flushes raw evidence and then waits on IPC. Stop
         // its owned tree even on a handled result, including probe descendants.
@@ -145,6 +145,8 @@ export async function launchProvisioningAttempt(input, { logDir, script = worker
   }
   if (stdout.length || offset !== stderr.length) fatal ??= 'unexpected-output';
   if (!final || (!stopping && (status.code !== 0 || status.signal))) fatal ??= 'invalid-evidence';
+  const windowsProbe = process.platform === 'win32' && events.some(event => event.phase === 'runtime-probe');
+  if (final?.probeScopeIntact === false || (windowsProbe && (fatal || !final))) cleanupComplete = false;
   if (!cleanupComplete) fatal = 'cleanup-incomplete';
   const result = {
     number: input.number, contextSha256: digest(JSON.stringify(input.context)),
@@ -158,6 +160,7 @@ export async function launchProvisioningAttempt(input, { logDir, script = worker
   };
   try { validateAttempt(result, input.context, input.number); }
   catch {
+    if (windowsProbe) result.cleanupComplete = false;
     result.outcome = 'invalid-evidence'; result.error = { code: 'invalid-evidence', messageSha256: null }; result.delivery = null; result.verification = null;
     // Invalid worker data is never projected. Only parent-owned capture hashes survive.
     result.phases = [{ phase: 'configuration', elapsedMs: 0 }]; result.errorLogs = [];

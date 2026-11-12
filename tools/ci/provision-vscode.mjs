@@ -140,13 +140,17 @@ export async function invokeIntegrationOnce(context, markerPath, cli, env, spawn
   validateProvisioningContext(context);
   const args = [cli, '--config', join(editorRoot, '.vscode-test.mjs')];
   if (context.jobKey === 'package') args.push('--grep', 'Implementation navigation', '--fail-zero', '--forbid-pending');
-  require(!existsSync(markerPath), 'integration-already-invoked');
-  const logsPrepared = prepareEditorLogs(editorLogsRoot, dirname(markerPath));
-  // This marker proves invocation of the integration runner, not editor launch.
-  const marker = { context, state: 'invoked', outcome: 'pending', exitCode: null, logsPrepared };
+  // Claim the invocation before profile side effects. Keep the same descriptor;
+  // a preparation failure records no runner invocation or editor launch.
+  const marker = { context, state: 'unexecuted', outcome: 'pending', exitCode: null, logsPrepared: null };
   const markerDescriptor = openSync(markerPath, 'wx', 0o600);
+  const storeMarker = () => { ftruncateSync(markerDescriptor, 0); writeSync(markerDescriptor, encode(marker), 0); };
   try {
-    writeSync(markerDescriptor, encode(marker));
+    storeMarker();
+    try { marker.logsPrepared = prepareEditorLogs(editorLogsRoot, dirname(markerPath)); }
+    catch (error) { marker.outcome = 'failure'; storeMarker(); throw error; }
+    marker.state = 'invoked';
+    storeMarker();
     if (process.env.GITHUB_OUTPUT) writeFileSync(process.env.GITHUB_OUTPUT, 'invoked=true\n', { flag: 'a' });
     let status = { code: 127, signal: null }, spawnFailed = false;
     try {
@@ -159,8 +163,7 @@ export async function invokeIntegrationOnce(context, markerPath, cli, env, spawn
     } catch { spawnFailed = true; }
     marker.outcome = !spawnFailed && status.code === 0 && !status.signal ? 'success' : 'failure';
     marker.exitCode = spawnFailed ? 127 : status.code ?? 1;
-    ftruncateSync(markerDescriptor, 0);
-    writeSync(markerDescriptor, encode(marker), 0);
+    storeMarker();
   } finally { closeSync(markerDescriptor); }
   return marker.outcome === 'success';
 }
@@ -222,15 +225,20 @@ export function auditEditorProvisioning(reportRoot, editorLogsRoot = join(editor
   const markerPath = join(data.privateRoot, 'integration.json');
   if (existsSync(markerPath)) {
     const marker = canonicalJson(markerPath);
-    require(isDeepStrictEqual(Object.keys(marker).sort(), ['context', 'exitCode', 'logsPrepared', 'outcome', 'state']) && isDeepStrictEqual(marker.context, data.context) &&
-      marker.state === 'invoked' && ['success', 'failure'].includes(marker.outcome) && Number.isInteger(marker.exitCode) && marker.exitCode >= 0 && marker.exitCode <= 255 &&
-      (marker.outcome === 'success') === (marker.exitCode === 0), 'invalid-integration-marker');
-    require(marker.logsPrepared && isDeepStrictEqual(Object.keys(marker.logsPrepared).sort(), ['fresh', 'priorFiles']) && marker.logsPrepared.fresh === true &&
-      Number.isInteger(marker.logsPrepared.priorFiles) && marker.logsPrepared.priorFiles >= 0 && marker.logsPrepared.priorFiles <= 5000, 'invalid-editor-log-preparation');
+    require(isDeepStrictEqual(Object.keys(marker).sort(), ['context', 'exitCode', 'logsPrepared', 'outcome', 'state']) && isDeepStrictEqual(marker.context, data.context), 'invalid-integration-marker');
     require(data.report.provisioning.ok, 'integration-before-provisioning');
-    validateInstalledPath(data.state, data.privateRoot);
-    const files = countEditorLogs(editorLogsRoot);
-    data.report.integration = { state: 'invoked', outcome: marker.outcome, editorLogs: { ...marker.logsPrepared, present: files > 0, files } };
+    if (marker.state === 'unexecuted') {
+      require(marker.outcome === 'failure' && marker.exitCode === null && marker.logsPrepared === null, 'invalid-preparation-marker');
+      data.report.integration.preparation = 'failed';
+    } else {
+      require(marker.state === 'invoked' && ['success', 'failure'].includes(marker.outcome) && Number.isInteger(marker.exitCode) && marker.exitCode >= 0 && marker.exitCode <= 255 &&
+        (marker.outcome === 'success') === (marker.exitCode === 0), 'invalid-integration-marker');
+      require(marker.logsPrepared && isDeepStrictEqual(Object.keys(marker.logsPrepared).sort(), ['fresh', 'priorFiles']) && marker.logsPrepared.fresh === true &&
+        Number.isInteger(marker.logsPrepared.priorFiles) && marker.logsPrepared.priorFiles >= 0 && marker.logsPrepared.priorFiles <= 5000, 'invalid-editor-log-preparation');
+      validateInstalledPath(data.state, data.privateRoot);
+      const files = countEditorLogs(editorLogsRoot);
+      data.report.integration = { state: 'invoked', preparation: 'ready', outcome: marker.outcome, editorLogs: { ...marker.logsPrepared, present: files > 0, files } };
+    }
   }
   data.report.ok = data.report.provisioning.ok && data.report.integration.outcome === 'success' && data.report.integration.editorLogs.present;
   validateProvisioningReport(data.report, data.context);
@@ -240,7 +248,7 @@ export function auditEditorProvisioning(reportRoot, editorLogsRoot = join(editor
     const logsValid = data.report.integration.state === 'invoked' && data.report.integration.editorLogs.present;
     writeFileSync(process.env.GITHUB_OUTPUT, `safe=true\n${logsValid ? 'editor_logs_valid=true\n' : ''}`, { flag: 'a' });
   }
-  const phase = data.report.integration.state === 'unexecuted' ? 'integration unexecuted; editor logs not expected' :
+  const phase = data.report.integration.state === 'unexecuted' ? `integration unexecuted; preparation ${data.report.integration.preparation}; editor logs not expected` :
     data.report.integration.editorLogs.present ? 'integration invoked; editor logs present' : 'integration invoked; required editor logs missing';
   console.log(`VS Code evidence ${data.report.ok ? 'passed' : 'failed'}: ${phase}.`);
   return data.report.ok;

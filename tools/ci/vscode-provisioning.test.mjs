@@ -205,7 +205,7 @@ test('pinned SDK ZIP extraction starts before the remaining download events with
 test('only the exact SDK timeout before resolved-version evidence is classified as retryable', async () => {
   const resolution = await workerCase({ sdk: { download: async () => { throw new TimeoutError(); } } });
   assert.equal(resolution.result.outcome, 'version-resolution-timeout');
-  for (const error of [new Error(resolutionTimeoutMessage), new Error('EAI_AGAIN'), new Error('unrecognized timeout')]) {
+  for (const error of [new Error(resolutionTimeoutMessage), new Error('EAI_AGAIN'), new SyntaxError('invalid stable-release JSON'), new Error('unrecognized timeout')]) {
     const value = await workerCase({ sdk: { download: async () => { throw error; } } });
     assert.equal(value.result.outcome, 'provisioning-error');
   }
@@ -301,14 +301,14 @@ test('actual Windows matrix unit commands fail before compilation or provisionin
 function workerScript(root, body) {
   const path = join(root, `${randomUUID()}.mjs`);
   writeFileSync(path, `import {createHash} from 'node:crypto'; import {spawn} from 'node:child_process'; import {writeFileSync} from 'node:fs';
-process.once('message', input => { let seq=0; const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+process.once('message', async input => { let seq=0; const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const send=message=>process.send({token:input.token,attempt:input.number,contextSha256:hash(JSON.stringify(input.context)),seq:++seq,...message});
 process.on('message',()=>{}); ${body}\n});\n`);
   return path;
 }
 const inputFor = root => ({ context, number: 1, budgetMs: 3000, editorRoot: root, cachePath: join(root, 'child-pid.txt'), platform: 'linux-x64', token: randomUUID() });
 const successBody = `for(const phase of ${JSON.stringify(successfulPhases)}) send({type:'phase',phase});
-send({type:'result',outcome:'success',captureComplete:true,error:null,delivery:${JSON.stringify(delivered)},verification:${JSON.stringify(verified)},executable:input.cachePath});`;
+send({type:'result',outcome:'success',captureComplete:true,probeScopeIntact:true,error:null,delivery:${JSON.stringify(delivered)},verification:${JSON.stringify(verified)},executable:input.cachePath});`;
 
 test('actual owned worker protocol terminates its session and rejects malformed or unexpected output', async t => {
   const root = fixture(t);
@@ -318,6 +318,72 @@ test('actual owned worker protocol terminates its session and rejects malformed 
     assert.equal(result.result.cleanupComplete, true);
     assert.ok(!JSON.stringify(result.result).includes('PRIVATE'));
   }
+});
+
+test('worker probe-scope uncertainty cannot be upgraded by successful parent cleanup or confused with capture', async t => {
+  const root = fixture(t);
+  const body = `for(const phase of ${JSON.stringify(successfulPhases)}) send({type:'phase',phase});
+send({type:'result',outcome:'success',captureComplete:true,probeScopeIntact:false,error:null,delivery:${JSON.stringify(delivered)},verification:${JSON.stringify(verified)},executable:input.cachePath});`;
+  const value = await launchProvisioningAttempt(inputFor(root), { script: workerScript(root, body), logDir: join(root, 'scope-proof'), consoleOutput: false });
+  assert.equal(value.result.outcome, 'cleanup-incomplete'); assert.equal(value.result.cleanupComplete, false);
+  assert.equal(value.result.capture.complete, true); assert.equal(value.result.delivery, null);
+});
+
+function nestedProbeWorker(root, command) {
+  return workerScript(root, `const {runSdkProvisioning,probeVscodeVersion}=await import(${JSON.stringify(new URL('./vscode-provisioning-worker.mjs', import.meta.url).href)});
+const sdk={download:async({reporter})=>{reporter.report({stage:'resolvedVersion',version:${JSON.stringify(vscodeTestVersion)}});reporter.report({stage:'resolvingCDNLocation'});reporter.report({stage:'downloading',bytesSoFar:1,totalBytes:1});reporter.report({stage:'newInstallComplete',commitHash:${JSON.stringify(delivered.commit)}});return input.cachePath;},resolveCliArgsFromVSCodeExecutablePath:()=>[${JSON.stringify(command)}]};
+let final;await runSdkProvisioning(async()=>({context:input.context,budgetMs:input.budgetMs,sdkVersion:'3.1.0',cliVersion:'0.0.15',proxyAgentVersion:'7.0.6',manifest:${JSON.stringify(manifest)},configurations:${JSON.stringify(vscodeTestConfigurations({}))},platform:'linux-x64',cachePath:input.cachePath,sdk,fetchRelease:async()=>(${JSON.stringify(releaseMetadata)})}),message=>{if(message.type==='raw-error')process.stderr.write(message.bytes);else if(message.type==='result')final=message;else send(message);},(sdk,executable,platform,budget)=>probeVscodeVersion(sdk,executable,platform,Math.min(budget,1500)));
+await new Promise(resolve=>process.stderr.write('',resolve));send(final);`);
+}
+
+test('native nested-probe fixture parses before platform-specific execution', t => {
+  const root = fixture(t);
+  const script = nestedProbeWorker(root, join(root, 'fixture.cmd'));
+  const checked = spawnSync(process.execPath, ['--check', script], { encoding: 'utf8', timeout: 5000, maxBuffer: 4096, windowsHide: true });
+  assert.equal(checked.error, undefined); assert.equal(checked.status, 0, checked.stderr);
+});
+
+if (process.platform === 'win32') test('native Windows nested probe timeout and overflow preserve cleanup uncertainty and sibling safety', { timeout: 40000 }, async t => {
+  const root = fixture(t);
+  const sibling = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  t.after(() => sibling.kill('SIGKILL'));
+  const cleanup = pid => {
+    assert.ok(Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid && pid !== sibling.pid);
+    spawnSync(join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(pid), '/T', '/F'], { timeout: 2000, stdio: 'ignore', windowsHide: true, shell: false });
+    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  };
+  for (const mode of ['timeout', 'overflow']) {
+    const ids = join(root, `${mode}-pids.json`), wrapper = join(root, `${mode}.cjs`), command = join(root, `${mode}.cmd`);
+    for (const path of [process.execPath, wrapper]) assert.ok(!/["%!?&|<>^\r\n\0]/.test(path), 'fixture paths must be safe quoted cmd arguments');
+    writeFileSync(wrapper, `const {spawn}=require('node:child_process');const {writeFileSync}=require('node:fs');
+const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+writeFileSync(${JSON.stringify(ids)},JSON.stringify({wrapper:process.pid,child:child.pid}));
+process.stdout.on('error',()=>{});${mode === 'overflow' ? "process.stdout.write('X'.repeat(100000));" : ''}setInterval(()=>{},1000);`);
+    writeFileSync(command, `@echo off\r\n"${process.execPath}" "${wrapper}"\r\n`);
+    const script = nestedProbeWorker(root, command);
+    const value = await launchProvisioningAttempt({ ...inputFor(root), cachePath: ids, budgetMs: 7000 }, { script, logDir: join(root, `${mode}-logs`), consoleOutput: false });
+    let owned;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { owned = JSON.parse(readFileSync(ids, 'utf8')); break; }
+      catch (error) {
+        if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    }
+    assert.ok(owned, 'the actual wrapper must record its owned descendants');
+    t.after(() => { cleanup(owned.wrapper); cleanup(owned.child); });
+    assert.equal(value.result.outcome, 'cleanup-incomplete'); assert.equal(value.result.cleanupComplete, false);
+    assert.equal(value.result.delivery, null); assert.ok(value.result.phases.some(event => event.phase === 'runtime-probe')); assert.doesNotThrow(() => process.kill(sibling.pid, 0));
+    if (value.result.errorLogs.length) assert.equal(value.result.capture.complete, mode === 'timeout', 'capture and descendant proof are separate');
+  }
+  // A watchdog during runtime-probe must not invent a missing final proof.
+  const ids = join(root, 'no-final-pid');
+  const script = workerScript(root, `for(const phase of ${JSON.stringify(successfulPhases.slice(0, -1))})send({type:'phase',phase});
+const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync(input.cachePath,String(child.pid));setInterval(()=>{},1000);`);
+  const noFinal = await launchProvisioningAttempt({ ...inputFor(root), cachePath: ids, budgetMs: 1000 }, { script, logDir: join(root, 'no-final-logs'), consoleOutput: false });
+  const ownedPid = Number(readFileSync(ids, 'utf8')); t.after(() => cleanup(ownedPid));
+  assert.equal(noFinal.result.cleanupComplete, false); assert.equal(noFinal.result.outcome, 'cleanup-incomplete');
+  assert.doesNotThrow(() => process.kill(sibling.pid, 0));
 });
 
 test('actual child preserves SDK-recognized private proxy settings while excluding tokens and Node injection', async t => {
@@ -400,7 +466,7 @@ test('actual timeout recovery retains each failed attempt and its original priva
   const raw = `Error: ${resolutionTimeoutMessage}\nPRIVATE original SDK stack\n`;
   const timeoutBody = `for(const phase of ['configuration','version-resolution']) send({type:'phase',phase});
 const raw=${JSON.stringify(raw)}; send({type:'error-log',phase:'version-resolution',bytes:Buffer.byteLength(raw),sha256:hash(raw)});
-process.stderr.write(raw,()=>send({type:'result',outcome:'version-resolution-timeout',captureComplete:true,error:{code:'version-resolution-timeout',messageSha256:hash(${JSON.stringify(resolutionTimeoutMessage)})},delivery:null,verification:null,executable:null}));`;
+process.stderr.write(raw,()=>send({type:'result',outcome:'version-resolution-timeout',captureComplete:true,probeScopeIntact:true,error:{code:'version-resolution-timeout',messageSha256:hash(${JSON.stringify(resolutionTimeoutMessage)})},delivery:null,verification:null,executable:null}));`;
   for (const persistent of [false, true]) {
     const script = workerScript(root, persistent ? timeoutBody : `if(input.number===1){${timeoutBody}}else{${successBody}}`);
     const result = await provisionWithBudget(context, async ({ number, budgetMs }) => {
@@ -556,10 +622,37 @@ test('unsafe prior log roots and quarantine collisions fail before any runner in
     let calls = 0;
     await assert.rejects(() => invokeIntegrationOnce(data.report.context, join(data.privateRoot, 'integration.json'), '/unused/test-cli.mjs', {}, () => { calls++; throw new Error('must not invoke'); }, logs));
     assert.equal(calls, 0);
-    assert.equal(existsSync(join(data.privateRoot, 'integration.json')), false);
+    const marker = JSON.parse(readFileSync(join(data.privateRoot, 'integration.json'), 'utf8'));
+    assert.equal(marker.state, 'unexecuted'); assert.equal(marker.outcome, 'failure');
     if (mode === 'linked-root') assert.equal(readFileSync(join(target, 'original.log'), 'utf8'), 'PRIVATE original');
     if (mode === 'linked-file' || mode === 'quarantine-collision') assert.equal(readFileSync(target, 'utf8'), 'PRIVATE original');
   });
+});
+
+test('atomic claim precedes preparation and records an uninvoked preparation failure without authorizing logs', async t => {
+  await auditFixture(t, async data => {
+    writeFileSync(data.logs, 'PRIVATE original non-directory');
+    let calls = 0;
+    await assert.rejects(() => invokeIntegrationOnce(data.report.context, join(data.privateRoot, 'integration.json'), '/unused/test-cli.mjs', {}, () => { calls++; throw new Error('must not invoke'); }, data.logs));
+    const marker = JSON.parse(readFileSync(join(data.privateRoot, 'integration.json'), 'utf8'));
+    assert.equal(marker.state, 'unexecuted'); assert.equal(marker.outcome, 'failure');
+    assert.equal(marker.exitCode, null); assert.equal(marker.logsPrepared, null); assert.equal(calls, 0);
+    assert.equal(auditEditorProvisioning(data.reportRoot, data.logs), false);
+    const result = JSON.parse(readFileSync(join(data.reportRoot, 'result.json'), 'utf8'));
+    assert.equal(result.integration.preparation, 'failed'); assert.equal(result.integration.state, 'unexecuted');
+    assert.equal(readFileSync(join(data.root, 'output.txt'), 'utf8'), 'safe=true\n');
+    assert.equal(readFileSync(data.logs, 'utf8'), 'PRIVATE original non-directory');
+  });
+});
+
+test('an existing atomic claim stops before any profile side effect or second invocation', async t => {
+  const root = fixture(t), marker = join(root, 'integration.json'), logs = join(root, 'logs');
+  writeFileSync(marker, 'PRIVATE existing claim'); mkdirSync(logs); writeFileSync(join(logs, 'current.log'), 'PRIVATE existing editor');
+  let calls = 0;
+  await assert.rejects(() => invokeIntegrationOnce(context, marker, '/unused/test-cli.mjs', {}, () => { calls++; }, logs));
+  assert.equal(calls, 0); assert.equal(readFileSync(marker, 'utf8'), 'PRIVATE existing claim');
+  assert.equal(readFileSync(join(logs, 'current.log'), 'utf8'), 'PRIVATE existing editor');
+  assert.equal(existsSync(join(root, 'previous-editor-logs')), false);
 });
 
 test('post-invocation replacement of the log root or parent cannot pass audit or authorize raw upload', async t => {
@@ -623,7 +716,7 @@ test('post-test audit rejects malformed, stale, linked, oversized and unexpected
     data => writeFileSync(join(data.reportRoot, 'provisioning.json'), ' '.repeat(64 * 1024 + 1)),
     data => writeFileSync(join(data.reportRoot, 'PRIVATE.log'), 'PRIVATE'),
     data => { data.state.receiptSha256 = '0'.repeat(64); writeFileSync(join(data.privateRoot, 'state.json'), JSON.stringify(data.state, null, 2) + '\n'); },
-    data => { const text = JSON.stringify(data.state, null, 2).replace('{', '{"receiptSha256":"duplicate",'); writeFileSync(join(data.privateRoot, 'state.json'), text + '\n'); },
+    data => { const canonical = JSON.stringify(data.state, null, 2); const text = '{"receiptSha256":"duplicate",' + canonical.slice(1); writeFileSync(join(data.privateRoot, 'state.json'), text + '\n'); },
     data => { rmSync(join(data.privateRoot, 'state.json')); symlinkSync(join(data.reportRoot, 'provisioning.json'), join(data.privateRoot, 'state.json'), 'file'); },
     data => { const target = join(data.root, 'target.json'); writeFileSync(target, JSON.stringify(data.marker)); symlinkSync(target, join(data.privateRoot, 'integration.json'), 'file'); },
     data => { data.writeMarker(); mkdirSync(data.logs); const target = join(data.root, 'private-log'); writeFileSync(target, 'PRIVATE'); symlinkSync(target, join(data.logs, 'linked.log'), 'file'); },

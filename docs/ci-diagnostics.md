@@ -117,7 +117,9 @@ Extension CI's Linux/macOS/Windows integration and packaged-extension jobs, plus
 `tools/ci/provision-vscode.mjs`. Provisioning, test-runner invocation and the post-test evidence audit are separate
 steps. The wrapper invokes the existing pinned test CLI once, after unit tests and harness compilation; the packaged
 lane preserves its implementation-navigation selection. An integration-runner marker records that exact invocation,
-including a failed spawn, rather than claiming the editor launched or an assertion executed.
+including a failed spawn, rather than claiming the editor launched or an assertion executed. The marker is claimed
+atomically before profile preparation and updated through its held descriptor. A preparation failure remains explicitly
+unexecuted, authorizes no editor-log upload and fails readiness; an existing claim stops before profile side effects.
 
 The supported contract is `@vscode/test-electron` 3.1.0, `@vscode/test-cli` 0.0.15, its SDK-declared `https-proxy-agent`
 7.0.6 and VS Code 1.144.0. The shared configuration verifies the manifest floor and guards both repository and packaged
@@ -144,7 +146,13 @@ Neither that timeout nor Mocha's existing 30-second assertion timeout is raised.
 new owned process group and probes its disappearance even after an unexpected worker exit. An unproven cleanup fails.
 Windows uses the live owned worker PID's tree with bounded `taskkill /T /F`. If that worker exits unexpectedly first,
 the controller cannot prove descendant cleanup: it reports `cleanup-incomplete`, forbids retry and blocks integration.
-It does not claim Windows job-object containment. That limitation remains owned in #1882.
+The same uncertainty applies when a failed synchronous Windows probe loses its intermediate command wrapper:
+[Node can terminate that child on timeout or buffer overflow](https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processspawnsynccommand-args-options),
+and
+[Windows parent termination does not terminate its children](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process).
+A separate worker scope proof remains false and cannot be upgraded by successful parent `taskkill`; a runtime-probe
+phase without a valid final proof also fails closed. Capture completeness is a separate field. The adapter does not
+claim Windows job-object containment. These limits remain owned in #1882 and have native wrapper/grandchild controls.
 
 Every attempt has a fresh owned cache; an unexpected cache hit fails. Expected build identity comes from the fixed
 official exact-version/platform/stable metadata endpoint. The
