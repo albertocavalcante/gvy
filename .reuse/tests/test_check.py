@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 import hashlib
 import importlib.util
+import io
 import json
 import shutil
 import subprocess
+import sys
+import tarfile
 import tempfile
 import tomllib
 import unittest
@@ -215,6 +218,100 @@ class IntegrationTests(unittest.TestCase):
                 self.write_inventory(include_mit=True)
                 self.assertEqual([], check.check(self.root))
                 self.write_inventory()
+
+    def test_git_archive_preserves_licensed_corpus_and_excludes_other_tools(self) -> None:
+        project = Path(__file__).parents[2]
+        shutil.copy(project / ".gitattributes", self.root / ".gitattributes")
+        shutil.copy(project / "LICENSES/MIT.txt", self.root / "LICENSES/MIT.txt")
+        self.write_inventory(include_mit=True)
+        metadata = tomllib.loads((project / "REUSE.toml").read_text(encoding="utf-8"))
+        blocks = ["version = 1\n"]
+        corpus_paths: list[str] = []
+        for raw_annotation in metadata["annotations"]:
+            annotation = check.as_object(raw_annotation)
+            if annotation.get("SPDX-License-Identifier") != "MIT":
+                continue
+            blocks.append(
+                "[[annotations]]\n" + "\n".join(f"{key} = {json.dumps(value)}" for key, value in annotation.items())
+            )
+            paths = annotation.get("path")
+            if not isinstance(paths, list):
+                raise TypeError("missing corpus annotation paths")
+            for name in paths:
+                if not isinstance(name, str):
+                    raise TypeError("invalid corpus annotation path")
+                source = project / name
+                destination = self.root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+                corpus_paths.append(name)
+        self.assertEqual(4, len(corpus_paths))
+        (self.root / "REUSE.toml").write_text("\n\n".join(blocks), encoding="utf-8")
+        excluded = ("tools/other.py", "tools/perf/other.py", "tools/perf/bench/driver.py")
+        for name in excluded:
+            (self.root / name).write_bytes(b"not part of the distributed corpus\n")
+        tracked = [
+            ".gitattributes",
+            "REUSE.toml",
+            ".reuse/license-hashes.toml",
+            "LICENSE",
+            "LICENSES/Apache-2.0.txt",
+            "LICENSES/MIT.txt",
+            "editors/code/LICENSE",
+            "editors/zed/LICENSE",
+            "src/a.py",
+            *corpus_paths,
+            *excluded,
+        ]
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "--", *tracked], check=True)
+        executable = "tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile"
+        subprocess.run(["git", "-C", str(self.root), "update-index", "--chmod=+x", "--", executable], check=True)
+        tree = subprocess.run(
+            ["git", "-C", str(self.root), "write-tree"], check=True, capture_output=True
+        ).stdout.strip()
+        archive = subprocess.run(
+            ["git", "-C", str(self.root), "archive", "--format=tar", tree.decode("ascii")],
+            check=True,
+            capture_output=True,
+        ).stdout
+        export_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(export_temp.cleanup)
+        exported = Path(export_temp.name)
+        with tarfile.open(fileobj=io.BytesIO(archive)) as contents:
+            members = {member.name: member for member in contents if member.isfile()}
+            self.assertEqual(set(tracked) - set(excluded), set(members))
+            self.assertEqual(0o111, members[executable].mode & 0o111)
+            self.assertEqual(0, members["src/a.py"].mode & 0o111)
+            for name, member in members.items():
+                stream = contents.extractfile(member)
+                if stream is None:
+                    raise AssertionError(f"missing archived contents: {name}")
+                with stream:
+                    data = stream.read()
+                if name in corpus_paths:
+                    self.assertEqual((project / name).read_bytes(), data)
+                destination = exported / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
+        self.assertFalse((exported / ".git").exists())
+        self.assertEqual([], check.check(exported))
+        mit = exported / "LICENSES/MIT.txt"
+        canonical = mit.read_bytes()
+        mit.unlink()
+        self.assertTrue(any(error.startswith("LICENSES/MIT.txt: cannot read:") for error in check.check(exported)))
+        mit.write_bytes(canonical)
+        for name in corpus_paths:
+            (exported / name).unlink()
+        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(exported))
+        result = subprocess.run(
+            [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(exported), "lint", "--json"],
+            capture_output=True,
+            check=False,
+        )
+        report = check.as_object(json.loads(result.stdout))
+        self.assertEqual(1, result.returncode)
+        self.assertEqual(["MIT"], check.as_object(report["non_compliant"])["unused_licenses"])
 
     def test_mit_like_custom_license_does_not_require_canonical_mit(self) -> None:
         (self.root / "LICENSES/LicenseRef-MIT-fixture.txt").write_text("Synthetic custom license\n", encoding="utf-8")

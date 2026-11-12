@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-tools/ export-ignore
+/tools/* export-ignore
+/tools/perf -export-ignore
+/tools/perf/* export-ignore
+/tools/perf/bench -export-ignore
+/tools/perf/bench/* export-ignore
+/tools/perf/bench/corpus -export-ignore
 .agent/ export-ignore
 .devcontainer/ export-ignore
 .gemini/ export-ignore
