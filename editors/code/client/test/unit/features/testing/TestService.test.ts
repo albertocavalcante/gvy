@@ -8,6 +8,7 @@ import { RequestType } from "vscode-languageserver-protocol";
 import type { LanguageClient } from "vscode-languageclient/node";
 
 interface MockLanguageClient {
+  isRunning: sinon.SinonStub;
   sendRequest: sinon.SinonStub;
 }
 
@@ -19,6 +20,7 @@ describe("TestService", () => {
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockLanguageClient = {
+      isRunning: sandbox.stub().returns(true),
       sendRequest: sandbox.stub(),
     };
     testService = new TestService(
@@ -28,6 +30,26 @@ describe("TestService", () => {
 
   afterEach(() => {
     sandbox.restore();
+  });
+
+  it("is ready only while the current client is running", () => {
+    let current: MockLanguageClient | undefined;
+    const service = new TestService(
+      () => current as LanguageClient | undefined,
+    );
+    expect(service.isReady()).to.equal(false);
+    current = mockLanguageClient;
+    current.isRunning.returns(false);
+    expect(service.isReady()).to.equal(false);
+    current.isRunning.returns(true);
+    expect(service.isReady()).to.equal(true);
+    current = undefined;
+    expect(service.isReady()).to.equal(false);
+    current = {
+      isRunning: sandbox.stub().returns(true),
+      sendRequest: sandbox.stub(),
+    };
+    expect(service.isReady()).to.equal(true);
   });
 
   it("should send a discoverTests request to the LSP for a workspace", async () => {
