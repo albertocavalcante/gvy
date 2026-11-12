@@ -52,6 +52,14 @@ java {
     withJavadocJar()
 }
 
+// Include the project license in the binary and source artifacts published independently.
+tasks.named<Jar>("jar") {
+    from(rootProject.file("LICENSE")) { into("META-INF") }
+}
+tasks.named<Jar>("sourcesJar") {
+    from(rootProject.file("LICENSE")) { into("META-INF") }
+}
+
 // Publishing configuration for GitHub Packages
 publishing {
     val repoPath = "albertocavalcante/gvy"

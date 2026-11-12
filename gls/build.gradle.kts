@@ -10,6 +10,7 @@ import java.net.URLClassLoader
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import java.util.jar.Attributes
 import java.util.jar.JarFile
 import java.util.jar.Manifest
@@ -488,9 +489,75 @@ listOf(tasks.jar, tasks.shadowJar).forEach { archive ->
     }
 }
 
+// Keep dependency notices separate: Shadow otherwise drops repeated META-INF/LICENSE paths.
+abstract class StageDependencyNotices : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val archives: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        val output = outputDirectory.get().asFile
+        check(!output.exists() || output.deleteRecursively()) { "Cannot clear notice directory: $output" }
+        check(output.mkdirs() || output.isDirectory) { "Cannot create notice directory: $output" }
+        val index = sortedSetOf<String>()
+        for (archive in archives.files.sortedBy { it.name }) {
+            require(archive.isFile && archive.name.endsWith(".jar", ignoreCase = true)) {
+                "Unsupported runtime artifact for notice preservation: $archive"
+            }
+            val digest = MessageDigest.getInstance("SHA-256")
+            archive.inputStream().buffered().use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val hash = digest.digest().joinToString("") { "%02x".format(it) }
+            // The content digest distinguishes different artifacts even when their filenames collide.
+            val artifact = archive.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            index.add("$artifact/$hash\t${archive.name}\tSHA-256:$hash")
+            val seen = mutableSetOf<String>()
+            ZipFile(archive).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (entry.isDirectory) continue
+                    val parts = entry.name.split('/')
+                    val base = parts.last().uppercase(Locale.ROOT)
+                    val notice = listOf("LICENSE", "LICENCE", "NOTICE", "COPYING", "COPYRIGHT").any {
+                        base == it || base.startsWith("$it.") || base.startsWith("$it-")
+                    } || parts.dropLast(1).any { it.equals("licenses", ignoreCase = true) || it.equals("license", ignoreCase = true) }
+                    if (!notice) continue
+                    require(parts.none { it.isEmpty() || it == "." || it == ".." || '\\' in it || ':' in it }) {
+                        "Unsafe notice path in ${archive.name}: ${entry.name}"
+                    }
+                    check(seen.add(entry.name.lowercase(Locale.ROOT))) { "Duplicate notice path in ${archive.name}: ${entry.name}" }
+                    val destination = output.resolve("$artifact/$hash/${entry.name}")
+                    check(destination.parentFile.mkdirs() || destination.parentFile.isDirectory)
+                    zip.getInputStream(entry).use { input -> destination.outputStream().use { input.copyTo(it) } }
+                }
+            }
+        }
+        output.resolve("INDEX.txt").writeText(index.joinToString("\n", postfix = "\n"))
+    }
+}
+
+val stageDependencyNotices = tasks.register<StageDependencyNotices>("stageDependencyNotices") {
+    archives.from(configurations.named("runtimeClasspath"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/dependency-notices"))
+}
+
 tasks.shadowJar {
     archiveBaseName = "gls"
     archiveClassifier = "all"
+
+    from(rootProject.file("LICENSE")) { into("META-INF/gvy") }
+    from(stageDependencyNotices) { into("META-INF/third-party") }
 
     // Standard shadow JAR configuration - includes all runtimeClasspath by default
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

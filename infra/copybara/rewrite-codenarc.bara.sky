@@ -55,6 +55,7 @@ core.workflow(
             "gradle/wrapper/**",
             # License from monorepo root
             "LICENSE",
+            "LICENSES/Apache-2.0.txt",
         ],
         exclude = [
             # Build artifacts
@@ -128,6 +129,8 @@ core.workflow(
             "gradle/wrapper/**",
             # License (maintained in monorepo)
             "LICENSE",
+            "LICENSES/**",
+            "REUSE.toml",
         ]
     ),
 
