@@ -66,6 +66,8 @@ Run the packaging regression controls without building the JVM project:
 node --test tools/ci/release-artifacts.test.mjs
 ```
 
+CI also runs the paired-nightly controls to check the shared ZIP and server-provenance readers.
+
 The tagged-release builder runs `test` and `:gls:stageEditorServer` before packaging the extension. It passes the exact
 staged JAR through pnpm preparation and VSCE prepublish, with pinned fallback disabled. The verifier checks the source
 commit, clean server provenance, extension version, and byte equality between the standalone and embedded JARs.
@@ -78,7 +80,9 @@ excludes its own output and replaces the previous manifest only after hashing su
 
 Use a clean checkout whose base version matches the requested release. `tools/release.sh build --version vX.Y.Z`
 produces the verified artifacts; `--dry-run` creates placeholders without invoking Gradle or pnpm. The builder restores
-the original `package.json` contents and permissions after either successful packaging or an error.
+the original `package.json` contents and permissions after either successful packaging or an error. Artifact paths
+resolve inside the script's own checkout, including when it is invoked from another directory. Version and checkout
+preflight checks run before the builder resets `dist/`.
 
 Published v0.5.4 still contains the mismatched server tracked in
 [#1751](https://github.com/albertocavalcante/gvy/issues/1751). A source fix does not replace that release; publish and

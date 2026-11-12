@@ -28,6 +28,16 @@ cleanup_package_json() {
   fi
 }
 
+enter_checkout() {
+  local checkout_root
+  checkout_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [[ ! -x "${checkout_root}/gradlew" || ! -f "${checkout_root}/${EXTENSION_DIR}/package.json" ]]; then
+    log_error "Release commands require the complete gvy checkout containing this script"
+    return 1
+  fi
+  cd "${checkout_root}"
+}
+
 print_usage() {
   echo "Usage: $(basename "$0") [COMMAND] [OPTIONS]"
   echo ""
@@ -80,6 +90,7 @@ check_version() {
 cmd_build() {
   check_version
   cmd_validate
+  enter_checkout
   log_info "Starting build for version: ${VERSION}"
   local release_version="${VERSION#vscode-groovy-v}"
   release_version="${release_version#v}"
@@ -87,6 +98,9 @@ cmd_build() {
   root_dir="$(pwd)"
   target_jar="${root_dir}/${DIST_DIR}/gls-${release_version}.jar"
   target_vsix="${root_dir}/${DIST_DIR}/gvy-${release_version}.vsix"
+  if [[ "${DRY_RUN}" != true ]]; then
+    source_commit="$(git rev-parse HEAD)"
+  fi
 
   # Clean and prepare dist
   rm -rf "${DIST_DIR}"
@@ -99,7 +113,6 @@ cmd_build() {
     return
   fi
 
-  source_commit="$(git rev-parse HEAD)"
   log_info "Testing and staging the current server..."
   GITHUB_REF_TYPE=tag ./gradlew --no-daemon test :gls:stageEditorServer
   cp "gls/build/editor-server/gls.jar" "${target_jar}"
@@ -147,6 +160,7 @@ cmd_validate() {
 }
 
 cmd_smoke_test() {
+  enter_checkout
   log_info "Running JAR smoke tests..."
   # Find built JAR in dist
   local JAR_FILE
@@ -163,6 +177,7 @@ cmd_smoke_test() {
 }
 
 cmd_checksums() {
+  enter_checkout
   if [[ ! -d "${DIST_DIR}" ]]; then
     log_error "Directory ${DIST_DIR} does not exist."
     exit 1

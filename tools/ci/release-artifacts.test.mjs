@@ -125,7 +125,8 @@ if (args[0] === 'run' && args[1] === 'package') {
     writeFileSync(join(editor, 'aaa-stale.vsix'), zip([['extension/package.json', '{}']]));
   }
   const run = (...extra) => spawnSync('bash', ['tools/release.sh', 'build', '--version', `v${version}`, ...extra], {
-    cwd: root, encoding: 'utf8', timeout: 20000,
+    // Allow shared-host I/O contention while bounding hung fixture commands.
+    cwd: root, encoding: 'utf8', timeout: 60000,
     env: { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, CI: 'true', FIXTURE_ROOT: root,
       FIXTURE_COMMIT: commit, FIXTURE_MODE: options.mode ?? '', GLS_USE_PINNED: 'true',
       GLS_CHANNEL: 'pinned', GLS_REQUIRE_FRESH: 'true', SKIP_PREPARE_SERVER: 'true' },
@@ -226,6 +227,22 @@ for (const mode of ['', 'package-failure']) {
   });
 }
 
+for (const condition of ['unavailable-git', 'unusable-gradle-wrapper']) {
+  test(`build preflight preserves existing artifacts for ${condition}`, t => {
+    const f = fixture(t);
+    mkdirSync(join(f.root, 'dist'));
+    writeFileSync(join(f.root, 'dist/previous-artifact'), 'keep previous artifacts');
+    if (condition === 'unavailable-git') {
+      writeFileSync(join(f.root, 'bin/git'), '#!/bin/bash\nexit 17\n', { mode: 0o755 });
+    } else {
+      chmodSync(join(f.root, 'gradlew'), 0o644);
+    }
+    assert.notEqual(f.run().status, 0);
+    assert.equal(readFileSync(join(f.root, 'dist/previous-artifact'), 'utf8'), 'keep previous artifacts');
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  });
+}
+
 test('a prerelease extension can truthfully bundle its clean base-version server', t => {
   const f = fixture(t);
   const result = f.run('--version', 'v0.5.4-rc.1');
@@ -269,4 +286,18 @@ test('a failed checksum command preserves the last manifest and its nonzero exit
   assert.equal(result.status, 7);
   assert.equal(readFileSync(join(dist, 'checksums.txt'), 'utf8'), 'previous verified manifest\n');
   assert.doesNotMatch(result.stdout, /Checksums generated/);
+});
+
+test('an absolute invocation from another directory preserves that directory artifacts', t => {
+  const f = fixture(t);
+  const caller = join(f.root, 'unrelated checkout');
+  mkdirSync(join(caller, 'dist'), { recursive: true });
+  writeFileSync(join(caller, 'dist/previous-artifact'), 'keep caller output');
+  const result = spawnSync('bash', [join(f.root, 'tools/release.sh'), 'build', '--version', 'v0.5.4', '--dry-run'], {
+    cwd: caller, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(readFileSync(join(caller, 'dist/previous-artifact'), 'utf8'), 'keep caller output');
+  assert.equal(existsSync(join(f.root, 'dist/gls-0.5.4.jar')), true);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
