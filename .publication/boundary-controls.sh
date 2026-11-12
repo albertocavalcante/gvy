@@ -9,7 +9,7 @@ negative_patch=${2:?}
 negative_spec=${3:?}
 proof_dir=${4:?}
 printf '%s  %s\n' 'cbb784d585e9718b72a929aa23ac0d51bc6375402f01d2d028725b04da930094' "${negative_patch}" | sha256sum -c -
-printf '%s  %s\n' '8e9dda712102f19810a67c0df8646821f4fb0f83152773cc2083ab3b754fbb23' "${negative_spec}" | sha256sum -c -
+printf '%s  %s\n' 'c1711e6893e2ae2ec4ab6b3a94c8f4d388775dfa0e2e112a9d82f7f25c7fd6b5' "${negative_spec}" | sha256sum -c -
 negative_bytes=$(stat -c %s "${negative_patch}")
 [[ ${negative_bytes} -le 8192 ]]
 spec_tree=$(jq -er '.greenTree' "${negative_spec}")
@@ -102,7 +102,11 @@ for path in reports:
         if faults:
             assert len(faults) == 1
             assert faults[0].attrib['type'] in ('java.lang.AssertionError', 'org.opentest4j.AssertionFailedError')
-            failed.add(case.attrib['name'])
+            name = case.attrib['name']
+            assert name in spec['expectedFailureMessageContains'], name
+            message = faults[0].attrib.get('message', '')
+            assert all(part in message for part in spec['expectedFailureMessageContains'][name]), (name, message)
+            failed.add(name)
         else:
             passed.add(case.attrib['name'])
     report_hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()

@@ -188,7 +188,7 @@ jobs:
           git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           boundary_script="$GITHUB_WORKSPACE/support/.publication/boundary-controls.sh"
-          printf '%s  %s\n' '2d6d75c1b718c858af29cbca00acc0407dc90f04aa7db23ac905281e11b1049f' "$boundary_script" | sha256sum -c -
+          printf '%s  %s\n' 'afb92f186866e2a805b98d3b573042e1464de6549c41e0684abf114eaefe922c' "$boundary_script" | sha256sum -c -
           bash "$boundary_script" "$EXPECTED_TREE" \
               "$GITHUB_WORKSPACE/support/.publication/negative-control.patch" \
               "$GITHUB_WORKSPACE/support/.publication/negative-control-spec.json" \

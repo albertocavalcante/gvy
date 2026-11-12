@@ -1,6 +1,6 @@
 {
-  "greenTree": "89ba5632f3b9b0c3f11f96ca29c151c431433016",
-  "negativeTree": "c2f94dae7de647b5b12ed62b4a4a50fb5519623a",
+  "greenTree": "d0248ab4b28b1ecd4781a3bcb40f0cd819b7e8d7",
+  "negativeTree": "c29c6ec7c205bfe90ef6754b0a4b52c8a0f8de1a",
   "patchSha256": "cbb784d585e9718b72a929aa23ac0d51bc6375402f01d2d028725b04da930094",
   "patchBytes": 1754,
   "sourceSha256": {
@@ -22,5 +22,29 @@
     "long nonzero coefficient",
     "long fractional coefficient"
   ],
-  "scope": "Only remove numeric-length guard and await lifecycle guard; all SDK raw-type/exactness handling remains. Bounded4096-character inputs. No global mutation or private runner grants."
+  "scope": "Only remove numeric-length and await lifecycle guards; actualJSONnumberfixturesexplicitlychecked,atmost512chars. Originalcommand/capture outcomes retained.",
+  "maxNumericFixtureCharacters": 512,
+  "expectedFailureMessageContains": {
+    "long zero coefficient": [
+      "Expected an exception of class org.eclipse.lsp4j.jsonrpc.ResponseErrorException",
+      "completed successfully",
+      "DiagnosticsRunResult"
+    ],
+    "long exponent": [
+      "Expected an exception of class org.eclipse.lsp4j.jsonrpc.ResponseErrorException",
+      "completed successfully",
+      "DiagnosticsRunResult"
+    ],
+    "65 character exact integer": [
+      "Expected an exception of class org.eclipse.lsp4j.jsonrpc.ResponseErrorException",
+      "completed successfully",
+      "DiagnosticsRunResult"
+    ],
+    "terminal diagnostics reject requests before initialization()": [
+      "expected: <-32002> but was: <-32801>"
+    ],
+    "shutdown rejects terminal requests before queued cleanup begins()": [
+      "expected: <-32600> but was: <-32801>"
+    ]
+  }
 }
