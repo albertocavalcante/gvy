@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.groovyparser.tokens
 
 import org.junit.jupiter.api.Test
@@ -135,5 +138,104 @@ class GroovyTokenIndexTest {
         assertTrue(index.isInCommentOrString(5)) // in comment
         assertTrue(index.isInCommentOrString(source.indexOf("'") + 1)) // in string
         assertFalse(index.isInCommentOrString(source.indexOf("def"))) // in code
+    }
+
+    @Test
+    fun `single quoted string boundaries use UTF16 offsets after and within supplementary text`() {
+        val source = "def prior = '😀'; def value = 'later 😀';"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, "'later 😀'", TokenContext.StringLiteral)
+    }
+
+    @Test
+    fun `double quoted string boundaries use UTF16 offsets after and within supplementary text`() {
+        val source = "def prior = '😀'; def value = \"later 😀\";"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, "\"later 😀\"", TokenContext.StringLiteral)
+    }
+
+    @Test
+    fun `triple quoted string boundaries preserve supplementary text and embedded CRLF`() {
+        val source = "def prior = '😀'; def value = \"\"\"left 😀\r\nright\"\"\";"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, "\"\"\"left 😀\r\nright\"\"\"", TokenContext.StringLiteral)
+    }
+
+    @Test
+    fun `line comment boundaries use UTF16 offsets and exclude following CRLF`() {
+        val source = "def prior = '😀'; // later 😀\r\ndef next = 1"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, "// later 😀", TokenContext.LineComment)
+        assertFalse(index.isInComment(source.indexOf('\n')))
+        assertFalse(index.isInComment(source.indexOf("def next")))
+    }
+
+    @Test
+    fun `block comment and subsequent string boundaries use UTF16 offsets`() {
+        val source = "def prior = '😀'; /* later 😀 */ def value = 'after 😀';"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, "/* later 😀 */", TokenContext.BlockComment)
+        assertContextSpan(source, index, "'after 😀'", TokenContext.StringLiteral)
+    }
+
+    @Test
+    fun `GString segments use UTF16 offsets without coloring interpolation code`() {
+        val source = "def prior = '😀'; def value = \"hello 😀\${name} bye 😀\";"
+        val index = GroovyTokenIndex.build(source)
+
+        // The lexer includes '$' in GStringBegin, then returns to code for the braces and expression.
+        assertContextSpan(source, index, "\"hello 😀\$", TokenContext.GString)
+        assertContextSpan(source, index, " bye 😀\"", TokenContext.GString)
+        val interpolation = source.indexOf("name")
+        for (offset in interpolation until interpolation + "name".length) {
+            assertFalse(index.isInString(offset), "Interpolation UTF-16 offset $offset")
+        }
+    }
+
+    @Test
+    fun `supplementary shebang text does not shift a subsequent token across CRLF`() {
+        val header = "#!/usr/bin/env groovy 😀\r"
+        val source = "$header\ndef value = 'later 😀';"
+        val index = GroovyTokenIndex.build(source)
+
+        // The existing manual shebang span includes CR and stops before LF.
+        assertContextSpan(source, index, header, TokenContext.LineComment)
+        assertContextSpan(source, index, "'later 😀'", TokenContext.StringLiteral)
+    }
+
+    @Test
+    fun `completed token boundaries remain correct before a malformed continuation`() {
+        val source = "def prior = '😀'; def value = 'kept 😀'; // kept 😀\r\ndef broken = \"unterminated"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, "'kept 😀'", TokenContext.StringLiteral)
+        assertContextSpan(source, index, "// kept 😀", TokenContext.LineComment)
+        // This control makes no completeness claim about text after the lexer failure.
+    }
+
+    @Test
+    fun `a supplementary string includes its closing quote and excludes the UTF16 end of source`() {
+        val source = "'😀'"
+        val index = GroovyTokenIndex.build(source)
+
+        assertContextSpan(source, index, source, TokenContext.StringLiteral)
+    }
+
+    private fun assertContextSpan(source: String, index: GroovyTokenIndex, token: String, expected: TokenContext) {
+        // Kotlin String indices and lengths supply independent UTF-16 expectations.
+        val start = source.indexOf(token)
+        assertTrue(start >= 0, "Expected fixture token must be present")
+        val end = start + token.length
+
+        assertEquals(null, index.contextAt(start - 1).fold({ null }, { it }), "Before UTF-16 start $start")
+        for (offset in start until end) {
+            assertEquals(expected, index.contextAt(offset).fold({ null }, { it }), "Inside UTF-16 span at $offset")
+        }
+        assertEquals(null, index.contextAt(end).fold({ null }, { it }), "At exclusive UTF-16 end $end")
     }
 }
