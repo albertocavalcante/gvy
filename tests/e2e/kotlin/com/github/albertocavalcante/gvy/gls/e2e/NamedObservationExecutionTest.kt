@@ -15,6 +15,10 @@ import org.junit.jupiter.api.parallel.Isolated
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 @Isolated
 class NamedObservationExecutionTest {
@@ -133,6 +137,58 @@ class NamedObservationExecutionTest {
         val cleanup = outcome.cleanup as CleanupOutcome.Failed
         assertThat(cleanup.detail).contains("shared transport and cleanup failure")
         assertThat(cleanup.confirmed).isTrue()
+    }
+
+    @Test
+    fun `deadline seals incomplete report while a late worker is still running`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val cleaned = CountDownLatch(1)
+        val session = mockk<LanguageServerSession>(relaxed = true)
+        every { factory.start(any(), any()) } answers {
+            entered.countDown()
+            while (release.count > 0) {
+                try {
+                    release.await()
+                } catch (_: InterruptedException) {
+                    // Model a startup that has not responded to cancellation yet.
+                }
+            }
+            session
+        }
+        every { WorkspaceFixture.cleanup(workspace) } answers {
+            try {
+                callOriginal()
+            } finally {
+                cleaned.countDown()
+            }
+        }
+        val executor = ScenarioExecutor(factory) {
+            ScenarioExecution(
+                Duration.ofSeconds(5),
+                cleanupTimeout = Duration.ofMillis(100),
+                awaitOutcome = { _, _ ->
+                    check(entered.await(5, TimeUnit.SECONDS))
+                    throw TimeoutException("controlled deadline")
+                },
+            )
+        }
+        val scenario = Scenario(name = "late worker", steps = listOf(
+            ScenarioStep.Initialized,
+            ScenarioStep.Assert("workspace", listOf(JsonCheck("$.uri", JsonExpectation(), id = "later"))),
+        ))
+        try {
+            val outcome = executor.executeWithOutcome(ScenarioDefinition(scenario))
+            assertThat(outcome.blocked).containsExactly("later")
+            assertThat(outcome.cleanup).isInstanceOf(CleanupOutcome.Unconfirmed::class.java)
+            release.countDown()
+            assertThat(cleaned.await(5, TimeUnit.SECONDS)).isTrue()
+            assertThat(outcome.observed).isEmpty()
+            assertThat(outcome.blocked).containsExactly("later")
+        } finally {
+            release.countDown()
+            cleaned.await(5, TimeUnit.SECONDS)
+        }
     }
 
     @Test
