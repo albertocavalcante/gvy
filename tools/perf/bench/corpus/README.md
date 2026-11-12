@@ -60,6 +60,10 @@ Acquisition used the GitHub CLI contents API at each recorded commit, checked th
 SHA-256, and verified that digest before writing each file. Future refreshes must repeat those checks and source-notice
 review. A repository's detected license alone is insufficient evidence for an attributed third-party subdirectory.
 
+Each version-one fixture is also bound to its selected source ID. Project counts use the repositories referenced by
+fixtures, so unused declarations cannot inflate diversity and moving fixtures between origins cannot preserve a false
+six-project claim.
+
 ### Preserved upstream whitespace
 
 A full `git diff --check` reports these five observations in four verbatim license files. They are preserved source

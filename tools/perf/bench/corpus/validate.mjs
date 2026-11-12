@@ -7,11 +7,19 @@ const MAX_BYTES = 1024 * 1024;
 const FAMILIES = ['class', 'script', 'gradle', 'jenkins', 'spock'];
 const CATEGORIES = ['keyword', 'comment', 'string', 'number', 'operator', 'punctuation'];
 const PROFILE = 'conversion-only-empty-external-classpath';
-const REQUIRED_FIXTURES = [
-  'groovy-cli-exception', 'spock-blocking-variables', 'groovy-grape-ivy', 'groovy-benchmark-driver',
-  'ofbiz-filter-receipts', 'spock-gradle-build', 'geb-gradle-bootstrap', 'pipeline-parallel-list',
-  'jenkins-docker-pipeline', 'spock-feature-methods', 'geb-browser-spec',
-].sort();
+const REQUIRED_FIXTURES = new Map([
+  ['groovy-cli-exception', 'groovy4'],
+  ['spock-blocking-variables', 'spock'],
+  ['groovy-grape-ivy', 'groovy4'],
+  ['groovy-benchmark-driver', 'groovy4'],
+  ['ofbiz-filter-receipts', 'ofbiz'],
+  ['spock-gradle-build', 'spock'],
+  ['geb-gradle-bootstrap', 'geb'],
+  ['pipeline-parallel-list', 'pipeline-examples'],
+  ['jenkins-docker-pipeline', 'jenkins-docker'],
+  ['spock-feature-methods', 'spock'],
+  ['geb-browser-spec', 'geb'],
+]);
 const REQUIRED_SOURCES = new Map([
   ['groovy4', { repository: 'apache/groovy', spdx: 'Apache-2.0', files: ['LICENSE', 'NOTICE'] }],
   ['spock', { repository: 'spockframework/spock', spdx: 'Apache-2.0', files: ['LICENSE', 'NOTICE'] }],
@@ -72,7 +80,7 @@ export function validateManifest(manifest) {
   if (profile.id !== PROFILE || profile.phase !== 'CONVERSION' || !equal(profile.externalClasspath, [])
     || profile.semanticAvailability !== 'not-declared' || profile.executeSource !== false) invalid();
   if (!Array.isArray(manifest.sources) || manifest.sources.length !== REQUIRED_SOURCES.size
-    || !Array.isArray(manifest.fixtures) || manifest.fixtures.length !== REQUIRED_FIXTURES.length) invalid();
+    || !Array.isArray(manifest.fixtures) || manifest.fixtures.length !== REQUIRED_FIXTURES.size) invalid();
   for (const fixture of manifest.fixtures) {
     if (!fixture || typeof fixture !== 'object' || Array.isArray(fixture)) invalid();
     identifier(fixture.id);
@@ -98,13 +106,14 @@ export function validateManifest(manifest) {
     if (!equal(source.license.files.map(file => file.upstreamPath).sort(), [...requiredSource.files].sort())) invalid();
     sources.set(source.id, source);
   }
-  if (!equal(manifest.fixtures.map(fixture => fixture.id).sort(), REQUIRED_FIXTURES)) invalid();
+  if (!equal(manifest.fixtures.map(fixture => fixture.id).sort(), [...REQUIRED_FIXTURES.keys()].sort())) invalid();
   const origins = new Map(FAMILIES.map(family => [family, new Set()]));
   for (const fixture of manifest.fixtures) {
     fileRecord(fixture, `fixtures/upstream/${fixture.id}/`, true);
     identifier(fixture.id);
     identifier(fixture.sourceId);
     if (!FAMILIES.includes(fixture.family) || !sources.has(fixture.sourceId) || paths.has(fixture.path)
+      || fixture.sourceId !== REQUIRED_FIXTURES.get(fixture.id)
       || !['library-source', 'tool-script', 'hosted-service-script', 'build-script', 'pipeline-example',
         'ci-pipeline', 'test-spec'].includes(fixture.originKind)
       || !Number.isSafeInteger(fixture.lineCount) || fixture.lineCount < 1
@@ -204,7 +213,7 @@ export async function validateCorpus(directory) {
   return {
     schemaVersion: 1, corpusId: manifest.id, manifestSha256: hash(manifestBytes),
     fixtures: manifest.fixtures.length, bytes: manifest.fixtures.reduce((sum, fixture) => sum + fixture.byteLength, 0),
-    projects: new Set(manifest.sources.map(source => source.repository)).size, families,
+    projects: new Set(manifest.fixtures.map(fixture => sourceById.get(fixture.sourceId).repository)).size, families,
     compatibility: 'not-executed',
   };
 }

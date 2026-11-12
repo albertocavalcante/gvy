@@ -99,6 +99,23 @@ test('version-one source and license identities cannot be relabeled', async t =>
   await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
 });
 
+test('unused source declarations cannot inflate diversity after fixture reassignment', async t => {
+  const directory = await copyCorpus(t);
+  await changeManifest(directory, manifest => {
+    manifest.fixtures.find(value => value.id === 'ofbiz-filter-receipts').sourceId = 'spock';
+  });
+  await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
+});
+
+test('retaining every source declaration does not permit swapping fixture provenance', async t => {
+  const directory = await copyCorpus(t);
+  await changeManifest(directory, manifest => {
+    manifest.fixtures.find(value => value.id === 'ofbiz-filter-receipts').sourceId = 'spock';
+    manifest.fixtures.find(value => value.id === 'spock-blocking-variables').sourceId = 'ofbiz';
+  });
+  await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
+});
+
 test('mutated license evidence fails its recorded identity', async t => {
   const directory = await copyCorpus(t);
   const manifest = JSON.parse(await fs.readFile(join(directory, 'manifest.json'), 'utf8'));
