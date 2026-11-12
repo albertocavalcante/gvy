@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { expect } from "chai";
+import { readFileSync } from "fs";
 import { PassThrough } from "stream";
 import {
   createStderrRouter,
@@ -46,6 +47,34 @@ describe("stderrRouter", () => {
       "debug",
       "trace",
     ]);
+  });
+
+  it("keeps encoder throwable continuations at their DEBUG and WARN levels", () => {
+    const fixture = process.env.GVY_ROUTING_FIXTURE;
+    const text = fixture
+      ? readFileSync(fixture, "utf8")
+      : [
+          "00:00:00.000 [main] DEBUG example.Logger -- signal",
+          "\tExceptions: example.OddSignal",
+          "\texample.OddSignal: signal detail",
+          "\t\tat example.Signal.run(Signal.groovy:7)",
+          "00:00:00.000 [main] WARN  example.Logger -- signal",
+          "\tExceptions: example.OddSignal",
+          "\texample.OddSignal: signal detail",
+          "\t\tat example.Signal.run(Signal.groovy:7)",
+          "",
+        ].join("\n");
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    for (const line of text.split("\n")) route(line);
+    route.flush();
+
+    const levels = entries.map(([level]) => level);
+    expect(entries.some(([, line]) => line.includes("OddSignal"))).to.equal(true);
+    expect(levels.filter((level) => level === "debug").length).to.be.greaterThan(1);
+    expect(levels.filter((level) => level === "warn").length).to.be.greaterThan(1);
+    expect(levels.every((level) => level === "debug" || level === "warn")).to.equal(true);
+    expect(levels.lastIndexOf("debug")).to.be.lessThan(levels.indexOf("warn"));
   });
 
   it("does not label routine INFO output as an error", () => {

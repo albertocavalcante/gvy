@@ -49,7 +49,7 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         val visited = IdentityHashMap<IThrowableProxy, Boolean>()
         var current: IThrowableProxy? = root
         var count = 0
-        record.append("\nExceptions: ")
+        record.append("\n\tExceptions: ")
         while (current != null && count < MAX_DEPTH && !record.full) {
             if (visited.put(current, true) != null) {
                 record.markTruncated()
@@ -76,7 +76,7 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         }
         state.visited[proxy] = true
         state.nodes++
-        record.append("\n")
+        record.append("\n\t")
         record.append(label)
         record.append(safe(proxy.className ?: "", FIELD_BYTES))
         val message = proxy.message

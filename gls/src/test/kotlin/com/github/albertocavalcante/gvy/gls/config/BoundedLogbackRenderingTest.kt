@@ -188,6 +188,30 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
+    fun `configured warn and debug throwable lines remain continuations`() = withEncoder { encoder ->
+        val records = listOf(Level.DEBUG, Level.WARN).map { severity ->
+            val failure = OddSignal().apply {
+                stackTrace = arrayOf(StackTraceElement("example.Signal", "run", "Signal.groovy", 7))
+            }
+            val input = event("signal", emptyArray()).apply {
+                level = severity
+                setThrowableProxy(ThrowableProxy(failure))
+            }
+            val text = encoder.encode(input).toString(Charsets.UTF_8)
+            val lines = text.trimEnd('\n').split('\n')
+            assertTrue(lines.first().contains(" ${severity.levelStr} "))
+            assertTrue(lines.drop(1).all { it.startsWith(" ") || it.startsWith("\t") })
+            assertTrue(text.contains("OddSignal"))
+            text
+        }
+        System.getenv("GVY_ROUTING_FIXTURE")?.let {
+            java.nio.file.Files.writeString(java.nio.file.Path.of(it), records.joinToString(""))
+        }
+    }
+
+    private class OddSignal : Throwable("signal detail")
+
+    @Test
     fun `cyclic and oversized throwable graphs produce bounded output`() = withEncoder { encoder ->
         val first = IllegalStateException("first")
         val second = IllegalArgumentException("second")
