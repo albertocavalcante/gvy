@@ -11,6 +11,9 @@ on:
       - 'tools/ci/check-rust-diagnostics.test.mjs'
       - 'tools/ci/read-evidence.mjs'
       - 'tools/ci/read-evidence.test.mjs'
+      - 'tools/ci/windows-evidence.mjs'
+      - 'tools/ci/windows-evidence.test.mjs'
+      - 'tools/ci/windows-evidence-reader.c'
       - 'tools/ci/fixtures/rustup-auto-install-warnings.txt'
       - '.github/workflows/bench-native.yml'
   push:
@@ -21,6 +24,9 @@ on:
       - 'tools/ci/check-rust-diagnostics.test.mjs'
       - 'tools/ci/read-evidence.mjs'
       - 'tools/ci/read-evidence.test.mjs'
+      - 'tools/ci/windows-evidence.mjs'
+      - 'tools/ci/windows-evidence.test.mjs'
+      - 'tools/ci/windows-evidence-reader.c'
       - 'tools/ci/fixtures/rustup-auto-install-warnings.txt'
       - '.github/workflows/bench-native.yml'
   workflow_dispatch:

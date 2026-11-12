@@ -7,12 +7,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { sha256 } from './source-files.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readRegularBytes, sha256 } from './source-files.mjs';
 import { probeSourceFiles } from './probe-sources.mjs';
 import { validateFeasibility } from './feasibility-policy.mjs';
+import { readEvidenceText } from '../../../ci/read-evidence.mjs';
 
 const digest = 'a'.repeat(64);
+const canonicalDependencies = [
+  'tools/ci/check-rust-diagnostics.mjs', 'tools/ci/read-evidence.mjs',
+  'tools/ci/windows-evidence.mjs', 'tools/ci/windows-evidence-reader.c',
+];
 const controls = ['valid-parse', 'exact-variable-identifier-boundary', 'malformed-error-location', 'complete-highlight-event-stream', 'regex-positive-negative', 'unknown-predicate-rejected', 'embedded-injection-explicitly-unsupported'];
 const identity = engine => ({ grammar: { revision: engine, files: [{ path: 'src/parser.c', sha256: digest }] }, runtime: [{ version: engine, revision: engine }], queryDigests: { highlights: { rawSha256: digest, effectiveSha256: digest, policy: 'upstream-unchanged' } }, cargoLockSha256: digest, manifestSha256: digest, fixtureDigests: { valid: digest, malformed: digest }, probeSourceDigests: { 'contract.rs': digest } });
 const fixtures = { valid: "int value = 1\nString label = '🙂'\ndef MAX_VALUE = 2\ndef Max_Value = MAX_VALUE\n", malformed: 'def broken = (\n' };
@@ -117,7 +122,7 @@ test('frozen policy hashes match the reviewed local sources and dependency pins'
   const root = path.dirname(fileURLToPath(import.meta.url));
   const frozen = JSON.parse(fs.readFileSync(path.join(root, 'feasibility-policy.json'), 'utf8'));
   const pins = JSON.parse(fs.readFileSync(path.join(root, 'source-lock.json'), 'utf8'));
-  const sourceNames = ['contract.rs', 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'probe-sources.mjs', 'source-lock.json', 'tools/ci/check-rust-diagnostics.mjs', 'tools/ci/read-evidence.mjs'];
+  const sourceNames = ['contract.rs', 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'probe-sources.mjs', 'source-lock.json', ...canonicalDependencies];
   for (const engine of ['primary', 'secondary']) {
     const value = frozen.identities[engine];
     const pin = pins.engines[engine];
@@ -152,6 +157,97 @@ test('probe source map accepts only fixed engines and canonical dependency targe
   const files = probeSourceFiles('primary');
   assert.equal(files['tools/ci/check-rust-diagnostics.mjs'], fileURLToPath(new URL('../../../ci/check-rust-diagnostics.mjs', import.meta.url)));
   assert.equal(files['tools/ci/read-evidence.mjs'], fileURLToPath(new URL('../../../ci/read-evidence.mjs', import.meta.url)));
+  assert.equal(files['tools/ci/windows-evidence.mjs'], fileURLToPath(new URL('../../../ci/windows-evidence.mjs', import.meta.url)));
+  assert.equal(files['tools/ci/windows-evidence-reader.c'], fileURLToPath(new URL('../../../ci/windows-evidence-reader.c', import.meta.url)));
+});
+
+test('both native workflow event filters cover the canonical evidence source closure', () => {
+  const workflow = fs.readFileSync(new URL('../../../../.github/workflows/bench-native.yml', import.meta.url), 'utf8');
+  for (const event of ['pull_request', 'push']) {
+    const section = workflow.match(new RegExp(`^  ${event}:([\\s\\S]*?)(?=^  [a-z_]+:)`, 'm'));
+    assert.ok(section, event);
+    const paths = [...section[1].matchAll(/^      - '([^']+)'$/gm)].map(match => match[1]);
+    for (const name of [...canonicalDependencies, 'tools/ci/windows-evidence.test.mjs']) assert.ok(paths.includes(name), `${event}: ${name}`);
+  }
+});
+
+function frozenInputs(frozen) {
+  const value = inputs();
+  for (const engine of ['primary', 'secondary']) Object.assign(value[engine], structuredClone(frozen.identities[engine]));
+  value.primary.native.runtimeVersion = frozen.identities.primary.runtime[0].version;
+  return value;
+}
+
+test('each canonical dependency is required and bound independently for both receipt identities', () => {
+  const frozen = JSON.parse(fs.readFileSync(new URL('./feasibility-policy.json', import.meta.url), 'utf8'));
+  const baseline = frozenInputs(frozen);
+  assert.doesNotThrow(() => validateFeasibility(baseline.primary, baseline.secondary, baseline.observed, frozen));
+  for (const engine of ['primary', 'secondary']) {
+    for (const dependency of canonicalDependencies) {
+      assert.ok(Object.hasOwn(frozen.identities[engine].probeSourceDigests, dependency), dependency);
+      for (const missing of [true, false]) {
+        const value = frozenInputs(frozen);
+        if (missing) delete value[engine].probeSourceDigests[dependency];
+        else value[engine].probeSourceDigests[dependency] = '0'.repeat(64);
+        assert.throws(() => validateFeasibility(value.primary, value.secondary, value.observed, frozen), /FEASIBILITY_POLICY_MISMATCH/);
+      }
+    }
+  }
+});
+
+test('receipt-only dependency aliases and traversal paths cannot extend the trusted inventory', () => {
+  const frozen = JSON.parse(fs.readFileSync(new URL('./feasibility-policy.json', import.meta.url), 'utf8'));
+  for (const engine of ['primary', 'secondary']) for (const name of ['tools/ci/windows-private-root.mjs', '../PRIVATE_CANARY_7821']) {
+    const value = frozenInputs(frozen);
+    value[engine].probeSourceDigests[name] = digest;
+    assert.throws(() => validateFeasibility(value.primary, value.secondary, value.observed, frozen), /FEASIBILITY_POLICY_MISMATCH/);
+    assert.equal(probeSourceFiles(engine)[name], undefined);
+  }
+});
+
+test('a changed or missing copied Windows dependency fails actual byte and policy checks', async t => {
+  const frozen = JSON.parse(fs.readFileSync(new URL('./feasibility-policy.json', import.meta.url), 'utf8'));
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gvy-native-closure-')));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const copiedModule = path.join(directory, 'tools/perf/bench/native-contract/probe-sources.mjs');
+  fs.mkdirSync(path.dirname(copiedModule), { recursive: true });
+  fs.mkdirSync(path.join(directory, 'tools/ci'), { recursive: true });
+  fs.copyFileSync(new URL('./probe-sources.mjs', import.meta.url), copiedModule);
+  const { probeSourceFiles: copiedSources } = await import(pathToFileURL(copiedModule).href);
+  for (const name of canonicalDependencies) {
+    const originalFile = probeSourceFiles('primary')[name];
+    assert.equal(typeof originalFile, 'string', name);
+    fs.copyFileSync(originalFile, path.join(directory, name));
+  }
+  for (const engine of ['primary', 'secondary']) for (const name of ['tools/ci/windows-evidence.mjs', 'tools/ci/windows-evidence-reader.c']) {
+    const file = copiedSources(engine)[name];
+    assert.equal(file, path.join(directory, name));
+    const original = readRegularBytes(file, 64 * 1024);
+    const value = frozenInputs(frozen);
+    value[engine].probeSourceDigests[name] = sha256(original);
+    assert.doesNotThrow(() => validateFeasibility(value.primary, value.secondary, value.observed, frozen));
+    fs.writeFileSync(file, Buffer.concat([original, Buffer.from('\n')]));
+    value[engine].probeSourceDigests[name] = sha256(readRegularBytes(file, 64 * 1024));
+    assert.throws(() => validateFeasibility(value.primary, value.secondary, value.observed, frozen), /FEASIBILITY_POLICY_MISMATCH/);
+    fs.unlinkSync(file);
+    assert.throws(() => readRegularBytes(file, 64 * 1024), /SOURCE_FILE_INVALID/);
+    fs.writeFileSync(file, original);
+  }
+});
+
+test('POSIX evidence reads do not select the environment-supplied Windows executable', { skip: !['darwin', 'linux'].includes(process.platform) }, t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gvy-posix-reader-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'evidence.log');
+  fs.writeFileSync(file, 'info: 🙂\r\n');
+  const previous = process.env.GVY_CI_EVIDENCE_READER;
+  try {
+    process.env.GVY_CI_EVIDENCE_READER = path.join(directory, 'PRIVATE_CANARY_7821.exe');
+    assert.equal(readEvidenceText(file, 64), 'info: 🙂\r\n');
+  } finally {
+    if (previous === undefined) delete process.env.GVY_CI_EVIDENCE_READER;
+    else process.env.GVY_CI_EVIDENCE_READER = previous;
+  }
 });
 
 test('policy CLI reads the frozen policy and preserves rejected-candidate labels', t => {

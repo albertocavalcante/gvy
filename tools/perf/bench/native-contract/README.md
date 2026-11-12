@@ -100,8 +100,12 @@ runtime release commits and Cargo lockfile digests. Cargo independently verifies
 revisions. The runner checks registry package release provenance through `.cargo_vcs_info.json` before building. Source
 inventory changes, a modified generated parser, a missing query or a wrong digest fail verification.
 
-The probe source identities additionally bind the canonical Rust classifier and its `read-evidence.mjs` dependency.
-Their read targets come from an explicit fixed map; receipt or policy path strings never select files to read.
+The probe source identities additionally bind the canonical Rust classifier, its `read-evidence.mjs` dependency and the
+statically imported `windows-evidence.mjs` helper. The fixed source map also includes that helper's Windows C source.
+Receipt or policy path strings never select files to read. The C source hash does not bind the environment-selected
+`GVY_CI_EVIDENCE_READER` executable or certify its compiler or binary. B01's native command runner remains macOS/Linux
+only; the Windows reader branch is not qualified by this source inventory. An identity change requires a new final-head
+execution receipt; historical native evidence remains bound to its original source closure.
 
 `--verify-only` fetches/verifies source metadata without compiling or certifying native execution.
 

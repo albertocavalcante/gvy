@@ -11,5 +11,8 @@ export function probeSourceFiles(engine) {
     ...Object.fromEntries(local.map(name => [name, fileURLToPath(new URL(name, import.meta.url))])),
     'tools/ci/check-rust-diagnostics.mjs': fileURLToPath(new URL('../../../ci/check-rust-diagnostics.mjs', import.meta.url)),
     'tools/ci/read-evidence.mjs': fileURLToPath(new URL('../../../ci/read-evidence.mjs', import.meta.url)),
+    'tools/ci/windows-evidence.mjs': fileURLToPath(new URL('../../../ci/windows-evidence.mjs', import.meta.url)),
+    // Platform-limited source identity; this does not bind an environment-selected executable.
+    'tools/ci/windows-evidence-reader.c': fileURLToPath(new URL('../../../ci/windows-evidence-reader.c', import.meta.url)),
   };
 }
