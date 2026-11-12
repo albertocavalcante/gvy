@@ -6,7 +6,10 @@ import org.eclipse.lsp4j.TextEdit
 /** Units negotiated by LSP 3.17 for a position's character offset. */
 internal enum class EditorPositionEncoding { UTF8, UTF16, UTF32 }
 
-/** Applies a single document's simultaneous LSP edits to a new string; no client or filesystem state is changed. */
+/**
+ * Applies a single document's simultaneous LSP edits to a new string; no client or filesystem state is changed.
+ * Callers must not mutate [text] or [edits] during the call. Positions that split encoded characters are rejected.
+ */
 internal object EditorTextEdits {
     fun apply(text: CharSequence, edits: List<TextEdit>, encoding: EditorPositionEncoding): String {
         val lines = lines(text)
