@@ -50,6 +50,21 @@ class LexicalScopeTest {
     }
 
     @Test
+    fun `nested local bindings remain isolated across modules`() {
+        val semantics = GroovySemantics(solver)
+        val left = parse("class A { def m() { if (true) { def x = 1; def probe = x } } }")
+        val right = parse("class B { def m() { if (true) { def x = 's'; def probe = x } } }")
+        fun probe(module: org.codehaus.groovy.ast.ModuleNode): DeclarationExpression {
+            val code = module.classes.first().methods.first { it.name == "m" }.code as BlockStatement
+            val branch = (code.statements.first() as org.codehaus.groovy.ast.stmt.IfStatement).ifBlock as BlockStatement
+            return (branch.statements[1] as ExpressionStatement).expression as DeclarationExpression
+        }
+        assertEquals(TypeConstants.INT, semantics.resolveType(probe(left).rightExpression, left))
+        assertEquals(TypeConstants.STRING, semantics.resolveType(probe(right).rightExpression, right))
+        assertEquals(TypeConstants.INT, semantics.resolveType(probe(left).rightExpression, left))
+    }
+
+    @Test
     fun `symbol extraction uses the matching method parameter`() {
         val module = parse("class Sample { def a(Integer x) { def result = x }; def b(String x) { def result = x } }")
         val semantics = GroovySemantics(solver)
