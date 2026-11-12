@@ -3,6 +3,7 @@ import { PassThrough } from "stream";
 import {
   createStderrRouter,
   pipeServerStderr,
+  pipeServerStdout,
   type LogSink,
 } from "../../../src/server/stderrRouter";
 
@@ -410,4 +411,45 @@ describe("stderrRouter", () => {
       ["info", "14:03:11.124 [main] INFO x.Y -- next"],
     ]);
   });
+
+  it("bounds oversized records and resets severity before recovery", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStderr(input, sink);
+    input.write("Nov 10, 2026 3:00:00 PM a.B c\n");
+    input.write("x".repeat(64 * 1024 + 1));
+    input.end("\n  continuation\n14:03:11.123 [main] INFO x.Y -- recovered\n");
+    await new Promise((resolve) => input.on("close", resolve));
+    assertTruncated(entries);
+  });
+
+  it("bounds auxiliary stdout, preserves UTF-8 and recovers", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStdout(input, sink);
+    const unicode = Buffer.from("🧪");
+    input.write(unicode.subarray(0, 2));
+    input.write(unicode.subarray(2));
+    input.write("x".repeat(64 * 1024));
+    input.end("\r\nnext");
+    await new Promise((resolve) => input.on("close", resolve));
+    expect(entries).to.have.length(2);
+    expect(entries[0][0]).to.equal("info");
+    expect(entries[0][1]).to.include("🧪");
+    expect(entries[0][1]).to.include("truncated");
+    expect(Buffer.byteLength(entries[0][1])).to.be.lessThan(64 * 1024 + 128);
+    expect(entries[1]).to.deep.equal(["info", "next"]);
+  });
 });
+
+function assertTruncated(entries: Entry[]): void {
+  expect(entries[0]).to.deep.equal(["error", "Nov 10, 2026 3:00:00 PM a.B c"]);
+  expect(entries[1][0]).to.equal("error");
+  expect(entries[1][1]).to.include("truncated");
+  expect(Buffer.byteLength(entries[1][1])).to.be.lessThan(64 * 1024 + 128);
+  expect(entries[2]).to.deep.equal(["error", "  continuation"]);
+  expect(entries[3]).to.deep.equal([
+    "info",
+    "14:03:11.123 [main] INFO x.Y -- recovered",
+  ]);
+}
