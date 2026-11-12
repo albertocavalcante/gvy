@@ -78,7 +78,7 @@ accepts that base version while requiring the extension's full prerelease versio
 receipt retains the server's actual version. `tools/release.sh checksums` can regenerate the checksum manifest; it
 excludes its own output and replaces the previous manifest only after hashing succeeds.
 
-Tagged artifact builds require Git 2.44 or newer for
+Use Node.js 24, as in release CI. Tagged artifact builds require Git 2.44 or newer for
 [`git show-ref --exists`](https://github.com/git/git/blob/v2.44.0/Documentation/git-show-ref.txt). Use a clean checkout
 whose base version matches the requested release, and provide the tag explicitly:
 
@@ -87,10 +87,10 @@ make release-build RELEASE_VERSION=vX.Y.Z    # preview build steps and output pa
 make release-publish RELEASE_VERSION=vX.Y.Z  # build verified local release artifacts
 ```
 
-The preview leaves existing artifacts and checksums unchanged. It invokes neither Gradle nor pnpm and creates no
-placeholder files. Other commands reject `--dry-run`; unsupported options and extra arguments fail before any build
-action. The `release-publish` target requires `RELEASE_VERSION`; it does not parse human-readable Gradle version output.
-The tagged GitHub workflow publishes the resulting artifacts.
+The preview validates the version and Git refname, leaving existing artifacts and checksums unchanged. It invokes
+neither Gradle nor pnpm and creates no placeholder files. Other commands reject `--dry-run`; unsupported options and
+extra arguments fail before any build action. The `release-publish` target requires `RELEASE_VERSION`; it does not parse
+human-readable Gradle version output. The tagged GitHub workflow publishes the resulting artifacts.
 
 The direct build command is `tools/release.sh build --version vX.Y.Z`; add `--dry-run` for the preview. The builder
 restores the original `package.json` contents and permissions after either successful packaging or an error. Artifact

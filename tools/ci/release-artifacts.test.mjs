@@ -81,7 +81,7 @@ function fixture(t, options = {}) {
   writeFileSync(join(root, 'fresh.jar'), server(options.serverVersion ?? version, options.commit ?? commit, options.dirty ?? false));
   writeFileSync(join(root, 'pinned.jar'), server('0.4.8-SNAPSHOT'));
   writeFileSync(join(root, 'fixture-zip.cjs'), `${crc32.toString()}\n${zip.toString()}\nmodule.exports = zip;\n`);
-  writeFileSync(join(root, 'bin/git'), '#!/bin/bash\nif [[ "$1" = show-ref ]]; then exit 2; fi\nprintf "%s\\n" "$FIXTURE_COMMIT"\n', { mode: 0o755 });
+  writeFileSync(join(root, 'bin/git'), '#!/bin/bash\nif [[ "$1" = show-ref ]]; then exit 2; fi\nif [[ "$1" = check-ref-format ]]; then exit 0; fi\nprintf "%s\\n" "$FIXTURE_COMMIT"\n', { mode: 0o755 });
   writeFileSync(join(root, 'gradlew'), `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
@@ -225,6 +225,53 @@ test('preview preserves existing artifacts even when a release tag points elsewh
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
 
+const malformedVersions = ['0.5.4-..', '0.5.4-rc..1', '0.5.4-01', '00.5.4', '0.05.4', '9007199254740992.5.4', '0.5.4\n'];
+for (const candidate of [...malformedVersions, '0.5.4-foo.lock']) {
+  test(`release input ${JSON.stringify(`v${candidate}`)} fails before cleanup or staging`, t => {
+    const f = realGitFixture(t);
+    mkdirSync(join(f.root, 'dist'));
+    writeFileSync(join(f.root, 'dist/verified-artifact'), 'previous verified artifact');
+    writeFileSync(join(f.root, 'gradlew'), '#!/bin/bash\ntouch staging-started\nexit 43\n', { mode: 0o755 });
+    const result = f.command('/bin/bash', ['tools/release.sh', 'build', '--version', `v${candidate}`]);
+    assert.equal(readFileSync(join(f.root, 'dist/verified-artifact'), 'utf8'), 'previous verified artifact');
+    assert.notEqual(result.status, 0);
+    assert.equal(existsSync(join(f.root, 'staging-started')), false);
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  });
+}
+
+for (const candidate of malformedVersions) {
+  test(`artifact verification rejects malformed release version ${JSON.stringify(candidate)}`, t => {
+    const f = fixture(t);
+    const jar = join(f.root, 'candidate.jar');
+    const vsix = join(f.root, 'candidate.vsix');
+    const jarBytes = server(candidate.split('-')[0]);
+    writeFileSync(jar, jarBytes);
+    writeFileSync(vsix, zip([['extension/package.json', JSON.stringify({ version: candidate })], ['extension/server/gls.jar', jarBytes]]));
+    const result = f.command(process.execPath, ['tools/ci/release-artifacts.mjs', jar, vsix, candidate, commit]);
+    assert.notEqual(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /Usage: release-artifacts/);
+    assert.equal(existsSync(join(f.root, 'release.json')), false);
+  });
+}
+
+for (const prefix of ['v', 'vscode-groovy-v']) {
+  test(`a real Git checkout accepts a valid RC release with prefix ${prefix}`, t => {
+    const f = realGitFixture(t);
+    const result = f.run('--version', `${prefix}0.5.4-rc.1`);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(JSON.parse(readFileSync(join(f.root, 'dist/release.json'), 'utf8')).version, '0.5.4-rc.1');
+  });
+}
+
+test('preview rejects a SemVer prerelease that is not a valid Git refname', t => {
+  const f = realGitFixture(t);
+  const result = f.run('--version', 'v0.5.4-foo.lock', '--dry-run');
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.equal(existsSync(join(f.root, 'dist')), false);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+});
+
 test('release build prepares and packages the exact current server despite inherited pinned selection', t => {
   const f = fixture(t);
   const result = f.run();
@@ -279,7 +326,7 @@ for (const options of [{ serverVersion: '0.4.8' }, { commit: 'a'.repeat(40) }, {
   });
 }
 
-test('dry run previews outputs without invoking tools or creating artifacts', t => {
+test('dry run previews outputs without building or creating artifacts', t => {
   const f = fixture(t);
   const result = f.run('--dry-run');
   assert.equal(result.status, 0, result.stdout + result.stderr);

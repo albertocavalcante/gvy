@@ -172,10 +172,12 @@ cmd_build() {
 
 cmd_validate() {
   if [[ -n "${VERSION}" ]]; then
-    # Check tag format (v1.2.3 or vscode-groovy-v1.2.3)
-    if [[ ! "${VERSION}" =~ ^(v|vscode-groovy-v)[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
-      log_error "Invalid version format: ${VERSION}. Expected vX.Y.Z or vscode-groovy-vX.Y.Z"
-      exit 1
+    local release_tools
+    release_tools="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+    node "${release_tools}/ci/release-version.mjs" "${VERSION}"
+    if ! git check-ref-format "refs/tags/${VERSION}"; then
+      log_error "Invalid release tag refname: ${VERSION}"
+      return 1
     fi
     log_success "Version format valid: ${VERSION}"
   fi

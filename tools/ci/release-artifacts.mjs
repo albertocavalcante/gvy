@@ -6,9 +6,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { readZipEntry } from '../../editors/code/tools/zip.js';
 import { readJarProvenance } from '../../editors/code/tools/jar-provenance.js';
+import { isReleaseVersion } from './release-version.mjs';
 
 const [jar, vsix, version, commit, ...extra] = process.argv.slice(2);
-if (!jar || !vsix || !/^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$/.test(version ?? '') ||
+if (!jar || !vsix || !isReleaseVersion(version) ||
     !/^[a-f0-9]{40}$/.test(commit ?? '') || extra.length) {
   throw new Error('Usage: release-artifacts.mjs <jar> <vsix> <release-version> <source-commit>');
 }
