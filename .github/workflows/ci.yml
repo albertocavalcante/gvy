@@ -915,7 +915,7 @@ jobs:
       - name: Check for dependency updates
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/dependency-gradle-evidence"
-          --producer dependency-updates dependencyUpdates --refresh-dependencies --stacktrace --max-workers=2
+          --producer dependency-updates dependencyUpdates --no-parallel --refresh-dependencies --stacktrace --max-workers=2
       - name: Upload dependency diagnostic evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

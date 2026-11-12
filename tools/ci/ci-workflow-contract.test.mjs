@@ -120,9 +120,11 @@ import { writeFileSync } from 'node:fs';
 writeFileSync('args.json', JSON.stringify(process.argv.slice(2)));
 console.log('> Task :dependencyUpdates');
 if (process.env.FAKE_GRADLE_MODE === 'warning') console.error('WARNING: Unexpected dependency tool warning');
+const parallelFailure = process.env.FAKE_GRADLE_MODE === 'requires-serial' && !process.argv.includes('--no-parallel');
+if (parallelFailure) console.error('Parallel project execution is not supported, run this task with --no-parallel');
 console.log('Dependency report generated');
-console.log('BUILD ' + (process.env.FAKE_GRADLE_MODE === 'failure' ? 'FAILED' : 'SUCCESSFUL') + ' in 1s');
-process.exitCode = process.env.FAKE_GRADLE_MODE === 'failure' ? 7 : 0;
+console.log('BUILD ' + (process.env.FAKE_GRADLE_MODE === 'failure' || parallelFailure ? 'FAILED' : 'SUCCESSFUL') + ' in 1s');
+process.exitCode = parallelFailure ? 1 : process.env.FAKE_GRADLE_MODE === 'failure' ? 7 : 0;
 `);
   writeFileSync(join(dir, 'event.json'), JSON.stringify({ pull_request: { head: { sha: headSha } } }));
   const env = { ...process.env, PATH: dir, RUNNER_TEMP: dir, FAKE_GRADLE_MODE: mode,
@@ -166,4 +168,20 @@ test('actual dependency workflow command retains complete current invocation evi
   assert.ok(summary.log.bytes > 0);
   assert.deepEqual(JSON.parse(readFileSync(join(fixture.dir, 'args.json'), 'utf8')).slice(-3),
     ['--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
+});
+
+test('actual dependency workflow command disables unsupported parallel project execution', t => {
+  // Real witness: manual run 43278828776/attempt 1/job 131395827251,
+  // invocation 0739d887-c50f-4bec-b77d-bc3743239965: complete capture,
+  // original exit 1, zero unexpected diagnostics, and this exact plugin error.
+  const fixture = commandFixture(t, 'requires-serial');
+  assert.equal(fixture.run.status, 0, fixture.run.stdout + fixture.run.stderr);
+  const args = JSON.parse(readFileSync(join(fixture.dir, 'args.json'), 'utf8'));
+  assert.equal(args.filter(arg => arg === '--no-parallel').length, 1);
+  assert.ok(!args.includes('--parallel'));
+  const [summary] = fixture.summaries();
+  assert.equal(summary.complete, true);
+  assert.equal(summary.commandExitCode, 0);
+  assert.equal(summary.captureExitCode, 0);
+  assert.equal(summary.ok, true);
 });
