@@ -19,3 +19,4 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 - Plans and audits: `MODERNIZATION_AUDIT_2026-11.md` (debt inventory, Kotlin idiom plan, RFCs, phased PR plan)
 - Serialization migration: [kotlinx plan and eventual LSP4K migration](KOTLINX_SERIALIZATION_MIGRATION.md)
 - Agent semantic tooling: [MCP research and evaluation proposal](MCP_RESEARCH.md)
+- Logging reliability: [PR delivery plan and Terra packets](LOGGING_DELIVERY_PLAN.md)
