@@ -279,7 +279,7 @@ test(
     assert.equal(result.status, 37);
     assert.equal(
       result.stdout.toString(),
-      ["-Xmx2g", "-jar", fs.realpathSync(jar), "version", ""].join("\0"),
+      ["-Xmx2g", "-jar", fs.realpathSync.native(jar), "version", ""].join("\0"),
     );
   },
 );
@@ -402,7 +402,7 @@ if (isWindows) {
       : args[2];
     assert.equal(
       path.normalize(actualJar),
-      path.normalize(fs.realpathSync(jar)),
+      path.normalize(fs.realpathSync.native(jar)),
       JSON.stringify({ argv: args }),
     );
   });
@@ -539,7 +539,10 @@ if (isWindows) {
       timeout: 60000,
     },
     (t) => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-runtime-probe-"));
+      // Windows TEMP may contain an 8.3 alias; match the launcher's handle-based canonical path.
+      const root = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), "gvy-runtime-probe-")),
+      );
       t.after(() =>
         fs.rmSync(root, {
           recursive: true,
