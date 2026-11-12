@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: CodeNarc current-main preparation
+name: CodeNarc combined-main preparation
 on:
   workflow_dispatch:
 permissions:
@@ -19,7 +19,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 1
       JDK_JAVA_OPTIONS: '-Xmx512m'
-      JAVA_TOOL_OPTIONS: '-Xmx512m'
+      JAVA_TOOL_OPTIONS: '-Xmx512m -Dorg.gradle.deprecation.trace=true'
       GRADLE_OPTS: >-
         -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC"
         -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
@@ -78,7 +78,7 @@ jobs:
           git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          git diff --quiet
+          git diff --exit-code
           git diff --cached --check
           cp "$GITHUB_WORKSPACE/support/.publication/paths.nul" "$RUNNER_TEMP/expected-paths.nul"
           [[ "$(sha256sum "$RUNNER_TEMP/expected-paths.nul" | cut -d' ' -f1)" == "$(jq -er '.pathsSha256' "$GITHUB_WORKSPACE/support/.publication/receipt.json")" ]]
@@ -172,22 +172,32 @@ jobs:
           test -x .git/hooks/pre-commit && test -x .git/hooks/commit-msg
           git config user.name 'Alberto Cavalcante'
           git config user.email 'alberto@cavalcante.uk'
-          git diff --quiet
+          git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           direnv allow
           direnv exec . java -version
           pnpm --dir editors/code run compile
           pnpm --dir editors/code test
           editors/code/node_modules/.bin/prettier --check editors/code/client/src/test/integration/implementation.test.ts
-          direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 \
+          candidate_sha=$(git rev-parse HEAD)
+          gradle_evidence="$RUNNER_TEMP/gvy-preparation-gradle-evidence"
+          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "$gradle_evidence" --producer preparation-lint-fix \
+              lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
-          git diff --quiet
+          git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          direnv exec . ./gradlew :diagnostics:codenarc:test \
+          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "$gradle_evidence" --producer preparation-codenarc-native \
+              :diagnostics:codenarc:test \
+              --no-build-cache --rerun-tasks \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
-              2>&1 | tee "$RUNNER_TEMP/gvy-codenarc-native.log"
-          git diff --quiet
+              --console=plain
+          native_reports=("$gradle_evidence"/preparation-codenarc-native-*/console.log)
+          [[ "${#native_reports[@]}" -eq 1 && -f "${native_reports[0]}" ]]
+          cp "${native_reports[0]}" "$RUNNER_TEMP/gvy-codenarc-native.log"
+          git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/gvy-staged-paths"
           while IFS= read -r -d '' staged_file; do
@@ -205,11 +215,17 @@ jobs:
               esac
           done <"$RUNNER_TEMP/gvy-staged-paths"
           git commit -m 'fix(codenarc): propagate source analysis failures' 2>&1 | tee "$RUNNER_TEMP/gvy-commit-hooks.log"
+          node tools/ci/check-gradle-diagnostics.mjs \
+              --log "$RUNNER_TEMP/gvy-commit-hooks.log" --exit-code 0 --capture-exit-code 0 \
+              --producer preparation-hooks --baseline tools/ci/gradle-diagnostics.json \
+              --report "$RUNNER_TEMP/gvy-hook-diagnostics" --root "$PWD"
           [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
-          git diff --quiet && git diff --cached --quiet
+          git diff --exit-code && git diff --cached --quiet
           test -z "$(git status --porcelain --untracked-files=all)"
           mkdir "$RUNNER_TEMP/gvy-publication-proof"
+          cp -R "$gradle_evidence" "$RUNNER_TEMP/gvy-publication-proof/gradle-evidence"
+          cp -R "$RUNNER_TEMP/gvy-hook-diagnostics" "$RUNNER_TEMP/gvy-publication-proof/hook-diagnostics"
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
           cp "$RUNNER_TEMP/gvy-commit-hooks.log" "$RUNNER_TEMP/gvy-publication-proof/"
@@ -242,6 +258,14 @@ jobs:
           path: |
             support/.publication/receipt.json
             candidate/diagnostics/codenarc/build/test-results/test/*.xml
+            candidate/diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/CodeAnalyzer.kt
+            candidate/diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/SingleFileSourceAnalyzer.kt
+            candidate/diagnostics/codenarc/src/test/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/DefaultCodeAnalyzerFailureTest.kt
+            candidate/diagnostics/codenarc/src/test/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/SingleFileSourceAnalyzerTest.kt
+            candidate/tools/ci/dependency-maintenance.json
             ${{ runner.temp }}/gvy-codenarc-native.log
+            ${{ runner.temp }}/gvy-preparation-gradle-evidence/
+            ${{ runner.temp }}/gvy-hook-diagnostics/
+            ${{ runner.temp }}/gvy-commit-hooks.log
           if-no-files-found: warn
           retention-days: 7
