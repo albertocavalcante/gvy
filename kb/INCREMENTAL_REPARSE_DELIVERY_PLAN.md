@@ -302,11 +302,11 @@ whole-file parsing.
 
 ## PR queue and next-PR packet
 
-Queue baseline: `dd3a3a20a28a1854c879071092ba241e41343508`, 2026-11-11 Pacific. The next PR is Q01. There are **18
-scoped PR packets and four experiment-gated follow-ons**, not 22 branches or promises of a selected parser. “Scoped”
-means the problem, contract, proof and boundary can be specified now; dependencies still have to land and integration
-heads must be rechecked. Q identifiers are planning references, not GitHub issue numbers. Existing issues remain the
-live trackers.
+Queue baseline: `dd3a3a20a28a1854c879071092ba241e41343508`, 2026-11-11 Pacific. The next PR is Q01. There are **19
+scoped PR packets and four experiment-gated follow-ons**, not 23 branches or promises of a selected parser. QH was added
+after auditing raw UTF-16 identity during Q02 preparation. “Scoped” means the problem, contract, proof and boundary can
+be specified now; dependencies still have to land and integration heads must be rechecked. Q identifiers are planning
+references, not GitHub issue numbers. Existing issues remain the live trackers.
 
 ### Coordinate existing work before opening a replacement
 
@@ -425,8 +425,9 @@ packet. A packet's implementation PR must refresh its exact touched paths agains
 | ID  | Proposed PR title / owner boundary                                                             | Prerequisites                          |
 | --- | ---------------------------------------------------------------------------------------------- | -------------------------------------- |
 | Q02 | `feat(lsp): accept atomic versioned buffer change batches` — DocumentProvider/lifecycle        | Q01                                    |
+| QH  | `fix(compilation): preserve raw UTF-16 source identity` — hashing/index freshness              | Independent; coordinate #1754/#1713    |
 | Q03 | `test(lsp): replay edits against fresh document controls` — protocol characterization          | None; use Full sync baseline           |
-| Q04 | `feat(lsp): handle incremental changes with explicit recovery` — didChange/readiness           | Q02, Q03                               |
+| Q04 | `feat(lsp): handle incremental changes with explicit recovery` — didChange/readiness           | Q02, Q03, QH                           |
 | Q05 | `feat(lsp): enable verified incremental text synchronization` — capabilities/real client       | Q04 and packaged protocol proof        |
 | Q06 | `fix(compilation): separate phase-sensitive cached and pending work` — compatibility keys      | None; independent correctness lane     |
 | Q07 | `fix(compilation): capture coherent source and workspace inputs` — compile snapshot            | Q06; coordinate declaration-view stack |
@@ -443,18 +444,38 @@ packet. A packet's implementation PR must refresh its exact touched paths agains
 | Q18 | `docs(parser): select the incremental syntax strategy from evidence` — decision experiment     | Q03, Q16, Q17                          |
 
 **Q02 — atomic buffer transition.** Extend `DocumentProvider` using Q01, retaining one incarnation and one accepted
-version/text snapshot. Prepare outside long-held locks, then revalidate the captured source identity and commit once;
-retry or reject a raced base rather than applying to different text. Keep existing full-text update compatibility. Tests
-cover version jumps, duplicate/old updates, concurrent replace, invalid later event, and close/reopen with the same
+version/text snapshot. Validate identity and version before inspecting edits; prepare outside long-held locks, then
+revalidate the captured source identity before returning an invalid result or committing once. Reject a raced base;
+never retry its edits against different text. Keep existing full-text update compatibility. Tests cover version jumps,
+duplicate/old updates, preflight short-circuit, concurrent replace, invalid later event, and close/reopen with the same
 text/version. Gate: exactly one coherent transition or no change. No public ranged acceptance yet. Rollback: restore the
 previous full-text transition API; no persistent data.
+
+**QH — lossless source identity.** A code audit found that `SemanticIndexer.contentHash` hashes UTF-8 encoding, whose
+[replacement behavior](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/String.html#getBytes(java.nio.charset.Charset))
+can turn distinct lone surrogate units into identical bytes before hashing. A bounded JVM probe of the compiled helper
+confirmed that two distinct lone high units, a lone low unit and a literal question mark produced the same digest;
+replacement-character and valid-pair controls differed. This is an encoding alias, not a cryptographic collision.
+Digest-only freshness checks in semantic/symbol indexing and unparseable-text tracking need a separate correctness fix
+before Q04 exposes ranged changes; `CompilationCache` already compares complete strings. Turn the codec reproduction
+into a regression test and reproduce an affected index/freshness path under TDD. Compilation/readiness owners must
+select a representation that preserves raw code units and coordinate any public hash contract with #1754/#1713. Gate:
+explicit lone-high/low, literal replacement and valid-pair controls distinguish the affected texts, stale facts cannot
+survive the change, and protocol hash compatibility and bounded memory costs are documented. Index-level reproduction
+and the fix remain pending. Rollback must retire affected facts and use exact-source comparison or disable reuse; do not
+restore digest-only freshness with the lossy encoding.
 
 **Q03 — edit replay characterization.** Extend public-server protocol tests around `DocumentSynchronizationTest`,
 snapshot/readiness tests and existing client journal. Replay named full replacements, await the matching diagnostic or
 readiness state without sleeps, then compare selected public answers with a fresh-open control of final text. Apply
 returned edits only through actual verified client state; until #1654's adapter exists, compare/apply them in an
-independent explicit test fixture and state that narrower scope. Gate: exact source/version/range/answer equality for
-the chosen cases and reproducible test invocation. Rollback: remove the new tests, without changing runtime behavior.
+independent explicit test fixture and state that narrower scope. At the audited base, the first parser publication is
+not terminal analysis and initialization readiness is not an edit barrier. Start with an explicitly parser-only cohort
+and endpoint freshness checks; terminal merged-provider coverage requires the actual public fence from #1754. Use
+distinct packaged processes with the same immutable workspace/URIs and final versions. Gate: exact authored client
+text/version, versioned parser diagnostics and nonempty expected hover/definition projections agree with the fresh
+control for the chosen cases; this does not establish arbitrary server-text equality from public answers. Rollback:
+remove the new tests, without changing runtime behavior.
 
 **Q04 — incoming protocol adapter and recovery.** Convert ordered content-change events into Q01/Q02 without sorting,
 preserve full replacements and signed versions, and ignore deprecated rangeLength as authority. Add a synchronization
@@ -585,6 +606,7 @@ honestly frozen before Q18. Refresh them from the selected backend instead of op
 ```mermaid
 flowchart LR
     Q01 --> Q02 --> Q04 --> Q05
+    QH --> Q04
     Q03 --> Q04
     Q06 --> Q07 --> Q08 --> Q12 --> Q15
     Q07 --> Q09 --> Q10 --> Q11 --> Q12
