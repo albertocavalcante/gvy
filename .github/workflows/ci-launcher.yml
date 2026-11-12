@@ -99,9 +99,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            arch: x86_64
+            arch: x64
             target: linuxX64
             producer: launcher-linux-x64
+            executable: gvy.kexe
             test-task: linuxX64Test
             link-task: linkReleaseExecutableLinuxX64
           # macos-15 is the standard Arm64 runner; macos-15-intel is a separate image.
@@ -109,18 +110,21 @@ jobs:
             arch: arm64
             target: macosArm64
             producer: launcher-macos-arm64
+            executable: gvy.kexe
             test-task: macosArm64Test
             link-task: linkReleaseExecutableMacosArm64
+          - os: windows-2025
+            arch: x64
+            target: mingwX64
+            producer: launcher-windows-x64
+            executable: gvy.exe
+            test-task: mingwX64Test
+            link-task: linkReleaseExecutableMingwX64
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-
-      - name: Verify native runner architecture
-        env:
-          EXPECTED_ARCH: ${{ matrix.arch }}
-        run: test "$(uname -m)" = "$EXPECTED_ARCH"
 
       - name: Setup build Java
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -132,6 +136,11 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
+
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e 'if (process.arch !== process.env.EXPECTED_ARCH) throw new Error("Unexpected native runner architecture")'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
@@ -195,11 +204,28 @@ jobs:
           }
           NODE
 
+      - name: Select Windows PE probe compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Reuse the MinGW dependency selected by the pinned Kotlin/Native distribution.
+          $konan = if ($env:KONAN_DATA_DIR) { $env:KONAN_DATA_DIR } else { Join-Path $env:USERPROFILE '.konan' }
+          $compiler = Join-Path $konan 'dependencies\msys2-mingw-w64-x86_64-2\bin\gcc.exe'
+          if (!(Test-Path -LiteralPath $compiler -PathType Leaf)) {
+            throw 'The completed Kotlin/Native build did not provide its MinGW x64 compiler'
+          }
+          $target = (& $compiler -dumpmachine).Trim()
+          if ($LASTEXITCODE -ne 0 -or $target -ne 'x86_64-w64-mingw32') {
+            throw 'The Windows probe compiler must target native MinGW x64'
+          }
+          "GVY_PROBE_CC=$compiler" >> $env:GITHUB_ENV
+          Split-Path -Parent $compiler >> $env:GITHUB_PATH
+
       - name: Verify forwarding and actual server CLI/LSP
         env:
-          GVY_LAUNCHER: ${{ github.workspace }}/launcher/build/bin/${{ matrix.target }}/releaseExecutable/gvy.kexe
+          GVY_LAUNCHER: ${{ github.workspace }}/launcher/build/bin/${{ matrix.target }}/releaseExecutable/${{ matrix.executable }}
           GVY_TEST_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
         run: |
           test -x "$GVY_LAUNCHER"
           test -s "$GVY_TEST_JAR"
-          node --test launcher/test/launcher.test.cjs
+          node --test --test-concurrency=1 launcher/test/*.test.cjs

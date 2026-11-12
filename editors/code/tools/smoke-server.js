@@ -14,12 +14,13 @@ function smokeServer(jar, timeoutMs = 30000) {
         process.platform === "win32" ? "java.exe" : "java",
       )
     : "java";
-  return smokeServerCommand(java, ["-jar", jar], timeoutMs);
+  return smokeServerCommand(java, ["-Xmx2g", "-jar", jar], timeoutMs);
 }
 
 /** Verify an LSP command with inherited application environment.
  * @param {string} command @param {string[]} args @param {number} timeoutMs
  * @param {NodeJS.ProcessEnv} env
+ * @param {{uri: string, text: string, verifySymbols: (symbols: object[]) => void} | null} document
  * @returns {Promise<void>}
  */
 function smokeServerCommand(
@@ -27,6 +28,7 @@ function smokeServerCommand(
   args,
   timeoutMs = 30000,
   env = process.env,
+  document = null,
 ) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -37,6 +39,7 @@ function smokeServerCommand(
     let stderr = "";
     let initialized = false;
     let shutdown = false;
+    let documentChecked = false;
     let settled = false;
     const timer = setTimeout(
       () => fail(new Error("LSP smoke timed out")),
@@ -85,6 +88,31 @@ function smokeServerCommand(
               throw new Error("LSP initialize failed");
             initialized = true;
             send({ method: "initialized", params: {} });
+            if (document) {
+              send({
+                method: "textDocument/didOpen",
+                params: {
+                  textDocument: {
+                    uri: document.uri,
+                    languageId: "groovy",
+                    version: 1,
+                    text: document.text,
+                  },
+                },
+              });
+              send({
+                id: 3,
+                method: "textDocument/documentSymbol",
+                params: { textDocument: { uri: document.uri } },
+              });
+            } else {
+              send({ id: 2, method: "shutdown", params: null });
+            }
+          } else if (message.id === 3 && !message.method && document) {
+            if (message.error || !Array.isArray(message.result))
+              throw new Error("LSP document symbols failed");
+            document.verifySymbols(message.result);
+            documentChecked = true;
             send({ id: 2, method: "shutdown", params: null });
           } else if (message.id === 2 && !message.method) {
             if (message.error) throw new Error("LSP shutdown failed");
@@ -103,7 +131,12 @@ function smokeServerCommand(
     });
     child.on("exit", (code) => {
       if (settled) return;
-      if (!initialized || !shutdown || code !== 0)
+      if (
+        !initialized ||
+        !shutdown ||
+        (document && !documentChecked) ||
+        code !== 0
+      )
         return fail(
           new Error(`LSP exited before completing smoke test (${code})`),
         );

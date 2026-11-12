@@ -1,9 +1,5 @@
 name: repro-cli-check-sarif-stdout
-description: '`gls check --format SARIF` writes only the SARIF document to stdout'
-xfail:
-  issue: 1543
-  reason: stdout of check --format SARIF also receives the CodeNarc runner summary line
-  match: 'CodeNarc completed'
+description: "`gls check --format SARIF` writes only the SARIF document to stdout"
 workspace:
   fixture: empty-workspace
   files:

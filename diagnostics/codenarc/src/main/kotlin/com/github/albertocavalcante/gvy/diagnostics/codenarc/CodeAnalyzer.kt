@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
+import groovy.lang.Closure
+import groovy.lang.ExpandoMetaClass
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.CodeNarcRunner
 import org.codenarc.analyzer.FilesSourceAnalyzer
@@ -81,6 +83,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
             Files.write(tempSourceFile, sourceCode.toByteArray(StandardCharsets.UTF_8))
 
             val runner = CodeNarcRunner().apply {
+                routeSummaryToStderr()
                 // FilesSourceAnalyzer produces FileResults (supports getChildren())
                 sourceAnalyzer = FilesSourceAnalyzer().also { analyzer ->
                     // Use reflection to set properties since Kotlin can't access Groovy property setters directly
@@ -152,6 +155,24 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
             Files.write(tmpRuleset, rulesetContent.toByteArray(StandardCharsets.UTF_8))
         }
     }
+}
+
+private fun CodeNarcRunner.routeSummaryToStderr() {
+    // TODO(#1543): Replace the embedding adapter when CodeNarc provides a supported summary-output API.
+    //   See: https://github.com/albertocavalcante/gvy/issues/1543
+    // CodeNarc's Groovy execute() dynamically calls println. Customize only this instance, preserving
+    // process streams and other runners. Subclassing breaks its private-method calls inside closures.
+    val runnerMetaClass = ExpandoMetaClass(CodeNarcRunner::class.java, false, true)
+    runnerMetaClass.registerInstanceMethod(
+        "println",
+        object : Closure<Unit>(this) {
+            fun doCall(message: Any?) {
+                System.err.println(message)
+            }
+        },
+    )
+    runnerMetaClass.initialize()
+    metaClass = runnerMetaClass
 }
 
 internal class RulesetFileCache(private val cacheDir: Path) {
