@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.groovyparser.tokens
 
 import arrow.core.Option
@@ -29,7 +32,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
     /**
      * Represents a token span in the source code.
      *
-     * The span uses half-open interval semantics: `[start, end)`.
+     * The span uses UTF-16 offsets with half-open interval semantics: `[start, end)`.
      *
      * @property start Inclusive start offset (0-based)
      * @property end Exclusive end offset (0-based)
@@ -80,9 +83,10 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             val collector = SpanCollector()
 
             val lexer = createLexer(source) ?: return GroovyTokenIndex(emptyList())
+            val codePointToUtf16 = codePointToUtf16Offsets(source)
 
             handleShebang(source, collector)
-            processAllTokens(lexer, collector)
+            processAllTokens(lexer, collector, codePointToUtf16)
 
             return GroovyTokenIndex(collector.toSortedList())
         }
@@ -102,11 +106,27 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             }
         }
 
-        private fun processAllTokens(lexer: GroovyLangLexer, collector: SpanCollector) {
+        private fun codePointToUtf16Offsets(source: String): IntArray? {
+            val codePointCount = source.codePointCount(0, source.length)
+            if (codePointCount == source.length) return null
+
+            // ANTLR indexes code points; Kotlin String and LSP offsets count UTF-16 code units.
+            // Include the end boundary so half-open spans also cover a final supplementary character.
+            val offsets = IntArray(codePointCount + 1)
+            var utf16Offset = 0
+            for (codePointOffset in 0 until codePointCount) {
+                offsets[codePointOffset] = utf16Offset
+                utf16Offset += Character.charCount(source.codePointAt(utf16Offset))
+            }
+            offsets[codePointCount] = source.length
+            return offsets
+        }
+
+        private fun processAllTokens(lexer: GroovyLangLexer, collector: SpanCollector, codePointToUtf16: IntArray?) {
             runCatching {
                 var token = fetchNextToken(lexer, collector)
                 while (token != null && token.type != Token.EOF) {
-                    processToken(token, lexer, collector)
+                    processToken(token, lexer, collector, codePointToUtf16)
                     token = fetchNextToken(lexer, collector)
                 }
             }.onFailure { throwable ->
@@ -122,7 +142,12 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             logger.debug { "Lexer error at offset ${collector.lastOrNull()?.end ?: 0}: ${throwable.message}" }
         }.getOrNull()
 
-        private fun processToken(token: Token, lexer: GroovyLangLexer, collector: SpanCollector) {
+        private fun processToken(
+            token: Token,
+            lexer: GroovyLangLexer,
+            collector: SpanCollector,
+            codePointToUtf16: IntArray?,
+        ) {
             val symbolicName = lexer.vocabulary.getSymbolicName(token.type) ?: ""
             val text = token.text ?: ""
 
@@ -133,7 +158,10 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             if (token.startIndex == 0 && collector.firstOrNull()?.start == 0) {
                 return
             }
-            collector.add(TokenSpan(token.startIndex, token.stopIndex + 1, context))
+            val codePointEnd = token.stopIndex + 1
+            val start = codePointToUtf16?.get(token.startIndex) ?: token.startIndex
+            val end = codePointToUtf16?.get(codePointEnd) ?: codePointEnd
+            collector.add(TokenSpan(start, end, context))
         }
 
         private fun mapTokenToContext(symbolicName: String, text: String): TokenContext = when {
