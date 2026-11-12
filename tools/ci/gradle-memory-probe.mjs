@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { closeSync, constants, lstatSync, openSync, opendirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { readEvidenceBytes } from './read-evidence.mjs';
+import { gradleMemoryObservationProfile } from './gradle-memory-options.mjs';
 
 const MAIN = 'org.gradle.launcher.daemon.bootstrap.GradleDaemon';
 const MAX_PROC_ENTRIES = 4096;
@@ -86,7 +87,7 @@ export function identifyOwnedGradleDaemon(record, { ownerArgument, uid }) {
 }
 
 function validate(options) {
-  const allowed = ['ownerArgument', 'identity', 'reportPath', 'intervalMs', 'maxDurationMs', 'discoveryTimeoutMs', 'maxSamples', 'maxReportBytes', 'toolTimeoutMs'];
+  const allowed = ['ownerArgument', 'identity', 'reportPath', 'profile', 'intervalMs', 'maxDurationMs', 'discoveryTimeoutMs', 'maxSamples', 'maxReportBytes', 'toolTimeoutMs'];
   const fields = ['headSha', 'testedSha', 'runId', 'runAttempt', 'producer', 'invocationId'];
   try {
     const copy = object => {
@@ -105,8 +106,9 @@ function validate(options) {
     if (![identity.headSha, identity.testedSha].every(value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value)) || typeof identity.runId !== 'string' || !/^[1-9][0-9]{0,19}$/.test(identity.runId) || !Number.isSafeInteger(Number(identity.runId)) || !Number.isSafeInteger(identity.runAttempt) || identity.runAttempt < 1 || typeof identity.producer !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(identity.producer) || typeof identity.invocationId !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(identity.invocationId)) throw new Error();
     if (typeof options.ownerArgument !== 'string' || options.ownerArgument.length > 4096 || !/^-XX:ErrorFile=\/[A-Za-z0-9_./-]+\/gvy-memory-[a-f0-9]{64}-hs_err_pid%p\.log$/.test(options.ownerArgument) || /\/(?:\.|\.\.)\//.test(options.ownerArgument)) throw new Error();
     if (typeof options.reportPath !== 'string' || !isAbsolute(options.reportPath) || options.reportPath.length > 4096 || options.reportPath.includes('\0')) throw new Error();
-    const limits = { intervalMs: options.intervalMs ?? 5000, maxDurationMs: options.maxDurationMs ?? 1800000, discoveryTimeoutMs: options.discoveryTimeoutMs ?? 60000, maxSamples: options.maxSamples ?? 360, maxReportBytes: options.maxReportBytes ?? 256 * 1024, toolTimeoutMs: options.toolTimeoutMs ?? 2000 };
-    for (const [key, min, max] of [['intervalMs', 1000, 60000], ['maxDurationMs', 1000, 1800000], ['discoveryTimeoutMs', 1, 60000], ['maxSamples', 1, 360], ['maxReportBytes', 4096, 256 * 1024], ['toolTimeoutMs', 10, 5000]]) if (!Number.isSafeInteger(limits[key]) || limits[key] < min || limits[key] > max) throw new Error();
+    const profile = gradleMemoryObservationProfile(options.profile);
+    const limits = { intervalMs: options.intervalMs ?? profile.intervalMs, maxDurationMs: options.maxDurationMs ?? profile.maxDurationMs, discoveryTimeoutMs: options.discoveryTimeoutMs ?? 60000, maxSamples: options.maxSamples ?? profile.maxSamples, maxReportBytes: options.maxReportBytes ?? profile.maxReportBytes, toolTimeoutMs: options.toolTimeoutMs ?? 2000 };
+    for (const [key, min, max] of [['intervalMs', 1000, 60000], ['maxDurationMs', 1000, profile.maxDurationMs], ['discoveryTimeoutMs', 1, 60000], ['maxSamples', 1, 360], ['maxReportBytes', 4096, 256 * 1024], ['toolTimeoutMs', 10, 5000]]) if (!Number.isSafeInteger(limits[key]) || limits[key] < min || limits[key] > max) throw new Error();
     return { limits, identity, ownerArgument: options.ownerArgument, reportPath: options.reportPath };
   } catch { throw new Error('Invalid memory probe options or identity'); }
 }

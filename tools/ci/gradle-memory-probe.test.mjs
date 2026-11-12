@@ -284,6 +284,60 @@ test('discovery deadline, sample count and report byte limits are explicit incom
   }
 });
 
+test('Nightly records a simulated 31-minute observation while Main retains its 30-minute ceiling', async t => {
+  for (const profile of ['main', 'nightly']) {
+    const f = fixture(t); let clock = 0;
+    const secondPair = deferred();
+    f.io.now = () => clock;
+    f.io.sleep = async (ms, signal) => {
+      if (clock === 0) { clock = 31 * 60 * 1000; return; }
+      secondPair.resolve();
+      await sleep(10000, signal);
+    };
+    const { intervalMs, maxDurationMs, ...options } = f.options;
+    const probe = startGradleMemoryProbe({ ...options, profile }, f.io);
+    if (profile === 'nightly') await secondPair.promise;
+    else await settled();
+    const result = await probe.stop();
+    assert.equal(result.complete, profile === 'nightly');
+    assert.equal(result.samples.length, profile === 'nightly' ? 2 : 1);
+    assert.equal(result.durationMs, 31 * 60 * 1000);
+    assert.equal(result.limits.maxDurationMs, profile === 'nightly' ? 3600000 : 1800000);
+    assert.equal(result.limits.intervalMs, profile === 'nightly' ? 10000 : 5000);
+    assert.deepEqual(result.reasonCodes, profile === 'nightly' ? [] : ['duration_limit']);
+    assert.equal(result.profile, undefined, 'resolved numeric limits preserve the report schema');
+  }
+});
+
+test('profile duration ceilings and existing sample, byte and tool bounds fail closed', t => {
+  const f = fixture(t);
+  for (const patch of [
+    { profile: '' }, { profile: 'CANARY' }, { maxDurationMs: 1800001 },
+    { profile: 'main', maxDurationMs: 3600000 }, { profile: 'nightly', maxDurationMs: 3600001 },
+    { profile: 'nightly', maxSamples: 361 }, { profile: 'nightly', maxReportBytes: 262145 },
+    { profile: 'nightly', toolTimeoutMs: 5001 }, { profile: 'nightly', intervalMs: 999 },
+  ]) assert.throws(() => startGradleMemoryProbe({ ...f.options, ...patch }, f.io), /Invalid memory probe/);
+  assert.equal(f.calls.length, 0);
+});
+
+test('Nightly still stops at the pair count and byte caps without retaining tool payloads', async t => {
+  for (const limit of ['samples', 'bytes']) {
+    const f = fixture(t);
+    f.io.now = () => 0;
+    f.io.sleep = async () => {};
+    const probe = startGradleMemoryProbe({ ...f.options, profile: 'nightly', maxDurationMs: 3600000,
+      ...(limit === 'bytes' ? { maxReportBytes: 4096 } : {}) }, f.io);
+    await settled();
+    const result = await probe.stop();
+    assert.equal(result.complete, false);
+    assert.deepEqual(result.reasonCodes, [limit === 'samples' ? 'sample_limit' : 'report_size_limit']);
+    if (limit === 'samples') assert.equal(result.samples.length, 360);
+    const bytes = readFileSync(f.options.reportPath);
+    assert.ok(bytes.length <= (limit === 'bytes' ? 4096 : 262144));
+    for (const secret of [marker, 'CANARY', 'ErrorFile']) assert.ok(!bytes.toString('utf8').includes(secret));
+  }
+});
+
 test('duration bound aborts an active tool before its independent longer timeout', async t => {
   const f = fixture(t);
   f.io.runTool = async (args, signal) => { await sleep(10000, signal); return { kind: signal.aborted ? 'stopped' : 'ok', stdout: gc }; };

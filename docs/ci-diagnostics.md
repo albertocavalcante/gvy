@@ -92,9 +92,10 @@ the step. Missing, empty, truncated or contradictory completion evidence and cap
 retains the original exit status, raw log/hash, exact diagnostics, owned exceptions and source/run context in a unique
 evidence directory. CI uploads that directory even after failure.
 
-The paired nightly server build uses the same diagnostic gate before artifact verification. A diagnostic failure fails
-the read-only build dependency and prevents the separate publishing job from running. Diagnostic evidence stays separate
-from the verified JAR/VSIX pair.
+Nightly lint and the server test/E2E/staging graph run in separate read-only Linux jobs, each with required numeric
+observations and the same diagnostic gate. Their daemon lifetimes are isolated by job, while the 3 GiB heap, 2 GiB
+metaspace and two-worker limits remain unchanged. Both jobs must succeed before the publishing job can run. Diagnostic
+evidence stays separate from the verified JAR/VSIX pair.
 
 Native launcher payload and Linux/macOS Native builds also use this wrapper, with separate stable producers and failure
 artifacts. Their JDK 21/native-compiler processes are outside the Linux/JDK 17 numeric sampler contract; tool
@@ -152,9 +153,12 @@ does not stop daemons or force GC. HotSpot can fall back to other crash-log dest
 open, so this does not make arbitrary fatal console output safe. Crash/core/replay files remain outside the explicit
 artifact inputs.
 
-Observations are bounded to five-second intervals, 30 minutes, 360 samples and a 256 KiB report. Each jstat command has
-an explicit 64 MiB heap, a two-second timeout and a 32 KiB output limit. Use the complete context-bound observations to
-evaluate cold compilation pressure before changing a resource profile; the memory-health warning remains a gate.
+The default Main observation profile uses five-second intervals, 30 minutes, 360 sample pairs and a 256 KiB report.
+Nightly explicitly sets `GVY_GRADLE_MEMORY_PROFILE=nightly` alongside `GVY_GRADLE_MEMORY_PROBE=true`: its fixed profile
+uses ten-second intervals and 60 minutes, retaining the same sample and byte caps. Unknown profiles and profiles without
+probe opt-in fail before Gradle starts. Resolved numeric limits appear in the existing report shape. Each jstat command
+has an explicit 64 MiB heap, a two-second timeout and a 32 KiB output limit. Use the complete context-bound observations
+to evaluate cold compilation pressure before changing a resource profile; the memory-health warning remains a gate.
 
 Gradle's indented captured test output is outside the tool classifier. Runtime warnings need scenario/test identity and
 executed negative-test assertions; they cannot be safely accepted by baselining a whole console stream.

@@ -7,7 +7,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { finished } from 'node:stream/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { checkGradleDiagnostics, renderSummary } from './check-gradle-diagnostics.mjs';
-import { effectiveGradleJvmArgs, gradleMemoryPlan } from './gradle-memory-options.mjs';
+import { effectiveGradleJvmArgs, gradleMemoryPlan, gradleMemoryObservationProfile } from './gradle-memory-options.mjs';
 import { startGradleMemoryProbe } from './gradle-memory-probe.mjs';
 import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 
@@ -135,6 +135,10 @@ async function main(args) {
     worktreeDirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));
     const gradleArgs = [...options.gradleArgs];
     if (!['true', 'false', undefined].includes(process.env.GVY_GRADLE_MEMORY_PROBE)) throw new Error('Invalid memory observation opt-in');
+    const memoryProfile = gradleMemoryObservationProfile(process.env.GVY_GRADLE_MEMORY_PROFILE);
+    if (process.env.GVY_GRADLE_MEMORY_PROFILE !== undefined && !memoryRequired) {
+      throw new Error('Memory observation profile requires probe opt-in');
+    }
     if (memoryRequired) {
       if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_OS !== 'Linux' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') {
         throw new Error('Required memory observation needs a Linux GitHub-hosted runner');
@@ -147,8 +151,8 @@ async function main(args) {
         jvmArgs: effectiveGradleJvmArgs(gradleArgs, properties), privateDirectory: memoryPrivateDirectory(options.reportRoot) });
       // Private crash-file routing proves ownership without changing memory/GC limits.
       gradleArgs.push('-Dorg.gradle.jvmargs=' + memoryPlan.jvmArgs);
-      memoryProbe = startGradleMemoryProbe({ ownerArgument: memoryPlan.ownerArgument, identity: memoryPlan.identity,
-        reportPath: memoryPath, intervalMs: 5000, maxDurationMs: 1800000 });
+      memoryProbe = startGradleMemoryProbe({ ...memoryProfile, ownerArgument: memoryPlan.ownerArgument, identity: memoryPlan.identity,
+        reportPath: memoryPath });
     }
     status = await capture([...gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir);
     // Oversize logs stay intact as artifacts; evidence fails instead of truncating.

@@ -1,11 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { effectiveGradleJvmArgs, gradleMemoryPlan } from './gradle-memory-options.mjs';
+import { effectiveGradleJvmArgs, gradleMemoryPlan, gradleMemoryObservationProfile } from './gradle-memory-options.mjs';
 
 const context = { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: 1,
   invocationId: '11111111-1111-4111-8111-111111111111' };
 const jvmArgs = '-Xms512m -Xmx3g -XX:MaxMetaspaceSize=2g';
 const privateDirectory = '/runner/temp/gvy-gradle-memory-private';
+
+test('named observation profiles retain Main limits and bound Nightly to 60 minutes without more samples or bytes', () => {
+  const main = gradleMemoryObservationProfile();
+  assert.deepEqual(main, { profile: 'main', intervalMs: 5000, maxDurationMs: 1800000, maxSamples: 360, maxReportBytes: 262144 });
+  assert.deepEqual(gradleMemoryObservationProfile('main'), main);
+  assert.deepEqual(gradleMemoryObservationProfile('nightly'), {
+    profile: 'nightly', intervalMs: 10000, maxDurationMs: 3600000, maxSamples: 360, maxReportBytes: 262144,
+  });
+  assert.equal(Object.isFrozen(main), true);
+});
+
+test('unknown observation profiles fail without coercing or disclosing their values', () => {
+  let coerced = false;
+  for (const profile of ['', 'NIGHTLY', 'CANARY-PROFILE', null, { toString() { coerced = true; return 'nightly'; } }]) {
+    assert.throws(() => gradleMemoryObservationProfile(profile), error => error.message === 'Invalid memory observation profile');
+  }
+  assert.equal(coerced, false);
+});
 
 test('memory observation preserves configured JVM budgets and the last explicit override', () => {
   assert.equal(effectiveGradleJvmArgs(['test'], 'org.gradle.jvmargs=' + jvmArgs + '\n'), jvmArgs);

@@ -45,6 +45,7 @@ else process.exitCode = 1;
   const env = { ...process.env, PATH: dir };
   for (const key of Object.keys(env)) if (key.startsWith('GITHUB_')) delete env[key];
   delete env.GVY_GRADLE_MEMORY_PROBE;
+  delete env.GVY_GRADLE_MEMORY_PROFILE;
   const reportRoot = join(dir, 'reports');
   const run = (args = ['lint'], extraEnv = {}) => spawnSync(process.execPath,
     [runner, '--report-root', reportRoot, '--producer', 'gradle-lint', ...args],
@@ -169,36 +170,45 @@ test('termination reaches only the wrapper child and records the interrupted sta
   assert.equal(summary.ok, false);
 });
 
-test('memory opt-in fails closed on unsupported runners and cannot invent healthy samples for a short producer', t => {
-  const f = fixture(t);
-  const event = join(f.dir, 'event.json');
-  const privateTemp = mkdtempSync(join(tmpdir(), 'gvy-memory-runner-temp-'));
-  t.after(() => rmSync(privateTemp, { recursive: true, force: true }));
-  writeFileSync(event, JSON.stringify({ pull_request: { head: { sha: 'a'.repeat(40) } } }));
-  const env = { GVY_GRADLE_MEMORY_PROBE: 'true', GITHUB_ACTIONS: 'true', GITHUB_SHA: sha,
-    GITHUB_EVENT_PATH: event, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_JOB: 'build',
-    RUNNER_OS: 'Linux', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: privateTemp };
-  const result = f.run(['test'], env);
-  assert.equal(result.signal, null, 'a stopped discovery loop must not wait out its full timeout');
-  assert.notEqual(result.status, 0);
-  const summary = f.summaries()[0];
-  assert.equal(summary.memoryProbe.required, true);
-  assert.equal(summary.memoryProbe.complete, false);
-  assert.equal(summary.complete, false);
-  assert.equal(summary.ok, false);
-  if (process.platform === 'linux') {
-    assert.equal(summary.commandExitCode, 0);
-    assert.ok(summary.memoryProbe.report);
-    const args = JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8'));
-    const jvm = args.find(value => value.startsWith('-Dorg.gradle.jvmargs='));
-    assert.match(jvm, /-Xmx3g -XX:MaxMetaspaceSize=2g -XX:ErrorFile=/);
-    assert.doesNotMatch(JSON.stringify(summary), /gvy-memory-[a-f0-9]{64}-hs_err/);
-  } else {
-    assert.equal(summary.commandExitCode, 2);
-    assert.equal(summary.memoryProbe.report, null);
-    assert.match(summary.errors.join(' '), /Linux GitHub-hosted runner/);
-  }
-});
+for (const profile of [undefined, 'nightly']) {
+  test(`memory opt-in (${profile ?? 'default Main'}) fails closed on unsupported runners and short producers`, t => {
+    const f = fixture(t);
+    const event = join(f.dir, 'event.json');
+    const privateTemp = mkdtempSync(join(tmpdir(), 'gvy-memory-runner-temp-'));
+    t.after(() => rmSync(privateTemp, { recursive: true, force: true }));
+    writeFileSync(event, JSON.stringify({ pull_request: { head: { sha: 'a'.repeat(40) } } }));
+    const env = { GVY_GRADLE_MEMORY_PROBE: 'true', GITHUB_ACTIONS: 'true', GITHUB_SHA: sha,
+      GITHUB_EVENT_PATH: event, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_JOB: 'build',
+      RUNNER_OS: 'Linux', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: privateTemp };
+    if (profile !== undefined) env.GVY_GRADLE_MEMORY_PROFILE = profile;
+    const result = f.run(['test'], env);
+    assert.equal(result.signal, null, 'a stopped discovery loop must not wait out its full timeout');
+    assert.notEqual(result.status, 0);
+    const summary = f.summaries()[0];
+    assert.equal(summary.memoryProbe.required, true);
+    assert.equal(summary.memoryProbe.complete, false);
+    assert.equal(summary.complete, false);
+    assert.equal(summary.ok, false);
+    if (process.platform === 'linux') {
+      assert.equal(summary.commandExitCode, 0);
+      assert.ok(summary.memoryProbe.report);
+      const args = JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8'));
+      const jvm = args.find(value => value.startsWith('-Dorg.gradle.jvmargs='));
+      assert.match(jvm, /-Xmx3g -XX:MaxMetaspaceSize=2g -XX:ErrorFile=/);
+      assert.doesNotMatch(JSON.stringify(summary), /gvy-memory-[a-f0-9]{64}-hs_err/);
+      const memory = JSON.parse(readFileSync(join(f.artifactDirs()[0], 'memory.json'), 'utf8'));
+      assert.equal(memory.limits.intervalMs, profile === 'nightly' ? 10000 : 5000);
+      assert.equal(memory.limits.maxDurationMs, profile === 'nightly' ? 3600000 : 1800000);
+      assert.equal(memory.limits.maxSamples, 360);
+      assert.equal(memory.limits.maxReportBytes, 262144);
+      assert.equal(memory.profile, undefined);
+    } else {
+      assert.equal(summary.commandExitCode, 2);
+      assert.equal(summary.memoryProbe.report, null);
+      assert.match(summary.errors.join(' '), /Linux GitHub-hosted runner/);
+    }
+  });
+}
 
 test('invalid memory configuration does not disclose its value or become successful evidence', t => {
   const f = fixture(t);
@@ -210,4 +220,49 @@ test('invalid memory configuration does not disclose its value or become success
   assert.equal(summary.complete, false);
   assert.match(summary.errors.join(' '), /Invalid memory observation opt-in/);
   assert.doesNotMatch(JSON.stringify(summary) + result.stdout + result.stderr, new RegExp(secret));
+});
+
+test('unknown profiles and profiles without probe opt-in fail before Gradle without disclosing input', t => {
+  for (const env of [
+    { GVY_GRADLE_MEMORY_PROFILE: 'CANARY-PROFILE' },
+    { GVY_GRADLE_MEMORY_PROFILE: 'CANARY-PROFILE', GVY_GRADLE_MEMORY_PROBE: 'true' },
+    { GVY_GRADLE_MEMORY_PROFILE: '' },
+    { GVY_GRADLE_MEMORY_PROFILE: 'nightly' },
+    { GVY_GRADLE_MEMORY_PROFILE: 'nightly', GVY_GRADLE_MEMORY_PROBE: 'false' },
+  ]) {
+    const f = fixture(t);
+    const result = f.run(['test'], env);
+    assert.notEqual(result.status, 0);
+    const summary = f.summaries()[0];
+    assert.equal(summary.commandExitCode, 2);
+    assert.equal(summary.complete, false);
+    assert.match(summary.errors.join(' '), /memory observation profile/i);
+    assert.doesNotMatch(JSON.stringify(summary) + result.stdout + result.stderr, /CANARY-PROFILE/);
+    assert.throws(() => readFileSync(join(f.dir, 'args.json')), { code: 'ENOENT' });
+  }
+});
+
+test('Nightly keeps lint and server tasks in separate measured jobs and requires both before publication', () => {
+  const workflow = readFileSync('.github/workflows/nightly.yml', 'utf8');
+  const jobs = new Map(); let current;
+  for (const line of workflow.split('\n')) {
+    const match = /^  ([a-z][a-z0-9-]*):$/.exec(line);
+    if (match) { current = match[1]; jobs.set(current, ''); }
+    else if (current) jobs.set(current, jobs.get(current) + line + '\n');
+  }
+  for (const name of ['lint', 'build']) {
+    const job = jobs.get(name);
+    assert.ok(job, `Missing Nightly ${name} job`);
+    assert.match(job, /GVY_GRADLE_MEMORY_PROBE: 'true'/);
+    assert.match(job, /GVY_GRADLE_MEMORY_PROFILE: nightly/);
+    assert.match(job, /--daemon /);
+    assert.doesNotMatch(job, /--no-daemon/);
+    assert.match(job, /--max-workers=2/);
+  }
+  assert.match(jobs.get('lint'), /--daemon lint --stacktrace --max-workers=2/);
+  assert.match(jobs.get('build'), /--daemon test :tests:e2eTest :gls:stageEditorServer --stacktrace --max-workers=2/);
+  assert.doesNotMatch(jobs.get('build'), /--daemon lint/);
+  assert.match(jobs.get('publish'), /needs: \[lint, build\]/);
+  assert.match(jobs.get('publish'), /needs\.lint\.result == 'success' && needs\.build\.result == 'success'/);
+  assert.match(jobs.get('publish'), /needs\.build\.outputs\.version/);
 });

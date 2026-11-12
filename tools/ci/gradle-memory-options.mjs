@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto';
 
+const profiles = Object.freeze({
+  main: Object.freeze({ profile: 'main', intervalMs: 5000, maxDurationMs: 1800000, maxSamples: 360, maxReportBytes: 256 * 1024 }),
+  nightly: Object.freeze({ profile: 'nightly', intervalMs: 10000, maxDurationMs: 3600000, maxSamples: 360, maxReportBytes: 256 * 1024 }),
+});
+
+export function gradleMemoryObservationProfile(profile = 'main') {
+  if (profile !== 'main' && profile !== 'nightly') throw new Error('Invalid memory observation profile');
+  return profiles[profile];
+}
+
 export function effectiveGradleJvmArgs(args, properties) {
   const supplied = args.filter(value => value.startsWith('-Dorg.gradle.jvmargs=')).at(-1);
   const configured = [...properties.matchAll(/^\s*org\.gradle\.jvmargs\s*=(.*)$/gm)].at(-1)?.[1];
