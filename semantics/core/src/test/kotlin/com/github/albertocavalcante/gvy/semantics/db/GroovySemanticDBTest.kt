@@ -103,19 +103,23 @@ class GroovySemanticDBTest {
             return SemanticDocument(testUri1, listOf(symbol), emptyList())
         }
         var legitimate: SemanticType = TypeConstants.STRING
-        repeat(100) { legitimate = SemanticType.Array(legitimate) }
+        repeat(127) { legitimate = SemanticType.Array(legitimate) }
         db.updateDocument(testUri1, document(legitimate))
         val version = db.version
         db.updateDocument(testUri1, document(legitimate))
         assertEquals(version, db.version)
         var deep = legitimate
-        repeat(30) { deep = SemanticType.Array(deep) }
+        repeat(1) { deep = SemanticType.Array(deep) }
         assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(deep)) }
-        var expanded: SemanticType = TypeConstants.INT
-        repeat(14) { expanded = SemanticType.Known("Pair", listOf(expanded, expanded)) }
-        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(expanded)) }
         assertEquals(version, db.version)
         assertEquals(legitimate, db.getDocument(testUri1)!!.symbols.single().type)
+        val maxSize = SemanticType.Known("Many", List(16383) { TypeConstants.INT })
+        db.updateDocument(testUri1, document(maxSize))
+        val maxVersion = db.version
+        val tooLarge = SemanticType.Known("Many", List(16384) { TypeConstants.INT })
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(tooLarge)) }
+        assertEquals(maxVersion, db.version)
+        assertEquals(maxSize, db.getDocument(testUri1)!!.symbols.single().type)
     }
 
     @Nested

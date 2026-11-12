@@ -46,6 +46,27 @@ class SemanticIndexerTest {
     }
 
     @Test
+    fun `rejected type graph removes stale index and is not reported current`() {
+        var oversized = false
+        val guarded = SemanticIndexer(index, build = { ast, u ->
+            val document = com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
+            if (!oversized) document else {
+                val type = com.github.albertocavalcante.gvy.semantics.SemanticType.Known(
+                    "TooLarge", List(16384) { com.github.albertocavalcante.gvy.semantics.TypeConstants.INT },
+                )
+                document.copy(symbols = document.symbols.map { it.copy(type = type) })
+            }
+        })
+        guarded.update(uri, "class Old {}", parse("class Old {}"), phase = Phases.CANONICALIZATION)
+        assertNotNull(index.getDocument(uri))
+        oversized = true
+        val changed = "class New {}"
+        guarded.update(uri, changed, parse(changed), phase = Phases.CANONICALIZATION)
+        assertNull(index.getDocument(uri))
+        assertEquals(false, guarded.isCurrent(uri, changed))
+    }
+
+    @Test
     fun `a degraded parse of identical content keeps the resolved document`() {
         val content = "class Guarded { def kept() {} }"
         val resolved = parse(content)

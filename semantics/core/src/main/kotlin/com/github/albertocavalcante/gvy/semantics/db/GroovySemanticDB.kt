@@ -68,12 +68,17 @@ class GroovySemanticDB {
     /**
      * Stores a detached document and source text so readers do not combine facts from different versions.
      * Callers must not mutate the supplied document or nested collections during this call. After it returns,
-     * later caller mutations cannot affect the published data.
+     * later caller mutations cannot affect the published data. Cyclic types, nesting deeper than 128 nodes,
+     * and types larger than 16,384 nodes when shared edges are expanded are rejected with
+     * [IllegalArgumentException] before replacing the stored document.
      */
     fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) =
         updateDocument(uri, doc, sourceText, ImplementationFacts.Snapshot())
 
-    /** Hierarchy facts and ranges belong to the same compilation as [doc] and [sourceText]. */
+    /**
+     * Hierarchy facts and ranges belong to the same compilation as [doc] and [sourceText].
+     * The type graph limits and atomic rejection described by the source-text overload also apply here.
+     */
     fun updateDocument(
         uri: URI,
         doc: SemanticDocument,
