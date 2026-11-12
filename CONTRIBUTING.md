@@ -63,9 +63,13 @@ instructions and claims. Code changes need relevant tests and lint checks; requi
 ### License metadata
 
 The standalone license checker is being introduced ahead of repository-wide adoption; it reports existing gaps until
-migration is complete. Install [uv](https://docs.astral.sh/uv/) and bootstrap the pinned tools once with
-`uv sync --project .reuse --locked`. Then run `make license-check` and `make license-test` offline. The equivalent
-portable check is `uv run --offline --project .reuse --locked python .reuse/check.py --root .`.
+migration is complete. Bootstrap the pinned uv version with
+`python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt`, then install the
+locked tools with `uv sync --project .reuse --locked`. Run `make license-check` and `make license-test` offline. The
+equivalent portable check is `uv run --offline --project .reuse --locked python .reuse/check.py --root .`.
+
+When updating uv, update the version and all wheel SHA-256 hashes in `.reuse/bootstrap-requirements.txt` from the
+[uv release metadata](https://pypi.org/pypi/uv/0.13.7/json), then validate the Linux, macOS, and Windows tooling jobs.
 
 Original maintained source files require leading SPDX copyright and Apache-2.0 license comments. Preserve existing
 copyright notices and attributed holders; use `Alberto Cavalcante and the gvy contributors` for original gvy source
