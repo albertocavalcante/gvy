@@ -44,10 +44,10 @@ jobs:
           SH
           chmod 700 "$private/wrapper"
           bazel --version >"$private/bazel-version" 2>&1
-          echo 'BAZELISK_GITHUB_TOKEN=' >> "$GITHUB_ENV"
+          echo 'BAZELISK_GITHUB_TOKEN=' >>"$GITHUB_ENV"
           if ! bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1; then
-            echo "Focused Bazel witness failed; private output withheld." >&2
-            exit 1
+          	echo "Focused Bazel witness failed; private output withheld." >&2
+          	exit 1
           fi
           if ! python3 - "$public/receipt.json" >"$private/receipt-build.log" 2>&1 <<'PY'
           import hashlib
@@ -87,8 +87,8 @@ jobs:
           pathlib.Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
           PY
           then
-            echo "Private report validation failed; details withheld." >&2
-            exit 1
+          	echo "Private report validation failed; details withheld." >&2
+          	exit 1
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
