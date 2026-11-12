@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 
-function successful(main = true, bazel = true, zed = true) {
+function successful(main = true, bazel = true, zed = true, dependency = false) {
   return {
     license: { result: 'success' },
-    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed) } },
+    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed), run_dependency_check: String(dependency) } },
     'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
     build: { result: main ? 'success' : 'skipped' },
@@ -17,6 +17,7 @@ function successful(main = true, bazel = true, zed = true) {
     'smoke-test': { result: main ? 'success' : 'skipped' },
     bazel: { result: bazel ? 'success' : 'skipped' },
     zed: { result: zed ? 'success' : 'skipped' },
+    'dependency-check': { result: dependency ? 'success' : 'skipped' },
   };
 }
 
@@ -50,7 +51,7 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
     assert.equal(evaluateReadiness(jobs).ok, false, String(result));
   }
   for (const value of [undefined, '', 'True', '0', 'null', true, false, {}, []]) {
-    for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci']) {
+    for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci', 'run_dependency_check']) {
       const jobs = successful(false, false, false);
       jobs['check-paths'].outputs[field] = value;
       assert.equal(evaluateReadiness(jobs).ok, false, `${field}=${value}`);
@@ -109,8 +110,31 @@ test('malformed needs fails closed with a report', () => {
   for (const value of [null, undefined, [], {}, 'success']) assert.equal(evaluateReadiness(value).ok, false);
 });
 
+test('an undeclared needs entry fails even when every known producer succeeds', () => {
+  for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
+    assert.equal(evaluateReadiness({ ...successful(), unaccounted: { result } }).ok, false, result);
+  }
+});
+
+test('applicable dependency updates must succeed and explicitly excluded updates must be skipped', () => {
+  for (const applies of [false, true]) {
+    const needs = successful();
+    needs['check-paths'].outputs.run_dependency_check = String(applies);
+    needs['dependency-check'] = { result: applies ? 'success' : 'skipped' };
+    assert.equal(evaluateReadiness(needs).ok, true);
+    for (const result of [undefined, 'failure', 'cancelled', 'timed_out', 'neutral', 'unknown', applies ? 'skipped' : 'success']) {
+      needs['dependency-check'].result = result;
+      assert.equal(evaluateReadiness(needs).ok, false, `${applies}: ${result}`);
+    }
+    delete needs['dependency-check'];
+    assert.equal(evaluateReadiness(needs).ok, false, `${applies}: missing`);
+  }
+});
+
 const context = { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: '2' };
 const attemptStartedAt = '2026-11-11T12:22:40Z';
+const licenseJob = receipt => receipt.jobs.find(job => job.name === 'License compliance');
+const observerJob = receipt => receipt.jobs.find(job => job.name === 'Validation Check');
 function currentReceipt() {
   return {
     schemaVersion: 1, ok: true, observationComplete: true, context, attemptStartedAt,
@@ -122,9 +146,35 @@ function currentReceipt() {
       jobId: 9, checkId: 9, name: 'License compliance', headSha: context.headSha,
       status: 'completed', conclusion: 'success', annotationsObserved: true,
       startedAt: '2026-11-11T12:22:41Z',
+    }, {
+      jobId: 1, checkId: 1, name: 'Validation Check', headSha: context.headSha,
+      status: 'in_progress', conclusion: null, annotationsObserved: false,
+      startedAt: '2026-11-11T12:22:41Z',
     }],
   };
 }
+
+test('a terminal producer graph cannot accept unfinished non-observer jobs', () => {
+  for (const status of ['queued', 'in_progress', 'waiting', 'pending', 'requested']) {
+    const receipt = currentReceipt();
+    receipt.jobs.push({ ...receipt.jobs[0], jobId: 3, checkId: 3, name: 'Check Dependencies', status, conclusion: null, annotationsObserved: false });
+    assert.equal(combineReadiness(evaluateReadiness(successful()), receipt, context).ok, false, status);
+  }
+});
+
+test('a terminal producer graph requires exactly one current in-progress observer', () => {
+  for (const alter of [
+    receipt => { receipt.jobs = receipt.jobs.filter(job => job.name !== 'Validation Check'); },
+    receipt => { observerJob(receipt).status = 'completed'; },
+    receipt => { receipt.jobs.push({ ...observerJob(receipt), jobId: 3 }); },
+    receipt => { observerJob(receipt).startedAt = '2026-11-11T12:00:00Z'; },
+    receipt => { observerJob(receipt).headSha = 'c'.repeat(40); },
+  ]) {
+    const receipt = currentReceipt();
+    alter(receipt);
+    assert.equal(combineReadiness(evaluateReadiness(successful()), receipt, context).ok, false);
+  }
+});
 
 test('final policy verdict requires the current successful Actions diagnostic receipt', () => {
   const graph = evaluateReadiness(successful());
@@ -226,17 +276,15 @@ test('license job success needs fresh observed execution evidence', () => {
     { headSha: 'c'.repeat(40) },
   ]) {
     const changed = structuredClone(runner);
-    Object.assign(changed.jobs[1], patch);
+    Object.assign(licenseJob(changed), patch);
     assert.equal(combineReadiness(graph, changed, context).ok, false);
   }
 });
 
-test('skipped and unfinished optional jobs retain their explicit snapshot boundary', () => {
+test('explicitly skipped jobs and the running observer retain the snapshot boundary', () => {
   const runner = currentReceipt();
   runner.jobs.push(
     { ...runner.jobs[0], jobId: 3, name: 'Skipped advisory', conclusion: 'skipped', startedAt: '2026-11-11T12:14:11Z' },
-    { ...runner.jobs[0], jobId: 4, name: 'Running advisory', status: 'in_progress', conclusion: null, startedAt: null, annotationsObserved: false },
-    { ...runner.jobs[0], jobId: 5, name: 'Validation Check', status: 'in_progress', conclusion: null, startedAt: null, annotationsObserved: false },
   );
   assert.equal(combineReadiness(evaluateReadiness(successful()), runner, context).ok, true);
 });
@@ -246,22 +294,22 @@ test('license receipt must contain exactly one fresh successful execution matchi
   const receipt = currentReceipt();
   assert.equal(combineReadiness(graph, receipt, context).ok, true);
   for (const [name, alter] of [
-    ['missing', value => { value.jobs.pop(); }],
-    ['skipped separately', value => { value.skippedJobs = [value.jobs.pop()]; }],
-    ['duplicate', value => { value.jobs.push({ ...value.jobs[1], jobId: 10, checkId: 10 }); }],
-    ['duplicate skipped', value => { value.jobs.push({ ...value.jobs[1], jobId: 10, checkId: 10, conclusion: 'skipped' }); }],
-    ['unfinished', value => { value.jobs[1].status = 'in_progress'; }],
-    ['missing status', value => { delete value.jobs[1].status; }],
-    ['skipped', value => { value.jobs[1].conclusion = 'skipped'; }],
-    ['failed', value => { value.jobs[1].conclusion = 'failure'; }],
-    ['cancelled', value => { value.jobs[1].conclusion = 'cancelled'; }],
-    ['unexpected conclusion', value => { value.jobs[1].conclusion = 'timed_out'; }],
-    ['missing conclusion', value => { delete value.jobs[1].conclusion; }],
-    ['stale', value => { value.jobs[1].startedAt = '2026-11-11T12:14:11Z'; }],
-    ['missing start', value => { delete value.jobs[1].startedAt; }],
-    ['invalid start', value => { value.jobs[1].startedAt = 'invalid'; }],
-    ['unobserved', value => { value.jobs[1].annotationsObserved = false; }],
-    ['different head', value => { value.jobs[1].headSha = 'c'.repeat(40); }],
+    ['missing', value => { value.jobs = value.jobs.filter(job => job.name !== 'License compliance'); }],
+    ['skipped separately', value => { value.skippedJobs = [licenseJob(value)]; value.jobs = value.jobs.filter(job => job.name !== 'License compliance'); }],
+    ['duplicate', value => { value.jobs.push({ ...licenseJob(value), jobId: 10, checkId: 10 }); }],
+    ['duplicate skipped', value => { value.jobs.push({ ...licenseJob(value), jobId: 10, checkId: 10, conclusion: 'skipped' }); }],
+    ['unfinished', value => { licenseJob(value).status = 'in_progress'; }],
+    ['missing status', value => { delete licenseJob(value).status; }],
+    ['skipped', value => { licenseJob(value).conclusion = 'skipped'; }],
+    ['failed', value => { licenseJob(value).conclusion = 'failure'; }],
+    ['cancelled', value => { licenseJob(value).conclusion = 'cancelled'; }],
+    ['unexpected conclusion', value => { licenseJob(value).conclusion = 'timed_out'; }],
+    ['missing conclusion', value => { delete licenseJob(value).conclusion; }],
+    ['stale', value => { licenseJob(value).startedAt = '2026-11-11T12:14:11Z'; }],
+    ['missing start', value => { delete licenseJob(value).startedAt; }],
+    ['invalid start', value => { licenseJob(value).startedAt = 'invalid'; }],
+    ['unobserved', value => { licenseJob(value).annotationsObserved = false; }],
+    ['different head', value => { licenseJob(value).headSha = 'c'.repeat(40); }],
   ]) {
     const changed = structuredClone(receipt);
     alter(changed);

@@ -255,7 +255,7 @@ test('notice evidence cannot turn stale source or attempt identities into a comp
 });
 
 test('readiness accepts observed informational notices and rejects incomplete or warning-bearing evidence', async () => {
-  const f = fixture([job(1, 'check-paths'), job(2, 'License compliance')]);
+  const f = fixture([job(1, 'check-paths'), job(2, 'License compliance'), job(3, 'Validation Check', 'in_progress', null)]);
   const endpoint = `${base}/check-runs/1001/annotations?per_page=100&page=1`;
   const graph = { schemaVersion: 1, ok: true, errors: [], jobs: { license: { result: 'success' } } };
   f.responses.set(`${base}/check-runs/1001`, check(1, 1));
@@ -270,6 +270,25 @@ test('readiness accepts observed informational notices and rejects incomplete or
   const warned = await observeRunnerDiagnostics(context, f.request, []);
   assert.equal(warned.observationComplete, true);
   assert.equal(combineReadiness(graph, warned, context).ok, false);
+});
+
+test('completed dependency post-job warnings fail the terminal verdict and pending dependency jobs cannot pass it', async () => {
+  const graph = { schemaVersion: 1, ok: true, errors: [], jobs: { license: { result: 'success' } } };
+  const completed = fixture([job(1, 'check-paths'), job(2, 'Check Dependencies'), job(3, 'Validation Check', 'in_progress', null), job(4, 'License compliance')]);
+  const clean = await observeRunnerDiagnostics(context, completed.request, []);
+  assert.equal(combineReadiness(graph, clean, context).ok, true);
+  const postJob = { ...annotation, title: 'Artifact upload', message: 'New dependency evidence post-job warning' };
+  completed.responses.set(`${base}/check-runs/1002`, check(2, 1));
+  completed.responses.set(`${base}/check-runs/1002/annotations?per_page=100&page=1`, [postJob]);
+  const warned = await observeRunnerDiagnostics(context, completed.request, []);
+  assert.equal(warned.observationComplete, true);
+  assert.equal(warned.annotations[0].jobName, 'Check Dependencies');
+  assert.equal(combineReadiness(graph, warned, context).ok, false);
+  assert.equal(warned.runWideComplete, false, 'the observer still cannot inspect its own future post-job output');
+  const pending = fixture([job(1, 'check-paths'), job(2, 'Check Dependencies', 'queued', null), job(3, 'Validation Check', 'in_progress', null), job(4, 'License compliance')]);
+  const unfinished = await observeRunnerDiagnostics(context, pending.request, []);
+  assert.equal(unfinished.ok, true, 'the annotation snapshot retains its narrower completed-job boundary');
+  assert.equal(combineReadiness(graph, unfinished, context).ok, false);
 });
 
 test('warning/failure annotations have stable exact keys and full job/check/source provenance', async () => {
@@ -414,7 +433,7 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
   const readSummary = () => readFileSync(join(report, 'summary.md'), 'utf8');
   const graph = { schemaVersion: 1, ok: true, errors: [], jobs: { license: { result: 'success' } } };
   const summaryLimit = 512 * 1024;
-  const budgetFixture = fixture([job(1, 'check-paths'), job(2, 'License compliance')]);
+  const budgetFixture = fixture([job(1, 'check-paths'), job(2, 'License compliance'), job(3, 'Validation Check', 'in_progress', null)]);
   const setNotices = values => {
     budgetFixture.responses.set(`${base}/check-runs/1001`, check(1, values.length));
     budgetFixture.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, values);
