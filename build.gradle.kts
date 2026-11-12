@@ -185,7 +185,7 @@ subprojects {
         reports {
             verify {
                 rule {
-                    minBound(54)
+                    minBound(if (project.path == ":viz:desktop") 70 else 54)
                 }
             }
         }
