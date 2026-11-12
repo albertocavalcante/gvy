@@ -428,6 +428,7 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
 
 class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification> {
     override fun execute(step: ScenarioStep.WaitNotification, context: ScenarioContext, nextStep: ScenarioStep?) {
+        step.checks.forEach { ScenarioCheckValidation.validate(it, context) }
         // Optimization: Peek ahead if optional and next step is also a wait
         if (step.optional && nextStep is ScenarioStep.WaitNotification) {
             val nextStepPredicate: (Any?) -> Boolean = { payload ->

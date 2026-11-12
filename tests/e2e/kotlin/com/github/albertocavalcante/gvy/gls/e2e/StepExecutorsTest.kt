@@ -72,6 +72,62 @@ class StepExecutorsTest {
     }
 
     @Test
+    fun `optional wait rejects invalid interpolated checks before waiting`() {
+        context.variables["pattern"] = JsonPrimitive("(")
+        val check =
+            JsonCheck("$", JsonExpectation(type = ExpectationType.MATCHES_REGEX, value = JsonPrimitive("{{pattern}}")))
+        val step = ScenarioStep.WaitNotification(
+            method = "test/notification",
+            checks = listOf(check),
+            optional = true,
+            timeoutMs = 0,
+        )
+
+        assertThatThrownBy { WaitNotificationStepExecutor().execute(step, context) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        verify(exactly = 0) { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `required wait rejects invalid interpolated JSONPath before waiting`() {
+        context.variables["path"] = JsonPrimitive("$[?(")
+        val check = JsonCheck("{{path}}", JsonExpectation())
+        val step = ScenarioStep.WaitNotification(method = "test/notification", checks = listOf(check), timeoutMs = 0)
+
+        assertThatThrownBy { WaitNotificationStepExecutor().execute(step, context) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        verify(exactly = 0) { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `optional wait may time out with a valid interpolated regex`() {
+        context.variables["pattern"] = JsonPrimitive("foo.*")
+        val check =
+            JsonCheck("$", JsonExpectation(type = ExpectationType.MATCHES_REGEX, value = JsonPrimitive("{{pattern}}")))
+        val step = ScenarioStep.WaitNotification(
+            method = "test/notification",
+            checks = listOf(check),
+            optional = true,
+            timeoutMs = 0,
+        )
+        every { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) } returns
+            WaitResult(null, emptyList(), emptyList(), 0)
+
+        WaitNotificationStepExecutor().execute(step, context)
+
+        verify(exactly = 1) { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `dynamic snapshot check does not require a regex pattern`() {
+        context.variables["path"] = JsonPrimitive("$.value")
+        val check =
+            JsonCheck("{{path}}", JsonExpectation(type = ExpectationType.MATCHES_REGEX, snapshot = "snapshot.json"))
+
+        ScenarioCheckValidation.validate(check, context)
+    }
+
+    @Test
     fun `InitializeStepExecutor should interpolate options and store result`() {
         // Arrange
         val optionsNode = buildJsonObject {
