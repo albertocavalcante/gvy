@@ -20,8 +20,8 @@ class GradleJdkCompatibilityServiceTest {
 
     @Test
     fun `should fall back to formula for unknown major versions`() {
-        // majorVersion 70 = JDK 26 (70 - 44 = 26)
-        assertEquals(26, service.majorVersionToJdk(70))
+        // The bundled mapping currently ends at 71.
+        assertEquals(28, service.majorVersionToJdk(72))
     }
 
     @Test
@@ -40,12 +40,63 @@ class GradleJdkCompatibilityServiceTest {
     }
 
     @Test
-    fun `should handle future JDK versions gracefully`() {
-        // JDK 26+ should return a reasonable default
-        val minGradle = service.minGradleVersionForJdk(26)
-        // Either null or some Gradle version
-        if (minGradle != null) {
-            assert(minGradle.isNotEmpty())
+    fun `should infer Gradle 9_1 for future JDK versions`() {
+        assertEquals("9.1", service.minGradleVersionForJdk(26))
+    }
+
+    @Test
+    fun `missing resources use fallback mappings`() {
+        val service = GradleJdkCompatibilityService { null }
+
+        assertEquals(21, service.majorVersionToJdk(65))
+        assertNull(service.minGradleVersionForJdk(21))
+        assertEquals("9.1", service.minGradleVersionForJdk(26))
+    }
+
+    @Test
+    fun `malformed resources use fallback mappings`() {
+        val service = GradleJdkCompatibilityService { "{ malformed".byteInputStream() }
+
+        assertEquals(21, service.majorVersionToJdk(65))
+        assertNull(service.minGradleVersionForJdk(21))
+    }
+
+    @Test
+    fun `invalid resource entries discard the entire mapping`() {
+        val service = GradleJdkCompatibilityService { path ->
+            when (path) {
+                "/class-file-versions.json" ->
+                    """{"majorVersionToJdk":{"65":123,"66":"invalid"}}""".byteInputStream()
+                else -> """
+                    {"compatibility":[
+                      {"jdk":21,"minGradle":"1.2"},
+                      {"jdk":"invalid","minGradle":"8.8"}
+                    ]}
+                """.trimIndent().byteInputStream()
+            }
         }
+
+        assertEquals(21, service.majorVersionToJdk(65))
+        assertNull(service.minGradleVersionForJdk(21))
+    }
+
+    @Test
+    fun `resource metadata is ignored and null minimum Gradle is retained`() {
+        val service = GradleJdkCompatibilityService { path ->
+            when (path) {
+                "/class-file-versions.json" ->
+                    """{"majorVersionToJdk":{"65":123},"metadata":"ignored"}""".byteInputStream()
+                else -> """
+                    {"compatibility":[
+                      {"jdk":21,"minGradle":null,"metadata":true},
+                      {"jdk":22,"minGradle":"8.8"}
+                    ]}
+                """.trimIndent().byteInputStream()
+            }
+        }
+
+        assertEquals(123, service.majorVersionToJdk(65))
+        assertNull(service.minGradleVersionForJdk(21))
+        assertEquals("8.8", service.minGradleVersionForJdk(22))
     }
 }

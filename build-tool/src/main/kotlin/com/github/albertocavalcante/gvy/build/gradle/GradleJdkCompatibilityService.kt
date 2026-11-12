@@ -1,16 +1,28 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
-import com.google.gson.Gson
-import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.InputStream
+
+@Serializable
+private data class ClassFileVersions(val majorVersionToJdk: Map<String, Int>)
+
+@Serializable
+private data class GradleJdkVersions(val compatibility: List<GradleJdkVersion>)
+
+@Serializable
+private data class GradleJdkVersion(val jdk: Int, val minGradle: String?)
 
 /**
  * Service for loading and querying Gradle/JDK compatibility data from JSON resources.
  * Externalizes version mappings to allow updates without code changes.
  */
-class GradleJdkCompatibilityService {
+class GradleJdkCompatibilityService internal constructor(private val resourceLoader: (String) -> InputStream?) {
+    constructor() : this({ GradleJdkCompatibilityService::class.java.getResourceAsStream(it) })
+
     private val logger = KotlinLogging.logger {}
-    private val gson = Gson()
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val majorVersionToJdk: Map<Int, Int> by lazy { loadMajorVersionMapping() }
     private val jdkToMinGradle: Map<Int, String> by lazy { loadJdkCompatibility() }
@@ -36,18 +48,16 @@ class GradleJdkCompatibilityService {
 
     private fun loadMajorVersionMapping(): Map<Int, Int> {
         return try {
-            val stream = javaClass.getResourceAsStream("/class-file-versions.json")
+            val stream = resourceLoader("/class-file-versions.json")
             if (stream == null) {
                 logger.warn { "class-file-versions.json not found, using fallback formula" }
                 return emptyMap()
             }
 
-            val json = stream.bufferedReader().use { it.readText() }
-            val root = gson.fromJson(json, JsonObject::class.java)
-            val mapping = root.getAsJsonObject("majorVersionToJdk")
-
-            mapping.entrySet().associate { (key, value) ->
-                key.toInt() to value.asInt
+            val content = stream.bufferedReader().use { it.readText() }
+            val mapping = json.decodeFromString<ClassFileVersions>(content).majorVersionToJdk
+            mapping.entries.associate { (key, value) ->
+                key.toInt() to value
             }
         } catch (e: Exception) {
             logger.warn { "Failed to load class-file-versions.json: ${e.message}" }
@@ -57,21 +67,16 @@ class GradleJdkCompatibilityService {
 
     private fun loadJdkCompatibility(): Map<Int, String> {
         return try {
-            val stream = javaClass.getResourceAsStream("/gradle-jdk-compatibility.json")
+            val stream = resourceLoader("/gradle-jdk-compatibility.json")
             if (stream == null) {
                 logger.warn { "gradle-jdk-compatibility.json not found, using fallback mappings" }
                 return emptyMap()
             }
 
-            val json = stream.bufferedReader().use { it.readText() }
-            val root = gson.fromJson(json, JsonObject::class.java)
-            val compatibility = root.getAsJsonArray("compatibility")
-
-            compatibility.mapNotNull { element ->
-                val obj = element.asJsonObject
-                val jdk = obj.get("jdk").asInt
-                val minGradle = obj.get("minGradle")
-                if (minGradle.isJsonNull) null else jdk to minGradle.asString
+            val content = stream.bufferedReader().use { it.readText() }
+            val compatibility = json.decodeFromString<GradleJdkVersions>(content).compatibility
+            compatibility.mapNotNull { entry ->
+                entry.minGradle?.let { entry.jdk to it }
             }.toMap()
         } catch (e: Exception) {
             logger.warn { "Failed to load gradle-jdk-compatibility.json: ${e.message}" }
