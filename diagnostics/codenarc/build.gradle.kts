@@ -25,6 +25,9 @@ dependencies {
 
     detektPlugins(libs.detekt.formatting)
 
+    testImplementation(libs.logback.classic)
+    testImplementation("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
+    testImplementation(libs.slf4j.api)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.mockk)

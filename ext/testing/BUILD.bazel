@@ -24,7 +24,10 @@ kt_test(
     deps = [
         "//ext/spock",
         "//parser/native",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:ch_qos_logback_logback_core",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_slf4j_slf4j_api",
     ],
 )

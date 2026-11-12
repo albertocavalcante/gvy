@@ -48,6 +48,9 @@ private const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
 
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
+private const val LOG_CLASS_INVENTORY_LIMIT = 16
+private const val LOG_CLASS_NAME_LIMIT = 80
+private const val LOG_URI_LIMIT = 160
 private const val UNATTRIBUTED_ERROR_REASON =
     "an open buffer was dropped because the compile failed with an error no source could be blamed for"
 private const val SCRIPT_FALLBACK_REASON =
@@ -275,7 +278,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             shouldRetryOnCompilationFailure(request, result) -> Fallback.COMPILATION_FAILED
             else -> return result
         }
-        logger.info { "Detected $fallback for ${request.uri}, retrying at CONVERSION phase" }
+        logger.debug {
+            "Detected $fallback for ${request.uri.toString().take(LOG_URI_LIMIT)}, retrying at CONVERSION phase"
+        }
 
         val retried = parseInternal(request.copy(compilePhase = Phases.CONVERSION))
         val reason = firstErrorMessage(result) ?: SCRIPT_FALLBACK_REASON
@@ -325,9 +330,11 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
 
         if (shouldRetry) {
-            // Log class details for debugging - use safe call for superClass (null for interfaces)
-            val classInfo = classes.map { "${it.name} (super=${it.superClass?.name ?: "null"})" }
-            logger.info { "shouldRetryAtConversion: checking classes: $classInfo" }
+            logger.trace {
+                val names = classes.take(LOG_CLASS_INVENTORY_LIMIT).joinToString { it.name.take(LOG_CLASS_NAME_LIMIT) }
+                val omitted = (classes.size - LOG_CLASS_INVENTORY_LIMIT).coerceAtLeast(0)
+                "shouldRetryAtConversion: class inventory: [$names] ($omitted omitted)"
+            }
         }
 
         if (shouldRetry && classes.size != 1) {
@@ -335,10 +342,14 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             shouldRetry = false
         }
 
+        if (!shouldRetry) return false
+
         val cls = classes.firstOrNull()
         val isScript = cls?.superClass?.name == "groovy.lang.Script"
         if (shouldRetry && !isScript) {
-            logger.info { "shouldRetryAtConversion: false - not a Script for ${cls?.name}" }
+            logger.debug {
+                "shouldRetryAtConversion: false - not a Script for ${cls?.name?.take(LOG_CLASS_NAME_LIMIT)}"
+            }
             shouldRetry = false
         }
 
@@ -350,7 +361,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
 
         if (shouldRetry) {
-            logger.info { "shouldRetryAtConversion: true - class ${cls?.name} was converted to Script" }
+            logger.debug {
+                "shouldRetryAtConversion: true - class ${cls?.name?.take(LOG_CLASS_NAME_LIMIT)} was converted to Script"
+            }
         }
 
         return shouldRetry

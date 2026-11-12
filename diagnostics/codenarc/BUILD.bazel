@@ -38,6 +38,8 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.gvy.diagnostics.codenarc"],
     deps = [
         "//diagnostics/api",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:ch_qos_logback_logback_core",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_apache_groovy_groovy",
@@ -46,5 +48,6 @@ kt_test(
         "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
+        "@maven//:org_slf4j_slf4j_api",
     ],
 )
