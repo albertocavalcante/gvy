@@ -1,0 +1,472 @@
+{
+  "schemaVersion": 1,
+  "id": "gvy-authored-quality-v1",
+  "categories": [
+    "keyword",
+    "comment",
+    "string",
+    "number",
+    "operator",
+    "punctuation"
+  ],
+  "fixtures": [
+    {
+      "id": "basic",
+      "source": "def values = [42, 'ok'] // note\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 3,
+            "category": "keyword",
+            "text": "def"
+          },
+          {
+            "startByte": 11,
+            "endByte": 12,
+            "category": "operator",
+            "text": "="
+          },
+          {
+            "startByte": 13,
+            "endByte": 14,
+            "category": "punctuation",
+            "text": "["
+          },
+          {
+            "startByte": 14,
+            "endByte": 16,
+            "category": "number",
+            "text": "42"
+          },
+          {
+            "startByte": 16,
+            "endByte": 17,
+            "category": "punctuation",
+            "text": ","
+          },
+          {
+            "startByte": 18,
+            "endByte": 22,
+            "category": "string",
+            "text": "'ok'"
+          },
+          {
+            "startByte": 22,
+            "endByte": 23,
+            "category": "punctuation",
+            "text": "]"
+          },
+          {
+            "startByte": 24,
+            "endByte": 31,
+            "category": "comment",
+            "text": "// note"
+          }
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "cea652e4d1736f9f4858bd81ad06490e5ecb3d64c013e34c67ec765126fc3083",
+      "byteLength": 32
+    },
+    {
+      "id": "unicode-crlf",
+      "source": "/* 😀 é */\r\nclass Café {\r\n    String greet() { return '🌍' }\r\n}\r\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 14,
+            "category": "comment",
+            "text": "/* 😀 é */"
+          },
+          {
+            "startByte": 16,
+            "endByte": 21,
+            "category": "keyword",
+            "text": "class"
+          },
+          {
+            "startByte": 28,
+            "endByte": 29,
+            "category": "punctuation",
+            "text": "{"
+          },
+          {
+            "startByte": 47,
+            "endByte": 48,
+            "category": "punctuation",
+            "text": "("
+          },
+          {
+            "startByte": 48,
+            "endByte": 49,
+            "category": "punctuation",
+            "text": ")"
+          },
+          {
+            "startByte": 50,
+            "endByte": 51,
+            "category": "punctuation",
+            "text": "{"
+          },
+          {
+            "startByte": 52,
+            "endByte": 58,
+            "category": "keyword",
+            "text": "return"
+          },
+          {
+            "startByte": 59,
+            "endByte": 65,
+            "category": "string",
+            "text": "'🌍'"
+          },
+          {
+            "startByte": 66,
+            "endByte": 67,
+            "category": "punctuation",
+            "text": "}"
+          },
+          {
+            "startByte": 69,
+            "endByte": 70,
+            "category": "punctuation",
+            "text": "}"
+          }
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "0948c3ec8a87e83965c76276bc8b5b20919b0847cb9dd137e5f2a36ab7865b01",
+      "byteLength": 72
+    },
+    {
+      "id": "semantic-core",
+      "source": "class Tiny {\n    String greet(String who) {\n        return who\n    }\n}\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 5,
+            "category": "keyword",
+            "text": "class"
+          },
+          {
+            "startByte": 11,
+            "endByte": 12,
+            "category": "punctuation",
+            "text": "{"
+          },
+          {
+            "startByte": 29,
+            "endByte": 30,
+            "category": "punctuation",
+            "text": "("
+          },
+          {
+            "startByte": 40,
+            "endByte": 41,
+            "category": "punctuation",
+            "text": ")"
+          },
+          {
+            "startByte": 42,
+            "endByte": 43,
+            "category": "punctuation",
+            "text": "{"
+          },
+          {
+            "startByte": 52,
+            "endByte": 58,
+            "category": "keyword",
+            "text": "return"
+          },
+          {
+            "startByte": 67,
+            "endByte": 68,
+            "category": "punctuation",
+            "text": "}"
+          },
+          {
+            "startByte": 69,
+            "endByte": 70,
+            "category": "punctuation",
+            "text": "}"
+          }
+        ],
+        "semanticAnchors": [
+          {
+            "startByte": 6,
+            "endByte": 10,
+            "text": "Tiny",
+            "role": "class-declaration"
+          },
+          {
+            "startByte": 24,
+            "endByte": 29,
+            "text": "greet",
+            "role": "method-declaration"
+          },
+          {
+            "startByte": 37,
+            "endByte": 40,
+            "text": "who",
+            "role": "parameter-declaration"
+          },
+          {
+            "startByte": 59,
+            "endByte": 62,
+            "text": "who",
+            "role": "parameter-reference"
+          }
+        ]
+      },
+      "sourceSha256": "0e3d34e2aa34f9db63dfe8b1df12bc5797d408b45d65415656a77272ee7fe900",
+      "byteLength": 71
+    },
+    {
+      "id": "empty",
+      "source": "",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "byteLength": 0
+    },
+    {
+      "id": "whitespace",
+      "source": " \t\r\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "bb403f616bb62f0c473c42534601e3d8fe24fa61add49f51f4cdba8bd585ce29",
+      "byteLength": 4
+    },
+    {
+      "id": "unterminated",
+      "source": "def value = 'x\n",
+      "compilerProfile": "conversion-recovery-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "recovered",
+        "assertionMode": "required",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 3,
+            "category": "keyword",
+            "text": "def"
+          },
+          {
+            "startByte": 10,
+            "endByte": 11,
+            "category": "operator",
+            "text": "="
+          }
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "a23484ec4f6becf1e1e850d5e65986e329fd70ee7bbd79178ebd3ebadcea6064",
+      "byteLength": 15
+    },
+    {
+      "id": "corrected",
+      "source": "def value = 'x'\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 3,
+            "category": "keyword",
+            "text": "def"
+          },
+          {
+            "startByte": 10,
+            "endByte": 11,
+            "category": "operator",
+            "text": "="
+          },
+          {
+            "startByte": 12,
+            "endByte": 15,
+            "category": "string",
+            "text": "'x'"
+          }
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "6c4ba3dc7e3506f47499b6b871b55510fb4caca0c79a8c0b747255cbf16ffe7f",
+      "byteLength": 16
+    },
+    {
+      "id": "gstrings-dollar",
+      "source": "def name = 'Ada'\ndef greeting = \"hi ${name}\"\ndef dollars = $/a${name}/b/$\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "required",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 3,
+            "category": "keyword",
+            "text": "def"
+          },
+          {
+            "startByte": 9,
+            "endByte": 10,
+            "category": "operator",
+            "text": "="
+          },
+          {
+            "startByte": 11,
+            "endByte": 16,
+            "category": "string",
+            "text": "'Ada'"
+          }
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "e6cc3dc5412b9069ec13251c679e233d43a9f5e1ec6940a9514061713551bc37",
+      "byteLength": 74
+    },
+    {
+      "id": "slashy",
+      "source": "def regex = /a\\/b/\n",
+      "compilerProfile": "canonical-core-empty-external-classpath",
+      "expectation": {
+        "documentVersion": 1,
+        "outcome": "valid",
+        "assertionMode": "exact",
+        "spans": [
+          {
+            "startByte": 0,
+            "endByte": 3,
+            "category": "keyword",
+            "text": "def"
+          },
+          {
+            "startByte": 10,
+            "endByte": 11,
+            "category": "operator",
+            "text": "="
+          },
+          {
+            "startByte": 12,
+            "endByte": 18,
+            "category": "string",
+            "text": "/a\\/b/"
+          }
+        ],
+        "semanticAnchors": [
+
+        ]
+      },
+      "sourceSha256": "c14c5e4f27c2aca7a3bf05617b8b6fb4c94359abf5d5a956b57fe419a7b7efe5",
+      "byteLength": 19
+    }
+  ],
+  "traces": [
+    {
+      "id": "repair-string",
+      "initialFixtureId": "unterminated",
+      "edit": {
+        "fromVersion": 1,
+        "toVersion": 2,
+        "startByte": 14,
+        "endByte": 14,
+        "replacement": "'",
+        "sourceSha256": "a23484ec4f6becf1e1e850d5e65986e329fd70ee7bbd79178ebd3ebadcea6064"
+      },
+      "expectedSource": "def value = 'x'\n",
+      "expectedSourceSha256": "6c4ba3dc7e3506f47499b6b871b55510fb4caca0c79a8c0b747255cbf16ffe7f"
+    },
+    {
+      "id": "unicode-rename",
+      "initialFixtureId": "unicode-crlf",
+      "edit": {
+        "fromVersion": 1,
+        "toVersion": 2,
+        "startByte": 22,
+        "endByte": 27,
+        "replacement": "Bébé",
+        "sourceSha256": "0948c3ec8a87e83965c76276bc8b5b20919b0847cb9dd137e5f2a36ab7865b01"
+      },
+      "expectedSource": "/* 😀 é */\r\nclass Bébé {\r\n    String greet() { return '🌍' }\r\n}\r\n",
+      "expectedSourceSha256": "4a237f2d7d27477b4a5f6d5dde9abfbfb374f514b85e23359a3962a4d1177780"
+    },
+    {
+      "id": "crlf-to-lf",
+      "initialFixtureId": "unicode-crlf",
+      "edit": {
+        "fromVersion": 1,
+        "toVersion": 2,
+        "startByte": 14,
+        "endByte": 16,
+        "replacement": "\n",
+        "sourceSha256": "0948c3ec8a87e83965c76276bc8b5b20919b0847cb9dd137e5f2a36ab7865b01"
+      },
+      "expectedSource": "/* 😀 é */\nclass Café {\r\n    String greet() { return '🌍' }\r\n}\r\n",
+      "expectedSourceSha256": "1ae9f3b14c537dafbe9f717242dc3b2ddf1be283753314e54a5cb1b7c7caeadb"
+    },
+    {
+      "id": "grow-prefix",
+      "initialFixtureId": "semantic-core",
+      "edit": {
+        "fromVersion": 1,
+        "toVersion": 2,
+        "startByte": 0,
+        "endByte": 0,
+        "replacement": "// prefix\n",
+        "sourceSha256": "0e3d34e2aa34f9db63dfe8b1df12bc5797d408b45d65415656a77272ee7fe900"
+      },
+      "expectedSource": "// prefix\nclass Tiny {\n    String greet(String who) {\n        return who\n    }\n}\n",
+      "expectedSourceSha256": "4fda893cd1235a0516efcbcabc41d68dddb10a44d71595f2cf844c8a5badf046"
+    }
+  ]
+}
