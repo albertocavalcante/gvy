@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
 import com.github.albertocavalcante.gvy.diagnostics.api.DiagnosticConfiguration
@@ -7,6 +10,7 @@ import io.mockk.mockk
 import org.codenarc.results.Results
 import org.codenarc.rule.Rule
 import org.codenarc.rule.Violation
+import org.codenarc.rule.formatting.FileEndsWithoutNewlineRule
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
@@ -51,6 +55,23 @@ class CodeNarcConversionOutcomeTest {
         assertEquals(1, diagnostics.size)
         assertEquals(0, diagnostics.single().range.start.line)
         assertEquals("LineLength", diagnostics.single().code.left)
+    }
+
+    @TestFactory
+    fun `correct one based final newline positions are preserved`(): List<DynamicTest> = listOf(
+        "def value = 1" to 1,
+        "def value = 1\r" to 1,
+        "def first = 1\ndef second = 2" to 2,
+        "def first = 1\rdef second = 2\r" to 2,
+    ).map { (source, line) ->
+        DynamicTest.dynamicTest(source.replace("\r", "\\r").replace("\n", "\\n")) {
+            val provider = provider(violation(FileEndsWithoutNewlineRule(), line))
+
+            val diagnostics = provider.analyzeAndGetDiagnostics(source, FILE_NAME)
+
+            assertEquals(line - 1, diagnostics.single().range.start.line)
+            assertEquals(line - 1, diagnostics.single().range.end.line)
+        }
     }
 
     private fun rule(): Rule = mockk<Rule>().also {

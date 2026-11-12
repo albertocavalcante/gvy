@@ -44,6 +44,11 @@
       "id": "release-nightly-packages",
       "path": "tools/release-please/config.json",
       "anchor": "\"release-type\": \"simple\""
+    },
+    {
+      "id": "codenarc-final-newline-position",
+      "path": "diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/CodeNarcDiagnosticProvider.kt",
+      "anchor": "val finalCodeNarcLine = sourceLines.lastIndex"
     }
   ],
   "records": [
@@ -528,6 +533,31 @@
         {
           "id": "manual:release-nightly-packages",
           "sha256": "ad1fc50cd2168e8e713e17ec7d97ebcbb83aa3a72f0e1b7ca4ae98a717b53ec3"
+        }
+      ]
+    },
+    {
+      "id": "codenarc-final-newline-position",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1708",
+      "responsibleScope": "gvy diagnostics maintainers",
+      "lastVerified": "2026-11-12",
+      "reviewDue": "2026-11-19",
+      "reason": "CodeNarc final-newline violations use a zero-based final logical line while ordinary violation positions are one-based; normalize only the known rule type and final logical index.",
+      "upstreamStatus": "Actual pinned 3.7.0 reproduces the invalid zero/previous-line positions. Inspected v4.0.0 source retains lines.size() - 1; this is source evidence, not a 4.0.0 integration test. No upstream report was submitted.",
+      "upstreamTrigger": "A released final-newline rule reports the correct one-based final logical line, including CR EOF and blank final rows.",
+      "verification": "270 native CodeNarc controls passed with zero failures/errors/skips after the position correction, including real DefaultCodeAnalyzer LF, CRLF, CR-EOF, repeated-CR, empty and terminated-input cases, four corrected one-based producer controls, null file-level handling and unchanged generic invalid-position failures. Independent review found and verified the terminal-empty-row correction. The separate SDK catch-and-omit rule-engine failure remains tracked by #1740; these results do not certify complete CodeNarc failure observability.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/issues/1708",
+        "https://github.com/albertocavalcante/gvy/issues/1740",
+        "https://github.com/CodeNarc/CodeNarc/blob/9b7bb0fa741240d9990f9ce9da85438ebf385a08/src/main/groovy/org/codenarc/rule/formatting/FileEndsWithoutNewlineRule.groovy",
+        "https://github.com/CodeNarc/CodeNarc/releases/tag/v4.0.0"
+      ],
+      "nextAction": "Prepare the exact raw-rule reproduction locally for upstream review; evaluate the next released correction with real analyzer and corrected-producer controls before removing the adapter.",
+      "removalCriteria": "The adopted dependency alone produces correct final-line positions for LF, CRLF, CR EOF and repeated-CR input while generic invalid positions still fail; remove only this rule-specific adjustment and retain the regressions.",
+      "sources": [
+        {
+          "id": "manual:codenarc-final-newline-position",
+          "sha256": "7e2fd5b9f4c1ab17be7e6cc5266c3e7da7750ee59bc420fc425ac2980feed983"
         }
       ]
     }

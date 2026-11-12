@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
 import com.github.albertocavalcante.groovyparser.ast.CoordinateSystem
@@ -7,6 +10,7 @@ import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.results.Results
 import org.codenarc.rule.Violation
+import org.codenarc.rule.formatting.FileEndsWithoutNewlineRule
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -196,7 +200,15 @@ class CodeNarcDiagnosticProvider(
         rangeCalculator: HybridRangeCalculator,
     ): Diagnostic {
         // A missing line denotes a file-level violation. An invalid supplied line is a provider failure.
-        val groovyLineNumber = violation.lineNumber ?: 1
+        val reportedLine = violation.lineNumber
+        // Kotlin retains a trailing empty row after CR/LF; CodeNarc's readLines omits that row.
+        val finalCodeNarcLine = sourceLines.lastIndex - if (sourceLines.last().isEmpty()) 1 else 0
+        // CodeNarc 3.7 reports this rule's final line with a zero-based index. Other rules remain one-based.
+        val groovyLineNumber = when {
+            reportedLine == null -> 1
+            reportedLine == finalCodeNarcLine && violation.rule is FileEndsWithoutNewlineRule -> reportedLine + 1
+            else -> reportedLine
+        }
         check(groovyLineNumber in 1..sourceLines.size) {
             "Invalid CodeNarc violation line $groovyLineNumber for ${sourceLines.size} source lines"
         }
