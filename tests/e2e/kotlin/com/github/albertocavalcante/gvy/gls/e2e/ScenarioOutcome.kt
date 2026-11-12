@@ -34,10 +34,11 @@ sealed interface CleanupOutcome {
 }
 
 enum class ScenarioFailureKind { Specification, Product, Transport }
+enum class ScenarioFailurePhase { Setup, Execution }
 
 sealed interface ScenarioCompletion {
     data object Completed : ScenarioCompletion
-    data class Failed(val kind: ScenarioFailureKind, val detail: String) : ScenarioCompletion
+    data class Failed(val phase: ScenarioFailurePhase, val kind: ScenarioFailureKind, val detail: String) : ScenarioCompletion
     data class Cancelled(val detail: String) : ScenarioCompletion
 }
 
@@ -52,6 +53,9 @@ class ScenarioOutcome(
     val observed: List<ObservationResult> = Collections.unmodifiableList(observed.toList())
     val blocked: List<String>
     val counts: ObservationCounts
+    /** True only when all planned checks passed and execution and cleanup completed successfully.
+     * Known failures remain visible and do not count as a pass; a runner decides how to report them.
+     */
     val isSuccessful: Boolean
 
     init {

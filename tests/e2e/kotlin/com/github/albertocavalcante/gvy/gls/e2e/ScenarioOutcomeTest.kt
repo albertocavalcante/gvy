@@ -115,5 +115,7 @@ class ScenarioOutcomeTest {
         assertThat(outcome.planned).containsExactly("a", "b", "c")
         assertThat(outcome.blocked).containsExactly("a", "c")
         assertThat(outcome.counts.executed).isEqualTo(1)
+        assertThatThrownBy { (outcome.planned as MutableList<String>).clear() }
+            .isInstanceOf(UnsupportedOperationException::class.java)
     }
 }
