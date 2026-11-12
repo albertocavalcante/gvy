@@ -2,11 +2,25 @@ package com.github.albertocavalcante.gvy.gls.e2e
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import java.io.IOException
 import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class NamedObservationRecorderTest {
+    @Test
+    fun `known cleanup failure does not claim other cleanup finished`() {
+        val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
+        val failure = assertThrows<IOException> { recorder.closeSession { throw IOException("close failed") } }
+
+        val outcome = recorder.finish(failure)
+
+        val cleanup = outcome.cleanup as CleanupOutcome.Failed
+        assertThat(cleanup.detail).contains("close failed")
+        assertThat(cleanup.confirmed).isFalse()
+    }
+
     @Test
     fun `late observation cannot change a published incomplete outcome`() {
         val recorder = NamedObservationRecorder(listOf("late"), "scenario.yaml")

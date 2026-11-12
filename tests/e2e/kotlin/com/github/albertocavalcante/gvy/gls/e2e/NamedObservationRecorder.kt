@@ -50,7 +50,10 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
     @Synchronized fun finish(failure: Throwable?): ScenarioOutcome {
         sealed = true
         val cleanup = when {
-            cleanupFailures.isNotEmpty() -> CleanupOutcome.Failed(cleanupFailures.joinToString("\n") { it.stackTraceToString() })
+            cleanupFailures.isNotEmpty() -> CleanupOutcome.Failed(
+                cleanupFailures.joinToString("\n") { it.stackTraceToString() },
+                confirmed = failure == null && workspaceClosed && sessionClosed,
+            )
             failure == null && workspaceClosed && sessionClosed -> CleanupOutcome.Succeeded
             else -> CleanupOutcome.Unconfirmed("Scenario resources did not finish cleanup before reporting")
         }
