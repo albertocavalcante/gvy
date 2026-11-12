@@ -15,6 +15,7 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.expr.VariableExpression
 
 /**
  * TypeContext implementation for native Groovy AST.
@@ -54,6 +55,8 @@ class NativeTypeContext(
     override fun calculateType(node: Any): SemanticType = calculatorRegistry.calculate(node, this)
 
     override fun lookupSymbol(name: String): SemanticType? = scope.lookupVariable(name)
+
+    internal fun lookupDeclaration(variable: VariableExpression): SemanticType? = scope.lookupDeclaration(variable)
 
     override fun getMethodReturnType(
         receiverType: SemanticType,

@@ -4,6 +4,9 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.VariableExpression
+import java.util.Collections.synchronizedMap
+import java.util.WeakHashMap
 
 /**
  * Scope tracking for variable resolution in native Groovy AST.
@@ -16,7 +19,15 @@ class NativeScope private constructor(
     private val parent: NativeScope?,
     private val variables: MutableMap<String, SemanticType> = mutableMapOf(),
     val currentModule: ModuleNode? = null,
+    private val declarations: MutableMap<VariableExpression, SemanticType> = synchronizedMap(WeakHashMap()),
 ) {
+
+    internal fun lookupDeclaration(variable: VariableExpression): SemanticType? =
+        declarations[variable] ?: parent?.lookupDeclaration(variable)
+
+    internal fun defineDeclaration(variable: VariableExpression, type: SemanticType) {
+        declarations[variable] = type
+    }
 
     /**
      * Look up a variable by name in this scope or parent scopes.

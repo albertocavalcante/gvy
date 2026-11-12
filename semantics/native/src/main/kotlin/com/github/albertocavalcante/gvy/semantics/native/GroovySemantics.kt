@@ -9,12 +9,10 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ASTNode
-import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
-import org.codehaus.groovy.ast.stmt.BlockStatement
-import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import java.lang.ref.WeakReference
 import java.util.Collections.synchronizedMap
 import java.util.WeakHashMap
@@ -68,6 +66,7 @@ class GroovySemantics(
             synchronized(contextCache) {
                 val cached = contextCache[module]?.get()
                 if (cached != null && contextVersions[module] == workspaceVersion) return cached
+
             }
             // Build outside the lock; unrelated modules must not wait for local type inference.
             val scope = buildRootScope(module)
@@ -78,8 +77,7 @@ class GroovySemantics(
                 isStaticCompilation = hasCompileStatic(module),
                 workspaceMemberLookup = workspaceMemberLookup,
             )
-            populateScriptVariables(module, scope, context)
-            populateClassMethodVariables(module, scope, context)
+            populateDeclarations(module, scope, context)
             if (Thread.currentThread().isInterrupted) throw CancellationException("Semantic context build interrupted")
 
             val published = synchronized(contextCache) {
@@ -101,49 +99,17 @@ class GroovySemantics(
         error("Workspace changed repeatedly while building semantic context")
     }
 
-    private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
-        module.statementBlock?.statements?.forEach { stmt ->
-            if (stmt is ExpressionStatement && stmt.expression is DeclarationExpression) {
-                val decl = stmt.expression as DeclarationExpression
-                val name = decl.variableExpression.name
-                val type = calculatorRegistry.calculate(decl, context)
-                scope.defineVariable(name, type)
+    private fun populateDeclarations(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
+        val visitor = object : CodeVisitorSupport() {
+            override fun visitDeclarationExpression(expression: DeclarationExpression) {
+                if (!expression.isMultipleAssignmentDeclaration) {
+                    scope.defineDeclaration(expression.variableExpression, calculatorRegistry.calculate(expression, context))
+                }
+                super.visitDeclarationExpression(expression)
             }
         }
-    }
-
-    private fun populateClassMethodVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
-        for (classNode in module.classes) {
-            for (method in classNode.methods) {
-                registerMethodParameters(method, scope)
-                registerMethodLocalVariables(method, scope, context)
-            }
-        }
-    }
-
-    private fun registerMethodParameters(method: MethodNode, scope: NativeScope) {
-        for (param in method.parameters) {
-            val paramType = NativeTypeContext.fromClassNode(param.type)
-            scope.defineVariable(param.name, paramType)
-        }
-    }
-
-    private fun registerMethodLocalVariables(method: MethodNode, scope: NativeScope, context: NativeTypeContext) {
-        val code = method.code
-        if (code is BlockStatement) {
-            populateScopeFromBlock(code, scope, context)
-        }
-    }
-
-    /**
-     * Populates scope with variables from a BlockStatement.
-     * Uses shared DeclarationWalker to traverse DeclarationExpressions.
-     */
-    private fun populateScopeFromBlock(block: BlockStatement, scope: NativeScope, context: NativeTypeContext) {
-        val result = DeclarationWalker.walk(block, context, captureMapKeys = false)
-        for (decl in result.variables) {
-            scope.defineVariable(decl.name, decl.inferredType)
-        }
+        module.statementBlock?.visit(visitor)
+        module.classes.forEach { cls -> cls.methods.forEach { it.code?.visit(visitor) } }
     }
 
     /**
@@ -244,23 +210,7 @@ class GroovySemantics(
         return TypeLub.lub(types)
     }
 
-    private fun buildRootScope(module: ModuleNode): NativeScope {
-        // Create scope from module to enable module-level field/method resolution
-        val scope = NativeScope.fromModule(module)
-
-        // Populate with first class's fields
-        for (classNode in module.classes) {
-            // Use the first class found as the root scope basis
-            // (common for scripts where it's the script class)
-            for (field in classNode.fields) {
-                val type = NativeTypeContext.fromClassNode(field.type)
-                scope.defineVariable(field.name, type)
-            }
-            break
-        }
-
-        return scope
-    }
+    private fun buildRootScope(module: ModuleNode): NativeScope = NativeScope.fromModule(module)
 
     private fun hasCompileStatic(module: ModuleNode): Boolean {
         // Check for @CompileStatic annotation on classes
