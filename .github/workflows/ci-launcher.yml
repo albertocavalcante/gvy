@@ -143,8 +143,10 @@ jobs:
           NATIVE_TEST_TASK: ${{ matrix.test-task }}
           NATIVE_LINK_TASK: ${{ matrix.link-task }}
           NATIVE_PRODUCER: ${{ matrix.producer }}
+          NATIVE_TARGET: ${{ matrix.target }}
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/launcher-gradle-evidence" --producer "$NATIVE_PRODUCER"
+          --native-provisioning "$NATIVE_TARGET"
           ":launcher:$NATIVE_TEST_TASK" ":launcher:$NATIVE_LINK_TASK"
           --no-daemon --no-parallel --build-cache --stacktrace --max-workers=2
           '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'
