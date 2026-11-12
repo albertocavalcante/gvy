@@ -9,7 +9,7 @@ The E2E harness drives full LSP sessions against the `groovy-lsp` process. It la
 ## Running
 
 ```bash
-GRADLE_USER_HOME=$(pwd)/.gradle ./gradlew e2eTest
+./gradlew :tests:e2eTest
 ```
 
 Gradle sets the following system properties for the runner:
@@ -22,8 +22,9 @@ Gradle sets the following system properties for the runner:
 | `groovy.lsp.e2e.mainClass`       | Fully-qualified entry point (`MainKt`).                                |
 | `groovy.lsp.e2e.gradleUserHome`  | Optional override for the isolated Gradle user home used by the LSP.   |
 
-If Gradle cannot download the wrapper because of network limits, point `GRADLE_USER_HOME` to a writeable directory or
-pre-install the distribution.
+Keep the default shared Gradle user home for the outer build so checkouts can reuse its distributions and caches. If
+provisioning is unavailable, pre-install the required distribution there. On a shared host, run heavy commands through
+the installed build-slot wrapper.
 
 The harness launches the language server with an isolated Gradle user home (`build/e2e-gradle-home` by default, or
 `GROOVY_LSP_E2E_GRADLE_USER_HOME` / `groovy.lsp.e2e.gradleUserHome` if set) to avoid cache lock contention with the
@@ -56,7 +57,7 @@ without affecting source files.
 ## Shared Test Client
 
 The harness talks to the language server through the reusable client in
-`tests/lsp-client/kotlin/com/github/albertocavalcante/groovylsp/testing/client`. If you need to stub extra client
+`tests/lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/client`. If you need to stub extra client
 behaviour (for example `workspace/configuration` responses), extend that module rather than the scenario runner so unit
 and e2e tests share the same LSP-facing surface.
 
@@ -88,6 +89,9 @@ Details and examples are in [`tests/e2e/README.md`](../../tests/e2e/README.md).
   files are skipped but must parse and carry a `# disabled:` header.
 
 ## Next Steps
+
+Original byte evidence and its independent offline inspection are described in
+[Inspecting original protocol evidence](wire-evidence.md).
 
 - Add socket-mode launch as an opt-in for CLI parity.
 - Add repros for the open scenario bugs (#1523-#1543) as `xfail` scenarios, one per issue.
