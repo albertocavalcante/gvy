@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: E2E diagnostics hosted preparation
+name: CodeNarc hosted preparation
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: e2e-diagnostics-preparation-${{ github.sha }}
+  group: e2e-codenarc-preparation-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   candidate:
@@ -74,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
-          git switch -c ci/e2e-diagnostics-publication
+          git switch -c ci/e2e-codenarc-publication
           git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
@@ -117,8 +117,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          bins="$RUNNER_TEMP/e2e-diagnostics-hook-bin"
-          download="$RUNNER_TEMP/e2e-diagnostics-hook-download"
+          bins="$RUNNER_TEMP/e2e-codenarc-hook-bin"
+          download="$RUNNER_TEMP/e2e-codenarc-hook-download"
           mkdir -p "$bins" "$download"
           fetch() {
               local repo="$1" version="$2" asset="$3" digest="$4"
@@ -181,14 +181,10 @@ jobs:
           editors/code/node_modules/.bin/prettier --check editors/code/client/src/test/integration/implementation.test.ts
           direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
-          direnv exec . ./gradlew :gls:test \
-              --tests '*.DiagnosticsRequestHandlerTest' \
-              --tests '*.DiagnosticsRequestRegistrationTest' \
-              --tests '*.DiagnosticsOrchestratorTest' \
-              :tests:e2eTest --tests '*.DiagnosticsTerminalProtocolTest' \
+          direnv exec . ./gradlew :diagnostics:codenarc:test \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
-              2>&1 | tee "$RUNNER_TEMP/gvy-diagnostics-native.log"
+              2>&1 | tee "$RUNNER_TEMP/gvy-codenarc-native.log"
           git diff --quiet
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/gvy-staged-paths"
@@ -206,7 +202,7 @@ jobs:
                   *) ;;
               esac
           done <"$RUNNER_TEMP/gvy-staged-paths"
-          git commit -m 'feat(lsp): expose version-bound diagnostics completion' 2>&1 | tee "$RUNNER_TEMP/gvy-commit-hooks.log"
+          git commit -m 'fix(codenarc): propagate source analysis failures' 2>&1 | tee "$RUNNER_TEMP/gvy-commit-hooks.log"
           [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
           git diff --quiet && git diff --cached --quiet
@@ -215,8 +211,8 @@ jobs:
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
           cp "$RUNNER_TEMP/gvy-commit-hooks.log" "$RUNNER_TEMP/gvy-publication-proof/"
-          cp "$RUNNER_TEMP/gvy-diagnostics-native.log" "$RUNNER_TEMP/gvy-publication-proof/"
-          for report_dir in gls/build/test-results/test tests/build/test-results/e2eTest; do
+          cp "$RUNNER_TEMP/gvy-codenarc-native.log" "$RUNNER_TEMP/gvy-publication-proof/"
+          for report_dir in diagnostics/codenarc/build/test-results/test; do
               test -d "$report_dir"
               while IFS= read -r -d '' report_file; do
                   mkdir -p "$RUNNER_TEMP/gvy-publication-proof/junit/$(dirname "$report_file")"
@@ -232,7 +228,7 @@ jobs:
       - name: Upload candidate and evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gvy-e2e-diagnostics-publication-proof
+          name: gvy-e2e-codenarc-publication-proof
           path: ${{ runner.temp }}/gvy-publication-proof/
           if-no-files-found: error
           retention-days: 7
