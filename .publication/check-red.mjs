@@ -37,13 +37,13 @@ for case in cases:
 if len(list(root.iter('failure'))) != len(failures) or len(list(root.iter('error'))) != errors or len(list(root.iter('skipped'))) != skipped: raise SystemExit('outcome outside testcase')
 if counts['failures']!=len(failures) or counts['errors']!=errors or counts['skipped']!=skipped: raise SystemExit('outcome count mismatch')
 if errors or skipped: raise SystemExit('error or skip')
-print(json.dumps({'count':len(cases),'failures':failures}))
+print(json.dumps({'count':len(cases),'failures':failures,'cases':sorted(seen)}))
 `;
 const actual=[];
 for (const c of r.classes) {
   const file=`${dir}/TEST-com.github.albertocavalcante.gvy.gls.e2e.${c.name}.xml`;
   const result=JSON.parse(execFileSync('python3',['-c',parser,file,c.name],{encoding:'utf8',maxBuffer:1024*1024,timeout:10000}));
-  if(result.count!==c.count) throw Error('suite mismatch'); actual.push(...result.failures);
+  if(result.count!==c.count || JSON.stringify(result.cases)!==JSON.stringify([...c.cases].sort())) throw Error('suite mismatch'); actual.push(...result.failures);
 }
 if (actual.length !== r.failures.length || actual.some(a => !r.failures.some(f => f.class === a.class && f.name === a.name && f.types.includes(a.type) && f.includes.every(part=>a.message.includes(part))))) throw Error('unexpected failure');
 console.log(`${phase} tests validated`);

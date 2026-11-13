@@ -15,8 +15,15 @@ for (const phase of phases) {
   const v=r[phase]; obj(v,['tree','patch','paths','classes','failures']); hash(v.tree,40); paths(v.paths);
   obj(v.patch,['sha256','compressedSha256','bytes','compressedBytes']); hash(v.patch.sha256,64); hash(v.patch.compressedSha256,64);
   for (const n of ['bytes','compressedBytes']) if (!Number.isSafeInteger(v.patch[n]) || v.patch[n] < 1 || v.patch[n] > 131072) fail();
-  if (!Array.isArray(v.classes) || !v.classes.length || v.classes.some(c => { try { obj(c,['name','count']); } catch { return true; } return !/^[A-Za-z][A-Za-z0-9]*Test$/.test(c.name) || !Number.isSafeInteger(c.count) || c.count < 1; }) || new Set(v.classes.map(c=>c.name)).size !== v.classes.length) fail();
-  if (!Array.isArray(v.failures) || v.failures.some(f => { try { obj(f,['class','name','types','includes']); } catch { return true; } return !Array.isArray(f.includes) || !f.includes.length || f.includes.length>8 || f.includes.some(x=>typeof x!=='string'||!x.length||x.length>256) || !v.classes.some(c=>c.name===f.class) || typeof f.name !== 'string' || !f.name || !Array.isArray(f.types) || f.types.length !== 2 || new Set(f.types).size !== 2 || f.types.some(t => !['java.lang.AssertionError','org.opentest4j.AssertionFailedError'].includes(t)); })) fail();
+  if (!Array.isArray(v.classes) || !v.classes.length) fail();
+  for (const entry of v.classes) {
+    obj(entry,['name','count','cases']);
+    if (!/^[A-Za-z][A-Za-z0-9]*Test$/.test(entry.name) || !Number.isSafeInteger(entry.count) || entry.count<1 || entry.count>1000) fail();
+    if (!Array.isArray(entry.cases) || entry.cases.length!==entry.count || new Set(entry.cases).size!==entry.count) fail();
+    if (entry.cases.some(id=>typeof id!=='string'||!id.length||id.length>512)) fail();
+  }
+  if (new Set(v.classes.map(entry=>entry.name)).size!==v.classes.length) fail();
+  if (!Array.isArray(v.failures) || v.failures.some(f => { try { obj(f,['class','name','types','includes']); } catch { return true; } return !Array.isArray(f.includes) || !f.includes.length || f.includes.length>8 || f.includes.some(x=>typeof x!=='string'||!x.length||x.length>256) || !v.classes.some(c=>c.name===f.class && c.cases.includes(f.name)) || typeof f.name !== 'string' || !f.name || !Array.isArray(f.types) || f.types.length !== 2 || new Set(f.types).size !== 2 || f.types.some(t => !['java.lang.AssertionError','org.opentest4j.AssertionFailedError'].includes(t)); })) fail();
   if ((phase === 'red') !== (v.failures.length > 0) || new Set(v.failures.map(f=>`${f.class}:${f.name}`)).size !== v.failures.length) fail();
 }
 if (r.red.paths.some(p => !p.endsWith('Test.kt') && p !== 'tests/build.gradle.kts')) fail();

@@ -2,12 +2,12 @@
   "base": "dbc590b62c9ed92a846e7dfb3e92a00ffba4bdbd",
   "mode": "red-green",
   "red": {
-    "tree": "9ddc79cf89677a18fa362f14e7cf63b199e9d4ba",
+    "tree": "1ed34505cb42e8025d9aac20b2b8314b3ec89be0",
     "patch": {
-      "sha256": "2730ada43ba623fea224742a6946329c38caa94bdffca4cd8ccbab77ee5cb933",
-      "compressedSha256": "1a95897689a8f2365a0c6439724a87b26488ec57f7ae2f99df97deed0d51ce59",
-      "bytes": 20926,
-      "compressedBytes": 4437
+      "sha256": "143ed3da61c21409c25c544e41a9f51b73e691fae6fb1543bd49a1dfd4c536dd",
+      "compressedSha256": "11ced38cf895f16c4a67616ff13e1d1c85ed2f3955c2960e1a9708b6173afe92",
+      "bytes": 22050,
+      "compressedBytes": 4576
     },
     "paths": [
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
@@ -16,15 +16,107 @@
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 48
+        "count": 48,
+        "cases": [
+          "CR named sections retain case insensitive repeated entry validation()",
+          "CR only main duplicate attributes are rejected without logging names()",
+          "case insensitive external classpath and duplicate manifest entries are rejected()",
+          "control thrown by cause accessor is preserved after staging cleanup()",
+          "different valid clean source is recorded and rejected()",
+          "dirty embedded source does not retain arbitrary hash content()",
+          "dirty expected source does not retain arbitrary hash content()",
+          "dirty observed stamp is explicitly unsupported()",
+          "duplicate attribute in split same name sections is rejected()",
+          "duplicate attributes in a named manifest section are rejected without logging their name()",
+          "duplicate manifest classpath attributes cannot erase an external dependency()",
+          "duplicate provenance entry is rejected()",
+          "empty expected clean dirty hash is canonicalized to absent()",
+          "empty main and repeated named section duplicate are rejected without logging name()",
+          "entry and artifact limits fail closed and leave no staged files()",
+          "failed preparation runs its owned closer and preserves cleanup control()",
+          "folded multibyte entry name detects duplicate across sections()",
+          "fresh cause nodes cannot grow inspection without a bound()",
+          "impractical metadata limit is rejected before staging()",
+          "invalid expected digest and commit are rejected before copy()",
+          "malformed ZIP and escaped properties fail safely without staged files()",
+          "manifest continuation without preceding attribute is rejected()",
+          "manifest external classpath is rejected even with a matching digest and source()",
+          "metadata byte limit rejects oversized provenance without leaking staging()",
+          "missing artifact is unavailable and leaves source unchecked()",
+          "missing provenance entry is rejected()",
+          "mixed line endings cannot hide duplicate main attributes()",
+          "oversized and malformed manifest fail closed()",
+          "oversized embedded provenance fails closed()",
+          "post start verification refuses a staged symbolic link without following it()",
+          "post start verification rejects a staged artifact grown beyond the configured limit()",
+          "preparation preserves cancellation and removes the owned stage()",
+          "preparation preserves fatal failure and removes owned stage()",
+          "preparation preserves interruption and restores its flag after cleanup()",
+          "prepared close preserves local control and fatal failures()",
+          "relative Java executable is rejected before staging()",
+          "requested dirty source is explicitly unsupported()",
+          "same digest attribute in distinct named manifest sections is accepted()",
+          "same named sections with disjoint attributes and folded values are accepted()",
+          "same source stamp does not make different bytes match the expected digest()",
+          "socket timeout remains a sanitized IO failure without setting interrupt()",
+          "staging cleanup failure preserves safe primary and safe suppression()",
+          "symbolic link artifact is rejected without following its target()",
+          "throwing cause accessor is sanitized after removing the owned stage()",
+          "unknown malformed duplicate and incomplete source stamps fail without observed source claims()",
+          "valid CR only and mixed manifests preserve folds and distinct entries()",
+          "verified preparation copies owned bytes and removes its staging directory()",
+          "wide suppressed graph has bounded inspection work()"
+        ]
       },
       {
         "name": "PackagedSessionFactoryTest",
-        "count": 34
+        "count": 35,
+        "cases": [
+          "artifact mismatch is rejected before process acquisition()",
+          "default launch preserves original process start exception()",
+          "default session reports stderr observation as unavailable()",
+          "explicit packaged launch ignores malformed unused legacy jar selector()",
+          "fatal cleanup never reads suppressed failure messages()",
+          "in process rejects packaged override before starting process or server()",
+          "packaged launch chooses its verified staging copy and explicit heap before stdio()",
+          "packaged launch forwards the isolated Jenkins cache root before the jar()",
+          "post start mismatch retains safe primary and safe cleanup suppression()",
+          "post start staged tampering destroys acquired process and cleans the stage()",
+          "private cleanup preserves primary cancellation when later cleanup fails()",
+          "private cleanup promotes suppressed cancellation after closing every resource()",
+          "private cleanup promotes suppressed fatal failure and closes all resources()",
+          "private cleanup promotes suppressed interruption and restores interrupt()",
+          "private cleanup retains interruption flag even when fatal error takes priority()",
+          "private close sanitizes cleanup failure and restores interruption()",
+          "private control only interruption remains visible after fatal promotion()",
+          "private launch preserves closed by interrupt and restores flag()",
+          "private launch preserves interruption and restores flag after staging cleanup()",
+          "private launch propagates cancellation and cleans its staging()",
+          "private launch sanitizes socket timeout without marking interrupt()",
+          "private launch sanitizes throwing cause accessors and cleans staging()",
+          "private process requires explicit nonblank Gradle home before acquisition()",
+          "private stderr cancellation is replayed after cleanup()",
+          "private stderr drains a bounded pipe and teardown retires its reader()",
+          "private stderr fatal close after EOF records failure and is replayed locally()",
+          "private stderr fatal read is replayed locally after owned cleanup()",
+          "private stderr interruption is replayed after cleanup and restores caller interrupt()",
+          "private stderr is drained without exposing bytes or launch secrets()",
+          "private stderr preserves suppressed fatal and interruption after owned cleanup()",
+          "private stderr read failure records observed bytes without error text()",
+          "private unsupported modes are rejected before acquisition()",
+          "reject policy blocks each authored JVM options variable()",
+          "reject policy starts process when all authored JVM options are empty()",
+          "remove policy strips each authored JVM options variable()"
+        ]
       },
       {
         "name": "SessionResourcesTest",
-        "count": 3
+        "count": 3,
+        "cases": [
+          "failed construction preserves its failure and closes every acquired resource()",
+          "interrupted construction still closes acquired resources before restoring cancellation()",
+          "transferred resources close in reverse order exactly once()"
+        ]
       }
     ],
     "failures": [
@@ -214,24 +306,35 @@
         "includes": [
           "failed preparation must run its owned closer and preserve cleanup control"
         ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private control only interruption remains visible after fatal promotion()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "fatal promotion must retain the observed interruption"
+        ]
       }
     ]
   },
   "helpers": {
     "phase": "d8be5aad1666ed2809192cf44b834ea30ea95a4d62d78b596e4039d62bcd3b3e",
-    "results": "9020494bf8af1da79aeb09c3e9231d5b26ba165f66e6ed1de8639be5936fb701",
+    "results": "c6b5d426493dc0b3abc8c8a42dfd763cafbb1f863e9000be6c8d9681a392ef9a",
     "worker": "46753e4c9ae79ea24b1133a7b4bf0c1ca068f03f606f01baaf4ebd8b8ed3e4fe",
     "capture": "e369b217ddf780fb09744ee23071d4c5818e4fabe4bd137ae8ad2f9dd1ea6b8b",
     "budget": "8fed9039bb2955e2fc2df95f993e50a7e80428113afad4022c1c11f090463ba6",
     "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00"
   },
   "green": {
-    "tree": "83b5449561ef6c386b95ddd0cfcc6fd877e240a1",
+    "tree": "b10c1b9f0463609619c034701da4ab7dc43943b6",
     "patch": {
-      "sha256": "64d341db56e2fd34d3e68180e327085c2d6552f9b313b5584de7805bdf379c3a",
-      "compressedSha256": "963f26db95908bb67274fd4543a13b8f5aaa93f7a3335c66955bdb6972c34df1",
-      "bytes": 20156,
-      "compressedBytes": 5423
+      "sha256": "3fc17ef16c8b56c23f380603c4a73127fab81be74d5187b1ccce8b841daf091b",
+      "compressedSha256": "f3a48ab0323b07c7abf01b00742465bef2fe3d9270e8b3913fadad2576002a3a",
+      "bytes": 20088,
+      "compressedBytes": 5415
     },
     "paths": [
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt",
@@ -243,15 +346,108 @@
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 49
+        "count": 49,
+        "cases": [
+          "CR named sections retain case insensitive repeated entry validation()",
+          "CR only main duplicate attributes are rejected without logging names()",
+          "bounded cyclic graph preserves its observed fatal signal after cleanup()",
+          "case insensitive external classpath and duplicate manifest entries are rejected()",
+          "control thrown by cause accessor is preserved after staging cleanup()",
+          "different valid clean source is recorded and rejected()",
+          "dirty embedded source does not retain arbitrary hash content()",
+          "dirty expected source does not retain arbitrary hash content()",
+          "dirty observed stamp is explicitly unsupported()",
+          "duplicate attribute in split same name sections is rejected()",
+          "duplicate attributes in a named manifest section are rejected without logging their name()",
+          "duplicate manifest classpath attributes cannot erase an external dependency()",
+          "duplicate provenance entry is rejected()",
+          "empty expected clean dirty hash is canonicalized to absent()",
+          "empty main and repeated named section duplicate are rejected without logging name()",
+          "entry and artifact limits fail closed and leave no staged files()",
+          "failed preparation runs its owned closer and preserves cleanup control()",
+          "folded multibyte entry name detects duplicate across sections()",
+          "fresh cause nodes cannot grow inspection without a bound()",
+          "impractical metadata limit is rejected before staging()",
+          "invalid expected digest and commit are rejected before copy()",
+          "malformed ZIP and escaped properties fail safely without staged files()",
+          "manifest continuation without preceding attribute is rejected()",
+          "manifest external classpath is rejected even with a matching digest and source()",
+          "metadata byte limit rejects oversized provenance without leaking staging()",
+          "missing artifact is unavailable and leaves source unchecked()",
+          "missing provenance entry is rejected()",
+          "mixed line endings cannot hide duplicate main attributes()",
+          "oversized and malformed manifest fail closed()",
+          "oversized embedded provenance fails closed()",
+          "post start verification refuses a staged symbolic link without following it()",
+          "post start verification rejects a staged artifact grown beyond the configured limit()",
+          "preparation preserves cancellation and removes the owned stage()",
+          "preparation preserves fatal failure and removes owned stage()",
+          "preparation preserves interruption and restores its flag after cleanup()",
+          "prepared close preserves local control and fatal failures()",
+          "relative Java executable is rejected before staging()",
+          "requested dirty source is explicitly unsupported()",
+          "same digest attribute in distinct named manifest sections is accepted()",
+          "same named sections with disjoint attributes and folded values are accepted()",
+          "same source stamp does not make different bytes match the expected digest()",
+          "socket timeout remains a sanitized IO failure without setting interrupt()",
+          "staging cleanup failure preserves safe primary and safe suppression()",
+          "symbolic link artifact is rejected without following its target()",
+          "throwing cause accessor is sanitized after removing the owned stage()",
+          "unknown malformed duplicate and incomplete source stamps fail without observed source claims()",
+          "valid CR only and mixed manifests preserve folds and distinct entries()",
+          "verified preparation copies owned bytes and removes its staging directory()",
+          "wide suppressed graph has bounded inspection work()"
+        ]
       },
       {
         "name": "PackagedSessionFactoryTest",
-        "count": 34
+        "count": 35,
+        "cases": [
+          "artifact mismatch is rejected before process acquisition()",
+          "default launch preserves original process start exception()",
+          "default session reports stderr observation as unavailable()",
+          "explicit packaged launch ignores malformed unused legacy jar selector()",
+          "fatal cleanup never reads suppressed failure messages()",
+          "in process rejects packaged override before starting process or server()",
+          "packaged launch chooses its verified staging copy and explicit heap before stdio()",
+          "packaged launch forwards the isolated Jenkins cache root before the jar()",
+          "post start mismatch retains safe primary and safe cleanup suppression()",
+          "post start staged tampering destroys acquired process and cleans the stage()",
+          "private cleanup preserves primary cancellation when later cleanup fails()",
+          "private cleanup promotes suppressed cancellation after closing every resource()",
+          "private cleanup promotes suppressed fatal failure and closes all resources()",
+          "private cleanup promotes suppressed interruption and restores interrupt()",
+          "private cleanup retains interruption flag even when fatal error takes priority()",
+          "private close sanitizes cleanup failure and restores interruption()",
+          "private control only interruption remains visible after fatal promotion()",
+          "private launch preserves closed by interrupt and restores flag()",
+          "private launch preserves interruption and restores flag after staging cleanup()",
+          "private launch propagates cancellation and cleans its staging()",
+          "private launch sanitizes socket timeout without marking interrupt()",
+          "private launch sanitizes throwing cause accessors and cleans staging()",
+          "private process requires explicit nonblank Gradle home before acquisition()",
+          "private stderr cancellation is replayed after cleanup()",
+          "private stderr drains a bounded pipe and teardown retires its reader()",
+          "private stderr fatal close after EOF records failure and is replayed locally()",
+          "private stderr fatal read is replayed locally after owned cleanup()",
+          "private stderr interruption is replayed after cleanup and restores caller interrupt()",
+          "private stderr is drained without exposing bytes or launch secrets()",
+          "private stderr preserves suppressed fatal and interruption after owned cleanup()",
+          "private stderr read failure records observed bytes without error text()",
+          "private unsupported modes are rejected before acquisition()",
+          "reject policy blocks each authored JVM options variable()",
+          "reject policy starts process when all authored JVM options are empty()",
+          "remove policy strips each authored JVM options variable()"
+        ]
       },
       {
         "name": "SessionResourcesTest",
-        "count": 3
+        "count": 3,
+        "cases": [
+          "failed construction preserves its failure and closes every acquired resource()",
+          "interrupted construction still closes acquired resources before restoring cancellation()",
+          "transferred resources close in reverse order exactly once()"
+        ]
       }
     ],
     "failures": []
