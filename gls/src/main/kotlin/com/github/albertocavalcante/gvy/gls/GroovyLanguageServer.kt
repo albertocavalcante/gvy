@@ -13,6 +13,8 @@ import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRequestHandler
+import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
 import com.github.albertocavalcante.gvy.gls.project.DefaultProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.JenkinsProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
@@ -79,6 +81,8 @@ import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
+import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
@@ -90,6 +94,7 @@ class GroovyLanguageServer(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val processLiveness: ProcessLiveness = SystemProcessLiveness,
     private val exitProcess: (Int) -> Unit = { kotlin.system.exitProcess(it) },
+    private val shutdownExecutor: Executor = ForkJoinPool.commonPool(),
 ) : LanguageServer,
     LanguageClientAware {
 
@@ -146,6 +151,11 @@ class GroovyLanguageServer(
         ),
     )
 
+    private val diagnosticsRequestHandler = DiagnosticsRequestHandler(
+        coroutineScope,
+        textDocumentService::awaitCurrentDiagnostics,
+    )
+
     /** Notices classpath entries replaced between dependency observations (#1364). */
     private val classpathRestamper = ClasspathRestamper(compilationService, coroutineScope)
     private val workspaceService = GroovyWorkspaceService(
@@ -196,7 +206,7 @@ class GroovyLanguageServer(
 
     // State
     @Volatile
-    private var runtimeFactsReady = false
+    private var implementationRequestsReady = false
     private var savedInitParams: InitializeParams? = null
     private var clientCapabilities: ClientCapabilities? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
@@ -241,7 +251,7 @@ class GroovyLanguageServer(
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
-        runtimeFactsReady = false
+        implementationRequestsReady = false
         logger.info { "Initializing Groovy Language Server..." }
         logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
@@ -265,7 +275,7 @@ class GroovyLanguageServer(
             prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,
         )
 
-        runtimeFactsReady = true
+        implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
@@ -320,7 +330,7 @@ class GroovyLanguageServer(
 
     // Created at most once, so repeated shutdown requests (client plus watchdog) share one run.
     private val shutdownFuture: CompletableFuture<Any> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        CompletableFuture.supplyAsync { doShutdown() }
+        CompletableFuture.supplyAsync({ doShutdown() }, shutdownExecutor)
     }
 
     private fun doShutdown(): Any {
@@ -368,18 +378,28 @@ class GroovyLanguageServer(
      */
     @JsonRequest("groovy/runtimeFacts")
     fun runtimeFacts(): CompletableFuture<JsonElement> {
-        val error = when {
-            shutdownRequested -> ResponseErrorCode.InvalidRequest to "Server is shutting down"
-            !runtimeFactsReady -> ResponseErrorCode.ServerNotInitialized to "Server is not initialized"
-            else -> null
-        }
+        val error = customRequestLifecycleError()
         if (error != null) {
-            return CompletableFuture.failedFuture(
-                ResponseErrorException(ResponseError(error.first, error.second, null)),
-            )
+            return CompletableFuture.failedFuture(ResponseErrorException(error))
         }
         val facts = runtimeFacts(Version.info, observeRuntime(), compilationService.observeHoverEngine())
         return CompletableFuture.completedFuture(Gson().toJsonTree(facts))
+    }
+
+    @JsonRequest("groovy/awaitDiagnostics")
+    fun awaitDiagnostics(params: JsonElement?): CompletableFuture<DiagnosticsRunResult> {
+        val error = customRequestLifecycleError()
+        if (error != null) {
+            return CompletableFuture.failedFuture(ResponseErrorException(error))
+        }
+        return diagnosticsRequestHandler.awaitDiagnostics(params)
+    }
+
+    private fun customRequestLifecycleError(): ResponseError? = when {
+        shutdownRequested -> ResponseError(ResponseErrorCode.InvalidRequest, "Server is shutting down", null)
+        !implementationRequestsReady ->
+            ResponseError(ResponseErrorCode.ServerNotInitialized, "Server is not initialized", null)
+        else -> null
     }
 
     @JsonRequest("groovy/discoverTests")
