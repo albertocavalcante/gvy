@@ -43,7 +43,9 @@ const actual=[];
 for (const c of r.classes) {
   const file=`${dir}/TEST-com.github.albertocavalcante.gvy.gls.e2e.${c.name}.xml`;
   const result=JSON.parse(execFileSync('python3',['-c',parser,file,c.name],{encoding:'utf8',maxBuffer:1024*1024,timeout:10000}));
-  if(result.count!==c.count || JSON.stringify(result.cases)!==JSON.stringify([...c.cases].sort())) throw Error('suite mismatch'); actual.push(...result.failures);
+  const expectedCases=new Set(c.cases);
+  if (expectedCases.size!==c.count || result.count!==c.count || result.cases.some(id=>!expectedCases.has(id))) throw Error('suite mismatch');
+  actual.push(...result.failures);
 }
 if (actual.length !== r.failures.length || actual.some(a => !r.failures.some(f => f.class === a.class && f.name === a.name && f.types.includes(a.type) && f.includes.every(part=>a.message.includes(part))))) throw Error('unexpected failure');
 console.log(`${phase} tests validated`);
