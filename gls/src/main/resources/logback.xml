@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <!-- Console appender that outputs to stderr to avoid LSP protocol pollution -->
-    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="STDERR" class="com.github.albertocavalcante.gvy.gls.config.BoundedConsoleAppender">
         <target>System.err</target>
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} -- %msg%n</pattern>
-        </encoder>
+        <encoder class="com.github.albertocavalcante.gvy.gls.config.BoundedLogbackEncoder" />
     </appender>
 
     <!-- Root logger configuration -->

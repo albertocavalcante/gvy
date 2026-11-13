@@ -89,6 +89,7 @@ dependencies {
     // Logging
     implementation(libs.kotlin.logging)
     implementation(libs.logback.classic)
+    implementation("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
 
     // CLI
     implementation(libs.clikt)
