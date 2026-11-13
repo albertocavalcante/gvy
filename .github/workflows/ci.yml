@@ -36,6 +36,11 @@ jobs:
           private="$RUNNER_TEMP/parity-private"
           public="$RUNNER_TEMP/parity-receipt"
           mkdir -m 700 "$private" "$public"
+          source_stable() {
+          	[[ -z "$1" && "$2" == 1cd527e018f1cf397acb25f01a98dfa0a6662c5b && "$3" == 71d313b3e182b2bc7de166a8308f33b2a03e2ea5 ]]
+          }
+          initial_status="$(git -c core.fsmonitor=false -c core.hooksPath=/dev/null status --porcelain=v1 --untracked-files=all)"
+          source_stable "$initial_status" "$(git rev-parse HEAD)" "$(git write-tree)"
           mkdir -m 700 "$private/build-tool" "$private/jenkins"
           bazel --version >"$private/bazel-version" 2>&1
           echo 'BAZELISK_GITHUB_TOKEN=' >>"$GITHUB_ENV"
@@ -59,7 +64,7 @@ jobs:
           run_target() {
           	local name="$1" target="$2"
           	set +e
-          	timeout --kill-after=10s 1200s bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m "--sandbox_writable_path=$private/$name" '--test_arg=--include-classname=^.*\.LoggingProviderTest$' "--test_arg=--reports-dir=$private/$name" "$target" 2>&1 | python3 -c '
+          	timeout --kill-after=10s 1200s bazel --host_jvm_args=-Xmx1024m test --config=ci --jobs=1 --local_test_jobs=1 --nocache_test_results --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m "--sandbox_writable_path=$private/$name" '--test_arg=--include-classname=^.*\.LoggingProviderTest$' "--test_arg=--reports-dir=$private/$name" "$target" 2>&1 | python3 -c '
           import sys
           remaining = 4 * 1024 * 1024
           overflow = False
@@ -82,8 +87,18 @@ jobs:
           read -r second second_capture <"$private/jenkins.status"
           printf 'build_tool_exit=%s capture=%s jenkins_exit=%s capture=%s\n' "$first" "$first_capture" "$second" "$second_capture"
           cleanup
-          if ((first != 0 || first_capture != 0 || second != 0 || second_capture != 0 || cleanup_exit != 0)); then
-          	python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
+          source_status=0
+          if ! final_status="$(git -c core.fsmonitor=false -c core.hooksPath=/dev/null status --porcelain=v1 --untracked-files=all)"; then
+          	source_status=1
+          fi
+          if ! final_head="$(git rev-parse HEAD)" || ! final_tree="$(git write-tree)"; then
+          	source_status=1
+          elif ! source_stable "$final_status" "$final_head" "$final_tree"; then
+          	source_status=1
+          fi
+          printf 'source_stability=%s\n' "$source_status"
+          if ((first != 0 || first_capture != 0 || second != 0 || second_capture != 0 || cleanup_exit != 0 || source_status != 0)); then
+          	python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$source_status" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
           import json
           import os
           import pathlib
@@ -110,15 +125,15 @@ jobs:
               "zero_tests": r"(?i)(no tests (were )?found|0 tests found)",
               "wrapper_missing": r"(?i)(wrapper[^\n]{0,120}(no such file|not found|permission denied))",
               "output_env_missing": r"TEST_UNDECLARED_OUTPUTS_DIR: parameter (null or )?not set",
-              "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror)",
+              "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror|could not find or load main class)",
               "class_version": r"(?i)unsupportedclassversionerror",
-              "bootstrap_console_launcher": r"(?i)(?:could not find or load main class|ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]platform[./]console[./]ConsoleLauncher\b",
-              "bootstrap_jupiter_engine": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]jupiter[./]engine[./]JupiterTestEngine\b",
-              "bootstrap_slf4j": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]slf4j[./]LoggerFactory\b",
-              "bootstrap_logback_classic": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]classic[./]LoggerContext\b",
-              "bootstrap_logback_core": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]core[./]ConsoleAppender\b",
-              "bootstrap_build_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]build[./]LoggingProviderTest\b",
-              "bootstrap_jenkins_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]jenkins[./]LoggingProviderTest\b",
+              "bootstrap_console_launcher": r"(?:(?i:could not find or load main class)|ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]platform[./]console[./]ConsoleLauncher(?![\w.$/])",
+              "bootstrap_jupiter_engine": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]jupiter[./]engine[./]JupiterTestEngine(?![\w.$/])",
+              "bootstrap_slf4j": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]slf4j[./]LoggerFactory(?![\w.$/])",
+              "bootstrap_logback_classic": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]classic[./]LoggerContext(?![\w.$/])",
+              "bootstrap_logback_core": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]core[./]ConsoleAppender(?![\w.$/])",
+              "bootstrap_build_test": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]build[./]LoggingProviderTest(?![\w.$/])",
+              "bootstrap_jenkins_test": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]jenkins[./]LoggingProviderTest(?![\w.$/])",
           }
           
           def bounded(path):
@@ -227,8 +242,8 @@ jobs:
               return result
           
           def main():
-              first, first_capture, second, second_capture, cleanup, dest, private = sys.argv[1:]
-              if not all(value.isdecimal() for value in (first, first_capture, second, second_capture, cleanup)):
+              first, first_capture, second, second_capture, cleanup, source, dest, private = sys.argv[1:]
+              if not all(value.isdecimal() for value in (first, first_capture, second, second_capture, cleanup, source)):
                   raise SystemExit("invalid status")
               modules = {
                   "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
@@ -245,7 +260,7 @@ jobs:
                   observed["bazelXml"] = generic[0]
                   observed["xmlOrigin"] = "jupiter" if jupiter[0] == "present" else "bazel_fallback"
                   result[module] = observed
-              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": {"build-tool": int(first), "jenkins": int(second)}, "captureExit": {"build-tool": int(first_capture), "jenkins": int(second_capture)}, "cleanupExit": int(cleanup), "modules": result}
+              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": {"build-tool": int(first), "jenkins": int(second)}, "captureExit": {"build-tool": int(first_capture), "jenkins": int(second_capture)}, "cleanupExit": int(cleanup), "sourceStability": int(source), "modules": result}
               pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
           
           if __name__ == "__main__":
@@ -320,11 +335,11 @@ jobs:
               if any(x.get("classname") != classname or list(x.findall("failure")) or list(x.findall("error")) or list(x.findall("skipped")) for x in cases):
                   raise SystemExit("unexpected test class or outcome")
               result.append({"module": module, "class": classname, "cases": sorted(expected), "passed": 2, "errors": 0, "failures": 0, "skipped": 0, "xmlSha256": hashlib.sha256(raw).hexdigest()})
-          receipt = {"schemaVersion": 1, "sourceHead": "f04406dac415a5b7cc1698ca8feb0d0de3e9e956", "testedHead": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "testedTree": "71d313b3e182b2bc7de166a8308f33b2a03e2ea5", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "invocation": "two direct Bazel target tests, no test-result cache", "bazelExit": {"build-tool": 0, "jenkins": 0}, "captureExit": {"build-tool": 0, "jenkins": 0}, "cleanupExit": 0, "results": result}
+          receipt = {"schemaVersion": 1, "sourceHead": "f04406dac415a5b7cc1698ca8feb0d0de3e9e956", "testedHead": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "testedTree": "71d313b3e182b2bc7de166a8308f33b2a03e2ea5", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "invocation": "two direct Bazel target tests, no test-result cache", "bazelExit": {"build-tool": 0, "jenkins": 0}, "captureExit": {"build-tool": 0, "jenkins": 0}, "cleanupExit": 0, "sourceStability": 0, "results": result}
           pathlib.Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
           PY
           then
-          	python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
+          	python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$source_status" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
           import json
           import os
           import pathlib
@@ -351,15 +366,15 @@ jobs:
               "zero_tests": r"(?i)(no tests (were )?found|0 tests found)",
               "wrapper_missing": r"(?i)(wrapper[^\n]{0,120}(no such file|not found|permission denied))",
               "output_env_missing": r"TEST_UNDECLARED_OUTPUTS_DIR: parameter (null or )?not set",
-              "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror)",
+              "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror|could not find or load main class)",
               "class_version": r"(?i)unsupportedclassversionerror",
-              "bootstrap_console_launcher": r"(?i)(?:could not find or load main class|ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]platform[./]console[./]ConsoleLauncher\b",
-              "bootstrap_jupiter_engine": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]jupiter[./]engine[./]JupiterTestEngine\b",
-              "bootstrap_slf4j": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]slf4j[./]LoggerFactory\b",
-              "bootstrap_logback_classic": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]classic[./]LoggerContext\b",
-              "bootstrap_logback_core": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]core[./]ConsoleAppender\b",
-              "bootstrap_build_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]build[./]LoggingProviderTest\b",
-              "bootstrap_jenkins_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]jenkins[./]LoggingProviderTest\b",
+              "bootstrap_console_launcher": r"(?:(?i:could not find or load main class)|ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]platform[./]console[./]ConsoleLauncher(?![\w.$/])",
+              "bootstrap_jupiter_engine": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]jupiter[./]engine[./]JupiterTestEngine(?![\w.$/])",
+              "bootstrap_slf4j": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]slf4j[./]LoggerFactory(?![\w.$/])",
+              "bootstrap_logback_classic": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]classic[./]LoggerContext(?![\w.$/])",
+              "bootstrap_logback_core": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]core[./]ConsoleAppender(?![\w.$/])",
+              "bootstrap_build_test": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]build[./]LoggingProviderTest(?![\w.$/])",
+              "bootstrap_jenkins_test": r"(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]jenkins[./]LoggingProviderTest(?![\w.$/])",
           }
           
           def bounded(path):
@@ -468,8 +483,8 @@ jobs:
               return result
           
           def main():
-              first, first_capture, second, second_capture, cleanup, dest, private = sys.argv[1:]
-              if not all(value.isdecimal() for value in (first, first_capture, second, second_capture, cleanup)):
+              first, first_capture, second, second_capture, cleanup, source, dest, private = sys.argv[1:]
+              if not all(value.isdecimal() for value in (first, first_capture, second, second_capture, cleanup, source)):
                   raise SystemExit("invalid status")
               modules = {
                   "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
@@ -486,7 +501,7 @@ jobs:
                   observed["bazelXml"] = generic[0]
                   observed["xmlOrigin"] = "jupiter" if jupiter[0] == "present" else "bazel_fallback"
                   result[module] = observed
-              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": {"build-tool": int(first), "jenkins": int(second)}, "captureExit": {"build-tool": int(first_capture), "jenkins": int(second_capture)}, "cleanupExit": int(cleanup), "modules": result}
+              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": {"build-tool": int(first), "jenkins": int(second)}, "captureExit": {"build-tool": int(first_capture), "jenkins": int(second_capture)}, "cleanupExit": int(cleanup), "sourceStability": int(source), "modules": result}
               pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
           
           if __name__ == "__main__":
