@@ -176,9 +176,7 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 ) {
                     return null
                 }
-                if ((unqualified && hasHierarchy(reference.scope)) || (hasLocalClasses && !packageQualified)) {
-                    return null
-                }
+                if ((unqualified && hasHierarchy(reference.scope)) || hasLocalClasses) return null
             }
             val explicit = exposed(reference.spelling)
             if (hasHierarchy(reference.scope)) {
