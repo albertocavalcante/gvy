@@ -352,7 +352,7 @@
   "moduleExtensions": {
     "//tools/build_defs:junit.bzl%junit": {
       "general": {
-        "bzlTransitiveDigest": "23Z42VAxVeUTwHLC7AgluTMIONIVEdMr+gUUNhMxR1c=",
+        "bzlTransitiveDigest": "aDrEtSoSj9ns9zPMbGpyrdIgIG19Jjwg+shFF6oHz3I=",
         "usagesDigest": "ajWiTWd2ISYShaZDenbsUyEUCYeIDlTkCVjXVmFn65s=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -436,6 +436,16 @@
               ],
               "sha256": "adfe7a292d6d8a48b16565cf807aac3fff1a56bc4be88b26707f3b20c902b2fd",
               "downloaded_file_path": "junit-platform-console.jar"
+            }
+          },
+          "junit_platform_reporting_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-reporting/6.0.2/junit-platform-reporting-6.0.2.jar"
+              ],
+              "sha256": "34fd2fb625203ec62d61b72d0648ce1cb9609ab3ba04b9f13171aad20bb65a14",
+              "downloaded_file_path": "junit-platform-reporting.jar"
             }
           }
         }
