@@ -1,8 +1,8 @@
 {
   "fixtureBase": "b7e6657a923f2fb24c73b1ae1cb48b3088540bac",
-  "fixtureTree": "29d42a77a74022c3aa83d32347313c82e2c29d65",
-  "patchSha256": "1983f6e8957fa9ac2417322f10d75fd5c204d8459322ee8f92d026f5229cdf8f",
-  "gzipSha256": "5ab61d332bb468b3450fa2a039cb61948957cea8c685197cbd7075530011d32a",
+  "fixtureTree": "1ded41f3135bf696341e642c8d7b3b79661cf320",
+  "patchSha256": "db154249ebfac98fcbf6ad0c4f2caeb0fe5bc4920240360eaee5cc4d96f7047e",
+  "gzipSha256": "b52786256228beca7700a0912cba718d1ad223208b027ef8e73e2fb075447a2e",
   "caseMapSha256": "fcec3042e5df91243b1de2b81aca1e813d61da9db7f0d4013719b332c7a8add8",
   "fixtureStatus": "provisional; Factory 1897 and XFAIL 1811 unmerged",
   "sourceReviewReceiptSha256": "5ea8b98c349d61b5b77da61ab71e9083da3cf898536e5a5a08576cbb246198e5",
@@ -46,5 +46,14 @@
     "originalArtifactSha256": "87d8a8989b636360694c95cb20c1e6b371d37edfe2b8b5514930a6ca381d5db8",
     "followupPatchSha256": "9a29ed067e9878031775b39d90e24bda5a30b0be25491efc619f9711b1ef9d1b",
     "review": "Root and independent reviewer inspected both canonical dprint Markdown reflows and confirmed links, inline code, and limits were preserved."
+  },
+  "licenseFollowup": {
+    "previousTree": "29d42a77a74022c3aa83d32347313c82e2c29d65",
+    "originalRun": "43364220542",
+    "originalFailureLogSha256": "7c5e42c87e50b0b26197f7c8102f49db3b4a7b0a537b20e43fe448465d4966c8",
+    "originalArtifactSha256": "37979be9a25911a37b7bc6109b1a46d476ca0cfe5529d1be3bec79ac6dea44b3",
+    "followupPatchSha256": "eda0e646d8eaa8bc59f80fd15bbc76b5a176604d2db495568fa5b30a922a328c",
+    "qualification": "Hosted hook reported REUSE failure without detailed report; local pinned REUSE reproduction identified the missing document annotation. Pinned REUSE and canonical check pass after the exact-path addition.",
+    "review": "Root independently reviewed the exact annotation and worker pin-only changes."
   }
 }

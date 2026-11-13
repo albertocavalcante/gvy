@@ -45,20 +45,20 @@ jobs:
           : "${RUNNER_TEMP:?}"
           payload="${GITHUB_WORKSPACE}/support/.publication/candidate.patch.gz"
           proof_cmd_8_1=$(stat -c %s "${payload}")
-          [[ "${proof_cmd_8_1}" == 108506 ]]
-          printf '%s  %s\n' 5ab61d332bb468b3450fa2a039cb61948957cea8c685197cbd7075530011d32a "${payload}" | sha256sum -c -
+          [[ "${proof_cmd_8_1}" == 108640 ]]
+          printf '%s  %s\n' b52786256228beca7700a0912cba718d1ad223208b027ef8e73e2fb075447a2e "${payload}" | sha256sum -c -
           python3 - "${payload}" "${RUNNER_TEMP}/candidate.patch" <<'PY'
           import gzip, pathlib, sys
           with gzip.open(sys.argv[1], 'rb') as source:
-              data = source.read(556095)
-          assert len(data) == 556094
+              data = source.read(556481)
+          assert len(data) == 556480
           pathlib.Path(sys.argv[2]).write_bytes(data)
           PY
-          printf '%s  %s\n' 1983f6e8957fa9ac2417322f10d75fd5c204d8459322ee8f92d026f5229cdf8f "${RUNNER_TEMP}/candidate.patch" | sha256sum -c -
+          printf '%s  %s\n' db154249ebfac98fcbf6ad0c4f2caeb0fe5bc4920240360eaee5cc4d96f7047e "${RUNNER_TEMP}/candidate.patch" | sha256sum -c -
           git apply --check --index "${RUNNER_TEMP}/candidate.patch"
           git apply --index "${RUNNER_TEMP}/candidate.patch"
           proof_cmd_20_2=$(git write-tree)
-          [[ "${proof_cmd_20_2}" == 29d42a77a74022c3aa83d32347313c82e2c29d65 ]]
+          [[ "${proof_cmd_20_2}" == 1ded41f3135bf696341e642c8d7b3b79661cf320 ]]
           git diff --quiet
           git diff --cached --check
       - name: Set up JDK
@@ -188,7 +188,7 @@ jobs:
           assert.equal(data.commandExitCode, 0); assert.equal(data.captureExitCode, 0);
           JSHOOK
           proof_cmd_24_2=$(git rev-parse 'HEAD^{tree}')
-          [[ "${proof_cmd_24_2}" == 29d42a77a74022c3aa83d32347313c82e2c29d65 ]]
+          [[ "${proof_cmd_24_2}" == 1ded41f3135bf696341e642c8d7b3b79661cf320 ]]
           proof_cmd_25_3=$(git rev-parse HEAD^)
           [[ "${proof_cmd_25_3}" == b7e6657a923f2fb24c73b1ae1cb48b3088540bac ]]
           proof_cmd_26_4=$(git status --porcelain)
@@ -339,7 +339,7 @@ jobs:
           : "${TESTED_SHA:?}"
           # Synthetic local commit is the tested source, not the merged product head.
           proof_cmd_8_1=$(git rev-parse 'HEAD^{tree}')
-          [[ "${proof_cmd_8_1}" == 29d42a77a74022c3aa83d32347313c82e2c29d65 ]]
+          [[ "${proof_cmd_8_1}" == 1ded41f3135bf696341e642c8d7b3b79661cf320 ]]
           proof_cmd_9_2=$(git status --porcelain)
           [[ -z "${proof_cmd_9_2}" ]]
           proof_cmd_10_3=$(command -v java)

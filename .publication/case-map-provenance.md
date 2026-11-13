@@ -4,7 +4,7 @@
 # Hosted test case map provenance
 
 `hosted-child-test-cases.json` is an authored, literal expected inventory for the frozen source tree
-29d42a77a74022c3aa83d32347313c82e2c29d65. For each of the 12 classes selected by the worker, the map uses that file's
+1ded41f3135bf696341e642c8d7b3b79661cf320. For each of the 12 classes selected by the worker, the map uses that file's
 package and every `@Test` function name followed by `()`, the JUnit XML spelling. Each selected source was checked for
 `@ParameterizedTest`, `@RepeatedTest`, `@TestFactory`, `@Nested`, and `@TestTemplate`; none occur. The extraction
 asserted each `@Test` has one matched function and wrote sorted unique class/case identities, rather than reading the
@@ -33,3 +33,7 @@ reviewer inspected the exact formatter output; the 166 source-owned test names r
 
 Hosted run 43361024167 passed canonical lintFix but its normal commit hook failed on two Markdown formatting checks. The
 exact dprint-only correction preserves all 166 source-owned test names.
+
+Hosted run 43364220542 passed formatting but its normal commit hook reported a REUSE failure without the detailed REUSE
+report. Local reproduction identified the new Markdown document's missing exact-path licensing annotation; adding it
+preserves all 166 source-owned test names. Pinned REUSE and the canonical licensing check pass locally after the change.
