@@ -128,14 +128,12 @@ private class SourceTextCursor(
     private fun declarationKeywordStart(): Int? {
         var start = skipTrivia(source, offset, limit)
         var valid = start != null
-        while (start != null && valid) {
-            val current = start
-            if (current >= limit || source[current] == '@') break
-            val end = identifierEnd(source, current, limit)
+        while (start != null && valid && start < limit && source[start] != '@') {
+            val end = identifierEnd(source, start, limit)
             if (end == null) {
                 valid = false
             } else {
-                val word = source.substring(current, end)
+                val word = source.substring(start, end)
                 if (word in TYPE_KEYWORDS) {
                     break
                 } else if (word !in TYPE_MODIFIERS) {

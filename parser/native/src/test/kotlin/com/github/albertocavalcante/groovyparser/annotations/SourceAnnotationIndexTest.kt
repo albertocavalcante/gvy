@@ -46,6 +46,17 @@ class SourceAnnotationIndexTest {
     }
 
     @Test
+    fun `oversized source cannot claim complete annotation coverage`() {
+        val source = "import example.Mark\n@Mark class Money {}\n//" +
+            "x".repeat(CompilerSourceRanges.MAX_SOURCE_UTF16_UNITS)
+        val index = parse(source).sourceAnnotations
+
+        assertIs<AnnotationCoverage.Partial>(index.coverage)
+        assertTrue(index.references.isEmpty())
+        assertFalse(index.canRuleOutAnnotationUse(ParserRange(ParserPosition(0, 0), ParserPosition(0, 1))))
+    }
+
+    @Test
     fun `a selected source annotation records its compiler source unit without retaining its AST`() {
         val result = parse("@interface Mark {}\n@Mark class Money {}")
         assertTrue(result.isSuccessful, result.diagnostics.toString())
@@ -96,6 +107,44 @@ class SourceAnnotationIndexTest {
             classLoader.close()
             transformLoader.close()
         }
+    }
+
+    @Test
+    fun `plain source does not construct range indexes`() {
+        val sourceText = "class Money {}"
+        val capture = SourceAnnotationCapture(ParseRequest(URI.create("file:///Money.groovy"), sourceText))
+        val classLoader = GroovyClassLoader(javaClass.classLoader)
+        val transformLoader = GroovyClassLoader(javaClass.classLoader)
+        try {
+            val configuration = CompilerConfiguration().apply { addCompilationCustomizers(capture) }
+            val unit = CompilationUnit(configuration, null, classLoader, transformLoader)
+            unit.addSource("/Money.groovy", sourceText)
+            unit.compile(Phases.CONVERSION)
+
+            assertNull(requestStateValue(capture, "ranges"))
+            assertEquals(AnnotationCoverage.Complete, capture.finish(unit.ast.modules.single(), false).coverage)
+        } finally {
+            classLoader.close()
+            transformLoader.close()
+        }
+    }
+
+    @Test
+    fun `selection of current source does not scan open sources`() {
+        val sources = object : AbstractMap<URI, String>() {
+            override val entries: Set<Map.Entry<URI, String>>
+                get() = error("Open sources must not be scanned")
+        }
+        val capture = SourceAnnotationCapture(
+            ParseRequest(URI.create("file:///Money.groovy"), "class Money {}", openSources = sources),
+        )
+        val select = SourceAnnotationCapture::class.java
+            .getDeclaredMethod("selectedRequestSources", Set::class.java)
+            .apply { isAccessible = true }
+
+        select.invoke(capture, emptySet<String>())
+        select.invoke(capture, setOf("/Money.groovy"))
+        capture.discard()
     }
 
     @Test

@@ -61,14 +61,17 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
 
     private var requestState: RequestState? = RequestState(
         request.content,
-        CompilerSourceRanges(request.content),
+        null,
         request.uri,
         if (request.parseMode == ParseMode.MINIMAL) emptyMap() else request.openSources,
     )
     private val content: String
         get() = checkNotNull(requestState?.content) { "Source annotation capture was discarded" }
     private val ranges: CompilerSourceRanges
-        get() = checkNotNull(requestState?.ranges) { "Source annotation capture was discarded" }
+        get() {
+            val state = checkNotNull(requestState) { "Source annotation capture was discarded" }
+            return state.ranges ?: CompilerSourceRanges(checkNotNull(state.content)).also { state.ranges = it }
+        }
     private val sourceUri: URI
         get() = checkNotNull(requestState?.sourceUri) { "Source annotation capture was discarded" }
     private val openSources: Map<URI, String>
@@ -131,6 +134,8 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
                 .mapValues { (name, types) -> captureForeignDeclarations(name, types, selectedSources.texts) }
             val coverage = when {
                 compilationFailed -> AnnotationCoverage.Partial("Compilation did not complete")
+                requestState?.ranges?.let { !it.available || it.exhausted } == true ->
+                    AnnotationCoverage.Partial("Source annotation range index exceeds its bounded capacity")
                 incompleteReason != null -> AnnotationCoverage.Partial(checkNotNull(incompleteReason))
                 else -> AnnotationCoverage.Complete
             }
@@ -156,23 +161,25 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
     private data class SelectedRequestSources(val uris: Map<String, URI?>, val texts: Map<String, String?>)
 
     private fun selectedRequestSources(selectedNames: Set<String>): SelectedRequestSources {
+        if (selectedNames.all { it == sourceName }) {
+            return SelectedRequestSources(mapOf(sourceName to sourceUri), emptyMap())
+        }
         val requiredNames = selectedNames + sourceName
         val uriCandidates = linkedMapOf<String, URI?>(sourceName to sourceUri)
         val foreignTexts = mutableMapOf<String, String?>()
         for ((uri, text) in openSources) {
             val name = uri.path ?: uri.toString()
-            if (name in requiredNames) {
-                if (name !in uriCandidates) {
-                    uriCandidates[name] = uri
-                } else if (uriCandidates[name] != uri) {
-                    uriCandidates[name] = null
-                }
-                if (name in selectedNames && name != sourceName) {
-                    if (name !in foreignTexts) {
-                        foreignTexts[name] = text
-                    } else if (foreignTexts[name] != text) {
-                        foreignTexts[name] = null
-                    }
+            if (name !in requiredNames) continue
+            if (name !in uriCandidates) {
+                uriCandidates[name] = uri
+            } else if (uriCandidates[name] != uri) {
+                uriCandidates[name] = null
+            }
+            if (name in selectedNames && name != sourceName) {
+                if (name !in foreignTexts) {
+                    foreignTexts[name] = text
+                } else if (foreignTexts[name] != text) {
+                    foreignTexts[name] = null
                 }
             }
         }
@@ -214,7 +221,11 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
         ) {
             return
         }
-        val range = ranges.range(import) ?: return
+        val range = ranges.range(import)
+        if (range == null) {
+            incompleteReason = "An import has no verified source range"
+            return
+        }
         importRanges[import.lineNumber to import.columnNumber] = range
         if (import.annotations.isNotEmpty()) sourceAnnotatedImports.add(range)
         val selection = if (ranges.offset(range.end) - ranges.offset(range.start) <= MAX_NAME_CHARACTERS) {
@@ -348,12 +359,22 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
         // without reading a newer source revision to manufacture a precise declaration selection.
         val text = foreignTexts[name] ?: return emptyList()
         val foreignRanges = CompilerSourceRanges(text)
-        return types.mapNotNull { node ->
+        if (!foreignRanges.available) {
+            incompleteReason = "Source annotation ranges exceed the source size limit"
+            return emptyList()
+        }
+        val declarations = types.mapNotNull { node ->
             if (!acceptingMetadata || !nameFits(node.name)) return@mapNotNull null
-            val declaration = foreignRanges.range(node) ?: return@mapNotNull null
-            val selection = sourceTypeDeclarationName(node, text, foreignRanges, declaration) ?: return@mapNotNull null
+            val declaration = foreignRanges.range(node)
+            val selection = declaration?.let { sourceTypeDeclarationName(node, text, foreignRanges, it) }
+            if (declaration == null || selection == null) {
+                incompleteReason = "A foreign annotation declaration has no verified name range"
+                return@mapNotNull null
+            }
             if (retain(node.name)) SourceAnnotationDeclaration(node.name, declaration, selection) else null
         }
+        if (foreignRanges.exhausted) incompleteReason = "Source annotation range index exceeds its bounded capacity"
+        return declarations
     }
 
     private companion object {
