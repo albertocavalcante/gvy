@@ -82,10 +82,11 @@ class NativeClasspathInputsTest {
                 },
             ),
         )
-
-        val inputs = assertNotNull(result.classpathInputs)
-        assertEquals(listOf(Path.of("relative/a.jar")), inputs.classpath)
-        assertEquals(listOf(Path.of("relative/src")), inputs.sourceRoots)
+        result.compilationUnit.classLoader.use {
+            val inputs = assertNotNull(result.classpathInputs)
+            assertEquals(listOf(Path.of("relative/a.jar")), inputs.classpath)
+            assertEquals(listOf(Path.of("relative/src")), inputs.sourceRoots)
+        }
     }
 
     @Test
@@ -98,9 +99,10 @@ class NativeClasspathInputsTest {
                 compilePhase = Phases.CANONICALIZATION,
             ),
         )
-
-        assertTrue(result.outcome.stubbedClasses.isNotEmpty())
-        assertEquals(listOf(Path.of("relative/a.jar")), assertNotNull(result.classpathInputs).classpath)
+        result.compilationUnit.classLoader.use {
+            assertTrue(result.outcome.stubbedClasses.isNotEmpty())
+            assertEquals(listOf(Path.of("relative/a.jar")), assertNotNull(result.classpathInputs).classpath)
+        }
     }
 
     @Test

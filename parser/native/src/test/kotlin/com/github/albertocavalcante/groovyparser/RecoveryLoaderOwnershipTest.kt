@@ -29,9 +29,10 @@ class RecoveryLoaderOwnershipTest {
         val result = fixture.parser.parse(
             request("class Example implements com.missing.Iface {}").copy(compilePhase = Phases.CLASS_GENERATION),
         )
-        assertTrue(result.outcome.stubbedClasses.contains("com.missing.Iface"))
-        assertTrue(fixture.loaders.size >= 3, "Missing starts as a class and must be corrected to an interface")
-        fixture.assertPublished(result)
+        fixture.assertPublished(result) {
+            assertTrue(result.outcome.stubbedClasses.contains("com.missing.Iface"))
+            assertTrue(fixture.loaders.size >= 3, "Missing starts as a class and must be corrected to an interface")
+        }
     }
 
     @Test
@@ -39,9 +40,10 @@ class RecoveryLoaderOwnershipTest {
         val broken = Files.writeString(directory.resolve("Broken.groovy"), "class Broken { void m( }")
         val fixture = Fixture()
         val result = fixture.parser.parse(request("class Example {}").copy(workspaceSources = listOf(broken)))
-        assertTrue(result.outcome.excludedSources.isNotEmpty())
-        assertTrue(fixture.loaders.size >= 2)
-        fixture.assertPublished(result)
+        fixture.assertPublished(result) {
+            assertTrue(result.outcome.excludedSources.isNotEmpty())
+            assertTrue(fixture.loaders.size >= 2)
+        }
     }
 
     @Test
@@ -54,10 +56,11 @@ class RecoveryLoaderOwnershipTest {
                 locatorCandidates = setOf("/Example.groovy", "file:///Example.groovy"),
             ),
         )
-        assertEquals(Fallback.COMPILATION_FAILED, result.outcome.fallback)
-        assertTrue(result.outcome.fallbackReason.orEmpty().contains("Broken.groovy"))
-        assertTrue(fixture.loaders.size >= 2)
-        fixture.assertPublished(result)
+        fixture.assertPublished(result) {
+            assertEquals(Fallback.COMPILATION_FAILED, result.outcome.fallback)
+            assertTrue(result.outcome.fallbackReason.orEmpty().contains("Broken.groovy"))
+            assertTrue(fixture.loaders.size >= 2)
+        }
     }
 
     @Test
@@ -96,14 +99,18 @@ class RecoveryLoaderOwnershipTest {
             CountingLoader(parent) { closeFailure(index) }.also { loaders += it }
         }
 
-        fun assertPublished(result: ParseResult) {
+        fun assertPublished(result: ParseResult, additionalAssertions: () -> Unit) {
             val loader = result.compilationUnit.classLoader
-            val final = loaders.single { it === loader }
-            assertEquals(0, final.closes)
-            assertTrue(loaders.filter { it !== final }.all { it.closes == 1 })
-            val marker = Files.writeString(directory.resolve("selected-project-resource.txt"), "selected")
-            assertNotNull(loader.getResource(marker.fileName.toString()))
-            loader.close()
+            try {
+                additionalAssertions()
+                val final = loaders.single { it === loader }
+                assertEquals(0, final.closes)
+                assertTrue(loaders.filter { it !== final }.all { it.closes == 1 })
+                val marker = Files.writeString(directory.resolve("selected-project-resource.txt"), "selected")
+                assertNotNull(loader.getResource(marker.fileName.toString()))
+            } finally {
+                loader.close()
+            }
             assertTrue(loaders.all { it.closes == 1 })
         }
     }
