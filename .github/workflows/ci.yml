@@ -45,7 +45,38 @@ jobs:
           chmod 700 "$private/wrapper"
           bazel --version >"$private/bazel-version" 2>&1
           echo 'BAZELISK_GITHUB_TOKEN=' >>"$GITHUB_ENV"
-          if ! bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --zip_undeclared_test_outputs --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1; then
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$(cat .bazelversion)" == 9.0.0 ]]
+          grep -qx "bazel 9.0.0" "$private/bazel-version"
+          printf 'witness source=1cd527e018f1cf397acb25f01a98dfa0a6662c5b bazel_pin=9.0.0 run=%s attempt=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          set +e
+          bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --zip_undeclared_test_outputs --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1
+          bazel_status=$?
+          set -e
+          printf 'bazel_exit=%s\n' "$bazel_status"
+          if ((bazel_status != 0)); then
+          	python3 - "$private/bazel.log" 2>/dev/null <<'DIAG' || echo "reason_codes=diagnostic_unavailable"
+          import pathlib
+          import re
+          import sys
+
+          p = pathlib.Path(sys.argv[1])
+          with p.open("rb") as stream:
+              stream.seek(max(0, p.stat().st_size - 1024 * 1024))
+              text = stream.read(1024 * 1024).decode("utf-8", "replace")
+          patterns = {
+              "dependency_fetch": r"(?i)(error downloading|failed to download|repository.*fetch failed)",
+              "compile_error": r"(?i)(compilation failed|kotlin compilation error|error:.*\.kt:)",
+              "test_failed": r"(?m)^//(?:build-tool:build-tool_test|jenkins:jenkins_test)\s+FAILED",
+              "launcher_option": r"(?i)(unknown option|unmatched argument|unrecognized option)",
+              "resource_exhaustion": r"(?i)(outofmemoryerror|no space left on device)",
+          }
+          found = [name for name, pattern in patterns.items() if re.search(pattern, text)]
+          print("reason_codes=" + (",".join(found) if found else "unclassified"))
+          for label, target in (("build-tool", "//build-tool:build-tool_test"), ("jenkins", "//jenkins:jenkins_test")):
+              match = re.search(r"(?m)^" + re.escape(target) + r"\s+(PASSED|FAILED|NO STATUS)", text)
+              print(label + "_outcome=" + (match.group(1).lower().replace(" ", "_") if match else "not_observed"))
+          DIAG
           	echo "Focused Bazel witness failed; private output withheld." >&2
           	exit 1
           fi
@@ -87,6 +118,21 @@ jobs:
           pathlib.Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
           PY
           then
+          	python3 - "$private/receipt-build.log" 2>/dev/null <<'DIAG' || echo "receipt_reason=diagnostic_unavailable"
+          import pathlib
+          import sys
+
+          p = pathlib.Path(sys.argv[1])
+          messages = {
+              "missing or oversized private report archive": "archive_missing_or_oversized",
+              "missing or oversized private JUnit report": "junit_report_missing_or_oversized",
+              "unexpected test case inventory": "case_inventory_mismatch",
+              "unexpected test class or outcome": "case_outcome_mismatch",
+          }
+          with p.open("rb") as stream:
+              text = stream.read(4096).decode("utf-8", "replace").strip()
+          print("receipt_reason=" + messages.get(text, "unclassified"))
+          DIAG
           	echo "Private report validation failed; details withheld." >&2
           	exit 1
           fi
