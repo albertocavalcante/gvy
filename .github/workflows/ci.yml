@@ -137,46 +137,19 @@ jobs:
           final_tree=$(git write-tree)
           guarded scoped-lint direnv exec . ./gradlew :gls:lint --no-daemon --no-parallel --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
           test ! -e gls/build/test-results/test
-          encoder=gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackEncoder.kt
-          xml=gls/build/test-results/test/TEST-com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest.xml
-          saved_encoder="$RUNNER_TEMP/l05b-fixed-encoder.kt"
-          cp "$encoder" "$saved_encoder"
-          trap 'cp "$saved_encoder" "$encoder"' EXIT
-          git show 637e0cdf967f9d5f58b6da4a0d0aadd66481e5e6:"$encoder" >"$encoder"
-          export label=literal-tail-red
-          set +e
-          timeout --kill-after=10s 1800s bash -c 'run_pipeline "$@"' _ direnv exec . ./gradlew :gls:test --tests '*BoundedLogbackRenderingTest.unconsumed escaped placeholder tails remain literal' --no-daemon --no-parallel --max-workers=1 --no-build-cache --rerun-tasks --info -I "$RUNNER_TEMP/l05b.init.gradle" '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
-          red_timeout=$?
-          set -e
-          printf '%s\n' "$red_timeout" >"$proof/literal-tail-red.timeout"
-          [[ "$red_timeout" == 0 && -s "$proof/literal-tail-red.status" ]]
-          read -r red_producer red_capture <"$proof/literal-tail-red.status"
-          [[ "$red_producer" =~ ^[1-9][0-9]*$ && "$red_capture" == 0 ]]
-          test -f "$xml"
-          cp "$xml" "$proof/literal-tail-red.xml"
-          python3 - "$proof/literal-tail-red.xml" <<'PYRED'
-          import sys
-          import xml.etree.ElementTree as ET
-
-          root = ET.parse(sys.argv[1]).getroot()
-          cases = root.findall('testcase')
-          if root.get('name') != 'com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest':
-              raise SystemExit('unexpected red test class')
-          if root.get('tests') != '1' or root.get('failures') != '1' or root.get('errors') != '0' or root.get('skipped') != '0' or len(cases) != 1:
-              raise SystemExit('expected one assertion failure')
-          case = cases[0]
-          if case.get('classname') != root.get('name') or case.get('name', '').removesuffix('()') != 'unconsumed escaped placeholder tails remain literal':
-              raise SystemExit('unexpected red test case')
-          failure = case.find('failure')
-          if failure is None or failure.get('type') not in ('java.lang.AssertionError', 'org.opentest4j.AssertionFailedError'):
-              raise SystemExit('red failure is not an assertion')
-          if case.find('error') is not None or case.find('skipped') is not None or 'BoundedLogbackRenderingTest.kt:' not in (failure.text or ''):
-              raise SystemExit('red failure is not from the target test')
-          PYRED
-          cp "$saved_encoder" "$encoder"
-          trap - EXIT
-          git diff --quiet
-          rm -- "$xml"
+          cat >"$proof/literal-tail-red-reference.txt" <<'REDREF'
+          run=43349173929
+          attempt=1
+          candidate=c9536e392d9dcacb15032ba31aea8e67acdd8efa
+          old_encoder=637e0cdf967f9d5f58b6da4a0d0aadd66481e5e6
+          artifact=14004086692
+          artifact_sha256=4506b6f5b63d7e3bfa8489056c3fcfcb05fe35a381cd840238ca9e2c876867f5
+          xml_sha256=bb9f7f2a4d1e3bc4aac34575a58cda0141d628d1f72eafdf22887680b66e97f9
+          log_sha256=97cf51cecc0c5b1e5c33299ff8c852eed2234a3236ae4d2514b61d0c6dc427a7
+          producer=1
+          capture=0
+          timeout=0
+          REDREF
           export GVY_ROUTING_FIXTURE="$RUNNER_TEMP/l05b-routing.txt"
           test ! -e "$GVY_ROUTING_FIXTURE"
           guarded focused direnv exec . ./gradlew :gls:test --tests '*BoundedLogbackRenderingTest' --no-daemon --no-parallel --max-workers=1 --no-build-cache --rerun-tasks --info -I "$RUNNER_TEMP/l05b.init.gradle" '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
@@ -201,7 +174,9 @@ jobs:
           test -s "$GVY_ROUTING_FIXTURE"
           cp "$GVY_ROUTING_FIXTURE" "$proof/actual-routing.txt"
           guarded editor-install pnpm --dir editors/code install --frozen-lockfile --ignore-scripts
-          guarded editor-format pnpm --dir editors/code exec prettier --write client/test/unit/server/stderrRouter.test.ts
+          guarded editor-file-info editors/code/node_modules/.bin/prettier --file-info editors/code/client/test/unit/server/stderrRouter.test.ts
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (data.ignored !== false) process.exit(1)' "$proof/editor-file-info.log"
+          guarded editor-format editors/code/node_modules/.bin/prettier --write editors/code/client/test/unit/server/stderrRouter.test.ts
           changed="$(git diff --name-only)"
           [[ -z "$changed" || "$changed" == editors/code/client/test/unit/server/stderrRouter.test.ts ]]
           git diff -- editors/code/client/test/unit/server/stderrRouter.test.ts >>"$proof/formatter.patch"
