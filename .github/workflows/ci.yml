@@ -283,7 +283,7 @@ jobs:
                   return "unreadable", None
               return parse_archive(data)
           
-                    modules = {
+          modules = {
               "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
               "jenkins": ("jenkins_test", "com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest"),
           }
