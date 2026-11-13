@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.testing.api
 
+import com.github.albertocavalcante.gvy.gls.diagnostics.AwaitDiagnosticsParams
 import com.google.gson.JsonElement
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageServer
@@ -34,6 +35,10 @@ interface GroovyLanguageServerProtocol : LanguageServer {
     /** Optional on older servers; absence is reported by JSON-RPC MethodNotFound. */
     @JsonRequest("groovy/runtimeFacts")
     fun runtimeFacts(): CompletableFuture<JsonElement>
+
+    /** The raw result retains every terminal-analysis field for protocol assertions. */
+    @JsonRequest("groovy/awaitDiagnostics")
+    fun awaitDiagnostics(params: AwaitDiagnosticsParams?): CompletableFuture<JsonElement>
 
     /**
      * Discovers all test suites (Spock specifications) in the workspace.
