@@ -128,7 +128,7 @@ private class SourceTextCursor(
     private fun declarationKeywordStart(): Int? {
         var start = skipTrivia(source, offset, limit)
         var valid = start != null
-        while (start != null && valid && start < limit && source[start] != '@') {
+        while (start != null && valid && isDeclarationWordAt(start)) {
             val end = identifierEnd(source, start, limit)
             if (end == null) {
                 valid = false
@@ -146,6 +146,8 @@ private class SourceTextCursor(
         }
         return start.takeIf { valid }
     }
+
+    private fun isDeclarationWordAt(start: Int): Boolean = start < limit && source[start] != '@'
 
     private fun readDeclarationKeyword(start: Int): TypeDeclarationKeyword? {
         val annotation = start < limit && source[start] == '@'
