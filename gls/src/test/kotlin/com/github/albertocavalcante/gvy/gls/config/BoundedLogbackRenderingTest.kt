@@ -457,7 +457,7 @@ class BoundedLogbackRenderingTest {
 
     private fun event(
         message: String,
-        arguments: Array<Any>?,
+        arguments: Array<out Any?>?,
         thread: String = "main",
         severity: Level = Level.ERROR,
     ): LoggingEvent = LoggingEvent().apply {
