@@ -91,6 +91,7 @@ export function parseRuntimeFacts(json) {
     });
     stateFields(build, 'dirtyState', ['dirty'], () => { if (typeof build.dirty !== 'boolean') invalid(); });
     const hover = value.hoverEngine;
+    // 'core' is still accepted: older released servers can report the retired Core engine here.
     fields(hover, ['configured', 'state'], ['instantiated']);
     if (!['native', 'core', 'openrewrite'].includes(hover.configured) ||
         !['known', 'unknown', 'not_instantiated'].includes(hover.state)) invalid();
