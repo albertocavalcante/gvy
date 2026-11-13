@@ -7,11 +7,17 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.nativeapi.AnnotationCoverage
 import com.github.albertocavalcante.nativeapi.AnnotationImportBinding
 import com.github.albertocavalcante.nativeapi.AnnotationReferenceKind
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserPosition
 import com.github.albertocavalcante.nativeapi.ParserRange
+import groovy.lang.GroovyClassLoader
+import org.codehaus.groovy.control.CompilationUnit
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
+import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.control.io.StringReaderSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -20,6 +26,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class SourceAnnotationIndexTest {
@@ -47,6 +54,102 @@ class SourceAnnotationIndexTest {
         assertEquals("Mark", reference.binaryName)
         assertEquals("/Money.groovy", reference.sourceUnitName)
         assertEquals(URI.create("file:///Money.groovy"), reference.sourceUri)
+    }
+
+    @Test
+    fun `capture freezes successful metadata then releases request state`() {
+        val sourceName = "/Money.groovy"
+        val sourceUri = URI.create("file:///Money.groovy")
+        val sourceText = "@interface Mark {}\n@Mark class Money {}"
+        val openSources = mapOf(URI.create("file:///Other.groovy") to "class Other {}")
+        val request = ParseRequest(
+            sourceUri,
+            sourceText,
+            openSources = openSources,
+        )
+        val capture = SourceAnnotationCapture(request)
+        assertSame(openSources, requestStateValue(capture, "openSources"))
+        val classLoader = GroovyClassLoader(javaClass.classLoader)
+        val transformLoader = GroovyClassLoader(javaClass.classLoader)
+
+        try {
+            val configuration = CompilerConfiguration().apply { addCompilationCustomizers(capture) }
+            val compilationUnit = CompilationUnit(configuration, null, classLoader, transformLoader)
+            val sourceUnit = SourceUnit(
+                sourceName,
+                StringReaderSource(sourceText, configuration),
+                configuration,
+                classLoader,
+                compilationUnit.errorCollector,
+            )
+            compilationUnit.addSource(sourceUnit)
+            compilationUnit.compile(Phases.CANONICALIZATION)
+
+            assertNotNull(requestState(capture))
+            val index = capture.finish(compilationUnit.ast.modules.single(), compilationFailed = false)
+            assertEquals(AnnotationCoverage.Complete, index.coverage)
+            assertEquals(sourceUri, index.references.single().sourceUri)
+            assertNull(requestState(capture))
+            capture.discard()
+            assertEquals(sourceUri, index.references.single().sourceUri)
+        } finally {
+            classLoader.close()
+            transformLoader.close()
+        }
+    }
+
+    @Test
+    fun `unavailable capture releases request state and discard is idempotent`() {
+        val capture = SourceAnnotationCapture(
+            ParseRequest(
+                URI.create("file:///Money.groovy"),
+                "source ".repeat(32_768),
+                openSources = mapOf(
+                    URI.create("file:///Other.groovy") to "source ".repeat(32_768),
+                ),
+            ),
+        )
+        assertNotNull(requestState(capture))
+
+        val index = capture.finish(module = null, compilationFailed = false)
+
+        assertEquals(AnnotationCoverage.Unavailable, index.coverage)
+        assertNull(requestState(capture))
+        capture.discard()
+        assertEquals(AnnotationCoverage.Unavailable, capture.finish(module = null, compilationFailed = false).coverage)
+    }
+
+    @Test
+    fun `minimal capture does not copy ignored open source tables`() {
+        val uri = URI.create("file:///Money.groovy")
+        val request = ParseRequest(
+            uri = uri,
+            content = "class Money {}",
+            parseMode = ParseMode.MINIMAL,
+            openSources = mapOf(URI.create("file:///Other.groovy") to "source ".repeat(32_768)),
+        )
+        val capture = SourceAnnotationCapture(request)
+        assertNotNull(requestState(capture))
+
+        assertEquals(
+            uri,
+            requestStateValue(capture, "sourceUri"),
+        )
+        assertEquals(emptyMap<URI, String>(), requestStateValue(capture, "openSources"))
+        capture.discard()
+        assertNull(requestState(capture))
+    }
+
+    private fun requestState(capture: SourceAnnotationCapture): Any? =
+        SourceAnnotationCapture::class.java.getDeclaredField("requestState")
+            .apply { isAccessible = true }
+            .get(capture)
+
+    private fun requestStateValue(capture: SourceAnnotationCapture, name: String): Any? {
+        val state = checkNotNull(requestState(capture))
+        return state.javaClass.getDeclaredField(name)
+            .apply { isAccessible = true }
+            .get(state)
     }
 
     @Test

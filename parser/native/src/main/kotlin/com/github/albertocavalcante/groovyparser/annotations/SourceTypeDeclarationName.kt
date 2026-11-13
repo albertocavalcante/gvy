@@ -81,7 +81,7 @@ internal fun sourceTypeNameSegments(
     return result.takeIf { valid && complete }
 }
 
-private data class TypeDeclarationKeyword(val isAnnotation: Boolean)
+private data class TypeDeclarationKeyword(val isAnnotation: Boolean, val endOffset: Int)
 
 private class SourceTextCursor(
     private val source: String,
@@ -119,45 +119,49 @@ private class SourceTextCursor(
     }
 
     fun typeDeclarationKeyword(): TypeDeclarationKeyword? {
-        var declarationOffset = skipTrivia(source, offset, limit)
-        var valid = declarationOffset != null
-        var foundTypeKeyword = false
-        while (declarationOffset != null && valid) {
-            val currentOffset = declarationOffset
-            if (currentOffset >= limit || source[currentOffset] == '@' || foundTypeKeyword) break
-            val end = identifierEnd(source, currentOffset, limit)
+        val start = declarationKeywordStart() ?: return null
+        val keyword = readDeclarationKeyword(start) ?: return null
+        offset = keyword.endOffset
+        return keyword
+    }
+
+    private fun declarationKeywordStart(): Int? {
+        var start = skipTrivia(source, offset, limit)
+        var valid = start != null
+        while (start != null && valid) {
+            val current = start
+            if (current >= limit || source[current] == '@') break
+            val end = identifierEnd(source, current, limit)
             if (end == null) {
                 valid = false
             } else {
-                val word = source.substring(currentOffset, end)
+                val word = source.substring(current, end)
                 if (word in TYPE_KEYWORDS) {
-                    foundTypeKeyword = true
+                    break
                 } else if (word !in TYPE_MODIFIERS) {
                     valid = false
                 } else {
-                    declarationOffset = skipTrivia(source, end, limit)
-                    valid = declarationOffset != null
+                    start = skipTrivia(source, end, limit)
+                    valid = start != null
                 }
             }
         }
+        return start.takeIf { valid }
+    }
 
-        val annotation = declarationOffset?.let { currentOffset ->
-            currentOffset < limit && source[currentOffset] == '@'
-        } == true
-        val keywordStart = declarationOffset?.let { start ->
-            if (annotation) skipTrivia(source, start + 1, limit) else start
-        }
+    private fun readDeclarationKeyword(start: Int): TypeDeclarationKeyword? {
+        val annotation = start < limit && source[start] == '@'
+        val keywordStart = if (annotation) skipTrivia(source, start + 1, limit) else start
         val keywordEnd = keywordStart?.let { identifierEnd(source, it, limit) }
         val keywordName = if (keywordStart != null && keywordEnd != null) {
             source.substring(keywordStart, keywordEnd)
         } else {
             null
         }
-        val recognized = keywordName != null &&
-            (annotation && keywordName == "interface" || !annotation && keywordName in TYPE_KEYWORDS)
-        if (!valid || keywordEnd == null || !recognized) return null
-        offset = keywordEnd
-        return TypeDeclarationKeyword(annotation)
+        val recognized = keywordName?.let { name ->
+            if (annotation) name == "interface" else name in TYPE_KEYWORDS
+        } == true
+        return if (keywordEnd != null && recognized) TypeDeclarationKeyword(annotation, keywordEnd) else null
     }
 
     private fun consumeSeparator(): Boolean {

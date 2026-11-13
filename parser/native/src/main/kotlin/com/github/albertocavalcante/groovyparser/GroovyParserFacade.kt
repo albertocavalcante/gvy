@@ -95,6 +95,19 @@ private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequ
  */
 private fun GroovyClassLoader.hasClass(name: String): Boolean = runCatching { loadClass(name, false, true) }.isSuccess
 
+/** A source unit name as a normalized path: a plain path, or a `file:` URL for loader-found sources. */
+private fun locatorPath(locator: String): Any = if (locator.startsWith("file:")) {
+    runCatching { Path.of(URI(locator)).toAbsolutePath().normalize() }.getOrDefault(locator)
+} else {
+    runCatching { Path.of(locator).toAbsolutePath().normalize() }.getOrDefault(locator)
+}
+
+private fun urlPath(url: URL): Path? = if (url.protocol == "file") {
+    runCatching { Path.of(url.toURI()).toAbsolutePath().normalize() }.getOrNull()
+} else {
+    null
+}
+
 /**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
  */
@@ -271,21 +284,6 @@ class GroovyParserFacade internal constructor(
         return FailingSources(open, workspace, unattributed, reasons)
     }
 
-    /** A source unit name as a normalized path: a plain path, or a `file:` URL for loader-found sources. */
-    private fun locatorPath(locator: String): Any = if (locator.startsWith("file:")) {
-        runCatching { Path.of(URI(locator)).toAbsolutePath().normalize() }.getOrDefault(locator)
-    } else {
-        runCatching { Path.of(locator).toAbsolutePath().normalize() }.getOrDefault(locator)
-    }
-
-    private fun urlPath(url: URL): Path? = if (url.protocol ==
-        "file"
-    ) {
-        runCatching { Path.of(url.toURI()).toAbsolutePath().normalize() }.getOrNull()
-    } else {
-        null
-    }
-
     private fun retryAtEarlierPhaseIfNeeded(
         request: ParseRequest,
         owner: ParseResultOwner,
@@ -453,10 +451,22 @@ class GroovyParserFacade internal constructor(
     ): ParseResult {
         // Before any work: building the configuration below opens every classpath jar.
         request.checkCancelled()
+        val annotationCapture = SourceAnnotationCapture(request)
+        try {
+            return parseInternalWithCapture(request, inputs, stubs, annotationCapture)
+        } finally {
+            annotationCapture.discard()
+        }
+    }
 
+    private fun parseInternalWithCapture(
+        request: ParseRequest,
+        inputs: NativeClasspathInputs,
+        stubs: MissingClassStubs?,
+        annotationCapture: SourceAnnotationCapture,
+    ): ParseResult {
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
-        val annotationCapture = SourceAnnotationCapture(request)
         val config = createCompilerConfiguration(allClasspath, annotationCapture)
 
         val classLoader = createClassLoader(request)

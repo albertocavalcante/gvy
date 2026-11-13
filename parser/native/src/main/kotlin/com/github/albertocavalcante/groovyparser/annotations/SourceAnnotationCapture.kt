@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.AnnotationCoverage
 import com.github.albertocavalcante.nativeapi.AnnotationImportBinding
 import com.github.albertocavalcante.nativeapi.AnnotationReferenceKind
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserRange
 import com.github.albertocavalcante.nativeapi.SourceAnnotationDeclaration
@@ -48,29 +49,32 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /** Installed before the analysis policy strips annotations; never evaluates their member expressions. */
-internal class SourceAnnotationCapture(
-    private val sourceName: String,
-    private val content: String,
-    private val sourceUris: Map<String, URI?> = emptyMap(),
-    sourceTexts: Map<String, String?> = emptyMap(),
-) : CompilationCustomizer(CompilePhase.CONVERSION) {
+internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCustomizer(CompilePhase.CONVERSION) {
+    private val sourceName = request.sourceUnitName
 
-    constructor(request: ParseRequest) : this(
-        request.sourceUnitName,
-        request.content,
-        (
-            listOf(request.sourceUnitName to request.uri) +
-                request.openSources.keys.map { uri -> (uri.path ?: uri.toString()) to uri }
-            )
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, uris) -> uris.distinct().singleOrNull() },
-        request.openSources.entries
-            .groupBy({ entry -> entry.key.path ?: entry.key.toString() }, { entry -> entry.value })
-            .mapValues { (_, texts) -> texts.distinct().singleOrNull() },
+    private class RequestState(
+        var content: String?,
+        var ranges: CompilerSourceRanges?,
+        val sourceUri: URI,
+        var openSources: Map<URI, String>,
     )
 
-    private val ranges = CompilerSourceRanges(content)
+    private var requestState: RequestState? = RequestState(
+        request.content,
+        CompilerSourceRanges(request.content),
+        request.uri,
+        if (request.parseMode == ParseMode.MINIMAL) emptyMap() else request.openSources,
+    )
+    private val content: String
+        get() = checkNotNull(requestState?.content) { "Source annotation capture was discarded" }
+    private val ranges: CompilerSourceRanges
+        get() = checkNotNull(requestState?.ranges) { "Source annotation capture was discarded" }
+    private val sourceUri: URI
+        get() = checkNotNull(requestState?.sourceUri) { "Source annotation capture was discarded" }
+    private val openSources: Map<URI, String>
+        get() = checkNotNull(requestState?.openSources) { "Source annotation capture was discarded" }
     private var captured = false
+    private var discarded = false
     private var incompleteReason: String? = null
     private val references = linkedMapOf<Occurrence, PendingReference>()
     private val imports = mutableMapOf<String, ImportCandidates>()
@@ -78,14 +82,13 @@ internal class SourceAnnotationCapture(
     private val sourceAnnotatedImports = mutableSetOf<ParserRange>()
     private val importSelections = mutableMapOf<Pair<Int, Int>, SourceImportRanges>()
     private val declarations = mutableListOf<SourceAnnotationDeclaration>()
-    private val foreignTexts = sourceTexts.toMutableMap()
     private var retainedEntries = 0
     private var retainedCharacters = 0L
     private var retainedSegments = 0
     private var acceptingMetadata = true
 
     override fun call(source: SourceUnit, context: GeneratorContext, classNode: ClassNode) {
-        if (source.name != sourceName) {
+        if (discarded || source.name != sourceName) {
             return
         }
         if (captured) return
@@ -101,56 +104,105 @@ internal class SourceAnnotationCapture(
 
     /** Freeze only values. The temporary builder and its original compiler nodes are not published. */
     fun finish(module: ModuleNode?, compilationFailed: Boolean): SourceAnnotationIndex {
-        if (!captured || module == null) return SourceAnnotationIndex.UNAVAILABLE
-        val frozen = references.values.mapNotNull { pending ->
-            val reference = pending.freeze(sourceUris)
-            val boundNames = listOfNotNull(reference.binaryName, reference.sourceUnitName)
-            if (boundNames.any { !nameFits(it) }) return@mapNotNull null
-            if (!retain("", extraCharacters = boundNames.sumOf { it.length }, entries = 0)) return@mapNotNull null
-            reference
-        }
-        // Only compiler-selected source targets survive this request-local builder. Unrelated open buffers
-        // do not acquire a declaration walk or a published URI table entry for every held parse.
-        val redirectedTypes = references.values.mapNotNull { it.type?.redirect() } +
-            imports.values.flatMap { it.all() }.mapNotNull { it.node.type?.redirect() }
-        val selectedTypes = redirectedTypes
-            .filter { type ->
-                type.isPrimaryClassNode &&
-                    type.module?.context?.name != null &&
-                    !isStubSourceName(type.module?.context?.name)
+        try {
+            if (discarded || !captured || module == null) return SourceAnnotationIndex.UNAVAILABLE
+            // Only compiler-selected source targets survive this request-local builder. Unrelated open buffers
+            // do not acquire a declaration walk or a published URI table entry for every held parse.
+            val redirectedTypes = references.values.mapNotNull { it.type?.redirect() } +
+                imports.values.flatMap { it.all() }.mapNotNull { it.node.type?.redirect() }
+            val selectedTypes = redirectedTypes
+                .filter { type ->
+                    type.isPrimaryClassNode &&
+                        type.module?.context?.name != null &&
+                        !isStubSourceName(type.module?.context?.name)
+                }
+                .distinctBy { it.module?.context?.name to it.name }
+            val selectedNames = selectedTypes.mapNotNullTo(hashSetOf()) { it.module?.context?.name }
+            val selectedSources = selectedRequestSources(selectedNames)
+            val frozen = references.values.mapNotNull { pending ->
+                val reference = pending.freeze(selectedSources.uris)
+                val boundNames = listOfNotNull(reference.binaryName, reference.sourceUnitName)
+                if (boundNames.any { !nameFits(it) }) return@mapNotNull null
+                if (!retain("", extraCharacters = boundNames.sumOf { it.length }, entries = 0)) return@mapNotNull null
+                reference
             }
-            .distinctBy { it.module?.context?.name to it.name }
-        val selectedNames = selectedTypes.mapNotNullTo(hashSetOf()) { it.module?.context?.name }
-        val selectedUris = sourceUris.filterKeys { it == sourceName || it in selectedNames }
-        val foreign = selectedTypes.filter { it.module?.context?.name != sourceName }
-            .groupBy { checkNotNull(it.module.context).name }
-            .mapValues { (name, types) -> captureForeignDeclarations(name, types) }
-        val coverage = when {
-            compilationFailed -> AnnotationCoverage.Partial("Compilation did not complete")
-            incompleteReason != null -> AnnotationCoverage.Partial(checkNotNull(incompleteReason))
-            else -> AnnotationCoverage.Complete
+            val foreign = selectedTypes.filter { it.module?.context?.name != sourceName }
+                .groupBy { checkNotNull(it.module.context).name }
+                .mapValues { (name, types) -> captureForeignDeclarations(name, types, selectedSources.texts) }
+            val coverage = when {
+                compilationFailed -> AnnotationCoverage.Partial("Compilation did not complete")
+                incompleteReason != null -> AnnotationCoverage.Partial(checkNotNull(incompleteReason))
+                else -> AnnotationCoverage.Complete
+            }
+            val index = SourceAnnotationIndex(
+                frozen,
+                coverage,
+                SourceAnnotationMetadata(
+                    importRanges = importRanges,
+                    declarations = declarations,
+                    sourceUris = selectedSources.uris,
+                    importSelections = importSelections,
+                    foreignDeclarations = foreign,
+                    sourceAnnotatedImports = sourceAnnotatedImports,
+                ),
+            )
+            module.putNodeMetaData(SourceAnnotationIndex::class.java, index)
+            return index
+        } finally {
+            discard()
         }
-        val index = SourceAnnotationIndex(
-            frozen,
-            coverage,
-            SourceAnnotationMetadata(
-                importRanges = importRanges,
-                declarations = declarations,
-                sourceUris = selectedUris,
-                importSelections = importSelections,
-                foreignDeclarations = foreign,
-                sourceAnnotatedImports = sourceAnnotatedImports,
-            ),
+    }
+
+    private data class SelectedRequestSources(val uris: Map<String, URI?>, val texts: Map<String, String?>)
+
+    private fun selectedRequestSources(selectedNames: Set<String>): SelectedRequestSources {
+        val requiredNames = selectedNames + sourceName
+        val uriCandidates = linkedMapOf<String, URI?>(sourceName to sourceUri)
+        val foreignTexts = mutableMapOf<String, String?>()
+        for ((uri, text) in openSources) {
+            val name = uri.path ?: uri.toString()
+            if (name in requiredNames) {
+                if (name !in uriCandidates) {
+                    uriCandidates[name] = uri
+                } else if (uriCandidates[name] != uri) {
+                    uriCandidates[name] = null
+                }
+                if (name in selectedNames && name != sourceName) {
+                    if (name !in foreignTexts) {
+                        foreignTexts[name] = text
+                    } else if (foreignTexts[name] != text) {
+                        foreignTexts[name] = null
+                    }
+                }
+            }
+        }
+        return SelectedRequestSources(
+            uris = uriCandidates,
+            texts = foreignTexts,
         )
-        module.putNodeMetaData(SourceAnnotationIndex::class.java, index)
+    }
+
+    /** Releases request text, AST nodes, and temporary maps after the frozen index is published or abandoned. */
+    fun discard() {
+        if (discarded) return
+        discarded = true
+        requestState?.let { state ->
+            state.content = null
+            state.ranges = null
+            state.openSources = emptyMap()
+        }
+        requestState = null
         references.clear()
         imports.clear()
         importRanges.clear()
         sourceAnnotatedImports.clear()
         importSelections.clear()
         declarations.clear()
-        foreignTexts.clear()
-        return index
+        incompleteReason = null
+        retainedEntries = 0
+        retainedCharacters = 0L
+        retainedSegments = 0
+        acceptingMetadata = false
     }
 
     private fun addImport(alias: String, import: ImportNode, isStatic: Boolean) {
@@ -287,7 +339,11 @@ internal class SourceAnnotationCapture(
         incompleteReason = "Source annotation metadata exceeds its bounded capacity"
     }
 
-    private fun captureForeignDeclarations(name: String, types: List<ClassNode>): List<SourceAnnotationDeclaration> {
+    private fun captureForeignDeclarations(
+        name: String,
+        types: List<ClassNode>,
+        foreignTexts: Map<String, String?>,
+    ): List<SourceAnnotationDeclaration> {
         // These bytes were supplied in the original request. Disk-only targets retain their proven URI,
         // without reading a newer source revision to manufacture a precise declaration selection.
         val text = foreignTexts[name] ?: return emptyList()
