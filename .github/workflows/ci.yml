@@ -54,7 +54,7 @@ jobs:
           # fixed PR head, both compressed and decompressed sizes/SHA-256,
           # helper hashes, exact trees, paths, test names/counts and assertions.
           printf '%s  %s\n' "1e09eb02bd173c9b3e08a5388652aa5e25c8a287962ac4a872b56528b06cda0d" "$proof/validate-receipt.mjs" | sha256sum -c -
-          node "$proof/validate-receipt.mjs" "$receipt" "b57f9dd76e5aabb0aad37445a7936e53f2fab96e01c8a5c334736237733611d6"
+          node "$proof/validate-receipt.mjs" "$receipt" "c9436d0a157030c5dcb5928b2884db81d2c953a25e3284e79b8789375e8cc6a6"
           for pair in 'phase validate-phase.mjs' 'results check-red.mjs' 'worker review-fix.sh' 'capture bounded-capture.mjs' 'budget evidence-budget.mjs' 'copy bounded-file.mjs'; do
               read -r key file <<< "$pair"
               expected=$(jq -er --arg key "$key" '.helpers[$key]' "$receipt")
