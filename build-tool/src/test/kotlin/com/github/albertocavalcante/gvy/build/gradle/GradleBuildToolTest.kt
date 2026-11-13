@@ -5,6 +5,13 @@ package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.TestEnvironment
 import com.github.albertocavalcante.gvy.build.TestResources
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.gradle.tooling.GradleConnectionException
+import org.gradle.tooling.ModelBuilder
+import org.gradle.tooling.ProjectConnection
+import org.gradle.tooling.model.idea.IdeaProject
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import java.nio.file.Paths
@@ -139,16 +146,21 @@ class GradleBuildToolTest {
     }
 
     @Test
-    fun `getDependencyMetadata should handle non-gradle project`() {
-        // This test requires Gradle Tooling API
-        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+    fun `getDependencyMetadata returns empty when the model is rejected`() {
+        val project = Paths.get("src/test/resources/non-gradle-project")
+        val factory = mockk<GradleConnectionFactory>()
+        val connection = mockk<ProjectConnection>()
+        val model = mockk<ModelBuilder<IdeaProject>>()
+        every { factory.getConnection(project, null) } returns connection
+        every { connection.model(IdeaProject::class.java) } returns model
+        every { model.get() } throws GradleConnectionException("deliberate model rejection")
 
-        val tool = GradleBuildTool()
-        val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
+        val metadata = GradleBuildTool(connectionFactory = factory).getDependencyMetadata(project)
 
-        val metadata = tool.getDependencyMetadata(nonGradleProject)
-
-        assertTrue(metadata.isEmpty(), "Should return empty list for non-Gradle project")
+        assertTrue(metadata.isEmpty())
+        verify(exactly = 1) { factory.getConnection(project, null) }
+        verify(exactly = 1) { connection.model(IdeaProject::class.java) }
+        verify(exactly = 1) { model.get() }
     }
 
     @Test

@@ -16,7 +16,6 @@ import org.eclipse.aether.resolution.DependencyResult
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.io.File
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -51,12 +50,10 @@ class MavenDependencyResolverTest {
         val mockResult = mockk<DependencyResult>()
         val mockArtifactResult = mockk<ArtifactResult>()
         val mockArtifact = mockk<Artifact>()
-        val mockFile = mockk<File>()
 
-        every { mockFile.toPath() } returns expectedPath
         every { mockArtifact.groupId } returns groupId
         every { mockArtifact.artifactId } returns artifactId
-        every { mockArtifact.file } returns mockFile
+        every { mockArtifact.file } returns expectedPath.toFile()
         every { mockArtifactResult.isResolved } returns true
         every { mockArtifactResult.artifact } returns mockArtifact
         every { mockResult.artifactResults } returns listOf(mockArtifactResult)
