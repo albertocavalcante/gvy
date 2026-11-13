@@ -254,6 +254,7 @@ val harnessTest =
             "ScenarioParserTest",
             "ScenarioSchemaTest",
             "ScenarioCatalogTest",
+            "ScenarioInitializationOptionsTest",
             "BoundedWireCaptureTest",
             "SdkResponseProjectionTest",
             "SymbolSignatureScenarioAssertionsTest",

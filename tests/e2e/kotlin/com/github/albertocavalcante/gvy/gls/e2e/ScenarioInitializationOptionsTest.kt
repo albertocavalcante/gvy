@@ -44,13 +44,15 @@ class ScenarioInitializationOptionsTest {
 
     @Test
     fun `scenarios only select engines the server knows`() {
-        // EngineType.fromString silently falls back to Core, so a typo such as "nativ" would go unnoticed.
-        val accepted = EngineType.entries.map { it.id }
+        // Parsing silently falls back to Native; validation must still reject typos such as "nativ".
         val bad = settingsByScenario().mapNotNull { (scenario, settings) ->
             engineProblem(scenario, settings)
         }
 
-        assertTrue(bad.isEmpty(), "Unknown engine values (accepted: $accepted):\n${bad.joinToString("\n")}")
+        assertTrue(
+            bad.isEmpty(),
+            "Unknown engine values (accepted: $acceptedEngineSettings):\n${bad.joinToString("\n")}",
+        )
     }
 
     @Test
@@ -86,9 +88,21 @@ class ScenarioInitializationOptionsTest {
     }
 
     @Test
+    fun `legacy Core settings are accepted and select the Native server engine`() {
+        for (engine in listOf("core", "CORE", "CoRe")) {
+            val settings = JsonObject(mapOf(ENGINE_KEY to JsonPrimitive(engine)))
+
+            assertNull(engineProblem("legacy.yaml", settings))
+            assertEquals(EngineType.Native, ServerConfiguration.fromMap(mapOf(ENGINE_KEY to engine)).parserEngine)
+        }
+    }
+
+    @Test
     fun `unknown and non-string engine values are rejected with context`() {
         val invalid = listOf<JsonElement>(
             JsonPrimitive("nativ"),
+            JsonPrimitive("core-typo"),
+            JsonPrimitive("core "),
             JsonPrimitive(1),
             JsonPrimitive(true),
             JsonObject(emptyMap()),
@@ -183,8 +197,9 @@ class ScenarioInitializationOptionsTest {
         val value = settings[ENGINE_KEY]
         return when {
             value == null -> null
-            value is JsonPrimitive && value.isString &&
-                EngineType.entries.any { it.id.equals(value.content, ignoreCase = true) } -> null
+            value is JsonPrimitive &&
+                value.isString &&
+                acceptedEngineSettings.any { it.equals(value.content, ignoreCase = true) } -> null
             else -> "  $scenario: $ENGINE_KEY=$value"
         }
     }
@@ -212,6 +227,9 @@ class ScenarioInitializationOptionsTest {
 
     private companion object {
         const val ENGINE_KEY = "groovy.languageServer.engine"
+
+        // Accepted settings include the documented compatibility alias, which is not an available engine.
+        val acceptedEngineSettings = EngineType.entries.map { it.id } + "core"
     }
 }
 

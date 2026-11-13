@@ -158,7 +158,8 @@ class CoreEngineDeprecationTest {
     }
 
     private fun deprecations(): List<ILoggingEvent> = logs.list.filter {
-        it.level == Level.WARN && it.formattedMessage.contains("groovy.languageServer.engine") &&
+        it.level == Level.WARN &&
+            it.formattedMessage.contains("groovy.languageServer.engine") &&
             it.formattedMessage.contains("deprecat", ignoreCase = true)
     }
 
