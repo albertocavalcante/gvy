@@ -46,7 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           private="$RUNNER_TEMP/parity-qualification"
-          mkdir -m 700 "$private" "$RUNNER_TEMP/age-bin"
+          public="$RUNNER_TEMP/parity-receipt"
+          mkdir -m 700 "$private" "$RUNNER_TEMP/age-bin" "$public"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ && "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          printf '{"schemaVersion":1,"kind":"private-diagnostic-qualification","workflow":"%s","run":"%s","attempt":"%s","ok":false}\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >"$public/qualification.json"
           (
             ulimit -f 20480
             timeout --kill-after=5s 60s gh release download v1.3.2 --repo FiloSottile/age --pattern age-v1.3.2-linux-amd64.tar.gz --dir "$private"
@@ -103,6 +106,7 @@ jobs:
             "$private/shfmt_v3.12.0_linux_amd64" -i 2 -d "$inline_script"
           done
           bash "$script" controls >"$private/controls.log" 2>&1
+          printf '{"schemaVersion":1,"kind":"private-diagnostic-qualification","workflow":"%s","run":"%s","attempt":"%s","ok":true}\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >"$public/qualification.json"
           echo "private_controls_passed"
       - name: Run isolated witness
         shell: bash
@@ -112,7 +116,8 @@ jobs:
           [[ "$(git rev-parse 'HEAD^{tree}')" == 71d313b3e182b2bc7de166a8308f33b2a03e2ea5 ]]
           private="$RUNNER_TEMP/parity-private"
           public="$RUNNER_TEMP/parity-receipt"
-          mkdir -m 700 "$private" "$public"
+          mkdir -m 700 "$private"
+          [[ -d "$public" && ! -L "$public" && -f "$public/qualification.json" && ! -L "$public/qualification.json" ]]
           source_stable() {
             [[ -z "$1" && "$2" == 1cd527e018f1cf397acb25f01a98dfa0a6662c5b && "$3" == 71d313b3e182b2bc7de166a8308f33b2a03e2ea5 ]]
           }
@@ -352,7 +357,7 @@ jobs:
             echo "Focused Bazel witness failed; private output withheld." >&2
             exit 1
           fi
-          if ! python3 - "$public/receipt.json" "$private" >"$private/receipt-build.log" 2>&1 <<'PY'
+          if ! python3 - "$public/receipt.json" "$private" >"$private/receipt-build.log" 2>&1 <<'PY'; then
           import hashlib
           import json
           import os
@@ -420,7 +425,6 @@ jobs:
           receipt = {"schemaVersion": 1, "sourceHead": "f04406dac415a5b7cc1698ca8feb0d0de3e9e956", "testedHead": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "testedTree": "71d313b3e182b2bc7de166a8308f33b2a03e2ea5", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "invocation": "two direct Bazel target tests, no test-result cache", "bazelExit": {"build-tool": 0, "jenkins": 0}, "captureExit": {"build-tool": 0, "jenkins": 0}, "cleanupExit": 0, "sourceStability": 0, "results": result}
           pathlib.Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
           PY
-          then
             python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$source_status" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
           import json
           import os
@@ -613,6 +617,7 @@ jobs:
         with:
           name: bazel-logging-parity-receipt
           path: |
+            ${{ runner.temp }}/parity-receipt/qualification.json
             ${{ runner.temp }}/parity-receipt/failure.json
             ${{ runner.temp }}/parity-receipt/receipt.json
             ${{ runner.temp }}/parity-receipt/private-diagnostic.age
