@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResol
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.codehaus.groovy.ast.ASTNode
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import java.net.URI
 
 /**
@@ -45,6 +46,8 @@ data class ResolutionContext(
     val documentUri: URI,
     /** Cursor position within the document */
     val position: Position,
+    /** A source index already bound the type; positional/generated or same-simple-name fallbacks cannot replace it. */
+    val requireExactClassName: Boolean = false,
 )
 
 /**
@@ -108,6 +111,8 @@ fun interface SymbolResolutionStrategy {
                     result = try {
                         strategy.resolve(context)
                     } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: ResponseErrorException) {
                         throw e
                     } catch (e: Error) {
                         throw e

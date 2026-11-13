@@ -96,6 +96,7 @@ class RenameProvider private constructor(
                 (listOfNotNull(compilationService.workspaceManager.getWorkspaceRoot()) + extraRoots()).distinct()
             },
             sourceRoots = compilationService.workspaceManager::getSourceRoots,
+            excluded = compilationService.workspaceManager::isExcludedSource,
         ),
         caches.walks,
         caches.diskText,

@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceAlias
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -16,6 +17,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.nio.file.Files
@@ -88,6 +91,7 @@ class SymbolIndexingService(
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
+        if (isExcluded(uri)) return
         unparseable.remove(uri)
         classNames.replace(uri, prepared.classes) { entries.put(uri, prepared)?.classes }
     }
@@ -108,6 +112,7 @@ class SymbolIndexingService(
         content: String,
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
+        if (workspaceManager.isExcludedSourceFile(ticket.uri)) return null
         val hash = contentHash(content)
         entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { stored ->
             // A matching index answers only a current ticket, so a non-null result always means "committed or
@@ -126,7 +131,7 @@ class SymbolIndexingService(
      */
     fun getAllSymbolIndices(): Map<URI, SymbolIndex> {
         val hidden = shadowed()
-        return entries.entries.filter { it.key !in hidden }.sortedBy { it.key }
+        return entries.entries.filter { it.key !in hidden && !isExcluded(it.key) }.sortedBy { it.key }
             .associateTo(LinkedHashMap()) { it.key to it.value.index }
     }
 
@@ -135,8 +140,11 @@ class SymbolIndexingService(
      * name instead of scanning every file's symbols (#861); each result is checked against the file's
      * current entry, so a racing replacement never surfaces a class the file no longer declares.
      */
-    fun findClasses(query: ClassNameQuery): List<Symbol.Class> =
-        classNames.files(query).sorted().flatMap { entries[it]?.classes.orEmpty() }.filter(query::matches)
+    fun findClasses(query: ClassNameQuery): List<Symbol.Class> = classNames.files(query)
+        .filterNot(::isExcluded)
+        .sorted()
+        .flatMap { uri -> entries[uri]?.classes.orEmpty() }
+        .filter(query::matches)
 
     /**
      * Indexes a single workspace file for symbol resolution.
@@ -150,10 +158,12 @@ class SymbolIndexingService(
     suspend fun indexFile(uri: URI): SymbolIndex? = indexFile(uri, ownership.begin(uri))
 
     private suspend fun indexFile(uri: URI, ticket: ArtifactOwnership.Ticket): SymbolIndex? {
+        if (isExcluded(uri)) return null
         // An open file is indexed from its buffer when it compiles; a save or watcher event must not
         // replace that with the disk copy the user is not looking at.
         if (isOpen(uri)) return entries[uri]?.index
         val path = UriPathConverter.toPath(uri) ?: return null
+        if (excludedSourceAlias(path, workspaceManager::isExcludedSource)) return null
 
         if (!Files.isRegularFile(path)) {
             logger.debug { "File does not exist or is not a regular file: $uri" }
@@ -163,6 +173,10 @@ class SymbolIndexingService(
 
         return performIndexing(uri, path, ticket)
     }
+
+    private fun isExcluded(uri: URI): Boolean = UriPathConverter.toPath(uri)?.let {
+        workspaceManager.isExcludedSource(it)
+    } == true
 
     /**
      * Indexes all workspace source files in the background.
@@ -259,6 +273,9 @@ class SymbolIndexingService(
      */
     @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
     private suspend fun performIndexing(uri: URI, path: Path, ticket: ArtifactOwnership.Ticket): SymbolIndex? = try {
+        val context = currentCoroutineContext()
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        if (!admission.allows(path)) return null
         val content = Files.readString(path)
         val hash = contentHash(content)
         entries[uri]?.takeIf { it.contentHash == hash }?.let {
@@ -275,7 +292,8 @@ class SymbolIndexingService(
                 uri = uri,
                 content = content,
                 classpath = workspace.classpath,
-                sourceRoots = workspace.sourceRoots,
+                sourceRoots = workspace.sourceRoots.filter(admission::allows),
+                checkCancelled = admission.checkCancelled,
                 workspaceSources = emptyList(), // Don't recurse during indexing
                 locatorCandidates = buildLocatorCandidates(uri, path),
             ),

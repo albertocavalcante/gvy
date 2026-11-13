@@ -157,17 +157,26 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private suspend fun compile(uri: URI, content: String, compilePhase: Int, claim: Claim): CompilationResult {
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
         val publication = claim.publication
+        var admissionFingerprint: String? = null
 
         return runCatching {
             // One workspace model supplies this compile's key and inputs (H1). It may already be newer than
             // the claim; a retirement in between rejects the publication (#1184).
             val workspace = workspaceManager.current()
+            val admission = SourceInputAdmission(workspaceManager::isExcludedSource, cancellationCheck())
+            admission.requireDocument(uri)
+            val sourceInputs = checkNotNull(captureAdmittedInputs(uri, workspace, admission.checkCancelled, admission))
+            admissionFingerprint = sourceInputs.fingerprint
             // This document's classpath and key from that one model: a selected target's own (#1235)
             val context = workspaceManager.compileContextFor(uri, content, workspace)
             val configFingerprint = context.fingerprint
 
             // Check cache first - validates both content AND configuration fingerprint
-            val cachedResult = cacheService.getCached(uri, content, configFingerprint)
+            // A previously ordinary alias may now expose a managed source without a watcher/model update.
+            // Such secondary inputs must be removed before reusing a parse that may contain their declarations.
+            val cachedResult = cacheService.getCachedRecord(uri, configFingerprint)
+                ?.takeIf { it.content == content && it.admissionFingerprint == sourceInputs.fingerprint }
+                ?.parseResult
             if (cachedResult != null) {
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
@@ -179,6 +188,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                         workspace,
                         compilePhase,
                         context = context,
+                        admittedInputs = sourceInputs,
                     )
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
@@ -190,15 +200,22 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                             semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
                         }
                     }
-                    resultMapper.map(cachedResult, content)
+                    resultMapper.map(cachedResult, content).copy(admissionFingerprint = sourceInputs.fingerprint)
                 }
             } else {
-                performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase, context = context)
+                performCompilation(
+                    CompilationInput(uri, content, claim),
+                    workspace,
+                    compilePhase,
+                    context = context,
+                    admittedInputs = sourceInputs,
+                )
             }
         }.getOrElse { throwable ->
             when (throwable) {
                 is CancellationException -> throw throwable
                 is Exception -> errorHandler.handleException(throwable, uri)
+                    .copy(admissionFingerprint = admissionFingerprint)
                 else -> throw throwable
             }
         }
@@ -210,8 +227,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         compilePhase: Int = Phases.CANONICALIZATION,
         parseMode: ParseMode = ParseMode.WORKSPACE,
         context: DocumentCompileContext? = null,
+        admittedInputs: AdmittedCompilationInputs? = null,
     ): CompilationResult {
         val (uri, content, claim) = input
+        val sourceInputs = admittedInputs ?: requireNotNull(
+            captureAdmittedInputs(uri, workspace, cancellationCheck()),
+        ) { "Managed or unavailable source paths cannot be compiled as workspace documents" }
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // File-specific classpath and its cache key, from the same workspace as roots and sources (#1235)
@@ -220,19 +241,19 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // Use bounded workspace selection when dependency info is available (Issue #743)
         // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, logBounded = true)
+        val workspaceSources = sourceInputs.workspaceSources
 
         // Parse the source code; the compile aborts between phases if this coroutine is cancelled
-        val checkCancelled = cancellationCheck()
-        val locator = symbolIndexer.classLocator(sourcePath)
-        val parseResult = workerSessionManager.parse(
+        val checkCancelled = sourceInputs.checkCancelled
+        val locator = symbolIndexer.classLocator(sourcePath, sourceInputs.allowsSource)
+        val parseResult = parseAdmitted(
             ParseRequest(
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
+                sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
+                openSources = sourceInputs.openSources,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
@@ -241,6 +262,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 // named otherwise, one file per name the resolver asks for (#1425).
                 workspaceClassLocator = locator.takeIf { parseMode == ParseMode.MINIMAL },
             ),
+            sourceInputs,
         )
 
         logIfDegraded(uri, parseResult)
@@ -251,9 +273,23 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
             // index, as one commit that a retired compile cannot make (#1184)
             val fingerprint = compileContext.fingerprint
-            val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
-                symbolIndexer.install(uri, symbols)
+            val symbols = if (workspaceManager.isExcludedSourceFile(uri)) {
+                null
+            } else {
+                symbolIndexer.prepare(content, parseResult.astModel)
+            }
+            // Observe paths before the publication fence; the fence performs only captured-value checks.
+            val observedAdmission = captureAdmittedInputs(uri, checkCancelled = checkCancelled)?.fingerprint
+            val admissionCurrent = observedAdmission == sourceInputs.fingerprint
+            val published = cacheService.publish(
+                claim.ticket,
+                content,
+                parseResult,
+                fingerprint,
+                isValid = { claim.isValid() && admissionCurrent },
+                admissionFingerprint = sourceInputs.fingerprint,
+            ) {
+                symbols?.let { symbolIndexer.install(uri, it) }
             }
 
             if (published) {
@@ -266,7 +302,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             }
         }
 
-        return resultMapper.map(parseResult, content)
+        return resultMapper.map(parseResult, content).copy(admissionFingerprint = sourceInputs.fingerprint)
     }
 
     /**
@@ -289,27 +325,37 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
         logger.debug { "Transient compile: $uri" }
-        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val workspace = workspaceManager.current()
+        val sourceInputs = requireNotNull(captureAdmittedInputs(uri, workspace, cancellationCheck())) {
+            "Managed or unavailable source paths cannot be compiled as workspace documents"
+        }
+        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
 
         // Use bounded workspace selection when available (Issue #743)
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace)
-        val checkCancelled = cancellationCheck()
+        val workspaceSources = sourceInputs.workspaceSources
+        val checkCancelled = sourceInputs.checkCancelled
 
-        return workerSessionManager.parse(
+        return parseAdmitted(
             ParseRequest(
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
+                sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
+                openSources = sourceInputs.openSources,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 checkCancelled = checkCancelled,
             ),
+            sourceInputs,
         )
+    }
+
+    private fun parseAdmitted(request: ParseRequest, inputs: AdmittedCompilationInputs): ParseResult = try {
+        workerSessionManager.parse(request)
+    } finally {
+        inputs.releaseObservedPaths()
     }
 
     /** A hook that throws [CancellationException] once the calling coroutine is cancelled. */
@@ -378,7 +424,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val pending = scheduleCompilation(waiterScope, uri, identity)
         val cause = try {
             // A retirement wakes this waiter at once, not after the stale compile returns (#1429)
-            pending.awaitUnlessRetired()?.let { return Awaited.Done(it) }
+            pending.awaitUnlessRetired()?.let { completed ->
+                return classifyCompleted(uri, completed)
+            }
             null
         } catch (e: CancellationException) {
             e
@@ -393,6 +441,18 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 "resolving its current inputs again"
         }
         return if (ownerCancelled) Awaited.OwnerCancelled else Awaited.Retired
+    }
+
+    /** Every producer keeps its own receipt, whether it ran as shared work or directly from disk. */
+    private suspend fun classifyCompleted(uri: URI, completed: CompilationResult): Awaited {
+        currentCoroutineContext().ensureActive()
+        ensureRunning()
+        val observed = captureAdmittedInputs(uri, checkCancelled = cancellationCheck())
+        return if (observed != null && completed.admissionFingerprint == observed.fingerprint) {
+            Awaited.Done(completed)
+        } else {
+            Awaited.Retired
+        }
     }
 
     /**
@@ -416,6 +476,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     suspend fun ensureCompiled(uri: URI, snapshot: DocumentSnapshot): CompilationResult {
         ensureRunning()
+        if (!SourceInputAdmission(workspaceManager::isExcludedSource, cancellationCheck()).allows(uri)) {
+            return CompilationResult.failure(emptyList())
+        }
         var current = snapshot
         val result = resolveBounded(uri) {
             val buffer = documentProvider?.getBuffer(uri)?.takeIf { it.snapshot === current }
@@ -439,6 +502,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
     private suspend fun resolveCompiled(uri: URI): Awaited {
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource, cancellationCheck())
+        if (!admission.allows(uri)) return Awaited.Done(null)
         // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
         // disk or the cached parse, and didOpen compiles it in a background job that may not have
         // started yet. Resolve its identity before selecting any pending job.
@@ -460,11 +525,17 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             return awaitShared(uri, pending.identity)
         }
 
-        // A closed file's entry is retired when its buffer closes or the file changes, so it follows the disk
-        cacheService.getCachedWithContent(uri, configFingerprint)?.let { (content, parseResult) ->
-            logger.debug { "Using cached result for: $uri" }
-            return Awaited.Done(resultMapper.mapFromCache(parseResult, content))
-        }
+        val sourceInputs = captureAdmittedInputs(uri, workspace, admission.checkCancelled, admission)
+            ?: return Awaited.Done(null)
+        // A closed file can reuse only the same observed admission, including stable filtered inputs.
+        cacheService.getCachedRecord(uri, configFingerprint)
+            ?.takeIf { it.admissionFingerprint == sourceInputs.fingerprint }
+            ?.let { cached ->
+                logger.debug { "Using cached result for: $uri" }
+                val result = resultMapper.mapFromCache(cached.parseResult, cached.content)
+                    ?.copy(admissionFingerprint = cached.admissionFingerprint)
+                return Awaited.Done(result)
+            }
 
         // Use on-demand compilation from disk if file exists
         // This handles cases where file is in symbol index but not yet opened/compiled
@@ -476,30 +547,49 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // Read the model again now the ticket is taken, as the buffer path does: a change published
             // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
             val compileWorkspace = workspaceManager.current()
-            return Awaited.Done(
-                claim.publication.use {
-                    try {
-                        val content = withContext(ioDispatcher) {
-                            Files.readString(path)
-                        }
-                        // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                        performCompilation(
-                            CompilationInput(uri, content, claim),
-                            compileWorkspace,
-                            parseMode = ParseMode.MINIMAL,
-                        )
-                    } catch (e: CancellationException) {
-                        throw e // the request was cancelled; not a failure to compile
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
-                        null
+            val completed = claim.publication.use {
+                try {
+                    val content = withContext(ioDispatcher) {
+                        Files.readString(path)
                     }
-                },
-            )
+                    // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
+                    performCompilation(
+                        CompilationInput(uri, content, claim),
+                        compileWorkspace,
+                        parseMode = ParseMode.MINIMAL,
+                        admittedInputs = requireNotNull(
+                            captureAdmittedInputs(uri, compileWorkspace, cancellationCheck()),
+                        ),
+                    )
+                } catch (e: CancellationException) {
+                    throw e // the request was cancelled; not a failure to compile
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
+                    null
+                }
+            }
+            return if (completed == null) Awaited.Done(null) else classifyCompleted(uri, completed)
         }
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return Awaited.Done(null)
+    }
+
+    /** Explicit admission I/O, shared by replay, parser input construction and feature currentness. */
+    internal fun captureAdmittedInputs(
+        uri: URI,
+        workspace: WorkspaceModel = workspaceManager.current(),
+        checkCancelled: () -> Unit = {},
+        sourceAdmission: SourceInputAdmission? = null,
+    ): AdmittedCompilationInputs? {
+        val admission = sourceAdmission ?: SourceInputAdmission(workspaceManager::isExcludedSource, checkCancelled)
+        if (!admission.allows(uri)) return null
+        return AdmittedCompilationInputs(
+            workspace.sourceRoots.filter(admission::allows),
+            getWorkspaceSourcesForCompilation(uri, workspace).filter(admission::allows),
+            openSourcesFor(uri).filterKeys(admission::allows),
+            admission,
+        )
     }
 
     /**
@@ -605,10 +695,11 @@ private sealed interface Awaited {
  * index: an exact qualified-name match only, so a same-named class in another package is never added, and never
  * [self]. Before startup indexing has run the index is empty and nothing is found, as before #1425.
  */
-private fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
-    findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
-        .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
-        .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
-        .filter { it != self }
-        .distinct()
-}
+private fun SymbolIndexingService.classLocator(self: Path?, allowed: (Path) -> Boolean): (String) -> List<Path> =
+    { fullyQualifiedName ->
+        findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
+            .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
+            .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
+            .filter { it != self && allowed(it) }
+            .distinct()
+    }

@@ -12,6 +12,7 @@ import io.mockk.every
  */
 internal fun WorkspaceManager.delegateCompileContextToLegacyStubs() {
     val manager = this
+    every { manager.isExcludedSource(any<java.nio.file.Path>()) } returns false
     every { manager.compileContextFor(any(), any(), any()) } answers {
         val workspace = thirdArg<WorkspaceModel>()
         DocumentCompileContext(

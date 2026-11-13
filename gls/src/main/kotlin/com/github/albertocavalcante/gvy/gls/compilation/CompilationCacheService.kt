@@ -42,12 +42,13 @@ class CompilationCacheService(
      * @param configFingerprint The current workspace configuration fingerprint
      * @return ParseResult if cached and both content and fingerprint match, null otherwise
      */
+    // Raw structural access: content/configuration agreement does not certify current source admission.
     fun getCached(uri: URI, content: String, configFingerprint: String): ParseResult? =
         cache.get(uri, content, configFingerprint)
 
     /**
      * Gets the cached content and ParseResult, if they were compiled under [configFingerprint].
-     * For readers that do not hold the current text: invalidation keeps such an entry in step with its source.
+     * Raw positional/structural access; it does not certify current physical source admission.
      *
      * @param uri The URI of the file
      * @param configFingerprint The current workspace configuration fingerprint
@@ -55,6 +56,10 @@ class CompilationCacheService(
      */
     fun getCachedWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? =
         cache.getWithContent(uri, configFingerprint)
+
+    /** Raw source/parse/receipt captured together; no filesystem observation occurs under the cache lock. */
+    internal fun getCachedRecord(uri: URI, configFingerprint: String): CachedCompilation? =
+        cache.getRecord(uri, configFingerprint)
 
     /**
      * Stores a ParseResult (and [alongside], the other artifacts of the same compile) only while [ticket] is
@@ -66,6 +71,7 @@ class CompilationCacheService(
      * @param parseResult The result of compilation
      * @param configFingerprint The workspace configuration fingerprint at compilation time
      * @param isValid What else must still hold, checked under the same fence (e.g. the buffer is still open)
+     * @param admissionFingerprint The receipt observed for the exact source paths supplied to this parse
      * @param alongside Short, non-suspending writes of artifacts derived from the same compile
      */
     @Suppress("LongParameterList") // one atomic write: what was compiled, under which ticket, and its guards
@@ -75,12 +81,13 @@ class CompilationCacheService(
         parseResult: ParseResult,
         configFingerprint: String,
         isValid: () -> Boolean = { true },
+        admissionFingerprint: String? = null,
         alongside: () -> Unit = {},
     ): Boolean {
         var stored = false
         ownership.commit(ticket) {
             if (isValid()) {
-                cache.put(ticket.uri, content, parseResult, configFingerprint)
+                cache.put(ticket.uri, content, parseResult, configFingerprint, admissionFingerprint)
                 alongside()
                 stored = true
             }

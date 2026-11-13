@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CompilationCacheServiceTest {
@@ -28,6 +29,40 @@ class CompilationCacheServiceTest {
     @BeforeTest
     fun setup() {
         cacheService = CompilationCacheService()
+    }
+
+    @Test
+    fun `cached source parse and admission receipt remain one immutable publication`() {
+        val uri = URI.create("file:///receipt.groovy")
+        val first = createMockParseResult()
+        val second = createMockParseResult()
+        assertTrue(
+            cacheService.publish(
+                cacheService.ownership.begin(uri),
+                "before",
+                first,
+                FP,
+                admissionFingerprint = "first",
+            ),
+        )
+        val held = assertNotNull(cacheService.getCachedRecord(uri, FP))
+        assertTrue(
+            cacheService.publish(
+                cacheService.ownership.begin(uri),
+                "after",
+                second,
+                FP,
+                admissionFingerprint = "second",
+            ),
+        )
+        val current = assertNotNull(cacheService.getCachedRecord(uri, FP))
+
+        assertSame(first, held.parseResult)
+        assertEquals("before", held.content)
+        assertEquals("first", held.admissionFingerprint)
+        assertSame(second, current.parseResult)
+        assertEquals("after", current.content)
+        assertEquals("second", current.admissionFingerprint)
     }
 
     @Test

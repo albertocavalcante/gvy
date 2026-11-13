@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.control.SourceUnit
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -224,12 +223,9 @@ class DiagnosticSnapshotContextTest {
         successful: Boolean = true,
     ) = CompilationResult(successful, ast, diagnostics, SOURCE, parseCompleted = true)
 
-    private fun module(): ModuleNode = SourceUnit.create("Example.groovy", SOURCE).run {
-        parse()
-        completePhase()
-        convert()
-        ast
-    }
+    private fun module(): ModuleNode = checkNotNull(
+        GroovyParserFacade().parse(ParseRequest(uri, SOURCE)).ast,
+    )
 
     private companion object {
         const val SOURCE = "import java.util.List\nclass Example {}"

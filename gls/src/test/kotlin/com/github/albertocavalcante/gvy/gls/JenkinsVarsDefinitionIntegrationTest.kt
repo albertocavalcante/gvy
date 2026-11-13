@@ -3,7 +3,6 @@
 
 package com.github.albertocavalcante.gvy.gls
 
-import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -352,7 +351,7 @@ class JenkinsVarsDefinitionIntegrationTest {
         )
         // Wait for diagnostics (and thus compilation) to be ready before proceeding.
         // This is necessary because definition() relies on the compilation ensured by awaitDiagnostics().
-        (serverHandle!!.server.textDocumentService as GroovyTextDocumentService)
+        (serverHandle!!.server.workspaceDocumentService)
             .awaitDiagnostics(java.net.URI.create(uri))
     }
 

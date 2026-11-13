@@ -6,346 +6,165 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.sources.MissingSourceReason
+import com.github.albertocavalcante.gvy.gls.sources.ResolvedExternalSymbol
+import com.github.albertocavalcante.gvy.gls.sources.ResolvedSourceRequest
+import com.github.albertocavalcante.gvy.gls.sources.SourceContextIdentity
+import com.github.albertocavalcante.gvy.gls.sources.SourceDefinition
+import com.github.albertocavalcante.gvy.gls.sources.SourceFailure
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupContext
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
+import com.github.albertocavalcante.gvy.gls.sources.SourceSpan
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Nested
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.nio.file.Path
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertSame
 
-/**
- * Tests for DefinitionResolver fallback behavior and SourceNavigator integration.
- *
- * Key behaviors tested:
- * - Source navigation returns extracted .java file URI (success path)
- * - Source navigation fallback when source JAR unavailable
- * - Graceful error handling when source resolution fails
- *
- * Note on JDK classes (jrt: URIs) and external libraries (jar: URIs):
- * These tests verify that when source navigation succeeds, we return the extracted source URI.
- * When it fails, the resolver's normal resolution path takes over.
- *
- * TODO: Future enhancement - resolve JDK sources from $JAVA_HOME/lib/src.zip
- * FIXME: jar: and jrt: URIs currently cannot be resolved directly by VS Code
- */
+/** Only a captured origin and a verified declaration produce an external definition. */
 class DefinitionResolverFallbackTest {
+    private val document = URI.create("file:///project/Main.groovy")
+    private val position = Position(3, 12)
+    private val symbol = ResolvedExternalSymbol(
+        "sample.Library",
+        SourceOrigin.Archive(Path.of("/selected/library.jar")),
+    )
+    private val context = SourceLookupContext(SourceContextIdentity("selected-context")) { true }
+    private val request = ResolvedSourceRequest(symbol, context)
+    private val location = URI.create("file:///managed/view/Library.java")
+    private val definition = SourceDefinition(SourceSpan(4, 0, 20, 1), SourceSpan(4, 13, 4, 20))
+    private val compilation = mockk<GroovyCompilationService>(relaxed = true)
+    private val navigator = mockk<SourceNavigator>()
 
-    /**
-     * Creates a ClassNode with valid position info for testing.
-     */
-    private fun createPositionedClassNode(className: String, line: Int = 1, col: Int = 1): ClassNode {
-        val node = ClassNode(className, 0, null)
-        node.lineNumber = line
-        node.columnNumber = col
-        node.lastLineNumber = line
-        node.lastColumnNumber = col + 10
-        return node
+    @Test
+    fun `external class uses captured source origin and exact declaration and selection ranges`() = runBlocking {
+        coEvery { navigator.locate(symbol, context) } returns
+            SourceLookupResult.Located(location, symbol.binaryName, definition)
+        val result = assertIs<DefinitionResolver.DefinitionResult.Binary>(
+            resolver().findDefinitionAt(document, position),
+        )
+        assertEquals(location, result.uri)
+        assertEquals(4, result.range?.start?.line)
+        assertEquals(13, result.range?.start?.character)
+        assertEquals(20, result.declarationRange?.end?.line)
+        coVerify(exactly = 1) { navigator.locate(symbol, context) }
     }
 
-    private fun buildUri(vararg parts: String): URI = URI.create(parts.joinToString(separator = ""))
-
-    @Nested
-    inner class SourceNavigationSuccessTest {
-        /**
-         * When SourceNavigator successfully extracts source,
-         * we should return the file: URI to the extracted .java file.
-         */
-        @Test
-        fun `Apache Commons StringUtils navigates to extracted source`() {
-            val documentUri = URI.create("file:///project/src/TextProcessor.groovy")
-            val position = Position(6, 25)
-
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigator>()
-
-            val targetNode = createPositionedClassNode("org.apache.commons.lang3.StringUtils", 6, 25)
-            every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-            every { compilationService.getAllSymbolStorages() } returns emptyMap()
-            every { compilationService.getAst(documentUri) } returns null
-
-            val jarUri = buildUri(
-                "jar:file:///home/user/.m2/repository/org/apache/commons/commons-lang3/3.12.0/",
-                "commons-lang3-3.12.0.jar!/org/apache/commons/lang3/StringUtils.class",
-            )
-            val extractedSourceUri = buildUri(
-                "file:///home/user/.gls/cache/extracted-sources/org/apache/commons/lang3/",
-                "StringUtils.java",
-            )
-
-            every { compilationService.findClasspathClass("org.apache.commons.lang3.StringUtils") } returns jarUri
-
-            // Source JAR downloaded and extracted successfully
-            coEvery {
-                sourceNavigationService.navigateToSource(jarUri, "org.apache.commons.lang3.StringUtils")
-            } returns SourceNavigator.SourceResult.SourceLocation(
-                uri = extractedSourceUri,
-                className = "org.apache.commons.lang3.StringUtils",
-            )
-
-            val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position) }
-
-            // file: URI can be opened by VS Code
-            assertTrue(result is DefinitionResolver.DefinitionResult.Binary)
-            assertEquals(extractedSourceUri, (result as DefinitionResolver.DefinitionResult.Binary).uri)
-            assertEquals("org.apache.commons.lang3.StringUtils", result.name)
+    @Test
+    fun `import head goes through the same captured source lookup`() = runBlocking {
+        coEvery { navigator.locate(symbol, context) } returns
+            SourceLookupResult.Located(location, symbol.binaryName, definition)
+        val import = ImportNode(classNode(), null).apply {
+            lineNumber = 3
+            columnNumber = 1
+            lastLineNumber = 3
+            lastColumnNumber = 30
         }
-
-        /**
-         * Verify SourceNavigator is called with correct parameters
-         */
-        @Test
-        fun `SourceNavigator is invoked with jar URI and class name`() {
-            val documentUri = URI.create("file:///project/src/Main.groovy")
-            val position = Position(5, 10)
-
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigator>()
-
-            val targetNode = createPositionedClassNode("org.slf4j.Logger", 5, 10)
-            every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-            every { compilationService.getAllSymbolStorages() } returns emptyMap()
-            every { compilationService.getAst(documentUri) } returns null
-
-            val jarUri = buildUri(
-                "jar:file:///home/user/.m2/repository/org/slf4j/slf4j-api/2.0.9/",
-                "slf4j-api-2.0.9.jar!/org/slf4j/Logger.class",
-            )
-            val sourceUri = buildUri(
-                "file:///home/user/.gls/cache/extracted-sources/org/slf4j/",
-                "Logger.java",
-            )
-            every { compilationService.findClasspathClass("org.slf4j.Logger") } returns jarUri
-
-            coEvery {
-                sourceNavigationService.navigateToSource(jarUri, "org.slf4j.Logger")
-            } returns SourceNavigator.SourceResult.SourceLocation(
-                uri = sourceUri,
-                className = "org.slf4j.Logger",
-            )
-
-            val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            runBlocking { resolver.findDefinitionAt(documentUri, position) }
-
-            // Verify the service was called with correct parameters
-            io.mockk.coVerify {
-                sourceNavigationService.navigateToSource(jarUri, "org.slf4j.Logger")
-            }
-        }
+        assertIs<DefinitionResolver.DefinitionResult.Binary>(resolver(import).findDefinitionAt(document, position))
+        coVerify(exactly = 1) { navigator.locate(symbol, context) }
     }
 
-    @Nested
-    inner class FallbackBehaviorTest {
-
-        @Test
-        fun `fallbacks to binary URI when source navigation returns BinaryOnly`() {
-            val documentUri = URI.create("file:///project/src/App.groovy")
-            val position = Position(10, 10)
-
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigator>()
-
-            val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
-            every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-            every { compilationService.getAllSymbolStorages() } returns emptyMap()
-            every { compilationService.getAst(documentUri) } returns null
-
-            val jarUri = URI.create("jar:file:///libs/lib.jar!/com/example/Lib.class")
-            every { compilationService.findClasspathClass("com.example.Lib") } returns jarUri
-
-            // Service returns BinaryOnly
-            coEvery {
-                sourceNavigationService.navigateToSource(jarUri, "com.example.Lib")
-            } returns SourceNavigator.SourceResult.BinaryOnly(
-                uri = jarUri,
-                className = "com.example.Lib",
-                reason = "No source found",
-            )
-
-            val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position) }
-
-            // Should fallback to returning null for jar: URI (since VS Code can't open it)
-            // Note: Current DefinitionResolver logic returns null for "jar" scheme in fallback block
-            // See DefinitionResolver.kt:285
-            assertEquals(null, result)
-        }
-
-        @Test
-        fun `fallbacks to binary URI when source navigation throws exception`() {
-            val documentUri = URI.create("file:///project/src/App.groovy")
-            val position = Position(10, 10)
-
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigator>()
-
-            val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
-            every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-            every { compilationService.getAllSymbolStorages() } returns emptyMap()
-            every { compilationService.getAst(documentUri) } returns null
-
-            val jarUri = URI.create("jar:file:///libs/lib.jar!/com/example/Lib.class")
-            every { compilationService.findClasspathClass("com.example.Lib") } returns jarUri
-
-            // Service throws exception
-            coEvery {
-                sourceNavigationService.navigateToSource(jarUri, "com.example.Lib")
-            } throws RuntimeException("Network error")
-
-            val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position) }
-
-            // Should catch exception and fallback
-            assertEquals(null, result)
-        }
-
-        @Test
-        fun `works correctly when SourceNavigator is null`() {
-            val documentUri = URI.create("file:///project/src/App.groovy")
-            val position = Position(10, 10)
-
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-
-            val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
-            every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-            every { compilationService.getAllSymbolStorages() } returns emptyMap()
-            every { compilationService.getAst(documentUri) } returns null
-
-            val jarUri = URI.create("jar:file:///libs/lib.jar!/com/example/Lib.class")
-            every { compilationService.findClasspathClass("com.example.Lib") } returns jarUri
-
-            // Null service - backward compatibility mode
-            val resolver =
-                DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigator = null)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position) }
-
-            // No source nav attempted, fall through to binary result
-            // Since it's a jar: URI, it returns null
-            assertEquals(null, result)
-        }
+    @Test
+    fun `missing source and file-only results do not manufacture exact definitions`() = runBlocking {
+        val resolver = resolver()
+        coEvery { navigator.locate(symbol, context) } returns
+            SourceLookupResult.Unavailable(MissingSourceReason.NO_ATTACHMENT)
+        assertEquals(null, resolver.findDefinitionAt(document, position))
+        coEvery { navigator.locate(symbol, context) } returns SourceLookupResult.FileOnly(
+            location,
+            symbol.binaryName,
+            MissingSourceReason.DECLARATION_NOT_LOCATED,
+        )
+        assertEquals(null, resolver.findDefinitionAt(document, position))
     }
 
-    @Nested
-    inner class WorkspaceClassResolutionTest {
-        /**
-         * Classes defined in the workspace are resolved normally via symbol index
-         */
-        @Test
-        fun `resolves workspace class from symbol index`() {
-            val currentUri = URI.create("file:///project/src/Main.groovy")
-            val otherUri = URI.create("file:///project/src/utils/DateHelper.groovy")
-            val position = Position(10, 5)
-
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-
-            val targetNode = createPositionedClassNode("DateHelper", 10, 5)
-            every { astVisitor.getNodeAt(currentUri, position) } returns targetNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-
-            // Class is defined in another workspace file
-            val dateHelperNode = createPositionedClassNode("DateHelper", 1, 1)
-            val symbol = com.github.albertocavalcante.groovyparser.ast.symbols.Symbol.Class.from(
-                dateHelperNode,
-                otherUri,
-            )
-            every {
-                compilationService.symbolIndexingService.findClasses(
-                    com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery.Exact("DateHelper"),
-                )
-            } returns listOf(symbol)
-            every { compilationService.getAst(currentUri) } returns null
-
-            val otherAst = mockk<org.codehaus.groovy.ast.ModuleNode>()
-            every { compilationService.getAst(otherUri) } returns otherAst
-            every { otherAst.classes } returns listOf(dateHelperNode)
-
-            val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService)
-            val result = runBlocking { resolver.findDefinitionAt(currentUri, position) }
-
-            assertTrue(result is DefinitionResolver.DefinitionResult.Source)
-            val sourceResult = result as DefinitionResolver.DefinitionResult.Source
-            assertEquals(otherUri, sourceResult.uri)
-            assertEquals(dateHelperNode, sourceResult.node)
-        }
+    @Test
+    fun `retired source context fails request with ContentModified`() = runBlocking {
+        coEvery { navigator.locate(symbol, context) } returns SourceLookupResult.Stale
+        val resolver = resolver()
+        val failure = assertFailsWith<ResponseErrorException> { resolver.findDefinitionAt(document, position) }
+        assertEquals(ResponseErrorCode.ContentModified.value, failure.responseError.code)
     }
 
-    @Nested
-    inner class ImportNodeResolutionTest {
-        /**
-         * Import nodes for external classes should trigger classpath lookup
-         * and source navigation when available.
-         */
-        @Test
-        fun `import node triggers source navigation and returns extracted source`() {
-            val documentUri = URI.create("file:///project/src/App.groovy")
-            val position = Position(3, 20)
+    @Test
+    fun `source IO failure fails request rather than silently falling back`() = runBlocking {
+        coEvery { navigator.locate(symbol, context) } returns SourceLookupResult.Failed(SourceFailure.IO_FAILURE)
+        val resolver = resolver()
+        val failure = assertFailsWith<ResponseErrorException> { resolver.findDefinitionAt(document, position) }
+        assertEquals(ResponseErrorCode.RequestFailed.value, failure.responseError.code)
+    }
 
-            val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
-            val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigator>()
+    @Test
+    fun `source cancellation remains the same cancellation`() = runBlocking {
+        val cancelled = CancellationException("source request cancelled")
+        coEvery { navigator.locate(symbol, context) } throws cancelled
+        val resolver = resolver()
+        assertSame(cancelled, assertFailsWith<CancellationException> { resolver.findDefinitionAt(document, position) })
+    }
 
-            // Create import node: import com.google.gson.Gson
-            val importedType = createPositionedClassNode("com.google.gson.Gson", 3, 8)
-            val importNode = ImportNode(importedType, null).apply {
-                lineNumber = 3
-                columnNumber = 1
-                lastLineNumber = 3
-                lastColumnNumber = 30
-            }
+    @Test
+    fun `missing held compilation cannot fall back to process-global classpath`() = runBlocking {
+        val resolver = resolver()
+        coEvery { compilation.captureSourceRequest(document, symbol.binaryName, null, any()) } returns null
+        assertEquals(null, resolver.findDefinitionAt(document, position))
+        coVerify(exactly = 0) { navigator.locate(any(), any()) }
+    }
 
-            every { astVisitor.getNodeAt(documentUri, position) } returns importNode
-            every { astVisitor.getAllClassNodes() } returns emptyList()
-            every { compilationService.getAllSymbolStorages() } returns emptyMap()
-
-            val jarUri = buildUri(
-                "jar:file:///home/user/.m2/repository/com/google/code/gson/gson/2.10.1/",
-                "gson-2.10.1.jar!/com/google/gson/Gson.class",
+    @Test
+    fun `workspace class resolution remains available before dependency sources`() = runBlocking {
+        val ast = mockk<GroovyAstModel>()
+        val workspaceUri = URI.create("file:///project/Library.groovy")
+        val declaration = classNode()
+        val symbol = com.github.albertocavalcante.groovyparser.ast.symbols.Symbol.Class.from(declaration, workspaceUri)
+        every { ast.getNodeAt(document, position) } returns classNode()
+        every { ast.getAllClassNodes() } returns emptyList()
+        every { compilation.getAst(document) } returns null
+        every {
+            compilation.symbolIndexingService.findClasses(
+                ClassNameQuery.Exact(this@DefinitionResolverFallbackTest.symbol.binaryName),
             )
-            val extractedSourceUri = buildUri(
-                "file:///home/user/.gls/cache/extracted-sources/com/google/gson/",
-                "Gson.java",
-            )
-            every { compilationService.findClasspathClass("com.google.gson.Gson") } returns jarUri
+        } returns listOf(symbol)
+        val module = mockk<org.codehaus.groovy.ast.ModuleNode>()
+        every { compilation.getAst(workspaceUri) } returns module
+        every { module.classes } returns listOf(declaration)
+        val result = assertIs<DefinitionResolver.DefinitionResult.Source>(
+            DefinitionResolver(ast, mockk<SymbolTable>(), compilation, navigator).findDefinitionAt(document, position),
+        )
+        assertEquals(workspaceUri, result.uri)
+        assertSame(declaration, result.node)
+    }
 
-            coEvery {
-                sourceNavigationService.navigateToSource(jarUri, "com.google.gson.Gson")
-            } returns SourceNavigator.SourceResult.SourceLocation(
-                uri = extractedSourceUri,
-                className = "com.google.gson.Gson",
-            )
+    private fun resolver(node: ASTNode = classNode()): DefinitionResolver {
+        val ast = mockk<GroovyAstModel>()
+        every { ast.getNodeAt(document, position) } returns node
+        every { ast.getAllClassNodes() } returns emptyList()
+        every { compilation.getAllSymbolStorages() } returns emptyMap()
+        every { compilation.getAst(document) } returns null
+        coEvery { compilation.captureSourceRequest(document, symbol.binaryName, null, any()) } returns request
+        return DefinitionResolver(ast, mockk<SymbolTable>(), compilation, navigator)
+    }
 
-            val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position) }
-
-            assertTrue(result is DefinitionResolver.DefinitionResult.Binary)
-            val binaryResult = result as DefinitionResolver.DefinitionResult.Binary
-            assertEquals(extractedSourceUri, binaryResult.uri)
-            assertEquals("com.google.gson.Gson", binaryResult.name)
-        }
+    private fun classNode() = ClassNode(symbol.binaryName, 0, null).apply {
+        lineNumber = 3
+        columnNumber = 8
+        lastLineNumber = 3
+        lastColumnNumber = 22
     }
 }

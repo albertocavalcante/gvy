@@ -49,7 +49,7 @@ class EffectiveConfigurationTest {
                     launcher.startListening().get(10, TimeUnit.SECONDS)
                 }
             }
-            val endpoint = server.textDocumentService as GroovyTextDocumentService
+            val endpoint = server.workspaceDocumentService
             assertTrue(endpoint.diagnose(workspace.resolve("Broken.groovy").toUri(), BROKEN).isEmpty())
         } finally {
             server.shutdown().get()
@@ -71,7 +71,7 @@ class EffectiveConfigurationTest {
                     )
                 },
             ).get()
-            val endpoint = server.textDocumentService as GroovyTextDocumentService
+            val endpoint = server.workspaceDocumentService
             assertTrue(endpoint.diagnose(workspace.resolve("Broken.groovy").toUri(), BROKEN).isEmpty())
         } finally {
             server.shutdown().get()
@@ -88,7 +88,7 @@ class EffectiveConfigurationTest {
                     initializationOptions = settings(disableParser = true)
                 },
             ).get()
-            val endpoint = server.textDocumentService as GroovyTextDocumentService
+            val endpoint = server.workspaceDocumentService
 
             assertTrue(endpoint.diagnose(workspace.resolve("Broken.groovy").toUri(), BROKEN).isEmpty())
         } finally {
@@ -106,7 +106,7 @@ class EffectiveConfigurationTest {
                     initializationOptions = settings(disableParser = false)
                 },
             ).get()
-            val endpoint = server.textDocumentService as GroovyTextDocumentService
+            val endpoint = server.workspaceDocumentService
             val uri = workspace.resolve("Broken.groovy").toUri()
             assertTrue(endpoint.diagnose(uri, BROKEN).isNotEmpty(), "Control must produce a parser error")
 
@@ -130,7 +130,7 @@ class EffectiveConfigurationTest {
                     initializationOptions = settings(false) + ("groovy.server.maxNumberOfProblems" to 0)
                 },
             ).get()
-            val endpoint = server.textDocumentService as GroovyTextDocumentService
+            val endpoint = server.workspaceDocumentService
 
             assertTrue(endpoint.diagnose(workspace.resolve("Broken.groovy").toUri(), BROKEN).isEmpty())
         } finally {

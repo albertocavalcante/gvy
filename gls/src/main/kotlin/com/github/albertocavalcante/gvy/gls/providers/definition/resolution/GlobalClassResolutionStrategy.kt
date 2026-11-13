@@ -44,7 +44,15 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
             emptyList()
         }
         // Exact matches first; if none loads, the simple-name candidates follow as before.
-        val candidates = (exact + matches.distinctBy { it.uri }).distinct()
+        val candidates = if (context.requireExactClassName) {
+            exact
+        } else {
+            (
+                exact + matches.distinctBy {
+                    it.uri
+                }
+                ).distinct()
+        }
         for (matchingSymbol in candidates) {
             val uri = matchingSymbol.uri
             // Found it in the index, now load the actual ClassNode from AST

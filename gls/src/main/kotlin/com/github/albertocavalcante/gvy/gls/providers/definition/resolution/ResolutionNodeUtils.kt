@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.expr.ClassExpression
@@ -27,6 +28,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
  * - VariableExpression: when it represents a class name
  */
 internal fun getClassName(targetNode: ASTNode): String? = when (targetNode) {
+    is AnnotationNode -> targetNode.classNode.name
     is ClassNode -> targetNode.name
     is ConstructorCallExpression -> targetNode.type.name
     is ClassExpression -> targetNode.type.name
