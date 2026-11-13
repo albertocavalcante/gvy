@@ -1,8 +1,8 @@
 {
   "fixtureBase": "b7e6657a923f2fb24c73b1ae1cb48b3088540bac",
-  "fixtureTree": "7f56c7f346114b905ed907d9eeb46ded4dc6bdf5",
-  "patchSha256": "2cfd03cf9c58d765d45fe8f255b128d2b57a0ba0c97e3b56f626a64ba2754b17",
-  "gzipSha256": "821c0a7fda3fa67fe21d53d16fd8d471a8edd9e7efbe5f67ce7061d368636c51",
+  "fixtureTree": "29d42a77a74022c3aa83d32347313c82e2c29d65",
+  "patchSha256": "1983f6e8957fa9ac2417322f10d75fd5c204d8459322ee8f92d026f5229cdf8f",
+  "gzipSha256": "5ab61d332bb468b3450fa2a039cb61948957cea8c685197cbd7075530011d32a",
   "caseMapSha256": "fcec3042e5df91243b1de2b81aca1e813d61da9db7f0d4013719b332c7a8add8",
   "fixtureStatus": "provisional; Factory 1897 and XFAIL 1811 unmerged",
   "sourceReviewReceiptSha256": "5ea8b98c349d61b5b77da61ab71e9083da3cf898536e5a5a08576cbb246198e5",
@@ -38,5 +38,13 @@
     "originalFormatterPatchSha256": "415cc6b208753263516205e22d99fce739c4c88704e9687637d19c86316b4600",
     "followupPatchSha256": "c90820164e3f74cfc2ee44da8b22031acb75f2180ce503e3e58590339d32963f",
     "review": "Root reviewed both formatter paths; independent reviewer replayed the original patch to the exact tree and found no semantic change. Formatter success changed source, so the guard stopped before tests."
+  },
+  "formatterFollowup5": {
+    "previousTree": "7f56c7f346114b905ed907d9eeb46ded4dc6bdf5",
+    "originalRun": "43361024167",
+    "originalFailureLogSha256": "5eef1978c3e65945d94ef120da396737f5d19bd762a131b4d76171c1f0930759",
+    "originalArtifactSha256": "87d8a8989b636360694c95cb20c1e6b371d37edfe2b8b5514930a6ca381d5db8",
+    "followupPatchSha256": "9a29ed067e9878031775b39d90e24bda5a30b0be25491efc619f9711b1ef9d1b",
+    "review": "Root and independent reviewer inspected both canonical dprint Markdown reflows and confirmed links, inline code, and limits were preserved."
   }
 }
