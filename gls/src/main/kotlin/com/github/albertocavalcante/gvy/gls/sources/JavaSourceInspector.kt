@@ -5,41 +5,70 @@ package com.github.albertocavalcante.gvy.gls.sources
 
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
 import com.github.javaparser.JavaParser
+import com.github.javaparser.ParseStart
 import com.github.javaparser.ParserConfiguration
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
+import com.github.javaparser.Providers
+import com.github.javaparser.ast.CompilationUnit
+import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.MethodDeclaration
+import com.github.javaparser.ast.body.TypeDeclaration
 import com.github.javaparser.ast.comments.JavadocComment
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
+import java.io.StringReader
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 /**
  * Service to inspect Java source files using JavaParser.
  *
  * Extracts class definitions, line numbers, and Javadoc documentation from .java files.
- * Uses JavaParser (com.github.javaparser) which correctly handles all Java syntax,
- * unlike Groovy's parser which fails on C-style array declarations and other Java-specific constructs.
+ * Uses JavaParser for supported Java syntax, without executing or loading the inspected source.
  */
-class JavaSourceInspector {
+class JavaSourceInspector internal constructor(private val parserFactory: () -> JavaParser) {
+    constructor() : this(::newJavaSourceParser)
 
     private companion object {
         private const val PROBLEM_PREVIEW_LIMIT = 3
         private const val DOC_FALLBACK_LENGTH = 200
+        private const val MAX_PARSE_CHARACTERS = 1024 * 1024
+        private const val MAX_PARSE_BYTES = 4 * MAX_PARSE_CHARACTERS
     }
 
     private val logger = KotlinLogging.logger {}
 
-    // Configure JavaParser to be lenient and handle modern Java syntax
-    private val parserConfig = ParserConfiguration().apply {
-        setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17)
-        // Don't fail on attribute-related issues in Javadoc
-        setAttributeComments(true)
+    // Factories return an independent mutable parser for each call.
+    private fun newParser(): JavaParser = parserFactory()
+
+    private fun parseContent(content: String, checkCancelled: () -> Unit) =
+        CancellableSourceReader(StringReader(content), checkCancelled).use { reader ->
+            newParser().parse(ParseStart.COMPILATION_UNIT, Providers.provider(reader))
+        }
+
+    private fun readSource(path: Path): String? {
+        val resolved = path.toRealPath()
+        if (
+            !Files.isRegularFile(resolved, LinkOption.NOFOLLOW_LINKS) ||
+            Files.size(resolved) > MAX_PARSE_BYTES
+        ) {
+            return null
+        }
+        val bytes = Files.newInputStream(resolved, LinkOption.NOFOLLOW_LINKS).use { it.readNBytes(MAX_PARSE_BYTES + 1) }
+        if (bytes.size > MAX_PARSE_BYTES) return null
+        return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
     }
-    private val parser = JavaParser(parserConfig)
 
     /**
      * Result of inspecting a Java class in a source file.
      */
-    data class InspectionResult(val lineNumber: Int, val documentation: Documentation)
+    data class InspectionResult(
+        val lineNumber: Int,
+        val documentation: Documentation,
+        val definition: SourceDefinition? = null,
+    )
 
     /**
      * Inspect a Java source file to find the definition of the given class.
@@ -55,8 +84,10 @@ class JavaSourceInspector {
         }
 
         return try {
-            val content = Files.readString(sourcePath)
+            val content = readSource(sourcePath) ?: return null
             inspectClassFromContent(content, className, sourcePath.toString())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.warn(e) { "Failed to inspect Java source: $sourcePath" }
             null
@@ -71,11 +102,7 @@ class JavaSourceInspector {
      * @param methodName Simple method name (e.g., "getTime")
      * @return InspectionResult containing line number and documentation, or null if not found
      */
-    // TODO(#830): Add parameter count/types to method inspection API for overload resolution.
-    //   Current limitation: inspectMethod only matches by name, not signature, causing incorrect
-    //   navigation when multiple method overloads exist. Requires adding parameterTypes parameter
-    //   and updating method matching logic to compare signatures for precise overload resolution.
-    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
+    // A method name is insufficient to select an overload. Ambiguous names deliberately return no declaration.
     fun inspectMethod(sourcePath: Path, className: String, methodName: String): InspectionResult? {
         if (!Files.exists(sourcePath)) {
             logger.debug { "Source file does not exist: $sourcePath" }
@@ -83,8 +110,10 @@ class JavaSourceInspector {
         }
 
         return try {
-            val content = Files.readString(sourcePath)
+            val content = readSource(sourcePath) ?: return null
             inspectMethodFromContent(content, className, methodName, sourcePath.toString())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.warn(e) { "Failed to inspect method in Java source: $sourcePath" }
             null
@@ -94,56 +123,75 @@ class JavaSourceInspector {
     /**
      * Inspect Java source content directly (useful for testing).
      */
-    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
     fun inspectClassFromContent(
         content: String,
         className: String,
         sourceName: String = "<unknown>",
     ): InspectionResult? {
+        val definition = inspectDefinitionFromContent(content, className, sourceName) ?: return null
+        return InspectionResult(definition.nameRange.startLine + 1, definition.documentation, definition)
+    }
+
+    /** Exact syntactic declaration, including annotation, enum and record declarations. */
+    @Suppress("ReturnCount", "TooGenericExceptionCaught")
+    fun inspectDefinitionFromContent(
+        content: String,
+        className: String,
+        sourceName: String = "<unknown>",
+        checkCancelled: () -> Unit = {},
+    ): SourceDefinition? {
+        checkCancelled()
+        if (content.length > MAX_PARSE_CHARACTERS) return null
         return try {
-            val parseResult = parser.parse(content)
-
-            if (!parseResult.isSuccessful) {
-                logger.debug {
-                    "Failed to parse Java source $sourceName: " +
-                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
-                }
-                return null
-            }
-
-            val compilationUnit = parseResult.result.orElse(null) ?: return null
-
-            // Extract simple class name for matching
-            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
-            val simpleClassName = className
-                .substringAfterLast('.')
-                .substringAfterLast('$')
-
-            // Find the class declaration
-            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
-                .firstOrNull { it.nameAsString == simpleClassName }
-
-            if (classDecl == null) {
-                logger.debug { "Could not find class $className in $sourceName" }
-                return null
-            }
-
-            val lineNumber = classDecl.begin.map { it.line }.orElse(0)
-            if (lineNumber <= 0) {
-                logger.debug { "Class $className found but has invalid line number in $sourceName" }
-                return null
-            }
-
-            // Extract Javadoc
-            val documentation = extractJavadoc(classDecl)
-
-            logger.debug { "Found class $className at line $lineNumber in $sourceName" }
-            InspectionResult(lineNumber, documentation)
+            val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
+            val declaration = findTypeDeclaration(unit, className, checkCancelled) ?: return null
+            val declarationRange = declaration.range.orElse(null)?.toSourceSpan() ?: return null
+            val nameRange = declaration.name.range.orElse(null)?.toSourceSpan() ?: return null
+            SourceDefinition(declarationRange, nameRange, extractJavadoc(declaration))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            logger.warn(e) { "Failed to inspect Java source content for $className" }
+            logger.warn(e) { "Failed to inspect Java declaration for $className" }
             null
         }
     }
+
+    private fun parseUnit(content: String, sourceName: String, checkCancelled: () -> Unit): CompilationUnit? {
+        val parsed = parseContent(content, checkCancelled)
+        checkCancelled()
+        if (!parsed.isSuccessful) {
+            logger.debug {
+                "Failed to parse Java source $sourceName: " +
+                    parsed.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+            }
+            return null
+        }
+        return parsed.result.orElse(null)
+    }
+
+    private fun findTypeDeclaration(
+        unit: CompilationUnit,
+        binaryName: String,
+        checkCancelled: () -> Unit,
+    ): TypeDeclaration<*>? = unit.findAll(TypeDeclaration::class.java).singleOrNull { declaration ->
+        checkCancelled()
+        val owners = generateSequence<Node>(declaration) { it.parentNode.orElse(null) }
+            .filterIsInstance<TypeDeclaration<*>>()
+            .map { it.nameAsString }
+            .toList()
+            .asReversed()
+            .joinToString("$")
+        val packageName = unit.packageDeclaration.map { it.nameAsString }.orElse("")
+        val declaredName = if (packageName.isEmpty()) owners else "$packageName.$owners"
+        declaredName == binaryName
+    }
+
+    private fun com.github.javaparser.Range.toSourceSpan(): SourceSpan = SourceSpan(
+        begin.line - 1,
+        begin.column - 1,
+        end.line - 1,
+        end.column,
+    )
 
     /**
      * Inspect Java source content to find a specific method within a class.
@@ -154,9 +202,13 @@ class JavaSourceInspector {
         className: String,
         methodName: String,
         sourceName: String = "<unknown>",
+        checkCancelled: () -> Unit = {},
     ): InspectionResult? {
+        checkCancelled()
+        if (content.length > MAX_PARSE_CHARACTERS) return null
         return try {
-            val parseResult = parser.parse(content)
+            val parseResult = parseContent(content, checkCancelled)
+            checkCancelled()
 
             if (!parseResult.isSuccessful) {
                 logger.debug {
@@ -168,15 +220,8 @@ class JavaSourceInspector {
 
             val compilationUnit = parseResult.result.orElse(null) ?: return null
 
-            // Extract simple class name for matching
-            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
-            val simpleClassName = className
-                .substringAfterLast('.')
-                .substringAfterLast('$')
-
-            // Find the class declaration
-            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
-                .firstOrNull { it.nameAsString == simpleClassName }
+            // Match the complete package and lexical binary name, including nested owners.
+            val classDecl = findTypeDeclaration(compilationUnit, className, checkCancelled)
 
             if (classDecl == null) {
                 logger.debug { "Could not find class $className in $sourceName" }
@@ -185,7 +230,11 @@ class JavaSourceInspector {
 
             // Find the method declaration within the class
             // Handle method overloading: filter all candidates and warn if ambiguous
-            val methodCandidates = classDecl.methods.filter { it.nameAsString == methodName }
+            val methodCandidates = classDecl.members.filterIsInstance<MethodDeclaration>()
+                .filter { method ->
+                    checkCancelled()
+                    method.nameAsString == methodName
+                }
             val methodDecl = when (methodCandidates.size) {
                 0 -> null
                 1 -> methodCandidates[0]
@@ -202,7 +251,7 @@ class JavaSourceInspector {
                 return null
             }
 
-            val lineNumber = methodDecl.begin.map { it.line }.orElse(0)
+            val lineNumber = methodDecl.name.begin.map { it.line }.orElse(0)
             if (lineNumber <= 0) {
                 logger.debug {
                     "Method $methodName in class $className found but has invalid line number in $sourceName"
@@ -214,7 +263,16 @@ class JavaSourceInspector {
             val documentation = extractMethodJavadoc(methodDecl)
 
             logger.debug { "Found method $className.$methodName at line $lineNumber in $sourceName" }
-            InspectionResult(lineNumber, documentation)
+            val declarationRange = methodDecl.range.orElse(null)?.toSourceSpan()
+            val nameRange = methodDecl.name.range.orElse(null)?.toSourceSpan()
+            val definition = if (declarationRange != null && nameRange != null) {
+                SourceDefinition(declarationRange, nameRange, documentation)
+            } else {
+                null
+            }
+            InspectionResult(lineNumber, documentation, definition)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.warn(e) { "Failed to inspect method $methodName in $className" }
             null
@@ -227,8 +285,8 @@ class JavaSourceInspector {
      * Parses the Javadoc comment and converts it to our Documentation model,
      * similar to how IntelliJ renders hover documentation.
      */
-    private fun extractJavadoc(classDecl: ClassOrInterfaceDeclaration): Documentation {
-        val javadocComment = classDecl.javadocComment.orElse(null)
+    private fun extractJavadoc(classDecl: TypeDeclaration<*>): Documentation {
+        val javadocComment = classDecl.comment.orElse(null) as? JavadocComment
             ?: return Documentation()
 
         return parseJavadoc(javadocComment)
@@ -344,8 +402,10 @@ class JavaSourceInspector {
         }
 
         return try {
-            val content = Files.readString(sourcePath)
+            val content = readSource(sourcePath) ?: return emptyMap()
             extractAllMethodParametersFromContent(content, className, sourcePath.toString())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.warn(e) { "Failed to extract method parameters from Java source: $sourcePath" }
             emptyMap()
@@ -360,9 +420,13 @@ class JavaSourceInspector {
         content: String,
         className: String,
         sourceName: String = "<unknown>",
+        checkCancelled: () -> Unit = {},
     ): Map<String, List<String>> {
+        checkCancelled()
+        if (content.length > MAX_PARSE_CHARACTERS) return emptyMap()
         return try {
-            val parseResult = parser.parse(content)
+            val parseResult = parseContent(content, checkCancelled)
+            checkCancelled()
 
             if (!parseResult.isSuccessful) {
                 logger.debug {
@@ -374,14 +438,8 @@ class JavaSourceInspector {
 
             val compilationUnit = parseResult.result.orElse(null) ?: return emptyMap()
 
-            // Extract simple class name for matching
-            val simpleClassName = className
-                .substringAfterLast('.')
-                .substringAfterLast('$')
-
-            // Find the class declaration
-            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
-                .firstOrNull { it.nameAsString == simpleClassName }
+            // Match the complete package and lexical binary name.
+            val classDecl = findTypeDeclaration(compilationUnit, className, checkCancelled)
 
             if (classDecl == null) {
                 logger.debug { "Could not find class $className in $sourceName" }
@@ -391,7 +449,8 @@ class JavaSourceInspector {
             // Extract all methods with their parameter names
             val result = mutableMapOf<String, List<String>>()
 
-            classDecl.methods.forEach { method ->
+            classDecl.members.filterIsInstance<MethodDeclaration>().forEach { method ->
+                checkCancelled()
                 val methodName = method.nameAsString
                 val paramTypes = method.parameters.map { param ->
                     // Get simple type name (e.g., "Closure" instead of "groovy.lang.Closure")
@@ -412,6 +471,8 @@ class JavaSourceInspector {
 
             logger.debug { "Extracted ${result.size} methods from class $className in $sourceName" }
             result
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.warn(e) { "Failed to extract method parameters from $className" }
             emptyMap()
@@ -429,9 +490,7 @@ class JavaSourceInspector {
         if (text.isBlank()) return ""
 
         // Remove HTML tags for cleaner extraction
-        val cleanText = text
-            .replace(Regex("<[^>]+>"), " ")
-            .replace(Regex("\\{@[^}]+}"), "")
+        val cleanText = stripDocumentationMarkup(text)
             .replace(Regex("\\s+"), " ")
             .trim()
 
@@ -443,5 +502,40 @@ class JavaSourceInspector {
             // Take first 200 chars as fallback
             cleanText.take(DOC_FALLBACK_LENGTH).trim()
         }
+    }
+}
+
+private fun newJavaSourceParser(): JavaParser = JavaParser(
+    ParserConfiguration().apply {
+        setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21)
+        setAttributeComments(true)
+        setTabSize(1)
+    },
+)
+
+/** Unclosed markup is literal text; do not rescan its entire remaining suffix for each opening character. */
+private fun stripDocumentationMarkup(text: String): String = buildString(text.length) {
+    var offset = 0
+    var htmlCanClose = true
+    var inlineCanClose = true
+    while (offset < text.length) {
+        if (htmlCanClose && text[offset] == '<') {
+            val end = text.indexOf('>', offset + 1)
+            if (end > offset + 1) {
+                append(' ')
+                offset = end + 1
+                continue
+            }
+            if (end < 0) htmlCanClose = false
+        }
+        if (inlineCanClose && text.startsWith("{@", offset)) {
+            val end = text.indexOf('}', offset + 2)
+            if (end > offset + 2) {
+                offset = end + 1
+                continue
+            }
+            if (end < 0) inlineCanClose = false
+        }
+        append(text[offset++])
     }
 }
