@@ -124,6 +124,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "test.Class.method",
           name: "method",
         }),
@@ -148,6 +149,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "test.Class.method1",
           name: "method1",
         }),
@@ -177,6 +179,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "different.id",
           name: "testMethod",
         }),
@@ -196,6 +199,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "other.id",
           name: "testMethod",
         }),
@@ -215,6 +219,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "different.id",
           name: "nonexistent",
         }),
@@ -226,6 +231,54 @@ describe("TestEventConsumer", () => {
   });
 
   describe("processLine", () => {
+    it("keeps failure and suite summary while avoiding per-test transition chatter", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      const item = { id: "Suite.test", label: "test" };
+      consumer.registerTestItem(item.id, item);
+      consumer.processLine(
+        JSON.stringify({ event: "suiteStarted", id: "Suite", name: "Suite" }),
+      );
+      for (let i = 0; i < 10; i++) {
+        consumer.processLine(
+          JSON.stringify({
+            event: "testStarted",
+            parent: "Suite",
+            id: item.id,
+            name: "test",
+          }),
+        );
+        consumer.processLine(
+          JSON.stringify({
+            event: "testFinished",
+            duration: 0,
+            id: item.id,
+            name: "test",
+            result: i === 9 ? "FAILURE" : "SUCCESS",
+          }),
+        );
+      }
+      consumer.processLine(
+        JSON.stringify({
+          event: "suiteFinished",
+          duration: 0,
+          result: "SUCCESS",
+          id: "Suite",
+          testCount: 10,
+          successfulCount: 9,
+          failedCount: 1,
+          skippedCount: 0,
+        }),
+      );
+      consumer.processLine("User requested raw output");
+      assert.strictEqual(runMock.started.callCount, 10);
+      assert.strictEqual(runMock.passed.callCount, 9);
+      assert.strictEqual(runMock.failed.callCount, 1);
+      assert.ok(loggerMock.appendLine.calledWith(sinon.match(/FAILURE/)));
+      assert.ok(loggerMock.appendLine.calledWith(sinon.match(/10.*9.*1.*0/)));
+      assert.ok(loggerMock.appendLine.calledWith("User requested raw output"));
+      assert.strictEqual(loggerMock.appendLine.callCount, 3);
+    });
+
     it("should return false for non-JSON lines", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
 
@@ -233,6 +286,132 @@ describe("TestEventConsumer", () => {
 
       assert.strictEqual(result, false);
       assert.ok(loggerMock.appendLine.calledWith("Some regular output line"));
+    });
+
+    it("preserves ordinary JSON and malformed event-shaped output", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      for (const line of [
+        '{"message":"user output"}',
+        '{"event":"user event","id":"x"}',
+        '{"event":"testStarted","id":42,"name":"x"}',
+        '{"event":"testStarted","id":"x"}',
+      ]) {
+        assert.strictEqual(consumer.processLine(line), false);
+        assert.ok(loggerMock.appendLine.calledWith(line));
+      }
+      assert.ok(runMock.started.notCalled);
+    });
+
+    it("preserves malformed producer-shaped JSON without changing a registered item", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      const item = { id: "Suite.test", label: "test" };
+      consumer.registerTestItem(item.id, item);
+      const samples = [
+        {
+          event: "testFinished",
+          id: item.id,
+          name: "test",
+          result: {},
+          duration: 1,
+        },
+        {
+          event: "testFinished",
+          id: item.id,
+          name: "test",
+          result: "UNKNOWN",
+          duration: 1,
+        },
+        { event: "testFinished", id: item.id, name: "test", duration: 1 },
+        {
+          event: "testFinished",
+          id: item.id,
+          name: "test",
+          result: "SUCCESS",
+          duration: "1",
+        },
+        {
+          event: "testFinished",
+          id: item.id,
+          name: "test",
+          result: "FAILURE",
+          duration: 1,
+          message: {},
+        },
+        { event: "testStarted", id: item.id, name: "test", parent: {} },
+        { event: "suiteFinished", id: item.id, result: "SUCCESS", duration: 1 },
+        {
+          event: "suiteFinished",
+          id: item.id,
+          result: "SUCCESS",
+          testCount: 1,
+          successfulCount: 1,
+          failedCount: 0,
+          skippedCount: "0",
+          duration: 1,
+        },
+      ];
+      for (const sample of samples) {
+        const line = `  ${JSON.stringify(sample)}  `;
+        assert.strictEqual(consumer.processLine(line), false);
+        assert.ok(loggerMock.appendLine.calledWithExactly(line));
+      }
+      assert.ok(
+        runMock.started.notCalled &&
+          runMock.passed.notCalled &&
+          runMock.failed.notCalled &&
+          runMock.errored.notCalled &&
+          runMock.skipped.notCalled,
+      );
+    });
+
+    it("retains whitespace in regular and malformed output", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      for (const line of [
+        "  ordinary output  ",
+        "  { malformed JSON  ",
+        '  {"message":"user"}  ',
+      ]) {
+        assert.strictEqual(consumer.processLine(line), false);
+        assert.ok(loggerMock.appendLine.calledWithExactly(line));
+      }
+    });
+
+    it("accepts the Gradle producer event envelopes", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      const item = { id: "Suite.test", label: "test" };
+      consumer.registerTestItem(item.id, item);
+      const events = [
+        { event: "suiteStarted", id: "Suite", name: "Suite" },
+        { event: "testStarted", id: item.id, name: "test", parent: "Suite" },
+        {
+          event: "testFinished",
+          id: item.id,
+          name: "test",
+          result: "FAILURE",
+          duration: 1,
+          message: "fail",
+          stackTrace: "frame",
+        },
+        {
+          event: "suiteFinished",
+          id: "Suite",
+          result: "FAILURE",
+          testCount: 1,
+          successfulCount: 0,
+          failedCount: 1,
+          skippedCount: 0,
+          duration: 1,
+        },
+      ];
+      for (const event of events)
+        assert.strictEqual(consumer.processLine(JSON.stringify(event)), true);
+      assert.ok(runMock.started.calledOnceWith(item));
+      assert.ok(runMock.failed.calledOnce);
+      assert.ok(
+        loggerMock.appendLine.calledWith(
+          sinon.match(/1 total, 0 passed, 1 failed, 0 skipped/),
+        ),
+      );
     });
 
     it("should return false for invalid JSON", () => {
@@ -252,6 +431,7 @@ describe("TestEventConsumer", () => {
       const result = consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "test.Class.method",
           name: "method",
         }),
@@ -307,6 +487,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testFinished",
+          duration: 0,
           id: "test.Class.method",
           name: "method",
           result: "SKIPPED",
@@ -317,7 +498,7 @@ describe("TestEventConsumer", () => {
       assert.ok(runMock.skipped.calledWith(testItem));
     });
 
-    it("should handle unknown test result", () => {
+    it("preserves unknown test result as ordinary output", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
       const testItem = { id: "test.Class.method", label: "method" };
       consumer.registerTestItem("test.Class.method", testItem);
@@ -325,13 +506,15 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testFinished",
+          duration: 0,
           id: "test.Class.method",
           name: "method",
           result: "UNKNOWN",
         }),
       );
 
-      assert.ok(runMock.errored.calledOnce);
+      assert.ok(runMock.errored.notCalled);
+      assert.ok(loggerMock.appendLine.calledWith(sinon.match(/UNKNOWN/)));
     });
 
     it("should handle suiteStarted event", () => {
@@ -345,7 +528,7 @@ describe("TestEventConsumer", () => {
         }),
       );
 
-      assert.ok(loggerMock.appendLine.calledWith("[SUITE] Started: Suite"));
+      assert.ok(!loggerMock.appendLine.calledWith("[SUITE] Started: Suite"));
     });
 
     it("should handle suiteFinished event", () => {
@@ -354,12 +537,22 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "suiteFinished",
+          duration: 0,
+          result: "SUCCESS",
+          testCount: 0,
+          successfulCount: 0,
+          failedCount: 0,
+          skippedCount: 0,
           id: "test.Suite",
           name: "Suite",
         }),
       );
 
-      assert.ok(loggerMock.appendLine.calledWith("[SUITE] Finished: Suite"));
+      assert.ok(
+        loggerMock.appendLine.calledWith(
+          "[SUITE] Suite: 0 total, 0 passed, 0 failed, 0 skipped",
+        ),
+      );
     });
 
     it("should dynamically create subtest for Spock @Unroll iterations", () => {
@@ -542,6 +735,7 @@ describe("TestEventConsumer", () => {
       consumer.processLine(
         JSON.stringify({
           event: "testStarted",
+          parent: "Suite",
           id: "test.Class.method1",
           name: "method1",
         }),
@@ -585,6 +779,7 @@ describe("TestEventConsumer", () => {
       // Attempt prototype pollution
       const maliciousJSON = JSON.stringify({
         event: "testStarted",
+        parent: "Suite",
         id: "test.Class.method",
         name: "method",
         __proto__: { polluted: true },
@@ -613,6 +808,7 @@ describe("TestEventConsumer", () => {
       const largeMessage = "A".repeat(1024 * 1024);
       const largeEvent = JSON.stringify({
         event: "testFinished",
+        duration: 0,
         id: "test.Class.method",
         name: "method",
         result: "FAILURE",
@@ -635,6 +831,7 @@ describe("TestEventConsumer", () => {
       // Event with null bytes
       const eventWithNulls = JSON.stringify({
         event: "testStarted",
+        parent: "Suite",
         id: "test.Class.method",
         name: "method\x00withNulls",
       });
@@ -655,8 +852,9 @@ describe("TestEventConsumer", () => {
         event: string;
         id: string;
         name: string;
+        parent: string;
         nested?: Record<string, unknown>;
-      } = { event: "testStarted", id: "test", name: "test" };
+      } = { event: "testStarted", parent: "Suite", id: "test", name: "test" };
       let current: Record<string, unknown> = nested;
       for (let i = 0; i < 100; i++) {
         current.nested = { level: i };
@@ -679,6 +877,7 @@ describe("TestEventConsumer", () => {
       // Event with various Unicode characters including emojis and special chars
       const unicodeEvent = JSON.stringify({
         event: "testStarted",
+        parent: "Suite",
         id: "test.Class.method",
         name: "test with 🚀 emoji and ñ special chars 日本語",
       });
@@ -730,6 +929,7 @@ describe("TestEventConsumer", () => {
       // Event with many extra fields
       const eventWithExtras = JSON.stringify({
         event: "testStarted",
+        parent: "Suite",
         id: "test.Class.method",
         name: "method",
         extraField1: "value1",
@@ -756,6 +956,7 @@ describe("TestEventConsumer", () => {
 
       const maliciousEvent = JSON.stringify({
         event: "testStarted",
+        parent: "Suite",
         id: "test'; DROP TABLE tests; --",
         name: "'; SELECT * FROM users WHERE '1'='1",
       });
@@ -778,6 +979,7 @@ describe("TestEventConsumer", () => {
 
       const scriptEvent = JSON.stringify({
         event: "testStarted",
+        parent: "Suite",
         id: "test.Class.method",
         name: "<script>alert('XSS')</script>",
       });

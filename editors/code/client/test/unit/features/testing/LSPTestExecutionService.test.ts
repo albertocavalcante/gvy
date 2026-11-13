@@ -19,6 +19,12 @@ interface LSPTestExecutionServiceInstance {
     token: unknown,
     testController: unknown,
   ) => Promise<void>;
+  applyTestResults: (
+    uri: string,
+    run: unknown,
+    items: unknown[],
+    consumer: unknown,
+  ) => Promise<void>;
   isValidJavaHome: (path: string) => boolean;
   collectAllTestItems: (items: unknown[]) => unknown[];
 }
@@ -1180,6 +1186,130 @@ describe("LSPTestExecutionService", () => {
       };
     });
 
+    it("does not warn when a result owns coincident aliases or is repeated by identity", async () => {
+      const item = {
+        id: "a.Suite.method",
+        label: "method",
+        children: { forEach: () => {} },
+      };
+      const result = {
+        testId: "a.Suite.method",
+        className: "a.Suite",
+        name: "method",
+        status: "SUCCESS",
+        durationMs: 3,
+      };
+      for (const results of [[result], [result, result]]) {
+        testRunMock.passed.resetHistory();
+        loggerMock.appendLine.resetHistory();
+        testServiceMock.getTestResults.resolves({ results });
+        await service.applyTestResults("file:///w", testRunMock, [item], {});
+        assert.ok(testRunMock.passed.calledOnceWithExactly(item, 3));
+        assert.ok(
+          !loggerMock.appendLine.calledWith(sinon.match(/Collision detected/)),
+        );
+      }
+    });
+
+    it("warns for distinct duplicate records and preserves later exact match", async () => {
+      const item = {
+        id: "a.Suite.method",
+        label: "method",
+        children: { forEach: () => {} },
+      };
+      testServiceMock.getTestResults.resolves({
+        results: [
+          {
+            testId: item.id,
+            className: "a.Suite",
+            name: "method",
+            status: "SUCCESS",
+            durationMs: 1,
+          },
+          {
+            testId: item.id,
+            className: "a.Suite",
+            name: "method",
+            status: "FAILURE",
+            durationMs: 2,
+          },
+        ],
+      });
+      await service.applyTestResults("file:///w", testRunMock, [item], {});
+      assert.ok(
+        loggerMock.appendLine.calledWith(
+          sinon.match(/Collision detected for testId/),
+        ),
+      );
+      assert.ok(testRunMock.failed.calledOnce);
+    });
+
+    it("warns on distinct normalized aliases while exact IDs still select their own result", async () => {
+      const items = ["a.Suite.a b", "a.Suite.a-b"].map((id) => ({
+        id,
+        label: id,
+        children: { forEach: () => {} },
+      }));
+      testServiceMock.getTestResults.resolves({
+        results: [
+          {
+            testId: items[0].id,
+            name: "a b",
+            status: "SUCCESS",
+            durationMs: 1,
+          },
+          {
+            testId: items[1].id,
+            name: "a-b",
+            status: "FAILURE",
+            durationMs: 2,
+          },
+        ],
+      });
+      await service.applyTestResults("file:///w", testRunMock, items, {});
+      assert.ok(
+        loggerMock.appendLine.calledWith(
+          sinon.match(/Collision detected for normalized ID/),
+        ),
+      );
+      assert.ok(testRunMock.passed.calledWith(items[0]));
+      assert.ok(testRunMock.failed.calledWith(items[1]));
+    });
+
+    it("warns on shared names across suites while exact matching takes precedence", async () => {
+      const items = ["a.Suite.method", "b.Suite.method"].map((id) => ({
+        id,
+        label: "method",
+        children: { forEach: () => {} },
+      }));
+      testServiceMock.getTestResults.resolves({
+        results: [
+          {
+            testId: items[0].id,
+            className: "a.Suite",
+            name: "method",
+            status: "SUCCESS",
+            durationMs: 1,
+          },
+          {
+            testId: items[1].id,
+            className: "b.Suite",
+            name: "method",
+            status: "FAILURE",
+            durationMs: 2,
+          },
+        ],
+      });
+      await service.applyTestResults("file:///w", testRunMock, items, {});
+      assert.ok(
+        loggerMock.appendLine.calledWith(
+          sinon.match(/Collision detected for test name/),
+        ),
+      );
+      assert.ok(testRunMock.passed.calledWith(items[0]));
+      assert.ok(testRunMock.failed.calledWith(items[1]));
+    });
+
     it("should warn when multiple results have same testId", async () => {
       const testItem = {
         id: "com.example.Test.method",
@@ -1249,7 +1379,7 @@ describe("LSPTestExecutionService", () => {
       );
     });
 
-    it("should use first result when collision occurs", async () => {
+    it("uses the later result when a name collision occurs", async () => {
       const testItem = {
         id: "method",
         label: "method",
@@ -1307,7 +1437,8 @@ describe("LSPTestExecutionService", () => {
         { addCoverageToRun: sandbox.stub().resolves() },
       );
 
-      // The map will overwrite, so we should see collision warnings
+      assert.ok(testRunMock.failed.calledWith(testItem));
+      // The map will overwrite, so we should see collision warnings.
       assert.ok(
         loggerMock.appendLine.calledWith(
           sinon.match(/Collision detected for test name/),

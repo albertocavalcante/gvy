@@ -343,7 +343,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const resultMap = new Map<string, TestResultItem>();
       for (const result of results.results) {
         // Add exact testId
-        if (resultMap.has(result.testId)) {
+        if (
+          resultMap.has(result.testId) &&
+          resultMap.get(result.testId) !== result
+        ) {
           this.logger.appendLine(
             `[WARN] Collision detected for testId "${result.testId}". Later result will overwrite earlier one.`,
           );
@@ -353,7 +356,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
         // Add className.name combination
         if (result.className) {
           const classNameKey = `${result.className}.${result.name}`;
-          if (resultMap.has(classNameKey)) {
+          if (
+            resultMap.has(classNameKey) &&
+            resultMap.get(classNameKey) !== result
+          ) {
             this.logger.appendLine(
               `[WARN] Collision detected for className.name "${classNameKey}". Later result will overwrite earlier one.`,
             );
@@ -363,7 +369,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
         // Add normalized testId (spaces replaced with underscores)
         const normalized = normalizeTestId(result.testId);
-        if (resultMap.has(normalized)) {
+        if (resultMap.has(normalized) && resultMap.get(normalized) !== result) {
           this.logger.appendLine(
             `[WARN] Collision detected for normalized ID "${normalized}". Later result will overwrite earlier one.`,
           );
@@ -371,7 +377,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
         resultMap.set(normalized, result);
 
         // Add just the test name for loose matching
-        if (resultMap.has(result.name)) {
+        if (
+          resultMap.has(result.name) &&
+          resultMap.get(result.name) !== result
+        ) {
           this.logger.appendLine(
             `[WARN] Collision detected for test name "${result.name}". Later result will overwrite earlier one. Consider using more specific matching keys.`,
           );
