@@ -91,22 +91,24 @@ class JenkinsContextLoggingTest {
             configuration = JenkinsConfiguration(sharedLibraries = listOf(SharedLibrary("known", jar.toString()))),
             workspaceRoot = tempDir,
             pluginManager = JenkinsPluginManager(),
-            bundledMetadataLoader = { base },
-            classpathScanner = { classpath ->
-                assertEquals(listOf(jar), classpath)
-                BundledJenkinsMetadata(
-                    steps = mapOf(
-                        "knownStep" to JenkinsStepMetadata(
-                            name = "knownStep",
-                            plugin = "test",
-                            parameters = emptyMap(),
+            metadataSources = MetadataSources(
+                bundledMetadataLoader = { base },
+                classpathScanner = { classpath ->
+                    assertEquals(listOf(jar), classpath)
+                    BundledJenkinsMetadata(
+                        steps = mapOf(
+                            "knownStep" to JenkinsStepMetadata(
+                                name = "knownStep",
+                                plugin = "test",
+                                parameters = emptyMap(),
+                            ),
                         ),
-                    ),
-                    globalVariables = emptyMap(),
-                )
-            },
+                        globalVariables = emptyMap(),
+                    )
+                },
+                mavenRepositoryLookupOverride = lookup,
+            ),
             stubHooks = StubHooks(cacheRoot = tempDir.resolve("stubs")),
-            mavenRepositoryLookupOverride = lookup,
         )
         return Fixture(context, jar)
     }
