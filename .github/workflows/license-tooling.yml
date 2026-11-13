@@ -10,6 +10,8 @@ on:
       - '.github/workflows/license-tooling.yml'
       - 'tools/ci/junit_contract.py'
       - 'tools/ci/test_junit_contract.py'
+      - 'tools/ci/junit_contract_batch.py'
+      - 'tools/ci/test_junit_contract_batch.py'
       - 'Makefile'
   push:
     branches: [main]
@@ -19,6 +21,8 @@ on:
       - '.github/workflows/license-tooling.yml'
       - 'tools/ci/junit_contract.py'
       - 'tools/ci/test_junit_contract.py'
+      - 'tools/ci/junit_contract_batch.py'
+      - 'tools/ci/test_junit_contract_batch.py'
       - 'Makefile'
   workflow_dispatch:
 
@@ -56,15 +60,15 @@ jobs:
       - name: Run tests
         run: uv run --offline --locked --project .reuse python -m unittest discover -s .reuse/tests
       - name: JUnit execution contract self-tests
-        run: uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract
+        run: uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract tools.ci.test_junit_contract_batch
       - name: Check JUnit contract formatting
-        run: uv run --offline --locked --project .reuse ruff format --check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+        run: uv run --offline --locked --project .reuse ruff format --check tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
       - name: Lint JUnit contract
-        run: uv run --offline --locked --project .reuse ruff check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+        run: uv run --offline --locked --project .reuse ruff check tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
       - name: Check JUnit contract types with BasedPyright
-        run: uv run --offline --locked --project .reuse basedpyright tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+        run: uv run --offline --locked --project .reuse basedpyright tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
       - name: Check JUnit contract types with ty
-        run: uv run --offline --locked --project .reuse ty check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+        run: uv run --offline --locked --project .reuse ty check tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
       - name: Check formatting
         run: uv run --offline --locked --project .reuse ruff format --check .reuse/check.py .reuse/pin_export.py .reuse/tests/test_check.py .reuse/tests/test_pin_export.py
       - name: Lint
