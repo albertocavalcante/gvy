@@ -179,12 +179,13 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 if ((unqualified && hasHierarchy(reference.scope)) || hasLocalClasses) return null
             }
             val explicit = exposed(reference.spelling)
-            if (hasHierarchy(reference.scope)) {
-                localInCurrentScope(reference)?.let { definition ->
-                    return retainedReference(reference.range, emptyList(), definition)
+            if (!packageQualified) {
+                if (hasHierarchy(reference.scope)) {
+                    localInCurrentScope(reference)?.let { definition ->
+                        return retainedReference(reference.range, emptyList(), definition)
+                    }
+                    return null
                 }
-                if (!packageQualified) return null
-            } else {
                 local(reference)?.let { definition ->
                     return retainedReference(reference.range, emptyList(), definition)
                 }
