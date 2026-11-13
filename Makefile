@@ -320,3 +320,6 @@ license-test:
 .PHONY: junit-contract-check
 junit-contract-check:
 	uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract tools.ci.test_junit_contract_batch
+	node -e 'if (process.platform === "win32" && !process.env.GVY_CI_EVIDENCE_READER) { console.error("Set GVY_CI_EVIDENCE_READER to the compiled no-follow reader; see tools/ci/windows-evidence.mjs"); process.exit(1); }'
+	node --test tools/ci/junit-evidence.test.mjs
+	GVY_JUNIT_PYTHON="$$(uv run --offline --locked --project .reuse python -c 'import sys; print(sys.executable)')" node --test tools/ci/junit-evidence-python-check.mjs
