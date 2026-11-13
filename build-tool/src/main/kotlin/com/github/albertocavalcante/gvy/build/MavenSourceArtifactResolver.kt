@@ -26,6 +26,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 
+private const val SHA256_HEX_LENGTH = 64
+private const val KIBIBYTE = 1_024
+private const val MEBIBYTE = 1_048_576L
+private const val DEFAULT_VERIFIED_CACHE_MEBIBYTES = 512L
+private const val CACHE_DOWNLOAD_RESERVATION_PATHS = 512
+private const val CACHE_OFFLINE_RESERVATION_PATHS = 32
+private const val CACHE_OFFLINE_RESERVATION_BYTES = 64L * KIBIBYTE
+
 /**
  * Maven-based implementation of SourceArtifactResolver using Eclipse Aether.
  *
@@ -38,7 +46,7 @@ import java.security.MessageDigest
 class MavenSourceArtifactResolver(
     override val cacheDir: Path = defaultSourceArtifactCacheRoot(),
     private val repositoryProvider: RepositoryProvider = DefaultRepositoryProvider(),
-    private val verifiedCacheBytes: Long = 512L * 1024 * 1024,
+    private val verifiedCacheBytes: Long = DEFAULT_VERIFIED_CACHE_MEBIBYTES * MEBIBYTE,
 ) : SourceArtifactResolver,
     VerifiedSourceArtifactResolver {
 
@@ -72,8 +80,10 @@ class MavenSourceArtifactResolver(
         for (repository in repositoryProvider.getRepositories()) {
             val key = repositoryCacheKey(request, repository)
             if (!request.allowDownload && !Files.isDirectory(root.resolve(key))) continue
-            val reservationBytes = if (request.allowDownload) SOURCE_CACHE_RESERVATION_BYTES else 64L * 1024
-            val reservationPaths = if (request.allowDownload) 512 else 32
+            val reservationBytes =
+                if (request.allowDownload) SOURCE_CACHE_RESERVATION_BYTES else CACHE_OFFLINE_RESERVATION_BYTES
+            val reservationPaths =
+                if (request.allowDownload) CACHE_DOWNLOAD_RESERVATION_PATHS else CACHE_OFFLINE_RESERVATION_PATHS
             val result = withSourceResolverCapacity(
                 root = root,
                 maximumBytes = verifiedCacheBytes,
@@ -103,28 +113,68 @@ class MavenSourceArtifactResolver(
         val coordinate = request.coordinates
         val session = verifiedSession(local, request.allowDownload)
         val repositories = listOf(repository)
-        val binaryChecksum = when (val result = resolveArtifact(coordinate, "", "jar.sha256", repositories, session)) {
-            is ArtifactFetch.Found -> result.path
-            ArtifactFetch.Missing -> return null
-            ArtifactFetch.Failed -> return VerifiedSourceArtifactResult.Failed
+        return when (
+            val binary = verifySelectedBinary(coordinate, request.selectedBinarySha256, repositories, session)
+        ) {
+            BinaryCheck.TryNextRepository -> null
+            BinaryCheck.SelectedBinaryMatches -> resolveSourceArtifact(coordinate, repositories, session)
+            is BinaryCheck.Decided -> binary.result
         }
-        val expectedBinary = readChecksum(binaryChecksum) ?: return VerifiedSourceArtifactResult.IntegrityUnavailable
-        if (expectedBinary != request.selectedBinarySha256) {
-            return VerifiedSourceArtifactResult.BinaryMismatch
+    }
+
+    private fun verifySelectedBinary(
+        coordinates: ResolvedArtifactCoordinates,
+        selectedBinarySha256: String,
+        repositories: List<RemoteRepository>,
+        session: org.eclipse.aether.RepositorySystemSession,
+    ): BinaryCheck = when (val checksum = resolveChecksum(coordinates, "", "jar.sha256", repositories, session)) {
+        is ChecksumFetch.Valid -> if (checksum.sha256 == selectedBinarySha256) {
+            BinaryCheck.SelectedBinaryMatches
+        } else {
+            BinaryCheck.Decided(VerifiedSourceArtifactResult.BinaryMismatch)
         }
-        val checksum = when (val result = resolveArtifact(coordinate, "sources", "jar.sha256", repositories, session)) {
-            is ArtifactFetch.Found -> result.path
-            ArtifactFetch.Missing -> return VerifiedSourceArtifactResult.IntegrityUnavailable
-            ArtifactFetch.Failed -> return VerifiedSourceArtifactResult.Failed
+        ChecksumFetch.Missing -> BinaryCheck.TryNextRepository
+        ChecksumFetch.Invalid -> BinaryCheck.Decided(VerifiedSourceArtifactResult.IntegrityUnavailable)
+        ChecksumFetch.Failed -> BinaryCheck.Decided(VerifiedSourceArtifactResult.Failed)
+    }
+
+    private fun resolveSourceArtifact(
+        coordinates: ResolvedArtifactCoordinates,
+        repositories: List<RemoteRepository>,
+        session: org.eclipse.aether.RepositorySystemSession,
+    ): VerifiedSourceArtifactResult = when (
+        val checksum = resolveChecksum(coordinates, "sources", "jar.sha256", repositories, session)
+    ) {
+        is ChecksumFetch.Valid -> when (
+            val source = resolveArtifact(coordinates, "sources", "jar", repositories, session)
+        ) {
+            is ArtifactFetch.Found -> source.path.toVerifiedSourceResult(checksum.sha256)
+            ArtifactFetch.Missing -> VerifiedSourceArtifactResult.NotAvailable
+            ArtifactFetch.Failed -> VerifiedSourceArtifactResult.Failed
         }
-        val expectedSource = readChecksum(checksum) ?: return VerifiedSourceArtifactResult.IntegrityUnavailable
-        val source = when (val result = resolveArtifact(coordinate, "sources", "jar", repositories, session)) {
-            is ArtifactFetch.Found -> result.path
-            ArtifactFetch.Missing -> return VerifiedSourceArtifactResult.NotAvailable
-            ArtifactFetch.Failed -> return VerifiedSourceArtifactResult.Failed
+        ChecksumFetch.Missing, ChecksumFetch.Invalid -> VerifiedSourceArtifactResult.IntegrityUnavailable
+        ChecksumFetch.Failed -> VerifiedSourceArtifactResult.Failed
+    }
+
+    private fun Path.toVerifiedSourceResult(expectedSha256: String): VerifiedSourceArtifactResult =
+        if (Files.size(this) > MAX_SOURCE_DOWNLOAD_BYTES) {
+            VerifiedSourceArtifactResult.LimitExceeded
+        } else {
+            VerifiedSourceArtifactResult.Available(this, expectedSha256)
         }
-        if (Files.size(source) > MAX_SOURCE_DOWNLOAD_BYTES) return VerifiedSourceArtifactResult.LimitExceeded
-        return VerifiedSourceArtifactResult.Available(source, expectedSource)
+
+    private fun resolveChecksum(
+        coordinates: ResolvedArtifactCoordinates,
+        classifier: String,
+        extension: String,
+        repositories: List<RemoteRepository>,
+        session: org.eclipse.aether.RepositorySystemSession,
+    ): ChecksumFetch = when (
+        val fetched = resolveArtifact(coordinates, classifier, extension, repositories, session)
+    ) {
+        is ArtifactFetch.Found -> readChecksum(fetched.path)?.let(ChecksumFetch::Valid) ?: ChecksumFetch.Invalid
+        ArtifactFetch.Missing -> ChecksumFetch.Missing
+        ArtifactFetch.Failed -> ChecksumFetch.Failed
     }
 
     private fun repositoryCacheKey(request: VerifiedSourceArtifactRequest, repository: RemoteRepository): String {
@@ -209,6 +259,19 @@ class MavenSourceArtifactResolver(
         data class Found(val path: Path) : ArtifactFetch
         data object Missing : ArtifactFetch
         data object Failed : ArtifactFetch
+    }
+
+    private sealed interface ChecksumFetch {
+        data class Valid(val sha256: String) : ChecksumFetch
+        data object Missing : ChecksumFetch
+        data object Invalid : ChecksumFetch
+        data object Failed : ChecksumFetch
+    }
+
+    private sealed interface BinaryCheck {
+        data object TryNextRepository : BinaryCheck
+        data object SelectedBinaryMatches : BinaryCheck
+        data class Decided(val result: VerifiedSourceArtifactResult) : BinaryCheck
     }
 
     private fun repositoryLocation(value: String): String {
@@ -300,10 +363,10 @@ class MavenSourceArtifactResolver(
         private const val SOURCE_REQUEST_TIMEOUT_MS = 30_000L
         private const val SOURCE_CONNECT_TIMEOUT_MS = 5_000
         private const val SOURCE_READ_TIMEOUT_MS = 10_000
-        private const val MAX_SOURCE_DOWNLOAD_BYTES = 64L * 1024 * 1024
-        private const val MAX_CHECKSUM_BYTES = 1024
-        private const val SOURCE_CACHE_RESERVATION_BYTES = MAX_SOURCE_DOWNLOAD_BYTES + 1024 * 1024
-        private val SHA256 = Regex("[a-f0-9]{64}")
+        private const val MAX_SOURCE_DOWNLOAD_BYTES = 64L * MEBIBYTE
+        private const val MAX_CHECKSUM_BYTES = KIBIBYTE
+        private const val SOURCE_CACHE_RESERVATION_BYTES = MAX_SOURCE_DOWNLOAD_BYTES + MEBIBYTE
+        private val SHA256 = Regex("[a-f0-9]{$SHA256_HEX_LENGTH}")
 
         /**
          * Default cache directory: ~/.groovy-lsp/cache/sources

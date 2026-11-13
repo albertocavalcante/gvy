@@ -12,6 +12,8 @@ import com.github.albertocavalcante.nativeapi.ParserRange
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 
+private const val MAX_GROOVY_INSPECTION_CHARACTERS = 1_048_576
+
 /** Uses native source declarations, never a regex match inside a comment, string or annotation argument. */
 internal class GroovySourceDeclarationInspector {
     fun inspect(
@@ -21,7 +23,7 @@ internal class GroovySourceDeclarationInspector {
         checkCancelled: () -> Unit = {},
     ): SourceDefinition? {
         checkCancelled()
-        if (content.length > 1024 * 1024) return null
+        if (content.length > MAX_GROOVY_INSPECTION_CHARACTERS) return null
         val parsed = GroovyParserFacade().parse(
             ParseRequest(
                 uri = sourceUri,
@@ -32,19 +34,28 @@ internal class GroovySourceDeclarationInspector {
             ),
         )
         return try {
-            val declaration = parsed.sourceAnnotations.declarations.singleOrNull { it.binaryName == binaryName }
-            if (declaration != null) {
-                SourceDefinition(declaration.declarationRange.toSourceSpan(), declaration.nameRange.toSourceSpan())
-            } else {
-                val node = parsed.ast?.classes?.singleOrNull { it.name == binaryName } ?: return null
-                val ranges = CompilerSourceRanges(content)
-                val range = ranges.range(node) ?: return null
-                val name = sourceTypeDeclarationName(node, content, ranges, range) ?: return null
-                SourceDefinition(range.toSourceSpan(), name.toSourceSpan())
-            }
+            parsed.sourceAnnotations.declarations.singleOrNull { it.binaryName == binaryName }
+                ?.let { declaration ->
+                    SourceDefinition(declaration.declarationRange.toSourceSpan(), declaration.nameRange.toSourceSpan())
+                }
+                ?: fallbackDeclaration(parsed.ast?.classes.orEmpty(), content, binaryName)
         } finally {
             // Only detached spans escape. The separate shared transform loader remains owned by the native parser.
             parsed.compilationUnit.classLoader.close()
+        }
+    }
+
+    private fun fallbackDeclaration(
+        classes: List<org.codehaus.groovy.ast.ClassNode>,
+        content: String,
+        binaryName: String,
+    ): SourceDefinition? {
+        val node = classes.singleOrNull { it.name == binaryName } ?: return null
+        val ranges = CompilerSourceRanges(content)
+        return ranges.range(node)?.let { range ->
+            sourceTypeDeclarationName(node, content, ranges, range)?.let { name ->
+                SourceDefinition(range.toSourceSpan(), name.toSourceSpan())
+            }
         }
     }
 

@@ -5,6 +5,8 @@ package com.github.albertocavalcante.gvy.build
 
 import java.nio.file.Path
 
+private const val MAX_COORDINATE_PART_LENGTH = 256
+
 /** The binary digest binds a source lookup to the actual artifact, including privately patched same-GAV releases. */
 data class VerifiedSourceArtifactRequest(
     val coordinates: ResolvedArtifactCoordinates,
@@ -39,7 +41,7 @@ internal fun defaultSourceArtifactCacheRoot(): Path =
 internal fun supportsVerifiedSourceCoordinates(coordinates: ResolvedArtifactCoordinates): Boolean {
     val parts = listOf(coordinates.group, coordinates.module, coordinates.version)
     return parts.all { part ->
-        part.length in 1..256 &&
+        part.length in 1..MAX_COORDINATE_PART_LENGTH &&
             part != "." &&
             part != ".." &&
             part.all { character ->

@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.sources
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -71,9 +72,9 @@ class JavaSourceTypeIndexTest {
     @Test
     fun `local nested declarations are selected in their lexical scope`() {
         val content = "class A { enum Mode { ON } @interface N { Mode value(); } }"
-        val reference = at(content, "Mode value")
-        assertTrue(reference?.localDefinition != null)
-        assertEquals(content.indexOf("Mode"), reference.localDefinition?.nameRange?.startCharacter)
+        val reference = requireNotNull(at(content, "Mode value"))
+        val definition = assertNotNull(reference.localDefinition)
+        assertEquals(content.indexOf("Mode"), definition.nameRange.startCharacter)
     }
 
     @Test

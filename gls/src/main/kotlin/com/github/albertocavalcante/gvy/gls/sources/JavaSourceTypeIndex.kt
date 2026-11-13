@@ -92,34 +92,44 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
 
         private fun add(spelling: String, occurrence: Node, selectedName: Node) {
             checkCancelled()
-            val selectedSpelling = when (selectedName) {
-                is SimpleName -> selectedName.identifier
-                is Name -> selectedName.asString()
-                else -> return
+            selectedName.spellingOrNull()?.let { selectedSpelling ->
+                span(selectedName, selectedSpelling)?.let { range ->
+                    addSelectedReference(spelling, occurrence, range)
+                }
             }
-            val range = span(selectedName, selectedSpelling) ?: return
+        }
+
+        private fun addSelectedReference(spelling: String, occurrence: Node, range: SourceSpan) {
             budget.name(spelling)
             val first = spelling.substringBefore('.')
-            if (first in typeVariables || first in unmodelledLocalNames) return
-            if (hasUnmodelledHierarchy(occurrence)) return
+            if (first !in typeVariables && first !in unmodelledLocalNames && !hasUnmodelledHierarchy(occurrence)) {
+                addLocalOrImportedReference(spelling, occurrence, first, range)
+            }
+        }
+
+        private fun addLocalOrImportedReference(spelling: String, occurrence: Node, first: String, range: SourceSpan) {
             val local = localTarget(spelling, occurrence)
-            if (local != null) {
-                put(SourceTypeReference(range, emptyList(), local))
-                return
+            when {
+                local != null -> put(SourceTypeReference(range, emptyList(), local))
+                explicitImports[first].orEmpty().isNotEmpty() -> addExplicitImportReference(spelling, first, range)
+                else -> addCandidateReference(spelling, range)
             }
+        }
+
+        private fun addExplicitImportReference(spelling: String, first: String, range: SourceSpan) {
             val explicit = explicitImports[first].orEmpty()
-            if (explicit.isNotEmpty()) {
-                val candidates = candidateTiers.getOrPut(spelling) {
-                    // Duplicate exposed imports are not a license to pick one.
-                    if (explicit.size == 1) {
-                        budget.candidates(listOf(listOf(explicit.single() + spelling.removePrefix(first))))
-                    } else {
-                        emptyList()
-                    }
+            val candidates = candidateTiers.getOrPut(spelling) {
+                // Duplicate exposed imports are not a license to pick one.
+                if (explicit.size == 1) {
+                    budget.candidates(listOf(listOf(explicit.single() + spelling.removePrefix(first))))
+                } else {
+                    emptyList()
                 }
-                put(SourceTypeReference(range, candidates))
-                return
             }
+            put(SourceTypeReference(range, candidates))
+        }
+
+        private fun addCandidateReference(spelling: String, range: SourceSpan) {
             val candidates = candidateTiers.getOrPut(spelling) {
                 val samePackage = if (packageName.isEmpty()) spelling else packageName + "." + spelling
                 budget.candidates(
@@ -141,16 +151,22 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
         private fun localTarget(spelling: String, occurrence: Node): SourceDefinition? {
             val currentNames = enclosingTypes(occurrence).map(::typeName)
             val wanted = currentNames.map { it + "." + spelling } + qualify(spelling)
-            for (candidate in wanted) {
-                val matches = localDeclarations[candidate].orEmpty()
-                if (matches.size == 1) {
-                    val declaration = matches.single()
-                    val nameRange = span(declaration.name, declaration.nameAsString) ?: return null
-                    val declarationRange = declaration.range.orElse(null)?.let(::span) ?: return null
-                    return SourceDefinition(declarationRange, nameRange)
-                }
+            val declaration = wanted.firstNotNullOfOrNull { candidate ->
+                localDeclarations[candidate].orEmpty().takeIf { matches -> matches.size == 1 }?.single()
+            } ?: return null
+            val nameRange = span(declaration.name, declaration.nameAsString)
+            val declarationRange = declaration.range.orElse(null)?.let(::span)
+            return if (nameRange != null && declarationRange != null) {
+                SourceDefinition(declarationRange, nameRange)
+            } else {
+                null
             }
-            return null
+        }
+
+        private fun Node.spellingOrNull(): String? = when (this) {
+            is SimpleName -> identifier
+            is Name -> asString()
+            else -> null
         }
 
         private fun enclosingTypes(node: Node): List<TypeDeclaration<*>> =

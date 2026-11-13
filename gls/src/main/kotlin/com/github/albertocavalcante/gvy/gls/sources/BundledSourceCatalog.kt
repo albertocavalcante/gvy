@@ -16,6 +16,8 @@ private const val CLASS_DIGESTS_RESOURCE = "META-INF/gvy/sources/groovy-class-di
 private const val MAX_MANIFEST_BYTES = 2L * 1024 * 1024
 private const val MAX_BUNDLED_CLASS_BYTES = 2L * 1024 * 1024
 private const val MAX_COMPONENT_BYTES = 64L * 1024 * 1024
+private val REQUIRED_METADATA_FIELDS =
+    listOf("group", "module", "version", "binarySha256", "sourceSha256", "sourceResource")
 
 data class BundledSourceComponent(
     val id: String,
@@ -34,18 +36,11 @@ class BundledSourceCatalog(
 
     fun component(): BundledSourceComponent? = metadata?.component
 
-    fun selectedOrigin(resource: URI, binaryName: String): SourceOrigin.Bundled? {
-        val manifest = metadata ?: return null
-        val selected = parseJarClassResource(resource) ?: return null
+    fun selectedOrigin(resource: URI, binaryName: String): SourceOrigin.Bundled? = metadata?.let { manifest ->
         val runtimePath = runCatching { Path.of(runtimeContainer).toAbsolutePath().normalize() }.getOrNull()
-            ?: return null
-        if (selected.archive != runtimePath) return null
-        val binaryEntry = binaryName.replace('.', '/') + ".class"
-        if (selected.entryName != binaryEntry && !selected.entryName.endsWith("/$binaryEntry")) return null
-        val expected = manifest.classes.getProperty(selected.entryName) ?: return null
-        val actual = resource.toURL().openStream().use { copyAndDigest(it, MAX_BUNDLED_CLASS_BYTES) }
-        if (actual != expected) return null
-        return SourceOrigin.Bundled(manifest.component.id, selected.archive.toUri())
+        parseJarClassResource(resource)
+            ?.takeIf { selected -> runtimePath == selected.archive && selected.matchesBinaryName(binaryName) }
+            ?.let { selected -> selected.verifiedOrigin(resource, manifest) }
     }
 
     fun sourceInput(origin: SourceOrigin.Bundled): SourceArchiveInput? {
@@ -73,25 +68,23 @@ class BundledSourceCatalog(
         return sourceInput(SourceOrigin.Bundled(manifest.component.id, origin.binaryJar.toUri()))
     }
 
-    private fun loadMetadata(): Metadata? {
-        val properties = readProperties(MANIFEST_RESOURCE) ?: return null
-        val classes = readProperties(CLASS_DIGESTS_RESOURCE) ?: return null
-        val group = properties.getProperty("group") ?: return null
-        val module = properties.getProperty("module") ?: return null
-        val version = properties.getProperty("version") ?: return null
-        val binary = properties.getProperty("binarySha256") ?: return null
-        val sources = properties.getProperty("sourceSha256") ?: return null
-        val resource = properties.getProperty("sourceResource") ?: return null
-        if (!isSha256(binary) || !isSha256(sources) || !resource.startsWith("META-INF/gvy/sources/")) return null
-        if (resource.split('/').any { it == ".." || it == "." || it.isEmpty() }) return null
-        val component = BundledSourceComponent(
-            "$group:$module:$version",
-            ResolvedArtifactCoordinates(group, module, version),
-            binary,
-            sources,
-            resource,
+    private fun loadMetadata(): Metadata? = readProperties(MANIFEST_RESOURCE)?.let { properties ->
+        readProperties(CLASS_DIGESTS_RESOURCE)?.let { classes -> metadataFrom(properties, classes) }
+    }
+
+    private fun metadataFrom(properties: Properties, classes: Properties): Metadata? {
+        val fields = MetadataFields.from(properties) ?: return null
+        if (!fields.hasValidDigests() || !fields.hasSafeSourceResource()) return null
+        return Metadata(
+            BundledSourceComponent(
+                "${fields.group}:${fields.module}:${fields.version}",
+                ResolvedArtifactCoordinates(fields.group, fields.module, fields.version),
+                fields.binaryDigest,
+                fields.sourceDigest,
+                fields.sourceResource,
+            ),
+            classes,
         )
-        return Metadata(component, classes)
     }
 
     private fun readProperties(resource: String): Properties? =
@@ -102,4 +95,49 @@ class BundledSourceCatalog(
         }
 
     private data class Metadata(val component: BundledSourceComponent, val classes: Properties)
+
+    private data class MetadataFields(
+        val group: String,
+        val module: String,
+        val version: String,
+        val binaryDigest: String,
+        val sourceDigest: String,
+        val sourceResource: String,
+    ) {
+        fun hasValidDigests(): Boolean = isSha256(binaryDigest) && isSha256(sourceDigest)
+
+        fun hasSafeSourceResource(): Boolean = sourceResource.startsWith("META-INF/gvy/sources/") &&
+            sourceResource.split('/').none(::isUnsafeMetadataPathSegment)
+
+        companion object {
+            fun from(properties: Properties): MetadataFields? {
+                val propertyNames = properties.stringPropertyNames()
+                if (!REQUIRED_METADATA_FIELDS.all(propertyNames::contains)) return null
+                return MetadataFields(
+                    properties.getProperty("group", ""),
+                    properties.getProperty("module", ""),
+                    properties.getProperty("version", ""),
+                    properties.getProperty("binarySha256", ""),
+                    properties.getProperty("sourceSha256", ""),
+                    properties.getProperty("sourceResource", ""),
+                )
+            }
+        }
+    }
+
+    private fun JarClassResource.matchesBinaryName(binaryName: String): Boolean {
+        val binaryEntry = binaryName.replace('.', '/') + ".class"
+        return entryName == binaryEntry || entryName.endsWith("/$binaryEntry")
+    }
+
+    private fun JarClassResource.verifiedOrigin(resource: URI, manifest: Metadata): SourceOrigin.Bundled? =
+        manifest.classes.getProperty(entryName)?.let { expected ->
+            val actual = resource.toURL().openStream().use { copyAndDigest(it, MAX_BUNDLED_CLASS_BYTES) }
+            if (actual == expected) SourceOrigin.Bundled(manifest.component.id, archive.toUri()) else null
+        }
 }
+
+private fun isUnsafeMetadataPathSegment(segment: String): Boolean =
+    segment.isEmpty() || isDotMetadataPathSegment(segment)
+
+private fun isDotMetadataPathSegment(segment: String): Boolean = segment == "." || segment == ".."

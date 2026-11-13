@@ -57,29 +57,17 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
         }
         // A local attachment has no publisher digest. Observe its actual bytes for each later lookup,
         // then share only the immutable content identity. A change during copying fails verification.
-        val pinned = if (input is SourceArchiveInput.Local) {
-            permits.withPermit {
-                runInterruptible(Dispatchers.IO) {
-                    val path = input.path.toRealPath()
-                    if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-                        throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
+        val (pinned, expected) = when (input) {
+            is SourceArchiveInput.Local -> {
+                val source = permits.withPermit {
+                    runInterruptible(Dispatchers.IO) {
+                        pinLocalSource(input.path)
                     }
-                    if (Files.size(path) > limits.maxArchiveBytes) {
-                        throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
-                    }
-                    val digest = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).use { source ->
-                        copyAndDigest(source, limits.maxArchiveBytes)
-                    }
-                    SourceArchiveInput.Verified(path, digest)
                 }
+                source to source.expectedSha256.lowercase()
             }
-        } else {
-            input
-        }
-        val expected = when (pinned) {
-            is SourceArchiveInput.Local -> error("Local source input must have a content pin")
-            is SourceArchiveInput.Verified -> pinned.expectedSha256.lowercase()
-            is SourceArchiveInput.VerifiedResource -> pinned.expectedSha256.lowercase()
+            is SourceArchiveInput.Verified -> input to input.expectedSha256.lowercase()
+            is SourceArchiveInput.VerifiedResource -> input to input.expectedSha256.lowercase()
         }
         return share(pendingImports, expected) {
             synchronized(monitor) { importedArchives[expected] }?.let { cached ->
@@ -89,6 +77,20 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
             }
             importUnshared(pinned)
         }
+    }
+
+    private fun pinLocalSource(input: Path): SourceArchiveInput.Verified {
+        val path = input.toRealPath()
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
+        }
+        if (Files.size(path) > limits.maxArchiveBytes) {
+            throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
+        }
+        val digest = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).use { source ->
+            copyAndDigest(source, limits.maxArchiveBytes)
+        }
+        return SourceArchiveInput.Verified(path, digest)
     }
 
     private suspend fun importUnshared(input: SourceArchiveInput): VerifiedSourceArchive =
@@ -246,11 +248,8 @@ internal fun materializeEntry(
     }
 }
 
-private fun archiveEntryDigest(
-    archive: VerifiedSourceArchive,
-    entryName: String,
-    limits: SourceStoreLimits,
-): String = copyArchiveEntry(archive, entryName, limits)
+private fun archiveEntryDigest(archive: VerifiedSourceArchive, entryName: String, limits: SourceStoreLimits): String =
+    copyArchiveEntry(archive, entryName, limits)
 
 private fun copyArchiveEntry(
     archive: VerifiedSourceArchive,

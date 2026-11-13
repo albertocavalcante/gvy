@@ -23,6 +23,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SourceContentStoreTest {
+    private companion object {
+        const val ZIP_EOCD_LENGTH = 22
+        const val ZIP_CENTRAL_DIRECTORY_SIZE_OFFSET = 12
+        const val ZIP_CENTRAL_DIRECTORY_OFFSET = 16
+        const val MAX_ZIP_COMMENT_LENGTH = 65_535
+        const val FORGED_CENTRAL_DIRECTORY_SIZE = 0x70000000
+    }
+
     @TempDir
     lateinit var temporary: Path
 
@@ -177,7 +185,11 @@ class SourceContentStoreTest {
     fun `central directory allocation is bounded before ZipFile parses a forged table`(): Unit = runBlocking {
         val jar = archive("forged.jar", "example/Foo.java" to "class Foo {}")
         val bytes = Files.readAllBytes(jar)
-        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putInt(bytes.size - 22 + 12, 0x70000000)
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(
+                bytes.size - ZIP_EOCD_LENGTH + ZIP_CENTRAL_DIRECTORY_SIZE_OFFSET,
+                FORGED_CENTRAL_DIRECTORY_SIZE,
+            )
         Files.write(jar, bytes)
         SourceContentStore(temporary.resolve("store")).use { store ->
             val imported = store.importArchive(SourceArchiveInput.Local(jar))
@@ -185,6 +197,48 @@ class SourceContentStoreTest {
                 SourceFailure.LIMIT_EXCEEDED,
                 assertFailsWith<SourceStoreException> { store.sourceFor(imported, "example.Foo") }.failure,
             )
+        }
+    }
+
+    @Test
+    fun `EOCD at the maximum comment boundary is accepted`(): Unit = runBlocking {
+        val jar = archiveWithComment(
+            "maximum-comment.jar",
+            "c".repeat(MAX_ZIP_COMMENT_LENGTH),
+            "example/Foo.java" to "class Foo {}",
+        )
+        SourceContentStore(temporary.resolve("store")).use { store ->
+            val imported = store.importArchive(SourceArchiveInput.Local(jar))
+            assertNotNull(store.sourceFor(imported, "example.Foo"))
+        }
+    }
+
+    @Test
+    fun `central directory extending beyond EOCD is rejected`(): Unit = runBlocking {
+        val jar = archive("out-of-range.jar", "example/Foo.java" to "class Foo {}")
+        val bytes = Files.readAllBytes(jar)
+        val eocdOffset = bytes.size - ZIP_EOCD_LENGTH
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(eocdOffset + ZIP_CENTRAL_DIRECTORY_OFFSET, bytes.size + 1)
+        Files.write(jar, bytes)
+
+        SourceContentStore(temporary.resolve("store")).use { store ->
+            val imported = store.importArchive(SourceArchiveInput.Local(jar))
+            val failure = assertFailsWith<SourceStoreException> { store.sourceFor(imported, "example.Foo") }
+            assertEquals(SourceFailure.UNSAFE_ARCHIVE, failure.failure)
+        }
+    }
+
+    @Test
+    fun `truncated and missing EOCD records are rejected`(): Unit = runBlocking {
+        val truncated = Files.write(temporary.resolve("truncated.jar"), ByteArray(ZIP_EOCD_LENGTH - 1))
+        val missingSignature = Files.write(temporary.resolve("missing-eocd.jar"), ByteArray(ZIP_EOCD_LENGTH))
+        SourceContentStore(temporary.resolve("store")).use { store ->
+            for (path in listOf(truncated, missingSignature)) {
+                val imported = store.importArchive(SourceArchiveInput.Local(path))
+                val failure = assertFailsWith<SourceStoreException> { store.sourceFor(imported, "example.Foo") }
+                assertEquals(SourceFailure.UNSAFE_ARCHIVE, failure.failure)
+            }
         }
     }
 
@@ -267,10 +321,16 @@ class SourceContentStoreTest {
         }
     }
 
-    private fun archive(name: String, vararg entries: Pair<String, String>): Path {
+    private fun archive(name: String, vararg entries: Pair<String, String>): Path = writeArchive(name, null, entries)
+
+    private fun archiveWithComment(name: String, comment: String, vararg entries: Pair<String, String>): Path =
+        writeArchive(name, comment, entries)
+
+    private fun writeArchive(name: String, comment: String?, entries: Array<out Pair<String, String>>): Path {
         val path = temporary.resolve(name)
         Files.createDirectories(path.parent)
         ZipOutputStream(Files.newOutputStream(path)).use { zip ->
+            zip.setComment(comment)
             entries.forEach { (entry, content) ->
                 zip.putNextEntry(ZipEntry(entry))
                 zip.write(content.toByteArray(Charsets.UTF_8))

@@ -163,34 +163,41 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
         private fun bind(reference: Pending): SourceTypeReference? {
             checkCancelled()
             val firstName = reference.spelling.substringBefore('.')
-            if (firstName in typeVariables) return null
-            val unqualified = '.' !in reference.spelling
             val packageQualified = isPackageQualified(reference)
-            if (reference.kind == Kind.ARGUMENT) {
-                // Only an imported class prefix with no competing value namespace is safe in an expression.
-                if (
-                    firstName !in imports ||
-                    firstName in values ||
-                    firstName in staticImports ||
-                    module.staticStarImports.isNotEmpty()
-                ) {
-                    return null
-                }
-                if ((unqualified && hasHierarchy(reference.scope)) || hasLocalClasses) return null
+            val hasHierarchy = hasHierarchy(reference.scope)
+            return when {
+                firstName in typeVariables -> null
+                !canBindArgument(reference, firstName, hasHierarchy) -> null
+                packageQualified -> bindGlobally(reference)
+                hasHierarchy -> bindInCurrentHierarchy(reference)
+                hasLocalClasses -> bindToLocal(reference)
+                else -> bindToLocal(reference) ?: bindGlobally(reference)
             }
+        }
+
+        private fun canBindArgument(reference: Pending, firstName: String, hierarchy: Boolean): Boolean =
+            reference.kind != Kind.ARGUMENT ||
+                (hasExplicitClassImport(firstName) && isArgumentNamespaceSafe(reference, hierarchy))
+
+        private fun hasExplicitClassImport(firstName: String): Boolean =
+            firstName in imports && !hasValueOrStaticShadow(firstName) && module.staticStarImports.isEmpty()
+
+        private fun hasValueOrStaticShadow(firstName: String): Boolean =
+            firstName in values || firstName in staticImports
+
+        private fun isArgumentNamespaceSafe(reference: Pending, hierarchy: Boolean): Boolean =
+            !hasLocalClasses && ('.' in reference.spelling || !hierarchy)
+
+        private fun bindInCurrentHierarchy(reference: Pending): SourceTypeReference? =
+            localInCurrentScope(reference)?.let { definition ->
+                retainedReference(reference.range, emptyList(), definition)
+            }
+
+        private fun bindToLocal(reference: Pending): SourceTypeReference? =
+            local(reference)?.let { definition -> retainedReference(reference.range, emptyList(), definition) }
+
+        private fun bindGlobally(reference: Pending): SourceTypeReference? {
             val explicit = exposed(reference.spelling)
-            if (!packageQualified) {
-                if (hasHierarchy(reference.scope)) {
-                    localInCurrentScope(reference)?.let { definition ->
-                        return retainedReference(reference.range, emptyList(), definition)
-                    }
-                    return null
-                }
-                local(reference)?.let { definition ->
-                    return retainedReference(reference.range, emptyList(), definition)
-                }
-            }
-            if (hasLocalClasses && !packageQualified) return null
             if (explicit != null) return retainedReference(reference.range, explicit)
             val candidates = candidateCache.getOrPut(reference.spelling) {
                 val spelling = reference.spelling
@@ -295,18 +302,22 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
 
         private fun importAlias(node: ImportNode, typeRange: ParserRange, binaryName: String) {
             val alias = node.alias ?: return
-            val declaration = ranges.range(node) ?: return
-            val limit = ranges.offset(declaration.end)
-            val keyword = skipSourceTrivia(content, ranges.offset(typeRange.end), limit)
-            val keywordEnd = sourceIdentifierEnd(content, keyword, limit) ?: return
-            if (content.substring(keyword, keywordEnd) != "as") return
-            val start = skipSourceTrivia(content, keywordEnd, limit)
-            val end = sourceIdentifierEnd(content, start, limit) ?: return
-            if (content.substring(start, end) != alias) return
+            val span = aliasSelectionRange(node, typeRange, alias) ?: return
             budget.name(alias)
-            val span = ParserRange(ranges.positionAt(start), ranges.positionAt(end)).toSpan()
             checkReferenceCapacity()
             direct[span] = retainedReference(span, listOf(listOf(binaryName)))
+        }
+
+        private fun aliasSelectionRange(node: ImportNode, typeRange: ParserRange, alias: String): SourceSpan? {
+            val declaration = ranges.range(node) ?: return null
+            val limit = ranges.offset(declaration.end)
+            val keyword = skipSourceTrivia(content, ranges.offset(typeRange.end), limit)
+            val keywordEnd = sourceIdentifierEnd(content, keyword, limit)
+                ?.takeIf { end -> content.substring(keyword, end) == "as" } ?: return null
+            val start = skipSourceTrivia(content, keywordEnd, limit)
+            return sourceIdentifierEnd(content, start, limit)
+                ?.takeIf { end -> content.substring(start, end) == alias }
+                ?.let { end -> ParserRange(ranges.positionAt(start), ranges.positionAt(end)).toSpan() }
         }
 
         override fun visitClass(node: ClassNode) {
@@ -443,25 +454,39 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 ownerRange.toSpan().contains(range.toSpan())
             ) {
                 typeName(range, node.unresolvedName.removeSuffix("[]"))?.let { (spelling, pieces) ->
-                    if (spelling !in NON_TYPES) {
-                        pieces.forEach { piece -> put(Pending(spelling, piece.toSpan(), Kind.TYPE, scope)) }
-                    }
+                    addTypeReferences(spelling, pieces)
                 }
             }
             if (node.isArray) type(node.componentType, owner)
             generic(node.genericsTypes, owner)
         }
 
+        private fun addTypeReferences(spelling: String, pieces: List<ParserRange>) {
+            if (spelling !in NON_TYPES) {
+                pieces.forEach { piece -> put(Pending(spelling, piece.toSpan(), Kind.TYPE, scope)) }
+            }
+        }
+
         private fun typeName(range: ParserRange, expected: String): Pair<String, List<ParserRange>>? {
             budget.name(expected)
+            val startOffset = ranges.offset(range.start)
             val limit = ranges.offset(range.end)
-            if (limit - ranges.offset(range.start) > SourceTypeIndexBudget.MAX_NAME_CHARACTERS) {
+            if (limit - startOffset > SourceTypeIndexBudget.MAX_NAME_CHARACTERS) {
                 throw SourceTypeIndexLimitException()
             }
-            var start = skipSourceTrivia(content, ranges.offset(range.start), limit)
-            var end = sourceIdentifierEnd(content, start, limit) ?: return null
-            val names = mutableListOf(content.substring(start, end))
-            val pieces = mutableListOf(ParserRange(ranges.positionAt(start), ranges.positionAt(end)))
+            val parsed = readTypeName(startOffset, limit) ?: return null
+            val (spelling, pieces) = parsed
+            return (spelling to pieces).takeIf {
+                spelling == expected || spelling == expected.substringAfterLast('.')
+            }
+        }
+
+        private fun readTypeName(startOffset: Int, limit: Int): Pair<String, List<ParserRange>>? {
+            var start = skipSourceTrivia(content, startOffset, limit)
+            val firstEnd = sourceIdentifierEnd(content, start, limit) ?: return null
+            val names = mutableListOf(content.substring(start, firstEnd))
+            val pieces = mutableListOf(ParserRange(ranges.positionAt(start), ranges.positionAt(firstEnd)))
+            var end = firstEnd
             while (true) {
                 val dot = skipSourceTrivia(content, end, limit)
                 if (dot >= limit || content[dot] != '.') break
@@ -470,9 +495,7 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 names.add(content.substring(start, end))
                 pieces.add(ParserRange(ranges.positionAt(start), ranges.positionAt(end)))
             }
-            val spelling = names.joinToString(".")
-            if (spelling != expected && spelling != expected.substringAfterLast('.')) return null
-            return spelling to pieces
+            return names.joinToString(".") to pieces
         }
 
         private fun put(reference: Pending) {

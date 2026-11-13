@@ -32,7 +32,6 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
 
     private companion object {
         private const val PROBLEM_PREVIEW_LIMIT = 3
-        private const val DOC_FALLBACK_LENGTH = 200
         private const val MAX_PARSE_CHARACTERS = 1024 * 1024
         private const val MAX_PARSE_BYTES = 4 * MAX_PARSE_CHARACTERS
     }
@@ -143,7 +142,7 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         if (content.length > MAX_PARSE_CHARACTERS) return null
         return try {
             val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
-            val declaration = findTypeDeclaration(unit, className, checkCancelled) ?: return null
+            val declaration = findJavaTypeDeclaration(unit, className, checkCancelled) ?: return null
             val declarationRange = declaration.range.orElse(null)?.toSourceSpan() ?: return null
             val nameRange = declaration.name.range.orElse(null)?.toSourceSpan() ?: return null
             SourceDefinition(declarationRange, nameRange, extractJavadoc(declaration))
@@ -168,34 +167,6 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         return parsed.result.orElse(null)
     }
 
-    private fun findTypeDeclaration(
-        unit: CompilationUnit,
-        binaryName: String,
-        checkCancelled: () -> Unit,
-    ): TypeDeclaration<*>? = unit.findAll(TypeDeclaration::class.java).singleOrNull { declaration ->
-        checkCancelled()
-        val owners = binaryTypeOwners(declaration, checkCancelled) ?: return@singleOrNull false
-        val packageName = unit.packageDeclaration.map { it.nameAsString }.orElse("")
-        val declaredName = if (packageName.isEmpty()) owners else "$packageName.$owners"
-        declaredName == binaryName
-    }
-
-    /** Local and anonymous classes have compiler-assigned binary names and cannot be selected by source name alone. */
-    private fun binaryTypeOwners(declaration: TypeDeclaration<*>, checkCancelled: () -> Unit): String? {
-        val owners = mutableListOf<String>()
-        var current = declaration
-        while (true) {
-            checkCancelled()
-            owners.add(current.nameAsString)
-            when (val parent = current.parentNode.orElse(null)) {
-                is TypeDeclaration<*> -> current = parent
-                is CompilationUnit -> break
-                else -> return null
-            }
-        }
-        return owners.asReversed().joinToString("$")
-    }
-
     private fun com.github.javaparser.Range.toSourceSpan(): SourceSpan = SourceSpan(
         begin.line - 1,
         begin.column - 1,
@@ -206,7 +177,6 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
     /**
      * Inspect Java source content to find a specific method within a class.
      */
-    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
     fun inspectMethodFromContent(
         content: String,
         className: String,
@@ -217,76 +187,66 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         checkCancelled()
         if (content.length > MAX_PARSE_CHARACTERS) return null
         return try {
-            val parseResult = parseContent(content, checkCancelled)
-            checkCancelled()
-
-            if (!parseResult.isSuccessful) {
-                logger.debug {
-                    "Failed to parse Java source $sourceName: " +
-                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
-                }
-                return null
-            }
-
-            val compilationUnit = parseResult.result.orElse(null) ?: return null
-
-            // Match the complete package and lexical binary name, including nested owners.
-            val classDecl = findTypeDeclaration(compilationUnit, className, checkCancelled)
-
-            if (classDecl == null) {
-                logger.debug { "Could not find class $className in $sourceName" }
-                return null
-            }
-
-            // Find the method declaration within the class
-            // Handle method overloading: filter all candidates and warn if ambiguous
-            val methodCandidates = classDecl.members.filterIsInstance<MethodDeclaration>()
-                .filter { method ->
-                    checkCancelled()
-                    method.nameAsString == methodName
-                }
-            val methodDecl = when (methodCandidates.size) {
-                0 -> null
-                1 -> methodCandidates[0]
-                else -> {
-                    logger.debug {
-                        "Ambiguous method $className.$methodName (${methodCandidates.size} overloads) in $sourceName"
-                    }
-                    null
-                }
-            }
-
-            if (methodDecl == null) {
-                logger.debug { "Could not find method $methodName in class $className in $sourceName" }
-                return null
-            }
-
-            val lineNumber = methodDecl.name.begin.map { it.line }.orElse(0)
-            if (lineNumber <= 0) {
-                logger.debug {
-                    "Method $methodName in class $className found but has invalid line number in $sourceName"
-                }
-                return null
-            }
-
-            // Extract Javadoc from method
-            val documentation = extractMethodJavadoc(methodDecl)
-
-            logger.debug { "Found method $className.$methodName at line $lineNumber in $sourceName" }
-            val declarationRange = methodDecl.range.orElse(null)?.toSourceSpan()
-            val nameRange = methodDecl.name.range.orElse(null)?.toSourceSpan()
-            val definition = if (declarationRange != null && nameRange != null) {
-                SourceDefinition(declarationRange, nameRange, documentation)
-            } else {
-                null
-            }
-            InspectionResult(lineNumber, documentation, definition)
+            val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
+            findMethodDeclaration(unit, className, methodName, sourceName, checkCancelled)
+                ?.let { method -> methodInspectionResult(method, className, methodName, sourceName) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
             logger.warn(e) { "Failed to inspect method $methodName in $className" }
             null
         }
+    }
+
+    private fun findMethodDeclaration(
+        unit: CompilationUnit,
+        className: String,
+        methodName: String,
+        sourceName: String,
+        checkCancelled: () -> Unit,
+    ): MethodDeclaration? {
+        val classDecl = findJavaTypeDeclaration(unit, className, checkCancelled)
+        if (classDecl == null) {
+            logger.debug { "Could not find class $className in $sourceName" }
+            return null
+        }
+        val methodCandidates = classDecl.members.filterIsInstance<MethodDeclaration>().filter { method ->
+            checkCancelled()
+            method.nameAsString == methodName
+        }
+        return when (methodCandidates.size) {
+            0 -> null
+            1 -> methodCandidates.single()
+            else -> {
+                logger.debug {
+                    "Ambiguous method $className.$methodName (${methodCandidates.size} overloads) in $sourceName"
+                }
+                null
+            }
+        }
+    }
+
+    private fun methodInspectionResult(
+        method: MethodDeclaration,
+        className: String,
+        methodName: String,
+        sourceName: String,
+    ): InspectionResult? {
+        val lineNumber = method.name.begin.map { it.line }.orElse(0)
+        if (lineNumber <= 0) {
+            logger.debug { "Method $methodName in class $className found but has invalid line number in $sourceName" }
+            return null
+        }
+        val documentation = extractMethodJavadoc(method)
+        logger.debug { "Found method $className.$methodName at line $lineNumber in $sourceName" }
+        val declarationRange = method.range.orElse(null)?.toSourceSpan()
+        val nameRange = method.name.range.orElse(null)?.toSourceSpan()
+        val definition = if (declarationRange != null && nameRange != null) {
+            SourceDefinition(declarationRange, nameRange, documentation)
+        } else {
+            null
+        }
+        return InspectionResult(lineNumber, documentation, definition)
     }
 
     /**
@@ -449,7 +409,7 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
             val compilationUnit = parseResult.result.orElse(null) ?: return emptyMap()
 
             // Match the complete package and lexical binary name.
-            val classDecl = findTypeDeclaration(compilationUnit, className, checkCancelled)
+            val classDecl = findJavaTypeDeclaration(compilationUnit, className, checkCancelled)
 
             if (classDecl == null) {
                 logger.debug { "Could not find class $className in $sourceName" }
@@ -488,31 +448,34 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
             emptyMap()
         }
     }
+}
 
-    /**
-     * Extract the first sentence from a documentation string.
-     *
-     * A sentence ends at:
-     * - Period followed by whitespace or end of string
-     * - First paragraph break (<p> or blank line)
-     */
-    private fun extractFirstSentence(text: String): String {
-        if (text.isBlank()) return ""
+private fun findJavaTypeDeclaration(
+    unit: CompilationUnit,
+    binaryName: String,
+    checkCancelled: () -> Unit,
+): TypeDeclaration<*>? = unit.findAll(TypeDeclaration::class.java).singleOrNull { declaration ->
+    checkCancelled()
+    val owners = binaryTypeOwners(declaration, checkCancelled) ?: return@singleOrNull false
+    val packageName = unit.packageDeclaration.map { it.nameAsString }.orElse("")
+    val declaredName = if (packageName.isEmpty()) owners else "$packageName.$owners"
+    declaredName == binaryName
+}
 
-        // Remove HTML tags for cleaner extraction
-        val cleanText = stripDocumentationMarkup(text)
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        // Find first sentence end
-        val sentenceEnd = cleanText.indexOfFirst { it == '.' || it == '!' || it == '?' }
-        return if (sentenceEnd > 0 && sentenceEnd < cleanText.length - 1) {
-            cleanText.substring(0, sentenceEnd + 1).trim()
-        } else {
-            // Take first 200 chars as fallback
-            cleanText.take(DOC_FALLBACK_LENGTH).trim()
+/** Local and anonymous classes have compiler-assigned binary names and cannot be selected by source name alone. */
+private fun binaryTypeOwners(declaration: TypeDeclaration<*>, checkCancelled: () -> Unit): String? {
+    val owners = mutableListOf<String>()
+    var current = declaration
+    while (true) {
+        checkCancelled()
+        owners.add(current.nameAsString)
+        when (val parent = current.parentNode.orElse(null)) {
+            is TypeDeclaration<*> -> current = parent
+            is CompilationUnit -> break
+            else -> return null
         }
     }
+    return owners.asReversed().joinToString("$")
 }
 
 private fun newJavaSourceParser(): JavaParser = JavaParser(
@@ -529,23 +492,36 @@ private fun stripDocumentationMarkup(text: String): String = buildString(text.le
     var htmlCanClose = true
     var inlineCanClose = true
     while (offset < text.length) {
-        if (htmlCanClose && text[offset] == '<') {
-            val end = text.indexOf('>', offset + 1)
-            if (end > offset + 1) {
+        val isHtmlOpening = htmlCanClose && text[offset] == '<'
+        val htmlEnd = if (isHtmlOpening) text.indexOf('>', offset + 1) else -1
+        if (isHtmlOpening && htmlEnd < 0) htmlCanClose = false
+        val isInlineOpening = inlineCanClose && text.startsWith("{@", offset)
+        val inlineEnd = if (isInlineOpening) text.indexOf('}', offset + 2) else -1
+        if (isInlineOpening && inlineEnd < 0) inlineCanClose = false
+        when {
+            htmlEnd > offset + 1 -> {
                 append(' ')
-                offset = end + 1
-                continue
+                offset = htmlEnd + 1
             }
-            if (end < 0) htmlCanClose = false
+            inlineEnd > offset + 2 -> offset = inlineEnd + 1
+            else -> append(text[offset++])
         }
-        if (inlineCanClose && text.startsWith("{@", offset)) {
-            val end = text.indexOf('}', offset + 2)
-            if (end > offset + 2) {
-                offset = end + 1
-                continue
-            }
-            if (end < 0) inlineCanClose = false
-        }
-        append(text[offset++])
+    }
+}
+
+/** Extract a short first sentence for a source-backed documentation summary. */
+private const val DOC_FALLBACK_LENGTH = 200
+
+private fun extractFirstSentence(text: String): String {
+    if (text.isBlank()) return ""
+
+    val cleanText = stripDocumentationMarkup(text)
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    val sentenceEnd = cleanText.indexOfFirst { it == '.' || it == '!' || it == '?' }
+    return if (sentenceEnd > 0 && sentenceEnd < cleanText.length - 1) {
+        cleanText.substring(0, sentenceEnd + 1).trim()
+    } else {
+        cleanText.take(DOC_FALLBACK_LENGTH).trim()
     }
 }

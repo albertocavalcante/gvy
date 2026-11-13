@@ -39,47 +39,34 @@ internal class SourceManagedPaths(initialRoots: List<Path>) {
     fun resourceOperationIsManaged(uri: URI): Boolean {
         val destination = path(uri) ?: return true
         if (touchesManagedRoot(destination)) return true
-        val resolved = realPath(destination) ?: return true
-        if (touchesManagedRoot(resolved) || aliasesManagedAncestor(resolved)) return true
-        for (root in roots) {
-            var ancestor: Path? = root.parent
-            while (ancestor != null) {
-                try {
-                    if (Files.isSameFile(resolved, ancestor)) return true
-                } catch (_: NoSuchFileException) {
-                    // Managed namespaces can be reserved before the underlying directory exists.
-                } catch (_: IOException) {
-                    return true
-                } catch (_: SecurityException) {
-                    return true
-                }
-                ancestor = ancestor.parent
-            }
-        }
-        return false
+        return realPath(destination)?.let(::resolvedResourceOperationIsManaged) ?: true
     }
 
     private fun touchesManagedRoot(path: Path): Boolean = containsPath(path) || roots.any { it.startsWith(path) }
 
     private fun containsPath(path: Path): Boolean = roots.any(path::startsWith)
 
-    private fun aliasesManagedAncestor(path: Path): Boolean {
-        var ancestor: Path? = path
-        while (ancestor != null) {
-            for (root in roots) {
-                try {
-                    if (Files.isSameFile(ancestor, root)) return true
-                } catch (_: NoSuchFileException) {
-                    // New descendants and not-yet-created cache roots have no identity to compare.
-                } catch (_: IOException) {
-                    return true
-                } catch (_: SecurityException) {
-                    return true
-                }
-            }
-            ancestor = ancestor.parent
-        }
-        return false
+    private fun aliasesManagedAncestor(path: Path): Boolean = pathAncestors(path).any { ancestor ->
+        roots.any { root -> sameFileOrFailClosed(ancestor, root) }
+    }
+
+    private fun resolvedResourceOperationIsManaged(path: Path): Boolean = touchesManagedRoot(path) ||
+        aliasesManagedAncestor(path) ||
+        roots.asSequence()
+            .flatMap { root -> pathAncestors(root.parent) }
+            .any { ancestor -> sameFileOrFailClosed(path, ancestor) }
+
+    private fun pathAncestors(path: Path?): Sequence<Path> = generateSequence(path) { current -> current.parent }
+
+    private fun sameFileOrFailClosed(first: Path, second: Path): Boolean = try {
+        Files.isSameFile(first, second)
+    } catch (_: NoSuchFileException) {
+        // New descendants and reserved roots can lack a filesystem identity.
+        false
+    } catch (_: IOException) {
+        true
+    } catch (_: SecurityException) {
+        true
     }
 
     private fun path(uri: URI): Path? = if (uri.scheme.equals("file", ignoreCase = true)) {
