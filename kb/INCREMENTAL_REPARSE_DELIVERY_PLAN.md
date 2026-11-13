@@ -341,11 +341,11 @@ dependency, LSP4J type, coroutine, logger, URI, buffer version or filesystem ope
 Proposed public shape; names may be refined without changing the following contract:
 
 ```kotlin
-public data class Utf16Position(val line: Int, val character: Int)
-public data class Utf16Range(val start: Utf16Position, val end: Utf16Position)
+public data class RawUtf16Position(val line: Int, val character: Int)
+public data class RawUtf16Range(val start: RawUtf16Position, val endExclusive: RawUtf16Position)
 
 public sealed interface DocumentChange {
-    public data class Replace(val range: Utf16Range, val text: String) : DocumentChange
+    public data class Replace(val range: RawUtf16Range, val text: String) : DocumentChange
     public data class ReplaceAll(val text: String) : DocumentChange
 }
 
@@ -357,6 +357,10 @@ public fun applyOrderedDocumentChanges(
 ```
 
 **Contract:**
+
+The `Raw` types intentionally accept malformed incoming coordinates so the applicator can reject a batch with its event
+index. They are distinct from structurally validated source-location positions/ranges; converting between those
+contracts must be explicit. `endExclusive` names the half-open endpoint consistently.
 
 1. Apply events in authored order against the evolving string. Never sort them or apply simultaneous-overlap rules.
    `ReplaceAll` resets the current string; subsequent ranges address it. Empty input changes return unchanged text.
