@@ -35,12 +35,15 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.MethodDec
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.PropertyExpressionHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.VariableExpressionHoverStrategy
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -369,7 +372,7 @@ class HoverProvider(
 
         // If standard doc is empty, try source navigation for binary classes
         // This handles both ClassNode and ImportNode (which wraps a class reference)
-        if (doc.isEmpty()) doc = sourceDocumentation(node) ?: doc
+        if (doc.isEmpty()) doc = sourceDocumentation(node, documentUri, snapshot) ?: doc
 
         if (doc.isEmpty()) {
             return baseHover
@@ -400,12 +403,25 @@ class HoverProvider(
         }
     }
 
-    private suspend fun sourceDocumentation(node: ASTNode): Documentation? {
+    private suspend fun sourceDocumentation(
+        node: ASTNode,
+        documentUri: URI,
+        snapshot: CompiledDocumentSnapshot?,
+    ): Documentation? {
         val navigator = sourceNavigator ?: return null
+        val expectedSnapshot = snapshot ?: return null
         val className = extractClassNameForDocumentation(node) ?: return null
-        val classpathUri = compilationService.findClasspathClass(className) ?: return null
         return try {
-            (navigator.navigateToSource(classpathUri, className) as? SourceNavigator.SourceResult.SourceLocation)
+            val context = currentCoroutineContext()
+            val request = compilationService.captureSourceRequestForSnapshot(
+                documentUri,
+                className,
+                expectedSnapshot,
+                checkCancelled = context::ensureActive,
+            ) ?: return null
+            context.ensureActive()
+            (navigator.locate(request.symbol, request.context) as? SourceLookupResult.Located)
+                ?.definition
                 ?.documentation
         } catch (e: Exception) {
             rethrowIfCancellationOrError(e)

@@ -33,12 +33,21 @@ import java.net.URI
 
 class CallHierarchyProvider(private val compilationService: GroovyCompilationService) {
 
-    fun prepareCallHierarchy(params: CallHierarchyPrepareParams): List<CallHierarchyItem> {
+    fun prepareCallHierarchy(params: CallHierarchyPrepareParams): List<CallHierarchyItem> =
+        prepareCallHierarchy(params) {}
+
+    internal fun prepareCallHierarchy(
+        params: CallHierarchyPrepareParams,
+        ensureActive: () -> Unit,
+    ): List<CallHierarchyItem> {
+        ensureActive()
         val uri = URI.create(params.textDocument.uri)
         val source = captureSource(uri) ?: return emptyList()
+        ensureActive()
         val node = source.index.codePointPosition(params.position)?.toGroovyPosition()
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
         val definition = resolveDefinitionWithFallback(node, source.visitor, source.symbolTable)
+        ensureActive()
 
         return when (definition) {
             is MethodNode, is ClassNode -> listOfNotNull(createCallHierarchyItem(definition, uri, source.index))
@@ -142,9 +151,17 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return null
     }
 
-    fun outgoingCalls(params: CallHierarchyOutgoingCallsParams): List<CallHierarchyOutgoingCall> {
+    fun outgoingCalls(params: CallHierarchyOutgoingCallsParams): List<CallHierarchyOutgoingCall> =
+        outgoingCalls(params) {}
+
+    internal fun outgoingCalls(
+        params: CallHierarchyOutgoingCallsParams,
+        ensureActive: () -> Unit,
+    ): List<CallHierarchyOutgoingCall> {
+        ensureActive()
         val uri = URI.create(params.item.uri)
         val source = captureSource(uri) ?: return emptyList()
+        ensureActive()
         val node = source.index.codePointPosition(params.item.selectionRange.start)?.toGroovyPosition()
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
 
@@ -152,9 +169,10 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         val definition = node.resolveToDefinition(source.visitor, source.symbolTable, strict = false) ?: node
         val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
         if (definition is MethodNode) {
-            val callVisitor = CallVisitor(source, uri, callsMap)
+            val callVisitor = CallVisitor(source, uri, callsMap, ensureActive)
             definition.code?.visit(callVisitor)
         }
+        ensureActive()
         return callsMap.values.toList()
     }
 
@@ -162,9 +180,11 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         private val source: CallSource,
         private val uri: URI,
         private val callsMap: MutableMap<String, CallHierarchyOutgoingCall>,
+        private val ensureActive: () -> Unit,
     ) : CodeVisitorSupport() {
 
         private fun addCall(call: Expression) {
+            ensureActive()
             val callee = call.resolveToDefinition(source.visitor, source.symbolTable, strict = false)
             val range = call.toLspRange()?.let(source.index::utf16Range)
             if (callee != null && range != null) {

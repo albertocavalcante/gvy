@@ -481,6 +481,19 @@ class GroovyCompilationService internal constructor(
         checkCancelled: () -> Unit = {},
     ) = sourceRequests.capture(documentUri, binaryName, memberName, checkCancelled)
 
+    /** Capture dependency provenance only if it is from the exact parse used to build a feature result. */
+    internal suspend fun captureSourceRequestForSnapshot(
+        documentUri: URI,
+        binaryName: String,
+        snapshot: CompiledDocumentSnapshot,
+        checkCancelled: () -> Unit = {},
+    ) = sourceRequests.capture(
+        documentUri,
+        binaryName,
+        checkCancelled = checkCancelled,
+        expectedSnapshot = snapshot,
+    )
+
     internal suspend fun recaptureSourceRequest(binaryName: String, descriptor: SourceDocumentDescriptor) =
         sourceRequests.recapture(binaryName, descriptor)
 

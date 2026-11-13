@@ -67,8 +67,16 @@ internal class SourceRequestCapture(
         binaryName: String,
         memberName: String? = null,
         checkCancelled: () -> Unit = {},
+        expectedSnapshot: CompiledDocumentSnapshot? = null,
     ): ResolvedSourceRequest? {
         val environment = environment(uri, checkCancelled = checkCancelled) ?: return null
+        if (
+            expectedSnapshot != null &&
+            (environment.snapshot.parseResult !== expectedSnapshot.parseResult ||
+                environment.snapshot.sourceText != expectedSnapshot.sourceText)
+        ) {
+            return null
+        }
         val selection = select(
             environment,
             binaryName,
