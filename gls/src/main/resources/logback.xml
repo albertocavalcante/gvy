@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <!-- Console appender that outputs to stderr to avoid LSP protocol pollution -->
-    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="STDERR" class="com.github.albertocavalcante.gvy.gls.config.BoundedConsoleAppender">
         <target>System.err</target>
         <encoder class="com.github.albertocavalcante.gvy.gls.config.BoundedLogbackEncoder" />
     </appender>

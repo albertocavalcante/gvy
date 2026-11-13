@@ -9,6 +9,7 @@ import ch.qos.logback.classic.joran.JoranConfigurator
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.spi.LoggingEvent
 import ch.qos.logback.classic.spi.ThrowableProxy
+import ch.qos.logback.classic.util.LogbackMDCAdapter
 import ch.qos.logback.core.OutputStreamAppender
 import ch.qos.logback.core.ConsoleAppender
 import org.junit.jupiter.api.Test
@@ -193,8 +194,7 @@ class BoundedLogbackRenderingTest {
             val failure = OddSignal().apply {
                 stackTrace = arrayOf(StackTraceElement("example.Signal", "run", "Signal.groovy", 7))
             }
-            val input = event("signal", emptyArray()).apply {
-                level = severity
+            val input = event("signal", emptyArray(), severity = severity).apply {
                 setThrowableProxy(ThrowableProxy(failure))
             }
             val text = encoder.encode(input).toString(Charsets.UTF_8)
@@ -239,7 +239,7 @@ class BoundedLogbackRenderingTest {
 
     @Test
     fun `configured appender writes one bounded stderr record and flushes`() {
-        val context = LoggerContext()
+        val context = LoggerContext().apply { mdcAdapter = LogbackMDCAdapter() }
         try {
             JoranConfigurator().apply {
                 this.context = context
@@ -267,7 +267,7 @@ class BoundedLogbackRenderingTest {
 
     @Test
     fun `interrupted slow appender does not leave the writing thread blocked`() {
-        val context = LoggerContext()
+        val context = LoggerContext().apply { mdcAdapter = LogbackMDCAdapter() }
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         var writer: Thread? = null
@@ -328,9 +328,11 @@ class BoundedLogbackRenderingTest {
             setThrowableProxy(ThrowableProxy(failure))
         }
 
+        // Logback constructs the proxy before the encoder boundary.
+        val producerCalls = calls
         val output = encoder.encode(input).toString(Charsets.UTF_8)
 
-        assertEquals(0, calls)
+        assertEquals(producerCalls, calls, "Encoding must not invoke argument or throwable toString")
         assertTrue(output.contains("safe cause"))
         assertTrue(!output.contains("unsafe"))
     }
@@ -350,6 +352,36 @@ class BoundedLogbackRenderingTest {
         assertTrue(bytes.size <= 65_536)
         assertTrue(decoded.contains("[truncated]"))
         assertTrue(decoded.endsWith('\n'))
+    }
+
+    @Test
+    fun `configured synchronous appender never formats arbitrary arguments`() {
+        val context = LoggerContext().apply { mdcAdapter = LogbackMDCAdapter() }
+        var calls = 0
+        val argument = object {
+            override fun toString(): String {
+                calls++
+                return "unsafe argument"
+            }
+        }
+        try {
+            JoranConfigurator().apply {
+                this.context = context
+                doConfigure(assertNotNull(javaClass.classLoader.getResource("logback.xml")))
+            }
+            val appender = assertIs<BoundedConsoleAppender>(
+                context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).getAppender("STDERR"),
+            )
+            val sink = CountingStream()
+            appender.setOutputStream(sink)
+            context.getLogger("com.github.albertocavalcante.gvy.test").error("value {}", argument)
+            assertEquals(0, calls)
+            assertEquals(1, sink.writes)
+            assertEquals(1, sink.flushes)
+            assertTrue(sink.bytes.toString(Charsets.UTF_8).contains("<object>"))
+        } finally {
+            context.stop()
+        }
     }
 
     private class CountingStream : OutputStream() {
@@ -372,18 +404,23 @@ class BoundedLogbackRenderingTest {
         }
     }
 
-    private fun event(message: String, arguments: Array<Any>, thread: String = "main"): LoggingEvent =
+    private fun event(
+        message: String,
+        arguments: Array<Any>,
+        thread: String = "main",
+        severity: Level = Level.ERROR,
+    ): LoggingEvent =
         LoggingEvent().apply {
             loggerName = "com.github.albertocavalcante.gvy.test"
             threadName = thread
-            level = Level.ERROR
+            level = severity
             timeStamp = 1_700_000_000_000
             this.message = message
             argumentArray = arguments
         }
 
     private fun withEncoder(block: (ch.qos.logback.core.encoder.Encoder<ILoggingEvent>) -> Unit) {
-        val context = LoggerContext()
+        val context = LoggerContext().apply { mdcAdapter = LogbackMDCAdapter() }
         try {
             JoranConfigurator().apply {
                 this.context = context
