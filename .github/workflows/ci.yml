@@ -110,6 +110,54 @@ jobs:
               except OSError:
                   return ("unreadable", None)
           
+          def parse_archive(data):
+              import io
+              import pathlib
+              import zipfile
+              import zlib
+          
+              if len(data) > 4 * 1024 * 1024:
+                  return "oversize", None
+              try:
+                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                      entries = archive.infolist()
+                      if len(entries) > 64 or len({item.filename for item in entries}) != len(entries):
+                          return "unsafe_archive", None
+                      for item in entries:
+                          name = item.filename
+                          parts = name.rstrip("/").split("/")
+                          if not name or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in parts):
+                              return "unsafe_archive", None
+                          if ((item.external_attr >> 16) & 0o170000) == 0o120000:
+                              return "unsafe_archive", None
+                      selected = [item for item in entries if item.filename == "junit/TEST-junit-jupiter.xml"]
+                      if len(selected) != 1:
+                          return "report_missing", None
+                      item = selected[0]
+                      if item.file_size > LIMIT:
+                          return "oversize", None
+                      with archive.open(item) as stream:
+                          raw = stream.read(LIMIT + 1)
+                      if len(raw) != item.file_size or len(raw) > LIMIT:
+                          return "malformed", None
+                      if b"<!DOCTYPE" in raw.upper():
+                          return "dtd_rejected", None
+                      return "present", raw
+              except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError, zlib.error):
+                  return "malformed", None
+          
+          def read_jupiter(path):
+              import pathlib
+          
+              try:
+                  with pathlib.Path(path).open("rb") as stream:
+                      data = stream.read(4 * 1024 * 1024 + 1)
+              except FileNotFoundError:
+                  return "missing", None
+              except OSError:
+                  return "unreadable", None
+              return parse_archive(data)
+          
           def classify(log, xml, classname):
               log_state, log_bytes = log
               xml_state, xml_bytes = xml
@@ -117,6 +165,9 @@ jobs:
               codes = [key for key, pattern in PATTERNS.items() if re.search(pattern, text)]
               result = {"log": log_state, "xml": xml_state, "codes": codes or ["unknown"], "cases": []}
               if xml_bytes is None:
+                  return result
+              if b"<!DOCTYPE" in xml_bytes.upper():
+                  result["xml"] = "dtd_rejected"
                   return result
               try:
                   root = ET.fromstring(xml_bytes)
@@ -156,7 +207,14 @@ jobs:
               result = {}
               for module, (target, classname) in modules.items():
                   base = pathlib.Path("bazel-testlogs") / module / target
-                  result[module] = classify(bounded(base / "test.log"), bounded(base / "test.xml"), classname)
+                  generic = bounded(base / "test.xml")
+                  jupiter = read_jupiter(base / "test.outputs" / "outputs.zip")
+                  selected = jupiter if jupiter[0] == "present" else generic
+                  observed = classify(bounded(base / "test.log"), selected, classname)
+                  observed["jupiter"] = jupiter[0]
+                  observed["bazelXml"] = generic[0]
+                  observed["xmlOrigin"] = "jupiter" if jupiter[0] == "present" else "bazel_fallback"
+                  result[module] = observed
               payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": int(status), "cleanupExit": int(cleanup), "modules": result}
               pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
           
@@ -176,7 +234,56 @@ jobs:
           import xml.etree.ElementTree as ET
           import zipfile
 
-          modules = {
+          LIMIT = 256 * 1024
+          def parse_archive(data):
+              import io
+              import pathlib
+              import zipfile
+              import zlib
+          
+              if len(data) > 4 * 1024 * 1024:
+                  return "oversize", None
+              try:
+                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                      entries = archive.infolist()
+                      if len(entries) > 64 or len({item.filename for item in entries}) != len(entries):
+                          return "unsafe_archive", None
+                      for item in entries:
+                          name = item.filename
+                          parts = name.rstrip("/").split("/")
+                          if not name or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in parts):
+                              return "unsafe_archive", None
+                          if ((item.external_attr >> 16) & 0o170000) == 0o120000:
+                              return "unsafe_archive", None
+                      selected = [item for item in entries if item.filename == "junit/TEST-junit-jupiter.xml"]
+                      if len(selected) != 1:
+                          return "report_missing", None
+                      item = selected[0]
+                      if item.file_size > LIMIT:
+                          return "oversize", None
+                      with archive.open(item) as stream:
+                          raw = stream.read(LIMIT + 1)
+                      if len(raw) != item.file_size or len(raw) > LIMIT:
+                          return "malformed", None
+                      if b"<!DOCTYPE" in raw.upper():
+                          return "dtd_rejected", None
+                      return "present", raw
+              except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError, zlib.error):
+                  return "malformed", None
+          
+          def read_jupiter(path):
+              import pathlib
+          
+              try:
+                  with pathlib.Path(path).open("rb") as stream:
+                      data = stream.read(4 * 1024 * 1024 + 1)
+              except FileNotFoundError:
+                  return "missing", None
+              except OSError:
+                  return "unreadable", None
+              return parse_archive(data)
+          
+                    modules = {
               "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
               "jenkins": ("jenkins_test", "com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest"),
           }
@@ -187,13 +294,9 @@ jobs:
           result = []
           for module, (target, classname) in modules.items():
               path = pathlib.Path("bazel-testlogs") / module / target / "test.outputs/outputs.zip"
-              if not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
-                  raise SystemExit("missing or oversized private report archive")
-              with zipfile.ZipFile(path) as archive:
-                  selected = [x for x in archive.infolist() if x.filename == "junit/TEST-junit-jupiter.xml"]
-                  if len(selected) != 1 or selected[0].file_size > 1024 * 1024:
-                      raise SystemExit("missing or oversized private JUnit report")
-                  raw = archive.read(selected[0])
+              state, raw = read_jupiter(path)
+              if state != "present" or raw is None:
+                  raise SystemExit("missing or oversized private JUnit report")
               root = ET.fromstring(raw)
               cases = root.findall(".//testcase")
               if len(cases) != 2 or {x.get("name") for x in cases} != expected:
@@ -246,6 +349,54 @@ jobs:
               except OSError:
                   return ("unreadable", None)
           
+          def parse_archive(data):
+              import io
+              import pathlib
+              import zipfile
+              import zlib
+          
+              if len(data) > 4 * 1024 * 1024:
+                  return "oversize", None
+              try:
+                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                      entries = archive.infolist()
+                      if len(entries) > 64 or len({item.filename for item in entries}) != len(entries):
+                          return "unsafe_archive", None
+                      for item in entries:
+                          name = item.filename
+                          parts = name.rstrip("/").split("/")
+                          if not name or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in parts):
+                              return "unsafe_archive", None
+                          if ((item.external_attr >> 16) & 0o170000) == 0o120000:
+                              return "unsafe_archive", None
+                      selected = [item for item in entries if item.filename == "junit/TEST-junit-jupiter.xml"]
+                      if len(selected) != 1:
+                          return "report_missing", None
+                      item = selected[0]
+                      if item.file_size > LIMIT:
+                          return "oversize", None
+                      with archive.open(item) as stream:
+                          raw = stream.read(LIMIT + 1)
+                      if len(raw) != item.file_size or len(raw) > LIMIT:
+                          return "malformed", None
+                      if b"<!DOCTYPE" in raw.upper():
+                          return "dtd_rejected", None
+                      return "present", raw
+              except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError, zlib.error):
+                  return "malformed", None
+          
+          def read_jupiter(path):
+              import pathlib
+          
+              try:
+                  with pathlib.Path(path).open("rb") as stream:
+                      data = stream.read(4 * 1024 * 1024 + 1)
+              except FileNotFoundError:
+                  return "missing", None
+              except OSError:
+                  return "unreadable", None
+              return parse_archive(data)
+          
           def classify(log, xml, classname):
               log_state, log_bytes = log
               xml_state, xml_bytes = xml
@@ -253,6 +404,9 @@ jobs:
               codes = [key for key, pattern in PATTERNS.items() if re.search(pattern, text)]
               result = {"log": log_state, "xml": xml_state, "codes": codes or ["unknown"], "cases": []}
               if xml_bytes is None:
+                  return result
+              if b"<!DOCTYPE" in xml_bytes.upper():
+                  result["xml"] = "dtd_rejected"
                   return result
               try:
                   root = ET.fromstring(xml_bytes)
@@ -292,7 +446,14 @@ jobs:
               result = {}
               for module, (target, classname) in modules.items():
                   base = pathlib.Path("bazel-testlogs") / module / target
-                  result[module] = classify(bounded(base / "test.log"), bounded(base / "test.xml"), classname)
+                  generic = bounded(base / "test.xml")
+                  jupiter = read_jupiter(base / "test.outputs" / "outputs.zip")
+                  selected = jupiter if jupiter[0] == "present" else generic
+                  observed = classify(bounded(base / "test.log"), selected, classname)
+                  observed["jupiter"] = jupiter[0]
+                  observed["bazelXml"] = generic[0]
+                  observed["xmlOrigin"] = "jupiter" if jupiter[0] == "present" else "bazel_fallback"
+                  result[module] = observed
               payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": int(status), "cleanupExit": int(cleanup), "modules": result}
               pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
           
