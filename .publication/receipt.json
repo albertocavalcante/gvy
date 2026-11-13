@@ -1,6 +1,6 @@
 {
   "base": "dbc590b62c9ed92a846e7dfb3e92a00ffba4bdbd",
-  "mode": "red-only",
+  "mode": "red-green",
   "red": {
     "tree": "a0d3b7c7c31e24e0e6a98f4922ee9a84f5183398",
     "patch": {
@@ -213,5 +213,36 @@
     "capture": "e369b217ddf780fb09744ee23071d4c5818e4fabe4bd137ae8ad2f9dd1ea6b8b",
     "budget": "8fed9039bb2955e2fc2df95f993e50a7e80428113afad4022c1c11f090463ba6",
     "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00"
+  },
+  "green": {
+    "tree": "177c375d35b0fd3e627760eed7dc135320435815",
+    "patch": {
+      "sha256": "791ce5cbbc05e7fd8c90420ba55a3c002cee8667751bc9c8c774753bef535fda",
+      "compressedSha256": "25fc6378a6c868e442ac407b8e8ffb42982784c846d9d22d0bce6ae7ca2d9340",
+      "bytes": 18423,
+      "compressedBytes": 5051
+    },
+    "paths": [
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt",
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt",
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt",
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/SessionResources.kt"
+    ],
+    "classes": [
+      {
+        "name": "PackagedLaunchTest",
+        "count": 48
+      },
+      {
+        "name": "PackagedSessionFactoryTest",
+        "count": 34
+      },
+      {
+        "name": "SessionResourcesTest",
+        "count": 3
+      }
+    ],
+    "failures": []
   }
 }

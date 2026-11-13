@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 # Temporary execution support only. Never merge into main or the product PR.
-name: Launch boundaries failure-first proof
+name: Launch boundaries RED GREEN publication
 on:
   workflow_dispatch:
 permissions:
@@ -54,7 +54,7 @@ jobs:
           # fixed PR head, both compressed and decompressed sizes/SHA-256,
           # helper hashes, exact trees, paths, test names/counts and assertions.
           printf '%s  %s\n' "1e09eb02bd173c9b3e08a5388652aa5e25c8a287962ac4a872b56528b06cda0d" "$proof/validate-receipt.mjs" | sha256sum -c -
-          node "$proof/validate-receipt.mjs" "$receipt" "c9436d0a157030c5dcb5928b2884db81d2c953a25e3284e79b8789375e8cc6a6"
+          node "$proof/validate-receipt.mjs" "$receipt" "db2b05249bfb75b623e556f24dd29ad76e293fae20b34c01b0df004422fea23a"
           for pair in 'phase validate-phase.mjs' 'results check-red.mjs' 'worker review-fix.sh' 'capture bounded-capture.mjs' 'budget evidence-budget.mjs' 'copy bounded-file.mjs'; do
               read -r key file <<< "$pair"
               expected=$(jq -er --arg key "$key" '.helpers[$key]' "$receipt")
@@ -186,7 +186,7 @@ jobs:
           tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
           install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
           echo "$bins" >>"$GITHUB_PATH"
-      - name: Validate reviewed failure-first controls
+      - name: Validate RED GREEN and prepare source commit
         timeout-minutes: 75
         working-directory: candidate
         shell: bash
@@ -216,7 +216,9 @@ jobs:
               test -s "$proof/candidate.bundle"
           fi
           test -s "$proof/receipt.json"
-          jq -e '.exit == 0 and .phase == "complete-red"' "$proof/result.json" >/dev/null
+          expected_phase=complete-red
+          if [[ "$mode" == red-green ]]; then expected_phase=complete; fi
+          jq -e --arg phase "$expected_phase" '.exit == 0 and .phase == $phase' "$proof/result.json" >/dev/null
       - name: Upload candidate and evidence
         timeout-minutes: 5
         if: always()
