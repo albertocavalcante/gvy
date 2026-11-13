@@ -177,10 +177,16 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 if (hasHierarchy(reference.scope) || hasLocalClasses) return null
             }
             val explicit = exposed(reference.spelling)
+            if (hasHierarchy(reference.scope)) {
+                localInCurrentScope(reference)?.let { definition ->
+                    return retainedReference(reference.range, emptyList(), definition)
+                }
+                return null
+            }
             local(reference)?.let { definition ->
                 return retainedReference(reference.range, emptyList(), definition)
             }
-            if (hasLocalClasses || hasHierarchy(reference.scope)) return null
+            if (hasLocalClasses) return null
             if (explicit != null) return retainedReference(reference.range, explicit)
             val candidates = candidateCache.getOrPut(reference.spelling) {
                 val spelling = reference.spelling
@@ -231,6 +237,11 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
             val candidates = owners.map { "$it.${reference.spelling}" } +
                 listOf(qualify(reference.spelling), reference.spelling)
             return candidates.firstNotNullOfOrNull { declarations[it]?.definition }
+        }
+
+        private fun localInCurrentScope(reference: Pending): SourceDefinition? {
+            val owner = reference.scope ?: return null
+            return declarations["${sourceName(owner)}.${reference.spelling}"]?.definition
         }
 
         private fun hasHierarchy(node: ClassNode?): Boolean = generateSequence(node) { it.outerClass }.any { owner ->

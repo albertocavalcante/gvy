@@ -124,6 +124,34 @@ class GroovySourceTypeIndexTest {
     }
 
     @Test
+    fun `an outer local annotation is not chosen ahead of an unknown inherited nested type`() {
+        val source = """
+            class Outer {
+                @interface Mark {}
+                class Model extends Parent {
+                    @Mark void method() {}
+                }
+            }
+        """.trimIndent()
+
+        assertNull(GroovySourceTypeIndex.build(source).at(position(source, "Mark", 1)))
+    }
+
+    @Test
+    fun `a current class annotation remains linkable ahead of its inherited nested types`() {
+        val source = """
+            class Model extends Parent {
+                @interface Mark {}
+                @Mark void method() {}
+            }
+        """.trimIndent()
+        val reference = assertNotNull(GroovySourceTypeIndex.build(source).at(position(source, "Mark", 1)))
+
+        assertNotNull(reference.localDefinition)
+        assertEquals(emptyList(), reference.candidates)
+    }
+
+    @Test
     fun `source comments strings dynamic receivers and value-shadowed annotation arguments do not become type links`() {
         val source = """
             import dependency.Handler
