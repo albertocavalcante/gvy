@@ -62,6 +62,7 @@ kt_library(
         # Logging
         "@maven//:org_slf4j_slf4j_api",
         "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:ch_qos_logback_logback_core",
 
         # CLI - JVM variants
         "@maven//:com_github_ajalt_clikt_clikt_jvm",
