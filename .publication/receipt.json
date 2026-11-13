@@ -2,12 +2,12 @@
   "base": "dbc590b62c9ed92a846e7dfb3e92a00ffba4bdbd",
   "mode": "red-only",
   "red": {
-    "tree": "d2687157b2fbcd3a60168395ebdd943945e46147",
+    "tree": "4c5eebe78e2f0d408b7854cb3bf4443030ee27c2",
     "patch": {
-      "sha256": "ea0078e95127ec231bcb3c96226aae19843567a435e964ab6f2b3fe7ae92d787",
-      "compressedSha256": "2df5ae34a5efebbff7e5ee2e3b9c3c170d4f127e142ede69f4ebdef9a8e83c80",
-      "bytes": 18087,
-      "compressedBytes": 3988
+      "sha256": "f296c465ccd69ac643fd1039ec54345039bf52f552875b3367e810629f324a5b",
+      "compressedSha256": "78b0131b27361829ca0420468c16735f6a83fafa8169ad7a62702bcea2d2aa05",
+      "bytes": 18378,
+      "compressedBytes": 4072
     },
     "paths": [
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
@@ -201,9 +201,7 @@
           "org.opentest4j.AssertionFailedError"
         ],
         "includes": [
-          "explicit launch must ignore unused legacy jar",
-          "PackagedLaunchException",
-          "InvalidPathException"
+          "explicit launch must ignore unused legacy jar"
         ]
       }
     ]
