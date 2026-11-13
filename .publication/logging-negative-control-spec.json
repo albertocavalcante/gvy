@@ -1,0 +1,25 @@
+{
+  "base": "2a762e982c227ee806f3a96cf3d8216bfdee0b4b",
+  "greenTree": "5e2e31237fdd41b1687bc1b02a33c9a4193ce0f6",
+  "negativeTree": "9d8f5a60f947c7c05fde00341c3089523873c7e1",
+  "patchSha256": "9385ed6df36ae869d8c41e1ff6f91351d006fc66ef45dbc739dfc76c09b33b77",
+  "sourceSha256": {
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/DiagnosticsTerminalProtocolTest.kt": "a03107349ab411dbd37edea5967d9e761474fbb594e84141713ba86581881c96"
+  },
+  "totals": {
+    "tests": 4,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0
+  },
+  "expectedFailureNames": [
+    "in-process terminal session restores process logging levels()"
+  ],
+  "expectedPositiveNames": [
+    "harness logger forwards server stderr at INFO()",
+    "server packages log at INFO for in-process runs()",
+    "third party dependencies stay at WARN()"
+  ],
+  "expectedFailureMessage": "In-process terminal session leaked process log levels",
+  "scope": "Only inner restoration receives current levels rather than the captured pre-session levels; regression outer restoration and all session/protocol checks unchanged."
+}

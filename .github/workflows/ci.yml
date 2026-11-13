@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: Diagnostics boundary guard validation
+name: Diagnostics boundary and logging isolation validation
 on:
   workflow_dispatch:
 permissions:
@@ -37,17 +37,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          receipt="$GITHUB_WORKSPACE/support/.publication/receipt.json"
-          base=$(jq -er '.base' "$receipt")
-          tree=$(jq -er '.tree' "$receipt")
-          digest=$(jq -er '.patchSha256' "$receipt")
-          compressed=$(jq -er '.payloadSha256' "$receipt")
-          [[ "$base" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ && "$digest" =~ ^[0-9a-f]{64}$ && "$compressed" =~ ^[0-9a-f]{64}$ ]]
-          printf '%s  %s\n' "$compressed" "$GITHUB_WORKSPACE/support/.publication/payload.patch.gz" | sha256sum -c -
-          [[ "$(stat -c %s "$GITHUB_WORKSPACE/support/.publication/payload.patch.gz")" == "$(jq -er '.payloadBytes' "$receipt")" ]]
-          [[ "$(jq -er '.payloadBytes' "$receipt")" -le 65536 ]]
-          [[ "$(jq -er '.patchBytes' "$receipt")" -le 131072 ]]
-          python3 - "$GITHUB_WORKSPACE/support/.publication/payload.patch.gz" "$RUNNER_TEMP/gvy-reviewed.patch" <<'PYBOUND'
+          receipt="${GITHUB_WORKSPACE:?}/support/.publication/receipt.json"
+          base=$(jq -er '.base' "${receipt}")
+          tree=$(jq -er '.tree' "${receipt}")
+          digest=$(jq -er '.patchSha256' "${receipt}")
+          compressed=$(jq -er '.payloadSha256' "${receipt}")
+          [[ "${base}" =~ ^[0-9a-f]{40}$ && "${tree}" =~ ^[0-9a-f]{40}$ && "${digest}" =~ ^[0-9a-f]{64}$ && "${compressed}" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s  %s\n' "${compressed}" "${GITHUB_WORKSPACE:?}/support/.publication/payload.patch.gz" | sha256sum -c -
+          payload_bytes=$(stat -c %s "${GITHUB_WORKSPACE:?}/support/.publication/payload.patch.gz")
+          expected_payload_bytes=$(jq -er '.payloadBytes' "${receipt}")
+          expected_patch_bytes=$(jq -er '.patchBytes' "${receipt}")
+          [[ "${payload_bytes}" == "${expected_payload_bytes}" ]]
+          [[ "${expected_payload_bytes}" -le 65536 ]]
+          [[ "${expected_patch_bytes}" -le 131072 ]]
+          python3 - "${GITHUB_WORKSPACE:?}/support/.publication/payload.patch.gz" "${RUNNER_TEMP:?}/gvy-reviewed.patch" <<'PYBOUND'
           import gzip, pathlib, sys
           with gzip.open(sys.argv[1], 'rb') as stream:
               data = stream.read(131073)
@@ -55,9 +58,10 @@ jobs:
               raise SystemExit('patch exceeds 128 KiB')
           pathlib.Path(sys.argv[2]).write_bytes(data)
           PYBOUND
-          [[ "$(stat -c %s "$RUNNER_TEMP/gvy-reviewed.patch")" == "$(jq -er '.patchBytes' "$receipt")" ]]
-          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/gvy-reviewed.patch" | sha256sum -c -
-          printf 'base=%s\ntree=%s\npatch=%s\n' "$base" "$tree" "$digest" >>"$GITHUB_OUTPUT"
+          patch_bytes=$(stat -c %s "${RUNNER_TEMP:?}/gvy-reviewed.patch")
+          [[ "${patch_bytes}" == "${expected_patch_bytes}" ]]
+          printf '%s  %s\n' "${digest}" "${RUNNER_TEMP:?}/gvy-reviewed.patch" | sha256sum -c -
+          printf 'base=%s\ntree=%s\npatch=%s\n' "${base}" "${tree}" "${digest}" >>"${GITHUB_OUTPUT:?}"
       - name: Checkout exact pinned base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,18 +77,23 @@ jobs:
           EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
+          base=$(git rev-parse HEAD)
+          [[ "${base}" == "${EXPECTED_BASE:?}" ]]
           git switch -c ci/e2e-diagnostics-publication
-          git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
-          git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
-          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          git apply --check --index "${RUNNER_TEMP:?}/gvy-reviewed.patch"
+          git apply --index "${RUNNER_TEMP:?}/gvy-reviewed.patch"
+          index_tree=$(git write-tree)
+          [[ "${index_tree}" == "${EXPECTED_TREE:?}" ]]
           git diff --exit-code
           git diff --cached --check
-          cp "$GITHUB_WORKSPACE/support/.publication/paths.nul" "$RUNNER_TEMP/expected-paths.nul"
-          [[ "$(sha256sum "$RUNNER_TEMP/expected-paths.nul" | cut -d' ' -f1)" == "$(jq -er '.pathsSha256' "$GITHUB_WORKSPACE/support/.publication/receipt.json")" ]]
-          git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/actual-paths.nul"
-          cmp "$RUNNER_TEMP/expected-paths.nul" "$RUNNER_TEMP/actual-paths.nul"
-          test -z "$(git ls-files --others --exclude-standard)"
+          cp "${GITHUB_WORKSPACE:?}/support/.publication/paths.nul" "${RUNNER_TEMP:?}/expected-paths.nul"
+          paths_sha=$(sha256sum "${RUNNER_TEMP:?}/expected-paths.nul" | cut -d' ' -f1)
+          expected_paths_sha=$(jq -er '.pathsSha256' "${GITHUB_WORKSPACE:?}/support/.publication/receipt.json")
+          [[ "${paths_sha}" == "${expected_paths_sha}" ]]
+          git diff --cached --name-only --diff-filter=ACMRT -z >"${RUNNER_TEMP:?}/actual-paths.nul"
+          cmp "${RUNNER_TEMP:?}/expected-paths.nul" "${RUNNER_TEMP:?}/actual-paths.nul"
+          untracked=$(git ls-files --others --exclude-standard)
+          test -z "${untracked}"
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -109,7 +118,7 @@ jobs:
           set -euo pipefail
           python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
           uv sync --project .reuse --locked
-          echo "$PWD/.reuse/.venv/bin" >>"$GITHUB_PATH"
+          echo "${PWD}/.reuse/.venv/bin" >>"${GITHUB_PATH:?}"
           pnpm --dir editors/code install --frozen-lockfile
       - name: Fetch checksum-pinned hook tools
         shell: bash
@@ -117,41 +126,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          bins="$RUNNER_TEMP/e2e-diagnostics-hook-bin"
-          download="$RUNNER_TEMP/e2e-diagnostics-hook-download"
-          mkdir -p "$bins" "$download"
+          bins="${RUNNER_TEMP:?}/e2e-diagnostics-hook-bin"
+          download="${RUNNER_TEMP:?}/e2e-diagnostics-hook-download"
+          mkdir -p "${bins}" "${download}"
           fetch() {
               local repo="$1" version="$2" asset="$3" digest="$4"
-              gh release download "$version" --repo "$repo" --pattern "$asset" --dir "$download"
-              printf '%s  %s\n' "$digest" "$download/$asset" | sha256sum -c -
+              gh release download "${version}" --repo "${repo}" --pattern "${asset}" --dir "${download}"
+              printf '%s  %s\n' "${digest}" "${download}/${asset}" | sha256sum -c -
           }
           fetch direnv/direnv v2.38.2 direnv.linux-amd64 148820a187930d36ca6a204504e5cdb30d8396cd1a97e64c3b3f10d793c11247
-          install -m 755 "$download/direnv.linux-amd64" "$bins/direnv"
+          install -m 755 "${download}/direnv.linux-amd64" "${bins}/direnv"
           fetch evilmartians/lefthook v2.2.2 lefthook_2.2.2_Linux_x86_64 4fbf89eb7748c6aed84d833ee1a29edac48fae614468ca9a82896ec32f2800b6
-          install -m 755 "$download/lefthook_2.2.2_Linux_x86_64" "$bins/lefthook"
+          install -m 755 "${download}/lefthook_2.2.2_Linux_x86_64" "${bins}/lefthook"
           fetch dprint/dprint 0.64.3 dprint-x86_64-unknown-linux-gnu.zip f71cb7e22d6776439eba168d5cb296092d6413fea7148fe4d70684a2702a4fee
-          unzip -q "$download/dprint-x86_64-unknown-linux-gnu.zip" -d "$download/dprint"
-          install -m 755 "$download/dprint/dprint" "$bins/dprint"
+          unzip -q "${download}/dprint-x86_64-unknown-linux-gnu.zip" -d "${download}/dprint"
+          install -m 755 "${download}/dprint/dprint" "${bins}/dprint"
           fetch mikefarah/yq v4.52.4 yq_linux_amd64 0c4d965ea944b64b8fddaf7f27779ee3034e5693263786506ccd1c120f184e8c
-          install -m 755 "$download/yq_linux_amd64" "$bins/yq"
+          install -m 755 "${download}/yq_linux_amd64" "${bins}/yq"
           fetch koalaman/shellcheck v0.11.0 shellcheck-v0.11.0.linux.x86_64.tar.xz 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
-          tar -xJf "$download/shellcheck-v0.11.0.linux.x86_64.tar.xz" -C "$download"
-          install -m 755 "$download/shellcheck-v0.11.0/shellcheck" "$bins/shellcheck"
+          tar -xJf "${download}/shellcheck-v0.11.0.linux.x86_64.tar.xz" -C "${download}"
+          install -m 755 "${download}/shellcheck-v0.11.0/shellcheck" "${bins}/shellcheck"
           fetch mvdan/sh v3.12.0 shfmt_v3.12.0_linux_amd64 d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea
-          install -m 755 "$download/shfmt_v3.12.0_linux_amd64" "$bins/shfmt"
+          install -m 755 "${download}/shfmt_v3.12.0_linux_amd64" "${bins}/shfmt"
           fetch astral-sh/ruff 0.17.4 ruff-x86_64-unknown-linux-gnu.tar.gz 3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a
-          mkdir "$download/ruff"
-          tar -xzf "$download/ruff-x86_64-unknown-linux-gnu.tar.gz" -C "$download/ruff"
-          install -m 755 "$download/ruff/ruff-x86_64-unknown-linux-gnu/ruff" "$bins/ruff"
+          mkdir "${download}/ruff"
+          tar -xzf "${download}/ruff-x86_64-unknown-linux-gnu.tar.gz" -C "${download}/ruff"
+          install -m 755 "${download}/ruff/ruff-x86_64-unknown-linux-gnu/ruff" "${bins}/ruff"
           fetch rhysd/actionlint v1.7.9 actionlint_1.7.9_linux_amd64.tar.gz 233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4
-          mkdir "$download/actionlint"
-          tar -xzf "$download/actionlint_1.7.9_linux_amd64.tar.gz" -C "$download/actionlint"
-          install -m 755 "$download/actionlint/actionlint" "$bins/actionlint"
+          mkdir "${download}/actionlint"
+          tar -xzf "${download}/actionlint_1.7.9_linux_amd64.tar.gz" -C "${download}/actionlint"
+          install -m 755 "${download}/actionlint/actionlint" "${bins}/actionlint"
           fetch suzuki-shunsuke/ghalint v1.5.4 ghalint_1.5.4_linux_amd64.tar.gz 977555b7142cc057aad4663679772510a9ed3f1687f26f2359d18bb6b67314fe
-          mkdir "$download/ghalint"
-          tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
-          install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
-          echo "$bins" >>"$GITHUB_PATH"
+          mkdir "${download}/ghalint"
+          tar -xzf "${download}/ghalint_1.5.4_linux_amd64.tar.gz" -C "${download}/ghalint"
+          install -m 755 "${download}/ghalint/ghalint" "${bins}/ghalint"
+          echo "${bins}" >>"${GITHUB_PATH:?}"
       - name: Run canonical license checks and retain statuses
         working-directory: candidate
         shell: bash
@@ -193,35 +202,44 @@ jobs:
           git config user.name 'Alberto Cavalcante'
           git config user.email 'alberto@cavalcante.uk'
           git diff --exit-code
-          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          index_tree=$(git write-tree)
+          [[ "${index_tree}" == "${EXPECTED_TREE:?}" ]]
           direnv allow
           direnv exec . java -version
           pnpm --dir editors/code run compile
           pnpm --dir editors/code test
           editors/code/node_modules/.bin/prettier --check editors/code/client/src/test/integration/implementation.test.ts
           candidate_sha=$(git rev-parse HEAD)
-          gradle_evidence="$RUNNER_TEMP/gvy-preparation-gradle-evidence"
-          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
-              --report-root "$gradle_evidence" --producer preparation-lint-fix \
+          gradle_evidence="${RUNNER_TEMP:?}/gvy-preparation-gradle-evidence"
+          GITHUB_SHA="${candidate_sha}" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "${gradle_evidence}" --producer preparation-lint-fix \
               lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           git diff --exit-code
-          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
-              --report-root "$gradle_evidence" --producer preparation-terminal-compile \
-              :gls:compileTestKotlin :tests:compileE2eTestKotlin --no-build-cache \
+          index_tree=$(git write-tree)
+          [[ "${index_tree}" == "${EXPECTED_TREE:?}" ]]
+          GITHUB_SHA="${candidate_sha}" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "${gradle_evidence}" --producer preparation-terminal-compile \
+              :gls:compileTestKotlin :tests:compileE2eTestKotlin --no-build-cache -PtestJavaVersion=17 \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           git diff --exit-code
-          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          boundary_script="$GITHUB_WORKSPACE/support/.publication/boundary-controls.sh"
-          printf '%s  %s\n' '248754550225075eecbee82d36982e086483cebfee130c6caaccb9c459f32c11' "$boundary_script" | sha256sum -c -
-          bash "$boundary_script" "$EXPECTED_TREE" \
-              "$GITHUB_WORKSPACE/support/.publication/negative-control.patch" \
-              "$GITHUB_WORKSPACE/support/.publication/negative-control-spec.json" \
-              "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof"
-          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
-              --report-root "$gradle_evidence" --producer preparation-terminal-native \
+          index_tree=$(git write-tree)
+          [[ "${index_tree}" == "${EXPECTED_TREE:?}" ]]
+          boundary_script="${GITHUB_WORKSPACE:?}/support/.publication/boundary-controls.sh"
+          printf '%s  %s\n' 'fafe0fcf0eda27cb382c5c952529ac4338678df8ae3d79f8db3d427435d453f7' "${boundary_script}" | sha256sum -c -
+          bash "${boundary_script}" "${EXPECTED_TREE:?}" \
+              "${GITHUB_WORKSPACE:?}/support/.publication/negative-control.patch" \
+              "${GITHUB_WORKSPACE:?}/support/.publication/negative-control-spec.json" \
+              "${RUNNER_TEMP:?}/gvy-diagnostics-boundary-red-proof"
+          logging_boundary_script="${GITHUB_WORKSPACE:?}/support/.publication/logging-boundary-controls.sh"
+          printf '%s  %s\n' 'e02da84e6973463e42a2a98979f8e2b83cd197a735b3d5c44164c1c5e282b7d7' "${logging_boundary_script}" | sha256sum -c -
+          GITHUB_SHA="${candidate_sha}" bash "${logging_boundary_script}" "${EXPECTED_TREE:?}" \
+              "${GITHUB_WORKSPACE:?}/support/.publication/logging-negative-control.patch" \
+              "${GITHUB_WORKSPACE:?}/support/.publication/logging-negative-control-spec.json" \
+              "${RUNNER_TEMP:?}/gvy-diagnostics-logging-red-proof"
+          GITHUB_SHA="${candidate_sha}" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "${gradle_evidence}" --producer preparation-terminal-native \
               :gls:test --no-build-cache --info \
               --tests '*.DiagnosticsRequestHandlerTest' \
               --tests '*.DiagnosticsRequestRegistrationTest' \
@@ -229,18 +247,21 @@ jobs:
               --tests '*.RuntimeFactsWireTest' \
               --tests '*.ParentProcessWatchdogTest' \
               :tests:e2eTest --tests '*.DiagnosticsTerminalProtocolTest' \
+              --tests '*.LoggingConfigTest' --tests '*.CustomRequestMetadataTest' \
+              -Pe2eParallelForks=1 -PtestJavaVersion=17 \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
-          native_reports=("$gradle_evidence"/preparation-terminal-native-*/console.log)
+          native_reports=("${gradle_evidence}"/preparation-terminal-native-*/console.log)
           [[ "${#native_reports[@]}" -eq 1 && -f "${native_reports[0]}" ]]
-          cp "${native_reports[0]}" "$RUNNER_TEMP/gvy-diagnostics-native.log"
-          python3 - "$RUNNER_TEMP/gvy-positive-identities.json" <<'PYPOSITIVE'
+          cp "${native_reports[0]}" "${RUNNER_TEMP:?}/gvy-diagnostics-native.log"
+          python3 - "${RUNNER_TEMP:?}/gvy-positive-identities.json" "${RUNNER_TEMP:?}/gvy-diagnostics-native.log" <<'PYPOSITIVE'
           import hashlib, json, pathlib, xml.etree.ElementTree as ET, sys
           paths = list(pathlib.Path('gls/build/test-results/test').glob('TEST-*.xml'))
           paths += list(pathlib.Path('tests/build/test-results/e2eTest').glob('TEST-*.xml'))
           expected = {'ParentProcessWatchdogTest': 10, 'RuntimeFactsWireTest': 2,
               'DiagnosticsRequestHandlerTest': 47, 'DiagnosticsOrchestratorTest': 13,
-              'DiagnosticsRequestRegistrationTest': 3, 'DiagnosticsTerminalProtocolTest': 6}
+              'DiagnosticsRequestRegistrationTest': 3, 'DiagnosticsTerminalProtocolTest': 7,
+              'LoggingConfigTest': 3, 'CustomRequestMetadataTest': 58}
           observed, rows = {}, []
           for path in paths:
               assert path.stat().st_size <= 1048576
@@ -254,58 +275,71 @@ jobs:
               assert all(not case.findall('failure') and not case.findall('error') and not case.findall('skipped') for case in cases)
               observed[name] = hashlib.sha256(path.read_bytes()).hexdigest()
               rows += [(case.attrib['classname'], case.attrib['name']) for case in cases]
-          assert set(observed) == set(expected) and len(rows) == 81 and len(set(rows)) == 81
-          pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(executed=81, uniqueIdentities=81, reports=observed), indent=2) + '\n')
+          assert set(observed) == set(expected) and len(rows) == 143 and len(set(rows)) == 143
+          log = pathlib.Path(sys.argv[2]).read_text()
+          task_headers = {}
+          for task in (':gls:test', ':tests:e2eTest'):
+              headers = [line for line in log.splitlines() if line == '> Task ' + task or line.startswith('> Task ' + task + ' ')]
+              assert headers and all(line == '> Task ' + task for line in headers), (task, headers)
+              task_headers[task] = len(headers)
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(executed=143, uniqueIdentities=143, reports=observed, bareTaskHeaders=task_headers), indent=2) + '\n')
           PYPOSITIVE
           git diff --exit-code
-          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/gvy-staged-paths"
+          index_tree=$(git write-tree)
+          [[ "${index_tree}" == "${EXPECTED_TREE:?}" ]]
+          git diff --cached --name-only --diff-filter=ACMRT -z >"${RUNNER_TEMP:?}/gvy-staged-paths"
           while IFS= read -r -d '' staged_file; do
-              [[ -f "$staged_file" ]] || continue
+              [[ -f "${staged_file}" ]] || continue
               first_line=''
-              IFS= read -r first_line <"$staged_file" || true
-              case "$staged_file:$first_line" in
-                  *.zsh:*) zsh -n "$staged_file" ;;
+              IFS= read -r first_line <"${staged_file}" || true
+              case "${staged_file}:${first_line}" in
+                  *.zsh:*) zsh -n "${staged_file}" ;;
                   *.sh:* | .envrc:* | *:'#!'*bash* | *:'#!'*'/sh'*)
-                      shellcheck --rcfile tools/lint/shellcheckrc "$staged_file"
-                      shfmt -i 4 -ci -d "$staged_file"
-                      bash -n "$staged_file"
+                      shellcheck --rcfile tools/lint/shellcheckrc "${staged_file}"
+                      shfmt -i 4 -ci -d "${staged_file}"
+                      bash -n "${staged_file}"
                       ;;
                   *) ;;
               esac
-          done <"$RUNNER_TEMP/gvy-staged-paths"
-          git commit -m 'feat(lsp): expose version-bound diagnostics completion' 2>&1 | tee "$RUNNER_TEMP/gvy-commit-hooks.log"
+          done <"${RUNNER_TEMP:?}/gvy-staged-paths"
+          git commit -m 'feat(lsp): expose version-bound diagnostics completion' 2>&1 | tee "${RUNNER_TEMP:?}/gvy-commit-hooks.log"
           node tools/ci/check-gradle-diagnostics.mjs \
-              --log "$RUNNER_TEMP/gvy-commit-hooks.log" --exit-code 0 --capture-exit-code 0 \
+              --log "${RUNNER_TEMP:?}/gvy-commit-hooks.log" --exit-code 0 --capture-exit-code 0 \
               --producer preparation-hooks --baseline tools/ci/gradle-diagnostics.json \
-              --report "$RUNNER_TEMP/gvy-hook-diagnostics" --root "$PWD"
-          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
-          [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
+              --report "${RUNNER_TEMP:?}/gvy-hook-diagnostics" --root "${PWD}"
+          parent=$(git rev-parse HEAD^)
+          head_tree=$(git rev-parse 'HEAD^{tree}')
+          [[ "${parent}" == "${EXPECTED_BASE:?}" ]]
+          [[ "${head_tree}" == "${EXPECTED_TREE:?}" ]]
           git diff --exit-code && git diff --cached --quiet
-          test -z "$(git status --porcelain --untracked-files=all)"
-          mkdir "$RUNNER_TEMP/gvy-publication-proof"
-          cp -R "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof" "$RUNNER_TEMP/gvy-publication-proof/red-negative"
-          cp "$RUNNER_TEMP/gvy-positive-identities.json" "$RUNNER_TEMP/gvy-publication-proof/positive-identities.json"
-          cp -R "$gradle_evidence" "$RUNNER_TEMP/gvy-publication-proof/gradle-evidence"
-          cp -R "$RUNNER_TEMP/gvy-license-evidence" "$RUNNER_TEMP/gvy-publication-proof/license-evidence"
-          cp -R "$RUNNER_TEMP/gvy-hook-diagnostics" "$RUNNER_TEMP/gvy-publication-proof/hook-diagnostics"
-          git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
-          git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
-          cp "$RUNNER_TEMP/gvy-commit-hooks.log" "$RUNNER_TEMP/gvy-publication-proof/"
-          cp "$RUNNER_TEMP/gvy-diagnostics-native.log" "$RUNNER_TEMP/gvy-publication-proof/"
+          status=$(git status --porcelain --untracked-files=all)
+          test -z "${status}"
+          mkdir "${RUNNER_TEMP:?}/gvy-publication-proof"
+          cp -R "${RUNNER_TEMP:?}/gvy-diagnostics-boundary-red-proof" "${RUNNER_TEMP:?}/gvy-publication-proof/red-negative"
+          cp -R "${RUNNER_TEMP:?}/gvy-diagnostics-logging-red-proof" "${RUNNER_TEMP:?}/gvy-publication-proof/logging-red-negative"
+          cp "${RUNNER_TEMP:?}/gvy-positive-identities.json" "${RUNNER_TEMP:?}/gvy-publication-proof/positive-identities.json"
+          cp -R "${gradle_evidence}" "${RUNNER_TEMP:?}/gvy-publication-proof/gradle-evidence"
+          cp -R "${RUNNER_TEMP:?}/gvy-license-evidence" "${RUNNER_TEMP:?}/gvy-publication-proof/license-evidence"
+          cp -R "${RUNNER_TEMP:?}/gvy-hook-diagnostics" "${RUNNER_TEMP:?}/gvy-publication-proof/hook-diagnostics"
+          git bundle create "${RUNNER_TEMP:?}/gvy-publication-proof/candidate.bundle" HEAD "^${EXPECTED_BASE:?}"
+          git bundle verify "${RUNNER_TEMP:?}/gvy-publication-proof/candidate.bundle"
+          cp "${RUNNER_TEMP:?}/gvy-commit-hooks.log" "${RUNNER_TEMP:?}/gvy-publication-proof/"
+          cp "${RUNNER_TEMP:?}/gvy-diagnostics-native.log" "${RUNNER_TEMP:?}/gvy-publication-proof/"
           for report_dir in gls/build/test-results/test tests/build/test-results/e2eTest; do
-              test -d "$report_dir"
+              test -d "${report_dir}"
+              find "${report_dir}" -maxdepth 1 -type f -name 'TEST-*.xml' -print0 >"${RUNNER_TEMP:?}/gvy-report-files.nul"
               while IFS= read -r -d '' report_file; do
-                  mkdir -p "$RUNNER_TEMP/gvy-publication-proof/junit/$(dirname "$report_file")"
-                  cp "$report_file" "$RUNNER_TEMP/gvy-publication-proof/junit/$report_file"
-              done < <(find "$report_dir" -maxdepth 1 -type f -name 'TEST-*.xml' -print0)
+                  mkdir -p "${RUNNER_TEMP:?}/gvy-publication-proof/junit/$(dirname "${report_file}")"
+                  cp "${report_file}" "${RUNNER_TEMP:?}/gvy-publication-proof/junit/${report_file}"
+              done <"${RUNNER_TEMP:?}/gvy-report-files.nul"
           done
-          cp "$RUNNER_TEMP/gvy-staged-paths" "$RUNNER_TEMP/gvy-publication-proof/staged-paths.nul"
-          jq -n --arg base "$EXPECTED_BASE" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA" \
-              --arg head "$(git rev-parse HEAD)" --arg support "$GITHUB_SHA" \
-              '{base:$base,tree:$tree,patchSha256:$patch,head:$head,supportHead:$support}' \
-              >"$RUNNER_TEMP/gvy-publication-proof/receipt.json"
-          (cd "$RUNNER_TEMP/gvy-publication-proof" && sha256sum candidate.bundle >bundle.sha256)
+          cp "${RUNNER_TEMP:?}/gvy-staged-paths" "${RUNNER_TEMP:?}/gvy-publication-proof/staged-paths.nul"
+          publication_head=$(git rev-parse HEAD)
+          jq -n --arg base "${EXPECTED_BASE:?}" --arg tree "${EXPECTED_TREE:?}" --arg patch "${PATCH_SHA:?}" \
+              --arg head "${publication_head}" --arg support "${GITHUB_SHA:?}" \
+              '{base:${base},tree:${tree},patchSha256:${patch},head:${head},supportHead:${support}}' \
+              >"${RUNNER_TEMP:?}/gvy-publication-proof/receipt.json"
+          (cd "${RUNNER_TEMP:?}/gvy-publication-proof" && sha256sum candidate.bundle >bundle.sha256)
       - name: Upload candidate and evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -331,6 +365,10 @@ jobs:
             ${{ runner.temp }}/gvy-positive-identities.json
             ${{ runner.temp }}/gvy-diagnostics-native.log
             ${{ runner.temp }}/gvy-diagnostics-boundary-red-proof/
+            ${{ runner.temp }}/gvy-diagnostics-logging-red-proof/
+            support/.publication/logging-negative-control-spec.json
+            support/.publication/logging-negative-control.patch
+            support/.publication/logging-boundary-controls.sh
             ${{ runner.temp }}/gvy-preparation-gradle-evidence/
             ${{ runner.temp }}/gvy-hook-diagnostics/
             ${{ runner.temp }}/gvy-commit-hooks.log

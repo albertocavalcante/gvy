@@ -1,0 +1,11 @@
+diff --git a/tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/DiagnosticsTerminalProtocolTest.kt b/tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/DiagnosticsTerminalProtocolTest.kt
+index 0fe1e63e7..05b9a7786 100644
+--- a/tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/DiagnosticsTerminalProtocolTest.kt
++++ b/tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/DiagnosticsTerminalProtocolTest.kt
+@@ -92,5 +92,5 @@ class DiagnosticsTerminalProtocolTest {
+             verifyTransportSession(mode, invalidVersion)
+         } finally {
+-            restoreProcessLogLevels(saved)
++            restoreProcessLogLevels(saved.keys.associateWith { it.level })
+         }
+     }
