@@ -57,11 +57,13 @@ unset SDKMAN_DIR JAVA_HOME
 [[ -z "${GVY_ENVRC_TEST_SDKMAN_DIR}" ]] || SDKMAN_DIR="${GVY_ENVRC_TEST_SDKMAN_DIR}"
 [[ -z "${GVY_ENVRC_TEST_JAVA_HOME}" ]] || export JAVA_HOME="${GVY_ENVRC_TEST_JAVA_HOME}"
 PATH_add() { :; }
+# An if chain, not case: bash 3.2 misparses case labels inside a heredoc in $(...).
 brew() {
-    case "$2" in
-    openjdk@17) printf '%s\n' "${GVY_ENVRC_TEST_JDK_PREFIX}" ;;
-    *) printf '%s\n' "${PWD}/missing-brew" ;;
-    esac
+    if [[ "$2" == openjdk@17 ]]; then
+        printf '%s\n' "${GVY_ENVRC_TEST_JDK_PREFIX}"
+    else
+        printf '%s\n' "${PWD}/missing-brew"
+    fi
 }
 source "$1"
 if [[ "${JAVA_HOME:-}" != "${GVY_ENVRC_TEST_EXPECTED}" ]]; then
