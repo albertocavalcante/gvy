@@ -16,17 +16,8 @@ class CompilerSourceRanges(private val source: String) {
     private val groovyLineStarts = if (available) {
         buildList {
             add(0)
-            var offset = 0
-            while (offset < source.length) {
-                when (source[offset]) {
-                    '\r' -> {
-                        if (source.getOrNull(offset + 1) == '\n') offset++
-                        add(offset + 1)
-                    }
-                    '\n' -> add(offset + 1)
-                }
-                offset++
-            }
+            // The Groovy lexer (ANTLR) advances its line counter on LF only; a bare CR stays inside the line.
+            source.forEachIndexed { offset, char -> if (char == '\n') add(offset + 1) }
         }.toIntArray()
     } else {
         IntArray(0)

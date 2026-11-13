@@ -48,12 +48,14 @@ class CompilerSourceRangesTest {
     }
 
     @Test
-    fun `bare CR maps to a new compiler source line and excludes line endings`() {
-        val ranges = CompilerSourceRanges("first\rsecond")
-        val result = ranges.range(node(line = 2, startColumn = 1, endColumn = 7))
+    fun `bare CR stays inside one compiler line and trailing line endings are excluded`() {
+        val ranges = CompilerSourceRanges("first\rsecond\r\nthird")
+        val result = ranges.range(node(line = 1, startColumn = 7, endColumn = 13))
 
         assertEquals(ParserRange(ParserPosition(1, 0), ParserPosition(1, 6)), result)
         assertEquals("second", ranges.text(requireNotNull(result)))
+        assertEquals(ParserRange(ParserPosition(2, 0), ParserPosition(2, 5)), ranges.range(node(2, 1, 6)))
+        assertNull(ranges.range(node(3, 1, 2)))
     }
 
     private fun node(line: Int = 1, startColumn: Int, endColumn: Int): ASTNode = ASTNode().apply {
