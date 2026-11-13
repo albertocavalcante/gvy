@@ -56,25 +56,30 @@
       "id": "coursier-gmm",
       "issue": "https://github.com/albertocavalcante/gvy/issues/1029",
       "responsibleScope": "gvy Bazel dependency maintainers",
-      "lastVerified": "2026-11-11",
+      "lastVerified": "2026-11-13",
       "reviewDue": "2026-11-18",
       "reason": "Use Coursier 2.1.25-M23 to obtain GMM support absent from the bundled stable 2.1.24.",
       "upstreamStatus": "Stable Coursier 2.1.26 exists; upstream rules_jvm_external 7.2 still bundles 2.1.24. The old milestone-only availability claim is obsolete.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. The reviewed GMM source fingerprint covers the entire canonical maven.install argument body, including current selected artifact versions, exclusions, resolver and options; dependency-list changes invalidate this graph-specific review. This remains static drift detection, not universal resolver validation.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. The reviewed GMM source fingerprint covers the entire canonical maven.install argument body, including current selected artifact versions, exclusions, resolver and options; dependency-list changes invalidate this graph-specific review. This remains static drift detection, not universal resolver validation. Local source refresh for PR #1939 at 1e437e04676bd3bf4f3033e392d7a2b3407ddf16 adds JSpecify 1.0.0 and Open Test Reporting SPI 0.2.4 to the Maven argument body. Primary reporting/SPI POMs and artifact checksums were inspected for this runtime closure. Hosted preparation 43392266379 passes the three scoped repository queries in update then error lock mode, Buildifier, root lint, licensing and ordinary hooks. The two direct no-test-result-cache parity target invocations completed successfully in run 43394831060, using a witness with the exact five reporter product blobs; original named XML/receipt custody review is still pending local resource admission. Full publication CI stopped at the expected source-fingerprint drift and must run again after this record update. This bounded refresh is not whole-production-graph, POM or alternate-Coursier equivalence, and does not re-evaluate the historical upstream candidate observations.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
         "https://github.com/albertocavalcante/gvy/issues/1029",
-        "https://github.com/albertocavalcante/gvy/pull/1642"
+        "https://github.com/albertocavalcante/gvy/pull/1642",
+        "https://github.com/albertocavalcante/gvy/pull/1939",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43392266379",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43394831060",
+        "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-reporting/6.0.2/junit-platform-reporting-6.0.2.pom",
+        "https://repo.maven.apache.org/maven2/org/opentest4j/reporting/open-test-reporting-tooling-spi/0.2.4/open-test-reporting-tooling-spi-0.2.4.pom"
       ],
       "nextAction": "Compare stable Coursier GMM and current variant selection on the same dependency graph; validate metadata-only modules and generated targets.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
       "sources": [
         {
           "id": "MODULE.bazel:maven.install:maven:gmm",
-          "sha256": "b15f2d2622c4820d8097c538fa472418a5fcccc8e4d376c74473b8c7281221fe"
+          "sha256": "85d6c57fc2110879a9f900ebb09b822819de98c8ba92499fee0c6bf9588a9bfd"
         },
         {
           "id": "MODULE.bazel:single_version_override:rules_jvm_external",
@@ -306,21 +311,27 @@
       "id": "junit-downloads",
       "issue": "https://github.com/albertocavalcante/gvy/issues/1621",
       "responsibleScope": "gvy Bazel dependency maintainers",
-      "lastVerified": "2026-11-11",
+      "lastVerified": "2026-11-13",
       "reviewDue": "2026-11-18",
-      "reason": "Historical GMM generated Jupiter/Platform dependency cycles; eight direct JUnit 6.0.2 jars and handwritten targets bypass those graphs.",
+      "reason": "Historical GMM generated Jupiter/Platform dependency cycles; nine direct JUnit 6.0.2 jars and handwritten targets now include the legacy XML reporting runtime. The original eight Maven override declarations remain.",
       "upstreamStatus": "Matching upstream report/fix status for these exact cycles was not established by this audit. Stable resolver integration is pending, not known to fail; no gvy upstream submission was made.",
       "upstreamTrigger": "Released resolver candidate resolves the JUnit graph without historical cycle edges.",
-      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. Local source refresh for PR #1939 at 1e437e04676bd3bf4f3033e392d7a2b3407ddf16 adds the SHA-pinned JUnit Platform reporting 6.0.2 JAR and explicitly names the unused extension context parameter. The reporting JAR (SHA-256 34fd2fb625203ec62d61b72d0648ce1cb9609ab3ba04b9f13171aad20bb65a14), Java 17 listener bytecode, primary POM closure and SPI 0.2.4 checksums were checked against Maven Central. Hosted preparation 43392266379 passes scoped update/error resolution, generated JUnit lock entry, Buildifier, root lint, licensing and ordinary hooks. Run 43394831060 completed the two direct parity targets with test-result cache disabled and exact product/witness five-blob equality; original named XML/receipt custody review remains pending local resource admission. Full publication CI must be rerun after this fingerprint refresh. No released-resolver replacement integration, production dependency-graph equivalence or removal of the eight overrides is claimed.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
         "https://github.com/albertocavalcante/gvy/issues/1029",
         "https://github.com/albertocavalcante/gvy/issues/1621",
-        "https://github.com/albertocavalcante/gvy/pull/1642"
+        "https://github.com/albertocavalcante/gvy/pull/1642",
+        "https://github.com/albertocavalcante/gvy/pull/1939",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43392266379",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43394831060",
+        "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-reporting/6.0.2/junit-platform-reporting-6.0.2.jar.sha256",
+        "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-reporting/6.0.2/junit-platform-reporting-6.0.2.pom",
+        "https://repo.maven.apache.org/maven2/org/opentest4j/reporting/open-test-reporting-tooling-spi/0.2.4/open-test-reporting-tooling-spi-0.2.4.pom"
       ],
-      "nextAction": "Compare published 6.0.2 module/POM dependencies with resolver output; run discovery/engine execution without eight overrides.",
+      "nextAction": "Compare all nine published 6.0.2 module/POM dependencies, including reporting, with resolver output; run discovery, engine execution and legacy XML reporting without the eight Maven overrides. Complete fresh publication CI and original named-witness custody review for #1939; evaluate replacement resolver candidates separately.",
       "removalCriteria": "Acyclic correct Linux/macOS graph, required runtime jars and representative tests pass; remove eight overrides/custom extension/duplicate versions and retain graph regression.",
       "sources": [
         {
@@ -357,7 +368,7 @@
         },
         {
           "id": "tools/build_defs/junit.bzl:direct-download",
-          "sha256": "03228bce1c24c9594ed3e9783a310abc68d249879f78f70f0356efef58c56945"
+          "sha256": "ebe77d86b7e2ea011ec9ee6cb95bc93c4df62d00f11e207cdb55ef038561f038"
         }
       ]
     },
