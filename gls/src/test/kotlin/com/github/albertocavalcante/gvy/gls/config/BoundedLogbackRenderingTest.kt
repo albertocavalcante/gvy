@@ -114,6 +114,20 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
+    fun `unconsumed escaped placeholder tails remain literal`() = withEncoder { encoder ->
+        val tail = """literal \{} and \\{}"""
+        val withoutArguments = listOf<Array<Any>?>(null, emptyArray())
+
+        for (arguments in withoutArguments) {
+            val output = encoder.encode(event(tail, arguments)).toString(Charsets.UTF_8)
+            assertTrue(output.endsWith(" -- $tail\n"))
+        }
+
+        val output = encoder.encode(event("{} $tail", arrayOf("value"))).toString(Charsets.UTF_8)
+        assertTrue(output.endsWith(" -- value $tail\n"))
+    }
+
+    @Test
     fun `a url split at the input scan boundary never exposes its userinfo`() = withEncoder { encoder ->
         val userinfoPrefix = "https://SECRET"
         val input = "p".repeat(16_384 - userinfoPrefix.length) + userinfoPrefix + "@repo.example/path"
@@ -406,7 +420,7 @@ class BoundedLogbackRenderingTest {
 
     private fun event(
         message: String,
-        arguments: Array<Any>,
+        arguments: Array<Any>?,
         thread: String = "main",
         severity: Level = Level.ERROR,
     ): LoggingEvent =

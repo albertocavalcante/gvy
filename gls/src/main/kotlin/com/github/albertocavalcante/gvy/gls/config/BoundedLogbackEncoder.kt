@@ -203,6 +203,7 @@ private class MessageFormatter(private val template: String, private val argumen
 
     private fun consume() {
         when {
+            !hasRemainingArgument() -> buffer.append(template[index++])
             template.startsWith(DOUBLE_ESCAPED_PLACEHOLDER, index) -> {
                 append("\\")
                 appendArgument()
@@ -219,6 +220,8 @@ private class MessageFormatter(private val template: String, private val argumen
             else -> buffer.append(template[index++])
         }
     }
+
+    private fun hasRemainingArgument(): Boolean = arguments != null && argument < arguments.size
 
     private fun appendArgument() {
         if (arguments != null && argument < arguments.size && argument < ARGUMENT_LIMIT) {
