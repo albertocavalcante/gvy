@@ -138,6 +138,20 @@ class GroovySourceTypeIndexTest {
     }
 
     @Test
+    fun `a dotted outer nested annotation is not chosen ahead of an unknown inherited type`() {
+        val source = """
+            class Outer {
+                static class Qualifier { @interface Mark {} }
+                class Model extends Parent {
+                    @Qualifier.Mark void method() {}
+                }
+            }
+        """.trimIndent()
+
+        assertNull(GroovySourceTypeIndex.build(source).at(position(source, "Mark", 1)))
+    }
+
+    @Test
     fun `a current class annotation remains linkable ahead of its inherited nested types`() {
         val source = """
             class Model extends Parent {

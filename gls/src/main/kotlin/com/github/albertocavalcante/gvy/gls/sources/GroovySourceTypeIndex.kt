@@ -165,6 +165,7 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
             val firstName = reference.spelling.substringBefore('.')
             if (firstName in typeVariables) return null
             val unqualified = '.' !in reference.spelling
+            val packageQualified = isPackageQualified(reference)
             if (reference.kind == Kind.ARGUMENT) {
                 // Only an imported class prefix with no competing value namespace is safe in an expression.
                 if (
@@ -175,19 +176,22 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 ) {
                     return null
                 }
-                if ((unqualified && hasHierarchy(reference.scope)) || hasLocalClasses) return null
+                if ((unqualified && hasHierarchy(reference.scope)) || (hasLocalClasses && !packageQualified)) {
+                    return null
+                }
             }
             val explicit = exposed(reference.spelling)
-            if (unqualified && hasHierarchy(reference.scope)) {
+            if (hasHierarchy(reference.scope)) {
                 localInCurrentScope(reference)?.let { definition ->
                     return retainedReference(reference.range, emptyList(), definition)
                 }
-                return null
+                if (!packageQualified) return null
+            } else {
+                local(reference)?.let { definition ->
+                    return retainedReference(reference.range, emptyList(), definition)
+                }
             }
-            local(reference)?.let { definition ->
-                return retainedReference(reference.range, emptyList(), definition)
-            }
-            if (hasLocalClasses) return null
+            if (hasLocalClasses && !packageQualified) return null
             if (explicit != null) return retainedReference(reference.range, explicit)
             val candidates = candidateCache.getOrPut(reference.spelling) {
                 val spelling = reference.spelling
@@ -243,6 +247,15 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
         private fun localInCurrentScope(reference: Pending): SourceDefinition? {
             val owner = reference.scope ?: return null
             return declarations["${sourceName(owner)}.${reference.spelling}"]?.definition
+        }
+
+        private fun isPackageQualified(reference: Pending): Boolean {
+            val firstName = reference.spelling.substringBefore('.')
+            // Lowercase-leading dotted names are package paths; uppercase-leading paths may be nested types.
+            return '.' in reference.spelling &&
+                firstName.firstOrNull()?.isLowerCase() == true &&
+                firstName !in imports &&
+                firstName !in staticImports
         }
 
         private fun hasHierarchy(node: ClassNode?): Boolean = generateSequence(node) { it.outerClass }.any { owner ->
