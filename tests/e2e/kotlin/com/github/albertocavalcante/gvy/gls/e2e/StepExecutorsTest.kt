@@ -101,6 +101,61 @@ class StepExecutorsTest {
     }
 
     @Test
+    fun `both wait modes reject invalid interpolated path regex and missing variable before waiting`() {
+        context.variables["path"] = JsonPrimitive("$[?(")
+        context.variables["pattern"] = JsonPrimitive("(")
+        val checks = listOf(
+            JsonCheck("{{path}}", JsonExpectation()) to "Invalid JSONPath",
+            JsonCheck(
+                "$",
+                JsonExpectation(type = ExpectationType.MATCHES_REGEX, value = JsonPrimitive("{{pattern}}")),
+            ) to "Invalid regex",
+            JsonCheck("{{missing}}", JsonExpectation()) to "Unknown variable",
+        )
+        for (optional in listOf(false, true)) {
+            for ((check, message) in checks) {
+                val step = ScenarioStep.WaitNotification(
+                    method = "test/notification",
+                    checks = listOf(check),
+                    optional = optional,
+                    timeoutMs = 0,
+                )
+                assertThatThrownBy { WaitNotificationStepExecutor().execute(step, context) }
+                    .isInstanceOf(RuntimeException::class.java)
+                    .hasMessageContaining(message)
+            }
+        }
+        verify(exactly = 0) { session.client.awaitNotificationStrict(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `valid dynamic wait matches present value and treats absent field as mismatch`() {
+        context.variables["path"] = JsonPrimitive("$.value")
+        val check = JsonCheck("{{path}}", JsonExpectation(type = ExpectationType.EQUALS, value = JsonPrimitive("ok")))
+        for (optional in listOf(false, true)) {
+            val client = HarnessLanguageClient()
+            every { session.client } returns client
+            val step = ScenarioStep.WaitNotification(
+                method = "telemetry/event",
+                checks = listOf(check),
+                optional = optional,
+                timeoutMs = 0,
+            )
+            client.telemetryEvent(mapOf("other" to "ok"))
+            if (optional) {
+                WaitNotificationStepExecutor().execute(step, context)
+            } else {
+                assertThatThrownBy { WaitNotificationStepExecutor().execute(step, context) }
+                    .isInstanceOf(java.util.concurrent.TimeoutException::class.java)
+            }
+            assertThat(client.peekNotification("telemetry/event") { true }).isTrue()
+            client.telemetryEvent(mapOf("value" to "ok"))
+            WaitNotificationStepExecutor().execute(step, context)
+            assertThat(context.lastResult).isEqualTo(buildJsonObject { put("value", "ok") })
+        }
+    }
+
+    @Test
     fun `optional wait may time out with a valid interpolated regex`() {
         context.variables["pattern"] = JsonPrimitive("foo.*")
         val check =

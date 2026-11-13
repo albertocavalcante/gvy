@@ -238,6 +238,10 @@ val harnessTest =
             "EditorTextEditsTest",
             "EditorWorkspacePlanTest",
             "ScenarioContextTest",
+            "ScenarioValidationTest",
+            "StepExecutorsTest",
+            "StrictWaitPredicateTest",
+            "HarnessLanguageClientTest",
             "ScenarioOutcomeTest",
             "NamedObservationExecutionTest",
             "NamedObservationRecorderTest",
@@ -260,7 +264,15 @@ val harnessTest =
                 @get:PathSensitive(PathSensitivity.RELATIVE)
                 val scenarios = layout.projectDirectory.dir("e2e/resources/scenarios")
 
-                override fun asArguments() = listOf("-Dgroovy.lsp.e2e.scenarioDir=${scenarios.asFile.absolutePath}")
+                @get:InputDirectory
+                @get:PathSensitive(PathSensitivity.RELATIVE)
+                val snapshots = layout.projectDirectory.dir("e2e/resources/snapshots")
+
+                override fun asArguments() =
+                    listOf(
+                        "-Dgroovy.lsp.e2e.scenarioDir=${scenarios.asFile.absolutePath}",
+                        "-Dgroovy.lsp.e2e.snapshotDir=${snapshots.asFile.absolutePath}",
+                    )
             },
         )
         testLogging {
