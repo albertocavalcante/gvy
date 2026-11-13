@@ -33,6 +33,7 @@ import com.github.albertocavalcante.gvy.gls.providers.testing.GetTestResultsPara
 import com.github.albertocavalcante.gvy.gls.providers.testing.RunTestParams
 import com.github.albertocavalcante.gvy.gls.providers.testing.TestRequestDelegate
 import com.github.albertocavalcante.gvy.gls.providers.testing.TestSuite
+import com.github.albertocavalcante.gvy.gls.services.CoreEngineDeprecation
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
@@ -158,12 +159,14 @@ class GroovyLanguageServer(
 
     /** Notices classpath entries replaced between dependency observations (#1364). */
     private val classpathRestamper = ClasspathRestamper(compilationService, coroutineScope)
+    private val coreEngineDeprecation = CoreEngineDeprecation()
     private val workspaceService = GroovyWorkspaceService(
         compilationService,
         compilationService.symbolIndexingService,
         coroutineScope,
         textDocumentService,
         classpathRestamper = classpathRestamper,
+        reportEngineSetting = coreEngineDeprecation::report,
     )
 
     // Helpers
@@ -184,6 +187,7 @@ class GroovyLanguageServer(
         coroutineScope,
         strategyRegistry,
         classpathRestamper = classpathRestamper,
+        reportEngineSetting = coreEngineDeprecation::report,
     )
     private val testRequestDelegate =
         TestRequestDelegate(

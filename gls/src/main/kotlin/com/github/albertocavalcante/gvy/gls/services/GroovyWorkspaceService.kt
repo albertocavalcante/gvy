@@ -58,6 +58,8 @@ class GroovyWorkspaceService(
     sourceChangeDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** Told of every watched path, before any filtering: build output under a classpath directory counts (#1364). */
     private val classpathRestamper: ClasspathRestamper? = null,
+    /** Shared with startup so a saved legacy setting produces one migration notice per server. */
+    private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
 ) : WorkspaceService {
 
     private val logger = KotlinLogging.logger {}
@@ -123,6 +125,7 @@ class GroovyWorkspaceService(
 
         if (settingsMap != null) {
             val newConfig = ServerConfiguration.fromMap(settingsMap)
+            reportEngineSetting(settingsMap["groovy.languageServer.engine"] as? String)
             textDocumentService?.updateConfiguration(newConfig)
 
             // Update configuration on all active strategies

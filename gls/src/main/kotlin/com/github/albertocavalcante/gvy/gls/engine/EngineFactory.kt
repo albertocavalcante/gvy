@@ -8,7 +8,6 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
-import com.github.albertocavalcante.gvy.gls.engine.impl.core.CoreLanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.impl.rewrite.OpenRewriteLanguageEngine
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -45,8 +44,6 @@ object EngineFactory {
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
         )
-
-        EngineType.Core -> CoreLanguageEngine()
 
         EngineType.OpenRewrite -> OpenRewriteLanguageEngine()
     }

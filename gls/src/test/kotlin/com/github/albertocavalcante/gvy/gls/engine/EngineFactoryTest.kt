@@ -8,7 +8,6 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineFeatures
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
-import com.github.albertocavalcante.gvy.gls.engine.impl.core.CoreLanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.impl.rewrite.OpenRewriteLanguageEngine
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -47,8 +46,8 @@ class EngineFactoryTest {
     }
 
     @Test
-    fun `create returns CoreLanguageEngine for Core configuration`() {
-        val config = EngineConfiguration(type = EngineType.Core)
+    fun `create returns NativeLanguageEngine for a saved core alias`() {
+        val config = EngineConfiguration(type = EngineType.fromString("core"))
 
         val engine = EngineFactory.create(
             config = config,
@@ -58,8 +57,8 @@ class EngineFactoryTest {
             sourceNavigator = mockSourceNavigator,
         )
 
-        assertIs<CoreLanguageEngine>(engine)
-        assertEquals("core", engine.id)
+        assertIs<NativeLanguageEngine>(engine)
+        assertEquals("native", engine.id)
     }
 
     @Test
@@ -94,8 +93,8 @@ class EngineFactoryTest {
     }
 
     @Test
-    fun `create works with null sourceNavigator for Core engine`() {
-        val config = EngineConfiguration(type = EngineType.Core)
+    fun `create works with null sourceNavigator for the core compatibility alias`() {
+        val config = EngineConfiguration(type = EngineType.fromString("core"))
 
         val engine = EngineFactory.create(
             config = config,
@@ -105,7 +104,7 @@ class EngineFactoryTest {
             sourceNavigator = null,
         )
 
-        assertIs<CoreLanguageEngine>(engine)
+        assertIs<NativeLanguageEngine>(engine)
     }
 
     @Test
@@ -126,7 +125,7 @@ class EngineFactoryTest {
     @Test
     fun `create with custom features does not affect engine type selection`() {
         val customFeatures = EngineFeatures(typeInference = false, flowAnalysis = true)
-        val config = EngineConfiguration(type = EngineType.Core, features = customFeatures)
+        val config = EngineConfiguration(type = EngineType.fromString("core"), features = customFeatures)
 
         val engine = EngineFactory.create(
             config = config,
@@ -136,7 +135,7 @@ class EngineFactoryTest {
             sourceNavigator = null,
         )
 
-        assertIs<CoreLanguageEngine>(engine)
+        assertIs<NativeLanguageEngine>(engine)
     }
 
     @Test

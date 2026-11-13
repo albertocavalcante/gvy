@@ -22,16 +22,16 @@ class HoverEngineObservationTest {
             workspaceManager = WorkspaceManager(),
             options = LanguageEngineManagerOptions(
                 documentProvider = DocumentProvider(),
-                engineConfig = EngineConfiguration(EngineType.Core),
+                engineConfig = EngineConfiguration(EngineType.fromString("core")),
             ),
         )
         val before = manager.observeHoverEngine()
-        assertEquals("core", before.configured)
+        assertEquals("native", before.configured)
         assertEquals("not_instantiated", before.state)
         assertNull(before.instantiated)
         assertEquals(before, manager.observeHoverEngine())
-        assertEquals("core", manager.activeEngine.id)
-        assertEquals("core", manager.observeHoverEngine().instantiated)
+        assertEquals("native", manager.activeEngine.id)
+        assertEquals("native", manager.observeHoverEngine().instantiated)
         manager.updateEngineConfiguration(EngineConfiguration(EngineType.OpenRewrite))
         val reset = manager.observeHoverEngine()
         assertEquals("openrewrite", reset.configured)

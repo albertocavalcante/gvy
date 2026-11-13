@@ -606,11 +606,10 @@
         "groovy.languageServer.engine": {
           "type": "string",
           "enum": [
-            "core",
             "native"
           ],
           "default": "native",
-          "description": "Select the hover engine. Native reuses the Groovy compiler's project types and documentation; Core uses a separate parser. Restart the language server after changing this setting."
+          "description": "Native hover reuses the Groovy compiler's project types and documentation. Saved core values alias native through 0.5.5 and are removed in 0.5.6; change them to native and restart the language server."
         },
         "groovy.server.vmargs": {
           "scope": "machine",

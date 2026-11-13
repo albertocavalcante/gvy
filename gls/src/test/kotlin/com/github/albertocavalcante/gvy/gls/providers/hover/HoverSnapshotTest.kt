@@ -47,14 +47,27 @@ class HoverSnapshotTest {
     lateinit var workspace: Path
 
     @Test
-    fun `core hover reads the accepted buffer before debounced compilation`(): Unit = runBlocking {
-        fixture(EngineType.Core).use { fixture ->
+    fun `legacy core alias reads the accepted Native buffer before debounced compilation`(): Unit = runBlocking {
+        fixture(EngineType.fromString("core")).use { fixture ->
             fixture.change(CURRENT_SOURCE, 42)
 
             val hover = fixture.endpoint.hover(fixture.params()).await()
 
             assertContains(hover.contents.right.value, "Integer value()")
             assertEquals(CURRENT_SOURCE, fixture.documents.get(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `legacy core alias rejects a changed buffer instead of returning an earlier source`(): Unit = runBlocking {
+        fixture(EngineType.fromString("core")).use { fixture ->
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.acquireCompilation().also { fixture.documents.put(fixture.uri, CURRENT_SOURCE, 42) }
+            }
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
         }
     }
 
@@ -185,7 +198,7 @@ class HoverSnapshotTest {
         }
     }
 
-    private suspend fun fixture(engine: EngineType = EngineType.Core): Fixture {
+    private suspend fun fixture(engine: EngineType = EngineType.Native): Fixture {
         val uri = workspace.resolve("Sample.groovy").toUri()
         val documents = DocumentProvider().apply { put(uri, ORIGINAL_SOURCE, 41) }
         val compilation =

@@ -1,0 +1,50 @@
+name: hover-legacy-core-alias
+description: A saved Core hover setting uses compiler-backed Native types and the current unsaved buffer.
+workspace:
+  fixture: hover-basic
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: core
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+  - openDocument:
+      path: LegacyCoreHover.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        def count = 42
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{workspace.uri}}LegacyCoreHover.groovy" }
+        position: { line: 0, character: 5 }
+      saveAs: originalHover
+  - assert:
+      source: originalHover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "int count" }
+  - changeDocument:
+      path: LegacyCoreHover.groovy
+      version: 2
+      text: |
+        def count = 'current'
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{workspace.uri}}LegacyCoreHover.groovy" }
+        position: { line: 0, character: 5 }
+      saveAs: currentHover
+  - assert:
+      source: currentHover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "String count" }
+  - shutdown: {}
+  - exit: {}

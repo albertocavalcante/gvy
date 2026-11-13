@@ -279,6 +279,7 @@ path = [
   "tests/e2e/resources/scenarios/gradle-hover-deps.yaml",
   "tests/e2e/resources/scenarios/hover-current-buffer.yaml",
   "tests/e2e/resources/scenarios/hover-documentation.yaml",
+  "tests/e2e/resources/scenarios/hover-legacy-core-alias.yaml",
   "tests/e2e/resources/scenarios/hover-println.yaml",
   "tests/e2e/resources/scenarios/hover-type-inference.yaml",
   "tests/e2e/resources/scenarios/implementation-basic.yaml",

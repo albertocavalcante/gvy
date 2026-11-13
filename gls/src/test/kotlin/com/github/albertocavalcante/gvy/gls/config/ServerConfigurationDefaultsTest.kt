@@ -45,11 +45,11 @@ class ServerConfigurationDefaultsTest {
     }
 
     @Test
-    fun `fromMap parses core engine explicitly`() {
+    fun `fromMap treats an explicit core setting as a Native compatibility alias`() {
         val config = ServerConfiguration.fromMap(
             mapOf("groovy.languageServer.engine" to "core"),
         )
-        assertEquals(EngineType.Core, config.parserEngine)
+        assertEquals(EngineType.Native, config.parserEngine)
     }
 
     @Test
@@ -67,7 +67,7 @@ class ServerConfigurationDefaultsTest {
             ServerConfiguration.fromMap(mapOf("groovy.languageServer.engine" to "NATIVE")).parserEngine,
         )
         assertEquals(
-            EngineType.Core,
+            EngineType.Native,
             ServerConfiguration.fromMap(mapOf("groovy.languageServer.engine" to "CORE")).parserEngine,
         )
     }

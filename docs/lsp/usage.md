@@ -54,9 +54,12 @@ extension methods, and available Groovydoc. Hover follows the current open buffe
 rejected instead of displaying stale information. Missing or ambiguous information produces a minimal card rather than a
 guessed target.
 
-In VS Code, `groovy.languageServer.engine` selects the engine. Existing explicit `core` settings remain supported;
-select `native` and restart the language server to use compiler-backed hover. Other LSP clients can pass
-`"groovy.languageServer.engine": "native"` in initialization options. Released versions may use an earlier default.
+The separate Core hover engine has been retired. Saved `groovy.languageServer.engine: "core"` values select Native on
+startup or restart and log one migration warning per server. This compatibility alias is supported through **0.5.5** and
+is removed in **0.5.6**. Change the setting to `native` and restart the language server. Other LSP clients can pass
+`"groovy.languageServer.engine": "native"` in initialization options. OpenRewrite remains available as an explicit
+server option for its limited feature set; changing engines requires a restart. Released versions may use an earlier
+default.
 
 ## Check support and troubleshoot
 

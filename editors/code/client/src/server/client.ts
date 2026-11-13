@@ -318,6 +318,7 @@ export function buildServerSettingsMap(): Record<string, unknown> {
       "off",
     ),
 
+    // Forward saved legacy values so the server can report its migration policy.
     "groovy.languageServer.engine": config.get<"core" | "native">(
       "languageServer.engine",
       "native",

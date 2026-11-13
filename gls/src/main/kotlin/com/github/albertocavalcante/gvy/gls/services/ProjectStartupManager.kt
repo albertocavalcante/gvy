@@ -80,7 +80,7 @@ typealias StatusUpdateCallback = (Health, Boolean, String?, Int?, Int?, String?,
  * Manages project startup lifecycle: dependency resolution, file watching, and indexing.
  * De-clutters the main LanguageServer class.
  */
-@Suppress("LongParameterList") // the last three are defaulted collaborators and test seams
+@Suppress("LongParameterList") // defaulted lifecycle collaborators and a shared configuration-notice callback
 class ProjectStartupManager(
     private val compilationService: GroovyCompilationService,
     private val availableBuildTools: List<BuildTool>,
@@ -90,6 +90,8 @@ class ProjectStartupManager(
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
     /** Re-stamps classpath entries between observations (#1364); its watched directories follow each model. */
     private val classpathRestamper: ClasspathRestamper? = null,
+    /** Shared with live configuration intake when this manager belongs to a language server. */
+    private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
 ) {
     private val logger = KotlinLogging.logger {}
     private val groovyVersionResolver = GroovyVersionResolver()
@@ -189,10 +191,10 @@ class ProjectStartupManager(
 
         // Apply log level from client settings
         LogLevelConfigurator.apply(config.logLevel)
+        reportEngineSetting(initOptionsMap?.get("groovy.languageServer.engine") as? String)
 
         // Apply engine configuration
-        val engineConfig = EngineConfiguration(type = config.parserEngine)
-        compilationService.updateEngineConfiguration(engineConfig)
+        compilationService.updateEngineConfiguration(EngineConfiguration(type = config.parserEngine))
         compilationService.updateCompilationCacheLimit(config.compilationCacheMaxEntries)
 
         if (initParams == null) {
