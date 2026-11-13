@@ -3,8 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
-import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.FieldNode
@@ -22,6 +22,8 @@ import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.CatchStatement
 import org.codehaus.groovy.syntax.Types
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * Collects all type names used in a ModuleNode.
@@ -65,7 +67,7 @@ object TypeUsageCollector {
      * Collect all used type names from a ModuleNode.
      * Returns simple names (not FQNs) to match import aliases.
      */
-    fun collectUsedTypes(moduleNode: ModuleNode): Set<String> {
+    fun collectUsedTypes(moduleNode: ModuleNode, includeAnnotations: Boolean = true): Set<String> {
         val usedTypes = mutableSetOf<String>()
         val visitor = TypeUsageVisitor(usedTypes)
 
@@ -82,11 +84,18 @@ object TypeUsageCollector {
             visitor.visitMethod(method)
         }
 
+        if (includeAnnotations) {
+            SourceAnnotationIndex.fromModule(moduleNode).references.forEach { reference ->
+                usedTypes.add((reference.binaryName ?: reference.spelling).substringAfterLast('.'))
+            }
+        }
+
         logger.debug { "Collected ${usedTypes.size} used types from module" }
         return usedTypes
     }
 
     private class TypeUsageVisitor(private val usedTypes: MutableSet<String>) {
+        private val visitedTypes = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
 
         val codeVisitor = TypeUsageCodeVisitor()
 
@@ -103,9 +112,6 @@ object TypeUsageCollector {
 
             // Collect interfaces
             classNode.interfaces?.forEach { collectTypeReference(it) }
-
-            // Collect annotations
-            classNode.annotations?.forEach { collectAnnotation(it) }
 
             // Visit fields
             classNode.fields.forEach { visitField(it) }
@@ -127,9 +133,6 @@ object TypeUsageCollector {
             // Skip synthetic methods
             if (method.isSynthetic) return
 
-            // Collect annotations
-            method.annotations?.forEach { collectAnnotation(it) }
-
             // Collect return type (skip void/Object)
             val returnType = method.returnType
             if (returnType.nameWithoutPackage != "void" && returnType.nameWithoutPackage != "Object") {
@@ -139,7 +142,6 @@ object TypeUsageCollector {
             // Collect parameter types
             method.parameters?.forEach { param ->
                 collectTypeReference(param.type)
-                param.annotations?.forEach { collectAnnotation(it) }
             }
 
             // Visit method body
@@ -150,18 +152,16 @@ object TypeUsageCollector {
             // Skip synthetic fields
             if (field.isSynthetic) return
 
-            field.annotations?.forEach { collectAnnotation(it) }
             collectTypeReference(field.type)
             field.initialExpression?.visit(codeVisitor)
         }
 
         private fun visitProperty(property: PropertyNode) {
-            property.annotations?.forEach { collectAnnotation(it) }
             collectTypeReference(property.type)
         }
 
         private fun collectTypeReference(classNode: ClassNode?) {
-            if (classNode == null) return
+            if (classNode == null || !visitedTypes.add(classNode)) return
 
             // Get simple name
             val simpleName = classNode.nameWithoutPackage
@@ -174,15 +174,6 @@ object TypeUsageCollector {
                 genericType.type?.let { collectTypeReference(it) }
                 genericType.upperBounds?.forEach { collectTypeReference(it) }
                 genericType.lowerBound?.let { collectTypeReference(it) }
-            }
-        }
-
-        private fun collectAnnotation(annotation: AnnotationNode) {
-            collectTypeReference(annotation.classNode)
-            // Visit annotation member value expressions to collect types used in parameters
-            // For example: @Target(ElementType.TYPE) -> collect ElementType
-            annotation.members?.values?.forEach { expression ->
-                expression?.visit(codeVisitor)
             }
         }
 

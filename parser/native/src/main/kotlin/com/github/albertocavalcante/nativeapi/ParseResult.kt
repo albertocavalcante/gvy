@@ -29,6 +29,10 @@ data class ParseResult(
     val tokenIndex: com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex? = null,
     /** What the parser gave up to produce this result; undegraded unless stated otherwise. */
     val outcome: ParseOutcome = ParseOutcome(),
+    /** Immutable source annotation evidence from this compilation, before rewriting or policy stripping. */
+    val sourceAnnotations: SourceAnnotationIndex = SourceAnnotationIndex.UNAVAILABLE,
+    /** Exact ordered inputs used for this compile. Null for older or synthetic results without that evidence. */
+    val classpathInputs: NativeClasspathInputs? = null,
 ) {
     val isSuccessful: Boolean = diagnostics.none { it.severity == ParserSeverity.ERROR }
 }

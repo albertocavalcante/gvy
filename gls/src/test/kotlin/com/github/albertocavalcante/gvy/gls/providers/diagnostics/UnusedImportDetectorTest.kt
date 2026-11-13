@@ -4,12 +4,14 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.nativeapi.AnnotationCoverage
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -28,6 +30,108 @@ class UnusedImportDetectorTest {
     private fun compile(code: String): ModuleNode = runBlocking {
         compilationService.compile(uri, code)
         compilationService.getAst(uri) as ModuleNode
+    }
+
+    @Test
+    fun `collector annotations preserve their imports without crediting generated components`() {
+        val ast = compile(
+            """
+            import groovy.transform.Immutable
+            import groovy.transform.CompileStatic
+            import groovy.transform.ToString
+            @Immutable
+            @CompileStatic
+            class Money { BigDecimal amount }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf("groovy.transform.ToString"),
+            UnusedImportDetector.detectUnusedImports(ast).map { it.className },
+        )
+    }
+
+    @Test
+    fun `annotated imports are excluded when their source range may include a directive`() {
+        val source =
+            """
+            @java.lang.Deprecated import java.util.List
+            class Example {}
+            """.trimIndent()
+        val result = runBlocking { compilationService.compile(uri, source) }
+        assertTrue(result.isSuccess)
+        assertEquals(AnnotationCoverage.Complete, result.sourceAnnotations.coverage)
+        val ast = assertNotNull(result.ast as? ModuleNode)
+        val listImport = ast.imports.single { it.className == "java.util.List" }
+
+        assertTrue(listImport.annotations.isNotEmpty(), "Fixture must attach the marker to the import node")
+        assertTrue(UnusedImportDetector.detectUnusedImports(ast, result.sourceAnnotations).none { it === listImport })
+    }
+
+    @Test
+    fun `collector expansion cannot erase source annotations from unused import safety`() {
+        val source =
+            """
+            import groovy.transform.AnnotationCollector
+            @Marker import java.util.List
+            @AnnotationCollector(processor='example.NotLoadedDuringAnalysis') @interface Marker {}
+            class Example {}
+            """.trimIndent()
+        val result = runBlocking { compilationService.compile(uri, source) }
+        assertTrue(result.isSuccess, result.diagnostics.toString())
+        assertEquals(AnnotationCoverage.Complete, result.sourceAnnotations.coverage)
+        val ast = assertNotNull(result.ast as? ModuleNode)
+        val listImport = ast.imports.single { it.className == "java.util.List" }
+
+        assertTrue(listImport.annotations.isEmpty(), "Collector expansion should remove the mutable AST marker")
+        assertTrue(result.sourceAnnotations.isSourceAnnotated(listImport))
+        assertTrue(UnusedImportDetector.detectUnusedImports(ast, result.sourceAnnotations).none { it === listImport })
+    }
+
+    @Test
+    fun `ordinary annotation import wins over a colliding static alias`() {
+        val ast = compile(
+            """
+            import groovy.transform.CompileStatic as Mark
+            import static java.lang.Math.PI as Mark
+            @Mark class Money {}
+            """.trimIndent(),
+        )
+        val unused = UnusedImportDetector.detectUnusedImports(ast)
+
+        assertEquals(1, unused.size)
+        assertEquals("java.lang.Math", unused.single().className)
+        assertEquals("PI", unused.single().fieldName)
+    }
+
+    @Test
+    fun `fully qualified annotations do not credit an explicit import of the same type`() {
+        val ast = compile(
+            """
+            import groovy.transform.CompileStatic
+            @groovy.transform.CompileStatic
+            class Money {}
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf("groovy.transform.CompileStatic"),
+            UnusedImportDetector.detectUnusedImports(ast).map { it.className },
+        )
+    }
+
+    @Test
+    fun `only the written alias of a collector annotation credits its import`() {
+        val ast = compile(
+            """
+            import groovy.transform.Immutable as Value
+            import groovy.transform.Immutable as Other
+            @Value
+            class Money { BigDecimal amount }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("Other"), UnusedImportDetector.detectUnusedImports(ast).map { it.alias })
     }
 
     @Test

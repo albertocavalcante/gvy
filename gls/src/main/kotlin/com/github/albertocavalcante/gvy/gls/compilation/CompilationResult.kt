@@ -3,7 +3,9 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.Diagnostic
 
 /**
@@ -36,6 +38,9 @@ data class CompilationResult(
      * unparseable (#1344).
      */
     val parseCompleted: Boolean = false,
+    /** Captured with [ast] and [sourceText]; never reacquired from a newer URI cache entry. */
+    val sourceAnnotations: SourceAnnotationIndex =
+        (ast as? ModuleNode)?.let(SourceAnnotationIndex::fromModule) ?: SourceAnnotationIndex.UNAVAILABLE,
 ) {
     companion object {
         /**

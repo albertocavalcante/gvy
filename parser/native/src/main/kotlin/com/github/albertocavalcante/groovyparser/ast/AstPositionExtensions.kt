@@ -122,6 +122,7 @@ fun ASTNode.resolveToDefinition(visitor: GroovyAstModel, symbolTable: SymbolTabl
         is VariableExpression -> resolveVariableDefinition(this, visitor, symbolTable)
         is MethodCallExpression -> resolveMethodDefinition(this, symbolTable, visitor)
         is ClassNode, is ClassExpression, is ConstructorCallExpression -> resolveTypeDefinition(this)
+        is AnnotationNode -> classNode
         is PropertyExpression -> resolvePropertyExpression(this, visitor, symbolTable)
         is DeclarationExpression -> resolveDeclarationDefinition(this)
         is Parameter, is MethodNode, is FieldNode, is PropertyNode, is ImportNode -> this
@@ -167,7 +168,8 @@ private fun resolveMethodDefinition(
 
 /**
  * False when this call cannot reach [method]: its receiver has a known static type that is not the
- * method's class, a subclass, or an implementor of its interface/trait (`"x".size()` does not call a `size()` declared in this file). Spread calls and
+ * method's class, a subclass, or an implementor of its interface/trait
+ * (`"x".size()` does not call a `size()` declared in this file). Spread calls and
  * unresolved types are given the benefit of the doubt.
  * Implicit-this, `this`/`super`, and dynamically typed receivers (`def x`) may reach it.
  */

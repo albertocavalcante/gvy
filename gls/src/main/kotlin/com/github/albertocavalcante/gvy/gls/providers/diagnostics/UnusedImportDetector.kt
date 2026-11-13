@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ImportNode
@@ -27,8 +28,11 @@ object UnusedImportDetector {
      *
      * @return List of ImportNode that are unused (can be regular or static imports)
      */
-    fun detectUnusedImports(moduleNode: ModuleNode): List<ImportNode> {
-        val usedTypes = TypeUsageCollector.collectUsedTypes(moduleNode)
+    fun detectUnusedImports(
+        moduleNode: ModuleNode,
+        annotations: SourceAnnotationIndex = SourceAnnotationIndex.fromModule(moduleNode),
+    ): List<ImportNode> {
+        val usedTypes = TypeUsageCollector.collectUsedTypes(moduleNode, includeAnnotations = false)
         val usedStaticMembers = collectUsedStaticMembers(moduleNode)
 
         val unusedImports = mutableListOf<ImportNode>()
@@ -40,9 +44,16 @@ object UnusedImportDetector {
         moduleNode.imports.forEach { importNode ->
             val alias = importNode.alias
             val simpleName = importNode.type?.nameWithoutPackage
-            val isUsed = (alias != null && alias in usedTypes) ||
-                (simpleName != null && simpleName in usedTypes)
-            if (!isUsed) {
+            val isUsed =
+                (alias != null && alias in usedTypes) ||
+                    (simpleName != null && simpleName in usedTypes)
+            // Collector transforms can erase import annotations after conversion. Use the parser's frozen source
+            // provenance so reporting or removing the import cannot dim or delete a meaningful directive.
+            if (
+                !annotations.isSourceAnnotated(importNode) &&
+                !isUsed &&
+                annotations.canRuleOutAnnotationUse(importNode)
+            ) {
                 logger.debug { "Detected unused import: ${importNode.className} (alias: $alias)" }
                 unusedImports.add(importNode)
             }
@@ -51,7 +62,12 @@ object UnusedImportDetector {
         // Check static imports (not star imports)
         moduleNode.staticImports.values.forEach { importNode ->
             val fieldName = importNode.fieldName
-            if (fieldName != null && fieldName !in usedStaticMembers) {
+            if (
+                !annotations.isSourceAnnotated(importNode) &&
+                fieldName != null &&
+                fieldName !in usedStaticMembers &&
+                annotations.canRuleOutAnnotationUse(importNode)
+            ) {
                 logger.debug { "Detected unused static import: ${importNode.className}.$fieldName" }
                 unusedImports.add(importNode)
             }

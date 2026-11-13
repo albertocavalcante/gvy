@@ -10,6 +10,7 @@ kt_library(
     deps = [
         "//common",
         "//parser/api",
+        "//source",
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
