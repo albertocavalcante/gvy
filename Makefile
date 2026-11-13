@@ -10,8 +10,8 @@ export CARGO_BUILD_JOBS ?= 2
 
 # macOS: Check for JAVA_HOME, trust environment (direnv/sdkman)
 ifeq ($(shell uname),Darwin)
-    # Rust-only adapter checks and the default help do not require Java.
-    ifneq ($(strip $(filter-out zed-check zed-test zed-build zed-format,$(MAKECMDGOALS))),)
+    # Rust adapter checks, JUnit report checks and the default help do not require Java.
+    ifneq ($(strip $(filter-out zed-check zed-test zed-build zed-format junit-contract-check,$(MAKECMDGOALS))),)
     ifndef JAVA_HOME
         $(warning JAVA_HOME is not set!)
         $(warning Run 'sdk env' or 'direnv allow' to activate the environment.)
@@ -37,6 +37,7 @@ help:
 	@echo "  format     - Format source code and fix auto-correctable issues"
 	@echo "  fix-imports - Auto-fix unused imports and other detekt auto-correctable issues"
 	@echo "  quality    - Run all quality checks including coverage"
+	@echo "  junit-contract-check - Check JUnit comparison without packaging or a JVM"
 	@echo "  harness-test - Run focused harness controls without fat JAR/distribution assembly"
 	@echo "  e2e        - Run end-to-end LSP scenarios"
 	@echo "  e2e-single - Run a single E2E scenario (usage: make e2e-single SCENARIO=name)"
@@ -314,3 +315,8 @@ license-check:
 
 license-test:
 	uv run --offline --project .reuse --locked python -m unittest discover -s .reuse/tests
+
+# Source-owned JUnit comparison controls use the existing locked Python tools.
+.PHONY: junit-contract-check
+junit-contract-check:
+	uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract
