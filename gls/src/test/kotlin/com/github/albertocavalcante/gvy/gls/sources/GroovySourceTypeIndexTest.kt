@@ -97,6 +97,33 @@ class GroovySourceTypeIndexTest {
     }
 
     @Test
+    fun `a local nested annotation shadows an imported annotation alias`() {
+        val source = """
+            import java.lang.Deprecated as Mark
+            class Outer {
+                @interface Mark {}
+                @Mark void method() {}
+            }
+        """.trimIndent()
+        val reference = assertNotNull(GroovySourceTypeIndex.build(source).at(position(source, "Mark", 2)))
+
+        assertNotNull(reference.localDefinition)
+        assertEquals(emptyList(), reference.candidates)
+    }
+
+    @Test
+    fun `an imported annotation is not chosen when an inherited nested type can shadow it`() {
+        val source = """
+            import java.lang.Deprecated as Mark
+            class Model extends Parent {
+                @Mark void method() {}
+            }
+        """.trimIndent()
+
+        assertNull(GroovySourceTypeIndex.build(source).at(position(source, "Mark", 1)))
+    }
+
+    @Test
     fun `source comments strings dynamic receivers and value-shadowed annotation arguments do not become type links`() {
         val source = """
             import dependency.Handler

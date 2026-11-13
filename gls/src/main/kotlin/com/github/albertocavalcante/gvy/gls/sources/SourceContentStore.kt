@@ -230,7 +230,9 @@ internal fun materializeEntry(
         ensureManagedDirectory(directory)
         val temporary = Files.createTempFile(directory, ".extracting-", ".source")
         try {
-            val digest = archiveEntryDigest(archive, entryName, limits)
+            val digest = Files.newOutputStream(temporary).use { output ->
+                copyArchiveEntry(archive, entryName, limits, output::write)
+            }
             verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
             if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
                 verifyFileDigest(destination, digest, limits.maxEntryBytes)
@@ -248,12 +250,19 @@ private fun archiveEntryDigest(
     archive: VerifiedSourceArchive,
     entryName: String,
     limits: SourceStoreLimits,
+): String = copyArchiveEntry(archive, entryName, limits)
+
+private fun copyArchiveEntry(
+    archive: VerifiedSourceArchive,
+    entryName: String,
+    limits: SourceStoreLimits,
+    consume: (ByteArray, Int, Int) -> Unit = { _, _, _ -> },
 ): String = ZipFile(archive.path.toFile()).use { zip ->
     val entry = zip.getEntry(entryName) ?: throw SourceStoreException(SourceFailure.IO_FAILURE)
     if (entry.isDirectory || entry.size > limits.maxEntryBytes) {
         throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
     }
-    zip.getInputStream(entry).use { input -> copyAndDigest(input, limits.maxEntryBytes) }
+    zip.getInputStream(entry).use { input -> copyAndDigest(input, limits.maxEntryBytes, consume) }
 }
 
 internal fun sourceDigest(value: String): String = MessageDigest.getInstance("SHA-256")

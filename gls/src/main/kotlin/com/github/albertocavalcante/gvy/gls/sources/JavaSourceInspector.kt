@@ -9,7 +9,6 @@ import com.github.javaparser.ParseStart
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.Providers
 import com.github.javaparser.ast.CompilationUnit
-import com.github.javaparser.ast.Node
 import com.github.javaparser.ast.body.MethodDeclaration
 import com.github.javaparser.ast.body.TypeDeclaration
 import com.github.javaparser.ast.comments.JavadocComment
@@ -175,15 +174,26 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         checkCancelled: () -> Unit,
     ): TypeDeclaration<*>? = unit.findAll(TypeDeclaration::class.java).singleOrNull { declaration ->
         checkCancelled()
-        val owners = generateSequence<Node>(declaration) { it.parentNode.orElse(null) }
-            .filterIsInstance<TypeDeclaration<*>>()
-            .map { it.nameAsString }
-            .toList()
-            .asReversed()
-            .joinToString("$")
+        val owners = binaryTypeOwners(declaration, checkCancelled) ?: return@singleOrNull false
         val packageName = unit.packageDeclaration.map { it.nameAsString }.orElse("")
         val declaredName = if (packageName.isEmpty()) owners else "$packageName.$owners"
         declaredName == binaryName
+    }
+
+    /** Local and anonymous classes have compiler-assigned binary names and cannot be selected by source name alone. */
+    private fun binaryTypeOwners(declaration: TypeDeclaration<*>, checkCancelled: () -> Unit): String? {
+        val owners = mutableListOf<String>()
+        var current = declaration
+        while (true) {
+            checkCancelled()
+            owners.add(current.nameAsString)
+            when (val parent = current.parentNode.orElse(null)) {
+                is TypeDeclaration<*> -> current = parent
+                is CompilationUnit -> break
+                else -> return null
+            }
+        }
+        return owners.asReversed().joinToString("$")
     }
 
     private fun com.github.javaparser.Range.toSourceSpan(): SourceSpan = SourceSpan(

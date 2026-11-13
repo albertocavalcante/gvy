@@ -98,6 +98,46 @@ class JavaSourceInspectorTest {
         )
     }
 
+    @Test
+    fun `does not resolve a local class using a member class binary name`() {
+        val source = """
+            package demo;
+            class Outer {
+                void method() {
+                    class Local {
+                        class Inner {}
+                    }
+                }
+            }
+        """.trimIndent()
+
+        listOf("demo.Outer\$Local", "demo.Outer\$Local\$Inner").forEach { binaryName ->
+            org.junit.jupiter.api.Assertions.assertNull(inspector.inspectDefinitionFromContent(source, binaryName))
+        }
+    }
+
+    @Test
+    fun `selects member type when a local class has the same simple name`() {
+        val source = """
+            package demo;
+            class Outer {
+                class Inner {}
+                void method() {
+                    class Inner {}
+                }
+            }
+        """.trimIndent()
+
+        val definition = requireNotNull(inspector.inspectDefinitionFromContent(source, "demo.Outer\$Inner"))
+        val selectedLine = source.lines()[definition.nameRange.startLine]
+
+        assertEquals(2, definition.nameRange.startLine)
+        assertEquals(
+            "Inner",
+            selectedLine.substring(definition.nameRange.startCharacter, definition.nameRange.endCharacter),
+        )
+    }
+
     @Nested
     inner class InspectClassTest {
 
