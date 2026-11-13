@@ -164,6 +164,7 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
             checkCancelled()
             val firstName = reference.spelling.substringBefore('.')
             if (firstName in typeVariables) return null
+            val unqualified = '.' !in reference.spelling
             if (reference.kind == Kind.ARGUMENT) {
                 // Only an imported class prefix with no competing value namespace is safe in an expression.
                 if (
@@ -174,10 +175,10 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 ) {
                     return null
                 }
-                if (hasHierarchy(reference.scope) || hasLocalClasses) return null
+                if ((unqualified && hasHierarchy(reference.scope)) || hasLocalClasses) return null
             }
             val explicit = exposed(reference.spelling)
-            if (hasHierarchy(reference.scope)) {
+            if (unqualified && hasHierarchy(reference.scope)) {
                 localInCurrentScope(reference)?.let { definition ->
                     return retainedReference(reference.range, emptyList(), definition)
                 }

@@ -152,6 +152,18 @@ class GroovySourceTypeIndexTest {
     }
 
     @Test
+    fun `a qualified annotation remains linkable despite unknown inherited nested types`() {
+        val source = """
+            class Model extends Parent {
+                @java.lang.Deprecated void method() {}
+            }
+        """.trimIndent()
+        val reference = assertNotNull(GroovySourceTypeIndex.build(source).at(position(source, "Deprecated")))
+
+        assertEquals(listOf("java.lang.Deprecated"), reference.candidates.first())
+    }
+
+    @Test
     fun `source comments strings dynamic receivers and value-shadowed annotation arguments do not become type links`() {
         val source = """
             import dependency.Handler
