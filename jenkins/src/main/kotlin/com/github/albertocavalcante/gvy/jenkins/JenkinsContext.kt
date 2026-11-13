@@ -119,7 +119,7 @@ class JenkinsContext internal constructor(
         classpath.addProjectDependencies(logger, projectDependencies)
         classpath.ensureJenkinsCorePresent(logger) { findLocalJenkinsCore() }
 
-        val librariesToInclude = resolveLibrariesToInclude(configuration, libraryResolver, logger, libraryReferences)
+        val librariesToInclude = resolveLibrariesToInclude(configuration, libraryResolver, libraryReferences)
         classpath.addLibrariesToClasspath(logger, librariesToInclude)
         classpath.addSharedLibrarySrcDir(logger, workspaceRoot)
         classpath.addRegisteredPluginJars(logger, pluginManager)
@@ -206,7 +206,7 @@ class JenkinsContext internal constructor(
                 resolveMavenRepository()
             }
             if (mavenRepo == null) {
-                logger.warn { "Could not determine Maven repository location" }
+                logger.debug { "Could not determine Maven repository location" }
                 return null
             }
 
@@ -591,16 +591,11 @@ private fun MutableList<Path>.ensureJenkinsCorePresent(logger: KLogger, findLoca
 private fun resolveLibrariesToInclude(
     configuration: JenkinsConfiguration,
     libraryResolver: SharedLibraryResolver,
-    logger: KLogger,
     libraryReferences: List<LibraryReference>,
 ): List<SharedLibrary> = if (libraryReferences.isEmpty()) {
     configuration.sharedLibraries
 } else {
-    val result = libraryResolver.resolveAllWithWarnings(libraryReferences)
-    result.missing.forEach { ref ->
-        logger.warn { "Jenkins library '${ref.name}' referenced but not configured" }
-    }
-    result.resolved
+    libraryResolver.resolveAllWithWarnings(libraryReferences).resolved
 }
 
 private fun MutableList<Path>.addLibrariesToClasspath(logger: KLogger, librariesToInclude: List<SharedLibrary>) {
