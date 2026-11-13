@@ -134,12 +134,22 @@ jobs:
                       if len(selected) != 1:
                           return "report_missing", None
                       item = selected[0]
+                      if item.flag_bits & 1:
+                          return "encrypted", None
+                      if item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                          return "unsupported_compression", None
                       if item.file_size > LIMIT:
                           return "oversize", None
                       with archive.open(item) as stream:
                           raw = stream.read(LIMIT + 1)
                       if len(raw) != item.file_size or len(raw) > LIMIT:
                           return "malformed", None
+                      if b"\x00" in raw:
+                          return "invalid_encoding", None
+                      try:
+                          raw.decode("utf-8", "strict")
+                      except UnicodeDecodeError:
+                          return "invalid_encoding", None
                       if b"<!DOCTYPE" in raw.upper():
                           return "dtd_rejected", None
                       return "present", raw
@@ -158,6 +168,21 @@ jobs:
                   return "unreadable", None
               return parse_archive(data)
           
+          def source_line(failure, classname):
+              pattern = re.compile(
+                  r"^\s*at " + re.escape(classname) +
+                  r"(?:\$[A-Za-z0-9_$]+)?\.[^(]+\(LoggingProviderTest\.kt:([0-9]+)\)\s*$"
+              )
+              for line in (failure.text or "").splitlines():
+                  match = pattern.fullmatch(line)
+                  if match:
+                      number = match.group(1)
+                      if len(number) > 4:
+                          return None
+                      value = int(number)
+                      return value if 1 <= value <= 4096 else None
+              return None
+          
           def classify(log, xml, classname):
               log_state, log_bytes = log
               xml_state, xml_bytes = xml
@@ -165,6 +190,14 @@ jobs:
               codes = [key for key, pattern in PATTERNS.items() if re.search(pattern, text)]
               result = {"log": log_state, "xml": xml_state, "codes": codes or ["unknown"], "cases": []}
               if xml_bytes is None:
+                  return result
+              if b"\x00" in xml_bytes:
+                  result["xml"] = "invalid_encoding"
+                  return result
+              try:
+                  xml_bytes.decode("utf-8", "strict")
+              except UnicodeDecodeError:
+                  result["xml"] = "invalid_encoding"
                   return result
               if b"<!DOCTYPE" in xml_bytes.upper():
                   result["xml"] = "dtd_rejected"
@@ -188,7 +221,8 @@ jobs:
                       child = children[0]
                       outcome = {"failure": "failed", "error": "error", "skipped": "skipped"}[child.tag]
                       kind = TYPES.get(child.get("type", ""), "unknown") if child.tag != "skipped" else "none"
-                  found.append({"id": CASES[name], "outcome": outcome, "type": kind})
+                  line = source_line(children[0], classname) if len(children) == 1 and outcome in ("failed", "error") else None
+                  found.append({"id": CASES[name], "outcome": outcome, "type": kind, "sourceLine": line})
               if len(found) > 2 or len({item["id"] for item in found}) != len(found):
                   result["xml"] = "ambiguous"
                   return result
@@ -259,12 +293,22 @@ jobs:
                       if len(selected) != 1:
                           return "report_missing", None
                       item = selected[0]
+                      if item.flag_bits & 1:
+                          return "encrypted", None
+                      if item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                          return "unsupported_compression", None
                       if item.file_size > LIMIT:
                           return "oversize", None
                       with archive.open(item) as stream:
                           raw = stream.read(LIMIT + 1)
                       if len(raw) != item.file_size or len(raw) > LIMIT:
                           return "malformed", None
+                      if b"\x00" in raw:
+                          return "invalid_encoding", None
+                      try:
+                          raw.decode("utf-8", "strict")
+                      except UnicodeDecodeError:
+                          return "invalid_encoding", None
                       if b"<!DOCTYPE" in raw.upper():
                           return "dtd_rejected", None
                       return "present", raw
@@ -373,12 +417,22 @@ jobs:
                       if len(selected) != 1:
                           return "report_missing", None
                       item = selected[0]
+                      if item.flag_bits & 1:
+                          return "encrypted", None
+                      if item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                          return "unsupported_compression", None
                       if item.file_size > LIMIT:
                           return "oversize", None
                       with archive.open(item) as stream:
                           raw = stream.read(LIMIT + 1)
                       if len(raw) != item.file_size or len(raw) > LIMIT:
                           return "malformed", None
+                      if b"\x00" in raw:
+                          return "invalid_encoding", None
+                      try:
+                          raw.decode("utf-8", "strict")
+                      except UnicodeDecodeError:
+                          return "invalid_encoding", None
                       if b"<!DOCTYPE" in raw.upper():
                           return "dtd_rejected", None
                       return "present", raw
@@ -397,6 +451,21 @@ jobs:
                   return "unreadable", None
               return parse_archive(data)
           
+          def source_line(failure, classname):
+              pattern = re.compile(
+                  r"^\s*at " + re.escape(classname) +
+                  r"(?:\$[A-Za-z0-9_$]+)?\.[^(]+\(LoggingProviderTest\.kt:([0-9]+)\)\s*$"
+              )
+              for line in (failure.text or "").splitlines():
+                  match = pattern.fullmatch(line)
+                  if match:
+                      number = match.group(1)
+                      if len(number) > 4:
+                          return None
+                      value = int(number)
+                      return value if 1 <= value <= 4096 else None
+              return None
+          
           def classify(log, xml, classname):
               log_state, log_bytes = log
               xml_state, xml_bytes = xml
@@ -404,6 +473,14 @@ jobs:
               codes = [key for key, pattern in PATTERNS.items() if re.search(pattern, text)]
               result = {"log": log_state, "xml": xml_state, "codes": codes or ["unknown"], "cases": []}
               if xml_bytes is None:
+                  return result
+              if b"\x00" in xml_bytes:
+                  result["xml"] = "invalid_encoding"
+                  return result
+              try:
+                  xml_bytes.decode("utf-8", "strict")
+              except UnicodeDecodeError:
+                  result["xml"] = "invalid_encoding"
                   return result
               if b"<!DOCTYPE" in xml_bytes.upper():
                   result["xml"] = "dtd_rejected"
@@ -427,7 +504,8 @@ jobs:
                       child = children[0]
                       outcome = {"failure": "failed", "error": "error", "skipped": "skipped"}[child.tag]
                       kind = TYPES.get(child.get("type", ""), "unknown") if child.tag != "skipped" else "none"
-                  found.append({"id": CASES[name], "outcome": outcome, "type": kind})
+                  line = source_line(children[0], classname) if len(children) == 1 and outcome in ("failed", "error") else None
+                  found.append({"id": CASES[name], "outcome": outcome, "type": kind, "sourceLine": line})
               if len(found) > 2 or len({item["id"] for item in found}) != len(found):
                   result["xml"] = "ambiguous"
                   return result
