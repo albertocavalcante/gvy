@@ -232,7 +232,10 @@ class BoundedLogbackRenderingTest {
                 assertTrue(output.toByteArray(Charsets.UTF_8).size <= 65_536)
                 assertTrue(output.contains("[truncated]"))
                 assertTrue(lines.first().contains(" ${severity.levelStr} "))
-                assertTrue(lines.drop(1).all { it.startsWith(" ") || it.startsWith("\t") })
+                assertTrue(
+                    lines.drop(1).all { it.startsWith(" ") || it.startsWith("\t") },
+                    "truncation marker must remain a continuation",
+                )
             }
         }
     }
