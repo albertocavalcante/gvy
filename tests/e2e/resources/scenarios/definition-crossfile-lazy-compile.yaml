@@ -33,7 +33,7 @@ steps:
   - initialize:
       initializationOptions:
         groovy.server.logLevel: DEBUG
-        groovy.languageServer.engine: core
+        groovy.languageServer.engine: native
   - initialized: {}
   - waitNotification:
       method: groovy/status

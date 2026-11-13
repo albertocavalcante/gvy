@@ -51,7 +51,7 @@ class RuntimeFactsProcessTest {
             val configured = session.groovyServer.runtimeFacts().get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .asJsonObject.getAsJsonObject("hoverEngine").get("configured").asString
             val expectedInstance = when (configured) {
-                "core", "native" -> configured
+                "native" -> configured
                 "openrewrite" -> "rewrite"
                 else -> error("Unexpected configured hover engine")
             }
