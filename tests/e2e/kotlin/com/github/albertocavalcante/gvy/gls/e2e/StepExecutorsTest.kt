@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.github.albertocavalcante.gvy.gls.services.Health
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
+import com.github.albertocavalcante.gvy.gls.testing.client.HarnessLanguageClient
 import com.github.albertocavalcante.gvy.gls.testing.client.NotificationEnvelope
 import com.github.albertocavalcante.gvy.gls.testing.client.NotificationSnapshot
 import com.github.albertocavalcante.gvy.gls.testing.client.PredicateFailure
@@ -85,7 +86,7 @@ class StepExecutorsTest {
 
         assertThatThrownBy { WaitNotificationStepExecutor().execute(step, context) }
             .isInstanceOf(IllegalArgumentException::class.java)
-        verify(exactly = 0) { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { session.client.awaitNotificationStrict(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -96,7 +97,7 @@ class StepExecutorsTest {
 
         assertThatThrownBy { WaitNotificationStepExecutor().execute(step, context) }
             .isInstanceOf(IllegalArgumentException::class.java)
-        verify(exactly = 0) { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { session.client.awaitNotificationStrict(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -110,12 +111,12 @@ class StepExecutorsTest {
             optional = true,
             timeoutMs = 0,
         )
-        every { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) } returns
+        every { session.client.awaitNotificationStrict(any(), any(), any(), any(), any()) } returns
             WaitResult(null, emptyList(), emptyList(), 0)
 
         WaitNotificationStepExecutor().execute(step, context)
 
-        verify(exactly = 1) { session.client.awaitNotificationDetailed(any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { session.client.awaitNotificationStrict(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -125,6 +126,28 @@ class StepExecutorsTest {
             JsonCheck("{{path}}", JsonExpectation(type = ExpectationType.MATCHES_REGEX, snapshot = "snapshot.json"))
 
         ScenarioCheckValidation.validate(check, context)
+    }
+
+    @Test
+    fun `matched notification retains the converted payload without converting it twice`() {
+        var conversions = 0
+        val key = object {
+            override fun toString(): String {
+                check(++conversions == 1) { "converted twice" }
+                return "key"
+            }
+        }
+        val client = HarnessLanguageClient()
+        client.telemetryEvent(mapOf(key to "value"))
+        every { session.client } returns client
+
+        WaitNotificationStepExecutor().execute(
+            ScenarioStep.WaitNotification(method = "telemetry/event", timeoutMs = 0),
+            context,
+        )
+
+        assertThat(context.lastResult).isEqualTo(buildJsonObject { put("key", "value") })
+        assertThat(conversions).isEqualTo(1)
     }
 
     @Test

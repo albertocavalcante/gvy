@@ -430,19 +430,19 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
     override fun execute(step: ScenarioStep.WaitNotification, context: ScenarioContext, nextStep: ScenarioStep?) {
         step.checks.forEach { ScenarioCheckValidation.validate(it, context) }
         // Optimization: Peek ahead if optional and next step is also a wait
-        if (step.optional && nextStep is ScenarioStep.WaitNotification) {
+        if (step.optional && nextStep is ScenarioStep.WaitNotification &&
+            nextStep.checks.none { hasFutureValue(it, step.saveAs) }
+        ) {
             val nextStepPredicate: (Any?) -> Boolean = { payload ->
                 // payload comes from HarnessLanguageClient. Currently it is Any? (LSP4J uses Objects).
                 // We need to convert it to JsonElement to check.
-                val jsonPayload = wrapJavaObject(payload)
+                val jsonPayload = waitPredicateBoundary { wrapJavaObject(payload) }
                 nextStep.checks.all { check ->
-                    runCatching {
-                        context.evaluateCheck(jsonPayload, check, quiet = true)
-                    }.getOrDefault(false)
+                    evaluateWaitCheck(context, jsonPayload, check)
                 }
             }
 
-            if (context.session.client.peekNotification(nextStep.method, nextStepPredicate)) {
+            if (context.session.client.peekNotificationStrict(nextStep.method, nextStepPredicate)) {
                 logger.info {
                     "Skipping optional step '${step.method}' - next step's notification '${nextStep.method}' already available"
                 }
@@ -457,67 +457,198 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             context.effectiveTimeoutMs(requestedTimeout)
         }
         val checkFailureReasons = mutableListOf<String>()
+        var matchedPayload: JsonElement? = null
 
-        val earlySkipPredicate: (() -> Boolean)? = if (step.optional && nextStep is ScenarioStep.WaitNotification) {
+        val earlySkipPredicate: (() -> Boolean)? = if (
+            step.optional && nextStep is ScenarioStep.WaitNotification &&
+            nextStep.checks.none { hasFutureValue(it, step.saveAs) }
+        ) {
             val nextStepPredicate: (Any?) -> Boolean = { payload ->
-                val jsonPayload = wrapJavaObject(payload)
+                val jsonPayload = waitPredicateBoundary { wrapJavaObject(payload) }
                 nextStep.checks.all { check ->
-                    runCatching {
-                        context.evaluateCheck(jsonPayload, check, quiet = true)
-                    }.getOrDefault(false)
+                    evaluateWaitCheck(context, jsonPayload, check)
                 }
             }
-            { context.session.client.peekNotification(nextStep.method, nextStepPredicate) }
+            { context.session.client.peekNotificationStrict(nextStep.method, nextStepPredicate) }
         } else {
             null
         }
 
-        val waitResult = try {
-            context.session.client.awaitNotificationDetailed(
-                step.method,
-                timeout,
-                { payload ->
-                    checkFailureReasons.clear()
-                    val jsonPayload = wrapJavaObject(payload)
-                    step.checks.all { check ->
-                        val result =
-                            runCatching { context.evaluateCheck(jsonPayload, check, quiet = true) }
-                        val success = result.getOrDefault(false)
-                        if (!success) {
-                            val failureReason = result.exceptionOrNull()?.message ?: "Check failed"
-                            checkFailureReasons.add("${check.jsonPath} ${check.expect.type}: $failureReason")
-                            logger.debug { "Notification check failed: $failureReason" }
-                        }
-                        success
+        val waitResult = context.session.client.awaitNotificationStrict(
+            step.method,
+            timeout,
+            { payload ->
+                checkFailureReasons.clear()
+                val jsonPayload = waitPredicateBoundary { wrapJavaObject(payload) }
+                val matched = step.checks.all { check ->
+                    val success = evaluateWaitCheck(context, jsonPayload, check)
+                    if (!success) {
+                        val failureReason = "Check failed"
+                        checkFailureReasons.add("${check.jsonPath} ${check.expect.type}: $failureReason")
+                        logger.debug { "Notification check failed: $failureReason" }
                     }
-                },
-                earlySkipPredicate,
-            )
-        } catch (e: TimeoutException) {
-            if (step.optional) {
-                logger.info { "Optional step '${step.method}' timed out after ${timeout}ms - continuing" }
-                return
-            }
-            throw e
-        }
+                    success
+                }
+                if (matched) matchedPayload = jsonPayload
+                matched
+            },
+            earlySkipPredicate,
+        )
 
         if (waitResult.skipped) {
             logger.info { "Skipping optional step '${step.method}' - next notification arrived" }
             return
         }
 
-        val envelope = waitResult.envelope ?: run {
+        if (waitResult.envelope == null) {
             if (step.optional) return
             throw TimeoutException(timeoutMessage(step.method, waitResult))
         }
 
-        val payloadNode = wrapJavaObject(envelope.payload)
+        val payloadNode = checkNotNull(matchedPayload) { "Matched notification has no captured payload" }
         context.lastResult = payloadNode
         step.saveAs?.let { context.saveResult(it, payloadNode) }
         step.checks.forEach { check ->
-            context.evaluateCheck(payloadNode, check)
+            evaluateFinalWaitCheck(context, payloadNode, check)
         }
     }
+}
+
+private val WAIT_PLACEHOLDER = "\\{\\{([^}]+)}}".toRegex()
+
+private fun hasFutureValue(check: JsonCheck, savedName: String?): Boolean {
+    if (savedName == null) return false
+    val expressions = listOf(check.jsonPath, check.expect.value.toString()) + check.expect.values.map { it.toString() }
+    return expressions.any { text ->
+        WAIT_PLACEHOLDER.findAll(text).any { it.groupValues[1].trim().substringBefore('.') == savedName }
+    }
+}
+
+private class WaitPredicateFailure(cause: Throwable) : IllegalStateException("Notification predicate failed", cause)
+
+private fun evaluateWaitCheck(context: ScenarioContext, payload: JsonElement, check: JsonCheck): Boolean =
+    waitPredicateBoundary { context.evaluateCheck(payload, check, quiet = true) }
+
+private fun evaluateFinalWaitCheck(context: ScenarioContext, payload: JsonElement, check: JsonCheck) {
+    try {
+        context.evaluateCheck(payload, check)
+    } catch (failure: TimeoutException) {
+        throw WaitPredicateFailure(failure)
+    } catch (failure: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw failure
+    } catch (failure: java.io.InterruptedIOException) {
+        if (failure !is java.net.SocketTimeoutException) Thread.currentThread().interrupt()
+        throw failure
+    } catch (failure: java.nio.channels.ClosedByInterruptException) {
+        Thread.currentThread().interrupt()
+        throw failure
+    } catch (failure: java.util.concurrent.ExecutionException) {
+        propagateWrappedPredicateFailure(failure)
+    } catch (failure: java.util.concurrent.CompletionException) {
+        propagateWrappedPredicateFailure(failure)
+    }
+}
+
+private inline fun <T> waitPredicateBoundary(action: () -> T): T = try {
+    action()
+} catch (failure: AssertionError) {
+    throw WaitPredicateFailure(failure)
+} catch (failure: TimeoutException) {
+    throw WaitPredicateFailure(failure)
+} catch (failure: java.io.InterruptedIOException) {
+    if (failure !is java.net.SocketTimeoutException) Thread.currentThread().interrupt()
+    throw failure
+} catch (failure: java.nio.channels.ClosedByInterruptException) {
+    Thread.currentThread().interrupt()
+    throw failure
+} catch (failure: java.util.concurrent.ExecutionException) {
+    propagateWrappedPredicateFailure(failure)
+} catch (failure: java.util.concurrent.CompletionException) {
+    propagateWrappedPredicateFailure(failure)
+}
+
+private const val MAX_WAIT_FAILURE_NODES = 32
+
+private fun propagateWrappedPredicateFailure(failure: Throwable): Nothing {
+    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+    val wrappers = mutableListOf<Throwable>()
+    var cause: Throwable = failure
+    while (cause is java.util.concurrent.ExecutionException || cause is java.util.concurrent.CompletionException) {
+        if (wrappers.size >= MAX_WAIT_FAILURE_NODES || !seen.add(cause)) throw WaitPredicateFailure(failure)
+        wrappers.add(cause)
+        cause = try {
+            cause.cause ?: throw WaitPredicateFailure(failure)
+        } catch (interrupted: java.io.InterruptedIOException) {
+            if (interrupted is java.net.SocketTimeoutException) throw WaitPredicateFailure(failure)
+            Thread.currentThread().interrupt()
+            propagateGetterControl(interrupted, failure, wrappers)
+        } catch (interrupted: java.nio.channels.ClosedByInterruptException) {
+            Thread.currentThread().interrupt()
+            propagateGetterControl(interrupted, failure, wrappers)
+        } catch (control: java.util.concurrent.CancellationException) {
+            propagateGetterControl(control, failure, wrappers)
+        } catch (control: InterruptedException) {
+            Thread.currentThread().interrupt()
+            propagateGetterControl(control, failure, wrappers)
+        } catch (control: Error) {
+            if (control is AssertionError) {
+                val fallback = WaitPredicateFailure(failure)
+                fallback.addSuppressed(control)
+                throw fallback
+            }
+            propagateGetterControl(control, failure, wrappers)
+        } catch (ordinary: Exception) {
+            throw WaitPredicateFailure(failure)
+        }
+    }
+    val critical = cause is java.util.concurrent.CancellationException || cause is InterruptedException ||
+        (cause is java.io.InterruptedIOException && cause !is java.net.SocketTimeoutException) ||
+        cause is java.nio.channels.ClosedByInterruptException || (cause is Error && cause !is AssertionError)
+    if (!critical) throw WaitPredicateFailure(failure)
+    if (cause is InterruptedException || cause is java.io.InterruptedIOException ||
+        cause is java.nio.channels.ClosedByInterruptException
+    ) {
+        Thread.currentThread().interrupt()
+    }
+    if (!retainSuppressed(cause, wrappers)) throw WaitPredicateFailure(failure)
+    throw cause
+}
+
+/** Keep both the inspected graph and getter control when bounded copying is impossible. */
+private fun propagateGetterControl(control: Throwable, original: Throwable, wrappers: List<Throwable>): Nothing {
+    if (!retainSuppressed(control, wrappers)) {
+        val fallback = WaitPredicateFailure(original)
+        fallback.addSuppressed(control)
+        throw fallback
+    }
+    throw control
+}
+
+/** Bounds retained references; JVM suppressed getters may allocate their pre-existing arrays. */
+private fun retainSuppressed(cause: Throwable, wrappers: List<Throwable>): Boolean {
+    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+    seen.add(cause)
+    val existing = cause.suppressed
+    if (existing.size >= MAX_WAIT_FAILURE_NODES) return false
+    existing.forEach { seen.add(it) }
+    val additions = mutableListOf<Throwable>()
+    for (wrapper in wrappers) {
+        val suppressed = wrapper.suppressed
+        if (suppressed.size > MAX_WAIT_FAILURE_NODES) return false
+        for (item in suppressed) {
+            if (wrappers.any { it === item }) return false
+            if (seen.add(item)) {
+                if (seen.size > MAX_WAIT_FAILURE_NODES) return false
+                additions.add(item)
+            }
+        }
+    }
+    for (item in additions) {
+        cause.addSuppressed(item)
+        if (cause.suppressed.none { it === item }) return false
+    }
+    return true
 }
 
 private const val REPORTED_NOTIFICATIONS = 3
