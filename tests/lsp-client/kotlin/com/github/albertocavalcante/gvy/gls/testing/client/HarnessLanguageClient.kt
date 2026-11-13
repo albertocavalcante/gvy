@@ -166,6 +166,10 @@ class HarnessLanguageClient : GroovyLanguageClient {
     /** Checks queued, unconsumed notifications without running the predicate under the journal lock. */
     fun peekNotification(method: String, predicate: (Any?) -> Boolean): Boolean = journal.peek(method, predicate)
 
+    /** Like [peekNotification], but predicate errors are failures rather than mismatches. */
+    fun peekNotificationStrict(method: String, predicate: (Any?) -> Boolean): Boolean =
+        journal.peek(method, predicate, strict = true)
+
     /** Each candidate is evaluated once; new arrivals and predicate failures remain available in timeout evidence. */
     fun awaitNotificationDetailed(
         method: String,
@@ -174,6 +178,15 @@ class HarnessLanguageClient : GroovyLanguageClient {
         earlySkipPredicate: (() -> Boolean)? = null,
         afterSequence: Long = 0,
     ): WaitResult = journal.await(method, timeoutMs, predicate, earlySkipPredicate, afterSequence)
+
+    /** Like [awaitNotificationDetailed], but predicate errors are propagated without consuming the candidate. */
+    fun awaitNotificationStrict(
+        method: String,
+        timeoutMs: Long,
+        predicate: (Any?) -> Boolean,
+        earlySkipPredicate: (() -> Boolean)? = null,
+        afterSequence: Long = 0,
+    ): WaitResult = journal.await(method, timeoutMs, predicate, earlySkipPredicate, afterSequence, strict = true)
 
     private fun recordNotification(method: String, payload: Any?) {
         journal.record(method, payload)

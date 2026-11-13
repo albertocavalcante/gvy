@@ -26,11 +26,11 @@ internal class NotificationJournal {
 
     fun checkpoint(): Long = lock.withLock { sequence }
 
-    fun peek(method: String, predicate: (Any?) -> Boolean): Boolean {
+    fun peek(method: String, predicate: (Any?) -> Boolean, strict: Boolean = false): Boolean {
         val candidates = lock.withLock {
             notifications.filter { it.method == method && it.id !in consumed }
         }
-        return candidates.any { failureReason(it.payload, predicate) == null }
+        return candidates.any { failureReason(it.payload, predicate, strict) == null }
     }
 
     fun await(
@@ -39,6 +39,7 @@ internal class NotificationJournal {
         predicate: (Any?) -> Boolean,
         earlySkipPredicate: (() -> Boolean)?,
         afterSequence: Long,
+        strict: Boolean = false,
     ): WaitResult {
         require(timeoutMs >= 0) { "Notification timeout must not be negative" }
         val start = System.nanoTime()
@@ -64,7 +65,7 @@ internal class NotificationJournal {
             evidence.recordArrivals(batch)
             if (earlySkipPredicate?.invoke() == true) return result(skipped = true)
 
-            val match = findMatch(batch, method, predicate, evidence)
+            val match = findMatch(batch, method, predicate, evidence, strict)
             if (match != null) return result(match)
 
             val elapsed = System.nanoTime() - start
@@ -86,10 +87,11 @@ internal class NotificationJournal {
         method: String,
         predicate: (Any?) -> Boolean,
         evidence: WaitEvidence,
+        strict: Boolean,
     ): NotificationEnvelope? {
         for (candidate in batch) {
             if (candidate.method != method || lock.withLock { candidate.id in consumed }) continue
-            val reason = failureReason(candidate.payload, predicate)
+            val reason = failureReason(candidate.payload, predicate, strict)
             if (reason != null) {
                 evidence.recordFailure(candidate, reason)
             } else if (lock.withLock { consumed.add(candidate.id) }) {
@@ -129,7 +131,7 @@ internal class NotificationJournal {
 
         // Predicates are caller-provided and may throw any Exception. Cancellation and interruption remain fatal.
         @Suppress("TooGenericExceptionCaught")
-        fun failureReason(payload: Any?, predicate: (Any?) -> Boolean): String? = try {
+        fun failureReason(payload: Any?, predicate: (Any?) -> Boolean, strict: Boolean): String? = try {
             if (predicate(payload)) null else "Predicate returned false"
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -137,6 +139,7 @@ internal class NotificationJournal {
             Thread.currentThread().interrupt()
             throw interrupted
         } catch (failure: Exception) {
+            if (strict) throw failure
             failure.message ?: failure.javaClass.name
         }
     }
