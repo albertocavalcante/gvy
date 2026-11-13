@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "status": "PRIVATE_WORKER_NOT_ADMITTED_OR_DISPATCHED",
+  "base": "2a762e982c227ee806f3a96cf3d8216bfdee0b4b",
+  "baselineTree": "74a92727885379d4e0682dbd161bea4b600b2261",
+  "testsTree": "238f1304c542168ab76239fdeeb9d2facc4444c0",
+  "patches": {
+    "baseline": {
+      "file": "baseline.patch.gz",
+      "patchBytes": 14366,
+      "payloadBytes": 3143,
+      "patchSha256": "945249337dec2abefb1bec1fdb84d43098f309d855c5a9894b7057672e9b35df",
+      "payloadSha256": "c5df6a3913337e476fff7076f2d20afe3ad4d1ee45db3d7d7e08561bfe6feacf"
+    },
+    "testsFirst": {
+      "file": "testsFirst.patch.gz",
+      "patchBytes": 19129,
+      "payloadBytes": 3432,
+      "patchSha256": "b50401dec412cf80ebdc7bd86cc6928f65822979afe101557e0a4e0039f508a2",
+      "payloadSha256": "923e99690ce4f2862387527b6285533a7013aaecad73e2b7149d5aa0a8fbf06e"
+    }
+  },
+  "allowedPaths": [
+    "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisPublicationCoordinator.kt",
+    "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisPublicationCoordinatorTest.kt",
+    "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisSourceQuarantineTest.kt",
+    "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisVerificationBoundaryTest.kt"
+  ],
+  "sourceFiles": [
+    {
+      "path": "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisPublicationCoordinator.kt",
+      "sha256": "e19831437382048dd3a9fc8e06380f261525edb76baf41b764eadd7da1d86361"
+    },
+    {
+      "path": "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisPublicationCoordinatorTest.kt",
+      "sha256": "a94ca6ea9f8afacf55a9c1a690adc24fecb4eb4b27743c975416e925da66b707"
+    },
+    {
+      "path": "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisSourceQuarantineTest.kt",
+      "sha256": "eeaf8aa1ca709402fdc665a429e78f09dbe6c451b5c9a0c0ffadbacf0ceed077"
+    },
+    {
+      "path": "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/AnalysisVerificationBoundaryTest.kt",
+      "sha256": "6453df1d0d0e003aa87c2375fe67bb012165ec974dc6dae8e7650d3ae2df3f77"
+    }
+  ],
+  "baselineCases": [
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "completed mutation invalidates a permit even while root was unavailable()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "overlapping scopes fence publication until all close()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "scope closes after a failed owner update without restoring the old root()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "aborted overlapping update stays unavailable until a complete repair is verified()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "reentrant recovery cannot clear an aborted update barrier()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "commit selects response only while root and source remain current and uncancelled()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "a ready shared root cannot be evicted by another builder()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "reentrant mutation during validation cannot install or commit stale data()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "cancellation during validation cannot be revoked and prevents selection()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "owner validation failure or exception never installs a root()"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisPublicationCoordinatorTest",
+      "name": "off-lock mutation scope blocks stale work until it completes()"
+    }
+  ],
+  "redCases": [
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisSourceQuarantineTest",
+      "name": "quarantined companion blocks fresh capture after unrelated successful mutation()",
+      "message": "A must not capture while companion B is unavailable"
+    },
+    {
+      "classname": "com.github.albertocavalcante.gvy.gls.compilation.AnalysisVerificationBoundaryTest",
+      "name": "publish verification permits another writer and rejects its stale candidate()",
+      "message": "Writer must finish while the owner verifier remains blocked"
+    }
+  ],
+  "limits": [
+    "Only baseline11 and selected2newassertionREDs execute; all17newcontrols compile, not all execute.",
+    "Frozen2a base evidence requires current-main integration later.",
+    "No productcommit or productionregistration.",
+    "Formatter/quality failures preserve earlierXML; they are not waived.",
+    "Inherited canonical producer log/disk bounds remain1870; caps are not measuredRSS evidence."
+  ]
+}
