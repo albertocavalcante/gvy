@@ -1,0 +1,887 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package com.github.albertocavalcante.gvy.gls.e2e
+
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.api.parallel.Isolated
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.jar.Attributes
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import java.util.jar.Manifest
+import java.util.logging.Handler
+import java.util.logging.LogRecord
+import java.util.logging.Logger
+
+@Isolated
+class PackagedLaunchTest {
+    @TempDir
+    lateinit var tempDir: Path
+
+    @Test
+    fun `verified preparation copies owned bytes and removes its staging directory`() {
+        val original = jar(properties = cleanProperties())
+        val expected = digest(original)
+        val launch = launch(original, expected)
+        val staging = Files.createDirectory(tempDir.resolve("staging"))
+
+        lateinit var staged: Path
+        launch.prepare(stagingParent = staging).use { prepared ->
+            staged = prepared.jar
+            assertThat(prepared.jar).isNotEqualTo(original)
+            assertThat(digest(prepared.jar)).isEqualTo(expected)
+            assertThat(prepared.verification.artifact).isEqualTo(VerificationState.Verified)
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+            assertThat(prepared.verification.expectedDigest).isEqualTo(expected)
+            assertThat(prepared.verification.observedDigest).isEqualTo(expected)
+            assertThat(prepared.verification.expectedSource).isEqualTo(SourceStamp(COMMIT))
+            assertThat(prepared.verification.observedSource).isEqualTo(SourceStamp(COMMIT))
+            Files.writeString(original, "changed after verification")
+            assertThat(digest(prepared.jar)).isEqualTo(expected)
+        }
+        assertThat(staged.parent).doesNotExist()
+    }
+
+    @Test
+    fun `empty expected clean dirty hash is canonicalized to absent`() {
+        val artifact = jar(cleanProperties())
+        val configured = launch(artifact, digest(artifact)).copy(expectedSource = SourceStamp(COMMIT, false, ""))
+        configured.prepare().use { prepared ->
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+            assertThat(prepared.verification.expectedSource).isEqualTo(SourceStamp(COMMIT))
+            assertThat(prepared.verification.observedSource).isEqualTo(SourceStamp(COMMIT))
+        }
+    }
+
+    @Test
+    fun `same source stamp does not make different bytes match the expected digest`() {
+        val original = jar(properties = cleanProperties())
+        val other = jar(properties = cleanProperties(), suffix = "other")
+        val failure = failedPreparation(launch(other, digest(original)))
+
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactDigestMismatch)
+        assertThat(failure.verification.artifact).isEqualTo(VerificationState.Rejected)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.NotChecked)
+        assertThat(failure.verification.expectedDigest).isEqualTo(digest(original))
+        assertThat(failure.verification.observedDigest).isEqualTo(digest(other))
+        assertThat(failure.verification.observedSource).isNull()
+    }
+
+    @Test
+    fun `unknown malformed duplicate and incomplete source stamps fail without observed source claims`() {
+        val badStamps = listOf(
+            "gitSha=unknown\ngitDirty=false\ngitDirtyHash=\n",
+            "gitSha=$COMMIT\ngitDirty=maybe\ngitDirtyHash=\n",
+            "gitSha=$COMMIT\ngitDirtyHash=\n",
+            "gitSha=$COMMIT\ngitDirty=false\ngitDirtyHash=abcdef\n",
+            "gitSha=$COMMIT\ngitDirty=false\ngitDirty=false\ngitDirtyHash=\n",
+        )
+        badStamps.forEachIndexed { index, properties ->
+            val artifact = jar(properties, suffix = index.toString())
+            val expected = digest(artifact)
+            val failure = failedPreparation(launch(artifact, expected), index.toString())
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.verification.artifact).isEqualTo(VerificationState.Verified)
+            assertThat(failure.verification.source).isEqualTo(VerificationState.Rejected)
+            assertThat(failure.verification.expectedSource).isEqualTo(SourceStamp(COMMIT))
+            assertThat(failure.verification.observedDigest).isEqualTo(expected)
+            assertThat(failure.verification.observedSource).isNull()
+        }
+    }
+
+    @Test
+    fun `different valid clean source is recorded and rejected`() {
+        val otherCommit = "b".repeat(40)
+        val artifact = jar("gitSha=$otherCommit\ngitDirty=false\ngitDirtyHash=\n")
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.SourceMismatch)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Rejected)
+        assertThat(failure.verification.expectedSource).isEqualTo(SourceStamp(COMMIT))
+        assertThat(failure.verification.observedSource).isEqualTo(SourceStamp(otherCommit))
+    }
+
+    @Test
+    fun `invalid expected digest and commit are rejected before copy`() {
+        val artifact = jar(cleanProperties())
+        val launch = launch(artifact, digest(artifact))
+        listOf(launch.copy(expectedSha256 = "secret"), launch.copy(expectedSource = SourceStamp("secret")))
+            .forEachIndexed { index, invalid ->
+                val failure = failedPreparation(invalid, index.toString())
+                assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidConfiguration)
+                assertThat(failure.verification.artifact).isEqualTo(VerificationState.NotChecked)
+                assertThat(failure.message).doesNotContain("secret")
+                assertThat(failure.verification.toString()).doesNotContain("secret")
+            }
+    }
+
+    private fun failedPreparation(
+        launch: PackagedLaunch,
+        suffix: String = "",
+        limits: PreparationLimits = PreparationLimits(),
+    ): PackagedLaunchException {
+        val staging = Files.createDirectory(tempDir.resolve("failed-staging$suffix"))
+        val failure =
+            assertThrows<PackagedLaunchException> { launch.prepare(stagingParent = staging, limits = limits).close() }
+        Files.list(staging).use { assertThat(it.count()).isZero() }
+        return failure
+    }
+
+    @Test
+    fun `manifest external classpath is rejected even with a matching digest and source`() {
+        val artifact = jar(cleanProperties(), classPath = "outside.jar")
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ExternalClassPath)
+    }
+
+    @Test
+    fun `duplicate provenance entry is rejected`() {
+        val artifact = jar(cleanProperties(), duplicate = true)
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Rejected)
+    }
+
+    @Test
+    fun `missing provenance entry is rejected`() {
+        val artifact = jar(cleanProperties(), includeProperties = false)
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Rejected)
+    }
+
+    @Test
+    fun `oversized embedded provenance fails closed`() {
+        val artifact = jar(cleanProperties() + "padding=${"x".repeat(1_000_000)}\n")
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Rejected)
+    }
+
+    @Test
+    fun `requested dirty source is explicitly unsupported`() {
+        val artifact = jar(cleanProperties())
+        val dirty = launch(artifact, digest(artifact)).copy(expectedSource = SourceStamp(COMMIT, true, "abcdef"))
+        assertThatThrownBy { dirty.prepare().close() }
+            .isInstanceOf(PackagedLaunchException::class.java)
+            .extracting("reason").isEqualTo(PackagedLaunchFailure.UnsupportedDirtySource)
+    }
+
+    @Test
+    fun `dirty observed stamp is explicitly unsupported`() {
+        val artifact = jar("gitSha=$COMMIT\ngitDirty=true\ngitDirtyHash=abcdef\n")
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.UnsupportedDirtySource)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Unsupported)
+        assertThat(failure.verification.observedSource).isEqualTo(SourceStamp(COMMIT, true, null))
+    }
+
+    @Test
+    fun `entry and artifact limits fail closed and leave no staged files`() {
+        val artifact = jar(cleanProperties(), extraEntries = 3)
+        val input = launch(artifact, digest(artifact))
+        val entryFailure = failedPreparation(input, "entries", PreparationLimits(maxEntries = 2))
+        assertThat(entryFailure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+        val sizeFailure = failedPreparation(input, "bytes", PreparationLimits(maxArtifactBytes = 8))
+        assertThat(sizeFailure.reason).isEqualTo(PackagedLaunchFailure.ArtifactTooLarge)
+    }
+
+    @Test
+    fun `metadata byte limit rejects oversized provenance without leaking staging`() {
+        val artifact = jar(cleanProperties())
+        val failure = failedPreparation(
+            launch(artifact, digest(artifact)),
+            "metadata",
+            PreparationLimits(maxMetadataBytes = 8),
+        )
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `case insensitive external classpath and duplicate manifest entries are rejected`() {
+        val classPath = jar(
+            cleanProperties(),
+            suffix = "classpath",
+            rawManifest = "Manifest-Version: 1.0\r\ncLaSs-PaTh: outside.jar\r\n\r\n",
+        )
+        val duplicate = jar(cleanProperties(), suffix = "manifest", duplicateManifest = true)
+        val external = failedPreparation(launch(classPath, digest(classPath)), "classpath")
+        val ambiguous = failedPreparation(launch(duplicate, digest(duplicate)), "manifest")
+        assertThat(external.reason).isEqualTo(PackagedLaunchFailure.ExternalClassPath)
+        assertThat(ambiguous.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `missing artifact is unavailable and leaves source unchecked`() {
+        val failure = failedPreparation(launch(tempDir.resolve("missing.jar"), "f".repeat(64)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(failure.verification.artifact).isEqualTo(VerificationState.Unavailable)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.NotChecked)
+        assertThat(failure.verification.observedDigest).isNull()
+    }
+
+    @Test
+    fun `oversized and malformed manifest fail closed`() {
+        val manifests = listOf(
+            "Manifest-Version: 1.0\r\nLong: ${"x".repeat(1000)}\r\n\r\n",
+            "Manifest-Version: 1.0\r\nNot a manifest attribute\r\n\r\n",
+        )
+        manifests.forEachIndexed { index, manifest ->
+            val artifact = jar(cleanProperties(), suffix = "manifest-$index", rawManifest = manifest)
+            val failure = failedPreparation(
+                launch(artifact, digest(artifact)),
+                "invalid-manifest-$index",
+                PreparationLimits(maxMetadataBytes = 256),
+            )
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+        }
+    }
+
+    @Test
+    fun `symbolic link artifact is rejected without following its target`() {
+        val artifact = jar(cleanProperties())
+        val link = tempDir.resolve("link.jar")
+        Files.createSymbolicLink(link, artifact)
+        val failure = failedPreparation(launch(link, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(failure.verification.artifact).isEqualTo(VerificationState.Unavailable)
+    }
+
+    @Test
+    fun `duplicate attributes in a named manifest section are rejected without logging their name`() {
+        val canary = "secret-canary"
+        val manifest = "Manifest-Version: 1.0\r\n\r\nName: first.class\r\n" +
+            "$canary: one\r\n$canary: two\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "section-duplicate", rawManifest = manifest)
+        val records = mutableListOf<LogRecord>()
+        val logger = Logger.getLogger("java.util.jar")
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                records.add(record)
+            }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        logger.addHandler(handler)
+        try {
+            val failure = failedPreparation(launch(artifact, digest(artifact)), "section-duplicate")
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.toString()).doesNotContain(canary)
+            assertThat(records.joinToString { "${it.message} ${it.parameters?.toList()}" }).doesNotContain(canary)
+        } finally {
+            logger.removeHandler(handler)
+        }
+    }
+
+    @Test
+    fun `empty main and repeated named section duplicate are rejected without logging name`() {
+        val canary = "secret-canary"
+        val manifest = "\r\nName: same.class\r\n$canary: first\r\n\r\n" +
+            "Name: same.class\r\n$canary: second\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "empty-main", rawManifest = manifest)
+        val records = mutableListOf<LogRecord>()
+        val logger = Logger.getLogger("java.util.jar")
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                records.add(record)
+            }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        logger.addHandler(handler)
+        try {
+            val failure = failedPreparation(launch(artifact, digest(artifact)), "empty-main")
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.toString()).doesNotContain(canary)
+            assertThat(records.joinToString { "${it.message} ${it.parameters?.toList()}" }).doesNotContain(canary)
+        } finally {
+            logger.removeHandler(handler)
+        }
+    }
+
+    @Test
+    fun `same digest attribute in distinct named manifest sections is accepted`() {
+        val manifest = "Manifest-Version: 1.0\r\n\r\nName: first.class\r\n" +
+            "SHA-256-Digest: first\r\n\r\nName: second.class\r\nSHA-256-Digest: second\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "distinct-sections", rawManifest = manifest)
+        launch(artifact, digest(artifact)).prepare().use { prepared ->
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+        }
+    }
+
+    @Test
+    fun `duplicate attribute in split same name sections is rejected`() {
+        val manifest = "Manifest-Version: 1.0\r\n\r\nName: same.class\r\nSecret-Canary: first\r\n\r\n" +
+            "Name: same.class\r\nsecret-canary: second\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "same-name", rawManifest = manifest)
+        assertThat(failedPreparation(launch(artifact, digest(artifact)), "same-name").reason)
+            .isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `folded multibyte entry name detects duplicate across sections`() {
+        val manifest = "Manifest-Version: 1.0\n\nName: caf".toByteArray() + byteArrayOf(0xc3.toByte()) +
+            "\n ".toByteArray() + byteArrayOf(0xa9.toByte()) +
+            ".class\nSecret-Canary: first\n\nName: café.class\nsecret-canary: second\n\n".toByteArray()
+        val artifact = jar(cleanProperties(), suffix = "folded-name", rawManifestBytes = manifest)
+        assertThat(failedPreparation(launch(artifact, digest(artifact)), "folded-name").reason)
+            .isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `same named sections with disjoint attributes and folded values are accepted`() {
+        val manifest = "Manifest-Version: 1.0\n\nName: same.class\nFirst: long\n value\n\n" +
+            "Name: same.class\nSecond: value\n\n"
+        val artifact = jar(cleanProperties(), suffix = "disjoint", rawManifest = manifest)
+        launch(artifact, digest(artifact)).prepare().use { prepared ->
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+        }
+    }
+
+    @Test
+    fun `manifest continuation without preceding attribute is rejected`() {
+        val manifest = "Manifest-Version: 1.0\r\n\r\n orphan\r\n"
+        val artifact = jar(cleanProperties(), suffix = "orphan", rawManifest = manifest)
+        assertThat(failedPreparation(launch(artifact, digest(artifact)), "orphan").reason)
+            .isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `CR only main duplicate attributes are rejected without logging names`() {
+        assertDuplicateManifestRejected(
+            "Manifest-Version: 1.0\rSecret-Canary: first\rsecret-canary: second\r\r",
+            "cr-main",
+        )
+    }
+
+    @Test
+    fun `mixed line endings cannot hide duplicate main attributes`() {
+        assertDuplicateManifestRejected(
+            "Manifest-Version: 1.0\r\nSecret-Canary: first\rsecret-canary: second\n\n",
+            "mixed-main",
+        )
+    }
+
+    @Test
+    fun `CR named sections retain case insensitive repeated entry validation`() {
+        val manifests = listOf(
+            "Manifest-Version: 1.0\r\rName: same.class\rSecret-Canary: first\r\r" +
+                "Name: same.class\rsecret-canary: second\r\r",
+            "Manifest-Version: 1.0\n\nName: same.class\rSecret-Canary: first\r\n\r\n" +
+                "Name: same.class\nsecret-canary: second\r\r",
+        )
+        manifests.forEachIndexed { index, manifest ->
+            assertDuplicateManifestRejected(manifest, "cr-section-$index")
+        }
+    }
+
+    @Test
+    fun `valid CR only and mixed manifests preserve folds and distinct entries`() {
+        val manifests = listOf(
+            "Manifest-Version: 1.0\rDescription: first\r second\r\r" +
+                "Name: first.class\rSHA-256-Digest: first\r\r" +
+                "Name: second.class\rSHA-256-Digest: second\r\r",
+            "Manifest-Version: 1.0\r\nDescription: first\r second\n\n" +
+                "Name: first.class\rSHA-256-Digest: first\n\n" +
+                "Name: second.class\nSHA-256-Digest: second\r\n\r\n",
+        )
+        manifests.forEachIndexed { index, manifest ->
+            val artifact = jar(cleanProperties(), suffix = "valid-cr-$index", rawManifest = manifest)
+            launch(artifact, digest(artifact)).prepare().use { prepared ->
+                assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+            }
+        }
+    }
+
+    private fun assertDuplicateManifestRejected(manifest: String, suffix: String) {
+        val artifact = jar(cleanProperties(), suffix = suffix, rawManifest = manifest)
+        val records = mutableListOf<LogRecord>()
+        val logger = Logger.getLogger("java.util.jar")
+        val parentHandlers = logger.useParentHandlers
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                records.add(record)
+            }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        logger.useParentHandlers = false
+        logger.addHandler(handler)
+        try {
+            val failure = failedPreparation(launch(artifact, digest(artifact)), suffix)
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.toString()).doesNotContainIgnoringCase("secret-canary")
+            assertThat(records.joinToString { "${it.message} ${it.parameters?.toList()}" })
+                .doesNotContainIgnoringCase("secret-canary")
+            assertThat(records).isEmpty()
+        } finally {
+            logger.removeHandler(handler)
+            logger.useParentHandlers = parentHandlers
+        }
+    }
+
+    @Test
+    fun `duplicate manifest classpath attributes cannot erase an external dependency`() {
+        val artifact = jar(
+            cleanProperties(),
+            rawManifest = "Manifest-Version: 1.0\r\nClass-Path: outside.jar\r\nClass-Path: \r\n\r\n",
+        )
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `impractical metadata limit is rejected before staging`() {
+        val artifact = jar(cleanProperties())
+        val failure = failedPreparation(
+            launch(artifact, digest(artifact)),
+            "limit-overflow",
+            PreparationLimits(maxMetadataBytes = Int.MAX_VALUE),
+        )
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidConfiguration)
+        assertThat(failure.verification.artifact).isEqualTo(VerificationState.NotChecked)
+    }
+
+    @Test
+    fun `malformed ZIP and escaped properties fail safely without staged files`() {
+        val brokenZip = Files.writeString(tempDir.resolve("broken.jar"), "not a zip")
+        val brokenProperties = jar("gitSha=$COMMIT\ngitDirty=false\ngitDirtyHash=\ninvalid=\\uZZZZ\n")
+        listOf(brokenZip, brokenProperties).forEachIndexed { index, artifact ->
+            val failure = failedPreparation(launch(artifact, digest(artifact)), "malformed-$index")
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.message).doesNotContain(tempDir.toString())
+        }
+    }
+
+    @Test
+    fun `post start verification rejects a staged artifact grown beyond the configured limit`() {
+        val artifact = jar(cleanProperties())
+        val limit = Files.size(artifact) + 1
+        launch(
+            artifact,
+            digest(artifact),
+        ).prepare(limits = PreparationLimits(maxArtifactBytes = limit)).use { prepared ->
+            Files.write(prepared.jar, ByteArray((limit + 1).toInt()))
+            val failure = assertThrows<PackagedLaunchException> { prepared.verifyAfterStart() }
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactTooLarge)
+            assertThat(failure.verification.artifact).isEqualTo(VerificationState.Rejected)
+        }
+    }
+
+    @Test
+    fun `post start verification refuses a staged symbolic link without following it`() {
+        val artifact = jar(cleanProperties())
+        launch(artifact, digest(artifact)).prepare().use { prepared ->
+            Files.delete(prepared.jar)
+            Files.createSymbolicLink(prepared.jar, artifact)
+            val failure = assertThrows<PackagedLaunchException> { prepared.verifyAfterStart() }
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+            assertThat(failure.verification.artifact).isEqualTo(VerificationState.Unavailable)
+        }
+    }
+
+    @Test
+    fun `relative Java executable is rejected before staging`() {
+        val artifact = jar(cleanProperties())
+        val workingDirectory = Path.of("").toAbsolutePath()
+        val executable = Files.createTempFile(workingDirectory, "gvy-java-test-", ".exe")
+        try {
+            assertThat(executable.toFile().setExecutable(true)).isTrue()
+            assertThat(Files.isExecutable(executable)).isTrue()
+            val input = launch(artifact, digest(artifact)).copy(javaExecutable = executable.fileName)
+            val failure = failedPreparation(input)
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidConfiguration)
+            assertThat(failure.verification.artifact).isEqualTo(VerificationState.NotChecked)
+        } finally {
+            Files.deleteIfExists(executable)
+        }
+    }
+
+    @Test
+    fun `staging cleanup failure preserves safe primary and safe suppression`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("cleanup-parent"))
+        var created: Path? = null
+        try {
+            val failure = assertThrows<PackagedLaunchException> {
+                launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = { directory ->
+                    created = directory
+                    Files.writeString(directory.resolve("test-owned-child"), "fixture")
+                    throw java.io.IOException("secret-canary")
+                }).close()
+            }
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+            assertThat(failure.cause).isNull()
+            assertThat(failure.suppressed).hasSize(1)
+            assertThat(failure.suppressed.single().message).isEqualTo("Staging cleanup failed")
+            assertThat(failure.stackTraceToString()).doesNotContain("secret-canary", parent.toString())
+            assertThat(created).isNotNull()
+        } finally {
+            created?.let { directory ->
+                Files.deleteIfExists(directory.resolve("test-owned-child"))
+                Files.deleteIfExists(directory)
+            }
+        }
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `preparation preserves cancellation and removes the owned stage`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("cancel-stage"))
+        val control = CancellationException("local cancellation")
+        assertThatThrownBy {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = { throw control })
+        }.isSameAs(control)
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `preparation preserves interruption and restores its flag after cleanup`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("interrupt-stage"))
+        val control = InterruptedException("local interruption")
+        try {
+            assertThatThrownBy {
+                launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                    throw control
+                })
+            }.isSameAs(control)
+            assertThat(Thread.currentThread().isInterrupted).isTrue()
+            Files.list(parent).use { assertThat(it.count()).isZero() }
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
+    fun `socket timeout remains a sanitized IO failure without setting interrupt`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("timeout-stage"))
+        val failure = assertThrows<PackagedLaunchException> {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw SocketTimeoutException("secret-canary")
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(failure.message).doesNotContain("secret-canary")
+        assertThat(Thread.currentThread().isInterrupted).isFalse()
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `preparation preserves fatal failure and removes owned stage`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("fatal-stage"))
+        val fatal = AssertionError("local fatal")
+        assertThatThrownBy {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = { throw fatal })
+        }.isSameAs(fatal)
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `prepared close preserves local control and fatal failures`() {
+        val artifact = jar(cleanProperties())
+        val controls = listOf(
+            CancellationException("local cancellation"),
+            InterruptedException("local interrupt"),
+            AssertionError("local fatal"),
+        )
+        controls.forEach { control ->
+            val prepared = launch(artifact, digest(artifact)).prepare(closeStaging = { throw control })
+            try {
+                assertThatThrownBy { prepared.close() }.isSameAs(control)
+                assertThat(Thread.currentThread().isInterrupted).isEqualTo(control is InterruptedException)
+            } finally {
+                Thread.interrupted()
+                Files.deleteIfExists(prepared.jar)
+                Files.deleteIfExists(prepared.jar.parent)
+            }
+        }
+    }
+
+    @Test
+    fun `throwing cause accessor is sanitized after removing the owned stage`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("throwing-cause-stage"))
+        val uninspectable = object : IOException("private wrapper") {
+            override val cause: Throwable
+                get() = throw IllegalStateException("secret-cause-canary")
+        }
+        val failure = assertThrows<PackagedLaunchException>("throwing cause accessor must remain private") {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw uninspectable
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-cause-canary", "private wrapper")
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `control thrown by cause accessor is preserved after staging cleanup`() {
+        val artifact = jar(cleanProperties())
+        val controls = listOf(
+            AssertionError("local fatal"),
+            InterruptedException("local interruption"),
+            CancellationException("local cancellation"),
+        )
+        controls.forEachIndexed { index, control ->
+            val parent = Files.createDirectory(tempDir.resolve("accessor-control-$index"))
+            val wrapper = object : IOException("private wrapper") {
+                override val cause: Throwable
+                    get() = throw control
+            }
+            try {
+                assertThatThrownBy {
+                    launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                        throw wrapper
+                    })
+                }.isSameAs(control)
+                assertThat(Thread.currentThread().isInterrupted).isEqualTo(control is InterruptedException)
+                Files.list(parent).use {
+                    assertThat(it.count())
+                        .describedAs("preparation must remove owned stage before replaying accessor control")
+                        .isZero()
+                }
+            } finally {
+                Thread.interrupted()
+            }
+        }
+    }
+
+    @Test
+    fun `fresh cause nodes cannot grow inspection without a bound`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("fresh-cause-stage"))
+        val reads = AtomicInteger()
+        fun nextFailure(): Throwable = object : IOException("private wrapper") {
+            override val cause: Throwable
+                get() {
+                    check(reads.incrementAndGet() <= 1024) { "secret-unbounded-canary" }
+                    return nextFailure()
+                }
+        }
+        val failure = assertThrows<PackagedLaunchException>("fresh cause traversal must remain bounded and private") {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw nextFailure()
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(reads.get()).isBetween(1, 512)
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-unbounded-canary", "private wrapper")
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `wide suppressed graph has bounded inspection work`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("wide-graph-stage"))
+        val reads = AtomicInteger()
+        val wrapper = IOException("private wrapper")
+        repeat(1024) {
+            wrapper.addSuppressed(object : IOException() {
+                override val cause: Throwable?
+                    get() {
+                        reads.incrementAndGet()
+                        return null
+                    }
+            })
+        }
+        val failure = assertThrows<PackagedLaunchException> {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw wrapper
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(reads.get()).describedAs("wide suppressed graph must bound cause reads").isBetween(0, 512)
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `failed preparation runs its owned closer and preserves cleanup control`() {
+        val artifact = jar(cleanProperties())
+        val cleanups = listOf(
+            AssertionError("local cleanup fatal"),
+            InterruptedException("local cleanup interruption"),
+            CancellationException("local cleanup cancellation"),
+        )
+        cleanups.forEachIndexed { index, cleanup ->
+            val parent = Files.createDirectory(tempDir.resolve("dual-control-$index"))
+            val primary = AssertionError("local primary fatal")
+            var closerCalled = false
+            try {
+                val caught = try {
+                    launch(artifact, digest(artifact)).prepare(
+                        stagingParent = parent,
+                        afterStagingCreated = { throw primary },
+                        closeStaging = { directory ->
+                            closerCalled = true
+                            Files.deleteIfExists(directory.resolve("server.jar"))
+                            Files.delete(directory)
+                            throw cleanup
+                        },
+                    )
+                    null
+                } catch (failure: Throwable) {
+                    failure
+                }
+                assertThat(caught === primary).isTrue()
+                Files.list(parent).use { assertThat(it.count()).isZero() }
+                assertThat(closerCalled && primary.suppressed.any { it === cleanup })
+                    .describedAs("failed preparation must run its owned closer and preserve cleanup control")
+                    .isTrue()
+                assertThat(primary.suppressed.any { it.message == "Session cleanup failed" }).isTrue()
+                assertThat(Thread.currentThread().isInterrupted).isEqualTo(cleanup is InterruptedException)
+            } finally {
+                Thread.interrupted()
+            }
+        }
+    }
+
+    @Test
+    fun `bounded cyclic graph preserves its observed fatal signal after cleanup`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("cyclic-graph-stage"))
+        val first = IOException("local wrapper")
+        var previous: Throwable = first
+        repeat(64) {
+            val next = IOException("local wrapper")
+            previous.initCause(next)
+            previous.addSuppressed(IOException("local suppressed failure"))
+            previous = next
+        }
+        val fatal = AssertionError("local fatal")
+        previous.initCause(fatal)
+        fatal.initCause(first)
+        assertThatThrownBy {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw first
+            })
+        }.isSameAs(fatal)
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `dirty expected source does not retain arbitrary hash content`() {
+        val artifact = jar(cleanProperties())
+        val canary = "secret-canary-".repeat(500)
+        val input = launch(artifact, digest(artifact)).copy(expectedSource = SourceStamp(COMMIT, true, canary))
+        val failure = failedPreparation(input)
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.UnsupportedDirtySource)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Unsupported)
+        assertThat(failure.verification.expectedSource?.dirtyHash).isNull()
+        assertThat(failure.verification.expectedSource).isEqualTo(SourceStamp(COMMIT, true, null))
+        assertThat(failure.verification.toString()).doesNotContain("secret-canary")
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-canary")
+        assertThat(failure.cause).isNull()
+    }
+
+    @Test
+    fun `dirty embedded source does not retain arbitrary hash content`() {
+        val canary = "secret-canary-".repeat(500)
+        val artifact = jar("gitSha=$COMMIT\ngitDirty=true\ngitDirtyHash=$canary\n")
+        val failure = failedPreparation(launch(artifact, digest(artifact)))
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.UnsupportedDirtySource)
+        assertThat(failure.verification.source).isEqualTo(VerificationState.Unsupported)
+        assertThat(failure.verification.observedSource?.dirtyHash).isNull()
+        assertThat(failure.verification.observedSource).isEqualTo(SourceStamp(COMMIT, true, null))
+        assertThat(failure.verification.toString()).doesNotContain("secret-canary")
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-canary")
+        assertThat(failure.cause).isNull()
+    }
+
+    private fun launch(artifact: Path, sha: String) = PackagedLaunch(
+        javaExecutable = Path.of(
+            System.getProperty("java.home"),
+            "bin",
+            if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java",
+        ),
+        jar = artifact,
+        expectedSha256 = sha,
+        expectedSource = SourceStamp(COMMIT),
+    )
+
+    private fun jar(
+        properties: String,
+        suffix: String = "",
+        classPath: String? = null,
+        duplicate: Boolean = false,
+        includeProperties: Boolean = true,
+        rawManifest: String? = null,
+        rawManifestBytes: ByteArray? = null,
+        duplicateManifest: Boolean = false,
+        extraEntries: Int = 0,
+    ): Path {
+        val path = tempDir.resolve("server$suffix.jar")
+        val manifest = Manifest().apply {
+            mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
+            classPath?.let { mainAttributes[Attributes.Name.CLASS_PATH] = it }
+        }
+        JarOutputStream(Files.newOutputStream(path)).use { jar ->
+            jar.putNextEntry(JarEntry("META-INF/MANIFEST.MF"))
+            if (rawManifestBytes != null) {
+                jar.write(rawManifestBytes)
+            } else if (rawManifest != null) {
+                jar.write(rawManifest.toByteArray())
+            } else {
+                manifest.write(jar)
+            }
+            jar.closeEntry()
+            if (duplicateManifest) {
+                jar.putNextEntry(JarEntry("META-INF/MANIFEST.MG"))
+                manifest.write(jar)
+                jar.closeEntry()
+            }
+            repeat(extraEntries) { index ->
+                jar.putNextEntry(JarEntry("extra-$index"))
+                jar.closeEntry()
+            }
+            if (includeProperties) {
+                jar.putNextEntry(JarEntry("version.properties"))
+                jar.write(properties.toByteArray())
+                jar.closeEntry()
+            }
+            if (duplicate) {
+                jar.putNextEntry(JarEntry("version.propertiez"))
+                jar.write(properties.toByteArray())
+                jar.closeEntry()
+            }
+            jar.putNextEntry(JarEntry("fixture"))
+            jar.write(suffix.toByteArray())
+            jar.closeEntry()
+        }
+        if (duplicate || duplicateManifest) {
+            val bytes = Files.readAllBytes(path)
+            val alternate = (if (duplicate) "version.propertiez" else "META-INF/MANIFEST.MG").toByteArray()
+            val canonical = (if (duplicate) "version.properties" else "META-INF/MANIFEST.MF").toByteArray()
+            for (index in 0..bytes.size - alternate.size) {
+                if (alternate.indices.all { bytes[index + it] == alternate[it] }) {
+                    canonical.copyInto(bytes, index)
+                }
+            }
+            Files.write(path, bytes)
+        }
+        return path
+    }
+
+    private fun digest(path: Path): String = MessageDigest.getInstance("SHA-256")
+        .digest(Files.readAllBytes(path)).joinToString("") { "%02x".format(it) }
+
+    private fun cleanProperties() = "gitSha=$COMMIT\ngitDirty=false\ngitDirtyHash=\n"
+
+    private companion object {
+        val COMMIT = "a".repeat(40)
+    }
+}

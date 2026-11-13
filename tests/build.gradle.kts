@@ -232,6 +232,7 @@ val harnessTest =
         listOf(
             "XfailOutcomeTest",
             "ScenarioExecutorResourcesTest",
+            "SessionResourcesTest",
             "ScenarioExecutionTest",
             "HarnessApplyEditTruthTest",
             "ScenarioDeadlineTest",
@@ -248,6 +249,8 @@ val harnessTest =
             "PrivateStderrCaptureTest",
             "ScenarioOutcomeJUnitTest",
             "NamedScenarioRunnerTest",
+            "PackagedLaunchTest",
+            "PackagedSessionFactoryTest",
             "NamedHighLevelChecksTest",
             "BoundedFailureEvidenceTest",
             "ScenarioDslTest",
