@@ -2,12 +2,12 @@
   "base": "dbc590b62c9ed92a846e7dfb3e92a00ffba4bdbd",
   "mode": "red-green",
   "red": {
-    "tree": "a0d3b7c7c31e24e0e6a98f4922ee9a84f5183398",
+    "tree": "9ddc79cf89677a18fa362f14e7cf63b199e9d4ba",
     "patch": {
-      "sha256": "5674d768ecbba6b76e2d14a81086acfca4bebc326387791c7234290a59a6f61c",
-      "compressedSha256": "096bb26c2a2737ae896c6d8abceb37071bee3c66a9b7eeebf08fd9f766b7fda5",
-      "bytes": 18948,
-      "compressedBytes": 4167
+      "sha256": "2730ada43ba623fea224742a6946329c38caa94bdffca4cd8ccbab77ee5cb933",
+      "compressedSha256": "1a95897689a8f2365a0c6439724a87b26488ec57f7ae2f99df97deed0d51ce59",
+      "bytes": 20926,
+      "compressedBytes": 4437
     },
     "paths": [
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
@@ -16,7 +16,7 @@
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 47
+        "count": 48
       },
       {
         "name": "PackagedSessionFactoryTest",
@@ -203,6 +203,17 @@
         "includes": [
           "explicit launch must ignore unused legacy jar: InvalidPathException"
         ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "failed preparation runs its owned closer and preserves cleanup control()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "failed preparation must run its owned closer and preserve cleanup control"
+        ]
       }
     ]
   },
@@ -215,12 +226,12 @@
     "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00"
   },
   "green": {
-    "tree": "177c375d35b0fd3e627760eed7dc135320435815",
+    "tree": "83b5449561ef6c386b95ddd0cfcc6fd877e240a1",
     "patch": {
-      "sha256": "791ce5cbbc05e7fd8c90420ba55a3c002cee8667751bc9c8c774753bef535fda",
-      "compressedSha256": "25fc6378a6c868e442ac407b8e8ffb42982784c846d9d22d0bce6ae7ca2d9340",
-      "bytes": 18423,
-      "compressedBytes": 5051
+      "sha256": "64d341db56e2fd34d3e68180e327085c2d6552f9b313b5584de7805bdf379c3a",
+      "compressedSha256": "963f26db95908bb67274fd4543a13b8f5aaa93f7a3335c66955bdb6972c34df1",
+      "bytes": 20156,
+      "compressedBytes": 5423
     },
     "paths": [
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt",
@@ -232,7 +243,7 @@
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 48
+        "count": 49
       },
       {
         "name": "PackagedSessionFactoryTest",
