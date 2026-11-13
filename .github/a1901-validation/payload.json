@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "status": "fixed-v2",
+  "files": [
+    {
+      "path": ".github/a1901-validation/ordering-graph.init.gradle",
+      "sha256": "3c44dd47123af974ab90a34ef9420ad5ca6a848e2fb762bcdcd67de88f10c171"
+    },
+    {
+      "path": ".github/a1901-validation/payload.json.license",
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".github/a1901-validation/profile.json",
+      "sha256": "51a4a8650509d4972ac4a735322afff070f17e2034abbbedcf8d99387b42c2db"
+    },
+    {
+      "path": ".github/a1901-validation/profile.json.license",
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".github/a1901-validation/root-kotlin-format.init.gradle",
+      "sha256": "6f5e444f74173ec5ef0a5dd77b7f0df739ca5dca84c3c8c3e1418a2bb7ae2c26"
+    },
+    {
+      "path": ".github/a1901-validation/source.patch",
+      "sha256": "16b2d324852494d45a1136331ec76c3b6d353f31ec0ea4a65b35bca72496818f"
+    },
+    {
+      "path": ".github/a1901-validation/source.patch.license",
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".github/workflows/dependency-maintenance.yml",
+      "sha256": "6100bd48def1c2eb7364b18f6d767e92aed3d94a42cd245ca856ec996e44f873"
+    },
+    {
+      "path": "tools/ci/a1901-validation-worker.mjs",
+      "sha256": "311919a1ec465f849678c0fb950570447ef6225e6fb8f6568b40c8b55332135d"
+    },
+    {
+      "path": "tools/ci/a1901-validation-worker.test.mjs",
+      "sha256": "2febdafb5b9e0c3e6a0d4eef4de716ec0770973b604723484e64e828208f7a4c"
+    }
+  ]
+}

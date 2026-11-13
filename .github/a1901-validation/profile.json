@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "purpose": "fixed A1901 precommit proof, not publication-head CI acceptance",
+  "revision": "v2",
+  "repository": "albertocavalcante/gvy",
+  "workerRef": "refs/heads/ci/a1901-validation-worker",
+  "sourceBase": "70c639403588b74d556eb42591c9a7aa2941df2a",
+  "sourceTree": "a0f972a24b950992b40deeb459cdeb14ffb8ff25",
+  "patchSha256": "16b2d324852494d45a1136331ec76c3b6d353f31ec0ea4a65b35bca72496818f",
+  "sourceFiles": [
+    {
+      "path": ".reuse/check.py",
+      "sha256": "a6308b64a8de23c0f0c37e7a154c23caa4ef4d039fc076c9d629e6c74c224212",
+      "gitBlob": "da68832c7a87f55231327a67a3a9b2114a3e4d7a"
+    },
+    {
+      "path": ".reuse/tests/test_check.py",
+      "sha256": "a65bad35aa3d2e32739977f97aba457f1b8ce57d35b1f67e9749121e31e22bd3",
+      "gitBlob": "603b4a2477207d150f715149642050fae0cfd5a3"
+    },
+    {
+      "path": "build.gradle.kts",
+      "sha256": "8575b550ef5d9d8d09195e4f9e8a88e2169d535a70f103a26a6eaf5ab61c9fe1",
+      "gitBlob": "80ed0c7c57496e33ab0be0ea9935b622a45e6bef"
+    },
+    {
+      "path": "docs/ci-diagnostics.md",
+      "sha256": "eec490f7bdc7216dfb525d628aebd80a241021735bc4ea7466e0332e815da76e",
+      "gitBlob": "b9bad91fb89d48b14460ff4c78bbad807bd41cda"
+    },
+    {
+      "path": "tools/ci/gradle-memory-probe.mjs",
+      "sha256": "972575d81824a78d0febc035144db3f4b0b55c6f220ddc449d6c5a927f823559",
+      "gitBlob": "86ac2fda94fee3f9c20abf600ecf3b95be3efb4a"
+    },
+    {
+      "path": "tools/ci/gradle-memory-probe.test.mjs",
+      "sha256": "d9ffc1dc279783ce39cb673928870a258fafd4d2e46660cad51d5e4bcc4c960c",
+      "gitBlob": "e082579290e20ad3615a5822e428100938106b2c"
+    },
+    {
+      "path": "tools/ci/verify-license-task-ordering.mjs",
+      "sha256": "700658d462564f4d6cf5172a3a3a48ed6d292133459da9145c08f0ca5ede22d4",
+      "gitBlob": "d01b59248b940d10cd25fd33d4e3105afc22b7e7"
+    },
+    {
+      "path": "tools/ci/verify-license-task-ordering.test.mjs",
+      "sha256": "2595833d4049dd26b1210d0391e5b585857f089aa8e78aaea39ea4dd870b0e8a",
+      "gitBlob": "ff8956b42dbf5f8e30ac3b07ca7e7b2036da765a"
+    }
+  ],
+  "toolHashes": [
+    {
+      "path": "gradlew",
+      "sha256": "a5a5c199ba02189ae8c46a334223371a20599d9c298ef65e7540ede4a3f72d59"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.jar",
+      "sha256": "3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.properties",
+      "sha256": "8a72676392342f526a63328b1861d848712d3d03187c5bdb2bd62d388ac17198"
+    },
+    {
+      "path": "tools/ci/run-gradle.mjs",
+      "sha256": "3f492c50886697bc926d4b156aa805eecbd47f09cf97a8263bb9b5c793256d93"
+    },
+    {
+      "path": "tools/ci/read-evidence.mjs",
+      "sha256": "0bc943ee1a25ef803812e4444912049f9706999a546782779a035c9765dedb9a"
+    },
+    {
+      "path": ".reuse/uv.lock",
+      "sha256": "0be5941e5e505e302966a9794802ea9695cc278b906f92e708accb23fc2e29e1"
+    },
+    {
+      "path": ".reuse/pyproject.toml",
+      "sha256": "b11584d278c0c5d86dd0a0509fadaa0dc61b425790a44dc30f507db40622b1e4"
+    },
+    {
+      "path": ".reuse/bootstrap-requirements.txt",
+      "sha256": "723288054998ad5a0c1fcf25b8184c0f8bf5b0d118263c8edce3a8789e5420ee"
+    },
+    {
+      "path": ".github/actions/setup-licensing/action.yml",
+      "sha256": "71ff8840f4a188d6899b7eb04f930a11d6500bd42eb82289ee3b2bb58f6c86b3"
+    }
+  ],
+  "tools": {
+    "gradle": "9.8.2",
+    "distributionSha256": "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607",
+    "spotless": "8.11.0",
+    "ktlint": "1.7.1",
+    "detekt": "1.23.8",
+    "jdkMajor": 21,
+    "nodeMajor": 24,
+    "pythonMajorMinor": "3.11",
+    "reuse": "6.3.0",
+    "uv": "0.13.7"
+  },
+  "limits": {
+    "jobMinutes": 45,
+    "phaseSeconds": 900,
+    "phaseLogBytes": 8388608,
+    "totalStreamBytes": 29360128,
+    "evidenceBytes": 134217728,
+    "maxFiles": 4096,
+    "minMemTotalGiB": 14,
+    "minMemAvailableGiB": 12,
+    "minDiskFreeGiB": 12,
+    "minRemainingDiskGiB": 4,
+    "fullDaemonHeapMiB": 2048,
+    "fullDaemonMetaspaceMiB": 1024,
+    "maxWorkers": 2,
+    "clientHeapMiB": 256,
+    "clientMetaspaceMiB": 256,
+    "additionalWorkerHeapBudgetMiB": 4096,
+    "additionalWorkerMetaspaceBudgetMiB": 512
+  },
+  "phases": [
+    "node-controls",
+    "python-controls",
+    "root-format-apply",
+    "root-format-check",
+    "fixtures",
+    "prerequisites",
+    "probe-order",
+    "lintfix",
+    "lint",
+    "focused-compile",
+    "root-format-final-check"
+  ],
+  "scope": {
+    "remoteBuildScans": false,
+    "remoteCache": false,
+    "remoteBes": false,
+    "remoteExecutor": false,
+    "numericSampler": false,
+    "rssClaim": false,
+    "sourcePublication": false,
+    "factory1897Edits": false
+  },
+  "limitsExplanation": [
+    "Configured JVM caps and capacity admission are not a numeric/RSS proof. Reserve two additional worker heaps plus native/OS headroom; Kotlin compilation stays in-process.",
+    "Gradle resolves the existing pinned source normally; no assumed populated cache. Canonical uv checker stays offline after locked bootstrap.",
+    "Helper workflow head is distinct from target sourceBase plus fixed patch. Preserve both identities; this proof cannot supply final PR CI freshness.",
+    "The original70 licensing detail and original433 probe cause remain unknown. No retained historical failure becomes green."
+  ],
+  "reviewedInputs": {
+    "memoryRepairPatchSha256": "7e8db8622a919e56f45d1c63d4d3204f42b18dd947e89431ba7225fc64e248d3",
+    "strictStderrDeltaSha256": "7dd4330cad8d0feff599d6d3ef02a86b9af9322f56fd98256d0c66af645e7db9"
+  },
+  "patchedTree": "174714d9ebb8ea5492592f08d6028dcd525721e9"
+}

@@ -1,0 +1,1225 @@
+diff --git a/.reuse/check.py b/.reuse/check.py
+index 87a037cbf8d4d77052d69b6430a8b72b2d74e7d6..da68832c7a87f55231327a67a3a9b2114a3e4d7a 100644
+--- a/.reuse/check.py
++++ b/.reuse/check.py
+@@ -12,7 +12,7 @@ import re
+ import subprocess
+ import sys
+ import tomllib
+-from pathlib import Path
++from pathlib import Path, PurePosixPath, PureWindowsPath
+ 
+ REQUIRED_LICENSE_PATHS = {"LICENSE", "LICENSES/Apache-2.0.txt", "editors/code/LICENSE", "editors/zed/LICENSE"}
+ # Resources include byte-sensitive fixtures and bundled data; their provenance is
+@@ -110,6 +110,162 @@ NAMES = {
+     "gradlew",
+ }
+ TAG = re.compile(r"^SPDX-(FileCopyrightText|License-Identifier):\s*(.*?)\s*$")
++NON_COMPLIANT_CATEGORIES = (
++    "bad_licenses",
++    "deprecated_licenses",
++    "licenses_without_extension",
++    "missing_licenses",
++    "unused_licenses",
++    "read_errors",
++    "missing_copyright_info",
++    "missing_licensing_info",
++)
++PATH_CATEGORIES = frozenset({"read_errors", "missing_copyright_info", "missing_licensing_info"})
++DIAGNOSTIC_BYTES = 16 * 1024
++DIAGNOSTIC_ITEMS = 50
++DIAGNOSTIC_FIELD_CHARS = 256
++
++
++def diagnostic_path(name: str, root: Path) -> str:
++    """Normalize lexically; diagnostic paths never cause filesystem access."""
++    path = Path(name)
++    if ".." in name.replace("\\", "/").split("/"):
++        return "[unsafe-path]"
++    if path.is_absolute():
++        try:
++            path = path.relative_to(root)
++        except ValueError:
++            return "[outside-root]"
++    elif PureWindowsPath(name).drive or PureWindowsPath(name).root or PurePosixPath(name).is_absolute():
++        return "[outside-root]"
++    return path.as_posix()
++
++
++class Diagnostics:
++    """Bound rendered details, reserving space for status and omission counts."""
++
++    def __init__(self) -> None:
++        self.lines: list[str] = []
++        self.size = 0
++        self.items = 0
++        self.omitted = 0
++        self.truncated_chars = 0
++        # Known credential values only; this is not a general secret detector.
++        self.secrets = sorted(
++            {
++                item
++                for name, item in os.environ.items()
++                if item and re.search(r"TOKEN|PASSWORD|SECRET|CREDENTIAL|API_KEY|PRIVATE_KEY|AUTHORIZATION", name, re.I)
++            },
++            key=lambda item: (-len(item), item),
++        )
++
++    def redact(self, value: str) -> str:
++        for secret in self.secrets:
++            value = value.replace(secret, "[redacted]")
++        return value
++
++    def add(self, label: str, value: str | None = None, *, detail: bool = False) -> None:
++        suffix = ""
++        if value is not None:
++            value = self.redact(value)
++            if len(value) > DIAGNOSTIC_FIELD_CHARS:
++                self.truncated_chars += len(value) - (DIAGNOSTIC_FIELD_CHARS - 3)
++                value = value[: DIAGNOSTIC_FIELD_CHARS - 3] + "..."
++            # ASCII JSON escaping includes controls, ANSI escapes and bidi characters.
++            suffix = json.dumps(value, ensure_ascii=True)
++        line = f"REUSE diagnostic: {label}{suffix}"
++        size = len(line.encode("utf-8")) + 1
++        if (detail and self.items >= DIAGNOSTIC_ITEMS) or self.size + size > DIAGNOSTIC_BYTES - 512:
++            self.omitted += 1
++            return
++        self.lines.append(line)
++        self.size += size
++        self.items += int(detail)
++
++    def finish(self) -> list[str]:
++        if self.omitted or self.truncated_chars:
++            self.lines.append(
++                f"REUSE diagnostic: omitted items={self.omitted}; truncated characters={self.truncated_chars}"
++            )
++        return self.lines
++
++
++def non_compliant_categories(value: object) -> dict[str, list[str]]:
++    categories = as_object(as_object(value).get("non_compliant"))
++    if set(categories) != set(NON_COMPLIANT_CATEGORIES):
++        raise ValueError("unexpected REUSE non_compliant categories")
++    result: dict[str, list[str]] = {}
++    for category in NON_COMPLIANT_CATEGORIES:
++        items = categories[category]
++        if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
++            raise TypeError("invalid REUSE non_compliant category")
++        result[category] = [item for item in items if isinstance(item, str)]
++    return result
++
++
++def reuse_diagnostics(report: object, root: Path, stderr: str | bytes | None) -> list[str]:
++    output = Diagnostics()
++    if report is not None:
++        categories = non_compliant_categories(report)
++        files = as_object(report)["files"]
++        if not isinstance(files, list):
++            raise TypeError("invalid REUSE files")
++        invalid: list[tuple[str, int]] = []
++        for raw_file in files:
++            file = as_object(raw_file)
++            entries = file["spdx_expressions"]
++            if not isinstance(entries, list):
++                raise TypeError("invalid REUSE expressions")
++            count = sum(as_object(entry)["is_valid"] is False for entry in entries)
++            name = file["path"]
++            if count and isinstance(name, str):
++                invalid.append((name, count))
++        # Totals precede details so a large early category cannot hide later causes.
++        for category, items in categories.items():
++            if items:
++                output.add(f"{category} count={len(items)}")
++        if invalid:
++            output.add(f"invalid_expressions count={sum(count for _, count in invalid)}")
++        for category, items in categories.items():
++            for item in sorted(items):
++                output.add(
++                    f"{category} item=",
++                    diagnostic_path(item, root) if category in PATH_CATEGORIES else item,
++                    detail=True,
++                )
++        for name, count in sorted(invalid):
++            output.add(f"invalid_expressions count={count} file=", diagnostic_path(name, root), detail=True)
++    if stderr:
++        text = stderr.decode("utf-8", errors="replace") if isinstance(stderr, bytes) else stderr
++        output.add(f"stderr bytes={len(stderr) if isinstance(stderr, bytes) else len(text.encode('utf-8'))}")
++        skipped = 0
++        traceback = False
++        exception = re.compile(r"^[\w.]*(?:Error|Exception):(?:\s|$)")
++        summary = re.compile(
++            r"^(?:reuse[\w.-]*:\s*(?:error|warning):|(?:error|warning|critical|fatal):|"
++            r"reuse[\w.-]* - (?:ERROR|WARNING|CRITICAL|FATAL) -)(?:\s|$)",
++            re.I,
++        )
++        # Keep diagnostic summaries, not traceback frames, source excerpts or env dumps.
++        for line in text.splitlines():
++            if line.startswith("Traceback (most recent call last):"):
++                traceback = True
++            terminal = exception.match(line)
++            if not terminal and (traceback or not summary.match(line)):
++                skipped += 1
++                continue
++            if terminal:
++                traceback = False
++            line = output.redact(line).replace(str(root) + os.sep, "")
++            # With unquoted/spaced paths the end is ambiguous. Drop the tail at
++            # an outside absolute path, rather than exposing leftover fragments.
++            # A slash inside a project-relative path is not an absolute boundary.
++            line = re.sub(r"(?<![\w.-])(?:[A-Za-z]:)?[\\/].*$", "[outside-root detail redacted]", line)
++            output.add("stderr line=", line, detail=True)
++        if skipped:
++            output.add(f"stderr omitted unrecognized lines={skipped}")
++    return output.finish()
+ 
+ 
+ def maintained(path: Path, data: bytes) -> bool:
+@@ -235,6 +391,8 @@ def parse_report(value: object) -> tuple[bool, dict[Path, set[str]]]:
+     files = report.get("files")
+     if not isinstance(compliant, bool) or not isinstance(files, list):
+         raise TypeError("invalid REUSE report summary or files")
++    categories = non_compliant_categories(report)
++    invalid_expression = False
+     paths: dict[Path, set[str]] = {}
+     for raw_item in files:
+         item = as_object(raw_item)
+@@ -251,12 +409,69 @@ def parse_report(value: object) -> tuple[bool, dict[Path, set[str]]]:
+             expression = entry.get("value")
+             if not isinstance(expression, str) or not isinstance(entry.get("is_valid"), bool):
+                 raise TypeError("invalid REUSE expression entry")
++            invalid_expression |= entry["is_valid"] is False
+             expressions.add(expression)
+         paths[path] = expressions
++    if compliant and (any(categories.values()) or invalid_expression):
++        raise ValueError("REUSE summary disagrees with reported violations")
+     return compliant, paths
+ 
+ 
+-def check(root: Path) -> list[str]:
++def run_reuse(root: Path) -> tuple[dict[Path, set[str]] | None, list[str], list[str]]:
++    """Use one invocation and enforce licensing plus diagnostic accountability."""
++    env = os.environ.copy()
++    env["REUSE_ENCODING_MODULE"] = "charset_normalizer"
++    stderr: str | bytes | None = None
++    report: object = None
++    status = ""
++    try:
++        result = subprocess.run(
++            [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(root), "lint", "--json"],
++            capture_output=True,
++            env=env,
++            check=False,
++            timeout=120,
++        )
++        stderr = result.stderr
++        status = f" (exit {result.returncode})"
++        if result.returncode not in (0, 1):
++            return (
++                None,
++                [f"REUSE check failed: unexpected exit {result.returncode}", *reuse_diagnostics(None, root, stderr)],
++                [],
++            )
++        report = json.loads(result.stdout.decode("utf-8"))
++        compliant, paths = parse_report(report)
++        details = reuse_diagnostics(report, root, stderr)
++        if (result.returncode == 0) != compliant:
++            return paths, [f"REUSE check failed: exit/report mismatch{status}, compliant={compliant}", *details], []
++        if not compliant:
++            return paths, [f"REUSE lint failed{status}", *details], []
++        # A compliant report does not classify its stderr under gvy's policy.
++        if result.stderr != b"":
++            return (
++                paths,
++                ["gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)", *details],
++                [],
++            )
++        return paths, [], details
++    except subprocess.TimeoutExpired as exc:
++        stderr = exc.stderr
++        reason = "timeout after 120 seconds"
++    except OSError as exc:
++        reason = f"launch error errno={exc.errno}"
++    except UnicodeDecodeError as exc:
++        reason = f"UTF-8 decode failure at byte {exc.start}{status}"
++    except json.JSONDecodeError as exc:
++        reason = f"malformed JSON at line {exc.lineno} column {exc.colno} char {exc.pos}{status}"
++    except RecursionError:
++        reason = f"malformed JSON nesting exceeds decoder limit{status}"
++    except (ValueError, KeyError, TypeError) as exc:
++        reason = f"invalid report schema{status}: {json.dumps(str(exc), ensure_ascii=True)}"
++    return None, [f"REUSE check failed: {reason}", *reuse_diagnostics(None, root, stderr)], []
++
++
++def check(root: Path, diagnostics: list[str] | None = None) -> list[str]:
+     root = root.resolve()
+     errors: list[str] = []
+     seen: set[str] = set()
+@@ -289,22 +504,13 @@ def check(root: Path) -> list[str]:
+         errors.append(f".reuse/license-hashes.toml: cannot read: {exc.strerror}")
+     except (ValueError, TypeError) as exc:
+         errors.append(f".reuse/license-hashes.toml: invalid inventory: {exc}")
+-    env = os.environ.copy()
+-    env["REUSE_ENCODING_MODULE"] = "charset_normalizer"
++    paths, reuse_errors, warnings = run_reuse(root)
++    errors.extend(reuse_errors)
++    if diagnostics is not None:
++        diagnostics.extend(warnings)
++    if paths is None:
++        return errors
+     try:
+-        result = subprocess.run(
+-            [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(root), "lint", "--json"],
+-            capture_output=True,
+-            text=True,
+-            env=env,
+-            check=False,
+-            timeout=120,
+-        )
+-        if result.returncode not in (0, 1):
+-            raise ValueError("REUSE did not return a lint report")
+-        compliant, paths = parse_report(json.loads(result.stdout))
+-        if not compliant:
+-            errors.append("REUSE lint failed; run reuse --root . lint for details")
+         # REUSE validates the SPDX expressions; recognize only the exact MIT
+         # identifier, including compound expressions, for the approved inventory.
+         uses_mit = any(
+@@ -372,7 +578,10 @@ def main() -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--root", type=Path, default=Path.cwd())
+     args = parser.parse_args()
+-    errors = check(args.root.resolve())
++    diagnostics: list[str] = []
++    errors = check(args.root.resolve(), diagnostics)
++    if diagnostics:
++        print("\n".join(diagnostics), file=sys.stderr)
+     if errors:
+         print("\n".join(errors), file=sys.stderr)
+         return 1
+diff --git a/.reuse/tests/test_check.py b/.reuse/tests/test_check.py
+index 752466b825ab82375dcc2c23dd249dd97c5bc854..603b4a2477207d150f715149642050fae0cfd5a3 100644
+--- a/.reuse/tests/test_check.py
++++ b/.reuse/tests/test_check.py
+@@ -170,6 +170,276 @@ class HeaderTests(unittest.TestCase):
+             self.assertTrue(check.header_errors(path, shebang + hash_header + b"pipeline {}\n"))
+ 
+ 
++class DiagnosticTests(unittest.TestCase):
++    def setUp(self) -> None:
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.root = Path(self.temp.name).resolve()
++
++    def report(
++        self,
++        *,
++        compliant: bool = False,
++        categories: dict[str, list[str]] | None = None,
++        files: list[dict[str, object]] | None = None,
++    ) -> dict[str, object]:
++        return {
++            "lint_version": "1.0",
++            "reuse_spec_version": "3.3",
++            "reuse_tool_version": "6.3.0",
++            "summary": {"compliant": compliant},
++            "non_compliant": {name: (categories or {}).get(name, []) for name in check.NON_COMPLIANT_CATEGORIES},
++            "files": files or [],
++        }
++
++    def invoke(
++        self, code: int, report: object, *, stdout: bytes | None = None, stderr: bytes = b""
++    ) -> tuple[dict[Path, set[str]] | None, list[str], list[str]]:
++        result = subprocess.CompletedProcess(
++            ["reuse"], code, json.dumps(report).encode() if stdout is None else stdout, stderr
++        )
++        with patch.object(check.subprocess, "run", return_value=result) as run:
++            outcome = check.run_reuse(self.root)
++        self.assertEqual(1, run.call_count)
++        self.assertNotIn("text", run.call_args.kwargs)
++        self.assertEqual(120, run.call_args.kwargs["timeout"])
++        return outcome
++
++    def test_every_category_and_invalid_expression_count_is_actionable(self) -> None:
++        categories = {
++            name: [str(self.root / "nested/a.txt") if name in check.PATH_CATEGORIES else "MIT"]
++            for name in check.NON_COMPLIANT_CATEGORIES
++        }
++        report = self.report(
++            categories=categories,
++            files=[
++                {
++                    "path": "invalid.txt",
++                    "copyrights": ["DO NOT LOG HOLDER"],
++                    "source": "DO NOT LOG SOURCE",
++                    "spdx_expressions": [{"value": "DO NOT LOG EXPRESSION", "is_valid": False}],
++                }
++            ],
++        )
++        _, errors, warnings = self.invoke(1, report)
++        self.assertEqual([], warnings)
++        text = "\n".join(errors)
++        for name in check.NON_COMPLIANT_CATEGORIES:
++            self.assertIn(f"{name} count=1", text)
++            self.assertIn(f'{name} item="', text)
++        self.assertIn('invalid_expressions count=1 file="invalid.txt"', text)
++        self.assertIn('read_errors item="nested/a.txt"', text)
++        self.assertNotIn(str(self.root), text)
++        self.assertNotIn("DO NOT LOG", text)
++
++    def test_diagnostic_paths_are_lexical_and_redact_outside_or_traversal(self) -> None:
++        with patch.object(Path, "resolve", side_effect=AssertionError("must not resolve diagnostic paths")):
++            self.assertEqual("a/file.txt", check.diagnostic_path(str(self.root / "a/./file.txt"), self.root))
++            self.assertEqual("[outside-root]", check.diagnostic_path(str(self.root.parent / "other.txt"), self.root))
++            self.assertEqual("[outside-root]", check.diagnostic_path("C:\\outside\\private.txt", self.root))
++            self.assertEqual("[outside-root]", check.diagnostic_path("/outside/private.txt", Path("C:/project")))
++            self.assertEqual("[unsafe-path]", check.diagnostic_path("a/../private.txt", self.root))
++            self.assertEqual("[unsafe-path]", check.diagnostic_path("a\\..\\private.txt", self.root))
++
++    def test_details_are_sorted_escaped_and_redact_known_credentials(self) -> None:
++        names = ["z\n::error title=forged::payload\x1b[31m\u202e", "a credential-value"]
++        with patch.dict(os.environ, {"GVY_TEST_API_TOKEN": "credential-value"}):
++            a = check.reuse_diagnostics(self.report(categories={"bad_licenses": names}), self.root, None)
++            b = check.reuse_diagnostics(
++                self.report(categories={"bad_licenses": list(reversed(names))}), self.root, None
++            )
++        self.assertEqual(a, b)
++        text = "\n".join(a)
++        self.assertIn("[redacted]", text)
++        self.assertNotIn("credential-value", text)
++        self.assertIn("\\n::error", text)
++        self.assertIn("\\u001b", text)
++        self.assertIn("\\u202e", text)
++        self.assertNotIn("\x1b", text)
++        self.assertNotIn("\u202e", text)
++        self.assertTrue(all(line.startswith("REUSE diagnostic: ") and "\n" not in line for line in a))
++
++    def test_item_field_and_total_byte_limits_have_explicit_omission_counts(self) -> None:
++        small = check.reuse_diagnostics(
++            self.report(categories={"unused_licenses": [f"id-{i:03}" for i in range(80)]}), self.root, None
++        )
++        self.assertEqual(50, sum(" item=" in line for line in small))
++        self.assertIn("omitted items=30", small[-1])
++        huge = check.reuse_diagnostics(
++            self.report(categories={"bad_licenses": [f"{i:03}" + "\u202e" * 1000 for i in range(80)]}), self.root, None
++        )
++        self.assertLessEqual(len("\n".join(huge).encode()), 16 * 1024)
++        self.assertIn("bad_licenses count=80", huge[0])
++        self.assertIn("truncated characters=", huge[-1])
++        self.assertNotIn("omitted items=0", huge[-1])
++        for line in huge:
++            if " item=" in line:
++                self.assertLessEqual(len(json.loads(line.split(" item=", 1)[1])), 256)
++
++    def test_stderr_keeps_summaries_without_traceback_source_or_environment_dump(self) -> None:
++        stderr = (
++            b'Traceback (most recent call last):\n  File "/private/runner.py", line 3\n'
++            b'    raise ValueError("PRIVATE SOURCE")\nTOKEN=PRIVATE ENVIRONMENT\n'
++            b"ValueError: secret/value failed /private/input.toml\nwarning: continuing\n"
++        )
++        with patch.dict(os.environ, {"GVY_TEST_PASSWORD": "secret/value"}):
++            _, errors, _ = self.invoke(2, None, stderr=stderr)
++        text = "\n".join(errors)
++        self.assertIn("unexpected exit 2", text)
++        self.assertIn("ValueError: [redacted] failed [outside-root detail redacted]", text)
++        self.assertIn("warning: continuing", text)
++        self.assertIn("omitted unrecognized lines=4", text)
++        for forbidden in ("Traceback", "PRIVATE SOURCE", "PRIVATE ENVIRONMENT", "/private/", "secret/value"):
++            self.assertNotIn(forbidden, text)
++
++    def test_stderr_rejects_traceback_source_and_level_named_environment_assignments(self) -> None:
++        stderr = (
++            'Traceback (most recent call last):\n  File "example.py", line 1\n'
++            '    error = "PRIVATE_SOURCE_SENTINEL"\nRuntimeError: safe terminal summary\n'
++            'WARNING=PRIVATE_ENV_SENTINEL\nerror = "PRIVATE_ASSIGNMENT"\n'
++            "reuse.report - ERROR - useful logger summary\n"
++        )
++        text = "\n".join(check.reuse_diagnostics(None, self.root, stderr))
++        for forbidden in ("PRIVATE_SOURCE_SENTINEL", "PRIVATE_ENV_SENTINEL", "PRIVATE_ASSIGNMENT"):
++            self.assertNotIn(forbidden, text)
++        self.assertIn("RuntimeError: safe terminal summary", text)
++        self.assertIn("reuse.report - ERROR - useful logger summary", text)
++
++    def test_stderr_preserves_nested_project_paths_and_redacts_whole_outside_path_tails(self) -> None:
++        stderr = (
++            f"ERROR: cannot parse {self.root / 'editors/code/REUSE.toml'}: invalid syntax\n"
++            "Error: '/Users/Other Person/private-file.txt' is inaccessible\n"
++            "Error: C:\\Users\\Other Person\\private-file.txt is inaccessible\n"
++            "Error: \\\\server\\Other Person\\private-file.txt is inaccessible\n"
++        )
++        text = "\n".join(check.reuse_diagnostics(None, self.root, stderr))
++        self.assertIn("editors/code/REUSE.toml: invalid syntax", text.replace("\\\\", "/"))
++        for forbidden in ("Other", "Person", "private-file", "server", str(self.root)):
++            self.assertNotIn(forbidden, text)
++
++    def test_json_decoder_recursion_failure_keeps_same_invocation_stderr(self) -> None:
++        _, errors, _ = self.invoke(1, None, stdout=b"[" * 10000, stderr=b"error: retained context\n")
++        self.assertIn("malformed JSON nesting", errors[0])
++        self.assertIn("exit 1", errors[0])
++        self.assertIn("retained context", "\n".join(errors))
++
++    def test_all_category_counts_survive_exhausted_detail_budget(self) -> None:
++        categories = {name: ["\0" * 1000] * 80 for name in check.NON_COMPLIANT_CATEGORIES}
++        lines = check.reuse_diagnostics(self.report(categories=categories), self.root, None)
++        for name in check.NON_COMPLIANT_CATEGORIES:
++            self.assertIn(f"REUSE diagnostic: {name} count=80", lines)
++
++    def test_exit_and_report_disagreement_fails_in_both_directions(self) -> None:
++        for code, compliant in ((1, True), (0, False)):
++            with self.subTest(code=code):
++                _, errors, _ = self.invoke(code, self.report(compliant=compliant))
++                self.assertIn("exit/report mismatch", errors[0])
++                self.assertIn(f"exit {code}", errors[0])
++
++    def test_malformed_json_decode_schema_and_unexpected_exit_remain_distinct(self) -> None:
++        cases = [
++            (1, None, b'{\n"private payload":', "malformed JSON at line 2 column 19 char 20"),
++            (1, None, b"\xff", "UTF-8 decode failure at byte 0"),
++            (1, {"lint_version": "future"}, None, "invalid report schema"),
++            (7, None, b"PRIVATE STDOUT", "unexpected exit 7"),
++        ]
++        for code, report, stdout, expected in cases:
++            with self.subTest(expected=expected):
++                _, errors, _ = self.invoke(code, report, stdout=stdout, stderr=b"error: useful context\n")
++                text = "\n".join(errors)
++                self.assertIn(expected, text)
++                self.assertIn("useful context", text)
++                self.assertNotIn("private payload", text)
++                self.assertNotIn("PRIVATE STDOUT", text)
++
++    def test_schema_rejects_incomplete_categories_or_non_string_items(self) -> None:
++        for categories in ({}, {name: [3] for name in check.NON_COMPLIANT_CATEGORIES}):
++            report = self.report()
++            report["non_compliant"] = categories
++            _, errors, _ = self.invoke(1, report)
++            self.assertIn("invalid report schema", errors[0])
++
++    def test_launch_and_timeout_keep_bounded_partial_stderr_without_command_dump(self) -> None:
++        for failure, expected in (
++            (OSError(13, "private executable"), "launch error errno=13"),
++            (subprocess.TimeoutExpired(["PRIVATE COMMAND"], 120, stderr=b"error: partial context\n"), "timeout"),
++        ):
++            with self.subTest(expected=expected):
++                with patch.object(check.subprocess, "run", side_effect=failure) as run:
++                    _, errors, _ = check.run_reuse(self.root)
++                self.assertEqual(1, run.call_count)
++                self.assertIn(expected, errors[0])
++                text = "\n".join(errors)
++                self.assertNotIn("PRIVATE COMMAND", text)
++                self.assertNotIn("private executable", text)
++                if expected == "timeout":
++                    self.assertIn("partial context", text)
++
++    def test_compliant_warning_is_visible_in_cli_and_fails_diagnostic_policy(self) -> None:
++        result = subprocess.CompletedProcess(
++            ["reuse"], 0, json.dumps(self.report(compliant=True)).encode(), b"warning: note\n"
++        )
++        with (
++            patch.object(check.subprocess, "run", return_value=result),
++            patch.object(check, "REQUIRED_LICENSE_PATHS", set()),
++            patch.object(check.tomllib, "loads", return_value={"license": []}),
++            patch.object(Path, "read_text", return_value=""),
++            patch.object(sys, "argv", ["check.py", "--root", str(self.root)]),
++            patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
++            patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
++        ):
++            self.assertEqual(1, check.main())
++        self.assertIn("warning: note", stderr.getvalue())
++        self.assertIn("gvy diagnostic policy", stderr.getvalue())
++        self.assertNotIn("checks passed", stdout.getvalue())
++
++    def test_only_exact_empty_successful_stderr_passes_shared_api_and_cli(self) -> None:
++        captures = (
++            b"",
++            b"warning: note\n",
++            b"unknown text",
++            b" \r\n\t",
++            b"\x1b[31mwarning: note",
++            b"\x1b[0m",
++            b"\0",
++            b"\xff",
++        )
++        policy = "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)"
++        for capture in captures:
++            with self.subTest(capture=capture):
++                result = subprocess.CompletedProcess(
++                    ["reuse"], 0, json.dumps(self.report(compliant=True)).encode(), capture
++                )
++                with (
++                    patch.object(check.subprocess, "run", return_value=result) as run,
++                    patch.object(check, "REQUIRED_LICENSE_PATHS", set()),
++                    patch.object(check.tomllib, "loads", return_value={"license": []}),
++                    patch.object(Path, "read_text", return_value=""),
++                ):
++                    with self.subTest(channel="check without collector"):
++                        errors = check.check(self.root)
++                        self.assertEqual(1, run.call_count)
++                        self.assertEqual(bool(capture), bool(errors))
++                        if capture:
++                            self.assertIn(policy, errors)
++                            self.assertNotIn("REUSE lint failed", "\n".join(errors))
++                    run.reset_mock()
++                    with self.subTest(channel="CLI"):
++                        with (
++                            patch.object(sys, "argv", ["check.py", "--root", str(self.root)]),
++                            patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
++                            patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
++                        ):
++                            self.assertEqual(int(bool(capture)), check.main())
++                        self.assertEqual(1, run.call_count)
++                        if capture:
++                            self.assertIn(policy, stderr.getvalue())
++                            self.assertNotIn("checks passed", stdout.getvalue())
++                        else:
++                            self.assertEqual("", stderr.getvalue())
++                            self.assertIn("checks passed", stdout.getvalue())
++
++
+ class IntegrationTests(unittest.TestCase):
+     def git(self, *arguments: str, directory: Path | None = None) -> subprocess.CompletedProcess[bytes]:
+         environment = {name: value for name, value in os.environ.items() if not name.upper().startswith("GIT_")}
+@@ -241,6 +511,71 @@ class IntegrationTests(unittest.TestCase):
+         (self.root / "LICENSES/Apache-2.0.txt").write_text("tampered")
+         self.assertTrue(any("SHA-256" in error for error in check.check(self.root)))
+ 
++    def test_stderr_policy_failure_preserves_parsed_paths_and_remaining_repository_gates(self) -> None:
++        self.git("init", "-q")
++        (self.root / "src/unreported.txt").write_text("unreported data\n", encoding="utf-8")
++        self.git("add", "--", "src/a.py", "src/unreported.txt")
++        tracked = self.git("ls-files", "-z")
++        (self.root / "LICENSE").write_text("tampered\n", encoding="utf-8")
++        self.source.write_text("print(1)\n", encoding="utf-8")
++        report = {
++            "lint_version": "1.0",
++            "reuse_spec_version": "3.3",
++            "reuse_tool_version": "6.3.0",
++            "summary": {"compliant": True},
++            "non_compliant": {name: [] for name in check.NON_COMPLIANT_CATEGORIES},
++            "files": [{"path": "src/a.py", "spdx_expressions": [{"value": "MIT", "is_valid": True}]}],
++        }
++        result = subprocess.CompletedProcess(["reuse"], 0, json.dumps(report).encode(), b"unknown diagnostic\n")
++        with patch.object(check.subprocess, "run", side_effect=[result, tracked]) as run:
++            errors = check.check(self.root)
++        self.assertEqual(2, run.call_count)  # One REUSE invocation, then the existing tracked-file scan.
++        for expected in (
++            "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)",
++            "LICENSE: license text does not match approved SHA-256",
++            "LICENSES/MIT.txt: used MIT license must have an approved inventory entry",
++            "src/unreported.txt: tracked file omitted by REUSE",
++            "src/a.py: missing nonempty leading SPDX-FileCopyrightText",
++            "src/a.py: leading license must be Apache-2.0",
++            "src/a.py: effective REUSE license must be Apache-2.0",
++        ):
++            self.assertIn(expected, errors)
++
++    def test_missing_metadata_diagnostic_names_both_categories_and_relative_file(self) -> None:
++        (self.root / "unannotated.txt").write_text("payload must not be logged\n", encoding="utf-8")
++        with patch.object(check.subprocess, "run", wraps=subprocess.run) as run:
++            errors = "\n".join(check.check(self.root))
++        self.assertEqual(1, run.call_count)
++        self.assertIn('missing_copyright_info item="unannotated.txt"', errors)
++        self.assertIn('missing_licensing_info item="unannotated.txt"', errors)
++        self.assertNotIn(str(self.root), errors)
++        self.assertNotIn("payload must not be logged", errors)
++
++    def test_unused_license_diagnostic_names_identifier(self) -> None:
++        shutil.copy(Path(__file__).parents[2] / "LICENSES/MIT.txt", self.root / "LICENSES/MIT.txt")
++        self.write_inventory(include_mit=True)
++        errors = "\n".join(check.check(self.root))
++        self.assertIn('unused_licenses item="MIT"', errors)
++
++    def test_invalid_expression_diagnostic_names_file_without_expression(self) -> None:
++        self.source.write_text(
++            "# SPDX-FileCopyrightText: Private Holder\n# SPDX-License-Identifier: Apache-2.0 AND\nprint(1)\n",
++            encoding="utf-8",
++        )
++        errors = "\n".join(check.check(self.root))
++        self.assertIn('invalid_expressions count=1 file="src/a.py"', errors)
++        self.assertNotIn("Private Holder", errors)
++        self.assertNotIn("Apache-2.0 AND", errors)
++
++    def test_invalid_toml_diagnostic_preserves_exit_and_same_invocation_stderr(self) -> None:
++        (self.root / "REUSE.toml").write_text("version = [\n", encoding="utf-8")
++        with patch.object(check.subprocess, "run", wraps=subprocess.run) as run:
++            errors = "\n".join(check.check(self.root))
++        self.assertEqual(1, run.call_count)
++        self.assertIn("unexpected exit 2", errors)
++        self.assertIn("stderr", errors)
++        self.assertIn("REUSE.toml", errors)
++
+     def test_used_mit_requires_approved_inventory(self) -> None:
+         self.add_mit_data()
+         self.assertEqual(
+@@ -354,7 +689,7 @@ class IntegrationTests(unittest.TestCase):
+         mit.write_bytes(canonical)
+         for name in corpus_paths:
+             (exported / name).unlink()
+-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(exported))
++        self.assertIn("REUSE lint failed (exit 1)", check.check(exported))
+         result = subprocess.run(
+             [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(exported), "lint", "--json"],
+             capture_output=True,
+@@ -463,7 +798,7 @@ class IntegrationTests(unittest.TestCase):
+         self.assertEqual([], check.check(self.root))
+ 
+         metadata.unlink()
+-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
++        self.assertIn("REUSE lint failed (exit 1)", check.check(self.root))
+ 
+         neighbor = relative.with_name("neighbor.groovy")
+         (self.root / neighbor).write_text("println 'synthetic source'\n", encoding="utf-8")
+@@ -476,7 +811,7 @@ class IntegrationTests(unittest.TestCase):
+             encoding="utf-8",
+         )
+         errors = check.check(self.root)
+-        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
++        self.assertNotIn("REUSE lint failed (exit 1)", errors)
+         self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
+ 
+     def test_editor_fixture_needs_metadata_and_cannot_exempt_annotated_neighbors(self) -> None:
+@@ -496,7 +831,7 @@ class IntegrationTests(unittest.TestCase):
+         self.assertEqual([], check.check(self.root))
+         self.assertEqual(payload, fixture.read_bytes())
+         metadata.unlink()
+-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
++        self.assertIn("REUSE lint failed (exit 1)", check.check(self.root))
+         neighbor = relative.with_name("neighbor.groovy")
+         (self.root / neighbor).write_bytes(b"println 'maintained source'\n")
+         metadata.write_text(
+@@ -508,7 +843,7 @@ class IntegrationTests(unittest.TestCase):
+             encoding="utf-8",
+         )
+         errors = check.check(self.root)
+-        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
++        self.assertNotIn("REUSE lint failed (exit 1)", errors)
+         self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
+ 
+     def test_metadata_cannot_mask_an_unlisted_jenkinsfile_header(self) -> None:
+@@ -524,7 +859,7 @@ class IntegrationTests(unittest.TestCase):
+             encoding="utf-8",
+         )
+         errors = check.check(self.root)
+-        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
++        self.assertNotIn("REUSE lint failed (exit 1)", errors)
+         self.assertTrue(any(error.startswith(f"{relative.as_posix()}:") and "leading" in error for error in errors))
+ 
+         source.write_text(
+@@ -552,7 +887,7 @@ class IntegrationTests(unittest.TestCase):
+         self.assertEqual([], check.check(self.root))
+         (self.root / "ignored.bin").write_bytes(b"\x00\x01")
+         self.git("add", "-f", "ignored.bin")
+-        self.assertEqual(["REUSE lint failed; run reuse --root . lint for details"], check.check(self.root))
++        self.assertIn("REUSE lint failed (exit 1)", check.check(self.root))
+ 
+     def test_tracked_report_omission_is_rejected(self) -> None:
+         self.git("init", "-q")
+diff --git a/build.gradle.kts b/build.gradle.kts
+index ddc1f115af803e6199ed1278541a0b83b30a23f6..80ed0c7c57496e33ab0be0ea9935b622a45e6bef 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -78,10 +78,15 @@ val licenseCheck = tasks.register<Exec>("licenseCheck") {
+ }
+ 
+ allprojects {
+-    tasks.matching {
+-        it.name in setOf("check", "lint", "quality") || it.name.startsWith("publish")
+-    }.configureEach {
+-        dependsOn(licenseCheck)
++    tasks.configureEach {
++        // Scan licensing before requested work can create ignored output trees.
++        if (path != ":licenseCheck") {
++            mustRunAfter(licenseCheck)
++        }
++
++        if (name in setOf("check", "lint", "quality") || name.startsWith("publish")) {
++            dependsOn(licenseCheck)
++        }
+     }
+ }
+ 
+diff --git a/docs/ci-diagnostics.md b/docs/ci-diagnostics.md
+index fa80fabe34abbea6b35821c581e429178671a493..b9bad91fb89d48b14460ff4c78bbad807bd41cda 100644
+--- a/docs/ci-diagnostics.md
++++ b/docs/ci-diagnostics.md
+@@ -307,6 +307,11 @@ configured heap or metaspace limits. Its sampled maxima are the highest observat
+ ambiguous, unsupported or failed sampling is incomplete evidence and fails the opted-in producer while preserving the
+ original Gradle exit.
+ 
++Tool failures retain the initiating timeout, cancellation, stderr or output-limit cause separately from bounded teardown
++failure. The report records whether process exit and pipe closure were observed and which termination signals were sent;
++an exited process can leave inherited pipes open. Unconfirmed teardown remains incomplete evidence, including when a
++requested cancellation started it. Raw tool text is not retained.
++
+ The sampler identifies the current job's daemon with one exact immutable ErrorFile argument, current user and pinned
+ PID/start time. The argument is stable across protobuf, unit and JAR producers so their daemon remains reusable. Its
+ owner-only crash directory is outside the workspace and artifact root. Reports retain neither the argument/private path
+diff --git a/tools/ci/gradle-memory-probe.mjs b/tools/ci/gradle-memory-probe.mjs
+index f9140143930ada6062f13d19303370dc2139838f..86ac2fda94fee3f9c20abf600ecf3b95be3efb4a 100644
+--- a/tools/ci/gradle-memory-probe.mjs
++++ b/tools/ci/gradle-memory-probe.mjs
+@@ -131,13 +131,23 @@ function runJstat(path, args, signal, timeoutMs) {
+   if (signal.aborted) return Promise.resolve({ kind: 'stopped' });
+   return new Promise(resolve => {
+     let child, cause, done = false, total = 0, timer, grace, hard;
++    let exitObserved = false, closeObserved = false, exitCode = null, exitSignal = null;
++    let termSent = false, killSent = false;
+     const chunks = [];
+-    const finish = result => { if (done) return; done = true; clearTimeout(timer); clearTimeout(grace); clearTimeout(hard); signal.removeEventListener('abort', abort); resolve(result); };
++    const finish = result => {
++      if (done) return; done = true;
++      clearTimeout(timer); clearTimeout(grace); clearTimeout(hard); signal.removeEventListener('abort', abort);
++      resolve(result.kind === 'ok' ? result : { ...result, cause: cause ?? result.kind,
++        exitObserved, closeObserved, exitCode, exitSignal, termSent, killSent });
++    };
+     const terminate = reason => {
+       if (done || cause) return; cause = reason;
+-      child.kill('SIGTERM');
++      if (!exitObserved) termSent = child.kill('SIGTERM');
+       grace = setTimeout(() => {
+-        if (done) return; child.kill('SIGKILL');
++        if (done) return;
++        if (!exitObserved) killSent = child.kill('SIGKILL');
++        // Process exit does not guarantee pipe closure: a descendant can retain stdio.
++        // Keep the initiating cause and the observed teardown state at the hard bound.
+         hard = setTimeout(() => { child.stdout?.destroy(); child.stderr?.destroy(); child.unref(); finish({ kind: 'termination_timeout' }); }, 1000);
+       }, 250);
+     };
+@@ -146,8 +156,12 @@ function runJstat(path, args, signal, timeoutMs) {
+     catch { finish({ kind: 'start_failed' }); return; }
+     child.stdout.on('data', chunk => { total += chunk.length; if (total > MAX_TOOL_BYTES) terminate('output_limit'); else if (!cause) chunks.push(chunk); });
+     child.stderr.on('data', () => terminate('stderr'));
+-    child.on('error', () => finish({ kind: cause ?? 'start_failed' }));
+-    child.on('close', code => finish(cause ? { kind: cause } : code === 0 ? { kind: 'ok', stdout: Buffer.concat(chunks) } : { kind: 'exit' }));
++    child.on('error', () => { if (!cause) finish({ kind: 'start_failed' }); });
++    child.on('exit', (code, signal) => { exitObserved = true; exitCode = code; exitSignal = signal; });
++    child.on('close', code => {
++      closeObserved = true;
++      finish(cause ? { kind: cause } : code === 0 ? { kind: 'ok', stdout: Buffer.concat(chunks) } : { kind: 'exit' });
++    });
+     timer = setTimeout(() => terminate('timeout'), timeoutMs);
+     signal.addEventListener('abort', abort, { once: true }); if (signal.aborted) abort();
+   });
+@@ -166,7 +180,7 @@ export function startGradleMemoryProbe(options, overrides = {}) {
+     limits: { ...settings, maxProcEntries: MAX_PROC_ENTRIES, maxProcScanBytes: MAX_PROC_BYTES, maxToolOutputBytes: MAX_TOOL_BYTES },
+     discovery: { attempts: 0, processEntriesScanned: 0, unreadableProcessRecords: 0, matchedDaemonCount: null, daemon: null },
+     startedAtEpochMs: Date.now(), endedAtEpochMs: null, durationMs: null, lastIdentityCheckElapsedMs: null,
+-    tools: { calls: 0, failures: 0, cancelled: 0 }, sampleColumns: [...sampleColumns], samples: [],
++    tools: { calls: 0, failures: 0, cancelled: 0, lastFailure: null }, sampleColumns: [...sampleColumns], samples: [],
+     sampledMax: Object.fromEntries([...GC_METRICS, ...CLASS_METRICS].map(key => [key, null])),
+   };
+   const elapsed = () => Math.max(0, Math.floor(io.now() - started));
+@@ -218,7 +232,16 @@ export function startGradleMemoryProbe(options, overrides = {}) {
+     const args = ['-J-Xmx64m', mode, '-t', String(report.discovery.daemon.pid), '1', '1'];
+     const output = await (io.runTool ? io.runTool(args, controller.signal) : runJstat(io.jstatPath ?? (process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin/jstat') : 'jstat'), args, controller.signal, settings.toolTimeoutMs));
+     if (output.kind === 'stopped') { report.tools.cancelled++; return null; }
+-    if (output.kind !== 'ok') { report.tools.failures++; fail(['timeout', 'output_limit', 'stderr', 'exit', 'start_failed', 'termination_timeout'].includes(output.kind) ? `jstat_${output.kind}` : 'jstat_failed'); }
++    if (output.kind !== 'ok') {
++      report.tools.failures++;
++      if (output.kind === 'termination_timeout') {
++        if (output.cause === 'stopped') report.tools.cancelled++;
++        else if (['timeout', 'output_limit', 'stderr'].includes(output.cause)) reason(`jstat_${output.cause}`);
++      }
++      report.tools.lastFailure = Object.fromEntries(['kind', 'cause', 'exitObserved', 'closeObserved', 'exitCode', 'exitSignal', 'termSent', 'killSent']
++        .filter(key => output[key] !== undefined).map(key => [key, output[key]]));
++      fail(['timeout', 'output_limit', 'stderr', 'exit', 'start_failed', 'termination_timeout'].includes(output.kind) ? `jstat_${output.kind}` : 'jstat_failed');
++    }
+     verifyPinned();
+     try { return mode === '-gc' ? parseGcSample(output.stdout) : parseClassSample(output.stdout); }
+     catch { fail('jstat_invalid_output'); }
+diff --git a/tools/ci/gradle-memory-probe.test.mjs b/tools/ci/gradle-memory-probe.test.mjs
+index 5d83e9b9201efe5e5be18bbc4f6160b081303667..e082579290e20ad3615a5822e428100938106b2c 100644
+--- a/tools/ci/gradle-memory-probe.test.mjs
++++ b/tools/ci/gradle-memory-probe.test.mjs
+@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import childProcess, { spawn, spawnSync } from 'node:child_process';
+ import { syncBuiltinESMExports } from 'node:module';
++import { EventEmitter } from 'node:events';
++import { PassThrough } from 'node:stream';
+ import test from 'node:test';
+ import { identifyOwnedGradleDaemon, parseProcStat, parseGcSample, parseClassSample, startGradleMemoryProbe } from './gradle-memory-probe.mjs';
+ 
+@@ -455,6 +457,61 @@ test('stop escalates only its own unresponsive tool and awaits its exit', async
+   assert.equal(readFileSync(join(f.procRoot, '42/stat'), 'utf8'), stat());
+ });
+ 
++test('bounded tool teardown retains its initiating cause when exit leaves inherited pipes open', { timeout: 10000 }, async t => {
++  for (const scenario of ['stopped', 'timeout', 'stderr', 'output_limit', 'stopped-kill-error']) {
++    const cause = scenario === 'stopped-kill-error' ? 'stopped' : scenario;
++    const killError = scenario === 'stopped-kill-error';
++    const f = fixture(t), started = deferred(), bounded = deferred(), realSpawn = childProcess.spawn;
++    const children = []; let calls = 0, probe;
++    childProcess.spawn = () => {
++      const child = new EventEmitter();
++      child.stdout = new PassThrough(); child.stderr = new PassThrough();
++      child.signals = []; child.unref = () => bounded.resolve();
++      child.kill = signal => {
++        child.signals.push(signal);
++        if (killError) { child.emit('error', new Error('CANARY')); return false; }
++        // The owned child exits, but a descendant still holds its pipe descriptors.
++        child.emit('exit', null, signal); return true;
++      };
++      children.push(child);
++      const call = ++calls;
++      queueMicrotask(() => {
++        if (call < 3) {
++          child.stdout.write(call === 1 ? gc : classes);
++          child.emit('exit', 0, null); child.emit('close', 0, null);
++        } else {
++          if (cause === 'stderr') child.stderr.write('CANARY');
++          if (cause === 'output_limit') child.stdout.write('CANARY'.repeat(6000));
++          started.resolve();
++        }
++      });
++      return child;
++    };
++    syncBuiltinESMExports();
++    try {
++      const io = { ...f.io, sleep: async () => {} }; delete io.runTool;
++      probe = startGradleMemoryProbe({ ...f.options, toolTimeoutMs: 10 }, io);
++      await started.promise;
++      if (cause !== 'stopped') await bounded.promise;
++      const result = await probe.stop();
++      assert.equal(result.complete, false, cause);
++      assert.ok(result.reasonCodes.includes('jstat_termination_timeout'), cause);
++      if (cause !== 'stopped') assert.ok(result.reasonCodes.includes(`jstat_${cause}`), cause);
++      assert.equal(result.tools.cancelled, cause === 'stopped' ? 1 : 0, cause);
++      assert.deepEqual(result.tools.lastFailure, {
++        kind: 'termination_timeout', cause, exitObserved: !killError, closeObserved: false,
++        exitCode: null, exitSignal: killError ? null : 'SIGTERM', termSent: !killError, killSent: false,
++      }, cause);
++      assert.deepEqual(children[2].signals, killError ? ['SIGTERM', 'SIGKILL'] : ['SIGTERM'],
++        'Escalation must stop once the owned child exits');
++      assert.ok(!readFileSync(f.options.reportPath, 'utf8').includes('CANARY'));
++    } finally {
++      await probe?.stop(); childProcess.spawn = realSpawn; syncBuiltinESMExports();
++      for (const child of children) { child.stdout.destroy(); child.stderr.destroy(); }
++    }
++  }
++});
++
+ // Explicit hosted Linux smoke; no skipped/native test is registered by default.
+ if (process.env.GVY_MEMORY_PROBE_NATIVE_TEST === 'true') test('Linux JDK17 live jstat headers and attach produce a private numeric pair', { timeout: 20000 }, async t => {
+   assert.equal(process.platform, 'linux', 'Native probe smoke requires Linux');
+diff --git a/tools/ci/verify-license-task-ordering.mjs b/tools/ci/verify-license-task-ordering.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..d01b59248b940d10cd25fd33d4e3105afc22b7e7
+--- /dev/null
++++ b/tools/ci/verify-license-task-ordering.mjs
+@@ -0,0 +1,245 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import assert from 'node:assert/strict';
++import { spawn } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
++import { isAbsolute, join, relative, resolve, sep } from 'node:path';
++import { fileURLToPath } from 'node:url';
++import { readEvidenceText } from './read-evidence.mjs';
++
++const repository = fileURLToPath(new URL('../../', import.meta.url));
++const hash = bytes => createHash('sha256').update(bytes).digest('hex');
++
++// Extract this single reviewed top-level block, rather than interpreting Kotlin.
++// A changed source layout requires deliberate fixture maintenance.
++export function licensingPolicy(source) {
++  const blocks = [...source.matchAll(/^allprojects \{\n[\s\S]*?^\}\n/gm)];
++  assert.equal(blocks.length, 1, 'Expected exactly one plain allprojects licensing block');
++  assert.ok(blocks[0][0].includes('licenseCheck'), 'The extracted block must contain licensing policy');
++  return blocks[0][0];
++}
++
++function fixture(policy, mode) {
++  return `// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++val licenseCheck = tasks.register("licenseCheck") {
++    doLast {
++        check(!rootProject.file("producer/build/order-probe.txt").exists()) { "LICENSE_PROBE_RAN_EARLY" }
++        if (providers.gradleProperty("fixtureRejectLicense").isPresent) {
++            error("LICENSE_REJECTED")
++        }
++        rootProject.file("license.done").writeText("passed")
++    }
++}
++
++subprojects {
++    tasks.register("unselectedSentinel") {
++        error("LICENSE_UNSELECTED_REALIZED")
++    }
++    tasks.register("compileKotlin") {
++        doLast {
++            check(!rootProject.file("license.done").exists()) { "LICENSE_FOCUSED_DEPENDENCY" }
++            file("compile.done").writeText("passed")
++        }
++    }
++    tasks.register("writeProbe") {
++        doLast {
++            check(rootProject.file("license.done").isFile) { "LICENSE_PROBE_RAN_EARLY" }
++            file("build/order-probe.txt").apply {
++                parentFile.mkdirs()
++                writeText("passed")
++            }
++        }
++    }
++    for (gate in listOf("check", "lint", "quality", "publishProbe")) {
++        tasks.register(gate) { dependsOn("writeProbe") }
++    }
++}
++
++${policy}
++gradle.taskGraph.whenReady {
++    val selected = allTasks
++    check(selected.none { it.name == "unselectedSentinel" }) { "LICENSE_UNSELECTED_SELECTED" }
++    if ("${mode}" == "focused") {
++        check(selected.none { it.path == ":licenseCheck" }) { "LICENSE_FOCUSED_DEPENDENCY" }
++        check(selected.map { it.path } == listOf(":producer:compileKotlin")) { "LICENSE_FOCUSED_GRAPH" }
++    } else {
++        val license = selected.single { it.path == ":licenseCheck" }
++        check(license.taskDependencies.getDependencies(license).isEmpty()) { "LICENSE_HAS_PREREQUISITES" }
++        check(license.mustRunAfter.getDependencies(license).isEmpty()) { "LICENSE_SELF_ORDER" }
++        for (task in selected.filter { it != license }) {
++            check(license in task.mustRunAfter.getDependencies(task)) { "LICENSE_ORDERING_MISSING" }
++        }
++    }
++    rootProject.file("selected-tasks.txt").writeText(selected.joinToString("\\n") { it.path })
++}
++`;
++}
++
++function mutations(policy) {
++  const ordering = '            mustRunAfter(licenseCheck)\n';
++  assert.equal(policy.split(ordering).length, 2, 'Review the ordering mutation when its source changes');
++  const lazy = '    tasks.configureEach {\n';
++  assert.equal(policy.split(lazy).length, 2, 'Review the realization mutation when its source changes');
++  return [
++    { name: 'missing-order', policy: policy.replace(ordering, ''), expected: 'LICENSE_ORDERING_MISSING' },
++    { name: 'eager-selection', policy: policy.replace(lazy, '    tasks.all {\n'), expected: 'LICENSE_UNSELECTED_REALIZED' },
++    { name: 'ordered', policy },
++    { name: 'focused', policy },
++    { name: 'license-rejected', policy, expected: 'LICENSE_REJECTED', reject: true },
++  ];
++}
++
++function boundedText(path, limit) {
++  return readEvidenceText(path, limit);
++}
++
++export function verifyInvocation(summary, exitCode, log, control, producer) {
++  assert.equal(summary.schemaVersion, 1);
++  assert.equal(summary.producer, producer);
++  assert.equal(summary.log?.bytes, Buffer.byteLength(log));
++  assert.equal(summary.log?.sha256, hash(log));
++  assert.equal(summary.complete, true, 'The canonical capture must be complete, including negative controls');
++  assert.equal(summary.captureExitCode, 0);
++  assert.deepEqual(summary.unexpected, []);
++  assert.ok(Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255, 'Invalid process exit');
++  assert.equal(exitCode, summary.commandExitCode, 'The process must retain the original Gradle exit');
++  if (control.expected) {
++    assert.notEqual(exitCode, 0, `${control.name} must fail`);
++    assert.deepEqual(summary.errors, [`Gradle command failed with exit ${exitCode}`]);
++    assert.equal(summary.ok, false);
++    assert.ok(log.includes(control.expected), 'Only the intended failure witness satisfies a negative control');
++  } else {
++    assert.equal(exitCode, 0, `${control.name} must succeed`);
++    assert.deepEqual(summary.errors, []);
++    assert.equal(summary.ok, true);
++  }
++}
++
++function runGradle(args) {
++  return new Promise((finish, fail) => {
++    const child = spawn(process.execPath, args, { cwd: repository, stdio: 'inherit', detached: true,
++      env: { ...process.env, JDK_JAVA_OPTIONS: '-Xmx256m -XX:MaxMetaspaceSize=256m', GVY_GRADLE_MEMORY_PROBE: 'false' } });
++    let stopped = false;
++    let hardStop;
++    const signalGroup = signal => {
++      if (!child.pid) return;
++      try { process.kill(-child.pid, signal); }
++      catch (error) { if (error.code !== 'ESRCH') throw error; }
++    };
++    const stop = signal => {
++      stopped = true;
++      signalGroup(signal);
++      hardStop ??= setTimeout(() => signalGroup('SIGKILL'), 15000);
++    };
++    const interrupt = () => stop('SIGINT');
++    const terminate = () => stop('SIGTERM');
++    const deadline = setTimeout(terminate, 180000);
++    process.on('SIGINT', interrupt);
++    process.on('SIGTERM', terminate);
++    const cleanup = () => {
++      clearTimeout(deadline);
++      clearTimeout(hardStop);
++      process.off('SIGINT', interrupt);
++      process.off('SIGTERM', terminate);
++      if (stopped) signalGroup('SIGKILL');
++    };
++    child.once('error', () => {
++      cleanup();
++      fail(new Error('Cannot start the canonical fixture wrapper'));
++    });
++    child.once('close', (code, signal) => {
++      cleanup();
++      if (stopped || signal !== null || code === null) fail(new Error('The fixture was interrupted or exceeded its deadline'));
++      else finish(code);
++    });
++  });
++}
++
++export async function verifyLicenseTaskOrdering(reportRoot) {
++  assert.notEqual(process.platform, 'win32', 'This fixture requires the approved POSIX hosted execution profile');
++  assert.ok(isAbsolute(reportRoot), 'The ordering report root must be absolute');
++  // Fresh directories prevent an earlier receipt or marker from satisfying a case.
++  mkdirSync(reportRoot, { mode: 0o700 });
++  const outside = relative(realpathSync(repository), realpathSync(reportRoot));
++  assert.ok(outside === '..' || outside.startsWith('..' + sep) || isAbsolute(outside),
++    'Fixture evidence must be outside the source checkout');
++  const source = readFileSync(join(repository, 'build.gradle.kts'), 'utf8');
++  const policy = licensingPolicy(source);
++  const report = { schemaVersion: 1, buildFileSha256: hash(source), policySha256: hash(policy), cases: [], currentCase: null, ok: false,
++    limits: ['Real Gradle fixtures exercise the extracted policy. They do not execute gvy Kotlin compilation, REUSE, or full lint.',
++      'Full-repository lintFix, explicit root formatting, parallel lint and focused compile remain separate checks.',
++      'No numeric daemon-memory, RSS, Native provisioning or uploaded-artifact consumption claim.'] };
++  try {
++    for (const control of mutations(policy)) {
++      report.currentCase = control.name;
++      const directory = join(reportRoot, control.name);
++      const project = join(directory, 'fixture');
++      mkdirSync(project, { recursive: true, mode: 0o700 });
++      for (const name of ['producer', 'consumer', 'publisher']) mkdirSync(join(project, name));
++      writeFileSync(join(project, 'settings.gradle.kts'), 'rootProject.name = "license-policy-fixture"\ninclude("producer", "consumer", "publisher")\n');
++      writeFileSync(join(project, 'build.gradle.kts'), fixture(control.policy, control.name));
++      writeFileSync(join(project, 'gradle.properties'), 'org.gradle.configuration-cache=false\norg.gradle.parallel=true\n');
++      const tasks = control.name === 'focused' ? [':producer:compileKotlin']
++        : [':producer:lint', ':consumer:check', ':publisher:publishProbe'];
++      const producer = `license-ordering-${control.name}`;
++      const evidence = join(directory, 'evidence');
++      const args = [join(repository, 'tools/ci/run-gradle.mjs'), '--report-root', evidence, '--producer', producer,
++        '--project-dir', project, ...tasks, '--offline', '--no-daemon', '--parallel', '--max-workers=2',
++        '--no-configuration-cache', '-Dorg.gradle.jvmargs=-Xms64m -Xmx512m -XX:MaxMetaspaceSize=384m',
++        '-Dorg.gradle.scan=false', '--stacktrace'];
++      if (control.reject) args.push('-PfixtureRejectLicense=true');
++      const exitCode = await runGradle(args);
++      const directories = readdirSync(evidence);
++      assert.equal(directories.length, 1, 'Expected exactly one fresh canonical invocation');
++      const invocation = join(evidence, directories[0]);
++      const summary = JSON.parse(boundedText(join(invocation, 'summary.json'), 256 * 1024));
++      const log = boundedText(join(invocation, 'console.log'), 4 * 1024 * 1024);
++      verifyInvocation(summary, exitCode, log, control, producer);
++      const selected = control.name === 'eager-selection' || control.name === 'missing-order' ? null
++        : boundedText(join(project, 'selected-tasks.txt'), 64 * 1024).split('\n');
++      if (control.name === 'focused') {
++        assert.deepEqual(selected, [':producer:compileKotlin']);
++        assert.equal(readFileSync(join(project, 'producer/compile.done'), 'utf8'), 'passed');
++      }
++      if (control.name === 'ordered') {
++        assert.equal(readFileSync(join(project, 'license.done'), 'utf8'), 'passed');
++        for (const name of ['producer', 'consumer', 'publisher']) {
++          assert.equal(readFileSync(join(project, name, 'build/order-probe.txt'), 'utf8'), 'passed');
++        }
++      }
++      if (control.name === 'license-rejected') {
++        assert.equal(existsSync(join(project, 'license.done')), false);
++        for (const name of ['producer', 'consumer', 'publisher']) {
++          assert.equal(readdirSync(join(project, name)).length, 0, 'Rejected licensing must prevent protected probe execution');
++        }
++      }
++      const result = { name: control.name, expectedFailure: control.expected ?? null, commandExitCode: summary.commandExitCode,
++        captureExitCode: summary.captureExitCode, complete: summary.complete, context: summary.context,
++        policySha256: hash(control.policy), log: summary.log, selected, ok: true };
++      report.cases.push(result);
++    }
++    report.currentCase = null;
++    report.ok = true;
++    return report;
++  } finally {
++    writeFileSync(join(reportRoot, 'ordering-verification.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
++  }
++}
++
++if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
++  try {
++    const args = process.argv.slice(2);
++    assert.equal(args.length, 3);
++    assert.equal(args[0], '--execute');
++    assert.equal(args[1], '--report-root');
++    const report = await verifyLicenseTaskOrdering(args[2]);
++    console.log(JSON.stringify({ ok: report.ok, cases: report.cases.length, buildFileSha256: report.buildFileSha256 }));
++  } catch {
++    console.error('License ordering verification failed; preserve and inspect the retained case evidence.');
++    process.exitCode = 1;
++  }
++}
+diff --git a/tools/ci/verify-license-task-ordering.test.mjs b/tools/ci/verify-license-task-ordering.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..ff8956b42dbf5f8e30ac3b07ca7e7b2036da765a
+--- /dev/null
++++ b/tools/ci/verify-license-task-ordering.test.mjs
+@@ -0,0 +1,67 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import assert from 'node:assert/strict';
++import { createHash } from 'node:crypto';
++import test from 'node:test';
++import { verifyInvocation } from './verify-license-task-ordering.mjs';
++
++const producer = 'license-ordering-missing-order';
++const control = { name: 'missing-order', expected: 'LICENSE_ORDERING_MISSING' };
++const log = 'LICENSE_ORDERING_MISSING\nBUILD FAILED in 1s\n';
++const hash = text => createHash('sha256').update(text).digest('hex');
++function originalFailure() {
++  return { schemaVersion: 1, producer, complete: true, captureExitCode: 0, commandExitCode: 1,
++    errors: ['Gradle command failed with exit 1'], unexpected: [], ok: false,
++    log: { bytes: Buffer.byteLength(log), sha256: hash(log) } };
++}
++
++test('an intended RED retains the canonical original-exit failure rather than requiring empty errors', () => {
++  assert.doesNotThrow(() => verifyInvocation(originalFailure(), 1, log, control, producer));
++});
++
++for (const [name, change] of [
++  ['missing original error', value => { value.errors = []; }],
++  ['another error', value => { value.errors.push('Other failure'); }],
++  ['different original error exit', value => { value.errors = ['Gradle command failed with exit 2']; }],
++  ['capture failure', value => { value.captureExitCode = 1; }],
++  ['incomplete capture', value => { value.complete = false; }],
++  ['unexpected warning', value => { value.unexpected = ['new warning']; }],
++  ['successful producer verdict', value => { value.ok = true; }],
++  ['wrong producer', value => { value.producer = 'other'; }],
++  ['wrong log hash', value => { value.log.sha256 = 'a'.repeat(64); }],
++  ['wrong log bytes', value => { value.log.bytes++; }],
++]) {
++  test(`an intended RED rejects ${name}`, () => {
++    const summary = originalFailure();
++    change(summary);
++    assert.throws(() => verifyInvocation(summary, 1, log, control, producer));
++  });
++}
++
++test('an intended RED needs its exact witness and a matching actual process exit', () => {
++  assert.throws(() => verifyInvocation(originalFailure(), 2, log, control, producer));
++  assert.throws(() => verifyInvocation(originalFailure(), 0, log, control, producer));
++  assert.throws(() => verifyInvocation(originalFailure(), 1, log, { ...control, expected: 'OTHER_WITNESS' }, producer));
++});
++
++for (const exit of [undefined, null, '1', false, NaN, -1, 0, 256]) {
++  test(`an intended RED rejects malformed original exit ${String(exit)}`, () => {
++    const summary = originalFailure();
++    summary.commandExitCode = exit;
++    summary.errors = [`Gradle command failed with exit ${String(exit)}`];
++    assert.throws(() => verifyInvocation(summary, exit, log, control, producer));
++  });
++}
++
++test('GREEN requires actual original exit zero, empty errors and successful complete capture', () => {
++  const greenLog = 'BUILD SUCCESSFUL in 1s\n';
++  const summary = { ...originalFailure(), commandExitCode: 0, errors: [], ok: true,
++    log: { bytes: Buffer.byteLength(greenLog), sha256: hash(greenLog) } };
++  const success = { name: 'ordered' };
++  assert.doesNotThrow(() => verifyInvocation(summary, 0, greenLog, success, producer));
++  assert.throws(() => verifyInvocation({ ...summary, errors: ['Other failure'] }, 0, greenLog, success, producer));
++  assert.throws(() => verifyInvocation({ ...summary, commandExitCode: 1 }, 0, greenLog, success, producer));
++  assert.throws(() => verifyInvocation({ ...summary, captureExitCode: 1 }, 0, greenLog, success, producer));
++  assert.throws(() => verifyInvocation({ ...summary, ok: false }, 0, greenLog, success, producer));
++});

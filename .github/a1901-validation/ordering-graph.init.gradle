@@ -1,0 +1,28 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import groovy.json.JsonOutput
+
+// Worker-only graph observation, always invoked with --no-configuration-cache.
+gradle.taskGraph.whenReady { graph ->
+    def mode = System.getProperty('gvy.license.ordering.expect')
+    if (!(mode in ['required', 'absent'])) throw new GradleException('Unknown licensing graph expectation')
+    def license = gradle.rootProject.tasks.named('licenseCheck').get()
+    def prerequisites = license.taskDependencies.getDependencies(license).collect { it.path }.sort()
+    if (prerequisites) throw new GradleException('Root licensing acquired Gradle prerequisites')
+    if (mode == 'required') {
+        if (!graph.hasTask(license)) throw new GradleException('Requested graph is missing root licensing')
+        for (task in graph.allTasks) {
+            if (task != license && !task.mustRunAfter.getDependencies(task).contains(license)) {
+                throw new GradleException('A requested task can overlap root licensing: ' + task.path)
+            }
+        }
+    } else if (graph.hasTask(license)) {
+        throw new GradleException('Focused compilation unexpectedly schedules licensing')
+    }
+    def result = [schemaVersion: 1, expectation: mode, licensePrerequisites: prerequisites,
+                  tasks: graph.allTasks.collect { it.path }, ok: true]
+    def output = System.getProperty('gvy.license.ordering.report')
+    if (!output) throw new GradleException('Missing graph report destination')
+    new File(output).withWriter('UTF-8') { writer -> writer.write(JsonOutput.toJson(result) + '\n') }
+}

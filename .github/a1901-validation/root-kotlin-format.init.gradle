@@ -1,0 +1,12 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Worker-only validation target; no permanent formatter configuration is changed.
+gradle.rootProject { root ->
+    root.plugins.withId('com.diffplug.spotless') {
+        root.extensions.getByName('spotless').kotlinGradle {
+            target(root.file('build.gradle.kts'))
+            ktlint('1.7.1')
+        }
+    }
+}
