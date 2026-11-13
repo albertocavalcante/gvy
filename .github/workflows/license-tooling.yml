@@ -8,12 +8,18 @@ on:
       - '.reuse/**'
       - 'LICENSES/**'
       - '.github/workflows/license-tooling.yml'
+      - 'tools/ci/junit_contract.py'
+      - 'tools/ci/test_junit_contract.py'
+      - 'Makefile'
   push:
     branches: [main]
     paths:
       - '.reuse/**'
       - 'LICENSES/**'
       - '.github/workflows/license-tooling.yml'
+      - 'tools/ci/junit_contract.py'
+      - 'tools/ci/test_junit_contract.py'
+      - 'Makefile'
   workflow_dispatch:
 
 permissions:
@@ -49,6 +55,16 @@ jobs:
         run: uv sync --locked --project .reuse ${{ runner.os == 'Windows' && '--link-mode=copy' || '' }}
       - name: Run tests
         run: uv run --offline --locked --project .reuse python -m unittest discover -s .reuse/tests
+      - name: JUnit execution contract self-tests
+        run: uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract
+      - name: Check JUnit contract formatting
+        run: uv run --offline --locked --project .reuse ruff format --check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+      - name: Lint JUnit contract
+        run: uv run --offline --locked --project .reuse ruff check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+      - name: Check JUnit contract types with BasedPyright
+        run: uv run --offline --locked --project .reuse basedpyright tools/ci/junit_contract.py tools/ci/test_junit_contract.py
+      - name: Check JUnit contract types with ty
+        run: uv run --offline --locked --project .reuse ty check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
       - name: Check formatting
         run: uv run --offline --locked --project .reuse ruff format --check .reuse/check.py .reuse/pin_export.py .reuse/tests/test_check.py .reuse/tests/test_pin_export.py
       - name: Lint
