@@ -319,4 +319,4 @@ license-test:
 # Source-owned JUnit comparison controls use the existing locked Python tools.
 .PHONY: junit-contract-check
 junit-contract-check:
-	uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract
+	uv run --offline --locked --project .reuse python -m unittest tools.ci.test_junit_contract tools.ci.test_junit_contract_batch
