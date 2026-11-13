@@ -220,29 +220,69 @@ describe("planRunItems", () => {
   });
 
   for (const form of ["nested", "direct", "multiple"] as const) {
-    it(`refuses an uncovered ${form} runtime row selection`, () => {
+    it(`skips and reports an uncovered ${form} runtime row selection`, () => {
       const include =
         form === "direct"
           ? [directRow]
           : form === "multiple"
             ? [row, iteration(a)]
             : [row];
-      unsupported(request(include), "unrepresentable-selection");
-    });
-  }
-
-  for (const selected of ["suite", "feature"] as const) {
-    it(`refuses an effective row exclusion cutting a whole ${selected}`, () => {
-      unsupported(
-        request([selected === "suite" ? first : a], [row]),
-        "unrepresentable-selection",
+      const result = request(include);
+      assert.deepStrictEqual(ready(result), []);
+      assert.deepStrictEqual(
+        refusals(result),
+        include.map((item) => ({ item, reason: "unrunnable-iteration" })),
       );
     });
   }
 
-  it("refuses an ambiguous direct-suite row exclusion for a selected feature", () => {
-    unsupported(request([a], [directRow]), "unrepresentable-selection");
+  it("runs the runnable part of a request that also contains a runtime row", () => {
+    const result = request([a, directRow, c, row]);
+    assert.deepStrictEqual(ready(result), [
+      { item: a, target: { suite: first.id, test: "a" } },
+      { item: c, target: { suite: second.id, test: "c" } },
+    ]);
+    assert.deepStrictEqual(
+      refusals(result).map(({ item }) => item),
+      [directRow],
+    );
   });
+
+  for (const selected of ["suite", "feature"] as const) {
+    it(`refuses only the ${selected} an effective row exclusion cuts`, () => {
+      const item = selected === "suite" ? first : a;
+      const result = request([item, c], [row]);
+      assert.deepStrictEqual(ready(result), [
+        { item: c, target: { suite: second.id, test: "c" } },
+      ]);
+      assert.deepStrictEqual(refusals(result), [
+        { item, reason: "excluded-iteration" },
+      ]);
+    });
+  }
+
+  it("runs the other suites of Run All when one iteration row is excluded", () => {
+    const result = request(undefined, [row]);
+    assert.deepStrictEqual(ready(result), [
+      { item: second, target: { suite: second.id } },
+    ]);
+    assert.deepStrictEqual(refusals(result), [
+      { item: first, reason: "excluded-iteration" },
+    ]);
+  });
+
+  for (const selected of ["suite", "feature"] as const) {
+    it(`refuses a ${selected} an unowned direct-suite row exclusion may cut`, () => {
+      const item = selected === "suite" ? first : a;
+      const result = request([item, second], [directRow]);
+      assert.deepStrictEqual(ready(result), [
+        { item: second, target: { suite: second.id } },
+      ]);
+      assert.deepStrictEqual(refusals(result), [
+        { item, reason: "excluded-iteration" },
+      ]);
+    });
+  }
 
   it("does not confuse a proven different feature's excluded row", () => {
     assert.deepStrictEqual(ready(request([b], [row])), [
@@ -260,8 +300,19 @@ describe("planRunItems", () => {
     assert.deepStrictEqual(ready(request([row], [row])), []);
   });
 
-  it("returns no executable partial plan when a later unit is unsupported", () => {
-    unsupported(request([second, row]), "unrepresentable-selection");
+  it("runs the rest of a request and reports a later runtime row", () => {
+    const result = request([second, row]);
+    assert.deepStrictEqual(ready(result), [
+      { item: second, target: { suite: second.id } },
+    ]);
+    assert.deepStrictEqual(refusals(result), [
+      { item: row, reason: "unrunnable-iteration" },
+    ]);
+  });
+
+  it("returns no executable plan when a later unit is structurally unsupported", () => {
+    const stale = suite("stale.Spec", "file:///stale/Spec.groovy");
+    unsupported(request([second, stale]), "unrepresentable-selection");
   });
 
   it("rejects a foreign-parent feature in a supplied complete snapshot", () => {
@@ -376,6 +427,29 @@ describe("planRunItems", () => {
     it("drops a class whose overloads are all excluded", () => {
       assert.deepStrictEqual(ready(request([first], [a, overload, b])), []);
     });
+
+    it("runs both selected overloads with one command beside other tests", () => {
+      // The shape of Rerun Failed Tests after both overloads failed.
+      const result = request([a, overload, c]);
+      assert.deepStrictEqual(ready(result), [
+        { item: a, target: { suite: first.id, test: "a" } },
+        { item: c, target: { suite: second.id, test: "c" } },
+      ]);
+      assert.deepStrictEqual(refusals(result), []);
+    });
+
+    it("refuses both selected overloads when a third same-named one is excluded", () => {
+      const third = feature(first, "a");
+      complete(first, a, overload, third, b);
+      const result = request([a, overload, c], [third]);
+      assert.deepStrictEqual(ready(result), [
+        { item: c, target: { suite: second.id, test: "c" } },
+      ]);
+      assert.deepStrictEqual(refusals(result), [
+        { item: a, reason: "ambiguous-feature-name" },
+        { item: overload, reason: "ambiguous-feature-name" },
+      ]);
+    });
   });
 
   it("deduplicates a repeated feature object in the supplied snapshot", () => {
@@ -394,14 +468,19 @@ describe("planRunItems", () => {
     ]);
   });
 
-  it("rejects conflicting fallback features instead of issuing duplicate commands", () => {
+  it("issues one command for selected same-named fallback features", () => {
     descriptors.set(first, {
       kind: "suite",
       suite: first.id,
       completeChildren: undefined,
     });
     const sameTarget = feature(first, "a");
-    unsupported(request([a, sameTarget]), "unrepresentable-selection");
+    const result = request([a, sameTarget, c]);
+    assert.deepStrictEqual(ready(result), [
+      { item: a, target: { suite: first.id, test: "a" } },
+      { item: c, target: { suite: second.id, test: "c" } },
+    ]);
+    assert.deepStrictEqual(refusals(result), []);
   });
 
   it("refuses a fallback command matching a distinct excluded feature target", () => {

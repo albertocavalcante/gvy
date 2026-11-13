@@ -9,6 +9,8 @@ import { createBoundedLines, pipeBoundedLines } from "../../utils/boundedLines";
 import { ITestExecutionService } from "./ITestExecutionService";
 import {
   planRunItems,
+  RefusalReason,
+  RefusedSelection,
   TestSelectionDescriptor,
   TestTarget,
 } from "./testTarget";
@@ -86,6 +88,19 @@ function createHttpBlockerMatcher(
 /** The build command for a test item cannot be spawned safely. */
 class UnrunnableCommandError extends Error {}
 
+const REFUSAL_MESSAGES: Readonly<Record<RefusalReason, string>> = {
+  "unrunnable-iteration":
+    "A single test iteration cannot be run on its own. Run its whole test instead.",
+  "excluded-iteration":
+    "An excluded test iteration may belong to it, and a run cannot leave out a single iteration. Exclude the whole test instead.",
+  "ambiguous-feature-name":
+    "A test with the same name (an overload) is excluded, and tests that share a name cannot be run apart. Run or exclude them together.",
+};
+
+function itemName(item: vscode.TestItem): string {
+  return item.label || item.id;
+}
+
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
 
@@ -146,14 +161,25 @@ export class LSPTestExecutionService implements ITestExecutionService {
         this.describeItem,
       );
       if (plan.kind === "unsupported") {
-        this.reportPlanningFailure(
-          run,
+        const message =
           plan.reason === "incomplete-suite"
             ? "Cannot run this selection: discovery has not established all suite children. Refresh tests and try again."
-            : "Cannot run this selection exactly. Select whole discovered tests or suites; individual runtime iterations are not supported.",
+            : "Cannot run this selection exactly: the test tree changed or contradicts discovery. Refresh tests and try again.";
+        // Mark the cause only when the user asked to run it; an excluded or
+        // stale item keeps its status and is named in the output instead.
+        const requested: vscode.TestItem[] = [];
+        if (request.include) requested.push(...request.include);
+        else testController.items.forEach((item) => requested.push(item));
+        if (requested.includes(plan.item)) {
+          this.markErrored(run, plan.item, message);
+        }
+        this.reportPlanningFailure(
+          run,
+          `${message} Nothing was run. Cause: ${itemName(plan.item)}`,
         );
         return;
       }
+      this.reportRefusedSelections(run, plan.refused);
       if (plan.selections.length === 0) return;
       // Validate the entire selection before requesting any command. IDs are
       // opaque UI identity; targets were bound from discovery metadata.
@@ -311,6 +337,39 @@ export class LSPTestExecutionService implements ITestExecutionService {
           run.end();
         }
       }
+    }
+  }
+
+  /** Marks and names each item the plan could not run exactly; the rest still runs. */
+  private reportRefusedSelections(
+    run: vscode.TestRun,
+    refused: readonly RefusedSelection<vscode.TestItem>[],
+  ): void {
+    if (refused.length === 0) return;
+    for (const { item, reason } of refused) {
+      const message = `Not run: ${REFUSAL_MESSAGES[reason]}`;
+      this.markErrored(run, item, message);
+      const line = `[Testing] ${itemName(item)}: ${message}`;
+      this.logger.appendLine(line);
+      run.appendOutput(`${line}\r\n`);
+    }
+    this.reportPlanningFailure(
+      run,
+      `${refused.length} selected test item(s) cannot be run exactly and were not run. See the test output for each item and reason.`,
+    );
+  }
+
+  private markErrored(
+    run: vscode.TestRun,
+    item: vscode.TestItem,
+    message: string,
+  ): void {
+    try {
+      run.errored(item, new vscode.TestMessage(message));
+    } catch (error) {
+      this.logger.appendLine(
+        `[Testing] Could not mark ${item.id} errored: ${error}`,
+      );
     }
   }
 
