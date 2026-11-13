@@ -46,6 +46,27 @@ class SourceRequestCaptureTest {
     }
 
     @Test
+    fun `source requests reject a parse snapshot superseded before hover lookup`(): Unit = runBlocking {
+        val documents = DocumentProvider()
+        val service = GroovyCompilationService(documentProvider = documents)
+        try {
+            documents.put(uri, original, 1)
+            assertTrue(service.compile(uri, original).isSuccess)
+            val heldSnapshot = assertNotNull(service.getCompiledSnapshot(uri))
+
+            val edited = "class Money { String currency; int amount }"
+            documents.update(uri, edited, 2)
+            assertTrue(service.compile(uri, edited).isSuccess)
+
+            assertNull(service.captureSourceRequestForSnapshot(uri, "java.lang.String", heldSnapshot))
+            val currentSnapshot = assertNotNull(service.getCompiledSnapshot(uri))
+            assertNotNull(service.captureSourceRequestForSnapshot(uri, "java.lang.String", currentSnapshot))
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
     fun `source context survives ordinary edits but not a different logical environment`(): Unit = runBlocking {
         val documents = DocumentProvider()
         val service = GroovyCompilationService(documentProvider = documents)

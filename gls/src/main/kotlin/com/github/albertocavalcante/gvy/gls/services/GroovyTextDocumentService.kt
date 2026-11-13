@@ -345,9 +345,10 @@ class GroovyTextDocumentService(
             logger.debug { "Prepare call hierarchy requested for ${params.textDocument.uri}" }
             val uri = URI.create(params.textDocument.uri)
 
-            compilationService.ensureCompiled(uri)
-
             val context = currentCoroutineContext()
+            context.ensureActive()
+            compilationService.ensureCompiled(uri)
+            context.ensureActive()
             callHierarchyProvider.prepareCallHierarchy(params) { context.ensureActive() }
         }
 

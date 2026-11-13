@@ -7,7 +7,10 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
 import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.sources.SourceDefinition
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.sources.SourceSpan
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.mockk.coEvery
@@ -46,6 +49,17 @@ class HoverProviderTest {
     private val contentGenerator =
         HoverContentGenerator(semanticResolver)
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
+
+    private fun locatedSource(uri: URI, className: String, documentation: Documentation) =
+        SourceLookupResult.Located(
+            uri,
+            className,
+            SourceDefinition(
+                declarationRange = SourceSpan(0, 0, 0, className.length),
+                nameRange = SourceSpan(0, 0, 0, className.length),
+                documentation = documentation,
+            ),
+        )
 
     @Test
     fun `provideHover returns hover for method declaration`(): Unit = runTest {
@@ -862,26 +876,14 @@ class Calculator {
         val mockSourceNavigator = mockk<SourceNavigator>()
 
         val simpleDateFormatUri = URI.create("file:///extracted/java/text/SimpleDateFormat.java")
-        coEvery {
-            mockSourceNavigator.navigateToSource(any(), eq("java.text.SimpleDateFormat"))
-        } returns SourceNavigator.SourceResult.SourceLocation(
+        coEvery { mockSourceNavigator.locate(any(), any()) } returns locatedSource(
             uri = simpleDateFormatUri,
             className = "java.text.SimpleDateFormat",
-            lineNumber = 100,
             documentation = Documentation(
                 summary = "SimpleDateFormat is a concrete class for formatting and parsing dates.",
                 description = "SimpleDateFormat allows you to start by choosing any user-defined " +
                     "patterns for date-time formatting.",
             ),
-        )
-
-        // Return BinaryOnly for other classes
-        coEvery {
-            mockSourceNavigator.navigateToSource(any(), neq("java.text.SimpleDateFormat"))
-        } returns SourceNavigator.SourceResult.BinaryOnly(
-            uri = URI.create("jrt:/java.base/java/lang/Object.class"),
-            className = "java.lang.Object",
-            reason = "Test fallback",
         )
 
         // Create HoverProvider with the mock
@@ -924,26 +926,14 @@ class Calculator {
         val mockSourceNavigator = mockk<SourceNavigator>()
 
         val arrayListUri = URI.create("file:///extracted/java/util/ArrayList.java")
-        coEvery {
-            mockSourceNavigator.navigateToSource(any(), eq("java.util.ArrayList"))
-        } returns SourceNavigator.SourceResult.SourceLocation(
+        coEvery { mockSourceNavigator.locate(any(), any()) } returns locatedSource(
             uri = arrayListUri,
             className = "java.util.ArrayList",
-            lineNumber = 117,
             documentation = Documentation(
                 summary = "Resizable-array implementation of the List interface.",
                 description = "Implements all optional list operations, and permits all elements, " +
                     "including null.",
             ),
-        )
-
-        // Return BinaryOnly for other classes
-        coEvery {
-            mockSourceNavigator.navigateToSource(any(), neq("java.util.ArrayList"))
-        } returns SourceNavigator.SourceResult.BinaryOnly(
-            uri = URI.create("jrt:/java.base/java/lang/Object.class"),
-            className = "java.lang.Object",
-            reason = "Test fallback",
         )
 
         // Create HoverProvider with the mock
