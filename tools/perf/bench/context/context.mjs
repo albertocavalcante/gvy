@@ -70,7 +70,7 @@ function validateRuntime(runtime) {
 function validate(value) {
   record(value, ['schemaVersion', 'scope', 'implementation', 'source', 'artifact', 'runtime', 'grammar', 'workload', 'measurement', 'state', 'host', 'instrumentation']);
   if (value.schemaVersion !== 1 || value.scope !== 'benchmark-context-declaration') fail();
-  member(value.implementation, ['gvy-facade', 'gvy-semantic', 'tree-sitter']);
+  member(value.implementation, ['gvy-compiler', 'gvy-facade', 'gvy-semantic', 'tree-sitter']);
   record(value.source, ['commit', 'dirty']); revision(value.source.commit); bool(value.source.dirty);
   record(value.artifact, ['kind', 'sha256']); digest(value.artifact.sha256);
   validateRuntime(value.runtime);
@@ -93,6 +93,7 @@ function validate(value) {
   record(value.measurement, ['lane', 'boundary', 'compilePhase']);
   const boundaries = { P: 'parse', H: 'highlight-existing', F: 'parse-highlight', E: 'edit-highlight', C: 'startup' };
   if (!Object.hasOwn(boundaries, value.measurement.lane) || value.measurement.boundary !== boundaries[value.measurement.lane]) fail();
+  if (value.implementation === 'gvy-compiler' && value.measurement.lane !== 'P') fail();
   member(value.measurement.compilePhase, native ? ['not-applicable'] : ['conversion', 'canonicalization']);
   record(value.state, ['process', 'jit', 'structure', 'resultCache', 'osPages']);
   member(value.state.process, ['fresh', 'warm', 'unknown']);
