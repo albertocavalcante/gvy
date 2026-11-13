@@ -336,4 +336,4 @@ private const val SHIFT_THREE = 18
 private const val RAW_SCAN_LIMIT = 16_385
 private const val ARGUMENT_LIMIT = 32
 private const val RECORD_LIMIT = 65_536
-private val MARKER_BYTES = "[truncated]".toByteArray(Charsets.UTF_8)
+private val MARKER_BYTES = "\t[truncated]".toByteArray(Charsets.UTF_8)

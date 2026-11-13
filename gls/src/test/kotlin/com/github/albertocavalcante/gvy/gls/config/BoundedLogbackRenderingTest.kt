@@ -204,7 +204,7 @@ class BoundedLogbackRenderingTest {
 
     @Test
     fun `configured warn and debug throwable lines remain continuations`() = withEncoder { encoder ->
-        val records = listOf(Level.DEBUG, Level.WARN).map { severity ->
+        val records = listOf(Level.DEBUG, Level.WARN).flatMap { severity ->
             val failure = OddSignal().apply {
                 stackTrace = arrayOf(StackTraceElement("example.Signal", "run", "Signal.groovy", 7))
             }
@@ -216,11 +216,39 @@ class BoundedLogbackRenderingTest {
             assertTrue(lines.first().contains(" ${severity.levelStr} "))
             assertTrue(lines.drop(1).all { it.startsWith(" ") || it.startsWith("\t") })
             assertTrue(text.contains("OddSignal"))
-            text
+            listOf(text, truncatedThrowableRecord(encoder, severity, 3_516))
         }
         System.getenv("GVY_ROUTING_FIXTURE")?.let {
             java.nio.file.Files.writeString(java.nio.file.Path.of(it), records.joinToString(""))
         }
+    }
+
+    @Test
+    fun `truncation markers retain throwable continuation severity`() = withEncoder { encoder ->
+        for (severity in listOf(Level.DEBUG, Level.WARN)) {
+            for (padding in 3_515..3_517) {
+                val output = truncatedThrowableRecord(encoder, severity, padding)
+                val lines = output.trimEnd('\n').split('\n')
+                assertTrue(output.toByteArray(Charsets.UTF_8).size <= 65_536)
+                assertTrue(output.contains("[truncated]"))
+                assertTrue(lines.first().contains(" ${severity.levelStr} "))
+                assertTrue(lines.drop(1).all { it.startsWith(" ") || it.startsWith("\t") })
+            }
+        }
+    }
+
+    private fun truncatedThrowableRecord(
+        encoder: ch.qos.logback.core.encoder.Encoder<ILoggingEvent>,
+        severity: Level,
+        padding: Int,
+    ): String {
+        val failure = IllegalStateException("large stack").apply {
+            stackTrace = Array(128) { StackTraceElement("X".repeat(1_000), "method", "Example.groovy", it) }
+        }
+        val input = event("p".repeat(padding), emptyArray(), severity = severity).apply {
+            setThrowableProxy(ThrowableProxy(failure))
+        }
+        return encoder.encode(input).toString(Charsets.UTF_8)
     }
 
     private class OddSignal : Throwable("signal detail")

@@ -72,6 +72,9 @@ describe("stderrRouter", () => {
     const warnIndex = entries.findIndex(([, line]) => /\] WARN\s/u.test(line));
     expect(entries.length).to.equal(text.trimEnd().split("\n").length);
     expect(entries.filter(([, line]) => line.includes("OddSignal")).length).to.be.greaterThan(1);
+    if (fixture) {
+      expect(entries.filter(([, line]) => line.includes("[truncated]")).length).to.equal(2);
+    }
     expect(warnIndex).to.be.greaterThan(1);
     expect(entries.length - warnIndex).to.be.greaterThan(1);
     expect(entries.slice(0, warnIndex).every(([level]) => level === "debug")).to.equal(true);
