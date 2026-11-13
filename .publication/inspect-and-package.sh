@@ -146,7 +146,7 @@ pnpm_version_matches=$(grep -c '^10\.27\.0$' "${proof}/pnpm-version.log")
 [[ ${pnpm_version_matches} -eq 1 ]]
 inspect buildifier run @buildifier_prebuilt//:buildifier --lockfile_mode=error \
     --repo_env=JAVA_TOOL_OPTIONS=-Xmx512m --action_env=JAVA_TOOL_OPTIONS=-Xmx512m --color=no --curses=no \
-    -- -mode=check -lint=warn MODULE.bazel
+    -- -mode=check -lint=warn "${PWD}/MODULE.bazel"
 
 node tools/ci/run-bazel.mjs \
     --report-root "${RUNNER_TEMP:?}/gvy-pnpm-bazel-evidence" \

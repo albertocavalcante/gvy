@@ -147,7 +147,7 @@ jobs:
           worker="${GITHUB_WORKSPACE:?}/support/.publication/inspect-and-package.sh"
           controls="${GITHUB_WORKSPACE:?}/support/.publication/check-exit-contract.sh"
           previous="${GITHUB_WORKSPACE:?}/support/.publication/reviewed-r2-worker.sh"
-          printf '%s  %s\n' '301290c6e238305347f6684087393a498ebec9becc8afdfdd58637ebe8e300e2' "${worker}" | sha256sum -c -
+          printf '%s  %s\n' '864332eb8c4da1ca9e690a0d3e4a5daca488741e1e106094cd15e5f42ca760d2' "${worker}" | sha256sum -c -
           printf '%s  %s\n' '78eb53d1d948d718f0cb9a3033e79a87539774a90ea01ca337780902f089aeeb' "${controls}" | sha256sum -c -
           printf '%s  %s\n' '6ee0f5b53bc91593d3fb5475b39d7736d2d23cdd190e095c40d8b8d50b7bd9d2' "${previous}" | sha256sum -c -
           bash "${controls}" "${worker}" "${previous}" "${RUNNER_TEMP:?}/gvy-pnpm-exit-contract"
@@ -161,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           preparation="${GITHUB_WORKSPACE:?}/support/.publication/inspect-and-package.sh"
-          printf '%s  %s\n' '301290c6e238305347f6684087393a498ebec9becc8afdfdd58637ebe8e300e2' "${preparation}" | sha256sum -c -
+          printf '%s  %s\n' '864332eb8c4da1ca9e690a0d3e4a5daca488741e1e106094cd15e5f42ca760d2' "${preparation}" | sha256sum -c -
           direnv allow
           direnv exec . java -version
           GITHUB_SHA="${EXPECTED_BASE:?}" direnv exec . bash "${preparation}" "${RUNNER_TEMP:?}/gvy-pnpm-inspection-proof"
