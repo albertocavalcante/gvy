@@ -3,64 +3,415 @@
 
 import * as assert from "assert";
 import {
-  resolveTestTarget,
-  selectRunItems,
+  planRunItems,
   TestItemLike,
+  TestSelectionDescriptor,
+  TestSelectionPlan,
 } from "../../../../src/features/testing/testTarget";
 
-function item(id: string, parent?: TestItemLike): TestItemLike {
-  return { id, parent };
+interface SelectionItem extends TestItemLike {
+  readonly parent?: SelectionItem;
+  readonly uri: string;
 }
 
-describe("testTarget", () => {
-  describe("resolveTestTarget", () => {
-    it("treats a top-level item in a package as a suite", () => {
-      const suite = item("com.example.MySpec");
-      assert.deepStrictEqual(resolveTestTarget(suite), {
-        suite: "com.example.MySpec",
-      });
-    });
+describe("planRunItems", () => {
+  let descriptors: Map<SelectionItem, TestSelectionDescriptor<SelectionItem>>;
+  let first: SelectionItem;
+  let second: SelectionItem;
+  let a: SelectionItem;
+  let b: SelectionItem;
+  let c: SelectionItem;
+  let row: SelectionItem;
+  let directRow: SelectionItem;
 
-    it("splits a method on its parent id, not on the last dot", () => {
-      const suite = item("com.x.Spec");
-      const feature = item("com.x.Spec.parses 1.5 values", suite);
-      assert.deepStrictEqual(resolveTestTarget(feature), {
-        suite: "com.x.Spec",
-        test: "parses 1.5 values",
-      });
+  function suite(id: string, uri: string): SelectionItem {
+    const value = { id, uri };
+    descriptors.set(value, {
+      kind: "suite",
+      suite: id,
+      completeChildren: undefined,
     });
+    return value;
+  }
 
-    it("runs the enclosing feature for a dynamic iteration item", () => {
-      const suite = item("com.x.Spec");
-      const feature = item("com.x.Spec.adds", suite);
-      const iteration = item("com.x.Spec.adds.adds [a: 1, #0]", feature);
-      assert.deepStrictEqual(resolveTestTarget(iteration), {
-        suite: "com.x.Spec",
-        test: "adds",
-      });
-    });
+  function feature(parent: SelectionItem, name: string): SelectionItem {
+    const value = { id: `${parent.id}.${name}`, parent, uri: parent.uri };
+    descriptors.set(value, { kind: "feature", test: name });
+    return value;
+  }
+
+  function iteration(parent: SelectionItem): SelectionItem {
+    const value = { id: `${parent.id}.row`, parent, uri: parent.uri };
+    descriptors.set(value, { kind: "unrepresentable" });
+    return value;
+  }
+
+  function complete(parent: SelectionItem, ...children: SelectionItem[]) {
+    const current = descriptors.get(parent);
+    assert.ok(current?.kind === "suite");
+    descriptors.set(parent, { ...current, completeChildren: children });
+  }
+
+  function request(
+    include: readonly SelectionItem[] | undefined,
+    exclude?: readonly SelectionItem[],
+    roots: readonly SelectionItem[] = [first, second],
+  ) {
+    return planRunItems(
+      include,
+      exclude,
+      { forEach: (callback) => roots.forEach(callback) },
+      (value) => descriptors.get(value) ?? { kind: "unrepresentable" },
+    );
+  }
+
+  function ready(result: TestSelectionPlan<SelectionItem>) {
+    assert.ok(result.kind === "ready", "Expected an executable complete plan");
+    return result.selections;
+  }
+
+  function unsupported(
+    result: TestSelectionPlan<SelectionItem>,
+    reason: "incomplete-suite" | "unrepresentable-selection",
+  ) {
+    assert.ok(result.kind === "unsupported", "Expected a controlled refusal");
+    assert.strictEqual(result.reason, reason);
+    assert.strictEqual("selections" in result, false);
+    assert.strictEqual("targets" in result, false);
+  }
+
+  beforeEach(() => {
+    descriptors = new Map();
+    first = suite("example.Spec", "file:///first/Spec.groovy");
+    second = suite("other.Spec", "file:///second/Spec.groovy");
+    a = feature(first, "a");
+    b = feature(first, "parses 1.5 values");
+    c = feature(second, "c");
+    row = iteration(a);
+    // The real Gradle producer can attach runtime rows directly to their suite.
+    directRow = iteration(first);
+    complete(first, a, b);
+    complete(second, c);
   });
 
-  describe("selectRunItems", () => {
-    const a = item("A");
-    const b = item("B");
-    const roots = {
-      forEach: (cb: (i: TestItemLike) => void) => [a, b].forEach(cb),
-    };
+  it("binds Run All to the original whole-suite items", () => {
+    assert.deepStrictEqual(ready(request(undefined)), [
+      { item: first, target: { suite: first.id } },
+      { item: second, target: { suite: second.id } },
+    ]);
+  });
 
-    it("runs every root item when include is undefined (Run All)", () => {
-      assert.deepStrictEqual(selectRunItems(undefined, undefined, roots), [
-        a,
-        b,
+  it("binds discovered server names independently of opaque UI identifiers", () => {
+    const opaqueSuite = { id: "ui:root", uri: first.uri };
+    const opaqueFeature = {
+      id: "ui:feature",
+      parent: opaqueSuite,
+      uri: first.uri,
+    };
+    const suiteNames = {
+      suite: "example.Spec",
+      completeChildren: [opaqueFeature],
+    };
+    const featureNames = { test: "parses 1.5 values" };
+    descriptors.set(opaqueSuite, { ...suiteNames, kind: "suite" });
+    descriptors.set(opaqueFeature, { ...featureNames, kind: "feature" });
+    assert.deepStrictEqual(
+      ready(request([opaqueFeature], undefined, [opaqueSuite])),
+      [
+        {
+          item: opaqueFeature,
+          target: { suite: "example.Spec", test: "parses 1.5 values" },
+        },
+      ],
+    );
+  });
+
+  it("preserves an explicit empty include", () => {
+    assert.deepStrictEqual(ready(request([])), []);
+  });
+
+  for (const runAll of [true, false]) {
+    it(`expands a complete ${runAll ? "Run All" : "included suite"} around an excluded feature`, () => {
+      assert.deepStrictEqual(
+        ready(request(runAll ? undefined : [first], [a], [first])),
+        [{ item: b, target: { suite: first.id, test: "parses 1.5 values" } }],
+      );
+    });
+  }
+
+  it("prunes included descendants of an excluded suite", () => {
+    assert.deepStrictEqual(ready(request([a, row], [first])), []);
+  });
+
+  it("drops an excluded complete subtree without affecting another suite", () => {
+    assert.deepStrictEqual(ready(request(undefined, [first])), [
+      { item: second, target: { suite: second.id } },
+    ]);
+  });
+
+  it("deduplicates repeated object includes", () => {
+    assert.deepStrictEqual(ready(request([a, a])), [
+      { item: a, target: { suite: first.id, test: "a" } },
+    ]);
+  });
+
+  it("coalesces a feature and its later included suite", () => {
+    assert.deepStrictEqual(ready(request([a, first])), [
+      { item: first, target: { suite: first.id } },
+    ]);
+  });
+
+  for (const covering of ["suite", "feature"] as const) {
+    it(`accepts a row covered by an explicit whole ${covering}`, () => {
+      const parent = covering === "suite" ? first : a;
+      assert.deepStrictEqual(ready(request([row, parent])), [
+        {
+          item: parent,
+          target:
+            covering === "suite"
+              ? { suite: first.id }
+              : { suite: first.id, test: "a" },
+        },
       ]);
     });
+  }
 
-    it("keeps an explicit include list", () => {
-      assert.deepStrictEqual(selectRunItems([b], undefined, roots), [b]);
-    });
+  it("prunes a row exclusion already covered by its excluded feature", () => {
+    assert.deepStrictEqual(ready(request([first], [row, a])), [
+      { item: b, target: { suite: first.id, test: "parses 1.5 values" } },
+    ]);
+  });
 
-    it("drops excluded items", () => {
-      assert.deepStrictEqual(selectRunItems(undefined, [a], roots), [b]);
+  it("allows a whole incomplete suite or an explicit known fallback feature", () => {
+    descriptors.set(first, {
+      kind: "suite",
+      suite: first.id,
+      completeChildren: undefined,
     });
+    assert.deepStrictEqual(ready(request([first])), [
+      { item: first, target: { suite: first.id } },
+    ]);
+    assert.deepStrictEqual(ready(request([a])), [
+      { item: a, target: { suite: first.id, test: "a" } },
+    ]);
+  });
+
+  it("refuses expansion of an incomplete suite, including a partial fallback", () => {
+    descriptors.set(first, {
+      kind: "suite",
+      suite: first.id,
+      completeChildren: undefined,
+    });
+    unsupported(request([first], [a]), "incomplete-suite");
+  });
+
+  it("distinguishes an authoritative empty snapshot from missing completeness", () => {
+    complete(first);
+    assert.deepStrictEqual(ready(request([first])), [
+      { item: first, target: { suite: first.id } },
+    ]);
+    // A child claiming that parent contradicts the supplied complete snapshot.
+    unsupported(request([first], [a]), "unrepresentable-selection");
+  });
+
+  for (const form of ["nested", "direct", "multiple"] as const) {
+    it(`refuses an uncovered ${form} runtime row selection`, () => {
+      const include =
+        form === "direct"
+          ? [directRow]
+          : form === "multiple"
+            ? [row, iteration(a)]
+            : [row];
+      unsupported(request(include), "unrepresentable-selection");
+    });
+  }
+
+  for (const selected of ["suite", "feature"] as const) {
+    it(`refuses an effective row exclusion cutting a whole ${selected}`, () => {
+      unsupported(
+        request([selected === "suite" ? first : a], [row]),
+        "unrepresentable-selection",
+      );
+    });
+  }
+
+  it("refuses an ambiguous direct-suite row exclusion for a selected feature", () => {
+    unsupported(request([a], [directRow]), "unrepresentable-selection");
+  });
+
+  it("does not confuse a proven different feature's excluded row", () => {
+    assert.deepStrictEqual(ready(request([b], [row])), [
+      { item: b, target: { suite: first.id, test: "parses 1.5 values" } },
+    ]);
+  });
+
+  it("does not confuse an unrelated suite's excluded runtime row", () => {
+    assert.deepStrictEqual(ready(request([c], [directRow])), [
+      { item: c, target: { suite: second.id, test: "c" } },
+    ]);
+  });
+
+  it("prunes an explicitly excluded row before checking representability", () => {
+    assert.deepStrictEqual(ready(request([row], [row])), []);
+  });
+
+  it("returns no executable partial plan when a later unit is unsupported", () => {
+    unsupported(request([second, row]), "unrepresentable-selection");
+  });
+
+  it("rejects a foreign-parent feature in a supplied complete snapshot", () => {
+    complete(first, a, c);
+    unsupported(request([first], [a]), "unrepresentable-selection");
+  });
+
+  it("rejects exclusions contradicting a supplied complete snapshot", () => {
+    complete(first, b);
+    unsupported(request([first], [a]), "unrepresentable-selection");
+  });
+
+  it("rejects runtime rows accidentally included in the discovery snapshot", () => {
+    complete(first, a, directRow);
+    unsupported(request([first], [a]), "unrepresentable-selection");
+  });
+
+  it("preserves distinct folder identities even with identical target IDs", () => {
+    const other = suite(first.id, "file:///third/Spec.groovy");
+    const sameName = feature(other, "a");
+    assert.deepStrictEqual(
+      ready(request([a, sameName], undefined, [first, other])),
+      [
+        { item: a, target: { suite: first.id, test: "a" } },
+        { item: sameName, target: { suite: first.id, test: "a" } },
+      ],
+    );
+  });
+
+  it("rejects stale item trees instead of matching another root by ID", () => {
+    const replacement = suite(first.id, "file:///replacement/Spec.groovy");
+    unsupported(
+      request([a], undefined, [replacement]),
+      "unrepresentable-selection",
+    );
+  });
+
+  it("rejects a row mislabeled as a feature rather than widening its target", () => {
+    descriptors.set(row, { kind: "feature", test: "row" });
+    unsupported(request([row]), "unrepresentable-selection");
+  });
+
+  it("rejects a selected feature missing from its complete discovery snapshot", () => {
+    complete(first, b);
+    unsupported(request([a]), "unrepresentable-selection");
+  });
+
+  it("validates supplied discovery snapshots even for a whole-suite selection", () => {
+    complete(first, c);
+    unsupported(request([first]), "unrepresentable-selection");
+  });
+
+  it("deduplicates a repeated feature object in the supplied snapshot", () => {
+    complete(first, a, b, b);
+    assert.deepStrictEqual(ready(request([first], [a])), [
+      { item: b, target: { suite: first.id, test: "parses 1.5 values" } },
+    ]);
+  });
+
+  it("rejects distinct snapshot items resolving to the same command target", () => {
+    const sameTarget = { id: "a", parent: first, uri: first.uri };
+    descriptors.set(sameTarget, { kind: "feature", test: "a" });
+    complete(first, a, sameTarget, b);
+    unsupported(request([first], [b]), "unrepresentable-selection");
+  });
+
+  it("rejects conflicting fallback features instead of issuing duplicate commands", () => {
+    descriptors.set(first, {
+      kind: "suite",
+      suite: first.id,
+      completeChildren: undefined,
+    });
+    const sameTarget = feature(first, "a");
+    unsupported(request([a, sameTarget]), "unrepresentable-selection");
+  });
+
+  it("refuses a fallback command matching a distinct excluded feature target", () => {
+    descriptors.set(first, {
+      kind: "suite",
+      suite: first.id,
+      completeChildren: undefined,
+    });
+    const sameTarget = feature(first, "a");
+    unsupported(request([a], [sameTarget]), "unrepresentable-selection");
+  });
+
+  it("keeps an explicit whole suite when it covers a direct-suite runtime row", () => {
+    assert.deepStrictEqual(ready(request([directRow, first])), [
+      { item: first, target: { suite: first.id } },
+    ]);
+  });
+
+  it("refuses a stale excluded item rather than matching it by ID", () => {
+    const oldSuite = suite(first.id, first.uri);
+    const oldFeature = feature(oldSuite, "a");
+    unsupported(request([a], [oldFeature]), "unrepresentable-selection");
+  });
+
+  it("refuses Run All with an exclusion from a replaced tree", () => {
+    const oldSuite = suite(first.id, first.uri);
+    unsupported(request(undefined, [oldSuite]), "unrepresentable-selection");
+  });
+
+  it("preserves an empty request even with a stale exclusion", () => {
+    const oldSuite = suite(first.id, first.uri);
+    assert.deepStrictEqual(ready(request([], [oldSuite])), []);
+  });
+
+  it("ignores an excluded feature from another known current root", () => {
+    assert.deepStrictEqual(ready(request([a], [c])), [
+      { item: a, target: { suite: first.id, test: "a" } },
+    ]);
+  });
+
+  it("refuses cyclic parent chains without traversing indefinitely", () => {
+    const cycle: SelectionItem & { parent?: SelectionItem } = {
+      id: "cycle",
+      uri: first.uri,
+    };
+    cycle.parent = cycle;
+    unsupported(request([cycle]), "unrepresentable-selection");
+  });
+
+  it("does not rescan every excluded feature for every selected feature", () => {
+    const count = 512;
+    const children = Array.from({ length: count }, (_, index) =>
+      feature(first, `feature ${index}`),
+    );
+    let nameReads = 0;
+    children.forEach((child, index) => {
+      descriptors.set(child, {
+        kind: "feature",
+        get test() {
+          nameReads++;
+          return `feature ${index}`;
+        },
+      });
+    });
+    descriptors.set(first, {
+      kind: "suite",
+      suite: first.id,
+      completeChildren: children,
+    });
+    const included = children.filter((_, index) => index % 2 === 0);
+    const excluded = children.filter((_, index) => index % 2 !== 0);
+    const result = ready(request(included, excluded));
+    assert.deepStrictEqual(
+      result.map(({ item }) => item),
+      included,
+    );
+    // A deterministic input-access budget catches quadratic rescanning without
+    // a machine-dependent wall-clock assertion. Leave room for linear passes.
+    assert.ok(
+      nameReads <= count * 8,
+      `Repeated feature-name reads: ${nameReads}`,
+    );
   });
 });

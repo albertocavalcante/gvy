@@ -6,6 +6,7 @@ import * as sinon from "sinon";
 import { EventEmitter } from "events";
 import { PassThrough } from "stream";
 import proxyquire from "proxyquire";
+import type { TestSelectionDescriptor } from "../../../../src/features/testing/testTarget";
 
 interface LSPTestExecutionServiceInstance {
   runTestsWithCoverage: (
@@ -28,6 +29,7 @@ interface LSPTestExecutionServiceType {
     testService: unknown,
     logger: unknown,
     extensionPath: string,
+    describe: (item: FixtureItem) => TestSelectionDescriptor<FixtureItem>,
   ): LSPTestExecutionServiceInstance;
 }
 
@@ -85,6 +87,12 @@ interface PathMock {
 const unquoted = (args: string[]) =>
   args.map((arg) => arg.replace(/^"|"$/gu, ""));
 
+interface FixtureItem {
+  id: string;
+  parent?: FixtureItem;
+  children?: { forEach(callback: (item: FixtureItem) => void): void };
+}
+
 describe("LSPTestExecutionService", () => {
   let LSPTestExecutionService: LSPTestExecutionServiceType;
   let service: LSPTestExecutionServiceInstance;
@@ -121,7 +129,7 @@ describe("LSPTestExecutionService", () => {
       },
       window: {
         showErrorMessage: sandbox.stub().resolves(),
-        showWarningMessage: sandbox.stub(),
+        showWarningMessage: sandbox.stub().resolves(),
       },
       TestRunRequest: class {
         constructor(public include: unknown[]) {}
@@ -218,11 +226,77 @@ describe("LSPTestExecutionService", () => {
       },
     );
     LSPTestExecutionService = module.LSPTestExecutionService;
+    const metadata = new Map<
+      FixtureItem,
+      TestSelectionDescriptor<FixtureItem>
+    >();
     service = new LSPTestExecutionService(
       testServiceMock,
       loggerMock,
       "/extension/path",
+      (item) => metadata.get(item) ?? { kind: "unrepresentable" },
     );
+
+    // Older stream/Java-home fixtures deliberately use server names as IDs.
+    // Supply their intended discovery provenance and native parent/root links.
+    // The separate selection-boundary suite uses opaque IDs and explicit names.
+    const seedDiscovery = (input: unknown, controller: unknown) => {
+      const request = input as {
+        include?: FixtureItem[];
+        exclude?: FixtureItem[];
+      };
+      const ctrl = controller as {
+        items?: { forEach(callback: (item: FixtureItem) => void): void };
+      };
+      const roots = new Set<FixtureItem>();
+      ctrl.items?.forEach((item) => roots.add(item));
+      for (const item of [
+        ...(request.include ?? []),
+        ...(request.exclude ?? []),
+      ]) {
+        let root = item;
+        while (root.parent) root = root.parent;
+        roots.add(root);
+      }
+      const seen = new Set<FixtureItem>();
+      const visit = (item: FixtureItem) => {
+        if (seen.has(item)) return;
+        seen.add(item);
+        const children: FixtureItem[] = [];
+        item.children?.forEach((child) => {
+          child.parent = item;
+          children.push(child);
+          visit(child);
+        });
+        metadata.set(
+          item,
+          item.parent
+            ? {
+                kind: "feature",
+                test: item.id.slice(item.parent.id.length + 1),
+              }
+            : {
+                kind: "suite",
+                suite: item.id,
+                completeChildren: item.children ? children : undefined,
+              },
+        );
+      };
+      for (const root of roots) visit(root);
+      for (const item of request.include ?? [])
+        if (!seen.has(item)) visit(item);
+      ctrl.items = { forEach: (callback) => roots.forEach(callback) };
+    };
+    const runTests = service.runTests.bind(service);
+    service.runTests = (request, token, controller) => {
+      seedDiscovery(request, controller);
+      return runTests(request, token, controller);
+    };
+    const runWithCoverage = service.runTestsWithCoverage.bind(service);
+    service.runTestsWithCoverage = (request, token, controller, coverage) => {
+      seedDiscovery(request, controller);
+      return runWithCoverage(request, token, controller, coverage);
+    };
   });
 
   afterEach(() => {
@@ -1505,11 +1579,15 @@ describe("LSPTestExecutionService", () => {
         uri,
         children: { forEach: () => {} },
       };
+      const remaining = { ...child, id: "suite.remaining", label: "remaining" };
       const suite = {
         id: "suite",
         label: "suite",
         uri,
-        children: { forEach: (f: (item: unknown) => void) => f(child) },
+        children: {
+          forEach: (f: (item: unknown) => void) =>
+            [child, remaining].forEach(f),
+        },
       };
       const token = {
         isCancellationRequested: false,
@@ -1565,7 +1643,14 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
-      assert.ok(run.errored.calledWith(suite));
+      assert.ok(run.errored.calledWith(remaining));
+      assert.ok(
+        testServiceMock.getTestCommand.calledOnceWithExactly(
+          "file:///w/a",
+          "suite",
+          "remaining",
+        ),
+      );
       assert.ok(!run.errored.calledWith(child));
     });
   });
@@ -1832,9 +1917,17 @@ describe("LSPTestExecutionService", () => {
         uri: item.uri,
         children: { forEach: () => {} },
       };
+      const remaining = {
+        ...child,
+        id: `${item.id}.remaining`,
+        label: "remaining",
+      };
       const suite = {
         ...item,
-        children: { forEach: (f: (value: unknown) => void) => f(child) },
+        children: {
+          forEach: (f: (value: unknown) => void) =>
+            [child, remaining].forEach(f),
+        },
       };
       testServiceMock.getTestResults.resolves({
         results: [
@@ -1860,6 +1953,10 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
+      assert.ok(
+        testServiceMock.getTestResults.calledOnce,
+        "exercise report filtering after a real selection",
+      );
       assert.ok(!run.passed.calledWith(child));
       assert.ok(!run.failed.calledWith(child));
       assert.ok(!run.errored.calledWith(child));

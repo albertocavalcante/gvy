@@ -9,6 +9,7 @@ interface GroovyTestControllerType {
   new (
     context: unknown,
     executionService: unknown,
+    itemRegistry: unknown,
     testService: unknown,
     coverageService?: unknown,
   ): { dispose: () => void; refreshTests: () => void };
@@ -83,6 +84,10 @@ describe("GroovyTestController", () => {
   let GroovyTestController: GroovyTestControllerType;
   let contextMock: { subscriptions: { push: sinon.SinonStub } };
   let executionServiceMock: ExecutionServiceMock;
+  let itemRegistry: {
+    registerSuite: sinon.SinonStub;
+    registerFeature: sinon.SinonStub;
+  };
   let testServiceMock: TestServiceMock;
   let vscodeMock: VscodeMock;
   let testControllerMock: TestControllerMock;
@@ -91,6 +96,10 @@ describe("GroovyTestController", () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    itemRegistry = {
+      registerSuite: sandbox.stub(),
+      registerFeature: sandbox.stub(),
+    };
     onChildLookup = undefined;
 
     // Mock test items
@@ -282,6 +291,7 @@ describe("GroovyTestController", () => {
       controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
         coverageService,
       );
@@ -313,6 +323,62 @@ describe("GroovyTestController", () => {
       assert.ok(testControllerMock.refreshHandler);
       await testControllerMock.refreshHandler();
     }
+
+    it("records raw discovery names and an explicit complete feature snapshot", async () => {
+      await discoverTests();
+      const suiteItem = testControllerMock.items.get(suite);
+      const featureItem = suiteItem.children.get(`${suite}.${feature}`);
+      assert.ok(
+        itemRegistry.registerFeature.calledOnceWithExactly(
+          featureItem,
+          feature,
+        ),
+      );
+      assert.ok(
+        itemRegistry.registerSuite.calledOnceWithExactly(suiteItem, suite, [
+          featureItem,
+        ]),
+      );
+      assert.equal(
+        suiteItem.canResolveChildren,
+        true,
+        "lazy loading is not completeness evidence",
+      );
+    });
+
+    it("marks an on-the-fly suite incomplete and preserves its literal feature name", async () => {
+      await handler("run")({ suite, test: feature, uri });
+      const suiteItem = testControllerMock.items.get(suite);
+      const featureItem = suiteItem.children.get(`${suite}.${feature}`);
+      assert.ok(
+        itemRegistry.registerFeature.calledWithExactly(featureItem, feature),
+      );
+      assert.ok(
+        itemRegistry.registerSuite.alwaysCalledWithExactly(
+          suiteItem,
+          suite,
+          undefined,
+        ),
+      );
+    });
+
+    it("invalidates completeness when a command adds an undiscovered feature", async () => {
+      await discoverTests();
+      await handler("run")({ suite, test: "new literal.name", uri });
+      const suiteItem = testControllerMock.items.get(suite);
+      assert.ok(
+        itemRegistry.registerSuite.calledWithExactly(suiteItem, suite, [
+          suiteItem.children.get(`${suite}.${feature}`),
+        ]),
+      );
+      assert.ok(
+        itemRegistry.registerSuite.calledWithExactly(
+          suiteItem,
+          suite,
+          undefined,
+        ),
+      );
+    });
 
     for (const mode of modes) {
       it(`guides a no-argument ${mode} call without selecting the active file`, async () => {
@@ -419,6 +485,7 @@ describe("GroovyTestController", () => {
         controller = new GroovyTestController(
           contextMock,
           executionServiceMock,
+          itemRegistry,
           testServiceMock,
           missing === "service" ? undefined : coverageService,
         );
@@ -556,6 +623,7 @@ describe("GroovyTestController", () => {
       controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
       return controller;
@@ -774,6 +842,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -818,6 +887,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -878,6 +948,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -920,6 +991,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1043,6 +1115,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1107,6 +1180,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1164,6 +1238,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1206,6 +1281,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 

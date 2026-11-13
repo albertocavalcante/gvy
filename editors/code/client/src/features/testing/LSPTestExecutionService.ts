@@ -7,7 +7,11 @@ import * as path from "path";
 import * as fs from "fs";
 import { createBoundedLines, pipeBoundedLines } from "../../utils/boundedLines";
 import { ITestExecutionService } from "./ITestExecutionService";
-import { resolveTestTarget, selectRunItems } from "./testTarget";
+import {
+  planRunItems,
+  TestSelectionDescriptor,
+  TestTarget,
+} from "./testTarget";
 import {
   buildProcessInvocation,
   buildToolOf,
@@ -89,6 +93,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     private readonly testService: TestService,
     private readonly logger: vscode.OutputChannel,
     extensionPath: string,
+    private readonly describeItem: (
+      item: vscode.TestItem,
+    ) => TestSelectionDescriptor<vscode.TestItem>,
   ) {
     this.initScriptPath = path.join(
       extensionPath,
@@ -128,40 +135,103 @@ export class LSPTestExecutionService implements ITestExecutionService {
     // the run's own token is what Test Explorer's Stop button cancels.
     const tokens = [token, run.token];
     const isCancelled = () => tokens.some((t) => t.isCancellationRequested);
-    const consumer = new TestEventConsumer(run, this.logger, testController);
-    const testsToRun = selectRunItems(
-      request.include,
-      request.exclude,
-      testController.items,
-    );
-
-    // Register requested items and their descendants so events for child
-    // tests update the existing items instead of replacing them.
-    for (const item of this.collectAllTestItems(testsToRun)) {
-      consumer.registerTestItem(item.id, item);
-    }
-    for (const item of testsToRun) {
-      run.enqueued(item);
-    }
-
+    let consumer: TestEventConsumer | undefined;
+    const cancellationSubscriptions: vscode.Disposable[] = [];
     try {
-      // Group tests by suite/file to minimize LSP calls if possible,
-      // but for now, we'll process the first item to get the command
-      // and assume the command runs all requested tests if we pass them effectively.
-      // Actually, LSP 'runTest' might handle one test at a time or a suite.
-      // If the user selected multiple unrelated tests, we might need multiple runs.
-      // For simplicity and to match current behavior, we'll assume they belong to the same project context.
+      if (isCancelled()) return;
+      const plan = planRunItems(
+        request.include,
+        request.exclude,
+        testController.items,
+        this.describeItem,
+      );
+      if (plan.kind === "unsupported") {
+        this.reportPlanningFailure(
+          run,
+          plan.reason === "incomplete-suite"
+            ? "Cannot run this selection: discovery has not established all suite children. Refresh tests and try again."
+            : "Cannot run this selection exactly. Select whole discovered tests or suites; individual runtime iterations are not supported.",
+        );
+        return;
+      }
+      if (plan.selections.length === 0) return;
+      // Validate the entire selection before requesting any command. IDs are
+      // opaque UI identity; targets were bound from discovery metadata.
+      const targets: {
+        item: vscode.TestItem;
+        target: Readonly<TestTarget>;
+        uri: string;
+      }[] = [];
+      for (const { item, target } of plan.selections) {
+        const uri = item.uri?.toString();
+        if (!uri) {
+          this.reportPlanningFailure(
+            run,
+            "Cannot run this selection: a test has no source URI. Refresh tests and try again.",
+          );
+          return;
+        }
+        targets.push({ item, target, uri });
+      }
 
-      // TODO: If the request contains multiple distinct items, the current LSP API
-      // might need to be called for each, OR we trust the LSP to build a command for all.
-      // The current `groovy/runTest` takes a single URI/Suite/Test.
-      // So if we have multiple items, we might need to iterate.
-      // However, usually `args` returned by LSP can be manipulated or we call it once.
-
-      // If we have mixed items, running them all in one go is tricky if they require different commands.
-      // We'll iterate through items and run them sequentially if they yield different commands,
-      // or try to batch them.
-      // For now, let's implement the loop:
+      const prepared: {
+        item: vscode.TestItem;
+        command: TestCommand;
+        invocation: ProcessInvocation;
+      }[] = [];
+      // Stop must release the UI run even when command generation does not
+      // settle. Promise.race also observes a losing lookup's later rejection.
+      const lookupCancelled = Symbol("cancelled test command lookup");
+      const cancelled = new Promise<typeof lookupCancelled>((resolve) => {
+        for (const cancellationToken of tokens) {
+          cancellationSubscriptions.push(
+            cancellationToken.onCancellationRequested(() =>
+              resolve(lookupCancelled),
+            ),
+          );
+        }
+      });
+      for (const { item, target, uri } of targets) {
+        if (isCancelled()) return;
+        const command = await Promise.race([
+          this.testService.getTestCommand(uri, target.suite, target.test),
+          cancelled,
+        ]);
+        if (command === lookupCancelled || isCancelled()) return;
+        if (!command) {
+          const message =
+            "No test execution command was returned. The entire selection was cancelled before starting any tests.";
+          run.errored(item, new vscode.TestMessage(message));
+          this.reportPlanningFailure(run, message);
+          return;
+        }
+        const args = [...command.args];
+        if (options.withCoverage) {
+          const tool = buildToolOf(command.executable);
+          if (tool === "gradle") args.push("jacocoTestReport");
+          else if (tool === "maven") args.push("jacoco:report");
+        }
+        const executableCommand = { ...command, args };
+        try {
+          prepared.push({
+            item,
+            command: executableCommand,
+            invocation: this.prepareInvocation(executableCommand),
+          });
+        } catch (error) {
+          if (!(error instanceof UnrunnableCommandError)) throw error;
+          run.errored(item, new vscode.TestMessage(error.message));
+          this.reportPlanningFailure(run, error.message);
+          return;
+        }
+      }
+      if (isCancelled()) return;
+      const testsToRun = prepared.map(({ item }) => item);
+      consumer = new TestEventConsumer(run, this.logger, testController);
+      for (const item of this.collectAllTestItems(testsToRun)) {
+        consumer.registerTestItem(item.id, item);
+      }
+      for (const item of testsToRun) run.enqueued(item);
 
       // Get workspace URI for LSP requests
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -170,77 +240,23 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const healthyMavenItems: vscode.TestItem[] = [];
       const affectedByLoss = new Set<vscode.TestItem>();
 
-      for (const item of testsToRun) {
+      for (const { item, command, invocation } of prepared) {
         if (isCancelled()) break;
+        const isMaven = buildToolOf(command.executable) === "maven";
 
-        // Parse suite/test from Item ID
-        const uri = item.uri?.toString();
-        if (!uri) {
-          this.logger.appendLine(
-            `[Error] Test item ${item.id} has no URI. Skipping.`,
-          );
-          continue;
-        }
-
-        const { suite: suiteName, test: testName } = resolveTestTarget(item);
-
-        const command = await this.testService.getTestCommand(
-          uri,
-          suiteName,
-          testName,
+        const outcome = await this.executeCommand(
+          command,
+          invocation,
+          consumer,
+          tokens,
         );
-
-        if (!command) {
-          this.logger.appendLine(
-            `[Testing] LSP returned no test execution command for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
-          );
-          consumer.markTerminal(item);
-          run.errored(
-            item,
-            new vscode.TestMessage(
-              `No test execution command was returned for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
-            ),
-          );
-          continue;
+        if (outcome.incomplete) {
+          for (const affected of this.collectAllTestItems([item]))
+            affectedByLoss.add(affected);
         }
-
-        // Execute the test command with optional coverage
-        const tool = buildToolOf(command.executable);
-        const isGradle = tool === "gradle";
-        const isMaven = tool === "maven";
-
-        // Clone command.args to avoid mutation
-        const coverageArgs = [...command.args];
-        if (options.withCoverage) {
-          // Append JaCoCo report generation
-          if (isGradle) {
-            coverageArgs.push("jacocoTestReport");
-          } else if (isMaven) {
-            // For Maven, add jacoco:report goal after test
-            // Requires jacoco-maven-plugin in pom.xml
-            coverageArgs.push("jacoco:report");
-          }
-        }
-
-        try {
-          const outcome = await this.executeCommand(
-            { ...command, args: coverageArgs },
-            consumer,
-            tokens,
-          );
-          if (outcome.incomplete) {
-            for (const affected of this.collectAllTestItems([item]))
-              affectedByLoss.add(affected);
-          }
-          // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
-          if (isMaven && outcome.spawned && !outcome.incomplete) {
-            healthyMavenItems.push(item);
-          }
-        } catch (error) {
-          if (!(error instanceof UnrunnableCommandError)) throw error;
-          this.logger.appendLine(`[Error] ${error.message}`);
-          consumer.markTerminal(item);
-          run.errored(item, new vscode.TestMessage(error.message));
+        // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
+        if (isMaven && outcome.spawned && !outcome.incomplete) {
+          healthyMavenItems.push(item);
         }
       }
 
@@ -283,10 +299,32 @@ export class LSPTestExecutionService implements ITestExecutionService {
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
+      run.appendOutput(`Test execution error: ${error}\r\n`);
     } finally {
-      consumer.clear();
-      run.end();
+      try {
+        consumer?.clear();
+      } finally {
+        try {
+          for (const subscription of cancellationSubscriptions)
+            subscription.dispose();
+        } finally {
+          run.end();
+        }
+      }
     }
+  }
+
+  private reportPlanningFailure(run: vscode.TestRun, message: string): void {
+    this.logger.appendLine(`[Testing] ${message}`);
+    run.appendOutput(`${message}\r\n`);
+    // This non-modal notification must not keep the TestRun open until dismissal.
+    void vscode.window
+      .showWarningMessage(message)
+      .then(undefined, (error: unknown) => {
+        this.logger.appendLine(
+          `Could not show test selection warning: ${error}`,
+        );
+      });
   }
 
   /**
@@ -554,8 +592,49 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
   }
 
+  private prepareInvocation(cmd: TestCommand): ProcessInvocation {
+    const { executable, args } = cmd;
+    const tool = buildToolOf(executable);
+    const isGradle = tool === "gradle";
+    const isMaven = tool === "maven";
+    let finalArgs = [...args];
+
+    // Inject Gradle Init Script if it's Gradle
+    if (isGradle) {
+      // Find where to insert --init-script. Usually at start or before 'test' task.
+      // LSP likely returns ['test', '--tests', ...]
+      // We prepend init script args
+      finalArgs = [
+        "--init-script",
+        this.initScriptPath,
+        ...finalArgs,
+        "--console=plain", // Ensure parsing works
+      ];
+    } else if (isMaven) {
+      // Ensure quiet/plain output for parsing?
+      // Maven output is harder to force to "plain" without affecting build.
+      // We'll rely on the default text output.
+      // Maybe add '-q' if not present?
+      if (!finalArgs.includes("-q") && !finalArgs.includes("--quiet")) {
+        finalArgs.push("-q");
+      }
+    }
+
+    try {
+      return buildProcessInvocation(executable, finalArgs);
+    } catch (error) {
+      throw new UnrunnableCommandError(
+        `This test cannot be run through the Windows command shell, which ` +
+          `${executable} needs. ${error instanceof Error ? error.message : String(error)}. If that is ` +
+          `the test name, rename the test or run its enclosing class; if it ` +
+          `is a path, move the project to a path without those characters.`,
+      );
+    }
+  }
+
   private async executeCommand(
     cmd: TestCommand,
+    invocation: ProcessInvocation,
     consumer: TestEventConsumer,
     tokens: readonly vscode.CancellationToken[],
   ): Promise<{ spawned: boolean; incomplete: boolean }> {
@@ -583,43 +662,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
     // Detect Build Tool by executable name
     const tool = buildToolOf(executable);
-    const isGradle = tool === "gradle";
     const isMaven = tool === "maven";
-
-    let finalArgs = [...args];
-
-    // Inject Gradle Init Script if it's Gradle
-    if (isGradle) {
-      // Find where to insert --init-script. Usually at start or before 'test' task.
-      // LSP likely returns ['test', '--tests', ...]
-      // We prepend init script args
-      finalArgs = [
-        "--init-script",
-        this.initScriptPath,
-        ...finalArgs,
-        "--console=plain", // Ensure parsing works
-      ];
-    } else if (isMaven) {
-      // Ensure quiet/plain output for parsing?
-      // Maven output is harder to force to "plain" without affecting build.
-      // We'll rely on the default text output.
-      // Maybe add '-q' if not present?
-      if (!finalArgs.includes("-q") && !finalArgs.includes("--quiet")) {
-        finalArgs.push("-q");
-      }
-    }
-
-    let invocation: ProcessInvocation;
-    try {
-      invocation = buildProcessInvocation(executable, finalArgs);
-    } catch (error) {
-      throw new UnrunnableCommandError(
-        `This test cannot be run through the Windows command shell, which ` +
-          `${executable} needs. ${(error as Error).message}. If that is ` +
-          `the test name, rename the test or run its enclosing class; if it ` +
-          `is a path, move the project to a path without those characters.`,
-      );
-    }
 
     return new Promise((resolve) => {
       const proc = cp.spawn(invocation.executable, invocation.args, {
