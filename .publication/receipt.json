@@ -1,0 +1,9 @@
+{
+  "base": "07553cf9bb4750177bd779dfdacd6c5260899e4d",
+  "tree": "1ee4a6ddf0f76031ff073bf50ba310b36d9ea539",
+  "patchSha256": "bd4d675764474676e411c523691cfb6c6ea82e15f9418b84569558656aaa90cb",
+  "patchBytes": 994,
+  "payloadSha256": "21c218d6f2bae7bca082deec45f1ef4f90bd166056f1386fbfe6fcc019909a4c",
+  "payloadBytes": 630,
+  "pathsSha256": "1de9af81e238871dbf215b14ac322ae3947b07a6e83da0aee70fd38c1fd7a0b1"
+}
