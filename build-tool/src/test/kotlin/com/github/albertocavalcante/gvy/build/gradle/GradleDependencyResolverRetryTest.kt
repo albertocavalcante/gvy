@@ -39,6 +39,24 @@ import kotlin.test.fail
 
 class GradleDependencyResolverRetryTest {
 
+    private class EmptyIdeaModules : AbstractMutableSet<IdeaModule>(), DomainObjectSet<IdeaModule> {
+        override val size: Int = 0
+        override fun iterator(): MutableIterator<IdeaModule> = mutableSetOf<IdeaModule>().iterator()
+        override fun add(element: IdeaModule): Boolean = throw UnsupportedOperationException("empty fixture")
+        override fun getAll(): List<IdeaModule> = emptyList()
+        override fun getAt(index: Int): IdeaModule = throw IndexOutOfBoundsException("empty fixture")
+    }
+
+    @Test
+    fun `empty tooling module fixture has genuine empty set behavior`() {
+        val modules = EmptyIdeaModules()
+        assertTrue(modules.isEmpty())
+        assertFalse(modules.iterator().hasNext())
+        assertTrue(modules.getAll().isEmpty())
+        assertThrows<IndexOutOfBoundsException> { modules.getAt(0) }
+    }
+
+
     @Test
     fun `retries with isolated Gradle user home when init scripts break model fetch`(@TempDir projectDir: Path) {
         projectDir.resolve("build.gradle").toFile().writeText(
@@ -149,7 +167,7 @@ class GradleDependencyResolverRetryTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
         val ideaProject = mockk<IdeaProject>()
-        val emptyModules = mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
+        val emptyModules = EmptyIdeaModules()
 
         every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
@@ -390,7 +408,7 @@ class GradleDependencyResolverRetryTest {
                 modelBuilder
             }
             val ideaProject = mockk<IdeaProject>()
-            every { ideaProject.modules } returns mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
+            every { ideaProject.modules } returns EmptyIdeaModules()
             every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
             every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
             every { modelBuilder.get() } answers {
