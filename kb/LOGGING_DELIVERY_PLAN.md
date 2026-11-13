@@ -645,8 +645,8 @@ Suggested reservations and concurrency:
 - Broad catalogs, BUILD declarations, Logback XML, schemas, CONTRIBUTING and this status ledger each have one active
   writer. The coordinator queues changes and tells affected peers when the contract changes.
 
-Preserve active worktrees and check reservations before dispatch. Use an isolated checkout in the owner's approved
-persistent location; do not release another author's workspace, stash or reset shared edits, or run tests in main.
+Check packet reservations before dispatch. Follow the [canonical Git workflow](../.agent/rules/git-workflow.md) and
+[repository agent instructions](../AGENTS.md) for checkout locations and shared-work preservation.
 
 ## Deferred debt and boundaries
 
