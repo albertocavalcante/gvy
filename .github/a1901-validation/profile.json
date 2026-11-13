@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "purpose": "fixed A1901 precommit proof, not publication-head CI acceptance",
-  "revision": "v2",
+  "revision": "v3",
   "repository": "albertocavalcante/gvy",
-  "workerRef": "refs/heads/ci/a1901-validation-worker",
+  "workerRef": "refs/heads/ci/a1901-validation-worker-v3",
   "sourceBase": "70c639403588b74d556eb42591c9a7aa2941df2a",
   "sourceTree": "a0f972a24b950992b40deeb459cdeb14ffb8ff25",
   "patchSha256": "16b2d324852494d45a1136331ec76c3b6d353f31ec0ea4a65b35bca72496818f",
@@ -145,7 +145,9 @@
     "Configured JVM caps and capacity admission are not a numeric/RSS proof. Reserve two additional worker heaps plus native/OS headroom; Kotlin compilation stays in-process.",
     "Gradle resolves the existing pinned source normally; no assumed populated cache. Canonical uv checker stays offline after locked bootstrap.",
     "Helper workflow head is distinct from target sourceBase plus fixed patch. Preserve both identities; this proof cannot supply final PR CI freshness.",
-    "The original70 licensing detail and original433 probe cause remain unknown. No retained historical failure becomes green."
+    "The original70 licensing detail and original433 probe cause remain unknown. No retained historical failure becomes green.",
+    "Process ownership snapshots same-uid PID/start identities before owned source execution; exact pre-existing identities are never inspected for environment markers or signalled. Uncertain or mismatched ownership is refused. Safe diagnostics retain reason and native error codes without paths, argv or environment data.",
+    "Cleanup uses owner-marker and PID/start/uid rechecks on a fresh single-job hosted runner. Explicit process/group signals and native owned-child timeout signals use numeric process IDs; PID reuse between a check and signal remains possible. This bounded nonadversarial protocol does not prove atomic target binding or that no foreign process received a signal. No global process-name termination or intentional foreign-process targeting is permitted."
   ],
   "reviewedInputs": {
     "memoryRepairPatchSha256": "7e8db8622a919e56f45d1c63d4d3204f42b18dd947e89431ba7225fc64e248d3",

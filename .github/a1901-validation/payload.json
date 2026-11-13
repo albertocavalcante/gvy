@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "fixed-v2",
+  "status": "fixed-v3",
   "files": [
     {
       "path": ".github/a1901-validation/ordering-graph.init.gradle",
@@ -12,7 +12,7 @@
     },
     {
       "path": ".github/a1901-validation/profile.json",
-      "sha256": "51a4a8650509d4972ac4a735322afff070f17e2034abbbedcf8d99387b42c2db"
+      "sha256": "17301f760cf9068cd4d4c9a249b297ba3a6e69239066d74baa2c8df20b7d61e2"
     },
     {
       "path": ".github/a1901-validation/profile.json.license",
@@ -32,15 +32,15 @@
     },
     {
       "path": ".github/workflows/dependency-maintenance.yml",
-      "sha256": "6100bd48def1c2eb7364b18f6d767e92aed3d94a42cd245ca856ec996e44f873"
+      "sha256": "a49f8ab9783eee20ad5dea2798967ccb1e5bd882f8ab93747d3cc626a7d03939"
     },
     {
       "path": "tools/ci/a1901-validation-worker.mjs",
-      "sha256": "311919a1ec465f849678c0fb950570447ef6225e6fb8f6568b40c8b55332135d"
+      "sha256": "3986f4d3d71afb4f12fd6665b473e29950175094a2478caeec06b5de12e14040"
     },
     {
       "path": "tools/ci/a1901-validation-worker.test.mjs",
-      "sha256": "2febdafb5b9e0c3e6a0d4eef4de716ec0770973b604723484e64e828208f7a4c"
+      "sha256": "e1801caa43cb057a5a70a643351e9eaacb43c50ed9078b05f4cb4ecf14935ed4"
     }
   ]
 }

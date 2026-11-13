@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -17,7 +18,7 @@ const GiB = 1024 ** 3;
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const environment = () => ({
   GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_REPOSITORY: 'albertocavalcante/gvy',
-  GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/ci/a1901-validation-worker',
+  GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/ci/a1901-validation-worker-v3',
   GITHUB_SHA: 'a'.repeat(40), GITHUB_RUN_ID: '43279999999', GITHUB_RUN_ATTEMPT: '1',
   RUNNER_TEMP: resolve(tmpdir(), 'gvy-a1901-context'),
 });
@@ -227,7 +228,7 @@ function captureFixture(t) {
     identityOf(pid) {
       childPid ??= pid;
       assert.equal(pid, childPid, 'the observer must never authorize another process');
-      return { pid, start: 1 };
+      return { pid, start: 1, uid: process.getuid() };
     },
     check() {},
   };
@@ -401,4 +402,309 @@ test('probe witness rejects missing, reordered, duplicate or substring markers a
     ...probeWitness.map(marker => valid + marker + '\n'),
   ];
   for (const text of invalid) assert.throws(() => worker.verifyProbeLog(text));
+});
+
+test('the actual canonical wrapper receives one console and warning policy from the helper call path', t => {
+  const root = mkdtempSync(join(tmpdir(), 'gvy-a1901-gradle-args-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, 'gradlew'), `#!${process.execPath}
+import {writeFileSync} from 'node:fs';
+const args = process.argv.slice(2);
+writeFileSync('received-args.json', JSON.stringify(args));
+if (args.filter(x=>x.startsWith('--console')).length !== 1 ||
+    args.filter(x=>x.startsWith('--warning-mode')).length !== 1) process.exit(17);
+console.log('BUILD SUCCESSFUL in 1s');
+`, { mode: 0o700 });
+  writeFileSync(join(root, 'git'), `#!${process.execPath}
+if (process.argv[2] === 'rev-parse') console.log('${worker.SOURCE}');
+else if (process.argv[2] === 'status') console.log('');
+else process.exit(19);
+`, { mode: 0o700 });
+  chmodSync(join(root, 'gradlew'), 0o700); chmodSync(join(root, 'git'), 0o700);
+  const env = { PATH: root, NODE_OPTIONS: '--max-old-space-size=64' };
+  const [command, args] = worker.gradleCommand({ root }, 'root-format-apply', [':spotlessKotlinGradleApply']);
+  args[0] = new URL('./run-gradle.mjs', import.meta.url).pathname;
+  const result = spawnSync(command, args, { cwd: root, env, timeout: 10000, maxBuffer: 1024 * 1024, encoding: 'utf8' });
+  assert.ifError(result.error); assert.equal(result.signal, null);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const actual = JSON.parse(readFileSync(join(root, 'received-args.json'), 'utf8'));
+  assert.deepEqual(actual.filter(x => x.startsWith('--console')), ['--console=plain']);
+  assert.deepEqual(actual.filter(x => x.startsWith('--warning-mode')), ['--warning-mode=all']);
+  assert.ok(actual.includes('--max-workers=2'));
+  assert.ok(actual.some(x => x.includes('-Xmx2048m')));
+});
+
+test('helper options cannot override the canonical console, warnings or deprecation policy', () => {
+  for (const option of ['--console=plain', '--console', '--warning-mode=none', '--warning-mode',
+    '-Dorg.gradle.deprecation.trace=false']) {
+    assert.throws(() => worker.gradleCommand({ root: '/owned' }, 'lint', ['lint'], [option]));
+    assert.throws(() => worker.gradleCommand({ root: '/owned' }, 'lint', [option]));
+  }
+});
+
+function processes() {
+  const uid = 42, rows = new Map(), reads = [], signals = [];
+  const add = (pid, start, owned = false, extra = {}) => rows.set(pid,
+    { pid, start, uid, state: 'S', owned, ...extra });
+  const p = { context: { runId: '123', helperSha: 'a'.repeat(40) }, state: { processBaseline: [] } };
+  const io = {
+    uid, list: () => [...rows.keys()],
+    identityOf(pid) {
+      const row = rows.get(pid); if (!row) throw Object.assign(new Error('PRIVATE stat path'), { code: 'ENOENT' });
+      return { pid: row.pid, start: row.start, uid: row.uid, state: row.state };
+    },
+    environmentOf(pid) {
+      reads.push(pid); const row = rows.get(pid);
+      if (row.error) throw Object.assign(new Error('PRIVATE environ SECRET=value'), { code: row.error });
+      return Buffer.from(row.owned ? 'GVY_A1901_OWNER=123-' + 'a'.repeat(40) + '\0' : 'FOREIGN_SECRET=value\0');
+    },
+    signal(pid, kind) { signals.push({ pid, kind }); rows.delete(pid); },
+    wait: async () => {},
+  };
+  return { uid, rows, reads, signals, add, p, io };
+}
+
+test('baseline snapshots same-uid identities without reading any process environment', () => {
+  const f = processes(); f.add(101, 7, false, { error: 'EACCES', state: 't' }); f.add(102, 8, false, { uid: 99 });
+  assert.deepEqual(worker.snapshotProcesses(f.io), [{ pid: 101, start: 7, uid: f.uid }]);
+  assert.deepEqual(f.reads, []);
+});
+
+test('protected baseline processes are skipped only by the exact pid, start and uid tuple', () => {
+  const f = processes(); f.add(101, 7, false, { error: 'EACCES' });
+  f.p.state.processBaseline = [{ pid: 101, start: 7, uid: f.uid }];
+  assert.deepEqual(worker.ownedProcesses(f.p, f.io), []); assert.deepEqual(f.reads, []);
+  f.rows.get(101).start = 8; f.rows.get(101).error = undefined; f.rows.get(101).owned = true;
+  assert.deepEqual(worker.ownedProcesses(f.p, f.io), [{ pid: 101, start: 8, uid: f.uid }]);
+  assert.deepEqual(f.reads, [101]);
+  f.p.state.processBaseline[0].uid = 99;
+  assert.throws(() => worker.ownedProcesses(f.p, f.io));
+});
+
+test('new owned and foreign processes require marker reads while unreadable new candidates fail closed', () => {
+  const f = processes(); f.add(101, 1, true); f.add(102, 2, false); f.add(103, 3, false, { uid: 99 });
+  assert.deepEqual(worker.ownedProcesses(f.p, f.io), [{ pid: 101, start: 1, uid: f.uid }]);
+  assert.deepEqual(f.reads, [101, 102]);
+  f.add(104, 4, false, { error: 'EACCES' });
+  assert.throws(() => worker.ownedProcesses(f.p, f.io), error => {
+    assert.deepEqual(worker.safeFailure(error), { reason: 'process_scan_failed', errno: 'EACCES', readKind: 'process_environ', pid: 104 });
+    assert.ok(!JSON.stringify(worker.safeFailure(error)).includes('PRIVATE')); return true;
+  });
+  assert.deepEqual(f.signals, []);
+});
+
+test('gone and zombie races do not read environments and changed identities cannot authorize a signal', () => {
+  const f = processes(); f.add(101, 1, true, { state: 'Z' }); f.add(102, 2, true);
+  const original = f.io.identityOf;
+  f.io.identityOf = pid => { if (pid === 102) { f.rows.delete(pid); throw Object.assign(new Error('gone'), { code: 'ESRCH' }); } return original(pid); };
+  assert.deepEqual(worker.ownedProcesses(f.p, f.io), []); assert.deepEqual(f.reads, []);
+  f.add(103, 3, true); let visits = 0;
+  f.io.identityOf = pid => { const row = original(pid); if (pid === 103 && ++visits > 1) row.start++; return row; };
+  assert.throws(() => worker.ownedProcesses(f.p, f.io), error => worker.safeFailure(error).reason === 'process_identity_changed');
+});
+
+test('process scans retain process-count and environment-byte bounds', () => {
+  const f = processes(); f.io.list = () => Array.from({ length: 4097 }, (_, i) => i + 1);
+  assert.throws(() => worker.snapshotProcesses(f.io));
+  f.io.list = () => Array.from({ length: 33 }, (_, i) => i + 1);
+  f.io.identityOf = pid => ({ pid, uid: f.uid, start: 1, state: 'S' });
+  f.io.environmentOf = () => Buffer.alloc(128 * 1024);
+  assert.throws(() => worker.ownedProcesses(f.p, f.io));
+});
+
+test('cleanup rechecks owner and identity before signalling and never signals baseline or foreign processes', async () => {
+  const f = processes(); f.add(101, 1, false, { error: 'EACCES' }); f.add(102, 2, false); f.add(103, 3, true);
+  f.p.state.processBaseline = [{ pid: 101, start: 1, uid: f.uid }];
+  const read = f.io.environmentOf;
+  f.io.environmentOf = pid => { const bytes = read(pid); if (pid === 103) f.rows.get(pid).owned = false; return bytes; };
+  await assert.rejects(worker.cleanupOwned(f.p, f.io));
+  assert.deepEqual(f.signals, []); assert.equal(f.p.state.cleanup.ok, false);
+  assert.equal(f.p.state.cleanup.diagnostic.reason, 'signal_refused');
+  assert.equal(f.p.state.teardownUncertain, true);
+  assert.ok(!f.reads.includes(101));
+  const next = processes(); next.add(101, 1, false, { error: 'EACCES' }); next.add(102, 2, false); next.add(103, 3, true);
+  next.p.state.processBaseline = [{ pid: 101, start: 1, uid: next.uid }];
+  await worker.cleanupOwned(next.p, next.io);
+  assert.deepEqual(next.signals, [{ pid: 103, kind: 'SIGTERM' }]);
+  assert.ok(!next.reads.includes(101));
+});
+
+test('cleanup failures retain safe errno and do not replace an initiating validation failure', async () => {
+  const f = processes(); f.add(104, 4, false, { error: 'EACCES' });
+  f.p.state.failure = { phase: 'lint', code: 'validation_failed', diagnostic: { reason: 'command_exit', errno: null, readKind: 'none' } };
+  const first = structuredClone(f.p.state.failure);
+  await assert.rejects(worker.cleanupOwned(f.p, f.io));
+  assert.deepEqual(f.p.state.failure, first);
+  assert.equal(f.p.state.cleanup.ok, false);
+  assert.deepEqual(f.p.state.cleanup.diagnostic, { reason: 'process_scan_failed', errno: 'EACCES', readKind: 'process_environ', pid: 104 });
+  assert.ok(!JSON.stringify(f.p.state.cleanup).includes('SECRET'));
+});
+
+test('safe failures expose only fixed reason, native errno, read kind and an optional pid', () => {
+  const error = Object.assign(new Error('PRIVATE /path SECRET=value argv stderr stack'), { code: 'EACCES',
+    diagnostic: { reason: 'PRIVATE', errno: 'SECRET', readKind: '/path', pid: 'argv', extra: 'SECRET' } });
+  assert.deepEqual(worker.safeFailure(error), { reason: 'operation_failed', errno: 'EACCES', readKind: 'none' });
+});
+
+test('native resource failure retains the first safe errno through a later teardown timeout', nativeCapture, async t => {
+  const fixture = captureFixture(t), started = Date.now();
+  // This owned child exits independently even when the synthetic identity
+  // observer denies both signal attempts. No other process can be signalled.
+  const script = 'process.stdout.write("READY\\n");setTimeout(()=>process.exit(91),5000);';
+  let first = true;
+  await assert.rejects(captureNode(fixture, script, 7000, {
+    identityOf(pid) {
+      if (first) { first = false; return { pid, start: 1, uid: process.getuid() }; }
+      throw Object.assign(new Error('PRIVATE process stat /path'), { code: 'EPERM' });
+    },
+    check() { throw Object.assign(new Error('PRIVATE resource path SECRET=value'), { code: 'EACCES' }); },
+  }), { message: 'resource_limit' });
+  const recorded = fixture.saved().commands[0];
+  assert.equal(recorded.cause, 'resource_limit'); assert.equal(recorded.signal, 'hard_bound');
+  assert.deepEqual(recorded.diagnostic, { reason: 'resource_limit', errno: 'EACCES', readKind: 'resource_monitor' });
+  assert.ok(recorded.secondaryDiagnostics.some(value => value.reason === 'teardown_timeout'));
+  assert.ok(recorded.secondaryDiagnostics.some(value => value.errno === 'EPERM'));
+  assert.ok(!JSON.stringify([recorded.diagnostic, recorded.secondaryDiagnostics]).match(/PRIVATE|SECRET|\/path/));
+  // Wait for this test's independently bounded child, not a foreign process.
+  await new Promise(done => setTimeout(done, Math.max(0, started + 5500 - Date.now())));
+});
+
+test('cleanup deadline is bounded and retains an earlier primary failure', async () => {
+  const f = processes(); let now = 0;
+  f.p.state.failure = { phase: 'lint', code: 'validation_failed' };
+  f.io.now = () => now; f.io.wait = async () => { now += 11000; };
+  await assert.rejects(worker.cleanupOwned(f.p, f.io));
+  assert.equal(f.p.state.cleanup.diagnostic.reason, 'teardown_timeout');
+  assert.deepEqual(f.p.state.failure, { phase: 'lint', code: 'validation_failed' });
+  assert.deepEqual(f.signals, []);
+});
+
+test('new-process stat failures retain pid and safe read kind without reading the environment', () => {
+  const f = processes(); f.io.list = () => [105];
+  f.io.identityOf = () => { throw Object.assign(new Error('PRIVATE /proc path'), { code: 'EPERM' }); };
+  assert.throws(() => worker.ownedProcesses(f.p, f.io), error => {
+    assert.deepEqual(worker.safeFailure(error), { reason: 'process_scan_failed', errno: 'EPERM', readKind: 'process_stat', pid: 105 });
+    return true;
+  });
+  assert.deepEqual(f.reads, []); assert.deepEqual(f.signals, []);
+});
+
+test('exact serialized-state limits round-trip and preserve the prior file on overflow', t => {
+  const root = mkdtempSync(join(tmpdir(), 'gvy-a1901-state-budget-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = join(root, 'state.json'), maximum = 256 * 1024, headroom = 64 * 1024;
+  const overhead = worker.serializeState({ value: '' }).length;
+  const exact = { value: 'x'.repeat(maximum - overhead) };
+  const bytes = worker.serializeState(exact);
+  assert.equal(bytes.length, maximum); assert.deepEqual(JSON.parse(bytes.toString('utf8')), exact);
+  worker.saveState(file, exact); assert.deepEqual(readFileSync(file), bytes);
+  assert.throws(() => worker.saveState(file, { value: exact.value + 'x' }), error => {
+    assert.deepEqual(worker.safeFailure(error), { reason: 'state_limit', errno: null, readKind: 'capture_state' }); return true;
+  });
+  assert.deepEqual(readFileSync(file), bytes); assert.equal(readdirSync(root).length, 1);
+  const reserved = { value: 'x'.repeat(maximum - headroom - overhead) };
+  assert.equal(worker.serializeState(reserved, headroom).length, maximum - headroom);
+  assert.throws(() => worker.serializeState({ value: reserved.value + 'x' }, headroom));
+  const baseline = Array.from({ length: 4096 }, (_, index) => ({ pid: index + 1, start: Number.MAX_SAFE_INTEGER, uid: 42 }));
+  assert.throws(() => worker.serializeState({ processBaseline: baseline }, headroom));
+  assert.deepEqual(readFileSync(file), bytes);
+});
+
+test('a baseline process that execs Java is rejected without reading its environment', () => {
+  const f = processes(); f.add(106, 6, false, { error: 'EACCES' });
+  f.p.state.processBaseline = [{ pid: 106, start: 6, uid: f.uid }];
+  f.io.javaProcesses = () => [{ ...f.rows.get(106), argv: ['java', '-Xmx256m'] }];
+  assert.throws(() => worker.inspectJvms(f.p, f.io), /unrelated JVM/);
+  assert.deepEqual(f.reads, []);
+  f.p.state.processBaseline = []; f.rows.get(106).uid = 99;
+  assert.throws(() => worker.inspectJvms(f.p, f.io), /unrelated JVM/);
+  assert.deepEqual(f.reads, []);
+});
+
+test('signal identities require complete equal pid, start and uid values before a numeric signal', () => {
+  const expected = { pid: 123, start: 7, uid: 42 };
+  assert.deepEqual(worker.validateSignalIdentity(expected, { ...expected }), expected);
+  for (const current of [undefined, {}, { ...expected, pid: 124 }, { ...expected, start: 8 },
+    { ...expected, uid: 43 }, { pid: 123, start: 7 }, { ...expected, start: NaN }]) {
+    assert.throws(() => worker.validateSignalIdentity(expected, current), error => {
+      assert.deepEqual(worker.safeFailure(error), { reason: 'signal_refused', errno: null, readKind: 'signal', pid: 123 });
+      return true;
+    });
+  }
+  assert.throws(() => worker.validateSignalIdentity({ pid: 123, start: 7 }, expected));
+});
+
+test('cleanup refuses a reused live pid after enumeration without signalling its replacement', async () => {
+  const f = processes(); f.add(107, 7, true); let scans = 0;
+  f.io.list = () => {
+    if (++scans === 2) { f.rows.get(107).start = 8; f.rows.get(107).owned = false; }
+    return [107];
+  };
+  await assert.rejects(worker.cleanupOwned(f.p, f.io));
+  assert.deepEqual(f.signals, []); assert.equal(f.p.state.cleanup.diagnostic.reason, 'signal_refused');
+  assert.equal(f.p.state.teardownUncertain, true);
+});
+
+test('cleanup and publication describe admitted numeric signalling without asserting atomic target safety', async t => {
+  const expected = { scope: 'temporary-helper-controller',
+    capture: 'leader-pid-start-uid-rechecked-numeric-group',
+    cleanup: 'owner-marker-pid-start-uid-rechecked-numeric-pid',
+    nativeTimeouts: 'node-managed-helper-started-fixed-command-child',
+    atomicTargetBinding: false, pidReuseRacePossible: true };
+  const f = processes(); await worker.cleanupOwned(f.p, f.io);
+  assert.deepEqual(f.p.state.cleanup.signallingPolicy, expected);
+  assert.equal(Object.hasOwn(f.p.state.cleanup, 'foreignProcessesSignalled'), false);
+  const p = publisherFixture(t), receipt = worker.publishEvidence(p, 'b'.repeat(64));
+  assert.deepEqual(receipt.signallingPolicy, expected); assert.equal(receipt.ok, false);
+});
+
+test('startup identity failure refuses a direct kill and preserves the first safe error', nativeCapture, async t => {
+  const fixture = captureFixture(t);
+  const script = 'import {writeFileSync} from "node:fs";' +
+    'setTimeout(()=>{writeFileSync("survived-identity-refusal","yes");process.exit(0)},200);';
+  await assert.rejects(captureNode(fixture, script, 4000, {
+    identityOf() { throw Object.assign(new Error('PRIVATE proc path SECRET=value'), { code: 'EACCES' }); },
+  }), { message: 'start_failed' });
+  const recorded = fixture.saved().commands[0];
+  assert.equal(recorded.cause, 'start_failed'); assert.equal(recorded.diagnostic.errno, 'EACCES');
+  assert.equal(recorded.diagnostic.readKind, 'process_stat'); assert.equal(fixture.p.state.teardownUncertain, true);
+  assert.ok(recorded.secondaryDiagnostics.some(value => value.reason === 'signal_refused'));
+  assert.equal(readFileSync(join(fixture.p.root, 'survived-identity-refusal'), 'utf8'), 'yes');
+  assert.ok(!JSON.stringify(recorded.diagnostic).match(/PRIVATE|SECRET|\/path/));
+});
+
+test('final and bookkeeping save failures remain secondary to the initiating safe diagnostic', t => {
+  const root = mkdtempSync(join(tmpdir(), 'gvy-a1901-first-state-failure-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const stateFile = join(root, 'state.json'), baseline = { status: 'running', processBaseline: [{ pid: 123, start: 7, uid: 42 }] };
+  worker.saveState(stateFile, baseline); const before = readFileSync(stateFile);
+  const primary = { reason: 'command_exit', errno: null, readKind: 'none' }, reports = [];
+  const p = { stateFile, state: { ...baseline, failure: { phase: 'lint', diagnostic: primary }, value: 'x'.repeat(256 * 1024) } };
+  const original = structuredClone(primary);
+  const secondary = worker.saveExecutionState(p, primary, { report: value => reports.push(value) });
+  assert.deepEqual(secondary, { reason: 'state_limit', errno: null, readKind: 'capture_state' });
+  assert.deepEqual(readFileSync(stateFile), before); assert.deepEqual(primary, original);
+  worker.saveExecutionState(p, primary, {
+    save() { throw Object.assign(new Error('PRIVATE bookkeeping /path SECRET=value'), { code: 'EIO' }); },
+    report: value => reports.push(value),
+  });
+  assert.deepEqual(reports, [secondary, { reason: 'capture_state_failed', errno: 'EIO', readKind: 'capture_state' }]);
+  assert.deepEqual(p.state.failure.diagnostic, original);
+  assert.ok(!JSON.stringify(reports).match(/PRIVATE|SECRET|\/path/));
+  assert.deepEqual(JSON.parse(readFileSync(stateFile, 'utf8')), baseline);
+  assert.throws(() => worker.saveExecutionState(p, null), error => worker.safeFailure(error).reason === 'state_limit');
+  worker.saveExecutionState(p, primary, {
+    save() { throw Object.assign(new Error('private write'), { code: 'EIO' }); },
+    report() { throw new Error('private stderr failure'); },
+  });
+  assert.equal(p.state.diagnosticOutputUncertain, true); assert.deepEqual(primary, original);
+});
+
+test('a native final-save failure without an earlier error remains the primary safe failure', () => {
+  assert.throws(() => worker.saveExecutionState({ stateFile: '/unused', state: {} }, null, {
+    save() { throw Object.assign(new Error('PRIVATE /path SECRET=value'), { code: 'ENOSPC' }); },
+  }), error => {
+    assert.deepEqual(worker.safeFailure(error), { reason: 'capture_state_failed', errno: 'ENOSPC', readKind: 'capture_state' });
+    return true;
+  });
 });

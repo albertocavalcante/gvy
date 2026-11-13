@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-name: Temporary A1901 validation worker
+name: Temporary A1901 validation worker v3
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   validate:
-    if: github.ref == 'refs/heads/ci/a1901-validation-worker' && github.run_attempt == 1
+    if: github.ref == 'refs/heads/ci/a1901-validation-worker-v3' && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:

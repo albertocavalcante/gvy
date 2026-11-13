@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 
 export const SOURCE = '70c639403588b74d556eb42591c9a7aa2941df2a';
-export const WORKER_REF = 'refs/heads/ci/a1901-validation-worker';
+export const WORKER_REF = 'refs/heads/ci/a1901-validation-worker-v3';
 export const SOURCE_PATHS = Object.freeze(['.reuse/check.py', '.reuse/tests/test_check.py', 'build.gradle.kts',
   'docs/ci-diagnostics.md', 'tools/ci/gradle-memory-probe.mjs', 'tools/ci/gradle-memory-probe.test.mjs',
   'tools/ci/verify-license-task-ordering.mjs', 'tools/ci/verify-license-task-ordering.test.mjs'].sort());
@@ -23,6 +23,15 @@ const fileHash = path => sha(readEvidenceBytes(path, 1024 * 1024));
 const json = path => JSON.parse(readEvidenceText(path, 256 * 1024));
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 const GiB = 1024 ** 3;
+const STATE_BYTES = 256 * 1024, STATE_HEADROOM = 64 * 1024;
+export const SIGNALLING_POLICY = Object.freeze({
+  scope: 'temporary-helper-controller',
+  capture: 'leader-pid-start-uid-rechecked-numeric-group',
+  cleanup: 'owner-marker-pid-start-uid-rechecked-numeric-pid',
+  nativeTimeouts: 'node-managed-helper-started-fixed-command-child',
+  atomicTargetBinding: false,
+  pidReuseRacePossible: true,
+});
 const LIMITS = Object.freeze({ jobMinutes: 45, phaseSeconds: 900, phaseLogBytes: 8388608,
   totalStreamBytes: 29360128, evidenceBytes: 134217728, maxFiles: 4096,
   minMemTotalGiB: 14, minMemAvailableGiB: 12, minDiskFreeGiB: 12, minRemainingDiskGiB: 4,
@@ -35,6 +44,29 @@ const PAYLOAD_PATHS = Object.freeze(['.github/workflows/dependency-maintenance.y
   '.github/a1901-validation/source.patch.license', '.github/a1901-validation/profile.json.license',
   '.github/a1901-validation/ordering-graph.init.gradle', '.github/a1901-validation/root-kotlin-format.init.gradle',
   'tools/ci/a1901-validation-worker.mjs', 'tools/ci/a1901-validation-worker.test.mjs'].sort());
+
+const REASONS = new Set(['operation_failed', 'preflight_failed', 'validation_failed', 'process_scan_failed',
+  'process_identity_changed', 'process_baseline_missing', 'cleanup_failed', 'resource_limit', 'phase_deadline',
+  'stream_limit', 'capture_failed', 'start_failed', 'interrupted', 'command_exit', 'capture_state_failed',
+  'teardown_failed', 'teardown_timeout', 'state_limit', 'signal_refused']);
+const ERRNOS = new Set(['EACCES', 'EPERM', 'ENOENT', 'ESRCH', 'EIO', 'ENOSPC', 'EMFILE', 'ENFILE',
+  'ENOMEM', 'EROFS', 'ELOOP', 'EINVAL', 'ETIMEDOUT']);
+const READ_KINDS = new Set(['none', 'process_list', 'process_stat', 'process_comm', 'process_cmdline', 'process_environ', 'resource_monitor',
+  'signal', 'capture_output', 'capture_state', 'evidence_retention']);
+export function safeFailure(error, fallback = 'operation_failed', readKind = 'none', pid) {
+  const inherited = error?.diagnostic;
+  const reason = REASONS.has(inherited?.reason) ? inherited.reason :
+    REASONS.has(error?.message) ? error.message : REASONS.has(fallback) ? fallback : 'operation_failed';
+  const errno = ERRNOS.has(inherited?.errno) ? inherited.errno : ERRNOS.has(error?.code) ? error.code : null;
+  const result = { reason, errno, readKind: READ_KINDS.has(inherited?.readKind) ? inherited.readKind :
+    READ_KINDS.has(readKind) ? readKind : 'none' };
+  const candidate = inherited?.pid ?? pid;
+  if (Number.isSafeInteger(candidate) && candidate > 0 && candidate <= 2147483647) result.pid = candidate;
+  return result;
+}
+function diagnosticError(reason, error, readKind = 'none', pid) {
+  const result = new Error(reason); result.diagnostic = safeFailure(error, reason, readKind, pid); return result;
+}
 
 export function safeRelative(path) {
   assert.equal(typeof path, 'string');
@@ -59,7 +91,7 @@ export function validateContext(env, runtime = { platform: process.platform, arc
 }
 
 export function validateProfile(profile) {
-  assert.equal(profile.schemaVersion, 1); assert.equal(profile.revision, 'v2');
+  assert.equal(profile.schemaVersion, 1); assert.equal(profile.revision, 'v3');
   assert.equal(profile.sourceBase, SOURCE); assert.equal(profile.workerRef, WORKER_REF);
   assert.equal(profile.repository, 'albertocavalcante/gvy');
   assert.match(profile.sourceTree, /^[a-f0-9]{40}$/);
@@ -89,10 +121,39 @@ function paths(env = process.env) {
   assert.ok(relative(repository, root).startsWith('..' + sep));
   return { context, root, target, publication: join(root, 'publication'), stateFile: join(root, 'state.json') };
 }
+export function serializeState(value, reserve = 0) {
+  assert.ok(reserve === 0 || reserve === STATE_HEADROOM);
+  const bytes = Buffer.from(JSON.stringify(value, null, 2) + '\n');
+  if (bytes.length + reserve > STATE_BYTES) throw diagnosticError('state_limit', undefined, 'capture_state');
+  return bytes;
+}
 function save(path, value) {
+  // Validate the exact bytes before touching the prior loadable state.
+  const bytes = serializeState(value);
   const temporary = path + '.new';
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  writeFileSync(temporary, bytes, { flag: 'wx', mode: 0o600 });
   renameSync(temporary, path);
+}
+export { save as saveState };
+function reportDiagnostic(kind, diagnostic) {
+  try { console.error('A1901 ' + kind + ' diagnostic: ' + JSON.stringify(diagnostic)); return true; }
+  catch { return false; }
+}
+export function saveExecutionState(p, primaryDiagnostic, observations = {}) {
+  try { (observations.save ?? save)(p.stateFile, p.state); }
+  catch (error) {
+    const diagnostic = safeFailure(error, 'capture_state_failed', 'capture_state');
+    if (!primaryDiagnostic) throw diagnosticError('capture_state_failed', { diagnostic });
+    // The prior loadable file is preserved. Do not replace the initiating
+    // failure merely because recording that failure was itself unsuccessful.
+    try {
+      const reported = (observations.report ?? (value => reportDiagnostic('secondary', value)))(diagnostic);
+      if (reported === false) p.state.diagnosticOutputUncertain = true;
+    }
+    catch { p.state.diagnosticOutputUncertain = true; }
+    return diagnostic;
+  }
+  return null;
 }
 function load() {
   const p = paths(), state = json(p.stateFile);
@@ -105,7 +166,8 @@ function fixed(command, args, cwd = repository, timeout = 20000, trimOutput = tr
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
     env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
       JDK_JAVA_OPTIONS: '-Xmx256m -XX:MaxMetaspaceSize=256m' } });
-  assert.ifError(result.error); assert.equal(result.signal, null); assert.equal(result.status, 0, 'A fixed preflight command failed');
+  if (result.error) throw diagnosticError('operation_failed', result.error);
+  assert.equal(result.signal, null); assert.equal(result.status, 0, 'A fixed preflight command failed');
   return trimOutput ? result.stdout.trim() : result.stdout;
 }
 function diskFree(path) {
@@ -130,7 +192,8 @@ function proc(pid) {
   const text = readEvidenceText(`/proc/${pid}/stat`, 32768), end = text.lastIndexOf(') ');
   assert.ok(text.startsWith(`${pid} (`) && end > 0);
   const fields = text.slice(end + 2).trim().split(/\s+/);
-  const result = { pid, ppid: Number(fields[1]), group: Number(fields[2]), session: Number(fields[3]), start: Number(fields[19]), state: fields[0] };
+  const result = { pid, uid: lstatSync(`/proc/${pid}`).uid, ppid: Number(fields[1]), group: Number(fields[2]),
+    session: Number(fields[3]), start: Number(fields[19]), state: fields[0] };
   assert.ok([result.ppid, result.group, result.session, result.start].every(Number.isSafeInteger));
   assert.ok(result.start > 0); return result;
 }
@@ -139,13 +202,16 @@ function javaProcesses() {
   assert.ok(entries.length <= 4096, 'Process inventory exceeds its bound');
   const rows = [];
   for (const name of entries) {
+    let readKind = 'process_comm';
     try {
       if (readEvidenceText(`/proc/${name}/comm`, 256).trim() !== 'java') continue;
+      readKind = 'process_stat';
       const identity = proc(Number(name));
       if (identity.state === 'Z') continue;
+      readKind = 'process_cmdline';
       const argv = readEvidenceBytes(`/proc/${name}/cmdline`, 32768).toString('utf8').split('\0').filter(Boolean);
       rows.push({ ...identity, argv });
-    } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
+    } catch (error) { if (!gone(error)) throw diagnosticError('process_scan_failed', error, readKind, Number(name)); }
   }
   return rows;
 }
@@ -160,7 +226,7 @@ export function heapMiB(argv) {
 function verifyAssets() {
   const manifest = json(join(assets, 'payload.json'));
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.status, 'fixed-v2');
+  assert.equal(manifest.status, 'fixed-v3');
   assert.deepEqual(manifest.files.map(entry => entry.path).sort(), PAYLOAD_PATHS);
   for (const entry of manifest.files) {
     safeRelative(entry.path); assert.match(entry.sha256, /^[a-f0-9]{64}$/);
@@ -179,6 +245,7 @@ function prepare() {
     patchSha256: profile.patchSha256, status: 'preparing', phases: [], startedAt: new Date().toISOString(),
     deadline: Date.now() + 38 * 60 * 1000, cleanup: null };
   save(p.stateFile, state);
+  let initiatingDiagnostic = null;
   try {
     const run = JSON.parse(fixed('gh', ['api', `repos/albertocavalcante/gvy/actions/runs/${p.context.runId}/attempts/1`]));
     assert.equal(run.head_sha, p.context.helperSha); assert.equal(run.event, 'workflow_dispatch');
@@ -192,9 +259,17 @@ function prepare() {
     assert.equal(String(runs.workflow_runs[0].id), p.context.runId);
     state.capacity = parseCapacity(readEvidenceText('/proc/meminfo', 32768), diskFree(p.root));
     assert.deepEqual(javaProcesses(), [], 'Runner already has an unrelated JVM; no source JVM is started');
+    // Snapshot identities before the first owner-tagged source child. Existing
+    // same-uid processes need no environment inspection during later cleanup.
+    const baseline = snapshotProcesses();
+    serializeState({ ...state, processBaseline: baseline, status: 'prepared' }, STATE_HEADROOM);
+    state.processBaseline = baseline;
     state.status = 'prepared';
-  } catch { state.status = 'failed'; state.error = 'preflight_failed'; throw new Error('Worker preflight failed'); }
-  finally { save(p.stateFile, state); }
+  } catch (error) {
+    state.status = 'failed'; initiatingDiagnostic = safeFailure(error, 'preflight_failed'); state.error = initiatingDiagnostic;
+    throw diagnosticError('preflight_failed', { diagnostic: initiatingDiagnostic });
+  }
+  finally { saveExecutionState({ stateFile: p.stateFile, state }, initiatingDiagnostic); }
 }
 function stage() {
   const p = load(); assert.equal(p.state.status, 'prepared'); verifyAssets();
@@ -248,21 +323,29 @@ function childEnvironment(p) {
   delete env.GVY_MEMORY_PROBE_NATIVE_TEST;
   return env;
 }
-function jvmInventory(p) {
+function jvmInventory(p, observations = {}) {
+  const io = processObservations(observations), baseline = processBaseline(p, io);
   const owner = p.context.runId + '-' + p.context.helperSha;
-  return javaProcesses().flatMap(row => {
+  return (observations.javaProcesses ?? javaProcesses)().flatMap(row => {
+    if (row.uid !== io.uid || baseline.some(previous => sameProcess(previous, row))) {
+      return [{ pid: row.pid, start: row.start, owned: false, args: [] }];
+    }
+    let readKind = 'process_environ';
     try {
-    const env = readEvidenceBytes(`/proc/${row.pid}/environ`, 128 * 1024).toString('utf8').split('\0');
-    const again = proc(row.pid); assert.equal(again.start, row.start, 'JVM identity changed during inspection');
-    const owned = env.includes('GVY_A1901_OWNER=' + owner);
-    const options = env.find(item => item.startsWith('JDK_JAVA_OPTIONS='))?.slice('JDK_JAVA_OPTIONS='.length) ?? '';
-    const args = [...options.split(/\s+/), ...row.argv];
+      const environment = io.environmentOf(row.pid);
+      assert.ok(Buffer.isBuffer(environment) && environment.length <= 128 * 1024);
+      const env = environment.toString('utf8').split('\0');
+      readKind = 'process_stat';
+      const again = processIdentity(io, row.pid); assert.ok(sameProcess(again, row), 'JVM identity changed during inspection');
+      const owned = env.includes('GVY_A1901_OWNER=' + owner);
+      const options = env.find(item => item.startsWith('JDK_JAVA_OPTIONS='))?.slice('JDK_JAVA_OPTIONS='.length) ?? '';
+      const args = [...options.split(/\s+/), ...row.argv];
       return [{ pid: row.pid, start: row.start, owned, args }];
-    } catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) return []; throw error; }
+    } catch (error) { if (gone(error)) return []; throw diagnosticError('process_scan_failed', error, readKind, row.pid); }
   });
 }
-function inspectJvms(p) {
-  const rows = jvmInventory(p);
+export function inspectJvms(p, observations = {}) {
+  const rows = jvmInventory(p, observations);
   assert.ok(rows.every(row => row.owned), 'An unrelated JVM appeared; it will not be signalled');
   assert.ok(rows.length <= 4, 'JVM process count exceeds the admitted profile');
   let heaps = 0, metaspace = 0;
@@ -277,21 +360,73 @@ function inspectJvms(p) {
   assert.ok(heaps <= 6400 && metaspace <= 1792, 'Aggregate configured JVM caps exceed admission');
   p.state.maxObservedJvmCount = Math.max(p.state.maxObservedJvmCount ?? 0, rows.length);
 }
-function ownedProcesses(p) {
-  const entries = readdirSync('/proc').filter(name => /^[1-9][0-9]*$/.test(name));
-  assert.ok(entries.length <= 4096);
+function processObservations(observations) {
+  return { uid: observations.uid ?? process.getuid(),
+    list: observations.list ?? (() => readdirSync('/proc').filter(name => /^[1-9][0-9]*$/.test(name)).map(Number)),
+    identityOf: observations.identityOf ?? proc,
+    environmentOf: observations.environmentOf ?? (pid => readEvidenceBytes(`/proc/${pid}/environ`, 128 * 1024)),
+    checkpoint: observations.checkpoint ?? (() => {}) };
+}
+function processEntries(io) {
+  try {
+    const entries = io.list(); assert.ok(Array.isArray(entries) && entries.length <= 4096);
+    assert.ok(entries.every(pid => Number.isSafeInteger(pid) && pid > 0 && pid <= 2147483647));
+    assert.equal(new Set(entries).size, entries.length); return entries;
+  } catch (error) { throw diagnosticError('process_scan_failed', error, 'process_list'); }
+}
+function processIdentity(io, pid) {
+  const identity = io.identityOf(pid);
+  assert.equal(identity.pid, pid);
+  assert.ok(Number.isSafeInteger(identity.start) && identity.start > 0 && Number.isSafeInteger(identity.uid) && identity.uid >= 0);
+  assert.match(identity.state, /^[A-Za-z]$/); return identity;
+}
+const sameProcess = (a, b) => a.pid === b.pid && a.start === b.start && a.uid === b.uid;
+const gone = error => ['ENOENT', 'ESRCH'].includes(error?.code);
+export function validateSignalIdentity(expected, current) {
+  const complete = row => row && Number.isSafeInteger(row.pid) && row.pid > 0 &&
+    Number.isSafeInteger(row.start) && row.start > 0 && Number.isSafeInteger(row.uid) && row.uid >= 0;
+  if (!complete(expected) || !complete(current) || !sameProcess(expected, current)) {
+    throw diagnosticError('signal_refused', undefined, 'signal', expected?.pid);
+  }
+  return current;
+}
+function processBaseline(p, io) {
+  const baseline = p.state.processBaseline;
+  if (!Array.isArray(baseline) || baseline.length > 4096) throw diagnosticError('process_baseline_missing');
+  for (const row of baseline) {
+    assert.ok(Number.isSafeInteger(row.pid) && row.pid > 0 && Number.isSafeInteger(row.start) && row.start > 0 && row.uid === io.uid);
+  }
+  return baseline;
+}
+export function snapshotProcesses(observations = {}) {
+  const io = processObservations(observations), rows = [];
+  for (const pid of processEntries(io)) {
+    io.checkpoint();
+    try {
+      const row = processIdentity(io, pid);
+      if (row.uid === io.uid) rows.push({ pid, start: row.start, uid: row.uid });
+    } catch (error) { if (!gone(error)) throw diagnosticError('process_scan_failed', error, 'process_stat', pid); }
+  }
+  return rows;
+}
+export function ownedProcesses(p, observations = {}) {
+  const io = processObservations(observations), baseline = processBaseline(p, io);
   const owner = 'GVY_A1901_OWNER=' + p.context.runId + '-' + p.context.helperSha;
   const rows = []; let bytes = 0;
-  for (const entry of entries) {
+  for (const pid of processEntries(io)) {
+    io.checkpoint();
+    let readKind = 'process_stat';
     try {
-      if (lstatSync('/proc/' + entry).uid !== process.getuid()) continue;
-      const identity = proc(Number(entry)); if (identity.state === 'Z') continue;
-      const environment = readEvidenceBytes(`/proc/${entry}/environ`, 128 * 1024);
+      const identity = processIdentity(io, pid);
+      if (identity.uid !== io.uid || identity.state === 'Z' || baseline.some(row => sameProcess(row, identity))) continue;
+      readKind = 'process_environ'; const environment = io.environmentOf(pid);
+      assert.ok(Buffer.isBuffer(environment) && environment.length <= 128 * 1024);
       bytes += environment.length; assert.ok(bytes <= 4 * 1024 * 1024, 'Process environment scan exceeds its byte bound');
       if (!environment.toString('utf8').split('\0').includes(owner)) continue;
-      assert.equal(proc(Number(entry)).start, identity.start);
-      rows.push({ pid: identity.pid, start: identity.start });
-    } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
+      readKind = 'process_stat'; const again = processIdentity(io, pid);
+      if (!sameProcess(again, identity)) throw diagnosticError('process_identity_changed', undefined, readKind, pid);
+      if (again.state !== 'Z') rows.push({ pid, start: identity.start, uid: identity.uid });
+    } catch (error) { if (!gone(error)) throw diagnosticError('process_scan_failed', error, readKind, pid); }
   }
   return rows;
 }
@@ -325,53 +460,94 @@ export async function capture(p, phase, command, args, deadline, observations = 
   const check = observations.check ?? resourceCheck;
   const file = join(p.root, 'evidence', phase + '.log');
   const previous = p.state.commands.some(item => item.phase === phase);
-  const descriptor = openSync(file, constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW |
-    constants.O_CREAT | (previous ? 0 : constants.O_EXCL), 0o600);
-  let child, identity, cause = null, bytes = 0, completed = false;
+  let descriptor;
+  try {
+    descriptor = openSync(file, constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW |
+      constants.O_CREAT | (previous ? 0 : constants.O_EXCL), 0o600);
+  } catch (error) { throw diagnosticError('capture_failed', error, 'capture_output'); }
+  let child, identity, cause = null, diagnostic = null, bytes = 0, completed = false;
+  const secondaryDiagnostics = [];
   let timeout, monitor, grace, hard;
   const startedAt = Date.now();
   return await new Promise((resolveCapture, rejectCapture) => {
     const signalGroup = signal => {
-      if (!identity) return;
-      try { if (identityOf(identity.pid).start === identity.start) process.kill(-identity.pid, signal); }
-      catch (error) { if (!['ESRCH', 'ENOENT'].includes(error.code)) throw error; }
+      try {
+        if (!identity) throw diagnosticError('signal_refused', undefined, 'signal', child?.pid);
+        const current = validateSignalIdentity(identity, identityOf(identity.pid));
+        if (current.state !== 'Z') process.kill(-identity.pid, signal);
+      } catch (error) {
+        if (!gone(error)) throw diagnosticError('signal_refused', { diagnostic:
+          { ...safeFailure(error, 'signal_refused', 'signal', identity?.pid), reason: 'signal_refused' } });
+      }
     };
     const finish = (code, signal) => {
       if (completed) return; completed = true;
       for (const timer of [timeout, monitor, grace, hard]) clearTimeout(timer);
       process.off('SIGTERM', interrupted); process.off('SIGINT', interrupted);
-      child.stdout?.destroy(); child.stderr?.destroy(); closeSync(descriptor);
-      const result = { command, args, code, signal, cause, bytes, elapsedMs: Date.now() - startedAt };
+      child?.stdout?.destroy(); child?.stderr?.destroy();
+      try { closeSync(descriptor); } catch (error) {
+        if (!cause) { cause = 'capture_failed'; diagnostic = safeFailure(error, cause, 'capture_output'); }
+        else secondaryDiagnostics.push(safeFailure(error, 'capture_failed', 'capture_output'));
+      }
+      diagnostic ??= code !== 0 || signal ? safeFailure(undefined, 'command_exit') : null;
+      const result = { command, args, code, signal, cause, diagnostic, secondaryDiagnostics, bytes, elapsedMs: Date.now() - startedAt };
       p.state.commands.push({ phase, ...result });
-      try { save(p.stateFile, p.state); } catch { rejectCapture(new Error('capture_state_failed')); return; }
-      if (cause || code !== 0 || signal) rejectCapture(new Error(cause ?? 'command_exit'));
+      try { save(p.stateFile, p.state); } catch (error) {
+        rejectCapture(diagnosticError(cause ?? 'capture_state_failed', diagnostic ? { diagnostic } : error, 'capture_state')); return;
+      }
+      if (cause || code !== 0 || signal) rejectCapture(diagnosticError(cause ?? 'command_exit', { diagnostic }));
       else resolveCapture(result);
     };
-    const stop = reason => {
+    const stop = (reason, error, readKind = 'none', pid) => {
       if (cause || completed) return; cause = reason;
-      try { signalGroup('SIGTERM'); } catch { p.state.teardownUncertain = true; }
+      diagnostic = safeFailure(error, reason, readKind, pid);
+      const teardown = error => {
+        p.state.teardownUncertain = true;
+        if (secondaryDiagnostics.length < 3) secondaryDiagnostics.push(safeFailure(error, 'teardown_failed', 'signal', identity?.pid));
+      };
+      try { signalGroup('SIGTERM'); } catch (error) { teardown(error); }
       grace = setTimeout(() => {
-        try { signalGroup('SIGKILL'); } catch { p.state.teardownUncertain = true; }
-        hard = setTimeout(() => { p.state.teardownUncertain = true; child.unref(); finish(null, 'hard_bound'); }, 2000);
+        try { signalGroup('SIGKILL'); } catch (error) { teardown(error); }
+        hard = setTimeout(() => {
+          p.state.teardownUncertain = true;
+          secondaryDiagnostics.push(safeFailure(undefined, 'teardown_timeout', 'signal', identity?.pid));
+          child.unref(); finish(null, 'hard_bound');
+        }, 2000);
       }, 1000);
     };
     const interrupted = () => stop('interrupted');
     try {
       child = spawn(command, args, { cwd: p.target, env: childEnvironment(p), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      if (child.pid) identity = identityOf(child.pid);
-    } catch { if (child?.pid) child.kill('SIGKILL'); closeSync(descriptor); rejectCapture(new Error('start_failed')); return; }
+      if (child.pid) {
+        identity = identityOf(child.pid); validateSignalIdentity(identity, identity);
+      }
+    } catch (error) {
+      cause = 'start_failed'; diagnostic = safeFailure(error, cause, 'process_stat', child?.pid);
+      if (child?.pid) {
+        // No verified target exists. Later owner-scoped cleanup may inspect it;
+        // an unconfirmed startup is never grounds for a numeric kill fallback.
+        p.state.teardownUncertain = true;
+        secondaryDiagnostics.push(safeFailure(undefined, 'signal_refused', 'signal', child.pid));
+        child.once('close', finish);
+        hard = setTimeout(() => { p.state.teardownUncertain = true; child.unref(); finish(null, 'hard_bound'); }, 2000);
+      } else finish(null, null);
+      return;
+    }
     const output = chunk => {
       if (completed) return;
       bytes += chunk.length; p.state.streamBytes += chunk.length;
       const priorBytes = p.state.commands.filter(item => item.phase === phase).reduce((total, item) => total + item.bytes, 0);
       if (priorBytes + bytes > LIMITS.phaseLogBytes || p.state.streamBytes > LIMITS.totalStreamBytes) stop('stream_limit');
-      else if (!cause) { try { writeFileSync(descriptor, chunk); } catch { stop('capture_failed'); } }
+      else if (!cause) { try { writeFileSync(descriptor, chunk); } catch (error) { stop('capture_failed', error, 'capture_output'); } }
     };
     child.stdout.on('data', output); child.stderr.on('data', output);
-    child.once('error', () => { cause ??= 'start_failed'; finish(null, null); });
+    child.once('error', error => {
+      if (!cause) { cause = 'start_failed'; diagnostic = safeFailure(error, cause); }
+      finish(null, null);
+    });
     child.once('close', finish);
     timeout = setTimeout(() => stop('phase_deadline'), Math.max(1, deadline - Date.now()));
-    monitor = setInterval(() => { try { check(p); } catch { stop('resource_limit'); } }, 1000);
+    monitor = setInterval(() => { try { check(p); } catch (error) { stop('resource_limit', error, 'resource_monitor'); } }, 1000);
     process.on('SIGTERM', interrupted); process.on('SIGINT', interrupted);
   });
 }
@@ -395,6 +571,18 @@ function graph(p, phase, mode, required) {
   assert.equal(report.tasks.filter(task => task === ':licenseCheck').length, mode === 'required' ? 1 : 0);
   p.state.evidenceFiles.push('evidence/' + phase + '-graph.json');
   return report;
+}
+export function gradleCommand(p, phase, tasks, options = []) {
+  // The canonical wrapper appends these exactly once; the helper owns only
+  // task selection and the fixed capacity/cache options.
+  assert.ok([...tasks, ...options].every(arg => !/^--(?:console|warning-mode)(?:=|$)/.test(arg) &&
+    !/^-Dorg\.gradle\.deprecation\.trace(?:=|$)/.test(arg)));
+  return [process.execPath, ['tools/ci/run-gradle.mjs', '--report-root',
+    join(p.root, 'evidence/reports', phase), '--producer', 'a1901-' + phase, ...tasks,
+    '--no-daemon', '--parallel', '--max-workers=2', '--no-configuration-cache', '--no-build-cache',
+    '-Dorg.gradle.jvmargs=-Xms64m -Xmx2048m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8',
+    '-Pkotlin.compiler.execution.strategy=in-process', '-Dorg.gradle.scan=false',
+    '-Dorg.gradle.caching=false', '--stacktrace', ...options]];
 }
 function unchangedSource(p, allowFormatting) {
   assert.equal(fixed('git', ['write-tree'], p.target), p.state.stagedTree, 'The staged source tree changed');
@@ -420,17 +608,13 @@ async function execute() {
   }
   save(p.stateFile, p.state);
   const node = process.execPath;
-  const gradle = (phase, tasks, options = []) => [node, ['tools/ci/run-gradle.mjs', '--report-root',
-    join(p.root, 'evidence/reports', phase), '--producer', 'a1901-' + phase, ...tasks,
-    '--no-daemon', '--parallel', '--max-workers=2', '--no-configuration-cache', '--no-build-cache',
-    '-Dorg.gradle.jvmargs=-Xms64m -Xmx2048m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8',
-    '-Pkotlin.compiler.execution.strategy=in-process', '-Dorg.gradle.scan=false',
-    '-Dorg.gradle.caching=false', '--console=plain', '--stacktrace', ...options]];
+  const gradle = (phase, tasks, options = []) => gradleCommand(p, phase, tasks, options);
   const init = name => join(assets, name + '.init.gradle');
   const graphOptions = (phase, mode) => ['--init-script', init('ordering-graph'),
     '-Dgvy.license.ordering.expect=' + mode,
     '-Dgvy.license.ordering.report=' + join(p.root, 'evidence', phase + '-graph.json')];
   const uv = args => ['uv', ['run', '--offline', '--locked', '--project', '.reuse', ...args]];
+  let initiatingDiagnostic = null;
   try {
     for (const phase of PHASES) {
       const deadline = Math.min(p.state.deadline, Date.now() + LIMITS.phaseSeconds * 1000);
@@ -515,65 +699,91 @@ async function execute() {
     }
     p.state.currentPhase = null; p.state.status = 'passed';
   } catch (error) {
-    p.state.status = 'failed'; p.state.failure = { phase: p.state.currentPhase, code: 'validation_failed' };
+    initiatingDiagnostic = safeFailure(error, 'validation_failed');
+    p.state.status = 'failed'; p.state.failure ??= { phase: p.state.currentPhase, code: 'validation_failed',
+      diagnostic: initiatingDiagnostic };
     // Retain the original canonical failure when it exists, without treating it
     // as accepted positive evidence or falling back to a recursive raw upload.
-    const directory = join(p.root, 'evidence/reports', p.state.currentPhase);
-    if (existsSync(directory)) {
-      for (const entry of readdirSync(directory)) {
-        safeRelative(entry);
-        for (const name of ['summary.json', 'context.json', 'console.log']) {
-          const path = join(directory, entry, name);
-          if (existsSync(path)) p.state.evidenceFiles.push(relative(p.root, path));
-        }
-      }
-    }
-    if (p.state.currentPhase === 'fixtures') {
-      const report = join(p.root, 'evidence/fixtures/ordering-verification.json');
-      if (existsSync(report)) p.state.evidenceFiles.push(relative(p.root, report));
-      for (const name of ['missing-order', 'eager-selection', 'ordered', 'focused', 'license-rejected']) {
-        const reports = join(p.root, 'evidence/fixtures', name, 'evidence');
-        if (!existsSync(reports)) continue;
-        for (const entry of readdirSync(reports)) {
+    try {
+      const directory = join(p.root, 'evidence/reports', p.state.currentPhase);
+      if (existsSync(directory)) {
+        for (const entry of readdirSync(directory)) {
           safeRelative(entry);
-          for (const file of ['summary.json', 'context.json', 'console.log']) {
-            const path = join(reports, entry, file);
+          for (const name of ['summary.json', 'context.json', 'console.log']) {
+            const path = join(directory, entry, name);
             if (existsSync(path)) p.state.evidenceFiles.push(relative(p.root, path));
           }
         }
       }
+      if (p.state.currentPhase === 'fixtures') {
+        const report = join(p.root, 'evidence/fixtures/ordering-verification.json');
+        if (existsSync(report)) p.state.evidenceFiles.push(relative(p.root, report));
+        for (const name of ['missing-order', 'eager-selection', 'ordered', 'focused', 'license-rejected']) {
+          const reports = join(p.root, 'evidence/fixtures', name, 'evidence');
+          if (!existsSync(reports)) continue;
+          for (const entry of readdirSync(reports)) {
+            safeRelative(entry);
+            for (const file of ['summary.json', 'context.json', 'console.log']) {
+              const path = join(reports, entry, file);
+              if (existsSync(path)) p.state.evidenceFiles.push(relative(p.root, path));
+            }
+          }
+        }
+      }
+    } catch (retentionError) {
+      if (!reportDiagnostic('secondary', safeFailure(retentionError, 'capture_failed', 'evidence_retention'))) {
+        p.state.diagnosticOutputUncertain = true;
+      }
     }
-    throw new Error('Fixed validation failed; retain the phase and original command evidence', { cause: error });
-  } finally { save(p.stateFile, p.state); }
+    throw diagnosticError('validation_failed', { diagnostic: initiatingDiagnostic });
+  } finally { saveExecutionState(p, initiatingDiagnostic); }
 }
 
-async function cleanup() {
-  const p = load(), observed = [];
+export async function cleanupOwned(p, observations = {}) {
+  const observed = [], now = observations.now ?? Date.now, deadline = now() + 10000;
+  const checkpoint = () => { if (now() >= deadline) throw diagnosticError('teardown_timeout'); };
+  const io = { ...observations, checkpoint };
+  const wait = observations.wait ?? sleep;
+  const scan = () => { checkpoint(); return ownedProcesses(p, io); };
   const signal = (row, kind) => {
     try {
-      const current = ownedProcesses(p).find(item => item.pid === row.pid && item.start === row.start);
-      if (current) process.kill(current.pid, kind);
-    } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
+      const current = scan().find(item => sameProcess(item, row));
+      if (current) { checkpoint(); (observations.signal ?? process.kill)(current.pid, kind); }
+      else {
+        // A missing owner match alone does not prove that the selected target
+        // is gone. Inspect metadata only; never read a baseline environment.
+        const identity = processIdentity(processObservations(io), row.pid);
+        if (identity.state !== 'Z') throw diagnosticError('signal_refused', undefined, 'signal', row.pid);
+      }
+    } catch (error) { if (!gone(error)) throw diagnosticError('cleanup_failed', error, 'signal', row.pid); }
   };
   try {
-    for (const row of ownedProcesses(p)) {
-      observed.push({ pid: row.pid, start: row.start }); signal(row, 'SIGTERM');
+    for (const row of scan()) {
+      observed.push({ pid: row.pid, start: row.start, uid: row.uid }); signal(row, 'SIGTERM');
     }
-    await sleep(1000);
-    for (const row of ownedProcesses(p)) signal(row, 'SIGKILL');
-    await sleep(1000);
-    assert.deepEqual(ownedProcesses(p), [], 'Owned process teardown did not finish');
-    p.state.cleanup = { ok: !p.state.teardownUncertain, observed, foreignProcessesSignalled: false };
+    await wait(1000); checkpoint();
+    for (const row of scan()) signal(row, 'SIGKILL');
+    await wait(1000); checkpoint();
+    assert.deepEqual(scan(), [], 'Owned process teardown did not finish');
+    p.state.cleanup = { ok: !p.state.teardownUncertain, observed, signallingPolicy: SIGNALLING_POLICY };
     assert.equal(p.state.cleanup.ok, true);
-  } catch {
-    p.state.cleanup = { ok: false, observed, foreignProcessesSignalled: false };
-    throw new Error('Owned-process cleanup failed');
-  } finally { save(p.stateFile, p.state); }
+  } catch (error) {
+    p.state.teardownUncertain = true;
+    p.state.cleanup = { ok: false, observed, signallingPolicy: SIGNALLING_POLICY, diagnostic: safeFailure(error, 'cleanup_failed') };
+    throw diagnosticError('cleanup_failed', error);
+  }
+}
+async function cleanup() {
+  const p = load(); let initiatingDiagnostic = null;
+  try { await cleanupOwned(p); }
+  catch (error) { initiatingDiagnostic = safeFailure(error, 'cleanup_failed'); throw error; }
+  finally { saveExecutionState(p, initiatingDiagnostic); }
 }
 export function publishEvidence(p, payloadSha256) {
   assert.match(payloadSha256, /^[a-f0-9]{64}$/);
   const completePhases = JSON.stringify(p.state.phases) === JSON.stringify(PHASES.map(name => ({ name, ok: true })));
   const receipt = { schemaVersion: 1, context: p.context, status: p.state.status,
+    signallingPolicy: SIGNALLING_POLICY,
     ok: p.state.status === 'passed' && completePhases && p.state.cleanup?.ok === true,
     profileSha256: p.state.profileSha256, payloadSha256,
     patchSha256: p.state.patchSha256, sourceTree: p.profile.sourceTree, stagedTree: p.state.stagedTree ?? null,
@@ -641,13 +851,21 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     assert.ok(Object.hasOwn(operations, process.argv[2]));
     const operation = operations[process.argv[2]];
     assert.equal(typeof operation, 'function'); await operation();
-  } catch {
+  } catch (error) {
+    // Keep the primary diagnostic outside bookkeeping: even a later load or
+    // save failure cannot discard the initiating safe reason from the job log.
+    const primaryDiagnostic = safeFailure(error);
+    const primaryReported = reportDiagnostic('primary', primaryDiagnostic);
     try {
       const p = load(); p.state.operationFailures ??= [];
+      if (!primaryReported) p.state.diagnosticOutputUncertain = true;
       const operation = ['prepare', 'stage', 'execute', 'cleanup', 'publish'].includes(process.argv[2]) ? process.argv[2] : 'invalid';
-      p.state.operationFailures.push({ operation, code: 'operation_failed' });
-      p.state.status = 'failed'; save(p.stateFile, p.state);
-    } catch { /* Invalid or unavailable context cannot manufacture trusted state. */ }
+      assert.ok(p.state.operationFailures.length < 16);
+      p.state.operationFailures.push({ operation, code: 'operation_failed', diagnostic: primaryDiagnostic });
+      p.state.status = 'failed'; saveExecutionState(p, primaryDiagnostic);
+    } catch (bookkeepingError) {
+      reportDiagnostic('secondary', safeFailure(bookkeepingError, 'capture_state_failed', 'capture_state'));
+    }
     console.error('A1901 fixed validation operation failed; inspect the bounded receipt.'); process.exitCode = 1;
   }
 }
