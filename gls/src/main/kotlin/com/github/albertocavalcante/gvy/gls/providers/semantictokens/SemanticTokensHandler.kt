@@ -56,7 +56,9 @@ class SemanticTokensHandler(
         val isJenkinsFile = jenkins?.isJenkinsFile(uri) ?: false
         val varsNames = jenkins?.getGlobalVariables()?.map { it.name }?.toSet().orEmpty()
         val module = parsed.ast
-        val unused = module?.let { UnusedImportDetector.detectUnusedImports(it).toSet() }.orEmpty()
+        val unused = module?.let {
+            UnusedImportDetector.detectUnusedImports(it, parsed.sourceAnnotations).toSet()
+        }.orEmpty()
         checkCancelled()
         val input = SemanticTokenInput(parsed.astModel, uri, unused, module, source)
         val groovyTokens = GroovySemanticTokenProvider.tokensForSnapshot(input, checkCancelled)

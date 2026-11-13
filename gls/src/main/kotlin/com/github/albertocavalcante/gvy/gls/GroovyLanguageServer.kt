@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRequestHandler
@@ -41,9 +42,21 @@ import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOp
 import com.github.albertocavalcante.gvy.gls.services.GroovyWorkspaceService
 import com.github.albertocavalcante.gvy.gls.services.Health
 import com.github.albertocavalcante.gvy.gls.services.IndexExportService
+import com.github.albertocavalcante.gvy.gls.services.ManagedSourceDocumentService
 import com.github.albertocavalcante.gvy.gls.services.ProjectStartupManager
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
+import com.github.albertocavalcante.gvy.gls.sources.ExternalSourceRegistry
+import com.github.albertocavalcante.gvy.gls.sources.SourceAttachParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceBrowserRequestHandler
+import com.github.albertocavalcante.gvy.gls.sources.SourceCommandService
+import com.github.albertocavalcante.gvy.gls.sources.SourceContentResult
+import com.github.albertocavalcante.gvy.gls.sources.SourceDefinitionParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceDetailsResult
+import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentParams
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
+import com.github.albertocavalcante.gvy.gls.sources.SourceResolveParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceResolveResult
+import com.github.albertocavalcante.gvy.gls.sources.shutdownResources
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.verification.observeRuntime
 import com.github.albertocavalcante.gvy.gls.verification.runtimeFacts
@@ -133,12 +146,31 @@ class GroovyLanguageServer(
 
     // Shared Services
     private val documentProvider = DocumentProvider()
-    private val sourceNavigator = SourceNavigationService()
+
+    @Volatile
+    private var sourceBrowserEnabled = false
+
+    private val externalSources = ExternalSourceRegistry(virtualDocumentsEnabled = { sourceBrowserEnabled })
+    private val sourceNavigator = SourceNavigationService(sourcePresentation = externalSources)
 
     private val compilationService = GroovyCompilationService(
         parentClassLoader = parentClassLoader,
         documentProvider = documentProvider,
         sourceNavigator = sourceNavigator,
+        workspaceManager = WorkspaceManager(sourceExclusion = { externalSources.isManaged(it.toUri()) }),
+    )
+    private val sourceCommands = SourceCommandService(
+        compilationService,
+        documentProvider,
+        sourceNavigator,
+        externalSources,
+    )
+    private val sourceBrowser = SourceBrowserRequestHandler(
+        coroutineScope,
+        externalSources,
+        sourceCommands::openLookupSession,
+        resolveSource = sourceCommands::resolve,
+        attachSource = sourceCommands::attach,
     )
 
     // Services
@@ -150,6 +182,12 @@ class GroovyLanguageServer(
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
         ),
+    )
+    private val managedTextDocumentService = ManagedSourceDocumentService(
+        textDocumentService,
+        externalSources,
+        sourceBrowser::definition,
+        definitionLinkSupport = { clientCapabilities?.textDocument?.definition?.linkSupport == true },
     )
 
     private val diagnosticsRequestHandler = DiagnosticsRequestHandler(
@@ -202,7 +240,9 @@ class GroovyLanguageServer(
             buildToolManagerProvider = { startupManager.buildToolManager },
             workspaceRootProvider = { savedInitParams?.let { startupManager.getWorkspaceRoot(it) } },
         )
-    private val indexExportService = IndexExportService { startupManager.buildToolManager }
+    private val indexExportService = IndexExportService(
+        sourceExclusion = { compilationService.workspaceManager.isExcludedSource(it) },
+    ) { startupManager.buildToolManager }
     private val astRequestHandler = AstRequestHandler(
         compilationService,
         CoreAstConverter(),
@@ -248,7 +288,8 @@ class GroovyLanguageServer(
         try {
             groovyClient?.groovyStatus(notification)
             logger.debug {
-                "Sent status notification: health=${notification.health}, quiescent=${notification.quiescent}, message=${notification.message}"
+                "Sent status notification: health=${notification.health}, " +
+                    "quiescent=${notification.quiescent}, message=${notification.message}"
             }
         } catch (e: Exception) {
             logger.debug { "Could not send status notification: ${e.message}" }
@@ -274,11 +315,13 @@ class GroovyLanguageServer(
         )
 
         savedInitOptionsMap = parseInitOptions(params.initializationOptions)
+        sourceBrowserEnabled = savedInitOptionsMap?.get("groovy.sourceBrowser.enabled") == true
         textDocumentService.updateConfiguration(ServerConfiguration.fromMap(savedInitOptionsMap))
 
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult(
             prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,
         )
+        initializeResult.capabilities.experimental = mapOf("groovySourceBrowser" to mapOf("version" to 1))
 
         implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
@@ -341,21 +384,26 @@ class GroovyLanguageServer(
     private fun doShutdown(): Any {
         logger.info { "Shutting down Groovy Language Server..." }
         try {
-            startupManager.shutdown()
-
-            val poolShutdown = CompletableFuture.runAsync { GradleConnectionPool.shutdown() }
-            try {
-                poolShutdown.get(GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            } catch (e: TimeoutException) {
-                logger.warn {
-                    "Gradle connection pool shutdown exceeded $GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS seconds; continuing shutdown"
-                }
-                poolShutdown.cancel(true)
-            }
-
-            // Requests first, so none sees the compilation shutdown as a retirement to report.
-            coroutineScope.cancel()
-            compilationService.shutdown()
+            shutdownResources(
+                { startupManager.shutdown() },
+                {
+                    val poolShutdown = CompletableFuture.runAsync { GradleConnectionPool.shutdown() }
+                    try {
+                        poolShutdown.get(GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    } catch (e: TimeoutException) {
+                        logger.warn {
+                            "Gradle connection pool shutdown exceeded " +
+                                "$GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS seconds; continuing shutdown"
+                        }
+                        poolShutdown.cancel(true)
+                    }
+                },
+                sourceBrowser::close,
+                // Requests first, so none sees the compilation shutdown as a retirement to report.
+                { coroutineScope.cancel() },
+                sourceNavigator::close,
+                compilationService::shutdown,
+            )
         } catch (e: CancellationException) {
             logger.debug(e) { "Coroutine scope cancelled during shutdown" }
         } catch (e: Exception) {
@@ -370,7 +418,34 @@ class GroovyLanguageServer(
         exitProcess(if (shutdownRequested) 0 else 1)
     }
 
-    override fun getTextDocumentService(): TextDocumentService = textDocumentService
+    override fun getTextDocumentService(): TextDocumentService = managedTextDocumentService
+
+    /** Internal diagnostics and readiness hooks; protocol requests use the guarded service above. */
+    internal val workspaceDocumentService: GroovyTextDocumentService
+        get() = textDocumentService
+
+    @JsonRequest("groovy/sourceContent")
+    fun sourceContent(params: SourceDocumentParams): CompletableFuture<SourceContentResult?> =
+        sourceBrowser.content(params)
+
+    @JsonRequest("groovy/sourceDefinition")
+    fun sourceDefinition(params: SourceDefinitionParams): CompletableFuture<List<org.eclipse.lsp4j.LocationLink>> =
+        sourceBrowser.definition(params)
+
+    @JsonRequest("groovy/sourceDetails")
+    fun sourceDetails(params: SourceDocumentParams): CompletableFuture<SourceDetailsResult?> =
+        sourceBrowser.details(params)
+
+    @JsonRequest("groovy/sourceResolve")
+    fun sourceResolve(params: SourceResolveParams): CompletableFuture<SourceResolveResult> =
+        sourceBrowser.resolve(params)
+
+    @JsonRequest("groovy/sourceAttach")
+    fun sourceAttach(params: SourceAttachParams): CompletableFuture<SourceResolveResult> = sourceBrowser.attach(params)
+
+    @JsonRequest("groovy/sourceIsManaged")
+    fun sourceIsManaged(params: SourceDocumentParams): CompletableFuture<Boolean> = sourceBrowser.isManaged(params)
+
     override fun getWorkspaceService(): WorkspaceService = workspaceService
 
     // ============================================================================

@@ -33,8 +33,8 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
         logger.debug { "Attempting SemanticDB resolution at ${context.documentUri}:${context.position}" }
 
-        if (context.targetNode is ImportNode) {
-            logger.debug { "Skipping SemanticDB resolution for ImportNode" }
+        if (context.targetNode is ImportNode || context.requireExactClassName) {
+            logger.debug { "Skipping positional SemanticDB resolution for an explicit type binding" }
             return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
         }
 

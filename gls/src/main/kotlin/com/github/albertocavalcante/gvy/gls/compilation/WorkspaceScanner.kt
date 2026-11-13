@@ -3,6 +3,9 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.utils.defaultWorkspaceSourceExclusion
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceFile
+import com.github.albertocavalcante.gvy.gls.utils.sourceExclusionForRoot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.net.URI
@@ -10,7 +13,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
-import kotlin.streams.asSequence
 
 /**
  * Service for discovering and scanning Groovy source files in workspace directories.
@@ -19,7 +21,7 @@ import kotlin.streams.asSequence
  * and validating file types. It complements WorkspaceManager by focusing specifically
  * on file system scanning operations.
  */
-class WorkspaceScanner {
+class WorkspaceScanner(private val sourceExclusion: (Path) -> Boolean = defaultWorkspaceSourceExclusion()) {
     private val logger = KotlinLogging.logger {}
 
     companion object {
@@ -51,13 +53,26 @@ class WorkspaceScanner {
             if (!Files.exists(root) || !Files.isDirectory(root)) {
                 continue
             }
+            val excluded = sourceExclusionForRoot(root, sourceExclusion)
+            if (excluded(root)) continue
 
             try {
-                Files.walk(root).use { stream ->
-                    stream.asSequence()
-                        .filter { it.isRegularFile() }
-                        .filter { isGroovyFile(it) }
-                        .forEach { yield(it) }
+                val pending = ArrayDeque<Path>()
+                pending.add(root)
+                while (pending.isNotEmpty()) {
+                    val directory = pending.removeLast()
+                    if (excluded(directory)) continue
+                    Files.newDirectoryStream(directory).use { children ->
+                        for (child in children) {
+                            when {
+                                excluded(child) -> Unit
+                                Files.isDirectory(child, java.nio.file.LinkOption.NOFOLLOW_LINKS) -> pending.add(child)
+                                child.isRegularFile() &&
+                                    isGroovyFile(child) &&
+                                    !excludedSourceFile(child, excluded) -> yield(child)
+                            }
+                        }
+                    }
                 }
             } catch (e: IOException) {
                 // Continue with next root if one fails

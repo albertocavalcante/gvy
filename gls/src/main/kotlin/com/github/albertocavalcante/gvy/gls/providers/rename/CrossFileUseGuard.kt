@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceAlias
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -90,7 +91,10 @@ internal class CrossFileUseGuard(
             // In the workspace: under a root, or a known source (e.g. a Gradle srcDir outside the roots).
             val used = index.findReferenceDocuments(symbolId).keys
                 .filter { uri ->
-                    keys.of(uri)?.let { !self.matches(it) && (keys.inScope(it) || it in known) } == true
+                    keys.of(uri)?.let {
+                        !excludedSourceAlias(it, layout.excluded) && !self.matches(it) &&
+                            (keys.inScope(it) || it in known)
+                    } == true
                 }
                 .sortedBy { it.toString() }
             if (used.size >= MAX_REPORTED) return@withContext CrossFileUses(used = used, truncated = true)
@@ -98,7 +102,7 @@ internal class CrossFileUseGuard(
             val snapshot = index.implementationSnapshot
             val buffers = openBuffers()
             val walked = walkedFiles(keys) { context.ensureActive() }
-            val found = CandidateCollector(keys, limits.maxFiles)
+            val found = CandidateCollector(keys, limits.maxFiles, layout.excluded)
                 .collect(known, snapshot.keys + buffers.keys, walked)
             val usedKeys = used.mapNotNullTo(HashSet(), keys::of)
             val candidates = found.files.filterKeys { !self.matches(it) && it !in usedKeys }
@@ -123,7 +127,14 @@ internal class CrossFileUseGuard(
         val sourceRootKeys = layout.sourceRoots().map(keys::of)
         val request = listOf(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries)
         return walks.get(request) {
-            walkWorkspace(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries, active)
+            walkWorkspace(
+                keys.rootKeys,
+                sourceRootKeys,
+                limits.maxFiles,
+                limits.maxWalkEntries,
+                layout.excluded,
+                active,
+            )
         }
     }
 
@@ -132,7 +143,9 @@ internal class CrossFileUseGuard(
         val list = layout.sources()
         keyedSources?.takeIf { it.list === list && it.rootKeys == keys.rootKeys }?.let { return it.byKey }
         val byKey = LinkedHashMap<Path, Path>()
-        list.forEach { byKey.putIfAbsent(keys.of(it), it) }
+        list.filterNot(layout.excluded).forEach { source ->
+            keys.of(source).takeUnless(layout.excluded)?.let { byKey.putIfAbsent(it, source) }
+        }
         keyedSources = KeyedSources(list, keys.rootKeys, byKey)
         return byKey
     }

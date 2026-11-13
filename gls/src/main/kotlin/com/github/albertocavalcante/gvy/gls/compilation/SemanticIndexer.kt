@@ -41,6 +41,7 @@ internal fun contentHash(content: String): String =
 class SemanticIndexer(
     private val index: WorkspaceSymbolIndex,
     private val isOpen: (URI) -> Boolean = { false },
+    private val excluded: (URI) -> Boolean = { false },
     private val build: (ModuleNode, URI) -> SemanticDocument = { ast, uri ->
         SemanticDocumentBuilder(ast, uri).build()
     },
@@ -136,6 +137,7 @@ class SemanticIndexer(
         fromBuffer: Boolean = true,
     ) {
         val uri = publication.uri
+        if (excluded(uri)) return
         val hash = contentHash(content)
         if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
         val built = buildOrNull(ast, uri)
@@ -165,8 +167,11 @@ class SemanticIndexer(
         } else {
             publication.ticket > (state?.highestTicket ?: 0L)
         }
-        return state === publication.identity && publication.generation == generation && !publication.isClosed &&
-            (fromBuffer || !isOpen(publication.uri)) && supersedes
+        return state === publication.identity &&
+            publication.generation == generation &&
+            !publication.isClosed &&
+            (fromBuffer || !isOpen(publication.uri)) &&
+            supersedes
     }
 
     /**

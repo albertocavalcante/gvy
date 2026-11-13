@@ -15,6 +15,7 @@ import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
+import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
@@ -107,7 +108,7 @@ class GroovyCompilationService internal constructor(
             isOpen = isOpen,
         )
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
-    val workspaceScanner = WorkspaceScanner()
+    val workspaceScanner = WorkspaceScanner(workspaceManager::isExcludedSource)
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)
 
@@ -115,7 +116,11 @@ class GroovyCompilationService internal constructor(
     // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb, shadows::shadowed)
-    private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen)
+    private val semanticIndexer = SemanticIndexer(
+        workspaceSymbolIndex,
+        isOpen,
+        excluded = workspaceManager::isExcludedSourceFile,
+    )
     private val semanticSnapshotGuard = SemanticSnapshotGuard { workspaceSymbolIndex.implementationSnapshot }
 
     // Shared dependency graph for bounded workspace selection (Issue #743)
@@ -456,14 +461,62 @@ class GroovyCompilationService internal constructor(
 
     fun getAst(uri: URI) = parseAccessor.getAst(uri)
 
-    /** The source text the cached AST for [uri] was compiled from, so AST positions index into it. */
+    /** Raw positional text only; semantic consumers acquire a freshly admission-validated snapshot. */
     fun getCompiledContent(uri: URI): String? =
         cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))?.first
 
-    /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
+    private val compiledSnapshots = CompiledSnapshotAccess(cacheService, workspaceManager, documentProvider)
+    private val sourceRequests = SourceRequestCapture(
+        compiledSnapshots,
+        workspaceManager,
+        captureInputs = { uri, model, checkCancelled ->
+            orchestrator.captureAdmittedInputs(uri, model, checkCancelled)
+        },
+    )
+
+    internal suspend fun captureSourceRequest(
+        documentUri: URI,
+        binaryName: String,
+        memberName: String? = null,
+        checkCancelled: () -> Unit = {},
+    ) = sourceRequests.capture(documentUri, binaryName, memberName, checkCancelled)
+
+    internal suspend fun recaptureSourceRequest(binaryName: String, descriptor: SourceDocumentDescriptor) =
+        sourceRequests.recapture(binaryName, descriptor)
+
+    internal suspend fun selectSourceType(binaryName: String, descriptor: SourceDocumentDescriptor) =
+        sourceRequests.select(binaryName, descriptor)
+
+    internal suspend fun captureSourceLookupSession(
+        descriptor: SourceDocumentDescriptor,
+        checkCancelled: () -> Unit = {},
+    ) =
+        sourceRequests.openSession(descriptor, checkCancelled)
+
+    /** Capture source and parse from the cache, as held by existing language features. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
         cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
             ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+
+    /** Fresh filesystem admission for source-navigation requests, outside cache/ownership locks. */
+    internal fun getAdmittedCompiledSnapshot(uri: URI, checkCancelled: () -> Unit): CompiledDocumentSnapshot? {
+        val captured = compiledSnapshots.captureCached(uri) ?: return null
+        val inputs = orchestrator.captureAdmittedInputs(uri, checkCancelled = checkCancelled) ?: return null
+        return captured.takeIf {
+            it.admissionFingerprint == inputs.fingerprint && compiledSnapshots.isCurrent(uri, it)
+        }
+    }
+
+    /** Cache/buffer identity only; callers still need fresh admission validation at emission. */
+    internal fun isAdmittedCompiledSnapshotCurrent(
+        uri: URI,
+        snapshot: CompiledDocumentSnapshot,
+        checkCancelled: () -> Unit,
+    ): Boolean {
+        if (!compiledSnapshots.isCurrent(uri, snapshot)) return false
+        val inputs = orchestrator.captureAdmittedInputs(uri, checkCancelled = checkCancelled) ?: return false
+        return inputs.fingerprint == snapshot.admissionFingerprint && compiledSnapshots.isCurrent(uri, snapshot)
+    }
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)

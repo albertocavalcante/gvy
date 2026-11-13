@@ -4,18 +4,15 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
 import org.slf4j.LoggerFactory
-import java.net.URI
-import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Resolves method calls to classpath methods with source navigation.
@@ -65,7 +62,9 @@ class MethodResolutionStrategy(
 
         // Find method in classpath
         val method = compilationService.classpathService.getMethods(receiverType)
-            .find { it.name == methodName && it.isPublic && (argCount == null || it.parameters.size == argCount) }
+            .singleOrNull {
+                it.name == methodName && it.isPublic && (argCount == null || it.parameters.size == argCount)
+            }
             ?: return SymbolResolutionStrategy.notFound(
                 "Method $methodName not found on type $receiverType",
                 STRATEGY_NAME,
@@ -74,7 +73,13 @@ class MethodResolutionStrategy(
         logger.debug("Found method {} in classpath", method.name)
 
         // Find the classpath URI for the declaring class
-        val classpathUri = compilationService.findClasspathClass(method.declaringClass)
+        val requestContext = currentCoroutineContext()
+        val request = compilationService.captureSourceRequest(
+            context.documentUri,
+            method.declaringClass,
+            methodName,
+            checkCancelled = requestContext::ensureActive,
+        )
             ?: return SymbolResolutionStrategy.notFound(
                 "Class ${method.declaringClass} not found on classpath",
                 STRATEGY_NAME,
@@ -82,8 +87,11 @@ class MethodResolutionStrategy(
 
         // Try to navigate to method source if possible
         sourceNavigator?.let { navigator ->
-            navigateToMethodSource(navigator, classpathUri, method.declaringClass, methodName)
-                ?.let { return it }
+            return sourceResolution(
+                navigator.locate(request.symbol, request.context),
+                "${method.declaringClass}#$methodName",
+                STRATEGY_NAME,
+            )
         }
 
         // Fallback: navigate to class-level (let ClasspathResolutionStrategy handle it)
@@ -119,41 +127,6 @@ class MethodResolutionStrategy(
             logger.debug("Failed to resolve receiver type for method call", e)
             null
         }
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun navigateToMethodSource(
-        sourceNavigator: SourceNavigator,
-        classpathUri: URI,
-        className: String,
-        methodName: String,
-    ): ResolutionResult? = try {
-        // Navigate to the method source using the new method-level navigation
-        when (val result = sourceNavigator.navigateToMethodSource(classpathUri, className, methodName)) {
-            is SourceNavigator.SourceResult.SourceLocation -> {
-                logger.debug("Found source for {}.{} at {}", className, methodName, result.uri)
-                val range = result.lineNumber?.let(::toZeroBasedLineRange)
-                SymbolResolutionStrategy.found(
-                    DefinitionResolver.DefinitionResult.Binary(result.uri, "$className#$methodName", range),
-                )
-            }
-
-            is SourceNavigator.SourceResult.BinaryOnly -> {
-                logger.debug("No source available for {}.{}: {}", className, methodName, result.reason)
-                null
-            }
-        }
-    } catch (e: CancellationException) {
-        throw e // Preserve coroutine cancellation
-    } catch (e: Exception) {
-        // NOTE: Source navigation is best-effort; resolution should still succeed with binaries when possible.
-        logger.warn("Failed to navigate to method source for {}.{}: {}", className, methodName, e.message, e)
-        null
-    }
-
-    private fun toZeroBasedLineRange(oneBasedLine: Int): Range {
-        val line0 = oneBasedLine - 1
-        return Range(Position(line0, 0), Position(line0, 0))
     }
 
     companion object {
