@@ -1,0 +1,366 @@
+{
+  "schemaVersion": 1,
+  "kind": "detekt-offline-bootstrap",
+  "nativeDispatchAllowed": false,
+  "productCommitAllowed": false,
+  "base": "26578e4d48678feaa3bc8f03dcfac57793b8f70b",
+  "productTree": "b1816e949dd3b19777aac418201cd722f36e6578",
+  "nodeVersion": "24.20.0",
+  "files": [
+    {
+      "path": ".publication/detekt-adoption/fixture-proof.mjs",
+      "mode": "100644",
+      "bytes": 13196,
+      "sha256": "e53d6f0a98cd6ac5b4be472eed61927b9c9f8276116e277dcb4b98a3300c54b5"
+    },
+    {
+      "path": ".publication/detekt-adoption/graph.init.gradle",
+      "mode": "100644",
+      "bytes": 9951,
+      "sha256": "7450651b7fb46538c441bf1bbc3c0202116755cd8aca94449137371fc77642ca"
+    },
+    {
+      "path": ".publication/detekt-adoption/guarded-probes.mjs",
+      "mode": "100644",
+      "bytes": 2339,
+      "sha256": "607b7ec3be0051d7ab0e6b800ee94fd61de2ca184f01f0b49c2c5189425aa0e4"
+    },
+    {
+      "path": ".publication/detekt-adoption/io.mjs",
+      "mode": "100644",
+      "bytes": 4037,
+      "sha256": "5220a180b8f6e41e2daffbe492465730aeed25c5c71c102e6d65fd8821f4dc69"
+    },
+    {
+      "path": ".publication/detekt-adoption/observe-java.mjs",
+      "mode": "100644",
+      "bytes": 4006,
+      "sha256": "0538a8758c76bc698322b53b715f87d979a6180486f831d553a0b75f6db18eda"
+    },
+    {
+      "path": ".publication/detekt-adoption/offline-inputs.json.license",
+      "mode": "100644",
+      "bytes": 104,
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".publication/detekt-adoption/offline.test.mjs",
+      "mode": "100644",
+      "bytes": 6463,
+      "sha256": "b366f4837689d88de0f2547d28396bf149f2d39836d91bb6025b7dc931bbdda1"
+    },
+    {
+      "path": ".publication/detekt-adoption/owned-command.mjs",
+      "mode": "100644",
+      "bytes": 13230,
+      "sha256": "7d4a36e105ea76473e4aa7ccd113d94acfeba701fc079e97b56dde04fda39aa8"
+    },
+    {
+      "path": ".publication/detekt-adoption/owned-command.mjs.license",
+      "mode": "100644",
+      "bytes": 104,
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".publication/detekt-adoption/prepare-tools.sh",
+      "mode": "100644",
+      "bytes": 678,
+      "sha256": "9cbadeff7090855de7a91fea06c88b0b31e81003436ce24b0dba4bc219420877"
+    },
+    {
+      "path": ".publication/detekt-adoption/probe-fixture.mjs",
+      "mode": "100644",
+      "bytes": 1851,
+      "sha256": "8c0aa0a6c8ba142e7d88df4d8d49d8b7140f3f6fdb0cb7dd7edba3a6a15f7f29"
+    },
+    {
+      "path": ".publication/detekt-adoption/probe-guard.mjs",
+      "mode": "100644",
+      "bytes": 6336,
+      "sha256": "057a26787b8e556d6ef1a1b65456427084da9566fc4a86371418a0db1a9a1bb4"
+    },
+    {
+      "path": ".publication/detekt-adoption/probe-register.cjs",
+      "mode": "100644",
+      "bytes": 791,
+      "sha256": "8216515408a69eef74f3a0da3647bf2077550be1bb12f14ca0724a4b12f23283"
+    },
+    {
+      "path": ".publication/detekt-adoption/probe-worker.mjs",
+      "mode": "100644",
+      "bytes": 5835,
+      "sha256": "278d6b09b708e2c3c0ae5cf6e9e857a84abf3cc607d61fbc8648e72939cc0241"
+    },
+    {
+      "path": ".publication/detekt-adoption/producer.sh",
+      "mode": "100644",
+      "bytes": 308,
+      "sha256": "2714e08024f6cbcc327c860a596180a660ca408fc778f66d1ecf1a3a25d10549"
+    },
+    {
+      "path": ".publication/detekt-adoption/product-ci.yml",
+      "mode": "100644",
+      "bytes": 39085,
+      "sha256": "5f445d57a78b153833607ca1cc14268705bc18341d76063a2f31cfe2fa531964"
+    },
+    {
+      "path": ".publication/detekt-adoption/receipt.json",
+      "mode": "100644",
+      "bytes": 14559,
+      "sha256": "620afdb601188d5040d282b2364cb007f29985b9fdaafc3ed4a62773fb966acc"
+    },
+    {
+      "path": ".publication/detekt-adoption/receipt.json.license",
+      "mode": "100644",
+      "bytes": 104,
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".publication/detekt-adoption/source.patch",
+      "mode": "100644",
+      "bytes": 177936,
+      "sha256": "a1302a4d6eb389a73bb7e65fb8e7d92765f0c4ab9afd08e333a12ebbf1aee30a"
+    },
+    {
+      "path": ".publication/detekt-adoption/source.patch.license",
+      "mode": "100644",
+      "bytes": 104,
+      "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb"
+    },
+    {
+      "path": ".publication/detekt-adoption/stages.mjs",
+      "mode": "100644",
+      "bytes": 1871,
+      "sha256": "b52885d9b43fd394e9881ebeab490546cf05bd7ec7cc0ad5668ee246270594c4"
+    },
+    {
+      "path": ".publication/detekt-adoption/verify-source.mjs",
+      "mode": "100644",
+      "bytes": 6755,
+      "sha256": "a42531efc8144e7a6a3e3c3d57112e1616a4f785f6e94c3c8c0e9e6c0ddca79e"
+    }
+  ],
+  "canonicalBodies": [
+    {
+      "name": "owned-command.mjs",
+      "originalSha256": "43cefb7517b7aeec79fc4bcda321251078b7a96ec735ce992f5858c177419d48",
+      "licensedSha256": "7d4a36e105ea76473e4aa7ccd113d94acfeba701fc079e97b56dde04fda39aa8",
+      "licensedBytes": 13230,
+      "prefixOnly": true
+    },
+    {
+      "name": "guarded-probes.mjs",
+      "originalSha256": "cacf6282e249f179f346be14c40d0add4b3dedf056c1e2fa41be5e83969efc91",
+      "licensedSha256": "607b7ec3be0051d7ab0e6b800ee94fd61de2ca184f01f0b49c2c5189425aa0e4",
+      "licensedBytes": 2339,
+      "prefixOnly": true
+    },
+    {
+      "name": "probe-guard.mjs",
+      "originalSha256": "20fc40dadffedf3920da83cf9dd2f14b157619ddfbe17b34a0d4356a084f1919",
+      "licensedSha256": "057a26787b8e556d6ef1a1b65456427084da9566fc4a86371418a0db1a9a1bb4",
+      "licensedBytes": 6336,
+      "prefixOnly": true
+    },
+    {
+      "name": "probe-register.cjs",
+      "originalSha256": "20bb5faaebc31bfde662ddb3c3642f673b28c8c6779fa2586697c95407fc5a77",
+      "licensedSha256": "8216515408a69eef74f3a0da3647bf2077550be1bb12f14ca0724a4b12f23283",
+      "licensedBytes": 791,
+      "prefixOnly": true
+    },
+    {
+      "name": "probe-worker.mjs",
+      "originalSha256": "f718e6758781cb779076f4fc4106b3cb0e3243331a2dc4a465e7197d242c60d7",
+      "licensedSha256": "278d6b09b708e2c3c0ae5cf6e9e857a84abf3cc607d61fbc8648e72939cc0241",
+      "licensedBytes": 5835,
+      "prefixOnly": true
+    },
+    {
+      "name": "probe-fixture.mjs",
+      "originalSha256": "ff193d67368dd018505c3600734e4debd75e7a17f0cd41a1c65292ac2e33e0e7",
+      "licensedSha256": "8c0aa0a6c8ba142e7d88df4d8d49d8b7140f3f6fdb0cb7dd7edba3a6a15f7f29",
+      "licensedBytes": 1851,
+      "prefixOnly": true
+    }
+  ],
+  "productCompositionData": {
+    "compositionSha256": "beffc2beb00deebcf4f34c3536dab89bc38069a81301ddfe4a52f65e8089ec57",
+    "patch": {
+      "path": ".publication/detekt-adoption/source.patch",
+      "bytes": 177936,
+      "sha256": "a1302a4d6eb389a73bb7e65fb8e7d92765f0c4ab9afd08e333a12ebbf1aee30a"
+    },
+    "files": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "mode": "100644",
+        "bytes": 39085,
+        "sha256": "5f445d57a78b153833607ca1cc14268705bc18341d76063a2f31cfe2fa531964",
+        "blobOid": "d1c76a7871848b20c4a3a2619c420d34d1b0a0e7"
+      },
+      {
+        "path": "build.gradle.kts",
+        "mode": "100644",
+        "bytes": 25932,
+        "sha256": "88976553834024932b51fbe22e0136a4f49fadd08343e55bf8009be24c75d614",
+        "blobOid": "d322e441720e8c357d396e8dc41ed978e270407f"
+      },
+      {
+        "path": "gradle/libs.versions.toml",
+        "mode": "100644",
+        "bytes": 8842,
+        "sha256": "b31429e89dffa4c5c964d2a903235307f9f0cf7706b1417972f0c29257e65764",
+        "blobOid": "f75792514b73fae4fa33443a07f94ca39312ef60"
+      },
+      {
+        "path": "settings.gradle.kts",
+        "mode": "100644",
+        "bytes": 2637,
+        "sha256": "738ce05e317627366635ea46404ee6247a49e19d48f193002222648b5713f9a8",
+        "blobOid": "38d243202a8ca37948c3b00a6bb6cfdeecb240b4"
+      },
+      {
+        "path": "tools/ci/check-gradle-diagnostics.test.mjs",
+        "mode": "100644",
+        "bytes": 42227,
+        "sha256": "ccc806417b972d52806505d04a38c897e4fc558577d874187e576df1ce905550",
+        "blobOid": "0324d5137462282766fc9f61d6936bf74126ac64"
+      },
+      {
+        "path": "tools/ci/fixtures/gradle-detekt2-plugin-origins.txt",
+        "mode": "100644",
+        "bytes": 1833,
+        "sha256": "ed51581dbfd3bd9625f53f63a6db3dedab41e749f0172af8db5d36c1cfb57ae3",
+        "blobOid": "262f8eaf0bda8bf920c5fbfd867ccf41a5bab184"
+      },
+      {
+        "path": "tools/ci/fixtures/gradle-detekt2-plugin-origins.txt.license",
+        "mode": "100644",
+        "bytes": 104,
+        "sha256": "533fa0dd5e4caf491828db5bb7b98627e0c8e5b90227777a4acc81c23d47e6bb",
+        "blobOid": "157d41fdd5319b0ff523f7278b4ae70c047133b5"
+      },
+      {
+        "path": "tools/ci/gradle-arguments.mjs",
+        "mode": "100644",
+        "bytes": 1429,
+        "sha256": "9598a4e9acacd3c08fd8f624ff314f160d0309be2103c950e05e6899f9262c0e",
+        "blobOid": "7a07b988270c3ffbab453b811a0feb81d68b28bf"
+      },
+      {
+        "path": "tools/ci/gradle-diagnostics.json",
+        "mode": "100644",
+        "bytes": 69720,
+        "sha256": "52ed45d0ea544795f84222ead37b8f0ecca71932424a38453ffdbbfdaaa07d48",
+        "blobOid": "d8d6347da36fff1e08c71869e8def6ff08ce4739"
+      },
+      {
+        "path": "tools/ci/run-gradle.mjs",
+        "mode": "100644",
+        "bytes": 15723,
+        "sha256": "d4be045d12da9bde0f1903c54fd0fdd7e9e542ff2803c6de3787a19159feff5a",
+        "blobOid": "253746fa3572af26c31e0cbb83addfe6cafd6b4d"
+      },
+      {
+        "path": "tools/ci/run-gradle.test.mjs",
+        "mode": "100644",
+        "bytes": 26884,
+        "sha256": "477d0b4cd294c5a872d351eb486f50c6efe8a47e5a24d8f377d7ddb6a9f1bf2b",
+        "blobOid": "4ef7fe3e919b4f601c7e5992b100bb66c7255b2c"
+      },
+      {
+        "path": "tools/lint/README.md",
+        "mode": "100644",
+        "bytes": 2529,
+        "sha256": "bddc9edc0a2449ddc25a4a3da3fcde6cb443784a121c40c115b3986d78b67b26",
+        "blobOid": "61d6cb2279e5f9354824103756aed5a09e744171"
+      },
+      {
+        "path": "tools/lint/analysis-health/build.gradle.kts",
+        "mode": "100644",
+        "bytes": 8938,
+        "sha256": "75787b970b82254937819ab3fd4fe94d119d2659b8f62c9ef1a25aad9b6f2d29",
+        "blobOid": "e84560acc8989ef1c97844d34adc259868c2b9f6"
+      },
+      {
+        "path": "tools/lint/analysis-health/src/main/kotlin/health/Clean.kt",
+        "mode": "100644",
+        "bytes": 169,
+        "sha256": "ebe08046561b8a4edbb9dc53870c29a83286db91adb97e7c1564c8d4caf1082e",
+        "blobOid": "5e215a83cbcfe569de8cad982ce3b55005f0f533"
+      },
+      {
+        "path": "tools/lint/analysis-health/src/main/kotlin/health/CommaFormatting.kt",
+        "mode": "100644",
+        "bytes": 317,
+        "sha256": "57eb3feaa81e8345b53056630704b89c0088d2382f554a242d3e99e3c72384a7",
+        "blobOid": "eae7d92d4de1d15e8a029630dc101d5d1f422e1f"
+      },
+      {
+        "path": "tools/lint/analysis-health/src/main/kotlin/health/Regex.kt",
+        "mode": "100644",
+        "bytes": 259,
+        "sha256": "65ea6348852adb993e7ac11dcf07f56e780f536f069e01730962a4bbe7f2cb4a",
+        "blobOid": "40bc5b4b3fe34a6c224622a4c88038ea38f692e4"
+      },
+      {
+        "path": "tools/lint/analysis-health/src/violations/kotlin/health/Unsafe.kt",
+        "mode": "100644",
+        "bytes": 182,
+        "sha256": "68a634ab3b1ca66438e13a176db1173ab42efe531b0a4005b769615d0dce7974",
+        "blobOid": "e6f757741098c2912c36592fc3762e41e8a54c51"
+      },
+      {
+        "path": "tools/lint/detekt-analysis-health.mjs",
+        "mode": "100644",
+        "bytes": 21161,
+        "sha256": "99973ba20d83404e845276a3fc0691d9f2ac5aac41ed90e0b43b80a6e3d09040",
+        "blobOid": "a637a68c152344e772185ea70db9bbc259cc095d"
+      },
+      {
+        "path": "tools/lint/detekt-analysis-health.test.mjs",
+        "mode": "100644",
+        "bytes": 43815,
+        "sha256": "627c6ab5db19c8c061123397df3e4827c390861e8e82ee8bab632a2d447734b1",
+        "blobOid": "4190fc7e7a49c31d35444023fd83d6179cfe98c1"
+      },
+      {
+        "path": "tools/lint/detekt.yml",
+        "mode": "100644",
+        "bytes": 7065,
+        "sha256": "550ed34be2347afbee9969d759814454ecd34b476fe3a23c04f49191813df715",
+        "blobOid": "e68c4d40cc9179e6cd51ed8e7496ccfe85cfadf0"
+      },
+      {
+        "path": "tools/lint/kotlin-formatting-health.mjs",
+        "mode": "100644",
+        "bytes": 17508,
+        "sha256": "8da883ee1f232ca52b2a1b138527ca8829d36ffea97b276e90bdfaa0a5907892",
+        "blobOid": "67cf5593b3751fe069e7f7fc266909ae84d37f09"
+      },
+      {
+        "path": "tools/lint/kotlin-formatting-health.test.mjs",
+        "mode": "100644",
+        "bytes": 21679,
+        "sha256": "d164904a286cb8fd36eba06fe15da2713c93203666483fe84c24c0e9b4d19d2d",
+        "blobOid": "37d0ab5e88bae90ad5c47d8a25b6651174a4227e"
+      }
+    ]
+  },
+  "limits": [
+    "Product source/patch/projection records are DATA only; no overlay will be applied",
+    "Only mocked controls, read-only syntax/format checks and registered-own-Node Linux cases are authorized by this workflow",
+    "No Java/Gradle/Mesh/queue/gvy fixture/CC/normal-hook/product-commit claim",
+    "Available driver output and case summaries are retained. Legacy workers retain helper streams above4096 bytes as length/hash instead of full raw bytes; the guard decodes worker streams as UTF-8. No full failed-leaf raw-byte custody is claimed."
+  ],
+  "evidenceDebt": {
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1876",
+    "owner": "Root8733 / canonical owned-command and affected caller owners",
+    "impact": "Large failed helper-output cases cannot be reconstructed from summaries; worker-stream UTF-8 decoding is not byte-preserving",
+    "reason": "Restricted bootstrap reuses the reviewed six-file harness with SPDX prefixes only; its serialization limits are retained and disclosed",
+    "nextAction": "Before stronger maintained-caller/full-original evidence claims, persist bounded helper and worker raw bytes independently from original tuple/cleanup status and add failed-large-output and persistence-fault controls",
+    "acceptance": "Source-bound failed large/binary-output controls retain exact original stdout/stderr bytes, byte counts and hashes plus original status/signal/cleanup and zero-remaining proof; independent final-source and runtime evidence review"
+  },
+  "evidenceScope": "Current-byte helper behavior assertions plus available driver/case summaries; not complete leaf raw-byte custody"
+}
