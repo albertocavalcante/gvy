@@ -17,7 +17,8 @@ import java.util.concurrent.CompletableFuture
  * [RemoteEndpoint.request] to return null for custom methods.
  *
  * This interface mirrors the @JsonRequest methods defined on [GroovyLanguageServer]
- * so that the E2E test harness can invoke them with proper type safety.
+ * so that the E2E test harness can observe their responses. Existing test-discovery
+ * routes retain typed DTOs; other extensions use raw JSON at the SDK boundary.
  *
  * ## Why is this needed?
  *
@@ -25,8 +26,8 @@ import java.util.concurrent.CompletableFuture
  * endpoint supports. Without a typed interface, custom method responses are not
  * properly deserialized.
  *
- * @see <a href="https://github.com/eclipse-lsp4j/lsp4j/blob/main/documentation/jsonrpc.md">LSP4J JSON-RPC Documentation</a>
- * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending the Protocol</a>
+ * @see [LSP4J JSON-RPC documentation](https://github.com/eclipse-lsp4j/lsp4j/blob/main/documentation/jsonrpc.md)
+ * @see [LSP4J extending the protocol](https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol)
  */
 interface GroovyLanguageServerProtocol : LanguageServer {
 
@@ -55,6 +56,30 @@ interface GroovyLanguageServerProtocol : LanguageServer {
      */
     @JsonRequest("groovy/runTest")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand>
+
+    /** Returns the requested AST without duplicating the server's DTO schema. */
+    @JsonRequest("groovy/ast")
+    fun getAst(params: JsonElement?): CompletableFuture<JsonElement>
+
+    /** Returns the exported index. */
+    @JsonRequest("groovy/exportIndex")
+    fun exportIndex(params: JsonElement?): CompletableFuture<JsonElement>
+
+    /** Returns build-tool information. */
+    @JsonRequest("groovy/getBuildToolInfo")
+    fun getBuildToolInfo(params: JsonElement?): CompletableFuture<JsonElement>
+
+    /** Returns coverage information. */
+    @JsonRequest("groovy/getCoverage")
+    fun getCoverage(params: JsonElement?): CompletableFuture<JsonElement>
+
+    /** Returns test execution results. */
+    @JsonRequest("groovy/getTestResults")
+    fun getTestResults(params: JsonElement?): CompletableFuture<JsonElement>
+
+    /** Returns workspace dependency information. */
+    @JsonRequest("groovy/workspace/dependencies")
+    fun getDependencies(params: JsonElement?): CompletableFuture<JsonElement>
 }
 
 // ============================================================================

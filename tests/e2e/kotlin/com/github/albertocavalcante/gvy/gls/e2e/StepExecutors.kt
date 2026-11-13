@@ -79,12 +79,11 @@ internal fun resolveJavaBinary(): String {
 /**
  * Sealed class for type-safe routing of custom @JsonRequest methods.
  *
- * LSP4J's generic [RemoteEndpoint.request] returns null for custom methods because
- * the client launcher doesn't know the expected response type. This sealed class
- * provides compile-time type safety when invoking custom methods through the
- * [GroovyLanguageServerProtocol] typed proxy.
+ * The extended client interface supplies result metadata for product custom methods.
+ * These legacy routes retain typed discovery and execution DTOs through the
+ * [GroovyLanguageServerProtocol] proxy; other extensions use raw JSON results.
  *
- * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending Protocol</a>
+ * @see [LSP4J extending the protocol](https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol)
  */
 sealed class CustomRequest<T> {
     abstract val method: String
@@ -360,12 +359,9 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
 
         logger.info { "Sending request '${step.method}' with params: $paramsNode" }
 
-        // Route custom @JsonRequest methods through typed proxy for proper response deserialization.
-        // Standard LSP methods use the generic endpoint.request() fallback.
-        //
-        // LSP4J's generic endpoint.request() returns null for custom methods because the
-        // client launcher doesn't know the expected response type. The typed server proxy
-        // (GroovyLanguageServerProtocol) solves this by providing compile-time type information.
+        // Keep typed DTO routing for legacy test discovery and execution methods.
+        // Standard LSP methods and other registered extensions use the generic endpoint;
+        // the extended client interface supplies their response metadata.
         //
         // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
         val customRequest = CustomRequest.fromMethod(step.method)
