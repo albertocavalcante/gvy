@@ -47,8 +47,8 @@ class HoverSnapshotTest {
     lateinit var workspace: Path
 
     @Test
-    fun `legacy core alias reads the accepted Native buffer before debounced compilation`(): Unit = runBlocking {
-        fixture(EngineType.fromString("core")).use { fixture ->
+    fun `Native reads the accepted Native buffer before debounced compilation`(): Unit = runBlocking {
+        fixture(EngineType.Native).use { fixture ->
             fixture.change(CURRENT_SOURCE, 42)
 
             val hover = fixture.endpoint.hover(fixture.params()).await()
@@ -59,8 +59,8 @@ class HoverSnapshotTest {
     }
 
     @Test
-    fun `legacy core alias rejects a changed buffer instead of returning an earlier source`(): Unit = runBlocking {
-        fixture(EngineType.fromString("core")).use { fixture ->
+    fun `Native rejects a changed buffer instead of returning an earlier source`(): Unit = runBlocking {
+        fixture(EngineType.Native).use { fixture ->
             coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
                 fixture.acquireCompilation().also { fixture.documents.put(fixture.uri, CURRENT_SOURCE, 42) }
             }

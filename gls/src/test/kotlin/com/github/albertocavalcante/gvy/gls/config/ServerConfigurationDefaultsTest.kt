@@ -45,14 +45,6 @@ class ServerConfigurationDefaultsTest {
     }
 
     @Test
-    fun `fromMap treats an explicit core setting as a Native compatibility alias`() {
-        val config = ServerConfiguration.fromMap(
-            mapOf("groovy.languageServer.engine" to "core"),
-        )
-        assertEquals(EngineType.Native, config.parserEngine)
-    }
-
-    @Test
     fun `fromMap parses openrewrite engine explicitly`() {
         val config = ServerConfiguration.fromMap(
             mapOf("groovy.languageServer.engine" to "openrewrite"),
@@ -67,8 +59,8 @@ class ServerConfigurationDefaultsTest {
             ServerConfiguration.fromMap(mapOf("groovy.languageServer.engine" to "NATIVE")).parserEngine,
         )
         assertEquals(
-            EngineType.Native,
-            ServerConfiguration.fromMap(mapOf("groovy.languageServer.engine" to "CORE")).parserEngine,
+            EngineType.OpenRewrite,
+            ServerConfiguration.fromMap(mapOf("groovy.languageServer.engine" to "OpenRewrite")).parserEngine,
         )
     }
 

@@ -46,8 +46,8 @@ class EngineFactoryTest {
     }
 
     @Test
-    fun `create returns NativeLanguageEngine for a saved core alias`() {
-        val config = EngineConfiguration(type = EngineType.fromString("core"))
+    fun `create returns NativeLanguageEngine for the Native type`() {
+        val config = EngineConfiguration(type = EngineType.Native)
 
         val engine = EngineFactory.create(
             config = config,
@@ -93,8 +93,8 @@ class EngineFactoryTest {
     }
 
     @Test
-    fun `create works with null sourceNavigator for the core compatibility alias`() {
-        val config = EngineConfiguration(type = EngineType.fromString("core"))
+    fun `create works with null sourceNavigator for the Native type`() {
+        val config = EngineConfiguration(type = EngineType.Native)
 
         val engine = EngineFactory.create(
             config = config,
@@ -125,7 +125,7 @@ class EngineFactoryTest {
     @Test
     fun `create with custom features does not affect engine type selection`() {
         val customFeatures = EngineFeatures(typeInference = false, flowAnalysis = true)
-        val config = EngineConfiguration(type = EngineType.fromString("core"), features = customFeatures)
+        val config = EngineConfiguration(type = EngineType.Native, features = customFeatures)
 
         val engine = EngineFactory.create(
             config = config,

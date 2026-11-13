@@ -24,7 +24,7 @@ class RuntimeFactsTest {
         val facts = runtimeFacts(
             BuildInfo.fromProperties(properties),
             RuntimeObservation(123, 21, "21.0.5+11", 268435456),
-            HoverEngineObservation("core", "not_instantiated", null),
+            HoverEngineObservation("native", "not_instantiated", null),
         )
         assertEquals(1, facts.schemaVersion)
         assertEquals(123L, facts.runtime.processId)
@@ -54,7 +54,7 @@ class RuntimeFactsTest {
     fun `legacy version and supported development stamps stay visible`() {
         val properties = Properties().apply { setProperty("version", "0.5.4-SNAPSHOT") }
         val observed = RuntimeObservation(1, 17, "17.0.1", 1024)
-        val engine = HoverEngineObservation("core", "not_instantiated", null)
+        val engine = HoverEngineObservation("native", "not_instantiated", null)
         assertEquals(
             "0.5.4-SNAPSHOT",
             runtimeFacts(BuildInfo.fromProperties(properties), observed, engine).build.version,
@@ -70,7 +70,7 @@ class RuntimeFactsTest {
         val legacy = runtimeFacts(
             BuildInfo.fromProperties(Properties()),
             RuntimeObservation(null, null, null, null),
-            HoverEngineObservation("core", "unknown", null),
+            HoverEngineObservation("native", "unknown", null),
         )
         assertEquals("unknown", legacy.build.dirtyState)
         assertEquals("unknown", legacy.build.commitState)

@@ -20,12 +20,12 @@ import kotlin.test.assertContains
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** The saved Core setting retains the public session API through the Native engine. */
+/** The Native engine exposes the public session API. */
 class GroovyCompilationServiceSessionTest {
     private val documents = DocumentProvider()
     private val compilation = GroovyCompilationService(documentProvider = documents)
     private val engine = EngineFactory.create(
-        config = EngineConfiguration(EngineType.fromString("core")),
+        config = EngineConfiguration(EngineType.Native),
         parser = GroovyParserFacade(),
         compilationService = compilation,
         documentProvider = documents,

@@ -22,7 +22,7 @@ class HoverEngineObservationTest {
             workspaceManager = WorkspaceManager(),
             options = LanguageEngineManagerOptions(
                 documentProvider = DocumentProvider(),
-                engineConfig = EngineConfiguration(EngineType.fromString("core")),
+                engineConfig = EngineConfiguration(EngineType.Native),
             ),
         )
         val before = manager.observeHoverEngine()
