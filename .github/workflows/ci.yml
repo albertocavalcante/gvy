@@ -36,13 +36,7 @@ jobs:
           private="$RUNNER_TEMP/parity-private"
           public="$RUNNER_TEMP/parity-receipt"
           mkdir -m 700 "$private" "$public"
-          cat >"$private/wrapper" <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          : "${TEST_UNDECLARED_OUTPUTS_DIR:?}"
-          exec "$@" '--include-classname=^.*\.LoggingProviderTest$' "--reports-dir=$TEST_UNDECLARED_OUTPUTS_DIR/junit"
-          SH
-          chmod 700 "$private/wrapper"
+          mkdir -m 700 "$private/build-tool" "$private/jenkins"
           bazel --version >"$private/bazel-version" 2>&1
           echo 'BAZELISK_GITHUB_TOKEN=' >>"$GITHUB_ENV"
           [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
@@ -62,14 +56,34 @@ jobs:
           	fi
           }
           trap cleanup EXIT
-          set +e
-          bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --zip_undeclared_test_outputs --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1
-          bazel_status=$?
-          set -e
-          printf 'bazel_exit=%s\n' "$bazel_status"
+          run_target() {
+          	local name="$1" target="$2"
+          	set +e
+          	timeout --kill-after=10s 1200s bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m "--sandbox_writable_path=$private/$name" '--test_arg=--include-classname=^.*\.LoggingProviderTest$' "--test_arg=--reports-dir=$private/$name" "$target" 2>&1 | python3 -c '
+          import sys
+          remaining = 4 * 1024 * 1024
+          overflow = False
+          while chunk := sys.stdin.buffer.read(65536):
+              keep = chunk[:remaining]
+              sys.stdout.buffer.write(keep)
+              remaining -= len(keep)
+              overflow = overflow or len(keep) != len(chunk)
+          sys.exit(75 if overflow else 0)
+          ' >"$private/$name.log"
+          	local status=("${PIPESTATUS[@]}")
+          	printf '%s %s\n' "${status[0]}" "${status[1]}" >"$private/$name.status"
+          	set -e
+          }
+          test ! -e "$private/build-tool/TEST-junit-jupiter.xml"
+          test ! -e "$private/jenkins/TEST-junit-jupiter.xml"
+          run_target build-tool //build-tool:build-tool_test
+          run_target jenkins //jenkins:jenkins_test
+          read -r first first_capture <"$private/build-tool.status"
+          read -r second second_capture <"$private/jenkins.status"
+          printf 'build_tool_exit=%s capture=%s jenkins_exit=%s capture=%s\n' "$first" "$first_capture" "$second" "$second_capture"
           cleanup
-          if ((bazel_status != 0 || cleanup_exit != 0)); then
-          	python3 - "$bazel_status" "$cleanup_exit" "$public/failure.json" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
+          if ((first != 0 || first_capture != 0 || second != 0 || second_capture != 0 || cleanup_exit != 0)); then
+          	python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
           import json
           import os
           import pathlib
@@ -98,6 +112,13 @@ jobs:
               "output_env_missing": r"TEST_UNDECLARED_OUTPUTS_DIR: parameter (null or )?not set",
               "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror)",
               "class_version": r"(?i)unsupportedclassversionerror",
+              "bootstrap_console_launcher": r"(?i)(?:could not find or load main class|ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]platform[./]console[./]ConsoleLauncher\b",
+              "bootstrap_jupiter_engine": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]jupiter[./]engine[./]JupiterTestEngine\b",
+              "bootstrap_slf4j": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]slf4j[./]LoggerFactory\b",
+              "bootstrap_logback_classic": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]classic[./]LoggerContext\b",
+              "bootstrap_logback_core": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]core[./]ConsoleAppender\b",
+              "bootstrap_build_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]build[./]LoggingProviderTest\b",
+              "bootstrap_jenkins_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]jenkins[./]LoggingProviderTest\b",
           }
           
           def bounded(path):
@@ -110,63 +131,38 @@ jobs:
               except OSError:
                   return ("unreadable", None)
           
-          def parse_archive(data):
-              import io
-              import pathlib
-              import zipfile
-              import zlib
-          
-              if len(data) > 4 * 1024 * 1024:
-                  return "oversize", None
-              try:
-                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                      entries = archive.infolist()
-                      if len(entries) > 64 or len({item.filename for item in entries}) != len(entries):
-                          return "unsafe_archive", None
-                      for item in entries:
-                          name = item.filename
-                          parts = name.rstrip("/").split("/")
-                          if not name or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in parts):
-                              return "unsafe_archive", None
-                          if ((item.external_attr >> 16) & 0o170000) == 0o120000:
-                              return "unsafe_archive", None
-                      selected = [item for item in entries if item.filename == "junit/TEST-junit-jupiter.xml"]
-                      if len(selected) != 1:
-                          return "report_missing", None
-                      item = selected[0]
-                      if item.flag_bits & 1:
-                          return "encrypted", None
-                      if item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
-                          return "unsupported_compression", None
-                      if item.file_size > LIMIT:
-                          return "oversize", None
-                      with archive.open(item) as stream:
-                          raw = stream.read(LIMIT + 1)
-                      if len(raw) != item.file_size or len(raw) > LIMIT:
-                          return "malformed", None
-                      if b"\x00" in raw:
-                          return "invalid_encoding", None
-                      try:
-                          raw.decode("utf-8", "strict")
-                      except UnicodeDecodeError:
-                          return "invalid_encoding", None
-                      if b"<!DOCTYPE" in raw.upper():
-                          return "dtd_rejected", None
-                      return "present", raw
-              except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError, zlib.error):
-                  return "malformed", None
-          
           def read_jupiter(path):
+              import os
               import pathlib
+              import stat
           
+              path = pathlib.Path(path)
               try:
-                  with pathlib.Path(path).open("rb") as stream:
-                      data = stream.read(4 * 1024 * 1024 + 1)
+                  descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                  with os.fdopen(descriptor, "rb") as stream:
+                      initial = os.fstat(stream.fileno())
+                      if not stat.S_ISREG(initial.st_mode) or initial.st_size > LIMIT:
+                          return "oversize_or_not_regular", None
+                      raw = stream.read(LIMIT + 1)
+                      final = os.fstat(stream.fileno())
+                  current = path.lstat()
+                  if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns):
+                      return "changed", None
+                  if (final.st_dev, final.st_ino) != (current.st_dev, current.st_ino) or len(raw) > LIMIT:
+                      return "changed", None
+                  if b"\x00" in raw:
+                      return "invalid_encoding", None
+                  try:
+                      raw.decode("utf-8", "strict")
+                  except UnicodeDecodeError:
+                      return "invalid_encoding", None
+                  if b"<!DOCTYPE" in raw.upper():
+                      return "dtd_rejected", None
+                  return "present", raw
               except FileNotFoundError:
                   return "missing", None
               except OSError:
                   return "unreadable", None
-              return parse_archive(data)
           
           def source_line(failure, classname):
               pattern = re.compile(
@@ -231,8 +227,8 @@ jobs:
               return result
           
           def main():
-              status, cleanup, dest = sys.argv[1:]
-              if not status.isdecimal() or not cleanup.isdecimal():
+              first, first_capture, second, second_capture, cleanup, dest, private = sys.argv[1:]
+              if not all(value.isdecimal() for value in (first, first_capture, second, second_capture, cleanup)):
                   raise SystemExit("invalid status")
               modules = {
                   "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
@@ -242,14 +238,14 @@ jobs:
               for module, (target, classname) in modules.items():
                   base = pathlib.Path("bazel-testlogs") / module / target
                   generic = bounded(base / "test.xml")
-                  jupiter = read_jupiter(base / "test.outputs" / "outputs.zip")
+                  jupiter = read_jupiter(pathlib.Path(private) / module / "TEST-junit-jupiter.xml")
                   selected = jupiter if jupiter[0] == "present" else generic
                   observed = classify(bounded(base / "test.log"), selected, classname)
                   observed["jupiter"] = jupiter[0]
                   observed["bazelXml"] = generic[0]
                   observed["xmlOrigin"] = "jupiter" if jupiter[0] == "present" else "bazel_fallback"
                   result[module] = observed
-              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": int(status), "cleanupExit": int(cleanup), "modules": result}
+              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": {"build-tool": int(first), "jenkins": int(second)}, "captureExit": {"build-tool": int(first_capture), "jenkins": int(second_capture)}, "cleanupExit": int(cleanup), "modules": result}
               pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
           
           if __name__ == "__main__":
@@ -259,7 +255,7 @@ jobs:
           	echo "Focused Bazel witness failed; private output withheld." >&2
           	exit 1
           fi
-          if ! python3 - "$public/receipt.json" >"$private/receipt-build.log" 2>&1 <<'PY'
+          if ! python3 - "$public/receipt.json" "$private" >"$private/receipt-build.log" 2>&1 <<'PY'
           import hashlib
           import json
           import os
@@ -268,64 +264,40 @@ jobs:
           import xml.etree.ElementTree as ET
           import zipfile
 
+          private = pathlib.Path(sys.argv[2])
           LIMIT = 256 * 1024
-          def parse_archive(data):
-              import io
-              import pathlib
-              import zipfile
-              import zlib
-          
-              if len(data) > 4 * 1024 * 1024:
-                  return "oversize", None
-              try:
-                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                      entries = archive.infolist()
-                      if len(entries) > 64 or len({item.filename for item in entries}) != len(entries):
-                          return "unsafe_archive", None
-                      for item in entries:
-                          name = item.filename
-                          parts = name.rstrip("/").split("/")
-                          if not name or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in parts):
-                              return "unsafe_archive", None
-                          if ((item.external_attr >> 16) & 0o170000) == 0o120000:
-                              return "unsafe_archive", None
-                      selected = [item for item in entries if item.filename == "junit/TEST-junit-jupiter.xml"]
-                      if len(selected) != 1:
-                          return "report_missing", None
-                      item = selected[0]
-                      if item.flag_bits & 1:
-                          return "encrypted", None
-                      if item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
-                          return "unsupported_compression", None
-                      if item.file_size > LIMIT:
-                          return "oversize", None
-                      with archive.open(item) as stream:
-                          raw = stream.read(LIMIT + 1)
-                      if len(raw) != item.file_size or len(raw) > LIMIT:
-                          return "malformed", None
-                      if b"\x00" in raw:
-                          return "invalid_encoding", None
-                      try:
-                          raw.decode("utf-8", "strict")
-                      except UnicodeDecodeError:
-                          return "invalid_encoding", None
-                      if b"<!DOCTYPE" in raw.upper():
-                          return "dtd_rejected", None
-                      return "present", raw
-              except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError, zlib.error):
-                  return "malformed", None
-          
           def read_jupiter(path):
+              import os
               import pathlib
+              import stat
           
+              path = pathlib.Path(path)
               try:
-                  with pathlib.Path(path).open("rb") as stream:
-                      data = stream.read(4 * 1024 * 1024 + 1)
+                  descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                  with os.fdopen(descriptor, "rb") as stream:
+                      initial = os.fstat(stream.fileno())
+                      if not stat.S_ISREG(initial.st_mode) or initial.st_size > LIMIT:
+                          return "oversize_or_not_regular", None
+                      raw = stream.read(LIMIT + 1)
+                      final = os.fstat(stream.fileno())
+                  current = path.lstat()
+                  if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns):
+                      return "changed", None
+                  if (final.st_dev, final.st_ino) != (current.st_dev, current.st_ino) or len(raw) > LIMIT:
+                      return "changed", None
+                  if b"\x00" in raw:
+                      return "invalid_encoding", None
+                  try:
+                      raw.decode("utf-8", "strict")
+                  except UnicodeDecodeError:
+                      return "invalid_encoding", None
+                  if b"<!DOCTYPE" in raw.upper():
+                      return "dtd_rejected", None
+                  return "present", raw
               except FileNotFoundError:
                   return "missing", None
               except OSError:
                   return "unreadable", None
-              return parse_archive(data)
           
           modules = {
               "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
@@ -337,7 +309,7 @@ jobs:
           }
           result = []
           for module, (target, classname) in modules.items():
-              path = pathlib.Path("bazel-testlogs") / module / target / "test.outputs/outputs.zip"
+              path = private / module / "TEST-junit-jupiter.xml"
               state, raw = read_jupiter(path)
               if state != "present" or raw is None:
                   raise SystemExit("missing or oversized private JUnit report")
@@ -348,11 +320,11 @@ jobs:
               if any(x.get("classname") != classname or list(x.findall("failure")) or list(x.findall("error")) or list(x.findall("skipped")) for x in cases):
                   raise SystemExit("unexpected test class or outcome")
               result.append({"module": module, "class": classname, "cases": sorted(expected), "passed": 2, "errors": 0, "failures": 0, "skipped": 0, "xmlSha256": hashlib.sha256(raw).hexdigest()})
-          receipt = {"schemaVersion": 1, "sourceHead": "f04406dac415a5b7cc1698ca8feb0d0de3e9e956", "testedHead": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "testedTree": "71d313b3e182b2bc7de166a8308f33b2a03e2ea5", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "invocation": "bazel focused parity tests, no test-result cache", "results": result}
+          receipt = {"schemaVersion": 1, "sourceHead": "f04406dac415a5b7cc1698ca8feb0d0de3e9e956", "testedHead": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "testedTree": "71d313b3e182b2bc7de166a8308f33b2a03e2ea5", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "invocation": "two direct Bazel target tests, no test-result cache", "bazelExit": {"build-tool": 0, "jenkins": 0}, "captureExit": {"build-tool": 0, "jenkins": 0}, "cleanupExit": 0, "results": result}
           pathlib.Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
           PY
           then
-          	python3 - "$bazel_status" "$cleanup_exit" "$public/failure.json" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
+          	python3 - "$first" "$first_capture" "$second" "$second_capture" "$cleanup_exit" "$public/failure.json" "$private" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
           import json
           import os
           import pathlib
@@ -381,6 +353,13 @@ jobs:
               "output_env_missing": r"TEST_UNDECLARED_OUTPUTS_DIR: parameter (null or )?not set",
               "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror)",
               "class_version": r"(?i)unsupportedclassversionerror",
+              "bootstrap_console_launcher": r"(?i)(?:could not find or load main class|ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]platform[./]console[./]ConsoleLauncher\b",
+              "bootstrap_jupiter_engine": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]junit[./]jupiter[./]engine[./]JupiterTestEngine\b",
+              "bootstrap_slf4j": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*org[./]slf4j[./]LoggerFactory\b",
+              "bootstrap_logback_classic": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]classic[./]LoggerContext\b",
+              "bootstrap_logback_core": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*ch[./]qos[./]logback[./]core[./]ConsoleAppender\b",
+              "bootstrap_build_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]build[./]LoggingProviderTest\b",
+              "bootstrap_jenkins_test": r"(?i)(?:ClassNotFoundException:|NoClassDefFoundError:)\s*com[./]github[./]albertocavalcante[./]gvy[./]jenkins[./]LoggingProviderTest\b",
           }
           
           def bounded(path):
@@ -393,63 +372,38 @@ jobs:
               except OSError:
                   return ("unreadable", None)
           
-          def parse_archive(data):
-              import io
-              import pathlib
-              import zipfile
-              import zlib
-          
-              if len(data) > 4 * 1024 * 1024:
-                  return "oversize", None
-              try:
-                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                      entries = archive.infolist()
-                      if len(entries) > 64 or len({item.filename for item in entries}) != len(entries):
-                          return "unsafe_archive", None
-                      for item in entries:
-                          name = item.filename
-                          parts = name.rstrip("/").split("/")
-                          if not name or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in parts):
-                              return "unsafe_archive", None
-                          if ((item.external_attr >> 16) & 0o170000) == 0o120000:
-                              return "unsafe_archive", None
-                      selected = [item for item in entries if item.filename == "junit/TEST-junit-jupiter.xml"]
-                      if len(selected) != 1:
-                          return "report_missing", None
-                      item = selected[0]
-                      if item.flag_bits & 1:
-                          return "encrypted", None
-                      if item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
-                          return "unsupported_compression", None
-                      if item.file_size > LIMIT:
-                          return "oversize", None
-                      with archive.open(item) as stream:
-                          raw = stream.read(LIMIT + 1)
-                      if len(raw) != item.file_size or len(raw) > LIMIT:
-                          return "malformed", None
-                      if b"\x00" in raw:
-                          return "invalid_encoding", None
-                      try:
-                          raw.decode("utf-8", "strict")
-                      except UnicodeDecodeError:
-                          return "invalid_encoding", None
-                      if b"<!DOCTYPE" in raw.upper():
-                          return "dtd_rejected", None
-                      return "present", raw
-              except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError, zlib.error):
-                  return "malformed", None
-          
           def read_jupiter(path):
+              import os
               import pathlib
+              import stat
           
+              path = pathlib.Path(path)
               try:
-                  with pathlib.Path(path).open("rb") as stream:
-                      data = stream.read(4 * 1024 * 1024 + 1)
+                  descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                  with os.fdopen(descriptor, "rb") as stream:
+                      initial = os.fstat(stream.fileno())
+                      if not stat.S_ISREG(initial.st_mode) or initial.st_size > LIMIT:
+                          return "oversize_or_not_regular", None
+                      raw = stream.read(LIMIT + 1)
+                      final = os.fstat(stream.fileno())
+                  current = path.lstat()
+                  if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns):
+                      return "changed", None
+                  if (final.st_dev, final.st_ino) != (current.st_dev, current.st_ino) or len(raw) > LIMIT:
+                      return "changed", None
+                  if b"\x00" in raw:
+                      return "invalid_encoding", None
+                  try:
+                      raw.decode("utf-8", "strict")
+                  except UnicodeDecodeError:
+                      return "invalid_encoding", None
+                  if b"<!DOCTYPE" in raw.upper():
+                      return "dtd_rejected", None
+                  return "present", raw
               except FileNotFoundError:
                   return "missing", None
               except OSError:
                   return "unreadable", None
-              return parse_archive(data)
           
           def source_line(failure, classname):
               pattern = re.compile(
@@ -514,8 +468,8 @@ jobs:
               return result
           
           def main():
-              status, cleanup, dest = sys.argv[1:]
-              if not status.isdecimal() or not cleanup.isdecimal():
+              first, first_capture, second, second_capture, cleanup, dest, private = sys.argv[1:]
+              if not all(value.isdecimal() for value in (first, first_capture, second, second_capture, cleanup)):
                   raise SystemExit("invalid status")
               modules = {
                   "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
@@ -525,14 +479,14 @@ jobs:
               for module, (target, classname) in modules.items():
                   base = pathlib.Path("bazel-testlogs") / module / target
                   generic = bounded(base / "test.xml")
-                  jupiter = read_jupiter(base / "test.outputs" / "outputs.zip")
+                  jupiter = read_jupiter(pathlib.Path(private) / module / "TEST-junit-jupiter.xml")
                   selected = jupiter if jupiter[0] == "present" else generic
                   observed = classify(bounded(base / "test.log"), selected, classname)
                   observed["jupiter"] = jupiter[0]
                   observed["bazelXml"] = generic[0]
                   observed["xmlOrigin"] = "jupiter" if jupiter[0] == "present" else "bazel_fallback"
                   result[module] = observed
-              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": int(status), "cleanupExit": int(cleanup), "modules": result}
+              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": {"build-tool": int(first), "jenkins": int(second)}, "captureExit": {"build-tool": int(first_capture), "jenkins": int(second_capture)}, "cleanupExit": int(cleanup), "modules": result}
               pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
           
           if __name__ == "__main__":
