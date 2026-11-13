@@ -1,0 +1,20 @@
+{
+  "base": "804387610dd2ee6351372029d1b62cae43771961",
+  "tree": "b74c3cf4e4d60e5e859e02c797ebb83bbe9291c5",
+  "patchSha256": "751f794b568a72577d167b25d8d3ebc430eaf8a4edad5c696823a1cee6f5ba5e",
+  "payloadSha256": "b36bf46c2d9a34298939ae944d478943bb78c31d0bcc784401c0fce63a53e493",
+  "patchBytes": 21274,
+  "payloadBytes": 5460,
+  "allowedPaths": [
+    ".github/workflows/license-tooling.yml",
+    "Makefile",
+    "tools/ci/junit_contract.py",
+    "tools/ci/test_junit_contract.py"
+  ],
+  "scope": "Bounded pure JUnit comparison helper plus locked three-platform self-tests, part of #1721",
+  "limits": [
+    "Report comparison does not attest fresh execution, source provenance or distinct variants sharing a display name.",
+    "No file-intake/subprocess adapter or canonical producer join is implemented in this foundation.",
+    "Canonical formatter/hooks and actual publication-head checks remain required."
+  ]
+}
