@@ -1,0 +1,10 @@
+{
+  "fixtureBase": "b7e6657a923f2fb24c73b1ae1cb48b3088540bac",
+  "fixtureTree": "ffced4dc1704d5e87cf2752cc5fd35a1c0ab25f7",
+  "patchSha256": "caf7f057421c944887ef61f8a55ccf496784e83a662c42752384a04beffd2ece",
+  "gzipSha256": "e2a0dc2617fefcd5d91a98394216e8dc7dfaf5a8f09008cb569cdd45b0b97496",
+  "caseMapSha256": "fcec3042e5df91243b1de2b81aca1e813d61da9db7f0d4013719b332c7a8add8",
+  "fixtureStatus": "provisional; Factory 1897 and XFAIL 1811 unmerged",
+  "sourceReviewReceiptSha256": "5ea8b98c349d61b5b77da61ab71e9083da3cf898536e5a5a08576cbb246198e5",
+  "rejectionFollowupReviewReceiptSha256": "3826bde353cc232ccb7d30d2d24a48b56073d924dfb2b5cbe2321d4f9ee985d6"
+}
