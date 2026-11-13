@@ -11,6 +11,7 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserRange
 import com.github.albertocavalcante.nativeapi.SourceAnnotationDeclaration
 import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
+import com.github.albertocavalcante.nativeapi.SourceAnnotationMetadata
 import com.github.albertocavalcante.nativeapi.SourceAnnotationReference
 import com.github.albertocavalcante.nativeapi.SourceImportRanges
 import kotlinx.collections.immutable.toPersistentList
@@ -132,12 +133,14 @@ internal class SourceAnnotationCapture(
         val index = SourceAnnotationIndex(
             frozen,
             coverage,
-            importRanges,
-            declarations,
-            selectedUris,
-            importSelections,
-            foreign,
-            sourceAnnotatedImports,
+            SourceAnnotationMetadata(
+                importRanges = importRanges,
+                declarations = declarations,
+                sourceUris = selectedUris,
+                importSelections = importSelections,
+                foreignDeclarations = foreign,
+                sourceAnnotatedImports = sourceAnnotatedImports,
+            ),
         )
         module.putNodeMetaData(SourceAnnotationIndex::class.java, index)
         references.clear()
@@ -197,49 +200,58 @@ internal class SourceAnnotationCapture(
             limited()
             return
         }
-        val range = ranges.range(type)
-        if (range != null && ranges.offset(range.end) - ranges.offset(range.start) > MAX_NAME_CHARACTERS) {
-            limited()
-            return
+        val verifiedName = verifiedSourceName(
+            range = ranges.range(type),
+            expected = type.name,
+            reportMissingRange = annotation.lineNumber > 0,
+            rangeFailure = "An annotation name has no verified source range",
+            segmentsFailure = "An annotation name has no verified identifier segments",
+        ) ?: return
+        val key = Occurrence(verifiedName.range, type.name, AnnotationReferenceKind.HEAD, verifiedName.segments)
+        if (key !in references && retain(type.name, verifiedName.segments)) {
+            references.putIfAbsent(key, PendingReference(key, type, candidates(type.name), enclosingBinaryName))
         }
-        if (range == null || normalizeName(ranges.text(range)) != type.name) {
-            // Compiler-generated annotations have no source position. A mismatched source position is not proof.
-            if (annotation.lineNumber > 0) incompleteReason = "An annotation name has no verified source range"
-            return
-        }
-        val segments = sourceTypeNameSegments(content, ranges, range)
-        if (segments == null) {
-            incompleteReason = "An annotation name has no verified identifier segments"
-            return
-        }
-        val key = Occurrence(range, type.name, AnnotationReferenceKind.HEAD, segments)
-        if (key in references || !retain(type.name, segments)) return
-        references.putIfAbsent(key, PendingReference(key, type, candidates(type.name), enclosingBinaryName))
     }
 
     private fun argument(spelling: String, node: org.codehaus.groovy.ast.ASTNode, enclosingBinaryName: String?) {
         if (!acceptingMetadata) return
-        if (!nameFits(spelling)) return
-        val possibleImports = candidates(spelling)
+        val possibleImports = if (nameFits(spelling)) candidates(spelling) else emptyList()
         if (possibleImports.isEmpty()) return
-        val range = ranges.range(node)
-        if (range != null && ranges.offset(range.end) - ranges.offset(range.start) > MAX_NAME_CHARACTERS) {
-            limited()
-            return
+        val verifiedName = verifiedSourceName(
+            range = ranges.range(node),
+            expected = spelling,
+            reportMissingRange = true,
+            rangeFailure = "An annotation argument has no verified source range",
+            segmentsFailure = "An annotation argument has no verified identifier segments",
+        ) ?: return
+        val key = Occurrence(verifiedName.range, spelling, AnnotationReferenceKind.ARGUMENT, verifiedName.segments)
+        if (key !in references && retain(spelling, verifiedName.segments)) {
+            // Member expressions can be replaced/inlined. Preserve candidate imports without inventing a semantic bind.
+            references.putIfAbsent(key, PendingReference(key, null, possibleImports, enclosingBinaryName))
         }
-        if (range == null || normalizeName(ranges.text(range)) != spelling) {
-            incompleteReason = "An annotation argument has no verified source range"
-            return
+    }
+
+    private data class VerifiedSourceName(val range: ParserRange, val segments: List<ParserRange>)
+
+    private fun verifiedSourceName(
+        range: ParserRange?,
+        expected: String,
+        reportMissingRange: Boolean,
+        rangeFailure: String,
+        segmentsFailure: String,
+    ): VerifiedSourceName? {
+        val withinLimit = range == null ||
+            ranges.offset(range.end) - ranges.offset(range.start) <= MAX_NAME_CHARACTERS
+        if (range != null && !withinLimit) limited()
+
+        val verifiedRange = range?.takeIf { withinLimit && normalizeName(ranges.text(it)) == expected }
+        if (verifiedRange == null && withinLimit && reportMissingRange) {
+            // An absent or mismatched compiler range is not proof of a source occurrence.
+            incompleteReason = rangeFailure
         }
-        val segments = sourceTypeNameSegments(content, ranges, range)
-        if (segments == null) {
-            incompleteReason = "An annotation argument has no verified identifier segments"
-            return
-        }
-        val key = Occurrence(range, spelling, AnnotationReferenceKind.ARGUMENT, segments)
-        if (key in references || !retain(spelling, segments)) return
-        // Member expressions can be replaced/inlined. Preserve candidate imports without inventing a semantic bind.
-        references.putIfAbsent(key, PendingReference(key, null, possibleImports, enclosingBinaryName))
+        val segments = verifiedRange?.let { sourceTypeNameSegments(content, ranges, it) }
+        if (verifiedRange != null && segments == null) incompleteReason = segmentsFailure
+        return if (verifiedRange != null && segments != null) VerifiedSourceName(verifiedRange, segments) else null
     }
 
     private fun nameFits(name: String): Boolean {
@@ -409,17 +421,11 @@ internal class SourceAnnotationCapture(
             scope = node
             try {
                 if (node.isAnnotationDefinition && acceptingMetadata) {
-                    val declarationRange = ranges.range(node)
-                    val nameRange = declarationRange?.let { sourceTypeDeclarationName(node, content, ranges, it) }
-                    if (
-                        declarationRange != null &&
-                        nameRange != null &&
-                        nameFits(node.name) &&
-                        retain(node.name)
-                    ) {
-                        declarations.add(SourceAnnotationDeclaration(node.name, declarationRange, nameRange))
-                    } else {
+                    val declaration = captureDeclaration(node)
+                    if (declaration == null) {
                         incompleteReason = "An annotation declaration has no verified name range"
+                    } else {
+                        declarations.add(declaration)
                     }
                 }
                 type(node.unresolvedSuperClass)
@@ -435,6 +441,16 @@ internal class SourceAnnotationCapture(
                 scope = previous
             }
         }
+
+        private fun captureDeclaration(node: ClassNode): SourceAnnotationDeclaration? = ranges.range(node)
+            ?.let { declarationRange ->
+                sourceTypeDeclarationName(node, content, ranges, declarationRange)
+                    ?.let { nameRange -> declarationRange to nameRange }
+            }
+            ?.takeIf { nameFits(node.name) && retain(node.name) }
+            ?.let { (declarationRange, nameRange) ->
+                SourceAnnotationDeclaration(node.name, declarationRange, nameRange)
+            }
 
         override fun visitMethod(node: MethodNode) {
             signature(node)

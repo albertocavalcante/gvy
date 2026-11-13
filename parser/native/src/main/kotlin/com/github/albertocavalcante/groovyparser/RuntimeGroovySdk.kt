@@ -50,6 +50,8 @@ internal class RuntimeGroovySdk private constructor(
         private const val MAX_COMPONENT_BYTES = 64L * 1024 * 1024
         private const val MAX_CONTAINER_BYTES = 512L * 1024 * 1024
         private const val MAX_CLASSES = 20_000
+        private const val MAX_CLASS_ENTRY_NAME_LENGTH = 1024
+        private const val DIGEST_BUFFER_BYTES = 8192
         private val SHA256 = Regex("[a-f0-9]{64}")
         private val trusted by lazy { discover() }
 
@@ -58,106 +60,120 @@ internal class RuntimeGroovySdk private constructor(
             NativeArtifactStamp.observe(Path.of(it.identity.container), maxPaths = 1) == it.identity.containerStamp
         }
 
-        private fun discover(): RuntimeGroovySdk? {
-            return try {
-                val sdkClass = GroovyObject::class.java
-                val loader = sdkClass.classLoader
-                val location = sdkClass.protectionDomain?.codeSource?.location?.toURI()
-                if (location?.scheme != "file") return null
+        private fun discover(): RuntimeGroovySdk? = try {
+            val sdkClass = GroovyObject::class.java
+            val loader = sdkClass.classLoader
+            val path = sdkClass.protectionDomain?.codeSource?.location?.toURI()
+                ?.takeIf { it.scheme == "file" }
+                ?.let { Path.of(it).toRealPath() }
+            path?.let { discoverFrom(loader, it) }
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
 
-                val path = Path.of(location).toRealPath()
-                val containerStamp = NativeArtifactStamp.observe(path, maxPaths = 1)
-                if (
-                    containerStamp == null ||
-                    containerStamp.files != null ||
-                    containerStamp.size > MAX_CONTAINER_BYTES
-                ) {
-                    return null
-                }
-
-                val container = path.toUri()
-                val indexed = packaged(loader, container) ?: unshaded(path) ?: return null
-                if (NativeArtifactStamp.observe(path, maxPaths = 1) != containerStamp) return null
-
-                val identity = NativeCompilerSdkIdentity(
+        private fun discoverFrom(loader: ClassLoader, path: Path): RuntimeGroovySdk? {
+            val container = path.toUri()
+            val containerStamp = NativeArtifactStamp.observe(path, maxPaths = 1)
+                ?.takeIf { it.files == null && it.size <= MAX_CONTAINER_BYTES }
+            val indexed = containerStamp?.let { packaged(loader, container) ?: unshaded(path) }
+            val stableStamp = containerStamp?.takeIf {
+                indexed != null && NativeArtifactStamp.observe(path, maxPaths = 1) == it
+            }
+            val identity = if (stableStamp != null && indexed != null) {
+                NativeCompilerSdkIdentity(
                     componentId = indexed.first,
                     container = container,
-                    containerStamp = containerStamp,
+                    containerStamp = stableStamp,
                     indexDigest = indexDigest(indexed.second),
                 )
-                RuntimeGroovySdk(identity, loader, Collections.unmodifiableMap(indexed.second))
+            } else {
+                null
+            }
+            return identity?.let { trustedIdentity ->
+                RuntimeGroovySdk(trustedIdentity, loader, Collections.unmodifiableMap(checkNotNull(indexed).second))
                     .takeIf { sdk -> sdk.resource("groovy/lang/GroovyObject.class") != null }
-            } catch (_: IOException) {
-                null
-            } catch (_: SecurityException) {
-                null
-            } catch (_: IllegalArgumentException) {
-                null
             }
         }
 
         private fun packaged(loader: ClassLoader, expectedContainer: URI): Pair<String, Map<String, String>>? {
+            val resources = packagedResources(loader, expectedContainer) ?: return null
+            val metadata = properties(open(resources.first))
+            val validMetadata =
+                metadata.getProperty("format") == "1" &&
+                    metadata.getProperty("module") == "groovy" &&
+                    metadata.getProperty("version") == GroovySystem.getVersion() &&
+                    metadata.getProperty("group") in setOf("org.apache.groovy", "org.codehaus.groovy")
+            val entries = if (validMetadata) indexedClasses(properties(open(resources.second))) else null
+            val id = metadata.getProperty("group") + ":groovy:" + metadata.getProperty("version")
+            return entries?.let { id to it }
+        }
+
+        private fun packagedResources(loader: ClassLoader, expectedContainer: URI): Pair<URL, URL>? {
             val manifest = loader.getResource(PREFIX + "groovy.properties")
                 ?.takeIf { resource -> container(resource) == expectedContainer }
                 ?: return null
             val index = loader.getResource(PREFIX + "groovy-class-digests.properties")
                 ?.takeIf { resource -> container(resource) == expectedContainer }
                 ?: return null
-            val metadata = properties(open(manifest))
-            if (
-                metadata.getProperty("format") != "1" ||
-                metadata.getProperty("module") != "groovy" ||
-                metadata.getProperty("version") != GroovySystem.getVersion() ||
-                metadata.getProperty("group") !in setOf("org.apache.groovy", "org.codehaus.groovy")
-            ) {
-                return null
-            }
-            val classes = properties(open(index))
+            return manifest to index
+        }
+
+        private fun indexedClasses(classes: Properties): Map<String, String>? {
             if (classes.size > MAX_CLASSES) return null
             val entries = classes.stringPropertyNames().associateWith { classes.getProperty(it) }
-            if (entries.keys.any { !classEntry(it) } || entries.values.any { !SHA256.matches(it) }) return null
-            val id = metadata.getProperty("group") + ":groovy:" + metadata.getProperty("version")
-            return (id to entries).takeIf { "groovy/lang/GroovyObject.class" in entries }
+            val validEntries = entries.keys.all(::classEntry) && entries.values.all(SHA256::matches)
+            return entries.takeIf { validEntries && "groovy/lang/GroovyObject.class" in it }
         }
 
         /** Development/native-only execution can identify the actual standalone core component by its own manifest. */
-        private fun unshaded(path: Path): Pair<String, Map<String, String>>? {
-            if (java.nio.file.Files.size(path) > MAX_COMPONENT_BYTES) return null
-            return JarFile(path.toFile()).use { jar ->
-                val metadata = jar.manifest?.mainAttributes ?: return null
-                if (
-                    metadata.getValue("Automatic-Module-Name") != "org.apache.groovy" ||
-                    metadata.getValue("Implementation-Version") != GroovySystem.getVersion()
-                ) {
-                    return null
-                }
-                val entries = sortedMapOf<String, String>()
-                var expanded = 0L
-                val iterator = jar.entries()
-                while (iterator.hasMoreElements()) {
-                    val entry = iterator.nextElement()
-                    if (!entry.isDirectory && entry.name.endsWith(".class")) {
-                        if (
-                            entries.size >= MAX_CLASSES ||
-                            !classEntry(entry.name) ||
-                            entry.size < 0 ||
-                            entry.size > MAX_CLASS_BYTES ||
-                            entry.size > MAX_COMPONENT_BYTES - expanded
-                        ) {
-                            return null
-                        }
+        private fun unshaded(path: Path): Pair<String, Map<String, String>>? =
+            if (java.nio.file.Files.size(path) > MAX_COMPONENT_BYTES) {
+                null
+            } else {
+                JarFile(path.toFile()).use(::indexUnshadedJar)
+            }
+
+        private fun indexUnshadedJar(jar: JarFile): Pair<String, Map<String, String>>? {
+            val metadata = jar.manifest?.mainAttributes
+            val validMetadata = metadata?.let {
+                it.getValue("Automatic-Module-Name") == "org.apache.groovy" &&
+                    it.getValue("Implementation-Version") == GroovySystem.getVersion()
+            } == true
+            val entries = if (validMetadata) classDigests(jar) else null
+            return entries?.let { "groovy-core:${GroovySystem.getVersion()}" to it }
+        }
+
+        private fun classDigests(jar: JarFile): Map<String, String>? {
+            val entries = sortedMapOf<String, String>()
+            var expanded = 0L
+            var valid = true
+            val iterator = jar.entries()
+            while (iterator.hasMoreElements() && valid) {
+                val entry = iterator.nextElement()
+                if (!entry.isDirectory && entry.name.endsWith(".class")) {
+                    val withinBounds = entries.size < MAX_CLASSES &&
+                        classEntry(entry.name) &&
+                        entry.size >= 0 &&
+                        entry.size <= MAX_CLASS_BYTES &&
+                        entry.size <= MAX_COMPONENT_BYTES - expanded
+                    if (!withinBounds) {
+                        valid = false
+                    } else {
                         expanded += entry.size
-                        val digest = digest(jar.getInputStream(entry), MAX_CLASS_BYTES)
-                        if (entries.put(entry.name, digest) != null) return null
+                        val entryDigest = digest(jar.getInputStream(entry), MAX_CLASS_BYTES)
+                        if (entries.put(entry.name, entryDigest) != null) valid = false
                     }
                 }
-                ("groovy-core:" + GroovySystem.getVersion() to entries)
-                    .takeIf { "groovy/lang/GroovyObject.class" in entries }
             }
+            return entries.takeIf { valid && "groovy/lang/GroovyObject.class" in it }
         }
 
         private fun classEntry(entry: String): Boolean = entry.endsWith(".class") &&
-            entry.length <= 1024 &&
+            entry.length <= MAX_CLASS_ENTRY_NAME_LENGTH &&
             !entry.startsWith("/") &&
             '\\' !in entry &&
             ':' !in entry &&
@@ -182,7 +198,7 @@ internal class RuntimeGroovySdk private constructor(
 
         private fun digest(input: InputStream, maximum: Long): String = input.use { stream ->
             val digest = MessageDigest.getInstance("SHA-256")
-            val buffer = ByteArray(8192)
+            val buffer = ByteArray(DIGEST_BUFFER_BYTES)
             var total = 0L
             while (true) {
                 val count = stream.read(buffer)

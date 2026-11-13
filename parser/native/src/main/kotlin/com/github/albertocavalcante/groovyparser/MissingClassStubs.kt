@@ -152,9 +152,13 @@ internal class MissingClassStubs {
                 val unresolved = ParserDiagnosticConverter.convert(first.compilationUnit.errorCollector, ownErrors)
                     .filter { UNRESOLVED.containsMatchIn(it.message) }
                 val stubs = MissingClassStubs()
-                for (round in 0 until MAX_ROUNDS) {
-                    if (!stubs.learnFrom(owner.result.compilationUnit, request.sourceUnitName)) break
+                var rounds = 0
+                while (
+                    rounds < MAX_ROUNDS &&
+                    stubs.learnFrom(owner.result.compilationUnit, request.sourceUnitName)
+                ) {
                     owner.replaceWith { compile(request, stubs) }
+                    rounds++
                 }
                 val compiled = owner.result
                 owner.publish(

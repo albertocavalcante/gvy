@@ -16,29 +16,18 @@ internal fun sourceImportSelectionRange(
     range: ParserRange,
 ): SourceImportRanges? {
     val limit = ranges.offset(range.end)
-    var offset = node.annotations.mapNotNull { ranges.range(it)?.end?.let(ranges::offset) }
+    val offset = node.annotations.mapNotNull { ranges.range(it)?.end?.let(ranges::offset) }
         .maxOrNull() ?: ranges.offset(range.start)
-    fun identifier(expected: String): ParserRange? {
-        val start = skipTrivia(source, offset, limit) ?: return null
-        val end = identifierEnd(source, start, limit) ?: return null
-        if (source.substring(start, end) != expected) return null
-        offset = end
-        return ParserRange(ranges.positionAt(start), ranges.positionAt(end))
+    val cursor = SourceTextCursor(source, ranges, limit, offset)
+    val keyword = cursor.identifier("import")
+    val staticKeywordMatches = !node.isStatic || (keyword != null && cursor.identifier("static") != null)
+    val parts = node.className?.split('.')?.plus(listOfNotNull(node.fieldName.takeIf { node.isStatic }))
+    val selection = if (keyword != null && staticKeywordMatches) parts?.let(cursor::qualifiedIdentifier) else null
+    return if (keyword != null && selection != null) {
+        SourceImportRanges(ParserRange(keyword.start, range.end), selection)
+    } else {
+        null
     }
-    val keyword = identifier("import") ?: return null
-    if (node.isStatic && identifier("static") == null) return null
-    val owner = node.className ?: return null
-    val parts = owner.split('.') + listOfNotNull(node.fieldName.takeIf { node.isStatic })
-    var selection: ParserRange? = null
-    for ((index, part) in parts.withIndex()) {
-        if (index > 0) {
-            offset = skipTrivia(source, offset, limit) ?: return null
-            if (offset >= limit || source[offset] != '.') return null
-            offset++
-        }
-        selection = identifier(part) ?: return null
-    }
-    return selection?.let { SourceImportRanges(ParserRange(keyword.start, range.end), it) }
 }
 
 /** Proves a compiler-declared type's header after its original annotations, never searches the body. */
@@ -49,27 +38,13 @@ fun sourceTypeDeclarationName(
     declarationRange: ParserRange,
 ): ParserRange? {
     val limit = ranges.offset(declarationRange.end)
-    var offset = node.annotations.mapNotNull { ranges.range(it)?.end?.let(ranges::offset) }
+    val offset = node.annotations.mapNotNull { ranges.range(it)?.end?.let(ranges::offset) }
         .maxOrNull() ?: ranges.offset(declarationRange.start)
-    offset = skipTrivia(source, offset, limit) ?: return null
-    while (offset < limit && source[offset] != '@') {
-        val end = identifierEnd(source, offset, limit) ?: return null
-        if (source.substring(offset, end) in TYPE_KEYWORDS) break
-        if (source.substring(offset, end) !in TYPE_MODIFIERS) return null
-        offset = skipTrivia(source, end, limit) ?: return null
-    }
-    if (offset >= limit) return null
-    val annotation = source[offset] == '@'
-    val keywordStart = if (annotation) skipTrivia(source, offset + 1, limit) ?: return null else offset
-    val keywordEnd = identifierEnd(source, keywordStart, limit) ?: return null
-    val keyword = source.substring(keywordStart, keywordEnd)
-    if ((annotation && keyword != "interface") || (!annotation && keyword !in TYPE_KEYWORDS)) return null
-    if (node.isAnnotationDefinition != annotation) return null
-    val nameStart = skipTrivia(source, keywordEnd, limit) ?: return null
-    val nameEnd = identifierEnd(source, nameStart, limit) ?: return null
+    val cursor = SourceTextCursor(source, ranges, limit, offset)
+    val keyword = cursor.typeDeclarationKeyword() ?: return null
+    if (node.isAnnotationDefinition != keyword.isAnnotation) return null
     val expectedName = node.outerClass?.let { node.name.removePrefix(it.name + '$') } ?: node.nameWithoutPackage
-    if (source.substring(nameStart, nameEnd) != expectedName) return null
-    return ParserRange(ranges.positionAt(nameStart), ranges.positionAt(nameEnd))
+    return cursor.identifier(expectedName)
 }
 
 /** Identifier-only pieces of an AST-confirmed qualified type name; comments and separators are never clickable. */
@@ -81,16 +56,116 @@ internal fun sourceTypeNameSegments(
     val limit = ranges.offset(range.end)
     var offset = ranges.offset(range.start)
     val result = mutableListOf<ParserRange>()
-    while (offset < limit) {
-        val start = skipTrivia(source, offset, limit) ?: return null
-        val end = identifierEnd(source, start, limit) ?: return null
-        result.add(ParserRange(ranges.positionAt(start), ranges.positionAt(end)))
-        offset = skipTrivia(source, end, limit) ?: return null
-        if (offset == limit) return result
-        if (source[offset] != '.') return null
-        offset++
+    var valid = true
+    var complete = false
+    while (offset < limit && valid && !complete) {
+        val start = skipTrivia(source, offset, limit)
+        val end = start?.let { identifierEnd(source, it, limit) }
+        if (start == null || end == null) {
+            valid = false
+        } else {
+            result.add(ParserRange(ranges.positionAt(start), ranges.positionAt(end)))
+            val next = skipTrivia(source, end, limit)
+            if (next == null) {
+                valid = false
+            } else if (next == limit) {
+                offset = next
+                complete = true
+            } else if (source[next] == '.') {
+                offset = next + 1
+            } else {
+                valid = false
+            }
+        }
     }
-    return null
+    return result.takeIf { valid && complete }
+}
+
+private data class TypeDeclarationKeyword(val isAnnotation: Boolean)
+
+private class SourceTextCursor(
+    private val source: String,
+    private val ranges: CompilerSourceRanges,
+    private val limit: Int,
+    private var offset: Int,
+) {
+    fun identifier(expected: String? = null): ParserRange? {
+        val start = skipTrivia(source, offset, limit)
+        val end = start?.let { identifierEnd(source, it, limit) }
+        val matches = start != null && end != null &&
+            (expected == null || source.substring(start, end) == expected)
+        if (matches) {
+            val tokenStart = checkNotNull(start)
+            val tokenEnd = checkNotNull(end)
+            offset = tokenEnd
+            return ParserRange(ranges.positionAt(tokenStart), ranges.positionAt(tokenEnd))
+        }
+        return null
+    }
+
+    fun qualifiedIdentifier(parts: List<String>): ParserRange? {
+        var selection: ParserRange? = null
+        var valid = true
+        for ((index, part) in parts.withIndex()) {
+            val hasSeparator = index == 0 || consumeSeparator()
+            val identifier = if (hasSeparator) identifier(part) else null
+            if (identifier == null) {
+                valid = false
+                break
+            }
+            selection = identifier
+        }
+        return selection.takeIf { valid }
+    }
+
+    fun typeDeclarationKeyword(): TypeDeclarationKeyword? {
+        var declarationOffset = skipTrivia(source, offset, limit)
+        var valid = declarationOffset != null
+        var foundTypeKeyword = false
+        while (declarationOffset != null && valid) {
+            val currentOffset = declarationOffset
+            if (currentOffset >= limit || source[currentOffset] == '@' || foundTypeKeyword) break
+            val end = identifierEnd(source, currentOffset, limit)
+            if (end == null) {
+                valid = false
+            } else {
+                val word = source.substring(currentOffset, end)
+                if (word in TYPE_KEYWORDS) {
+                    foundTypeKeyword = true
+                } else if (word !in TYPE_MODIFIERS) {
+                    valid = false
+                } else {
+                    declarationOffset = skipTrivia(source, end, limit)
+                    valid = declarationOffset != null
+                }
+            }
+        }
+
+        val annotation = declarationOffset?.let { currentOffset ->
+            currentOffset < limit && source[currentOffset] == '@'
+        } == true
+        val keywordStart = declarationOffset?.let { start ->
+            if (annotation) skipTrivia(source, start + 1, limit) else start
+        }
+        val keywordEnd = keywordStart?.let { identifierEnd(source, it, limit) }
+        val keywordName = if (keywordStart != null && keywordEnd != null) {
+            source.substring(keywordStart, keywordEnd)
+        } else {
+            null
+        }
+        val recognized = keywordName != null &&
+            (annotation && keywordName == "interface" || !annotation && keywordName in TYPE_KEYWORDS)
+        if (!valid || keywordEnd == null || !recognized) return null
+        offset = keywordEnd
+        return TypeDeclarationKeyword(annotation)
+    }
+
+    private fun consumeSeparator(): Boolean {
+        val separator = skipTrivia(source, offset, limit)
+        val found = separator != null && separator < limit && source[separator] == '.'
+        if (found) offset = checkNotNull(separator) + 1
+        return found
+    }
 }
 
 private fun identifierEnd(source: String, start: Int, limit: Int): Int? {

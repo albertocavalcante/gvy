@@ -14,36 +14,34 @@ import java.net.URI
 class SourceAnnotationIndex internal constructor(
     references: Iterable<SourceAnnotationReference>,
     val coverage: AnnotationCoverage,
-    compilerImportRanges: Map<Pair<Int, Int>, ParserRange> = emptyMap(),
-    declarations: Iterable<SourceAnnotationDeclaration> = emptyList(),
-    compilerSourceUris: Map<String, URI?> = emptyMap(),
-    compilerImportSelections: Map<Pair<Int, Int>, SourceImportRanges> = emptyMap(),
-    compilerForeignDeclarations: Map<String, List<SourceAnnotationDeclaration>> = emptyMap(),
-    sourceAnnotatedImports: Iterable<ParserRange> = emptyList(),
+    metadata: SourceAnnotationMetadata = SourceAnnotationMetadata(),
 ) {
     val references: List<SourceAnnotationReference> = references.toPersistentList()
-    private val importRanges = compilerImportRanges.toPersistentMap()
-    val declarations: List<SourceAnnotationDeclaration> = declarations.toPersistentList()
-    private val sourceUris = compilerSourceUris.toPersistentMap()
-    private val importSelections = compilerImportSelections.toPersistentMap()
-    private val foreignDeclarations = compilerForeignDeclarations
+    private val importRanges = metadata.importRanges.toPersistentMap()
+    val declarations: List<SourceAnnotationDeclaration> = metadata.declarations.toPersistentList()
+    private val sourceUris = metadata.sourceUris.toPersistentMap()
+    private val importSelections = metadata.importSelections.toPersistentMap()
+    private val foreignDeclarations = metadata.foreignDeclarations
         .mapValues { (_, declarations) -> declarations.toPersistentList() }
         .toPersistentMap()
-    private val sourceAnnotatedImports = sourceAnnotatedImports.toPersistentSet()
+    private val sourceAnnotatedImports = metadata.sourceAnnotatedImports.toPersistentSet()
     private val importedAnnotations = buildMap<ParserRange, SourceAnnotationReference?> {
         for (reference in this@SourceAnnotationIndex.references) {
-            if (reference.kind != AnnotationReferenceKind.HEAD) continue
-            val range = (reference.importBinding as? AnnotationImportBinding.Explicit)?.range ?: continue
-            if (range !in this) {
-                put(range, reference)
-            } else {
-                val previous = get(range)
-                if (
-                    previous?.binaryName != reference.binaryName ||
-                    previous?.sourceUnitName != reference.sourceUnitName ||
-                    previous?.sourceUri != reference.sourceUri
-                ) {
-                    put(range, null)
+            if (reference.kind == AnnotationReferenceKind.HEAD) {
+                val range = (reference.importBinding as? AnnotationImportBinding.Explicit)?.range
+                if (range != null) {
+                    if (range !in this) {
+                        put(range, reference)
+                    } else {
+                        val previous = get(range)
+                        if (
+                            previous?.binaryName != reference.binaryName ||
+                            previous?.sourceUnitName != reference.sourceUnitName ||
+                            previous?.sourceUri != reference.sourceUri
+                        ) {
+                            put(range, null)
+                        }
+                    }
                 }
             }
         }
@@ -117,6 +115,16 @@ class SourceAnnotationIndex internal constructor(
 }
 
 internal data class SourceImportRanges(val statement: ParserRange, val selection: ParserRange)
+
+/** Compiler-only range and origin details kept separate from the core occurrence set. */
+internal data class SourceAnnotationMetadata(
+    val importRanges: Map<Pair<Int, Int>, ParserRange> = emptyMap(),
+    val declarations: Iterable<SourceAnnotationDeclaration> = emptyList(),
+    val sourceUris: Map<String, URI?> = emptyMap(),
+    val importSelections: Map<Pair<Int, Int>, SourceImportRanges> = emptyMap(),
+    val foreignDeclarations: Map<String, List<SourceAnnotationDeclaration>> = emptyMap(),
+    val sourceAnnotatedImports: Iterable<ParserRange> = emptyList(),
+)
 
 @ConsistentCopyVisibility
 data class SourceAnnotationReference internal constructor(

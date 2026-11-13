@@ -412,6 +412,40 @@ class GroovyParserFacade internal constructor(
         return hasFallbackError
     }
 
+    private fun createCompilationContext(
+        request: ParseRequest,
+        config: CompilerConfiguration,
+        classLoader: SdkFallbackGroovyClassLoader,
+        stubs: MissingClassStubs?,
+    ): Pair<CompilationUnit, SourceUnit> {
+        // Use 4-arg constructor with separate transform loader for proper classloader isolation.
+        // transformLoader is a singleton (see companion object) to prevent resource leaks.
+        val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
+        val source = StringReaderSource(request.content, config)
+        val sourceUnit = SourceUnit(
+            request.sourceUnitName,
+            source,
+            config,
+            classLoader,
+            compilationUnit.errorCollector,
+        )
+        compilationUnit.addSource(sourceUnit)
+
+        addWorkspaceSources(compilationUnit, request, config, classLoader)
+        LocatingClassNodeResolver.install(compilationUnit, request)
+        stubs?.addTo(compilationUnit, config, classLoader)
+
+        // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
+        // phase. Its progress callback runs after each phase instead; throwing from it aborts the compile.
+        // CancellationException is not a CompilationFailedException, so it propagates past the catch below.
+        // Groovy also reports per-source progress (context is a SourceUnit) from inside a source operation,
+        // where it would wrap anything thrown in a GroovyBugError; only the per-phase report is used.
+        compilationUnit.progressCallback = CompilationUnit.ProgressCallback { context, _ ->
+            if (context is CompilationUnit) request.checkCancelled()
+        }
+        return compilationUnit to sourceUnit
+    }
+
     private fun parseInternal(
         request: ParseRequest,
         inputs: NativeClasspathInputs,
@@ -428,32 +462,7 @@ class GroovyParserFacade internal constructor(
         val classLoader = createClassLoader(request)
 
         return classLoader.closeOnFailure {
-            // Use 4-arg constructor with separate transform loader for proper classloader isolation.
-            // transformLoader is a singleton (see companion object) to prevent resource leaks.
-            val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
-
-            val source = StringReaderSource(request.content, config)
-            val sourceUnit = SourceUnit(
-                request.sourceUnitName,
-                source,
-                config,
-                classLoader,
-                compilationUnit.errorCollector,
-            )
-            compilationUnit.addSource(sourceUnit)
-
-            addWorkspaceSources(compilationUnit, request, config, classLoader)
-            LocatingClassNodeResolver.install(compilationUnit, request)
-            stubs?.addTo(compilationUnit, config, classLoader)
-
-            // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
-            // phase. Its progress callback runs after each phase instead; throwing from it aborts the compile.
-            // CancellationException is not a CompilationFailedException, so it propagates past the catch below.
-            // Groovy also reports per-source progress (context is a SourceUnit) from inside a source operation,
-            // where it would wrap anything thrown in a GroovyBugError; only the per-phase report is used.
-            compilationUnit.progressCallback = CompilationUnit.ProgressCallback { context, _ ->
-                if (context is CompilationUnit) request.checkCancelled()
-            }
+            val (compilationUnit, sourceUnit) = createCompilationContext(request, config, classLoader, stubs)
 
             val failure = compileCatching(compilationUnit, request)
             val compilationFailed = failure != null
