@@ -152,8 +152,8 @@
         "probe-sources.mjs": "9bdb2e52372fb03f39ad81e05aa604c66f693fd4c4dd268cade75ffc56162497",
         "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
         "primary/src/main.rs": "ce7beb0e92b1f4ad59f92e8c83cf94611cc0e7c8e04ae9053507b602deaa12a1",
-        "tools/ci/check-rust-diagnostics.mjs": "224d812e56d8638e1f0bb2b6660ad579c2f5f1b1aa127e641991ad6068e5b9b2",
-        "tools/ci/read-evidence.mjs": "b9fbe24269c65b40eb446a16530a41d0fe78069abe443cd8e635465eadae54bf",
+        "tools/ci/check-rust-diagnostics.mjs": "e7b9132fcc61559e87bea053500adae41bf35a2c8c1b09c78ec072551918ca13",
+        "tools/ci/read-evidence.mjs": "0bc943ee1a25ef803812e4444912049f9706999a546782779a035c9765dedb9a",
         "tools/ci/windows-evidence.mjs": "8b7ead14b76f6440817c4388a5b0300bda016f6d0893ade9f2ac5e40e3a5d56c",
         "tools/ci/windows-evidence-reader.c": "18f75680e3aed03461879733aef2835f76f103386e63757d43418e02e3ce04df"
       }
@@ -293,8 +293,8 @@
         "probe-sources.mjs": "9bdb2e52372fb03f39ad81e05aa604c66f693fd4c4dd268cade75ffc56162497",
         "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
         "secondary/src/main.rs": "08d3208a03cc4e7e6599ac3f559eade1785141b94a9cd5bde556ed3667748c41",
-        "tools/ci/check-rust-diagnostics.mjs": "224d812e56d8638e1f0bb2b6660ad579c2f5f1b1aa127e641991ad6068e5b9b2",
-        "tools/ci/read-evidence.mjs": "b9fbe24269c65b40eb446a16530a41d0fe78069abe443cd8e635465eadae54bf",
+        "tools/ci/check-rust-diagnostics.mjs": "e7b9132fcc61559e87bea053500adae41bf35a2c8c1b09c78ec072551918ca13",
+        "tools/ci/read-evidence.mjs": "0bc943ee1a25ef803812e4444912049f9706999a546782779a035c9765dedb9a",
         "tools/ci/windows-evidence.mjs": "8b7ead14b76f6440817c4388a5b0300bda016f6d0893ade9f2ac5e40e3a5d56c",
         "tools/ci/windows-evidence-reader.c": "18f75680e3aed03461879733aef2835f76f103386e63757d43418e02e3ce04df"
       }
