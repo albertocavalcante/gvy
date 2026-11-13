@@ -42,6 +42,10 @@ export const PROFILE = Object.freeze({
     // Exact pinned release: root executable plus the unused node-gyp payload.
     // Lock generation disables scripts; only root pnpm is retained or executed.
     archiveEntriesLimit: 543,
+    // Supply-chain verification needs registry metadata on a cold owned cache.
+    // Keep that policy enabled, then verify the generated lock offline.
+    updateNetwork: "online",
+    frozenNetwork: "offline",
   },
   bazel: {
     repository: "bazelbuild/bazel",
@@ -355,6 +359,26 @@ function tarOctal(header, start, size) {
   const number = Number.parseInt(value, 8);
   requireCondition(Number.isSafeInteger(number), "archive-number");
   return number;
+}
+
+export function pnpmInstallArguments(storeDirectory, phase) {
+  requireCondition(phase === "update" || phase === "frozen", "pnpm-phase");
+  const network = phase === "update"
+    ? PROFILE.pnpm.updateNetwork
+    : PROFILE.pnpm.frozenNetwork;
+  requireCondition(
+    network === "online" || network === "offline",
+    "pnpm-network-policy",
+  );
+  return [
+    "install",
+    "--lockfile-only",
+    ...(network === "offline" ? ["--offline"] : []),
+    "--ignore-scripts",
+    "--store-dir",
+    storeDirectory,
+    phase === "frozen" ? "--frozen-lockfile" : "--no-frozen-lockfile",
+  ];
 }
 
 /** Extract only pnpm, never delegate archive path/link handling to tar. */
@@ -853,14 +877,7 @@ async function main() {
       );
     }
     const pnpm = path.join(locations.tools, "pnpm");
-    const pnpmBase = [
-      "install",
-      "--lockfile-only",
-      "--offline",
-      "--ignore-scripts",
-      "--store-dir",
-      path.join(locations.cache, "pnpm-store"),
-    ];
+    const pnpmStore = path.join(locations.cache, "pnpm-store");
     const pnpmEnv = {
       XDG_CACHE_HOME: path.join(locations.cache, "xdg"),
       npm_config_cache: path.join(locations.cache, "npm"),
@@ -869,7 +886,7 @@ async function main() {
     await command(
       "pnpm-update",
       pnpm,
-      [...pnpmBase, "--no-frozen-lockfile"],
+      pnpmInstallArguments(pnpmStore, "update"),
       path.join(locations.payload, "editors/code"),
       {
         env: pnpmEnv,
@@ -885,7 +902,7 @@ async function main() {
     await command(
       "pnpm-frozen",
       pnpm,
-      [...pnpmBase, "--frozen-lockfile"],
+      pnpmInstallArguments(pnpmStore, "frozen"),
       path.join(locations.payload, "editors/code"),
       {
         env: pnpmEnv,
@@ -1320,6 +1337,46 @@ async function selfTest() {
   });
   const archive = (...entries) =>
     gzipSync(Buffer.concat([...entries, Buffer.alloc(1024)]));
+  await test("cold supply-chain metadata can warm during update and frozen verification stays offline", () => {
+    const store = "/fixed-owned-cache";
+    let metadataAvailable = false;
+    const checkPolicy = (args) => {
+      assert.ok(args.includes("--lockfile-only"));
+      assert.ok(args.includes("--ignore-scripts"));
+      assert.equal(args[args.indexOf("--store-dir") + 1], store);
+      if (args.includes("--offline") && !metadataAvailable)
+        throw new Error("ERR_PNPM_NO_OFFLINE_META");
+      metadataAvailable = true;
+    };
+    const frozen = pnpmInstallArguments(store, "frozen");
+    assert.ok(frozen.includes("--offline"));
+    assert.ok(frozen.includes("--frozen-lockfile"));
+    assert.ok(!frozen.includes("--no-frozen-lockfile"));
+    assert.throws(() => checkPolicy(frozen), /ERR_PNPM_NO_OFFLINE_META/);
+    const update = pnpmInstallArguments(store, "update");
+    checkPolicy(update);
+    assert.ok(!update.includes("--offline"));
+    assert.ok(update.includes("--no-frozen-lockfile"));
+    assert.ok(!update.includes("--frozen-lockfile"));
+    assert.doesNotThrow(() => checkPolicy(frozen));
+    const allowed = new Set([
+      "install",
+      "--lockfile-only",
+      "--ignore-scripts",
+      "--store-dir",
+      store,
+      "--offline",
+      "--frozen-lockfile",
+      "--no-frozen-lockfile",
+    ]);
+    assert.ok([...update, ...frozen].every((arg) => allowed.has(arg)));
+  });
+  await test("an unknown pnpm phase cannot select a network policy", () => {
+    assert.throws(
+      () => pnpmInstallArguments("/fixed-owned-cache", "other"),
+      /pnpm-phase/,
+    );
+  });
   await test("archive extracts only one regular pnpm member", () =>
     assert.equal(pnpmBinary(archive(tarFixture())).toString(), "executable"));
   await test("the pinned release's 543-entry layout retains only the root executable", () => {
