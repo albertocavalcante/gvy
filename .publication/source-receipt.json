@@ -1,8 +1,8 @@
 {
   "fixtureBase": "b7e6657a923f2fb24c73b1ae1cb48b3088540bac",
-  "fixtureTree": "3016dd0fa8b6459e5c27420b95df7c39bab349bf",
-  "patchSha256": "59e6bf26c7d13b53e24a86facc13aecb3a5725a187e857a43aa4b2572c35bfc3",
-  "gzipSha256": "b08814c3ee5568fadcc166534de7135c1c4a3eab37553b41abf74e56a77e4252",
+  "fixtureTree": "ed78ac249d08cc01c85d0379160649bdf118051d",
+  "patchSha256": "f7644d4fba83fcca6c889395419ab116e778ae0948b7c1e0f600d31da7aa61be",
+  "gzipSha256": "a56667d4563866c8c973902d2cf1e6a6dcec0fe2f3d4fa02c956bd59f1961efa",
   "caseMapSha256": "fcec3042e5df91243b1de2b81aca1e813d61da9db7f0d4013719b332c7a8add8",
   "fixtureStatus": "provisional; Factory 1897 and XFAIL 1811 unmerged",
   "sourceReviewReceiptSha256": "5ea8b98c349d61b5b77da61ab71e9083da3cf898536e5a5a08576cbb246198e5",
@@ -21,5 +21,13 @@
     "followupPatchSha256": "448d5aa8e588d8c9e8c6353e258639ac5f94380c70c0c627a3da8a5d9519f709",
     "lineInventorySha256": "bff1a24f4d75d9b396fbf64a197d28665c111c9d533e29786f40ca02daedbb5f",
     "review": "Root reviewed v2 semantics; independent reviewer reviewed all seven paths with one comment indentation finding, corrected in v3."
+  },
+  "formatterFollowup3": {
+    "previousTree": "3016dd0fa8b6459e5c27420b95df7c39bab349bf",
+    "originalRun": "43354801593",
+    "originalFailureLogSha256": "984b344e527bea2ee91ebfbc02f5ec239d0ba0dfa8258b1ba86859c80967d7d3",
+    "originalArtifactSha256": "a242226b70a3f744dd21321d673f0aa8e510280a7784587c540b0951dd556a7b",
+    "followupPatchSha256": "9de51348bfae2da829ccdde2435943158747bfaa0ff6a7c43f6af412ffed5183",
+    "review": "Root and independent reviewer inspected the focused test-only change and confirmed values, order, and assertions are preserved."
   }
 }
