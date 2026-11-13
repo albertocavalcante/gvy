@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: JUnit contract publication
+name: JUnit batch publication
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: junit-contract-publication-${{ github.sha }}
+  group: junit-batch-publication-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   candidate:
@@ -84,7 +84,7 @@ jobs:
           : "${RUNNER_TEMP:?}"
           current_head=$(git rev-parse HEAD)
           [[ "${current_head}" == "${EXPECTED_BASE}" ]]
-          git switch -c feat/junit-contract-publication
+          git switch -c feat/junit-batch-publication
           git apply --check --index "${RUNNER_TEMP}/gvy-reviewed.patch"
           git apply --index "${RUNNER_TEMP}/gvy-reviewed.patch"
           current_tree=$(git write-tree)
@@ -94,8 +94,8 @@ jobs:
           expected_paths=(
               .github/workflows/license-tooling.yml
               Makefile
-              tools/ci/junit_contract.py
-              tools/ci/test_junit_contract.py
+              tools/ci/junit_contract_batch.py
+              tools/ci/test_junit_contract_batch.py
           )
           printf '%s\0' "${expected_paths[@]}" >"${RUNNER_TEMP}/expected-paths.nul"
           git diff --cached --name-only --diff-filter=ACMRT -z >"${RUNNER_TEMP}/actual-paths.nul"
@@ -209,28 +209,28 @@ jobs:
           [[ "${current_tree}" == "${EXPECTED_TREE}" ]]
           direnv allow
           direnv exec . java -version
-          mkdir "${RUNNER_TEMP}/gvy-junit-contract-license"
+          mkdir "${RUNNER_TEMP}/gvy-junit-batch-license"
           set +e
-          make license-check 2>&1 | tee "${RUNNER_TEMP}/gvy-junit-contract-license/check.log"
+          make license-check 2>&1 | tee "${RUNNER_TEMP}/gvy-junit-batch-license/check.log"
           license_check_status=("${PIPESTATUS[@]}")
-          make license-test 2>&1 | tee "${RUNNER_TEMP}/gvy-junit-contract-license/test.log"
+          make license-test 2>&1 | tee "${RUNNER_TEMP}/gvy-junit-batch-license/test.log"
           license_test_status=("${PIPESTATUS[@]}")
           set -e
           jq -n --argjson check "${license_check_status[0]}" --argjson checkCapture "${license_check_status[1]}" \
               --argjson test "${license_test_status[0]}" --argjson testCapture "${license_test_status[1]}" \
-              '{check:$check,checkCapture:$checkCapture,test:$test,testCapture:$testCapture}' >"${RUNNER_TEMP}/gvy-junit-contract-license/status.json"
+              '{check:$check,checkCapture:$checkCapture,test:$test,testCapture:$testCapture}' >"${RUNNER_TEMP}/gvy-junit-batch-license/status.json"
           [[ "${license_check_status[0]}" == 0 && "${license_check_status[1]}" == 0 && "${license_test_status[0]}" == 0 && "${license_test_status[1]}" == 0 ]]
           # The wrapper checkout is the reviewed base plus a staged patch; workflow SHA identifies support.
           support_head=$(git -C "${GITHUB_WORKSPACE}/support" rev-parse HEAD)
           [[ "${support_head}" == "${GITHUB_SHA}" ]]
-          mkdir "${RUNNER_TEMP}/gvy-junit-contract-lint" "${RUNNER_TEMP}/gvy-junit-contract-green"
+          mkdir "${RUNNER_TEMP}/gvy-junit-batch-lint" "${RUNNER_TEMP}/gvy-junit-batch-green"
           GITHUB_SHA="${EXPECTED_BASE}" direnv exec . node tools/ci/run-gradle.mjs \
-              --report-root "${RUNNER_TEMP}/gvy-junit-contract-lint" --producer junit-contract-publication-lint \
+              --report-root "${RUNNER_TEMP}/gvy-junit-batch-lint" --producer junit-batch-publication-lint \
               lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           if ! git diff --quiet; then
-              git diff --binary --full-index >"${RUNNER_TEMP}/gvy-junit-contract-formatter.patch"
-              git diff --name-only -z >"${RUNNER_TEMP}/gvy-junit-contract-formatter-paths.nul"
+              git diff --binary --full-index >"${RUNNER_TEMP}/gvy-junit-batch-formatter.patch"
+              git diff --name-only -z >"${RUNNER_TEMP}/gvy-junit-batch-formatter-paths.nul"
               echo 'Formatter changed the reviewed candidate; preserving the diff for review.' >&2
               exit 1
           fi
@@ -240,27 +240,27 @@ jobs:
               local label="$1"
               shift
               set +e
-              "$@" 2>&1 | tee "${RUNNER_TEMP}/gvy-junit-contract-green/${label}.log"
+              "$@" 2>&1 | tee "${RUNNER_TEMP}/gvy-junit-batch-green/${label}.log"
               local statuses=("${PIPESTATUS[@]}")
               set -e
               local python_version hash_record raw_sha
               python_version=$(uv run --offline --locked --project .reuse python --version)
-              hash_record=$(sha256sum "${RUNNER_TEMP}/gvy-junit-contract-green/${label}.log")
+              hash_record=$(sha256sum "${RUNNER_TEMP}/gvy-junit-batch-green/${label}.log")
               raw_sha=${hash_record%% *}
               jq -n --argjson command "${statuses[0]}" --argjson capture "${statuses[1]}" \
                   --arg python "${python_version}" --arg base "${EXPECTED_BASE}" --arg tree "${EXPECTED_TREE}" \
                   --arg support "${GITHUB_SHA}" --arg run "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
                   --arg rawSha "${raw_sha}" \
                   '{commandExit:$command,captureExit:$capture,pythonVersion:$python,base:$base,tree:$tree,supportHead:$support,runId:$run,runAttempt:$attempt,rawSha256:$rawSha}' \
-                  >"${RUNNER_TEMP}/gvy-junit-contract-green/${label}.status.json"
+                  >"${RUNNER_TEMP}/gvy-junit-batch-green/${label}.status.json"
               [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 ]]
           }
-          quality self-tests uv run --offline --locked --project .reuse python -m unittest -v tools.ci.test_junit_contract
-          quality format uv run --offline --locked --project .reuse ruff format --check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
-          quality lint uv run --offline --locked --project .reuse ruff check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
-          quality basedpyright uv run --offline --locked --project .reuse basedpyright tools/ci/junit_contract.py tools/ci/test_junit_contract.py
-          quality ty uv run --offline --locked --project .reuse ty check tools/ci/junit_contract.py tools/ci/test_junit_contract.py
-          python3 - "${RUNNER_TEMP}/gvy-junit-contract-lint" "${EXPECTED_BASE}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${RUNNER_TEMP}/gvy-junit-contract-green/self-tests.log" <<'PYCHECK'
+          quality self-tests uv run --offline --locked --project .reuse python -m unittest -v tools.ci.test_junit_contract tools.ci.test_junit_contract_batch
+          quality format uv run --offline --locked --project .reuse ruff format --check tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
+          quality lint uv run --offline --locked --project .reuse ruff check tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
+          quality basedpyright uv run --offline --locked --project .reuse basedpyright tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
+          quality ty uv run --offline --locked --project .reuse ty check tools/ci/junit_contract.py tools/ci/test_junit_contract.py tools/ci/junit_contract_batch.py tools/ci/test_junit_contract_batch.py
+          python3 - "${RUNNER_TEMP}/gvy-junit-batch-lint" "${EXPECTED_BASE}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${RUNNER_TEMP}/gvy-junit-batch-green/self-tests.log" <<'PYCHECK'
           import hashlib, json, pathlib, re, sys
           root=pathlib.Path(sys.argv[1]); base, run, attempt=sys.argv[2:5]
           dirs=list(root.iterdir()); assert len(dirs)==1 and dirs[0].is_dir()
@@ -286,10 +286,20 @@ jobs:
               ('JunitContractTest','test_text_budget_and_failure_outcome'),
               ('TaskObservationTest','test_task_header_is_observation_not_execution_proof'),
               ('TaskObservationTest','test_task_log_work_limit_and_no_source'),
+              ('BatchContractTest','test_compares_original_bytes_without_echoing_private_selectors'),
+              ('BatchContractTest','test_preserves_xml_failure_instead_of_turning_it_into_batch_success'),
+              ('BatchContractTest','test_rejects_duplicate_keys_unknown_fields_and_nested_json'),
+              ('BatchContractTest','test_rejects_invalid_shape_and_boolean_multiplicity'),
+              ('BatchContractTest','test_aggregate_case_budget_is_not_a_per_report_budget'),
+              ('BatchContractTest','test_changed_mapping_has_a_different_identity'),
+              ('BatchContractTest','test_report_count_and_per_xml_bound_reject_before_comparison'),
+              ('BatchContractTest','test_quoted_brackets_do_not_consume_structural_depth'),
+              ('BatchContractTest','test_source_owned_unicode_mapping_digest_matches_the_pure_api'),
+              ('BatchContractTest','test_isolated_cli_has_one_json_result_and_truthful_status'),
           }
-          rows=re.findall(r'^(test_[a-z_]+) \(tools\.ci\.test_junit_contract\.([A-Za-z]+)\.\1\) \.\.\. ok$',text,re.M)
-          assert len(rows)==12 and {(cls,name) for name,cls in rows}==expected
-          assert re.search(r'^Ran 12 tests in ',text,re.M) and re.search(r'^OK$',text,re.M)
+          rows=re.findall(r'^(test_[a-z_]+) \(tools\.ci\.test_junit_contract(?:_batch)?\.([A-Za-z]+)\.\1\) \.\.\. ok$',text,re.M)
+          assert len(rows)==22 and {(cls,name) for name,cls in rows}==expected
+          assert re.search(r'^Ran 22 tests in ',text,re.M) and re.search(r'^OK$',text,re.M)
           PYCHECK
           git diff --quiet
           current_tree=$(git write-tree)
@@ -310,22 +320,22 @@ jobs:
               esac
           done <"${RUNNER_TEMP}/gvy-staged-paths"
           set +e
-          git commit -m 'test(ci): compare bounded JUnit evidence' 2>&1 | tee "${RUNNER_TEMP}/gvy-commit-hooks.log"
+          git commit -m 'feat(ci): compare JUnit reports through a bounded batch CLI' 2>&1 | tee "${RUNNER_TEMP}/gvy-commit-hooks.log"
           hook_status=("${PIPESTATUS[@]}")
           set -e
-          mkdir "${RUNNER_TEMP}/gvy-junit-contract-hook-diagnostics"
+          mkdir "${RUNNER_TEMP}/gvy-junit-batch-hook-diagnostics"
           jq -n --argjson git "${hook_status[0]}" --argjson capture "${hook_status[1]}" \
-              '{gitExit:$git,captureExit:$capture}' >"${RUNNER_TEMP}/gvy-junit-contract-hook-diagnostics/status.json"
+              '{gitExit:$git,captureExit:$capture}' >"${RUNNER_TEMP}/gvy-junit-batch-hook-diagnostics/status.json"
           [[ "${hook_status[0]}" == 0 && "${hook_status[1]}" == 0 ]]
           if grep -Eq '^BUILD (SUCCESSFUL|FAILED) in ' "${RUNNER_TEMP}/gvy-commit-hooks.log"; then
               node tools/ci/check-gradle-diagnostics.mjs --log "${RUNNER_TEMP}/gvy-commit-hooks.log" \
-                  --exit-code "${hook_status[0]}" --capture-exit-code "${hook_status[1]}" --producer junit-contract-publication-hook \
-                  --baseline tools/ci/gradle-diagnostics.json --root "${PWD}" --report "${RUNNER_TEMP}/gvy-junit-contract-hook-diagnostics/gradle"
+                  --exit-code "${hook_status[0]}" --capture-exit-code "${hook_status[1]}" --producer junit-batch-publication-hook \
+                  --baseline tools/ci/gradle-diagnostics.json --root "${PWD}" --report "${RUNNER_TEMP}/gvy-junit-batch-hook-diagnostics/gradle"
           else
               grep -F 'kotlin-lint (skip) no matching staged files' "${RUNNER_TEMP}/gvy-commit-hooks.log"
               cmp "${RUNNER_TEMP}/gvy-staged-paths" "${RUNNER_TEMP}/expected-paths.nul"
               jq -n --arg reason 'kotlin-lint glob does not match the staged Python, Makefile and workflow files' \
-                  '{gradleHook:"not_applicable",reason:$reason}' >"${RUNNER_TEMP}/gvy-junit-contract-hook-diagnostics/gradle-not-applicable.json"
+                  '{gradleHook:"not_applicable",reason:$reason}' >"${RUNNER_TEMP}/gvy-junit-batch-hook-diagnostics/gradle-not-applicable.json"
           fi
           parent_head=$(git rev-parse HEAD^)
           committed_tree=$(git rev-parse 'HEAD^{tree}')
@@ -338,10 +348,10 @@ jobs:
           git bundle create "${RUNNER_TEMP}/gvy-publication-proof/candidate.bundle" HEAD "^${EXPECTED_BASE}"
           git bundle verify "${RUNNER_TEMP}/gvy-publication-proof/candidate.bundle"
           cp "${RUNNER_TEMP}/gvy-commit-hooks.log" "${RUNNER_TEMP}/gvy-publication-proof/"
-          cp -R "${RUNNER_TEMP}/gvy-junit-contract-license" "${RUNNER_TEMP}/gvy-publication-proof/license"
-          cp -R "${RUNNER_TEMP}/gvy-junit-contract-lint" "${RUNNER_TEMP}/gvy-publication-proof/lint"
-          cp -R "${RUNNER_TEMP}/gvy-junit-contract-green" "${RUNNER_TEMP}/gvy-publication-proof/green"
-          cp -R "${RUNNER_TEMP}/gvy-junit-contract-hook-diagnostics" "${RUNNER_TEMP}/gvy-publication-proof/hook-diagnostics"
+          cp -R "${RUNNER_TEMP}/gvy-junit-batch-license" "${RUNNER_TEMP}/gvy-publication-proof/license"
+          cp -R "${RUNNER_TEMP}/gvy-junit-batch-lint" "${RUNNER_TEMP}/gvy-publication-proof/lint"
+          cp -R "${RUNNER_TEMP}/gvy-junit-batch-green" "${RUNNER_TEMP}/gvy-publication-proof/green"
+          cp -R "${RUNNER_TEMP}/gvy-junit-batch-hook-diagnostics" "${RUNNER_TEMP}/gvy-publication-proof/hook-diagnostics"
           cp "${RUNNER_TEMP}/gvy-staged-paths" "${RUNNER_TEMP}/gvy-publication-proof/staged-paths.nul"
           jq -n --arg base "${EXPECTED_BASE}" --arg tree "${EXPECTED_TREE}" --arg patch "${PATCH_SHA}" \
               --arg head "${current_head}" --arg support "${GITHUB_SHA}" \
@@ -351,7 +361,7 @@ jobs:
       - name: Upload candidate and evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gvy-junit-contract-evidence-publication-proof
+          name: gvy-junit-batch-evidence-publication-proof
           path: ${{ runner.temp }}/gvy-publication-proof/
           if-no-files-found: error
           retention-days: 7
@@ -359,17 +369,19 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gvy-junit-contract-evidence-publication-failed
+          name: gvy-junit-batch-evidence-publication-failed
           path: |
-            ${{ runner.temp }}/gvy-junit-contract-license/
-            ${{ runner.temp }}/gvy-junit-contract-formatter.patch
-            ${{ runner.temp }}/gvy-junit-contract-formatter-paths.nul
-            ${{ runner.temp }}/gvy-junit-contract-lint/
-            ${{ runner.temp }}/gvy-junit-contract-green/
-            ${{ runner.temp }}/gvy-junit-contract-hook-diagnostics/
+            ${{ runner.temp }}/gvy-junit-batch-license/
+            ${{ runner.temp }}/gvy-junit-batch-formatter.patch
+            ${{ runner.temp }}/gvy-junit-batch-formatter-paths.nul
+            ${{ runner.temp }}/gvy-junit-batch-lint/
+            ${{ runner.temp }}/gvy-junit-batch-green/
+            ${{ runner.temp }}/gvy-junit-batch-hook-diagnostics/
             ${{ runner.temp }}/gvy-commit-hooks.log
             candidate/tools/ci/junit_contract.py
             candidate/tools/ci/test_junit_contract.py
+            candidate/tools/ci/junit_contract_batch.py
+            candidate/tools/ci/test_junit_contract_batch.py
             candidate/.github/workflows/license-tooling.yml
             candidate/Makefile
           if-no-files-found: warn
