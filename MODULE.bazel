@@ -217,6 +217,8 @@ maven.install(
         "org.junit.platform:junit-platform-engine:6.0.2",
         "org.junit.platform:junit-platform-commons:6.0.2",
         "org.junit.platform:junit-platform-console:6.0.2",
+        "org.opentest4j.reporting:open-test-reporting-tooling-spi:0.2.4",
+        "org.jspecify:jspecify:1.0.0",
         "junit:junit:4.13.2",
         "org.assertj:assertj-core:3.27.7",
         "io.mockk:mockk:1.14.12",
@@ -428,6 +430,7 @@ use_repo(
     "junit_platform_console_jar",
     "junit_platform_engine_jar",
     "junit_platform_launcher_jar",
+    "junit_platform_reporting_jar",
 )
 
 # Override maven JUnit modules to use our directly-downloaded jars
