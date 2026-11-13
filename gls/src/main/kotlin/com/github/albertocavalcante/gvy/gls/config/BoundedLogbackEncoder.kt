@@ -27,7 +27,7 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         record.append("] ")
         record.append(level(event.level))
         record.append(" ")
-        record.append(prefixField(event.loggerName ?: "", logger = true).takeLast(LOGGER_CHARS))
+        record.append(loggerTail(prefixField(event.loggerName ?: "", logger = true)))
         record.append(" -- ")
         val message = formatMessage(event.message ?: "", event.argumentArray)
         val rendered = SafeLogging.localText(message.text, MESSAGE_BYTES)
@@ -136,6 +136,15 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
                 else -> append(character)
             }
         }
+    }
+
+    // Preserve the existing UTF-16 width while avoiding an orphaned low surrogate.
+    private fun loggerTail(value: String): String {
+        var start = (value.length - LOGGER_CHARS).coerceAtLeast(0)
+        if (start > 0 && Character.isLowSurrogate(value[start]) && Character.isHighSurrogate(value[start - 1])) {
+            start++
+        }
+        return value.substring(start)
     }
 
     private fun safe(value: String, bytes: Int): String = SafeLogging.localText(value, bytes).text

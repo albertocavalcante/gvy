@@ -61,6 +61,32 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
+    fun `logger tail does not split a supplementary character`() = withEncoder { encoder ->
+        val input = event("failure", emptyArray()).apply {
+            loggerName = "𝒜" + "a".repeat(35)
+        }
+
+        val bytes = encoder.encode(input)
+        val output = Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+
+        assertTrue(output.contains(" ERROR " + "a".repeat(35) + " -- failure\n"))
+        assertTrue(!output.contains('?'))
+    }
+
+    @Test
+    fun `logger tail preserves a complete supplementary character at its boundary`() = withEncoder { encoder ->
+        val input = event("failure", emptyArray()).apply {
+            loggerName = "xx𝒜" + "a".repeat(34)
+        }
+
+        val bytes = encoder.encode(input)
+        val output = Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+
+        assertTrue(output.contains(" ERROR 𝒜" + "a".repeat(34) + " -- failure\n"))
+        assertTrue(!output.contains('?'))
+    }
+
+    @Test
     fun `unbounded thread metadata cannot exhaust the record or hide its severity`() = withEncoder { encoder ->
         val bytes = encoder.encode(event("failure", emptyArray(), thread = "t".repeat(100_000)))
         val output = bytes.toString(Charsets.UTF_8)
