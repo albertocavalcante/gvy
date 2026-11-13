@@ -68,6 +68,7 @@ class JenkinsContext internal constructor(
     bundledMetadataLoader: () -> MergedJenkinsMetadata,
     private val classpathScanner: (List<Path>) -> BundledJenkinsMetadata,
     private val stubHooks: StubHooks = StubHooks(),
+    private val mavenRepositoryLookupOverride: (() -> Path?)? = null,
 ) {
     /**
      * @param stubsCacheRoot root for generated stubs; defaults to [JenkinsStubsLocation.defaultCacheRoot].
@@ -198,7 +199,12 @@ class JenkinsContext internal constructor(
      */
     private fun findLocalJenkinsCore(): Path? {
         try {
-            val mavenRepo = resolveMavenRepository()
+            // A supplied lookup returning null represents an absent repository, without machine-specific fallback.
+            val mavenRepo = if (mavenRepositoryLookupOverride != null) {
+                mavenRepositoryLookupOverride.invoke()
+            } else {
+                resolveMavenRepository()
+            }
             if (mavenRepo == null) {
                 logger.warn { "Could not determine Maven repository location" }
                 return null
