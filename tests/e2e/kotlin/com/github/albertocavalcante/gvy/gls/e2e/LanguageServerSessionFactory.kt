@@ -22,6 +22,7 @@ import java.nio.file.Paths
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** Test-JVM system properties forwarded to a language-server subprocess. */
@@ -32,7 +33,8 @@ private val FORWARDED_PROPERTIES = listOf(JenkinsStubsLocation.CACHE_ROOT_PROPER
  *
  * Packaged launch verifies artifact identity; callers must select [SessionEvidencePolicy.Private] to protect
  * factory-owned launch, stderr and failure output. Default retains normal diagnostic output. Private mode supports
- * stdio only and requires an explicitly authored Gradle user home; client/protocol logging needs its own privacy boundary.
+ * stdio only and requires an explicitly authored Gradle user home.
+ * Client/protocol logging needs its own privacy boundary.
  */
 class LanguageServerSessionFactory(
     private val startProcess: (ProcessBuilder) -> Process = ProcessBuilder::start,
@@ -44,8 +46,8 @@ class LanguageServerSessionFactory(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    private val execJar: Path? = System.getProperty("groovy.lsp.e2e.execJar")
-        ?.let { BazelRunfiles.resolve(it) }
+    private val configuredExecJar: String? = System.getProperty("groovy.lsp.e2e.execJar")
+    private val execJar: Path? by lazy { configuredExecJar?.let { BazelRunfiles.resolve(it) } }
 
     private val serverClasspath: String? = System.getProperty("groovy.lsp.e2e.serverClasspath")
     private val mainClass: String? = System.getProperty("groovy.lsp.e2e.mainClass")
@@ -124,12 +126,12 @@ class LanguageServerSessionFactory(
                     it.verification.copy(javaEnvironment = VerificationState.Verified)
                 }
                 if (before != null) partialVerification = before
+                val observer = if (privateMode) pending.own(PrivateStderrObserver(pending.interruption)) else null
                 val executor = pending.own(ListenerExecutor(if (privateMode) "private" else scenarioName))
                 val ownedProcess = pending.own(ServerProcess(startProcess(processBuilder), pending.interruption))
                 val process = ownedProcess.process
                 val after = prepared?.verifyAfterStart()?.copy(javaEnvironment = VerificationState.Verified)
                 if (after != null) partialVerification = after
-                val observer = if (privateMode) PrivateStderrObserver() else null
                 ownedProcess.stderrPump = if (observer == null) {
                     startErrorPump(process, scenarioName)
                 } else {
@@ -352,10 +354,16 @@ internal fun defaultIsolatedGradleHome(
 
 private val JAVA_OPTION_VARIABLES = listOf("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")
 
-private class PrivateStderrObserver {
+private class PrivateStderrObserver(private val interruption: CleanupInterruption) : AutoCloseable {
     private val evidence = AtomicReference(StderrEvidence(0, false, false))
+    private val readerFailure = AtomicReference<Throwable?>()
+    private val incomplete = AtomicBoolean()
+    private var reader: Thread? = null
 
-    fun snapshot(): StderrEvidence = evidence.get()
+    fun snapshot(): StderrEvidence {
+        val observed = evidence.get()
+        return if (readerFailure.get() == null && !incomplete.get()) observed else observed.copy(failed = true)
+    }
 
     fun start(process: Process): Thread = Thread({
         try {
@@ -370,11 +378,21 @@ private class PrivateStderrObserver {
                     evidence.updateAndGet { it.copy(bytesObserved = Math.addExact(it.bytesObserved, count.toLong())) }
                 }
             }
-        } catch (_: Exception) {
-            evidence.updateAndGet { it.copy(failed = true) }
+        } catch (failure: Throwable) {
+            // Retain the signal privately without formatting, logging or allocating a replacement exception.
+            readerFailure.set(failure)
         }
     }, "groovy-lsp-e2e-private-stderr").also {
+        reader = it
         it.isDaemon = true
         it.start()
+    }
+
+    override fun close() {
+        val stillRunning = reader?.isAlive == true
+        if (stillRunning) incomplete.set(true)
+        val failure = readerFailure.get()
+        if (failure != null) rethrowLocalControl(failure, interruption::record)
+        check(!stillRunning) { "Private stderr reader did not stop" }
     }
 }

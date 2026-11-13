@@ -162,44 +162,36 @@ data class PackagedLaunch(
             verification = verification.copy(source = VerificationState.Verified)
             return PreparedLaunch(staged, verification, minOf(size, limits.maxArtifactBytes), closeStaging)
         } catch (failure: Throwable) {
-            // Local control exceptions retain identity; callers must never export their contents.
-            val primary = if (localControl(failure) != null) {
-                failure
-            } else {
-                when (failure) {
-                    is PackagedLaunchException -> failure
-                    is InvalidMetadata -> PackagedLaunchException(
-                        PackagedLaunchFailure.InvalidMetadata,
-                        verification.copy(source = VerificationState.Rejected),
-                    )
-                    else -> PackagedLaunchException(
-                        PackagedLaunchFailure.ArtifactUnavailable,
-                        verification.copy(artifact = VerificationState.Unavailable),
-                    )
-                }
+            // Finish owned IO before inspecting potentially executable exception accessors.
+            val cleanup = cleanupFailedPreparation(directory, closeStaging)
+            val primary = when (failure) {
+                is PackagedLaunchException -> failure
+                is InvalidMetadata -> PackagedLaunchException(
+                    PackagedLaunchFailure.InvalidMetadata,
+                    verification.copy(source = VerificationState.Rejected),
+                )
+                else -> PackagedLaunchException(
+                    PackagedLaunchFailure.ArtifactUnavailable,
+                    verification.copy(artifact = VerificationState.Unavailable),
+                )
             }
-            cleanupFailedPreparation(directory, primary)
-            rethrowLocalControl(primary)
+            if (cleanup != null) primary.addSuppressed(IllegalStateException("Staging cleanup failed"))
+            val signals = LocalControlSignals()
+            signals.inspect(failure)
+            if (cleanup != null) signals.inspectCleanup(cleanup)
+            signals.rethrow()
             throw primary
         }
     }
 }
 
-private fun cleanupFailedPreparation(directory: Path?, failure: Throwable) {
-    if (directory == null) return
-    try {
-        removeStaging(directory)
+private fun cleanupFailedPreparation(directory: Path?, closeStaging: (Path) -> Unit): Throwable? {
+    if (directory == null) return null
+    return try {
+        closeStaging(directory)
+        null
     } catch (cleanup: Throwable) {
-        if (cleanup !== failure) {
-            val retained = if (localControl(cleanup) !=
-                null
-            ) {
-                cleanup
-            } else {
-                IllegalStateException("Staging cleanup failed")
-            }
-            failure.addSuppressed(retained)
-        }
+        cleanup
     }
 }
 
@@ -347,8 +339,13 @@ private fun validateManifestAttributes(bytes: ByteArray) {
     val sections = mutableListOf<MutableList<ByteArrayOutputStream>>(mutableListOf())
     var start = 0
     for (end in 0..bytes.size) {
-        if (end < bytes.size && bytes[end] != '\n'.code.toByte()) continue
-        val lineEnd = if (end > start && bytes[end - 1] == '\r'.code.toByte()) end - 1 else end
+        val atEnd = end == bytes.size
+        val lineFeed = !atEnd && bytes[end] == '\n'.code.toByte()
+        val bareCarriageReturn = !atEnd &&
+            bytes[end] == '\r'.code.toByte() &&
+            (end + 1 == bytes.size || bytes[end + 1] != '\n'.code.toByte())
+        if (!atEnd && !lineFeed && !bareCarriageReturn) continue
+        val lineEnd = if (lineFeed && end > start && bytes[end - 1] == '\r'.code.toByte()) end - 1 else end
         val current = bytes.copyOfRange(start, lineEnd)
         start = end + 1
         when {
@@ -381,52 +378,129 @@ private fun validateManifestAttributes(bytes: ByteArray) {
 }
 
 /** Local control and fatal signals retain identity and may contain private data; never serialize them as evidence. */
-internal fun rethrowLocalControl(failure: Throwable) {
-    val graph = controlGraph(failure)
-    if (graph.interruption != null) Thread.currentThread().interrupt()
-    val control = graph.fatal ?: graph.interruption ?: graph.cancellation ?: return
-    if (graph.hasOrdinaryFailure && control.suppressed.none { it.message == "Session cleanup failed" }) {
-        control.addSuppressed(IllegalStateException("Session cleanup failed"))
-    }
-    throw control
+internal fun rethrowLocalControl(
+    failure: Throwable,
+    onInterruption: () -> Unit = { Thread.currentThread().interrupt() },
+) {
+    val signals = LocalControlSignals()
+    signals.inspect(failure)
+    signals.rethrow(onInterruption)
 }
 
 private fun isInterruption(failure: Throwable): Boolean = failure is InterruptedException ||
     failure is ClosedByInterruptException ||
     (failure is InterruptedIOException && failure !is SocketTimeoutException)
 
-private data class ControlGraph(
-    val fatal: Throwable?,
-    val interruption: Throwable?,
-    val cancellation: Throwable?,
-    val hasOrdinaryFailure: Boolean,
-)
+private class SessionCleanupFailure : IllegalStateException("Session cleanup failed")
 
-/** Prefer fatal errors, then interruption, then cancellation when cleanup produces multiple signals. */
-private fun localControl(failure: Throwable): Throwable? {
-    val graph = controlGraph(failure)
-    return graph.fatal ?: graph.interruption ?: graph.cancellation
-}
+private const val MAX_CONTROL_NODES = 256
+private const val MAX_CONTROL_EDGES = 512
 
-private fun controlGraph(failure: Throwable): ControlGraph {
-    val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
-    val pending = ArrayDeque<Throwable>()
-    pending.add(failure)
-    var fatal: Throwable? = null
-    var interruption: Throwable? = null
-    var cancellation: Throwable? = null
-    var ordinary = false
-    while (pending.isNotEmpty()) {
-        val current = pending.removeFirst()
-        if (!seen.add(current)) continue
+private fun identityThrowableSet(): MutableSet<Throwable> =
+    Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
+
+private fun isLocalControl(failure: Throwable): Boolean =
+    failure is Error || isInterruption(failure) || failure is CancellationException
+
+/** Bounds traversal, not code executed or allocations made inside an arbitrary Throwable accessor. */
+private class LocalControlSignals {
+    private var fatal: Throwable? = null
+    private var interruption: Throwable? = null
+    private var cancellation: Throwable? = null
+    private var ordinary = false
+    private var incomplete = false
+    private var cleanupFailed = false
+    private val markedControls = identityThrowableSet()
+    private val controls = identityThrowableSet()
+    private val directControls = IdentityHashMap<Throwable, MutableSet<Throwable>>()
+
+    fun inspect(failure: Throwable) {
+        val seen = identityThrowableSet()
+        val pending = ArrayDeque<Throwable>()
+        var edges = 0
+        fun enqueue(observed: Throwable) {
+            observe(observed)
+            if (observed in seen) return
+            if (seen.size >= MAX_CONTROL_NODES) {
+                incomplete = true
+                return
+            }
+            seen.add(observed)
+            pending.addLast(observed)
+        }
+        enqueue(failure)
+        while (pending.isNotEmpty()) {
+            if (edges >= MAX_CONTROL_EDGES) {
+                incomplete = true
+                break
+            }
+            val current = pending.removeFirst()
+            edges++
+            try {
+                current.cause?.let(::enqueue)
+            } catch (accessorFailure: Throwable) {
+                incomplete = true
+                enqueue(accessorFailure)
+            }
+            // Throwable.getSuppressed is final, but its array copy is outside the traversal budget.
+            val suppressed = try {
+                current.suppressed
+            } catch (accessorFailure: Throwable) {
+                incomplete = true
+                enqueue(accessorFailure)
+                continue
+            }
+            for (child in suppressed) {
+                if (edges >= MAX_CONTROL_EDGES) {
+                    incomplete = true
+                    break
+                }
+                edges++
+                if (child is SessionCleanupFailure) markedControls.add(current)
+                if (isLocalControl(child)) directControls.getOrPut(current, ::identityThrowableSet).add(child)
+                enqueue(child)
+            }
+        }
+    }
+
+    /** Keep cleanup signals private, while preserving a visible fixed marker for any cleanup failure. */
+    fun inspectCleanup(failure: Throwable) {
+        val cleanup = LocalControlSignals()
+        cleanup.inspect(failure)
+        if (fatal == null) fatal = cleanup.fatal
+        if (interruption == null) interruption = cleanup.interruption
+        if (cancellation == null) cancellation = cleanup.cancellation
+        ordinary = ordinary || cleanup.ordinary
+        incomplete = incomplete || cleanup.incomplete
+        cleanupFailed = true
+        markedControls.addAll(cleanup.markedControls)
+        controls.addAll(cleanup.controls)
+        for ((parent, children) in cleanup.directControls) {
+            directControls.getOrPut(parent, ::identityThrowableSet).addAll(children)
+        }
+    }
+
+    private fun observe(current: Throwable) {
+        if (isLocalControl(current)) controls.add(current)
         when {
             current is Error -> if (fatal == null) fatal = current
             isInterruption(current) -> if (interruption == null) interruption = current
             current is CancellationException -> if (cancellation == null) cancellation = current
             else -> ordinary = true
         }
-        current.cause?.let(pending::addLast)
-        current.suppressed.forEach(pending::addLast)
     }
-    return ControlGraph(fatal, interruption, cancellation, ordinary)
+
+    /** Prefer fatal errors, then interruption, then cancellation; truncated inspection cannot prove absence. */
+    fun rethrow(onInterruption: () -> Unit = { Thread.currentThread().interrupt() }) {
+        if (interruption != null) onInterruption()
+        val control = fatal ?: interruption ?: cancellation ?: return
+        val existing = directControls.getOrPut(control, ::identityThrowableSet)
+        for (observed in controls) {
+            if (observed !== control && existing.add(observed)) control.addSuppressed(observed)
+        }
+        if ((ordinary || incomplete || cleanupFailed) && control !in markedControls) {
+            control.addSuppressed(SessionCleanupFailure())
+        }
+        throw control
+    }
 }

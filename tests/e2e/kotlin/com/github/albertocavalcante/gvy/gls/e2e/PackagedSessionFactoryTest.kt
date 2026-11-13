@@ -30,6 +30,7 @@ import java.io.PipedOutputStream
 import java.net.SocketTimeoutException
 import java.nio.channels.ClosedByInterruptException
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
@@ -37,6 +38,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.jar.Attributes
 import java.util.jar.JarEntry
@@ -222,6 +224,143 @@ class PackagedSessionFactoryTest {
         assertThat(stderr.eof).isFalse()
         assertThat(stderr.failed).isTrue()
         assertThat(stderr.toString()).doesNotContain("secret-canary")
+    }
+
+    @Test
+    fun `private stderr fatal read is replayed locally after owned cleanup`() {
+        assertPrivateStderrControl(AssertionError("secret-reader-canary"))
+    }
+
+    @Test
+    fun `private stderr fatal close after EOF records failure and is replayed locally`() {
+        assertPrivateStderrControl(AssertionError("secret-close-canary"), failOnClose = true)
+    }
+
+    @Test
+    fun `private stderr interruption is replayed after cleanup and restores caller interrupt`() {
+        assertPrivateStderrControl(InterruptedException("local reader interruption"))
+    }
+
+    @Test
+    fun `private stderr cancellation is replayed after cleanup`() {
+        assertPrivateStderrControl(CancellationException("local reader cancellation"))
+    }
+
+    @Test
+    fun `private stderr preserves suppressed fatal and interruption after owned cleanup`() {
+        val fatal = AssertionError("local reader fatal")
+        val failure = IOException("private wrapper").apply {
+            addSuppressed(fatal)
+            addSuppressed(InterruptedException("local reader interruption"))
+        }
+        assertPrivateStderrControl(failure, expectedControl = fatal, expectedInterrupt = true)
+    }
+
+    @Test
+    fun `private launch sanitizes throwing cause accessors and cleans staging`() {
+        var staged: Path? = null
+        val wrapper = object : IOException("private wrapper") {
+            override val cause: Throwable
+                get() = throw IllegalStateException("secret-cause-canary")
+        }
+        val factory = LanguageServerSessionFactory(
+            startProcess = { builder ->
+                val command = builder.command()
+                staged = Path.of(command[command.indexOf("-jar") + 1])
+                throw wrapper
+            },
+            packagedLaunch = launch(artifact()),
+            evidencePolicy = SessionEvidencePolicy.Private,
+        )
+        val failure = assertThrows<PackagedLaunchException>("throwing launch cause accessor must remain private") {
+            factory.start(ServerConfig(env = mapOf("GRADLE_USER_HOME" to "isolated")), "private")
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ProcessStartFailed)
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-cause-canary", "private wrapper")
+        assertThat(staged?.parent).doesNotExist()
+    }
+
+    @Test
+    fun `private control only interruption remains visible after fatal promotion`() {
+        val interruption = InterruptedException("local interruption")
+        val fatal = AssertionError("local fatal")
+        interruption.addSuppressed(fatal)
+        var otherResourceClosed = false
+        val resources = SessionResources().apply {
+            own(AutoCloseable { throw interruption })
+            own(AutoCloseable { otherResourceClosed = true })
+        }
+        try {
+            val caught = try {
+                privateSession(resources).close()
+                null
+            } catch (failure: Throwable) {
+                failure
+            }
+            assertThat(caught === fatal).isTrue()
+            assertThat(fatal.suppressed.any { it === interruption })
+                .describedAs("fatal promotion must retain the observed interruption")
+                .isTrue()
+            assertThat(otherResourceClosed).isTrue()
+            assertThat(Thread.currentThread().isInterrupted).isTrue()
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
+    fun `fatal cleanup never reads suppressed failure messages`() {
+        val fatal = AssertionError("local fatal")
+        fatal.addSuppressed(object : IOException() {
+            override val message: String
+                get() = throw IllegalStateException("secret-message-canary")
+        })
+        val resources = SessionResources().apply { own(AutoCloseable { throw fatal }) }
+        val caught = try {
+            privateSession(resources).close()
+            null
+        } catch (failure: Throwable) {
+            failure
+        }
+        assertThat(caught === fatal).describedAs("fatal cleanup must not read suppressed messages").isTrue()
+    }
+
+    @Test
+    fun `explicit packaged launch ignores malformed unused legacy jar selector`() {
+        val key = "groovy.lsp.e2e.execJar"
+        val previous = System.getProperty(key)
+        try {
+            System.setProperty(key, "secret-legacy-canary\u0000.jar")
+            SessionEvidencePolicy.entries.forEach { policy ->
+                var started = false
+                val caught = try {
+                    LanguageServerSessionFactory(
+                        startProcess = {
+                            started = true
+                            throw IOException("private launch failure")
+                        },
+                        packagedLaunch = launch(artifact()),
+                        evidencePolicy = policy,
+                    ).start(ServerConfig(env = mapOf("GRADLE_USER_HOME" to "isolated")), "private").close()
+                    null
+                } catch (failure: Throwable) {
+                    failure
+                }
+                // Keep the deliberately malformed path out of an assertion failure's exception graph.
+                val failure = when (caught) {
+                    is PackagedLaunchException -> caught
+                    is InvalidPathException -> throw AssertionError(
+                        "explicit launch must ignore unused legacy jar: InvalidPathException",
+                    )
+                    else -> throw AssertionError("Unexpected explicit launch outcome")
+                }
+                assertThat(started).isTrue()
+                assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ProcessStartFailed)
+                assertThat(failure.stackTraceToString()).doesNotContain("secret-legacy-canary")
+            }
+        } finally {
+            if (previous == null) System.clearProperty(key) else System.setProperty(key, previous)
+        }
     }
 
     @Test
@@ -781,6 +920,72 @@ class PackagedSessionFactoryTest {
             assertThat(Thread.currentThread().isInterrupted).isTrue()
         } finally {
             Thread.interrupted()
+        }
+    }
+
+    private fun assertPrivateStderrControl(
+        control: Throwable,
+        failOnClose: Boolean = false,
+        expectedControl: Throwable = control,
+        expectedInterrupt: Boolean = control is InterruptedException,
+    ) {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val reader = AtomicReference<Thread>()
+        val uncaught = AtomicReference<Throwable?>()
+        val closes = AtomicInteger()
+        val stderr = object : InputStream() {
+            override fun read(): Int {
+                reader.set(Thread.currentThread())
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS)) { "Test stderr reader was not released" }
+                if (failOnClose) return -1
+                throw control
+            }
+            override fun close() {
+                if (failOnClose && closes.incrementAndGet() == 1) throw control
+            }
+        }
+        var staged: Path? = null
+        val process = ControlledProcess(stderr)
+        val session = LanguageServerSessionFactory(
+            startProcess = { builder ->
+                val command = builder.command()
+                staged = Path.of(command[command.indexOf("-jar") + 1])
+                process
+            },
+            packagedLaunch = launch(artifact()),
+            evidencePolicy = SessionEvidencePolicy.Private,
+        ).start(ServerConfig(env = mapOf("GRADLE_USER_HOME" to "isolated")), "private")
+        try {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+            val pump = checkNotNull(reader.get())
+            pump.uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, failure -> uncaught.set(failure) }
+            release.countDown()
+            pump.join(5_000)
+            assertThat(pump.isAlive).isFalse()
+            assertThat(uncaught.get()).describedAs("private stderr must not reach uncaught handler").isNull()
+            val caught = try {
+                session.close()
+                null
+            } catch (failure: Throwable) {
+                failure
+            }
+            assertThat(caught === expectedControl)
+                .describedAs("private stderr control identity must survive owned cleanup")
+                .isTrue()
+            assertThat(Thread.currentThread().isInterrupted).isEqualTo(expectedInterrupt)
+            assertThat(process.isAlive).isFalse()
+            assertThat(staged?.parent).doesNotExist()
+            val evidence = checkNotNull(session.snapshotStderrEvidence())
+            assertThat(evidence.failed).isTrue()
+            assertThat(evidence.eof).isEqualTo(failOnClose)
+            assertThat(evidence.toString()).doesNotContain("secret-reader-canary", "secret-close-canary")
+        } finally {
+            Thread.interrupted()
+            release.countDown()
+            reader.get()?.join(5_000)
+            session.close()
         }
     }
 

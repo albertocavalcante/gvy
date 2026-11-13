@@ -8,11 +8,14 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.api.parallel.Isolated
+import java.io.IOException
 import java.net.SocketTimeoutException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.jar.Attributes
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
@@ -21,6 +24,7 @@ import java.util.logging.Handler
 import java.util.logging.LogRecord
 import java.util.logging.Logger
 
+@Isolated
 class PackagedLaunchTest {
     @TempDir
     lateinit var tempDir: Path
@@ -353,6 +357,80 @@ class PackagedLaunchTest {
     }
 
     @Test
+    fun `CR only main duplicate attributes are rejected without logging names`() {
+        assertDuplicateManifestRejected(
+            "Manifest-Version: 1.0\rSecret-Canary: first\rsecret-canary: second\r\r",
+            "cr-main",
+        )
+    }
+
+    @Test
+    fun `mixed line endings cannot hide duplicate main attributes`() {
+        assertDuplicateManifestRejected(
+            "Manifest-Version: 1.0\r\nSecret-Canary: first\rsecret-canary: second\n\n",
+            "mixed-main",
+        )
+    }
+
+    @Test
+    fun `CR named sections retain case insensitive repeated entry validation`() {
+        val manifests = listOf(
+            "Manifest-Version: 1.0\r\rName: same.class\rSecret-Canary: first\r\r" +
+                "Name: same.class\rsecret-canary: second\r\r",
+            "Manifest-Version: 1.0\n\nName: same.class\rSecret-Canary: first\r\n\r\n" +
+                "Name: same.class\nsecret-canary: second\r\r",
+        )
+        manifests.forEachIndexed { index, manifest ->
+            assertDuplicateManifestRejected(manifest, "cr-section-$index")
+        }
+    }
+
+    @Test
+    fun `valid CR only and mixed manifests preserve folds and distinct entries`() {
+        val manifests = listOf(
+            "Manifest-Version: 1.0\rDescription: first\r second\r\r" +
+                "Name: first.class\rSHA-256-Digest: first\r\r" +
+                "Name: second.class\rSHA-256-Digest: second\r\r",
+            "Manifest-Version: 1.0\r\nDescription: first\r second\n\n" +
+                "Name: first.class\rSHA-256-Digest: first\n\n" +
+                "Name: second.class\nSHA-256-Digest: second\r\n\r\n",
+        )
+        manifests.forEachIndexed { index, manifest ->
+            val artifact = jar(cleanProperties(), suffix = "valid-cr-$index", rawManifest = manifest)
+            launch(artifact, digest(artifact)).prepare().use { prepared ->
+                assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+            }
+        }
+    }
+
+    private fun assertDuplicateManifestRejected(manifest: String, suffix: String) {
+        val artifact = jar(cleanProperties(), suffix = suffix, rawManifest = manifest)
+        val records = mutableListOf<LogRecord>()
+        val logger = Logger.getLogger("java.util.jar")
+        val parentHandlers = logger.useParentHandlers
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                records.add(record)
+            }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        logger.useParentHandlers = false
+        logger.addHandler(handler)
+        try {
+            val failure = failedPreparation(launch(artifact, digest(artifact)), suffix)
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.toString()).doesNotContainIgnoringCase("secret-canary")
+            assertThat(records.joinToString { "${it.message} ${it.parameters?.toList()}" })
+                .doesNotContainIgnoringCase("secret-canary")
+            assertThat(records).isEmpty()
+        } finally {
+            logger.removeHandler(handler)
+            logger.useParentHandlers = parentHandlers
+        }
+    }
+
+    @Test
     fun `duplicate manifest classpath attributes cannot erase an external dependency`() {
         val artifact = jar(
             cleanProperties(),
@@ -531,6 +609,168 @@ class PackagedLaunchTest {
                 Files.deleteIfExists(prepared.jar.parent)
             }
         }
+    }
+
+    @Test
+    fun `throwing cause accessor is sanitized after removing the owned stage`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("throwing-cause-stage"))
+        val uninspectable = object : IOException("private wrapper") {
+            override val cause: Throwable
+                get() = throw IllegalStateException("secret-cause-canary")
+        }
+        val failure = assertThrows<PackagedLaunchException>("throwing cause accessor must remain private") {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw uninspectable
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-cause-canary", "private wrapper")
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `control thrown by cause accessor is preserved after staging cleanup`() {
+        val artifact = jar(cleanProperties())
+        val controls = listOf(
+            AssertionError("local fatal"),
+            InterruptedException("local interruption"),
+            CancellationException("local cancellation"),
+        )
+        controls.forEachIndexed { index, control ->
+            val parent = Files.createDirectory(tempDir.resolve("accessor-control-$index"))
+            val wrapper = object : IOException("private wrapper") {
+                override val cause: Throwable
+                    get() = throw control
+            }
+            try {
+                assertThatThrownBy {
+                    launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                        throw wrapper
+                    })
+                }.isSameAs(control)
+                assertThat(Thread.currentThread().isInterrupted).isEqualTo(control is InterruptedException)
+                Files.list(parent).use {
+                    assertThat(it.count())
+                        .describedAs("preparation must remove owned stage before replaying accessor control")
+                        .isZero()
+                }
+            } finally {
+                Thread.interrupted()
+            }
+        }
+    }
+
+    @Test
+    fun `fresh cause nodes cannot grow inspection without a bound`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("fresh-cause-stage"))
+        val reads = AtomicInteger()
+        fun nextFailure(): Throwable = object : IOException("private wrapper") {
+            override val cause: Throwable
+                get() {
+                    check(reads.incrementAndGet() <= 1024) { "secret-unbounded-canary" }
+                    return nextFailure()
+                }
+        }
+        val failure = assertThrows<PackagedLaunchException>("fresh cause traversal must remain bounded and private") {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw nextFailure()
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(reads.get()).isBetween(1, 512)
+        assertThat(failure.stackTraceToString()).doesNotContain("secret-unbounded-canary", "private wrapper")
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `wide suppressed graph has bounded inspection work`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("wide-graph-stage"))
+        val reads = AtomicInteger()
+        val wrapper = IOException("private wrapper")
+        repeat(1024) {
+            wrapper.addSuppressed(object : IOException() {
+                override val cause: Throwable?
+                    get() {
+                        reads.incrementAndGet()
+                        return null
+                    }
+            })
+        }
+        val failure = assertThrows<PackagedLaunchException> {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw wrapper
+            })
+        }
+        assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.ArtifactUnavailable)
+        assertThat(reads.get()).describedAs("wide suppressed graph must bound cause reads").isBetween(0, 512)
+        Files.list(parent).use { assertThat(it.count()).isZero() }
+    }
+
+    @Test
+    fun `failed preparation runs its owned closer and preserves cleanup control`() {
+        val artifact = jar(cleanProperties())
+        val cleanups = listOf(
+            AssertionError("local cleanup fatal"),
+            InterruptedException("local cleanup interruption"),
+            CancellationException("local cleanup cancellation"),
+        )
+        cleanups.forEachIndexed { index, cleanup ->
+            val parent = Files.createDirectory(tempDir.resolve("dual-control-$index"))
+            val primary = AssertionError("local primary fatal")
+            var closerCalled = false
+            try {
+                val caught = try {
+                    launch(artifact, digest(artifact)).prepare(
+                        stagingParent = parent,
+                        afterStagingCreated = { throw primary },
+                        closeStaging = { directory ->
+                            closerCalled = true
+                            Files.deleteIfExists(directory.resolve("server.jar"))
+                            Files.delete(directory)
+                            throw cleanup
+                        },
+                    )
+                    null
+                } catch (failure: Throwable) {
+                    failure
+                }
+                assertThat(caught === primary).isTrue()
+                Files.list(parent).use { assertThat(it.count()).isZero() }
+                assertThat(closerCalled && primary.suppressed.any { it === cleanup })
+                    .describedAs("failed preparation must run its owned closer and preserve cleanup control")
+                    .isTrue()
+                assertThat(primary.suppressed.any { it.message == "Session cleanup failed" }).isTrue()
+                assertThat(Thread.currentThread().isInterrupted).isEqualTo(cleanup is InterruptedException)
+            } finally {
+                Thread.interrupted()
+            }
+        }
+    }
+
+    @Test
+    fun `bounded cyclic graph preserves its observed fatal signal after cleanup`() {
+        val artifact = jar(cleanProperties())
+        val parent = Files.createDirectory(tempDir.resolve("cyclic-graph-stage"))
+        val first = IOException("local wrapper")
+        var previous: Throwable = first
+        repeat(64) {
+            val next = IOException("local wrapper")
+            previous.initCause(next)
+            previous.addSuppressed(IOException("local suppressed failure"))
+            previous = next
+        }
+        val fatal = AssertionError("local fatal")
+        previous.initCause(fatal)
+        fatal.initCause(first)
+        assertThatThrownBy {
+            launch(artifact, digest(artifact)).prepare(stagingParent = parent, afterStagingCreated = {
+                throw first
+            })
+        }.isSameAs(fatal)
+        Files.list(parent).use { assertThat(it.count()).isZero() }
     }
 
     @Test

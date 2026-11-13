@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 /** Owns partially acquired session resources until they can be transferred to the session. */
 internal class SessionResources private constructor(
     initial: List<AutoCloseable>,
@@ -35,13 +37,19 @@ internal class SessionResources private constructor(
 
 /** Records an interrupted cleanup before another failure can make it a suppressed exception. */
 internal class CleanupInterruption {
-    var observed: Boolean = false
-        private set
+    private val interrupted = AtomicBoolean()
+
+    val observed: Boolean
+        get() = interrupted.get()
+
+    fun record() {
+        interrupted.set(true)
+    }
 
     fun <T> observe(action: () -> T): T = try {
         action()
     } catch (failure: InterruptedException) {
-        observed = true
+        record()
         throw failure
     }
 }
