@@ -1,0 +1,14 @@
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+            minHeapSize = '64m'
+            maxHeapSize = '128m'
+            jvmArgs '-XX:MaxMetaspaceSize=512m'
+            maxParallelForks = 1
+            forkEvery = 0
+            doFirst {
+                println("GVY_TEST_JAVA=${javaLauncher.get().metadata.installationPath} GVY_TEST_HEAP=${maxHeapSize} GVY_TEST_FORKS=${maxParallelForks}")
+            }
+        }
+    }
+}
