@@ -39,7 +39,9 @@ export const PROFILE = Object.freeze({
     timeoutMs: 60_000,
     captureBytes: 64 * 1024,
     archiveBytesLimit: 256 * 1024 ** 2,
-    archiveEntriesLimit: 20,
+    // Exact pinned release: root executable plus the unused node-gyp payload.
+    // Lock generation disables scripts; only root pnpm is retained or executed.
+    archiveEntriesLimit: 543,
   },
   bazel: {
     repository: "bazelbuild/bazel",
@@ -361,6 +363,7 @@ export function pnpmBinary(archive) {
     maxOutputLength: PROFILE.pnpm.archiveBytesLimit,
   });
   const names = new Set();
+  const regularFiles = new Set();
   let executable;
   let count = 0;
   let offset = 0;
@@ -403,15 +406,25 @@ export function pnpmBinary(archive) {
     names.add(name);
     const kind = header[156];
     const size = tarOctal(header, 124, 12);
+    const ignoredHardLink = kind === 49 && size === 0 && name.startsWith("dist/");
     requireCondition(
-      kind === 0 || kind === 48 || (kind === 53 && size === 0),
+      kind === 0 || kind === 48 || (kind === 53 && size === 0) || ignoredHardLink,
       "archive-entry-kind",
     );
+    if (ignoredHardLink) {
+      // Validate ignored metadata; never create a filesystem link or follow it.
+      const target = tarString(header, 157, 100);
+      requireCondition(
+        target.startsWith("dist/") && regularFiles.has(target),
+        "archive-link-target",
+      );
+    }
     requireCondition(
       offset + 512 + size <= bytes.length,
       "archive-short-entry",
     );
-    if (segments.at(-1) === "pnpm" && kind !== 53) {
+    if (kind === 0 || kind === 48) regularFiles.add(name);
+    if (name === "pnpm" && (kind === 0 || kind === 48)) {
       requireCondition(!executable, "archive-duplicate-pnpm");
       executable = bytes.subarray(offset + 512, offset + 512 + size);
     }
@@ -1057,6 +1070,7 @@ function tarFixture(
   name = "pnpm",
   kind = 48,
   content = Buffer.from("executable"),
+  linkName = "",
 ) {
   const header = Buffer.alloc(512);
   header.write(name, 0, 100, "ascii");
@@ -1069,6 +1083,7 @@ function tarFixture(
   );
   header.fill(32, 148, 156);
   header[156] = kind;
+  header.write(linkName, 157, 100, "ascii");
   header.write(
     `${header
       .reduce((sum, byte) => sum + byte, 0)
@@ -1307,6 +1322,55 @@ async function selfTest() {
     gzipSync(Buffer.concat([...entries, Buffer.alloc(1024)]));
   await test("archive extracts only one regular pnpm member", () =>
     assert.equal(pnpmBinary(archive(tarFixture())).toString(), "executable"));
+  await test("the pinned release's 543-entry layout retains only the root executable", () => {
+    const entries = Array.from({ length: 542 }, (_, i) =>
+      tarFixture(`dist/file-${i}`, 48, Buffer.alloc(0)),
+    );
+    assert.equal(
+      pnpmBinary(archive(tarFixture(), ...entries)).toString(),
+      "executable",
+    );
+  });
+  await test("ignored node-gyp payload hard links are validated without materializing them", () => {
+    assert.equal(
+      pnpmBinary(archive(
+        tarFixture(),
+        tarFixture("dist/source", 48, Buffer.from("payload")),
+        tarFixture("dist/alias", 49, Buffer.alloc(0), "dist/source"),
+      )).toString(),
+      "executable",
+    );
+  });
+  await test("an archive cannot substitute a nested executable for root pnpm", () => {
+    assert.throws(
+      () => pnpmBinary(archive(tarFixture("dist/pnpm"))),
+      /archive-missing-pnpm/,
+    );
+  });
+  await test("the release entry bound still rejects one additional member", () => {
+    const entries = Array.from({ length: 543 }, (_, i) =>
+      tarFixture(`dist/file-${i}`, 48, Buffer.alloc(0)),
+    );
+    assert.throws(
+      () => pnpmBinary(archive(tarFixture(), ...entries)),
+      /archive-entry-limit/,
+    );
+  });
+  for (const [label, name, target, content] of [
+    ["traversing target", "dist/alias", "../pnpm", Buffer.alloc(0)],
+    ["executable target", "dist/alias", "pnpm", Buffer.alloc(0)],
+    ["missing target", "dist/alias", "dist/missing", Buffer.alloc(0)],
+    ["outside payload", "alias", "dist/source", Buffer.alloc(0)],
+    ["nonempty hard link", "dist/alias", "dist/source", Buffer.from("x")],
+  ]) {
+    await test(`ignored hard links reject ${label}`, () => {
+      assert.throws(() => pnpmBinary(archive(
+        tarFixture(),
+        tarFixture("dist/source", 48, Buffer.from("payload")),
+        tarFixture(name, 49, content, target),
+      )));
+    });
+  }
   for (const [name, bytes] of [
     ["traversal", archive(tarFixture("../pnpm"))],
     ["absolute path", archive(tarFixture("/pnpm"))],
