@@ -19,7 +19,10 @@ jobs:
       JAVA_TOOL_OPTIONS: '-Xmx512m'
     steps:
       - name: Prepare retained evidence
-        run: mkdir -m 700 "$RUNNER_TEMP/noise-proof"
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/noise-proof"
+          printf 'support=%s\ncandidate=%s\n' "$GITHUB_SHA" 21904c9591c2ce64b209c49f58d6856ec13365dd >"$RUNNER_TEMP/noise-proof/preparation-identity.txt"
       - name: Checkout support
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

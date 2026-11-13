@@ -13,21 +13,21 @@ candidate_tree=36d1e66ddb92662a133e1d7689bf3a98f0f6571f
 red_head=b9ccd3afca508ee897fd026ca6c47b32a4b8626b
 jenkins_test=jenkins/src/test/kotlin/com/github/albertocavalcante/gvy/jenkins/JenkinsContextLoggingTest.kt
 paths=(
-	build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleBuildToolTest.kt
-	build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleDependencyResolverRetryTest.kt
-	build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/maven/MavenDependencyResolverTest.kt
-	jenkins/src/main/kotlin/com/github/albertocavalcante/gvy/jenkins/JenkinsContext.kt
-	"$jenkins_test"
-	jenkins/src/test/kotlin/com/github/albertocavalcante/gvy/jenkins/config/UserMetadataLoaderTest.kt
+  build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleBuildToolTest.kt
+  build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleDependencyResolverRetryTest.kt
+  build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/maven/MavenDependencyResolverTest.kt
+  jenkins/src/main/kotlin/com/github/albertocavalcante/gvy/jenkins/JenkinsContext.kt
+  "$jenkins_test"
+  jenkins/src/test/kotlin/com/github/albertocavalcante/gvy/jenkins/config/UserMetadataLoaderTest.kt
 )
 printf '%s\n' "${paths[@]}" >"$RUNNER_TEMP/noise-expected-paths"
 printf '%s  %s\n' 7ed933ec81e68c3b98066f2b3273f475ad9a82cdcb19258ce7f835dd56797f5f "$init" | sha256sum -c -
 [[ "$(git -C "$GITHUB_WORKSPACE/support" rev-parse HEAD)" == "$GITHUB_SHA" ]]
 [[ -z "$(git -C "$GITHUB_WORKSPACE/support" status --porcelain)" ]]
 for checkout in "$red" "$candidate"; do
-	git -C "$checkout" worktree list --porcelain >"$proof/$(basename "$checkout")-worktrees.txt"
-	git -C "$checkout" branch --show-current >"$proof/$(basename "$checkout")-initial-branch.txt"
-	[[ -z "$(git -C "$checkout" status --porcelain)" ]]
+  git -C "$checkout" worktree list --porcelain >"$proof/$(basename "$checkout")-worktrees.txt"
+  git -C "$checkout" branch --show-current >"$proof/$(basename "$checkout")-initial-branch.txt"
+  [[ -z "$(git -C "$checkout" status --porcelain)" ]]
 done
 [[ "$(git -C "$red" rev-parse HEAD)" == "$red_head" ]]
 [[ "$(git -C "$candidate" rev-parse HEAD)" == "$candidate_head" ]]
@@ -50,7 +50,7 @@ gradle_common=(--no-daemon --no-parallel --max-workers=1 '-Dorg.gradle.jvmargs=-
 direnv exec . ./gradlew lintFix "${gradle_common[@]}" 2>&1 | tee "$proof/lintFix.log"
 git diff --name-only >"$RUNNER_TEMP/noise-formatted-unstaged"
 while IFS= read -r path; do
-	[[ -z "$path" ]] || grep -Fxq -- "$path" "$RUNNER_TEMP/noise-expected-paths"
+  [[ -z "$path" ]] || grep -Fxq -- "$path" "$RUNNER_TEMP/noise-expected-paths"
 done <"$RUNNER_TEMP/noise-formatted-unstaged"
 git add -- "${paths[@]}"
 git diff --quiet
@@ -125,14 +125,14 @@ PYRED
 cd "$candidate"
 rm -f build-tool/build/test-results/test/TEST-com.github.albertocavalcante.gvy.build.*.xml jenkins/build/test-results/test/TEST-com.github.albertocavalcante.gvy.jenkins.*.xml
 direnv exec . ./gradlew :build-tool:test \
-	--tests 'com.github.albertocavalcante.gvy.build.gradle.GradleDependencyResolverRetryTest' \
-	--tests 'com.github.albertocavalcante.gvy.build.maven.MavenDependencyResolverTest' \
-	--tests 'com.github.albertocavalcante.gvy.build.gradle.GradleBuildToolTest.getDependencyMetadata returns empty when the model is rejected' \
-	--tests 'com.github.albertocavalcante.gvy.build.LoggingProviderTest' \
-	:jenkins:test --tests 'com.github.albertocavalcante.gvy.jenkins.JenkinsContextLoggingTest' \
-	--tests 'com.github.albertocavalcante.gvy.jenkins.config.UserMetadataLoaderTest' \
-	--tests 'com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest' \
-	:build-tool:lint :jenkins:lint lint --rerun-tasks --no-build-cache --info -I "$init" "${gradle_common[@]}" 2>&1 | tee "$proof/green.log"
+  --tests 'com.github.albertocavalcante.gvy.build.gradle.GradleDependencyResolverRetryTest' \
+  --tests 'com.github.albertocavalcante.gvy.build.maven.MavenDependencyResolverTest' \
+  --tests 'com.github.albertocavalcante.gvy.build.gradle.GradleBuildToolTest.getDependencyMetadata returns empty when the model is rejected' \
+  --tests 'com.github.albertocavalcante.gvy.build.LoggingProviderTest' \
+  :jenkins:test --tests 'com.github.albertocavalcante.gvy.jenkins.JenkinsContextLoggingTest' \
+  --tests 'com.github.albertocavalcante.gvy.jenkins.config.UserMetadataLoaderTest' \
+  --tests 'com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest' \
+  :build-tool:lint :jenkins:lint lint --rerun-tasks --no-build-cache --info -I "$init" "${gradle_common[@]}" 2>&1 | tee "$proof/green.log"
 python3 - "$candidate" "$proof" <<'PYGREEN'
 import pathlib
 import shutil
@@ -162,11 +162,11 @@ for (module, name), count in expected.items():
 PYGREEN
 
 for phase in red green; do
-	phase_checkout="$candidate"
-	if [[ "$phase" == red ]]; then
-		phase_checkout="$red"
-	fi
-	python3 - "$proof/$phase.log" "$JAVA_HOME_17_X64/bin/java" "$phase_checkout" "$phase" >"$proof/$phase-java.txt" <<'PYJVM'
+  phase_checkout="$candidate"
+  if [[ "$phase" == red ]]; then
+    phase_checkout="$red"
+  fi
+  python3 - "$proof/$phase.log" "$JAVA_HOME_17_X64/bin/java" "$phase_checkout" "$phase" >"$proof/$phase-java.txt" <<'PYJVM'
 import os
 import re
 import shlex
