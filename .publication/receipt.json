@@ -1,24 +1,26 @@
 {
-  "base": "4335321c35aecba47d8b7e9201b0e6ba64fd1df7",
+  "base": "dbc590b62c9ed92a846e7dfb3e92a00ffba4bdbd",
+  "mode": "red-only",
   "red": {
-    "tree": "b3869d4a53592978adff08b088a6afc535d3b770",
+    "tree": "d2687157b2fbcd3a60168395ebdd943945e46147",
     "patch": {
-      "sha256": "c9c919cc6b79ed61045bc7e934bf01dc8fb07b196732512d1bf612e00b30d503",
-      "compressedSha256": "6de224ca378d71bc51acb4c7becd90bf249eec5126c24cb56806204617711c7d",
-      "bytes": 7064,
-      "compressedBytes": 1597
+      "sha256": "ea0078e95127ec231bcb3c96226aae19843567a435e964ab6f2b3fe7ae92d787",
+      "compressedSha256": "2df5ae34a5efebbff7e5ee2e3b9c3c170d4f127e142ede69f4ebdef9a8e83c80",
+      "bytes": 18087,
+      "compressedBytes": 3988
     },
     "paths": [
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt"
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt"
     ],
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 39
+        "count": 47
       },
       {
         "name": "PackagedSessionFactoryTest",
-        "count": 26
+        "count": 34
       },
       {
         "name": "SessionResourcesTest",
@@ -28,70 +30,188 @@
     "failures": [
       {
         "class": "PackagedLaunchTest",
-        "name": "duplicate attributes in a named manifest section are rejected without logging their name()",
+        "name": "throwing cause accessor is sanitized after removing the owned stage()",
         "types": [
           "java.lang.AssertionError",
           "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "throwing cause accessor must remain private",
+          "PackagedLaunchException",
+          "IllegalStateException"
         ]
       },
       {
         "class": "PackagedLaunchTest",
-        "name": "empty main and repeated named section duplicate are rejected without logging name()",
+        "name": "control thrown by cause accessor is preserved after staging cleanup()",
         "types": [
           "java.lang.AssertionError",
           "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "preparation must remove owned stage before replaying accessor control"
         ]
       },
       {
         "class": "PackagedLaunchTest",
-        "name": "duplicate attribute in split same name sections is rejected()",
+        "name": "fresh cause nodes cannot grow inspection without a bound()",
         "types": [
           "java.lang.AssertionError",
           "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "fresh cause traversal must remain bounded and private",
+          "PackagedLaunchException",
+          "IllegalStateException"
         ]
       },
       {
         "class": "PackagedLaunchTest",
-        "name": "folded multibyte entry name detects duplicate across sections()",
+        "name": "wide suppressed graph has bounded inspection work()",
         "types": [
           "java.lang.AssertionError",
           "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "wide suppressed graph must bound cause reads",
+          "1024",
+          "512"
+        ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "CR only main duplicate attributes are rejected without logging names()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "PackagedLaunchException",
+          "to be thrown, but nothing was thrown"
+        ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "mixed line endings cannot hide duplicate main attributes()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "PackagedLaunchException",
+          "to be thrown, but nothing was thrown"
+        ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "CR named sections retain case insensitive repeated entry validation()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "PackagedLaunchException",
+          "to be thrown, but nothing was thrown"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private stderr fatal read is replayed locally after owned cleanup()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "private stderr must not reach uncaught handler"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private stderr fatal close after EOF records failure and is replayed locally()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "private stderr must not reach uncaught handler"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private stderr interruption is replayed after cleanup and restores caller interrupt()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "private stderr control identity must survive owned cleanup"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private stderr cancellation is replayed after cleanup()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "private stderr control identity must survive owned cleanup"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private stderr preserves suppressed fatal and interruption after owned cleanup()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "private stderr control identity must survive owned cleanup"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "private launch sanitizes throwing cause accessors and cleans staging()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "throwing launch cause accessor must remain private",
+          "PackagedLaunchException",
+          "IllegalStateException"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "fatal cleanup never reads suppressed failure messages()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "fatal cleanup must not read suppressed messages"
+        ]
+      },
+      {
+        "class": "PackagedSessionFactoryTest",
+        "name": "explicit packaged launch ignores malformed unused legacy jar selector()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ],
+        "includes": [
+          "explicit launch must ignore unused legacy jar",
+          "PackagedLaunchException",
+          "InvalidPathException"
         ]
       }
     ]
   },
-  "green": {
-    "tree": "0c9a415c7d0cc156b012e6e461c5479d3747e84b",
-    "patch": {
-      "sha256": "5c5e122a3cdb8043a3bec5707faf8481df5e0d1f7d66be765d2749fc1e0b0149",
-      "compressedSha256": "b7b07201c8cc09031efe817a4d70f61bc2f6828777cf2fd7777707bf47d3da1f",
-      "bytes": 3049,
-      "compressedBytes": 1108
-    },
-    "paths": [
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt"
-    ],
-    "classes": [
-      {
-        "name": "PackagedLaunchTest",
-        "count": 39
-      },
-      {
-        "name": "PackagedSessionFactoryTest",
-        "count": 26
-      },
-      {
-        "name": "SessionResourcesTest",
-        "count": 3
-      }
-    ],
-    "failures": []
-  },
   "helpers": {
     "phase": "d8be5aad1666ed2809192cf44b834ea30ea95a4d62d78b596e4039d62bcd3b3e",
-    "results": "fee05c6f142813afa64cc15a9a664e092a09ca4f2800e69c361fddf68f1a3eae",
-    "worker": "fb817993c41d4c1c2abc259f0d7433ce4d14e7a4857b69ca31fae3614afb312c",
+    "results": "9020494bf8af1da79aeb09c3e9231d5b26ba165f66e6ed1de8639be5936fb701",
+    "worker": "46753e4c9ae79ea24b1133a7b4bf0c1ca068f03f606f01baaf4ebd8b8ed3e4fe",
     "capture": "e369b217ddf780fb09744ee23071d4c5818e4fabe4bd137ae8ad2f9dd1ea6b8b",
     "budget": "8fed9039bb2955e2fc2df95f993e50a7e80428113afad4022c1c11f090463ba6",
     "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00"

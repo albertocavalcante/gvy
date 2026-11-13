@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 # Temporary execution support only. Never merge into main or the product PR.
-name: Manifest sections RED GREEN publication
+name: Launch boundaries failure-first proof
 on:
   workflow_dispatch:
 permissions:
@@ -40,7 +40,7 @@ jobs:
           path: support
           persist-credentials: false
       # PLACEHOLDERS MUST BE REPLACED AND INDEPENDENTLY REVIEWED BEFORE DISPATCH.
-      # The exact 433 base, RED/GREEN trees, paths, patches and tests
+      # The exact published base, RED/GREEN trees, paths, patches and tests
       # belong in a reviewed closed receipt, never in user inputs.
       - name: Validate bounded RED and GREEN payloads
         timeout-minutes: 5
@@ -53,14 +53,15 @@ jobs:
           # This helper must fail closed on unknown/missing fields; verify the
           # fixed PR head, both compressed and decompressed sizes/SHA-256,
           # helper hashes, exact trees, paths, test names/counts and assertions.
-          printf '%s  %s\n' "3208c607dbb8ab12bc99921e00b8c25cca2d6df681016e9c57ed1b1c730b1106" "$proof/validate-receipt.mjs" | sha256sum -c -
-          node "$proof/validate-receipt.mjs" "$receipt" "84ba78577e315f156e0d13796559fc7f0e53967354bb2b70485b73f6ebb3b5c9"
+          printf '%s  %s\n' "1e09eb02bd173c9b3e08a5388652aa5e25c8a287962ac4a872b56528b06cda0d" "$proof/validate-receipt.mjs" | sha256sum -c -
+          node "$proof/validate-receipt.mjs" "$receipt" "0ce9a1b6c7c8bffa4f618d0af078af7fc39d645145ac93e297c587b51f1cdcc0"
           for pair in 'phase validate-phase.mjs' 'results check-red.mjs' 'worker review-fix.sh' 'capture bounded-capture.mjs' 'budget evidence-budget.mjs' 'copy bounded-file.mjs'; do
               read -r key file <<< "$pair"
               expected=$(jq -er --arg key "$key" '.helpers[$key]' "$receipt")
               printf '%s  %s\n' "$expected" "$proof/$file" | sha256sum -c -
           done
-          for phase in red green; do
+          phases=$(jq -er 'if .mode == "red-only" then "red" else "red", "green" end' "$receipt")
+          for phase in $phases; do
               expected=$(jq -er --arg phase "$phase" '.[$phase].patch.compressedSha256' "$receipt")
               printf '%s  %s\n' "$expected" "$proof/$phase.patch.gz" | sha256sum -c -
               expected_bytes=$(jq -er --arg phase "$phase" '.[$phase].patch.compressedBytes' "$receipt")
@@ -79,7 +80,7 @@ jobs:
               printf '%s  %s\n' "$expected" "$RUNNER_TEMP/$phase.patch" | sha256sum -c -
           done
           printf 'base=%s\n' "$(jq -er '.base' "$receipt")" >>"$GITHUB_OUTPUT"
-      - name: Checkout reviewed 433 base
+      - name: Checkout reviewed published base
         timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -95,8 +96,8 @@ jobs:
           EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
         run: |
           set -euo pipefail
-          [[ "$EXPECTED_BASE" == "4335321c35aecba47d8b7e9201b0e6ba64fd1df7" && "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
-          git switch -c feat/manifest-sections-publication
+          [[ "$EXPECTED_BASE" == "dbc590b62c9ed92a846e7dfb3e92a00ffba4bdbd" && "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
+          git switch -c feat/failure-boundaries-publication
           git apply --check --index "$RUNNER_TEMP/red.patch"
           git apply --index "$RUNNER_TEMP/red.patch"
           node "$GITHUB_WORKSPACE/support/.publication/validate-phase.mjs" red "$GITHUB_WORKSPACE/support/.publication/receipt.json"
@@ -185,7 +186,7 @@ jobs:
           tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
           install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
           echo "$bins" >>"$GITHUB_PATH"
-      - name: Validate RED and GREEN and create candidate commit
+      - name: Validate reviewed failure-first controls
         timeout-minutes: 75
         working-directory: candidate
         shell: bash
@@ -210,8 +211,12 @@ jobs:
           # Helper must require exact RED assertions, GREEN tests, lintFix/lint and all
           # six diagnostic gates. It must verify the branch/parent/tree,
           # paths, hooks and post-commit diagnostics before creating a bundle.
-          test -s "$proof/candidate.bundle"
+          mode=$(jq -er '.mode' "$support/receipt.json")
+          if [[ "$mode" == red-green ]]; then
+              test -s "$proof/candidate.bundle"
+          fi
           test -s "$proof/receipt.json"
+          jq -e '.exit == 0 and .phase == "complete-red"' "$proof/result.json" >/dev/null
       - name: Upload candidate and evidence
         timeout-minutes: 5
         if: always()

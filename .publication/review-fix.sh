@@ -106,7 +106,7 @@ run_tests() {
 observed=$(git rev-parse HEAD)
 [[ "${observed}" == "${base}" ]]
 observed=$(git branch --show-current)
-[[ "${observed}" == feat/manifest-sections-publication ]]
+[[ "${observed}" == feat/failure-boundaries-publication ]]
 phase_check red
 direnv allow
 git config user.name 'gvy publication automation'
@@ -121,6 +121,13 @@ diagnostic red-format review-fix-red-format
 phase=red-tests
 run_tests red
 diagnostic red review-fix-red
+mode=$(jq -er '.mode' "${receipt}")
+if [[ "${mode}" == red-only ]]; then
+    observed_tree=$(git write-tree)
+    jq -n --arg base "${base}" --arg tree "${observed_tree}" --arg support "${GITHUB_SHA:?}" '{mode:"red-only",base:$base,redTree:$tree,supportHead:$support}' >"${proof}/receipt.json"
+    phase=complete-red
+    exit 0
+fi
 phase=green-apply
 git apply --check --index "${RUNNER_TEMP}/green.patch"
 git apply --index "${RUNNER_TEMP}/green.patch"
@@ -140,8 +147,8 @@ phase_check green
 diagnostic lint review-fix-lint
 phase=commit
 observed=$(git branch --show-current)
-[[ "${observed}" == feat/manifest-sections-publication ]]
-capture commit git commit -m 'fix(test): verify packaged manifest sections'
+[[ "${observed}" == feat/failure-boundaries-publication ]]
+capture commit git commit -m 'fix(test): preserve private launch failure boundaries'
 require_success commit
 diagnostic commit review-fix-hooks
 observed=$(git rev-parse HEAD^)
