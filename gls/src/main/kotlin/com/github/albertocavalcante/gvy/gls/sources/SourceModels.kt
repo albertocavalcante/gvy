@@ -30,6 +30,38 @@ sealed interface SourceOrigin {
     data class Unknown(val resource: URI) : SourceOrigin
 }
 
+/** Metadata retained by a source-view descriptor. It owns no parser, classloader or coroutine resources. */
+data class SourceContextIdentity(
+    val id: String,
+    val documentUri: URI? = null,
+    val compileFingerprint: String? = null,
+) {
+    init {
+        require(id.isNotBlank()) { "Source context identity must be nonempty" }
+    }
+}
+
+enum class SourceLookupPolicy { LOCAL_ONLY, ALLOW_VERIFIED_DOWNLOADS }
+
+/** Request-scoped validation; presentation registries retain [identity] only. */
+class SourceLookupContext(
+    val identity: SourceContextIdentity,
+    val policy: SourceLookupPolicy = SourceLookupPolicy.LOCAL_ONLY,
+    validateCurrent: (suspend () -> Boolean)? = null,
+    private val isCurrent: () -> Boolean,
+) {
+    private val validator = validateCurrent
+
+    fun isCurrent(): Boolean = isCurrent.invoke()
+
+    /** Fresh validation for the final publication boundary of a source lookup. */
+    suspend fun validateCurrent(): Boolean = validator?.invoke() ?: isCurrent()
+}
+
+data class ResolvedExternalSymbol(val binaryName: String, val origin: SourceOrigin, val memberName: String? = null)
+
+data class ResolvedSourceRequest(val symbol: ResolvedExternalSymbol, val context: SourceLookupContext)
+
 /** Immutable zero-based UTF-16 coordinates, independent of LSP's mutable transport objects. */
 data class SourceSpan(val startLine: Int, val startCharacter: Int, val endLine: Int, val endCharacter: Int) {
     init {
