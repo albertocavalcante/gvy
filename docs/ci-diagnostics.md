@@ -112,6 +112,49 @@ The Zed gate covers pinned Rust formatting, host tests, host/WASM Clippy and the
 launch, platform and lifecycle validation remain tracked in
 [#1175](https://github.com/albertocavalcante/gvy/issues/1175).
 
+## Dependency update readiness
+
+Main-branch changes classified as applicable to main CI require the dependency-update job. Narrative-only changes skip
+it. The boolean `dependency_updates` manual input also enables this producer for an applicable feature-branch revision;
+its default is false. Applicability reuses the existing exact-revision path classifier, and required readiness demands
+the corresponding success or explicit skip. Missing, invalid or unexpected results fail.
+
+The job uses `run-gradle.mjs` with the stable `dependency-updates` producer. Original command and capture failures and
+unexpected tool diagnostics fail the job. Its unique evidence directory retains source/tested SHA, run/attempt,
+invocation identity, raw capture/hash and the local diagnostic verdict; the failure-path upload retains that evidence.
+This producer explicitly disables the numeric daemon sampler. It supplies no numeric memory, total-RSS or Native
+provisioning evidence.
+
+Dependency reporting exposes two additional serialization consumers of the pinned Native bundle and Hot Reload plain
+enum attributes. Their
+[captured task and resolver provenance](../tools/ci/fixtures/gradle-dependency-resolution-provenance.json) anchors two
+exact, owned exceptions in [#1603](https://github.com/albertocavalcante/gvy/issues/1603), expiring on 2026-12-11. The
+complete report keeps inspecting its configurations, and summaries retain both tracked warnings. A different task,
+attribute, type, message or resolver call site remains unexpected.
+
+Gradle 10 rejects these attribute types; serialization also cannot preserve extra enum state. The inspected current
+constants carry no extra instance state, and no current state loss was observed. Inspected KGP 2.4.21 still declares a
+plain Native enum. Hot Reload 1.3.0-rc01 implements `Named`, but compatible gvy/Compose adoption and desktop/reload
+validation remain pending. Source inspection and offline policy replay do not establish candidate integration or a fresh
+successful producer run.
+
+The source graph contract requires every job in `ci.yml` to appear in the readiness policy and terminal `validate.needs`
+list. License compliance remains unconditional, including for narrative-only changes, with a unique fresh successful
+observed execution matching its required result. The contract supports reviewed plain job keys and immediate fields,
+checks the terminal one-line `needs` syntax and verifies the dependency-update job's exact applicability wiring.
+Unsupported declarations in those boundaries fail for deliberate review; other job dependencies remain under Actions
+lint and GitHub validation. Readiness rejects unknown needs and unfinished non-observer jobs. This makes producer
+uploads and post-job outcomes precede the final annotation snapshot, without waiting on the observer itself.
+
+The canonical wrapper validates evidence within the producer. The final observer checks job results and Actions
+annotations; it does not download and verify uploaded diagnostic artifacts. Artifact inspection remains a separate
+acceptance step. The observer's own later output and separate workflows retain their documented coverage boundaries.
+
+Sonar's advisory command and missing-token steps remain inside the build job, with their existing conditional execution
+and warning annotations. Their raw command capture is separate from this dependency-update producer; successful Sonar
+tool output still needs its own diagnostic coverage. Dependency-update version listings likewise retain the existing
+tool classifier's coverage limits. These limits do not excuse a failed producer or an unexpected warning annotation.
+
 ## Bazel gate and build observability
 
 `CI (Bazel)` is called by main CI for applicable changes and also runs daily on main or manually. Its build, test,
@@ -359,9 +402,9 @@ complete server logs from passing tests, bind them to actual execution/assertion
 without blanket negative-test exceptions. Until both producer and consumer are implemented and validated, shipping
 agents must report this coverage gap explicitly. Semantic LSP diagnostics remain protocol assertions.
 
-Other workflows, advisory Sonar/dependency-update commands and the validation job's own post-job output still need agent
-review. This implementation does not claim repository-wide warning coverage. Every newly observed uncovered diagnostic
-must be fixed or recorded with the same ownership and acceptance criteria.
+Other workflows, advisory Sonar commands and the validation job's own post-job output still need agent review. This
+implementation does not claim repository-wide warning coverage. Every newly observed uncovered diagnostic must be fixed
+or recorded with the same ownership and acceptance criteria.
 
 Inspect complete job logs with binary-safe readers, such as `rg --text`, because legitimate NUL-delimited Git output can
 make a default text search omit later warnings. Preserve the original bytes and hash. The Gradle producer separately

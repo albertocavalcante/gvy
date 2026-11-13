@@ -1,0 +1,95 @@
+{
+  "kind": "selective-real-dependency-update-serialization-traces",
+  "sourceHead": "ea9084d0d274435f0e506459f1af6b9f0793035a",
+  "testedSha": "ea9084d0d274435f0e506459f1af6b9f0793035a",
+  "runId": "43283177251",
+  "runAttempt": 1,
+  "invocationId": "99d50a3a-2bc7-4fdf-bb57-e8eeff8441ca",
+  "producer": "dependency-updates",
+  "jobId": 131411683716,
+  "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/43283177251/job/131411683716",
+  "image": "ubuntu-24.04",
+  "originalCommandExitCode": 0,
+  "originalCaptureExitCode": 0,
+  "originalProducerComplete": true,
+  "originalProducerVerdict": false,
+  "archive": {
+    "id": 13974746427,
+    "bytes": 63942,
+    "sha256": "ac3756d5c83ce67ee90cf5a7da45a2be3475d442e0e527cc091d96135865d5a0"
+  },
+  "canonicalLog": {
+    "bytes": 257488,
+    "sha256": "ef06cef49fcd56f7db9e7295c4c9e422be7a2fc705424859bc6dc342744ab8ac"
+  },
+  "fixture": {
+    "file": "gradle-dependency-resolution.txt",
+    "bytes": 11033,
+    "sha256": "4d4a91511a6388c00e47d2e495a51fb799d85d5fe4503a4cedd8c1a86885b50e"
+  },
+  "versions": {
+    "gradle": "9.8.2",
+    "versionsPlugin": "0.53.0",
+    "kotlin": "2.3.0",
+    "compose": "1.10.0",
+    "resolvedHotReload": "1.0.0"
+  },
+  "events": [
+    {
+      "canonicalHeaderLine": 1970,
+      "canonicalStartLine": 2000,
+      "canonicalEndLine": 2036,
+      "observedHeader": "> Task :dependencyUpdates",
+      "origin": "com.github.benmanes.gradle.versions.updates.Resolver.resolve(Resolver.kt:58)"
+    },
+    {
+      "canonicalHeaderLine": 1970,
+      "canonicalStartLine": 2037,
+      "canonicalEndLine": 2073,
+      "observedHeader": "> Task :dependencyUpdates",
+      "origin": "com.github.benmanes.gradle.versions.updates.Resolver.getCurrentCoordinates(Resolver.kt:279)"
+    }
+  ],
+  "expectedDiagnostics": [
+    "[task :dependencyUpdates] Serializing the value of attribute 'kotlin.native.bundle.type', of the enum type 'org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$KotlinNativeBundleArtifactsTypes', which does not implement org.gradle.api.Named has been deprecated. This will fail with an error in Gradle 10. The value is serialized as the name of the enum constant, so any other state the constant carries is lost, and the value cannot be read back if the constant is renamed. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type [origin com.github.benmanes.gradle.versions.updates.Resolver.resolve(Resolver.kt:58)]",
+    "[task :dependencyUpdates] Serializing the value of attribute 'org.jetbrains.compose.reload.usageType', of the enum type 'org.jetbrains.compose.reload.gradle.HotReloadUsageType', which does not implement org.gradle.api.Named has been deprecated. This will fail with an error in Gradle 10. The value is serialized as the name of the enum constant, so any other state the constant carries is lost, and the value cannot be read back if the constant is renamed. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type [origin com.github.benmanes.gradle.versions.updates.Resolver.getCurrentCoordinates(Resolver.kt:279)]"
+  ],
+  "primarySources": [
+    {
+      "role": "serialization emitter",
+      "url": "https://github.com/gradle/gradle/blob/v9.8.2/platforms/software/dependency-management/src/main/java/org/gradle/internal/resolve/caching/DesugaringAttributeContainerSerializer.java#L136",
+      "finding": "Non-Named enum values are serialized by constant name and deprecated here; Gradle 10 rejects them."
+    },
+    {
+      "role": "resolution consumers",
+      "url": "https://github.com/ben-manes/gradle-versions-plugin/blob/v0.53.0/gradle-versions-plugin/src/main/kotlin/com/github/benmanes/gradle/versions/updates/Resolver.kt",
+      "finding": "Line 58 resolves the latest copied configuration; line 279 resolves the current copied configuration."
+    },
+    {
+      "role": "pinned Native attribute",
+      "url": "https://github.com/JetBrains/kotlin/blob/v2.3.0/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/toolchain/KotlinNativeBundleArtifactFormat.kt#L25",
+      "finding": "The bundle attribute uses a plain enum with ARCHIVE and DIRECTORY constants, without Named or additional instance state."
+    },
+    {
+      "role": "checked Native candidate source",
+      "url": "https://github.com/JetBrains/kotlin/blob/v2.4.21/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/toolchain/KotlinNativeBundleArtifactFormat.kt#L24",
+      "finding": "This inspected candidate still declares a plain DIRECTORY enum. No candidate integration was run."
+    },
+    {
+      "role": "pinned Hot Reload attribute",
+      "url": "https://github.com/JetBrains/compose-hot-reload/blob/v1.0.0/hot-reload-gradle-core/src/main/kotlin/org/jetbrains/compose/reload/gradle/HotReloadUsage.kt#L13",
+      "finding": "The usage attribute uses a plain Main/Dev enum, without Named or additional instance state."
+    },
+    {
+      "role": "upstream Hot Reload source correction",
+      "url": "https://github.com/JetBrains/compose-hot-reload/commit/beb72effc3934d7d45032e71803f3a14cbdb837e",
+      "finding": "CMP-10862 implements Named; the correction is present in 1.3.0-rc01. Compatible gvy adoption and integration remain untested."
+    }
+  ],
+  "limits": [
+    "Selective projection: observed task header, each warning stack through its first external resolver consumer, and the original completion marker. This is not the complete log or execution acceptance.",
+    "Full producer context, original status and canonical hash were independently verified from the root-qualified archive; source remains the failed historical EA revision.",
+    "Current inspected enum constants carry no extra instance state. No present data loss was observed; serialization loses other enum state in general and these types become errors in Gradle 10.",
+    "Release source inspection is not candidate execution or gvy adoption proof. No configurations were excluded and no warning category was suppressed."
+  ]
+}

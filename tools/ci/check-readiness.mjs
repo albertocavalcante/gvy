@@ -6,6 +6,19 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+export const producerApplicability = Object.freeze({
+  'check-runner': 'run_main_ci',
+  lint: 'run_main_ci',
+  build: 'run_main_ci',
+  launcher: 'run_main_ci',
+  'e2e-test': 'run_main_ci',
+  'smoke-test': 'run_main_ci',
+  bazel: 'run_bazel_ci',
+  zed: 'run_zed_ci',
+  'dependency-check': 'run_dependency_check',
+});
+export const alwaysRequiredJobIds = Object.freeze(['license']);
+export const readinessJobIds = Object.freeze(['check-paths', ...alwaysRequiredJobIds, ...Object.keys(producerApplicability)]);
 function timestampKey(value) {
   if (typeof value !== 'string') return null;
   const parts = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/);
@@ -19,10 +32,13 @@ function timestampKey(value) {
 export function evaluateReadiness(needs) {
   const errors = [];
   const jobs = record(needs) ? needs : {};
+  for (const name of Object.keys(jobs)) {
+    if (!readinessJobIds.includes(name)) errors.push(`Undeclared readiness job: ${name}.`);
+  }
   const paths = jobs['check-paths'];
   if (paths?.result !== 'success') errors.push('Applicability check did not succeed.');
   const applicability = {};
-  for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci']) {
+  for (const field of new Set(Object.values(producerApplicability))) {
     const value = paths?.outputs?.[field];
     if (value !== 'true' && value !== 'false') errors.push(`Missing or invalid applicability: ${field}.`);
     applicability[field] = value;
@@ -30,18 +46,12 @@ export function evaluateReadiness(needs) {
   if (jobs['check-runner']?.outputs?.provisioning_triggered === 'true') {
     errors.push('Runner provisioning is pending; rerun this revision after the runner is available.');
   }
-  const requirements = {
-    license: 'true',
-    'check-runner': applicability.run_main_ci,
-    lint: applicability.run_main_ci,
-    build: applicability.run_main_ci,
-    launcher: applicability.run_main_ci,
-    'e2e-test': applicability.run_main_ci,
-    'smoke-test': applicability.run_main_ci,
-    bazel: applicability.run_bazel_ci,
-    zed: applicability.run_zed_ci,
-  };
-  for (const [name, applies] of Object.entries(requirements)) {
+  for (const name of alwaysRequiredJobIds) {
+    const actual = jobs[name]?.result;
+    if (actual !== 'success') errors.push(`${name}: expected success, received ${actual ?? 'missing'}.`);
+  }
+  for (const [name, field] of Object.entries(producerApplicability)) {
+    const applies = applicability[field];
     const expected = applies === 'false' ? 'skipped' : 'success';
     const actual = jobs[name]?.result;
     if (actual !== expected) errors.push(`${name}: expected ${expected}, received ${actual ?? 'missing'}.`);
@@ -63,11 +73,19 @@ export function combineReadiness(graph, runner, context) {
   const anchors = jobs.filter(job => job.name === 'check-paths');
   const anchor = anchors[0];
   const attemptStart = timestampKey(runner?.attemptStartedAt);
-  const freshObserved = job => {
+  const startedThisAttempt = job => {
     const executionStart = timestampKey(job.startedAt);
-    return job.annotationsObserved === true && job.headSha === context.headSha &&
-      attemptStart !== null && executionStart !== null && executionStart >= attemptStart;
+    return job.headSha === context.headSha && attemptStart !== null && executionStart !== null && executionStart >= attemptStart;
   };
+  const freshObserved = job => job.annotationsObserved === true && startedThisAttempt(job);
+  const observers = jobs.filter(job => job.name === 'Validation Check');
+  if (observers.length !== 1 || observers[0].status !== 'in_progress' || observers[0].conclusion !== null ||
+      !startedThisAttempt(observers[0])) {
+    report.errors.push('Exactly one current in-progress Validation Check observer is required.');
+  }
+  if (jobs.some(job => job.name !== 'Validation Check' && job.status !== 'completed')) {
+    report.errors.push('A non-observer job is unfinished despite the terminal validation graph.');
+  }
   if (anchors.length !== 1 || anchor?.status !== 'completed' || anchor.conclusion !== 'success' ||
       !freshObserved(anchor)) {
     report.errors.push('A fresh successful observed check-paths execution is required for this attempt; rerun all CI jobs.');
@@ -81,8 +99,8 @@ export function combineReadiness(graph, runner, context) {
       !freshObserved(licenseJob)) {
     report.errors.push('A fresh successful observed License compliance execution matching needs is required for this attempt; rerun all CI jobs.');
   }
-  // Independent advisory jobs are not descendants of check-paths. Their reused
-  // completed records can lose annotations too, so the ancestor alone is insufficient.
+  // Every completed producer needs actual execution evidence: a fresh ancestor
+  // cannot justify copied success records that have lost their annotations.
   const completed = jobs.filter(job => job.name !== 'Validation Check' && job.status === 'completed' && job.conclusion !== 'skipped');
   if (completed.some(job => !freshObserved(job))) {
     report.errors.push('A completed job has reused or unobserved execution evidence; rerun all CI jobs.');

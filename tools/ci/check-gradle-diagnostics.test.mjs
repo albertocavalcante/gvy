@@ -70,6 +70,91 @@ test('a warning from an otherwise successful command fails', () => {
   assert.deepEqual(result.unexpected, [diagnostic]);
 });
 
+const dependencyResolutionLog = readFileSync(new URL('./fixtures/gradle-dependency-resolution.txt', import.meta.url), 'utf8');
+const dependencyResolutionProvenance = JSON.parse(readFileSync(new URL('./fixtures/gradle-dependency-resolution-provenance.json', import.meta.url), 'utf8'));
+const dependencyResolutionPolicy = () => JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8'));
+
+test('actual dependency resolution traces retain exact source, consumer and canonical capture provenance', () => {
+  const provenance = dependencyResolutionProvenance;
+  assert.equal(createHash('sha256').update(dependencyResolutionLog).digest('hex'), provenance.fixture.sha256);
+  assert.equal(Buffer.byteLength(dependencyResolutionLog), provenance.fixture.bytes);
+  assert.equal(provenance.sourceHead, 'ea9084d0d274435f0e506459f1af6b9f0793035a');
+  assert.equal(provenance.testedSha, provenance.sourceHead);
+  assert.equal(provenance.runId, '43283177251');
+  assert.equal(provenance.runAttempt, 1);
+  assert.equal(provenance.jobId, 131411683716);
+  assert.equal(provenance.invocationId, '99d50a3a-2bc7-4fdf-bb57-e8eeff8441ca');
+  assert.equal(provenance.archive.sha256, 'ac3756d5c83ce67ee90cf5a7da45a2be3475d442e0e527cc091d96135865d5a0');
+  assert.equal(provenance.canonicalLog.sha256, 'ef06cef49fcd56f7db9e7295c4c9e422be7a2fc705424859bc6dc342744ab8ac');
+  assert.equal(provenance.originalProducerComplete, true);
+  assert.equal(provenance.originalProducerVerdict, false);
+  assert.equal(provenance.originalCommandExitCode, 0);
+  assert.equal(provenance.originalCaptureExitCode, 0);
+  assert.equal(provenance.events.length, 2);
+  assert.deepEqual(collectDiagnostics(dependencyResolutionLog), provenance.expectedDiagnostics);
+  for (const event of provenance.events) {
+    assert.equal(event.observedHeader, '> Task :dependencyUpdates');
+    assert.ok(dependencyResolutionLog.includes(`at ${event.origin}`));
+    assert.ok(event.canonicalEndLine > event.canonicalStartLine);
+  }
+  const catalog = readFileSync(new URL('../../gradle/libs.versions.toml', import.meta.url), 'utf8');
+  for (const [key, field] of [['kotlin', 'kotlin'], ['compose', 'compose'], ['gradleVersions', 'versionsPlugin']]) {
+    assert.equal(catalog.match(new RegExp(`^${key} = "([^"]+)"$`, 'm'))?.[1], provenance.versions[field], `${key}: revalidate this exact debt before carrying it to a new pinned version`);
+  }
+});
+
+test('existing declaration and codec debt cannot admit the two new resolution consumers', () => {
+  const withoutResolution = dependencyResolutionPolicy().filter(entry => !dependencyResolutionProvenance.expectedDiagnostics.includes(entry.diagnostic));
+  const result = check(dependencyResolutionLog, { exceptions: withoutResolution });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.unexpected, dependencyResolutionProvenance.expectedDiagnostics);
+});
+
+test('only the reviewed exact dependency task and resolution consumer identities can be accepted', () => {
+  const result = check(dependencyResolutionLog, { exceptions: dependencyResolutionPolicy() });
+  assert.equal(result.ok, true, result.unexpected.join('\n'));
+  assert.equal(result.accepted.length, 2);
+  assert.deepEqual(result.accepted.map(entry => entry.diagnostic), dependencyResolutionProvenance.expectedDiagnostics);
+  for (const entry of result.accepted) {
+    assert.equal(entry.issue, 'https://github.com/albertocavalcante/gvy/issues/1603');
+    assert.equal(entry.expires, '2026-12-11');
+    for (const key of ['owner', 'reason', 'nextAction', 'acceptance']) assert.ok(entry[key].trim());
+  }
+});
+
+for (const [name, from, to, count] of [
+  ['task', ':dependencyUpdates', ':otherDependencyUpdates', 2],
+  ['Native attribute name', 'kotlin.native.bundle.type', 'kotlin.native.other.type', 1],
+  ['Native enum type', 'KotlinNativeBundleArtifactsTypes', 'DifferentNativeBundleType', 1],
+  ['Hot Reload attribute name', 'org.jetbrains.compose.reload.usageType', 'org.jetbrains.compose.reload.otherType', 1],
+  ['Hot Reload enum type', 'org.jetbrains.compose.reload.gradle.HotReloadUsageType', 'org.jetbrains.compose.reload.gradle.DifferentUsageType', 1],
+  ['Gradle version', '/9.8.2/', '/9.8.3/', 2],
+  ['Native consumer line', 'Resolver.kt:58', 'Resolver.kt:59', 1],
+  ['Hot Reload consumer line', 'Resolver.kt:279', 'Resolver.kt:280', 1],
+  ['consumer class', 'com.github.benmanes.gradle.versions.updates.Resolver', 'com.example.OtherResolver', 2],
+  ['serialization message', 'which does not implement org.gradle.api.Named', 'which has a different compatibility problem', 2],
+  ['first-party consumer', 'com.github.benmanes.gradle.versions.updates.Resolver.resolve(Resolver.kt:58)', 'Build_gradle.resolve(build.gradle.kts:58)', 1],
+]) {
+  test(`dependency resolution disposition rejects changed ${name}`, () => {
+    const result = check(dependencyResolutionLog.replaceAll(from, to), { exceptions: dependencyResolutionPolicy() });
+    assert.equal(result.ok, false);
+    assert.equal(result.unexpected.length, count);
+  });
+}
+
+test('resolution exceptions cannot hide missing, expired or malformed ownership even on a warm cache', () => {
+  const entries = dependencyResolutionPolicy().filter(entry => dependencyResolutionProvenance.expectedDiagnostics.includes(entry.diagnostic));
+  assert.equal(entries.length, 2);
+  for (const index of [0, 1]) {
+    const missing = entries.filter((_, current) => current !== index);
+    assert.equal(check(dependencyResolutionLog, { exceptions: missing }).ok, false);
+    for (const [field, value] of [['expires', '2026-11-01'], ['owner', ''], ['issue', 'https://example.com/issue']]) {
+      const changed = entries.map((entry, current) => current === index ? { ...entry, [field]: value } : entry);
+      assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions: changed }).ok, false, `${index}: ${field}`);
+    }
+  }
+});
+
 test('actual unprefixed Native bundle overwrite warnings fail with a stable emitter identity', () => {
   const fixture = readFileSync(new URL('./fixtures/gradle-native-provisioning.txt', import.meta.url), 'utf8');
   const result = check(`${fixture}\nBUILD SUCCESSFUL in 1s\n`);
@@ -539,7 +624,7 @@ test('Native attribution cannot accept unrelated Gradle deprecations or bypass m
   }
 });
 
-test('captured Gradle Wire warnings require five exact exceptions alongside the unchanged plugin debt', () => {
+test('captured Gradle Wire warnings require five exact exceptions alongside separately owned plugin debt', () => {
   const exceptions = gradleExceptions();
   const plugins = exceptions.filter(entry => entry.issue.endsWith('/1603'));
   const untracked = check(wireSuccess, { rootDir: wireRoot, exceptions: plugins });
@@ -552,8 +637,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 47);
-  assert.equal(exceptions.length, 52);
+  assert.equal(plugins.length, 49);
+  assert.equal(exceptions.length, 54);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {

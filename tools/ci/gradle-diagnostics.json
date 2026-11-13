@@ -466,5 +466,23 @@
     "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate on Windows x64 with Native toolchain resolution, configuration cache, unit/process tests and actual-JAR Java17 CLI/LSP parity, retaining Linux x64/macOS arm64 checks; review before Gradle10 or expiry.",
     "acceptance": "The adopted plugin resolves the intended Windows Native compiler and preserves those behaviors without this exact windows-x86_64@zip notation diagnostic; remove only this exception after verification.",
     "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[task :dependencyUpdates] Serializing the value of attribute 'kotlin.native.bundle.type', of the enum type 'org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$KotlinNativeBundleArtifactsTypes', which does not implement org.gradle.api.Named has been deprecated. This will fail with an error in Gradle 10. The value is serialized as the name of the enum constant, so any other state the constant carries is lost, and the value cannot be read back if the constant is renamed. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type [origin com.github.benmanes.gradle.versions.updates.Resolver.resolve(Resolver.kt:58)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Versions plugin 0.53.0 Resolver.resolve:58 resolves a copied latest configuration carrying the Kotlin Gradle Plugin 2.3.0 plain Native bundle enum. Gradle 9.8.2 serializes its constant name and Gradle 10 rejects this unsupported type. Its inspected constants have no extra instance state; no current data loss is established. Inspected KGP 2.4.21 still declares a plain enum; no compatible correction is verified in gvy.",
+    "nextAction": "Kotlin/build maintainers must validate a Named Native bundle attribute correction with a full unfiltered dependencyUpdates report plus Native/KMP consumers, Native tests and actual-JAR CLI/LSP checks; evaluate released candidates rather than filtering Native configurations or suppressing serialization diagnostics.",
+    "acceptance": "The adopted Kotlin plugin uses a supported attribute type and those checks pass without this exact dependencyUpdates serialization warning or the related Native enum warnings; remove the verified-obsolete exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[task :dependencyUpdates] Serializing the value of attribute 'org.jetbrains.compose.reload.usageType', of the enum type 'org.jetbrains.compose.reload.gradle.HotReloadUsageType', which does not implement org.gradle.api.Named has been deprecated. This will fail with an error in Gradle 10. The value is serialized as the name of the enum constant, so any other state the constant carries is lost, and the value cannot be read back if the constant is renamed. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type [origin com.github.benmanes.gradle.versions.updates.Resolver.getCurrentCoordinates(Resolver.kt:279)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Versions plugin 0.53.0 Resolver.getCurrentCoordinates:279 resolves a copied current configuration carrying Compose 1.10.0 / Hot Reload 1.0.0 plain Main/Dev enum values. Gradle 9.8.2 serializes their names and Gradle 10 rejects the unsupported type. No current extra state loss is established. Hot Reload 1.3.0-rc01 source implements Named via CMP-10862, but compatible Compose/Kotlin adoption and gvy desktop/reload integration are untested.",
+    "nextAction": "Desktop/build maintainers must resolve and validate a compatible Hot Reload/Compose combination containing the Named fix, including desktop packaging/reload and a complete unfiltered dependencyUpdates report before adopting it and retiring this resolution-consumer exception.",
+    "acceptance": "The adopted Hot Reload type implements Named and desktop/reload plus full dependency reporting pass without this exact serialization warning or the related declaration warning; remove the verified-obsolete exceptions.",
+    "expires": "2026-12-11"
   }
 ]
