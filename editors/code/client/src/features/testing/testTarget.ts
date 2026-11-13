@@ -32,6 +32,12 @@ export type TestSelectionDescriptor<T> =
   | { readonly kind: "feature"; readonly test: string }
   | { readonly kind: "unrepresentable" };
 
+/** A selected item that cannot be run exactly; the rest of the plan still can. */
+export interface RefusedSelection<T> {
+  readonly item: T;
+  readonly reason: "unrunnable-iteration" | "ambiguous-feature-name";
+}
+
 export type TestSelectionPlan<T> =
   | {
       readonly kind: "ready";
@@ -39,6 +45,7 @@ export type TestSelectionPlan<T> =
         readonly item: T;
         readonly target: Readonly<TestTarget>;
       }[];
+      readonly refused: readonly RefusedSelection<T>[];
     }
   | {
       readonly kind: "unsupported";
@@ -65,7 +72,7 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
   roots.forEach((item) => rootItems.add(item));
   const requested = new Set(include ?? rootItems);
   if (!requested.size) {
-    return { kind: "ready", selections: [] };
+    return { kind: "ready", selections: [], refused: [] };
   }
   const excluded = new Set(exclude);
   const paths = new Map<T, readonly T[]>();
@@ -122,8 +129,17 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
     exclusionsBySuite.set(suite, entries);
   }
   const selections: { item: T; target: Readonly<TestTarget> }[] = [];
+  const refused: RefusedSelection<T>[] = [];
   const targets = new Map<T, Map<string | undefined, T>>();
-  const completeFeatures = new Map<T, ReadonlyMap<T, string> | undefined>();
+  // Only built for a suite that must be split around exclusions.
+  const completeFeatures = new Map<
+    T,
+    | {
+        byName: ReadonlyMap<string, readonly T[]>;
+        all: ReadonlySet<T>;
+      }
+    | undefined
+  >();
   const excludedFeatures = new Map<
     T,
     {
@@ -163,34 +179,33 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
         ? { suite: suiteDescriptor.suite, test: itemDescriptor.test }
         : { suite: suiteDescriptor.suite };
 
-    if (!completeFeatures.has(suite)) {
+    const relevant = exclusionsBySuite.get(suite) ?? [];
+    // The discovery snapshot only matters when something is excluded from this
+    // suite. Without exclusions a whole suite runs as one target, whatever its
+    // children are called (overloaded methods share a name).
+    if (relevant.length && !completeFeatures.has(suite)) {
       const children = suiteDescriptor.completeChildren;
-      const featureTargets = new Map<string, T>();
-      const featureNames = new Map<T, string>();
+      const byName = new Map<string, T[]>();
+      const all = new Set<T>();
       for (const child of children ?? []) {
         const childDescriptor = descriptor(child);
         if (child.parent !== suite || childDescriptor.kind !== "feature") {
           return unsupported(child);
         }
-        const test = childDescriptor.test;
-        const previous = featureTargets.get(test);
-        if (previous !== undefined && previous !== child) {
-          return unsupported(child);
-        }
-        featureTargets.set(test, child);
-        featureNames.set(child, test);
+        const group = byName.get(childDescriptor.test) ?? [];
+        if (!all.has(child)) group.push(child);
+        all.add(child);
+        byName.set(childDescriptor.test, group);
       }
       completeFeatures.set(
         suite,
-        children === undefined ? undefined : featureNames,
+        children === undefined ? undefined : { byName, all },
       );
     }
     const features = completeFeatures.get(suite);
-    if (item !== suite && features && !features.has(item)) {
+    if (item !== suite && features && !features.all.has(item)) {
       return unsupported(item);
     }
-
-    const relevant = exclusionsBySuite.get(suite) ?? [];
     let exclusionIndex = excludedFeatures.get(suite);
     if (!exclusionIndex) {
       const byName = new Map<string, { feature: T; entry: T }>();
@@ -205,7 +220,7 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
         const featureDescriptor = descriptor(feature);
         if (
           featureDescriptor.kind !== "feature" ||
-          (features !== undefined && !features.has(feature))
+          (features !== undefined && !features.all.has(feature))
         ) {
           return unsupported(entry);
         }
@@ -224,7 +239,12 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
     }
     if (itemDescriptor.kind === "feature") {
       const alias = exclusionIndex.byName.get(itemDescriptor.test);
-      if (alias && alias.feature !== item) return unsupported(alias.entry);
+      if (alias && alias.feature !== item) {
+        // The server filters by name, so it cannot run one of two same-named
+        // features (overloads) without the other.
+        refused.push({ item, reason: "ambiguous-feature-name" });
+        continue;
+      }
       const row = exclusionIndex.rows.get(item);
       if (row) return unsupported(row);
     }
@@ -233,11 +253,23 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
       if (features === undefined) {
         return unsupported(item, "incomplete-suite");
       }
-      for (const [child, test] of features) {
-        if (
-          !excluded.has(child) &&
-          !append(child, { suite: suiteDescriptor.suite, test })
-        ) {
+      // One target per feature name. Same-named features (overloads) run
+      // together, which is exact unless only some of them are excluded; then
+      // this suite alone is refused because a name filter cannot split them.
+      const remaining: { child: T; test: string }[] = [];
+      let ambiguous = false;
+      for (const [test, group] of features.byName) {
+        const kept = group.filter((child) => !excluded.has(child));
+        if (kept.length === group.length)
+          remaining.push({ child: kept[0], test });
+        else if (kept.length) ambiguous = true;
+      }
+      if (ambiguous) {
+        refused.push({ item, reason: "ambiguous-feature-name" });
+        continue;
+      }
+      for (const { child, test } of remaining) {
+        if (!append(child, { suite: suiteDescriptor.suite, test })) {
           return unsupported(child);
         }
       }
@@ -245,5 +277,5 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
       return unsupported(item);
     }
   }
-  return { kind: "ready", selections };
+  return { kind: "ready", selections, refused };
 }
