@@ -49,33 +49,120 @@ jobs:
           [[ "$(cat .bazelversion)" == 9.0.0 ]]
           grep -qx "bazel 9.0.0" "$private/bazel-version"
           printf 'witness source=1cd527e018f1cf397acb25f01a98dfa0a6662c5b bazel_pin=9.0.0 run=%s attempt=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          cleanup_done=0
+          cleanup_exit=125
+          cleanup() {
+          	if ((cleanup_done == 0)); then
+          		cleanup_done=1
+          		set +e
+          		timeout --kill-after=5s 20s bazel --host_jvm_args=-Xmx1024m shutdown >"$private/shutdown.log" 2>&1
+          		cleanup_exit=$?
+          		set -e
+          		printf 'bazel_cleanup_exit=%s\n' "$cleanup_exit"
+          	fi
+          }
+          trap cleanup EXIT
           set +e
           bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --zip_undeclared_test_outputs --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1
           bazel_status=$?
           set -e
           printf 'bazel_exit=%s\n' "$bazel_status"
-          if ((bazel_status != 0)); then
-          	python3 - "$private/bazel.log" 2>/dev/null <<'DIAG' || echo "reason_codes=diagnostic_unavailable"
+          cleanup
+          if ((bazel_status != 0 || cleanup_exit != 0)); then
+          	python3 - "$bazel_status" "$cleanup_exit" "$public/failure.json" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
+          import json
+          import os
           import pathlib
           import re
           import sys
-
-          p = pathlib.Path(sys.argv[1])
-          with p.open("rb") as stream:
-              stream.seek(max(0, p.stat().st_size - 1024 * 1024))
-              text = stream.read(1024 * 1024).decode("utf-8", "replace")
-          patterns = {
-              "dependency_fetch": r"(?i)(error downloading|failed to download|repository.*fetch failed)",
-              "compile_error": r"(?i)(compilation failed|kotlin compilation error|error:.*\.kt:)",
-              "test_failed": r"(?m)^//(?:build-tool:build-tool_test|jenkins:jenkins_test)\s+FAILED",
-              "launcher_option": r"(?i)(unknown option|unmatched argument|unrecognized option)",
-              "resource_exhaustion": r"(?i)(outofmemoryerror|no space left on device)",
+          import xml.etree.ElementTree as ET
+          
+          LIMIT = 256 * 1024
+          CASES = {
+              "test logging uses the Logback provider": "provider",
+              "quiet test policy retains warnings and errors and allows a restored debug override": "quiet_policy",
           }
-          found = [name for name, pattern in patterns.items() if re.search(pattern, text)]
-          print("reason_codes=" + (",".join(found) if found else "unclassified"))
-          for label, target in (("build-tool", "//build-tool:build-tool_test"), ("jenkins", "//jenkins:jenkins_test")):
-              match = re.search(r"(?m)^" + re.escape(target) + r"\s+(PASSED|FAILED|NO STATUS)", text)
-              print(label + "_outcome=" + (match.group(1).lower().replace(" ", "_") if match else "not_observed"))
+          TYPES = {
+              "java.lang.AssertionError": "assertion",
+              "org.opentest4j.AssertionFailedError": "assertion",
+              "java.lang.ClassNotFoundException": "class_not_found",
+              "java.lang.NoClassDefFoundError": "class_not_found",
+              "java.lang.UnsupportedClassVersionError": "class_version",
+          }
+          PATTERNS = {
+              "reports_dir_option": r"(?i)(unknown option|unmatched argument|unrecognized option)[^\n]{0,160}--reports-dir",
+              "include_classname_option": r"(?i)(unknown option|unmatched argument|unrecognized option)[^\n]{0,160}--include-classname",
+              "missing_execute": r"(?i)(missing required (sub)?command|unknown command[^\n]{0,80}execute)",
+              "zero_tests": r"(?i)(no tests (were )?found|0 tests found)",
+              "wrapper_missing": r"(?i)(wrapper[^\n]{0,120}(no such file|not found|permission denied))",
+              "output_env_missing": r"TEST_UNDECLARED_OUTPUTS_DIR: parameter (null or )?not set",
+              "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror)",
+              "class_version": r"(?i)unsupportedclassversionerror",
+          }
+          
+          def bounded(path):
+              try:
+                  with pathlib.Path(path).open("rb") as stream:
+                      data = stream.read(LIMIT + 1)
+                  return ("oversize", None) if len(data) > LIMIT else ("present", data)
+              except FileNotFoundError:
+                  return ("missing", None)
+              except OSError:
+                  return ("unreadable", None)
+          
+          def classify(log, xml, classname):
+              log_state, log_bytes = log
+              xml_state, xml_bytes = xml
+              text = log_bytes.decode("utf-8", "replace") if log_bytes is not None else ""
+              codes = [key for key, pattern in PATTERNS.items() if re.search(pattern, text)]
+              result = {"log": log_state, "xml": xml_state, "codes": codes or ["unknown"], "cases": []}
+              if xml_bytes is None:
+                  return result
+              try:
+                  root = ET.fromstring(xml_bytes)
+              except ET.ParseError:
+                  result["xml"] = "malformed"
+                  return result
+              found = []
+              for case in root.findall(".//testcase"):
+                  name = case.get("name", "").removesuffix("()")
+                  if case.get("classname") != classname or name not in CASES:
+                      continue
+                  children = [child for child in case if child.tag in ("failure", "error", "skipped")]
+                  if len(children) > 1:
+                      outcome, kind = "ambiguous", "unknown"
+                  elif not children:
+                      outcome, kind = "passed", "none"
+                  else:
+                      child = children[0]
+                      outcome = {"failure": "failed", "error": "error", "skipped": "skipped"}[child.tag]
+                      kind = TYPES.get(child.get("type", ""), "unknown") if child.tag != "skipped" else "none"
+                  found.append({"id": CASES[name], "outcome": outcome, "type": kind})
+              if len(found) > 2 or len({item["id"] for item in found}) != len(found):
+                  result["xml"] = "ambiguous"
+                  return result
+              result["cases"] = sorted(found, key=lambda item: item["id"])
+              result["knownCounts"] = {key: sum(item["outcome"] == key for item in found) for key in ("passed", "failed", "error", "skipped", "ambiguous")}
+              return result
+          
+          def main():
+              status, cleanup, dest = sys.argv[1:]
+              if not status.isdecimal() or not cleanup.isdecimal():
+                  raise SystemExit("invalid status")
+              modules = {
+                  "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
+                  "jenkins": ("jenkins_test", "com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest"),
+              }
+              result = {}
+              for module, (target, classname) in modules.items():
+                  base = pathlib.Path("bazel-testlogs") / module / target
+                  result[module] = classify(bounded(base / "test.log"), bounded(base / "test.xml"), classname)
+              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": int(status), "cleanupExit": int(cleanup), "modules": result}
+              pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
+          
+          if __name__ == "__main__":
+              main()
+          
           DIAG
           	echo "Focused Bazel witness failed; private output withheld." >&2
           	exit 1
@@ -118,6 +205,101 @@ jobs:
           pathlib.Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
           PY
           then
+          	python3 - "$bazel_status" "$cleanup_exit" "$public/failure.json" 2>"$private/classifier.log" <<'DIAG' || echo "diagnostic_unavailable"
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+          
+          LIMIT = 256 * 1024
+          CASES = {
+              "test logging uses the Logback provider": "provider",
+              "quiet test policy retains warnings and errors and allows a restored debug override": "quiet_policy",
+          }
+          TYPES = {
+              "java.lang.AssertionError": "assertion",
+              "org.opentest4j.AssertionFailedError": "assertion",
+              "java.lang.ClassNotFoundException": "class_not_found",
+              "java.lang.NoClassDefFoundError": "class_not_found",
+              "java.lang.UnsupportedClassVersionError": "class_version",
+          }
+          PATTERNS = {
+              "reports_dir_option": r"(?i)(unknown option|unmatched argument|unrecognized option)[^\n]{0,160}--reports-dir",
+              "include_classname_option": r"(?i)(unknown option|unmatched argument|unrecognized option)[^\n]{0,160}--include-classname",
+              "missing_execute": r"(?i)(missing required (sub)?command|unknown command[^\n]{0,80}execute)",
+              "zero_tests": r"(?i)(no tests (were )?found|0 tests found)",
+              "wrapper_missing": r"(?i)(wrapper[^\n]{0,120}(no such file|not found|permission denied))",
+              "output_env_missing": r"TEST_UNDECLARED_OUTPUTS_DIR: parameter (null or )?not set",
+              "class_not_found": r"(?i)(classnotfoundexception|noclassdeffounderror)",
+              "class_version": r"(?i)unsupportedclassversionerror",
+          }
+          
+          def bounded(path):
+              try:
+                  with pathlib.Path(path).open("rb") as stream:
+                      data = stream.read(LIMIT + 1)
+                  return ("oversize", None) if len(data) > LIMIT else ("present", data)
+              except FileNotFoundError:
+                  return ("missing", None)
+              except OSError:
+                  return ("unreadable", None)
+          
+          def classify(log, xml, classname):
+              log_state, log_bytes = log
+              xml_state, xml_bytes = xml
+              text = log_bytes.decode("utf-8", "replace") if log_bytes is not None else ""
+              codes = [key for key, pattern in PATTERNS.items() if re.search(pattern, text)]
+              result = {"log": log_state, "xml": xml_state, "codes": codes or ["unknown"], "cases": []}
+              if xml_bytes is None:
+                  return result
+              try:
+                  root = ET.fromstring(xml_bytes)
+              except ET.ParseError:
+                  result["xml"] = "malformed"
+                  return result
+              found = []
+              for case in root.findall(".//testcase"):
+                  name = case.get("name", "").removesuffix("()")
+                  if case.get("classname") != classname or name not in CASES:
+                      continue
+                  children = [child for child in case if child.tag in ("failure", "error", "skipped")]
+                  if len(children) > 1:
+                      outcome, kind = "ambiguous", "unknown"
+                  elif not children:
+                      outcome, kind = "passed", "none"
+                  else:
+                      child = children[0]
+                      outcome = {"failure": "failed", "error": "error", "skipped": "skipped"}[child.tag]
+                      kind = TYPES.get(child.get("type", ""), "unknown") if child.tag != "skipped" else "none"
+                  found.append({"id": CASES[name], "outcome": outcome, "type": kind})
+              if len(found) > 2 or len({item["id"] for item in found}) != len(found):
+                  result["xml"] = "ambiguous"
+                  return result
+              result["cases"] = sorted(found, key=lambda item: item["id"])
+              result["knownCounts"] = {key: sum(item["outcome"] == key for item in found) for key in ("passed", "failed", "error", "skipped", "ambiguous")}
+              return result
+          
+          def main():
+              status, cleanup, dest = sys.argv[1:]
+              if not status.isdecimal() or not cleanup.isdecimal():
+                  raise SystemExit("invalid status")
+              modules = {
+                  "build-tool": ("build-tool_test", "com.github.albertocavalcante.gvy.build.LoggingProviderTest"),
+                  "jenkins": ("jenkins_test", "com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest"),
+              }
+              result = {}
+              for module, (target, classname) in modules.items():
+                  base = pathlib.Path("bazel-testlogs") / module / target
+                  result[module] = classify(bounded(base / "test.log"), bounded(base / "test.xml"), classname)
+              payload = {"schemaVersion": 1, "kind": "bazel-parity-failure", "source": "1cd527e018f1cf397acb25f01a98dfa0a6662c5b", "runId": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "bazelExit": int(status), "cleanupExit": int(cleanup), "modules": result}
+              pathlib.Path(dest).write_text(json.dumps(payload, sort_keys=True) + "\n")
+          
+          if __name__ == "__main__":
+              main()
+          
+          DIAG
           	python3 - "$private/receipt-build.log" 2>/dev/null <<'DIAG' || echo "receipt_reason=diagnostic_unavailable"
           import pathlib
           import sys
@@ -137,8 +319,9 @@ jobs:
           	exit 1
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
         with:
           name: bazel-logging-parity-receipt
-          path: ${{ runner.temp }}/parity-receipt/receipt.json
+          path: ${{ runner.temp }}/parity-receipt/
           if-no-files-found: error
           retention-days: 7
