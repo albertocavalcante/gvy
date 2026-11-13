@@ -13,17 +13,28 @@ private const val MAX_MANAGED_CACHE_PATHS = 16_384
 
 /**
  * Bound persistent cache growth across restarts without deleting viewing copies or files another editor owns.
- * Admission reserves a complete operation's maximum bytes and serializes publication across store instances.
- * Reaching capacity fails explicitly; it never evicts a dirty view or silently exceeds the configured budget.
+ * New writes reserve their maximum bytes and serialize publication across store instances. A reuse callback runs
+ * under the same lock and must verify an existing object without writing; it reserves no new bytes or paths.
+ * Reaching capacity fails explicitly; the store never evicts a dirty view or silently exceeds its write budget.
  */
 internal fun <T> withSourceDiskAdmission(
     root: Path,
     maximumBytes: Long,
     reservationBytes: Long,
     operation: () -> T,
+): T = withSourceDiskAdmissionOrReuse(root, maximumBytes, reservationBytes, { null }, operation)
+
+/** Reuse an already validated content-addressed object without reserving bytes for another copy. */
+internal fun <T> withSourceDiskAdmissionOrReuse(
+    root: Path,
+    maximumBytes: Long,
+    reservationBytes: Long,
+    reuse: () -> T?,
+    operation: () -> T,
 ): T = withSourceCacheLock(root) { canonical ->
     require(maximumBytes > 0 && reservationBytes > 0)
     if (reservationBytes > maximumBytes) throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
+    reuse()?.let { return@withSourceCacheLock it }
     var bytes = reservationBytes
     // Every operation creates at most a digest directory, entry path and staging file.
     var paths = 16

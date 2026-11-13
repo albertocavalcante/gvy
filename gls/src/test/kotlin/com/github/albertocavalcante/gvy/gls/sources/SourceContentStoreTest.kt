@@ -189,20 +189,81 @@ class SourceContentStoreTest {
     }
 
     @Test
-    fun `archive disk admission accounts existing content after restart and never deletes it`(): Unit = runBlocking {
+    fun `archive disk admission reuses verified content after restart and never deletes it`(): Unit = runBlocking {
         val jar = archive("small.jar", "example/Foo.java" to "class Foo {}")
         val root = temporary.resolve("store")
         val limits = SourceStoreLimits(maxArchiveBytes = 1024, maxArchiveStoreBytes = 1024)
         val imported = SourceContentStore(root, limits).use { it.importArchive(SourceArchiveInput.Local(jar)) }
         SourceContentStore(root, limits).use { restarted ->
-            assertEquals(
-                SourceFailure.LIMIT_EXCEEDED,
-                assertFailsWith<SourceStoreException> {
-                    restarted.importArchive(SourceArchiveInput.Local(jar))
-                }.failure,
-            )
+            assertEquals(imported, restarted.importArchive(SourceArchiveInput.Local(jar)))
             assertTrue(Files.isRegularFile(imported.path))
             verifyFileDigest(imported.path, imported.sha256, 1024)
+        }
+    }
+
+    @Test
+    fun `materialized content is reused after restart without another disk reservation`(): Unit = runBlocking {
+        val jar = archive("small.jar", "example/Foo.java" to "class Foo {}")
+        val root = temporary.resolve("store")
+        val limits = SourceStoreLimits(
+            maxArchiveBytes = 1024,
+            maxEntryBytes = 512,
+            maxArchiveStoreBytes = 1024,
+            maxContentStoreBytes = 512,
+        )
+        val original = SourceContentStore(root, limits).use { store ->
+            val archive = store.importArchive(SourceArchiveInput.Local(jar))
+            assertNotNull(store.sourceFor(archive, "example.Foo"))
+        }
+
+        SourceContentStore(root, limits).use { restarted ->
+            val archive = restarted.importArchive(SourceArchiveInput.Local(jar))
+            val reused = assertNotNull(restarted.sourceFor(archive, "example.Foo"))
+            assertEquals(original, reused)
+            assertEquals("class Foo {}", Files.readString(reused.contentPath))
+        }
+    }
+
+    @Test
+    fun `corrupted archive cache is rejected during restart reuse`(): Unit = runBlocking {
+        val jar = archive("small.jar", "example/Foo.java" to "class Foo {}")
+        val root = temporary.resolve("store")
+        val limits = SourceStoreLimits(maxArchiveBytes = 1024, maxArchiveStoreBytes = 1024)
+        val imported = SourceContentStore(root, limits).use { it.importArchive(SourceArchiveInput.Local(jar)) }
+        Files.writeString(imported.path, "corrupt cache bytes")
+
+        SourceContentStore(root, limits).use { restarted ->
+            val failure = assertFailsWith<SourceStoreException> {
+                restarted.importArchive(SourceArchiveInput.Local(jar))
+            }
+            assertEquals(SourceFailure.INTEGRITY_MISMATCH, failure.failure)
+            assertEquals("corrupt cache bytes", Files.readString(imported.path))
+        }
+    }
+
+    @Test
+    fun `corrupted materialized content is rejected during restart reuse and preserved`(): Unit = runBlocking {
+        val jar = archive("small.jar", "example/Foo.java" to "class Foo {}")
+        val root = temporary.resolve("store")
+        val limits = SourceStoreLimits(
+            maxArchiveBytes = 1024,
+            maxEntryBytes = 512,
+            maxArchiveStoreBytes = 1024,
+            maxContentStoreBytes = 512,
+        )
+        val source = SourceContentStore(root, limits).use { store ->
+            val archive = store.importArchive(SourceArchiveInput.Local(jar))
+            assertNotNull(store.sourceFor(archive, "example.Foo"))
+        }
+        Files.writeString(source.contentPath, "user modified source")
+
+        SourceContentStore(root, limits).use { restarted ->
+            val archive = restarted.importArchive(SourceArchiveInput.Local(jar))
+            val failure = assertFailsWith<SourceStoreException> {
+                restarted.sourceFor(archive, "example.Foo")
+            }
+            assertEquals(SourceFailure.INTEGRITY_MISMATCH, failure.failure)
+            assertEquals("user modified source", Files.readString(source.contentPath))
         }
     }
 

@@ -31,6 +31,73 @@ class JavaSourceInspectorTest {
         inspector = JavaSourceInspector()
     }
 
+    @Test
+    fun `returns exact UTF16 ranges for annotated nested record and enum declarations`() {
+        val source = """
+            package sample;
+            class Outer { /* 😀 */ @Deprecated public record Nested(String value) {} @Deprecated public enum State { READY } }
+        """.trimIndent()
+        val declarationLine = source.lines()[1]
+
+        listOf("Nested", "State").forEachIndexed { index, name ->
+            val definition = requireNotNull(inspector.inspectDefinitionFromContent(source, "sample.Outer\$$name"))
+            val selectedName = definition.nameRange
+            val annotationSearchStart = if (index == 0) {
+                0
+            } else {
+                declarationLine.indexOf('}', declarationLine.indexOf("Nested")) + 1
+            }
+            val annotationStart = declarationLine.indexOf("@Deprecated", annotationSearchStart)
+            val declarationEnd = declarationLine.indexOf('}', selectedName.startCharacter) + 1
+
+            assertEquals(1, selectedName.startLine)
+            assertEquals(declarationLine.indexOf(name), selectedName.startCharacter)
+            assertEquals(selectedName.startCharacter + name.length, selectedName.endCharacter)
+            assertEquals(name, declarationLine.substring(selectedName.startCharacter, selectedName.endCharacter))
+            assertEquals(SourceSpan(1, annotationStart, 1, declarationEnd), definition.declarationRange)
+        }
+    }
+
+    @Test
+    fun `returns exact method ranges and declines ambiguous overloads`() {
+        val source = """
+            package sample;
+            class Example {
+                public
+                String select(String value) { return value; }
+            }
+        """.trimIndent()
+        val result = requireNotNull(inspector.inspectMethodFromContent(source, "sample.Example", "select"))
+        val definition = requireNotNull(result.definition)
+        val methodLineNumber = source.lines().indexOfFirst { "String select" in it }
+        val methodLine = source.lines()[methodLineNumber]
+        val declarationStartLine = methodLineNumber - 1
+        val declarationStartCharacter = source.lines()[declarationStartLine].indexOf("public")
+        val declarationEndCharacter = methodLine.indexOf('}') + 1
+
+        assertEquals(methodLineNumber, definition.nameRange.startLine)
+        assertEquals(methodLine.indexOf("select"), definition.nameRange.startCharacter)
+        assertEquals(
+            "select",
+            methodLine.substring(definition.nameRange.startCharacter, definition.nameRange.endCharacter),
+        )
+        assertEquals(
+            SourceSpan(declarationStartLine, declarationStartCharacter, methodLineNumber, declarationEndCharacter),
+            definition.declarationRange,
+        )
+
+        val overloaded = """
+            package sample;
+            class Example {
+                String select(String value) { return value; }
+                String select(Object value) { return value.toString(); }
+            }
+        """.trimIndent()
+        org.junit.jupiter.api.Assertions.assertNull(
+            inspector.inspectMethodFromContent(overloaded, "sample.Example", "select"),
+        )
+    }
+
     @Nested
     inner class InspectClassTest {
 

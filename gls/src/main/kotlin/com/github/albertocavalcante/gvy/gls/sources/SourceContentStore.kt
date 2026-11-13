@@ -207,35 +207,53 @@ internal fun materializeEntry(
     archive: VerifiedSourceArchive,
     entryName: String,
     limits: SourceStoreLimits,
-): MaterializedSource = withSourceDiskAdmission(root, limits.maxContentStoreBytes, limits.maxEntryBytes) {
-    verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
+): MaterializedSource {
     val entryId = sourceDigest(entryName)
     val directory = root.resolve(archive.sha256).resolve(entryId)
-    ensureManagedDirectory(directory)
     val destination = directory.resolve(entryName.substringAfterLast('/'))
-    val temporary = Files.createTempFile(directory, ".extracting-", ".source")
-    try {
-        val digest = ZipFile(archive.path.toFile()).use { zip ->
-            val entry = zip.getEntry(entryName) ?: throw SourceStoreException(SourceFailure.IO_FAILURE)
-            if (entry.isDirectory || entry.size > limits.maxEntryBytes) {
-                throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
-            }
-            zip.getInputStream(entry).use { input ->
-                Files.newOutputStream(temporary).use { output ->
-                    copyAndDigest(input, limits.maxEntryBytes, output::write)
-                }
-            }
-        }
-        verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
-        if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
+    return withSourceDiskAdmissionOrReuse(
+        root,
+        limits.maxContentStoreBytes,
+        limits.maxEntryBytes,
+        reuse = {
+            if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return@withSourceDiskAdmissionOrReuse null
+            ensureManagedDirectory(directory)
+            if (!Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) return@withSourceDiskAdmissionOrReuse null
+            verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
+            val digest = archiveEntryDigest(archive, entryName, limits)
+            verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
             verifyFileDigest(destination, digest, limits.maxEntryBytes)
-        } else {
-            publishNewFile(temporary, destination)
+            MaterializedSource(archive, entryName, destination, digest)
+        },
+    ) {
+        verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
+        ensureManagedDirectory(directory)
+        val temporary = Files.createTempFile(directory, ".extracting-", ".source")
+        try {
+            val digest = archiveEntryDigest(archive, entryName, limits)
+            verifyFileDigest(archive.path, archive.sha256, limits.maxArchiveBytes)
+            if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
+                verifyFileDigest(destination, digest, limits.maxEntryBytes)
+            } else {
+                publishNewFile(temporary, destination)
+            }
+            MaterializedSource(archive, entryName, destination, digest)
+        } finally {
+            Files.deleteIfExists(temporary)
         }
-        MaterializedSource(archive, entryName, destination, digest)
-    } finally {
-        Files.deleteIfExists(temporary)
     }
+}
+
+private fun archiveEntryDigest(
+    archive: VerifiedSourceArchive,
+    entryName: String,
+    limits: SourceStoreLimits,
+): String = ZipFile(archive.path.toFile()).use { zip ->
+    val entry = zip.getEntry(entryName) ?: throw SourceStoreException(SourceFailure.IO_FAILURE)
+    if (entry.isDirectory || entry.size > limits.maxEntryBytes) {
+        throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
+    }
+    zip.getInputStream(entry).use { input -> copyAndDigest(input, limits.maxEntryBytes) }
 }
 
 internal fun sourceDigest(value: String): String = MessageDigest.getInstance("SHA-256")

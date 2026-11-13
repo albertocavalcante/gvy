@@ -58,8 +58,49 @@ internal class SourceStoreException(val failure: SourceFailure) : IOException(fa
 /** Copies inputs into a content-addressed private store, checking expected digests before any ZIP parsing. */
 class SourceArchiveStore(root: Path, private val limits: SourceStoreLimits = SourceStoreLimits()) {
     private val root = sourceStoreRoot(root)
-    fun importArchive(input: SourceArchiveInput): VerifiedSourceArchive =
-        withSourceDiskAdmission(root, limits.maxArchiveStoreBytes, limits.maxArchiveBytes) { importAdmitted(input) }
+    fun importArchive(input: SourceArchiveInput): VerifiedSourceArchive {
+        val expected = input.expectedSha256()
+        if (expected != null && !isSha256(expected)) {
+            throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
+        }
+
+        if (expected != null) {
+            val digest = expected.lowercase(Locale.ROOT)
+            return withSourceDiskAdmissionOrReuse(
+                root,
+                limits.maxArchiveStoreBytes,
+                limits.maxArchiveBytes,
+                reuse = { cachedArchive(digest) },
+            ) { importAdmitted(input) }
+        }
+
+        return try {
+            withSourceDiskAdmission(root, limits.maxArchiveStoreBytes, limits.maxArchiveBytes) {
+                importAdmitted(input)
+            }
+        } catch (failure: SourceStoreException) {
+            if (failure.failure != SourceFailure.LIMIT_EXCEEDED || input !is SourceArchiveInput.Local) throw failure
+            reuseLocalArchive(input.path, failure)
+        }
+    }
+
+    private fun SourceArchiveInput.expectedSha256(): String? = when (this) {
+        is SourceArchiveInput.Local -> null
+        is SourceArchiveInput.Verified -> expectedSha256
+        is SourceArchiveInput.VerifiedResource -> expectedSha256
+    }
+
+    private fun cachedArchive(digest: String): VerifiedSourceArchive? {
+        val path = root.resolve("$digest.jar")
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return null
+        verifyFileDigest(path, digest, limits.maxArchiveBytes)
+        return VerifiedSourceArchive(path, digest)
+    }
+
+    private fun reuseLocalArchive(path: Path, admissionFailure: SourceStoreException): VerifiedSourceArchive {
+        val digest = openArchiveFile(path).use { copyAndDigest(it, limits.maxArchiveBytes) }
+        return cachedArchive(digest) ?: throw admissionFailure
+    }
 
     private fun importAdmitted(input: SourceArchiveInput): VerifiedSourceArchive {
         val expected = when (input) {
