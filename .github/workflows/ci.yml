@@ -67,17 +67,17 @@ jobs:
           set -euo pipefail
           proof="$RUNNER_TEMP/l05b-green-proof"
           base=eb9d0251900a1a51894c13634db0e88a4cd846ff
-          candidate=c9536e392d9dcacb15032ba31aea8e67acdd8efa
+          candidate=525adf20a6dbc312ebb69fd34042ece7abdb423d
           cp .publication/l05b.init.gradle "$RUNNER_TEMP/l05b.init.gradle"
           printf '%s  %s\n' cc0742e076410f51f5824988f3a8f9921b372624ee84e634ceb8b3cf39d08efb "$RUNNER_TEMP/l05b.init.gradle" | sha256sum -c -
           git fetch --no-tags origin "$candidate"
-          [[ "$(git rev-parse "$candidate^{tree}")" == 5d356f15063a917028a7d5befb72aa79664a9a29 ]]
+          [[ "$(git rev-parse "$candidate^{tree}")" == dfc02cd7e1884311fb201cd5788cc9dfb89c79f5 ]]
           git diff --binary "$base" "$candidate" -- gls editors/code/client/test/unit/server/stderrRouter.test.ts >"$proof/source.patch"
           git switch --detach "$base"
           git switch -c fix/bounded-logback-publication
           git apply --check --index "$proof/source.patch"
           git apply --index "$proof/source.patch"
-          [[ "$(git write-tree)" == 5d356f15063a917028a7d5befb72aa79664a9a29 ]]
+          [[ "$(git write-tree)" == dfc02cd7e1884311fb201cd5788cc9dfb89c79f5 ]]
           git diff --quiet
           git diff --cached --check
           printf '%s\0' editors/code/client/test/unit/server/stderrRouter.test.ts gls/BUILD.bazel gls/build.gradle.kts gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedConsoleAppender.kt gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackEncoder.kt gls/src/main/resources/logback.xml gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackRenderingTest.kt >"$RUNNER_TEMP/expected-paths"
@@ -150,6 +150,48 @@ jobs:
           capture=0
           timeout=0
           REDREF
+          encoder=gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackEncoder.kt
+          xml=gls/build/test-results/test/TEST-com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest.xml
+          saved_encoder="$RUNNER_TEMP/l05b-fixed-encoder.kt"
+          cp "$encoder" "$saved_encoder"
+          trap 'cp "$saved_encoder" "$encoder"' EXIT
+          git show c9536e392d9dcacb15032ba31aea8e67acdd8efa:"$encoder" >"$encoder"
+          export label=marker-continuation-red
+          set +e
+          timeout --kill-after=10s 1800s bash -c 'run_pipeline "$@"' _ direnv exec . ./gradlew :gls:test --tests '*BoundedLogbackRenderingTest.truncation markers retain throwable continuation severity' --no-daemon --no-parallel --max-workers=1 --no-build-cache --rerun-tasks --info -I "$RUNNER_TEMP/l05b.init.gradle" '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
+          red_timeout=$?
+          set -e
+          printf '%s\n' "$red_timeout" >"$proof/marker-continuation-red.timeout"
+          [[ "$red_timeout" == 0 && -s "$proof/marker-continuation-red.status" ]]
+          read -r red_producer red_capture <"$proof/marker-continuation-red.status"
+          [[ "$red_producer" =~ ^[1-9][0-9]*$ && "$red_capture" == 0 ]]
+          test -f "$xml"
+          cp "$xml" "$proof/marker-continuation-red.xml"
+          python3 - "$proof/marker-continuation-red.xml" <<'PYRED'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(sys.argv[1]).getroot()
+          cases = root.findall('testcase')
+          if root.get('name') != 'com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest':
+              raise SystemExit('unexpected red test class')
+          if root.get('tests') != '1' or root.get('failures') != '1' or root.get('errors') != '0' or root.get('skipped') != '0' or len(cases) != 1:
+              raise SystemExit('expected one assertion failure')
+          case = cases[0]
+          if case.get('classname') != root.get('name') or case.get('name', '').removesuffix('()') != 'truncation markers retain throwable continuation severity':
+              raise SystemExit('unexpected red test case')
+          failure = case.find('failure')
+          if failure is None or failure.get('type') not in ('java.lang.AssertionError', 'org.opentest4j.AssertionFailedError'):
+              raise SystemExit('red failure is not an assertion')
+          if 'truncation marker must remain a continuation' not in (failure.get('message', '') + (failure.text or '')):
+              raise SystemExit('red failure did not reach the continuation assertion')
+          if case.find('error') is not None or case.find('skipped') is not None or 'BoundedLogbackRenderingTest.kt:' not in (failure.text or ''):
+              raise SystemExit('red failure is not from the target test')
+          PYRED
+          cp "$saved_encoder" "$encoder"
+          trap - EXIT
+          git diff --quiet
+          rm -- "$xml"
           export GVY_ROUTING_FIXTURE="$RUNNER_TEMP/l05b-routing.txt"
           test ! -e "$GVY_ROUTING_FIXTURE"
           guarded focused direnv exec . ./gradlew :gls:test --tests '*BoundedLogbackRenderingTest' --no-daemon --no-parallel --max-workers=1 --no-build-cache --rerun-tasks --info -I "$RUNNER_TEMP/l05b.init.gradle" '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
@@ -159,8 +201,8 @@ jobs:
           source = pathlib.Path('gls/build/test-results/test/TEST-com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest.xml')
           root = ET.parse(source).getroot()
           cases = root.findall('testcase')
-          if root.get('name') != 'com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest' or len(cases) != 21 or any(root.get(k) != '0' for k in ('failures','errors','skipped')) or any(case.find(k) is not None for case in cases for k in ('failure','error','skipped')):
-              raise SystemExit('expected 21 fresh passing cases')
+          if root.get('name') != 'com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest' or len(cases) != 22 or any(root.get(k) != '0' for k in ('failures','errors','skipped')) or any(case.find(k) is not None for case in cases for k in ('failure','error','skipped')):
+              raise SystemExit('expected 22 fresh passing cases')
           shutil.copyfile(source, proof / 'encoder.xml')
           lines = [line for line in (proof / 'focused.log').read_text(errors='replace').splitlines() if line.startswith("Starting process 'Gradle Test Executor ") and ' Command: ' in line]
           if len(lines) != 1: raise SystemExit('expected one actual executor')
@@ -195,7 +237,7 @@ jobs:
           git diff --quiet && git diff --cached --quiet && test -z "$(git status --porcelain --untracked-files=all)"
           git bundle create "$proof/candidate.bundle" HEAD "^$base"
           git bundle verify "$proof/candidate.bundle"
-          printf 'base=%s\nreviewed=%s\ninitial_tree=%s\nfinal_tree=%s\nhead=%s\nsupport=%s\n' "$base" "$candidate" 5d356f15063a917028a7d5befb72aa79664a9a29 "$final_tree" "$(git rev-parse HEAD)" "$GITHUB_SHA" >"$proof/receipt.txt"
+          printf 'base=%s\nreviewed=%s\ninitial_tree=%s\nfinal_tree=%s\nhead=%s\nsupport=%s\n' "$base" "$candidate" dfc02cd7e1884311fb201cd5788cc9dfb89c79f5 "$final_tree" "$(git rev-parse HEAD)" "$GITHUB_SHA" >"$proof/receipt.txt"
           (cd "$proof" && sha256sum candidate.bundle source.patch encoder.xml >evidence.sha256)
       - name: Upload proof
         if: always()
