@@ -80,6 +80,8 @@ def _kt_test_impl(
         "//tools:junit_jupiter_engine",
         "//tools:junit_platform_launcher",
         "//tools:junit_platform_console",
+        # ConsoleLauncher --reports-dir writes legacy JUnit XML through this runtime.
+        "//tools:junit_platform_reporting",
         # kotlin.test assertions use the JUnit 5 asserter at runtime.
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
         # Logging runtime - required by kotlin-logging-jvm used in many modules
