@@ -108,6 +108,14 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
+    fun `boxed primitive arguments preserve their values without arbitrary formatting`() = withEncoder { encoder ->
+        val arguments = arrayOf<Any?>(true, 1.toByte(), 2.toShort(), 3, 4L, 1.25f, 2.5, 'Ω', null, "text")
+        val output = encoder.encode(event("{} {} {} {} {} {} {} {} {} {}", arguments)).toString(Charsets.UTF_8)
+
+        assertTrue(output.endsWith(" -- true 1 2 3 4 1.25 2.5 Ω null text\n"))
+    }
+
+    @Test
     fun `escaped placeholders and missing arguments remain legible`() = withEncoder { encoder ->
         val output = encoder.encode(event("escaped \\{} {} {}", arrayOf("replacement"))).toString(Charsets.UTF_8)
         assertTrue(output.contains("escaped {} replacement {}"))
@@ -449,7 +457,7 @@ class BoundedLogbackRenderingTest {
 
     private fun event(
         message: String,
-        arguments: Array<Any>?,
+        arguments: Array<out Any?>?,
         thread: String = "main",
         severity: Level = Level.ERROR,
     ): LoggingEvent = LoggingEvent().apply {

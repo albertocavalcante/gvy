@@ -251,14 +251,14 @@ private const val DOUBLE_ESCAPED_PLACEHOLDER = "\\\\{}"
 private fun safeArgument(value: Any?): String = when {
     value == null -> "null"
     value.javaClass == String::class.java -> value as String
-    value.javaClass == java.lang.Boolean::class.java -> (value as Boolean).toString()
-    value.javaClass == java.lang.Byte::class.java -> (value as Byte).toString()
-    value.javaClass == java.lang.Short::class.java -> (value as Short).toString()
-    value.javaClass == java.lang.Integer::class.java -> (value as Int).toString()
-    value.javaClass == java.lang.Long::class.java -> (value as Long).toString()
-    value.javaClass == java.lang.Float::class.java -> (value as Float).toString()
-    value.javaClass == java.lang.Double::class.java -> (value as Double).toString()
-    value.javaClass == java.lang.Character::class.java -> (value as Char).toString()
+    value.javaClass == Boolean::class.javaObjectType -> (value as Boolean).toString()
+    value.javaClass == Byte::class.javaObjectType -> (value as Byte).toString()
+    value.javaClass == Short::class.javaObjectType -> (value as Short).toString()
+    value.javaClass == Int::class.javaObjectType -> (value as Int).toString()
+    value.javaClass == Long::class.javaObjectType -> (value as Long).toString()
+    value.javaClass == Float::class.javaObjectType -> (value as Float).toString()
+    value.javaClass == Double::class.javaObjectType -> (value as Double).toString()
+    value.javaClass == Char::class.javaObjectType -> (value as Char).toString()
     else -> "<object>"
 }
 
