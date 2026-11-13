@@ -70,6 +70,11 @@ describe("planRunItems", () => {
     return result.selections;
   }
 
+  function refusals(result: TestSelectionPlan<SelectionItem>) {
+    assert.ok(result.kind === "ready", "Expected an executable plan");
+    return result.refused;
+  }
+
   function unsupported(
     result: TestSelectionPlan<SelectionItem>,
     reason: "incomplete-suite" | "unrepresentable-selection",
@@ -299,14 +304,78 @@ describe("planRunItems", () => {
     unsupported(request([row]), "unrepresentable-selection");
   });
 
-  it("rejects a selected feature missing from its complete discovery snapshot", () => {
+  it("rejects a selected feature missing from the snapshot a split relies on", () => {
     complete(first, b);
-    unsupported(request([a]), "unrepresentable-selection");
+    unsupported(request([a], [b]), "unrepresentable-selection");
   });
 
-  it("validates supplied discovery snapshots even for a whole-suite selection", () => {
+  it("does not consult the discovery snapshot when nothing is excluded", () => {
+    // Neither a stale snapshot nor overloaded names can matter to a plain run.
     complete(first, c);
-    unsupported(request([first]), "unrepresentable-selection");
+    assert.deepStrictEqual(ready(request([first])), [
+      { item: first, target: { suite: first.id } },
+    ]);
+    assert.deepStrictEqual(ready(request([a])), [
+      { item: a, target: { suite: first.id, test: "a" } },
+    ]);
+  });
+
+  it("still validates the snapshot of a suite that must be split", () => {
+    complete(first, c);
+    unsupported(request([first], [a]), "unrepresentable-selection");
+  });
+
+  describe("overloaded (same-named) features", () => {
+    let overload: SelectionItem;
+
+    beforeEach(() => {
+      // Two JUnit 5 overloads are both discovered under the name "a".
+      overload = feature(first, "a");
+      complete(first, a, overload, b);
+    });
+
+    it("runs Run All as whole classes without refusing the workspace", () => {
+      assert.deepStrictEqual(ready(request(undefined)), [
+        { item: first, target: { suite: first.id } },
+        { item: second, target: { suite: second.id } },
+      ]);
+    });
+
+    it("runs the class itself as one target", () => {
+      assert.deepStrictEqual(ready(request([first])), [
+        { item: first, target: { suite: first.id } },
+      ]);
+    });
+
+    it("splits around an unrelated exclusion with one target for both overloads", () => {
+      assert.deepStrictEqual(ready(request([first], [b])), [
+        { item: a, target: { suite: first.id, test: "a" } },
+      ]);
+    });
+
+    it("refuses only the class when an exclusion cuts one overload", () => {
+      const result = request(undefined, [overload]);
+      assert.deepStrictEqual(ready(result), [
+        { item: second, target: { suite: second.id } },
+      ]);
+      assert.deepStrictEqual(refusals(result), [
+        { item: first, reason: "ambiguous-feature-name" },
+      ]);
+    });
+
+    it("refuses only a selected feature whose overload is excluded", () => {
+      const result = request([a, c], [overload]);
+      assert.deepStrictEqual(ready(result), [
+        { item: c, target: { suite: second.id, test: "c" } },
+      ]);
+      assert.deepStrictEqual(refusals(result), [
+        { item: a, reason: "ambiguous-feature-name" },
+      ]);
+    });
+
+    it("drops a class whose overloads are all excluded", () => {
+      assert.deepStrictEqual(ready(request([first], [a, overload, b])), []);
+    });
   });
 
   it("deduplicates a repeated feature object in the supplied snapshot", () => {
@@ -316,11 +385,13 @@ describe("planRunItems", () => {
     ]);
   });
 
-  it("rejects distinct snapshot items resolving to the same command target", () => {
+  it("coalesces distinct snapshot items resolving to the same command target", () => {
     const sameTarget = { id: "a", parent: first, uri: first.uri };
     descriptors.set(sameTarget, { kind: "feature", test: "a" });
     complete(first, a, sameTarget, b);
-    unsupported(request([first], [b]), "unrepresentable-selection");
+    assert.deepStrictEqual(ready(request([first], [b])), [
+      { item: a, target: { suite: first.id, test: "a" } },
+    ]);
   });
 
   it("rejects conflicting fallback features instead of issuing duplicate commands", () => {
@@ -340,7 +411,11 @@ describe("planRunItems", () => {
       completeChildren: undefined,
     });
     const sameTarget = feature(first, "a");
-    unsupported(request([a], [sameTarget]), "unrepresentable-selection");
+    const result = request([a], [sameTarget]);
+    assert.deepStrictEqual(ready(result), []);
+    assert.deepStrictEqual(refusals(result), [
+      { item: a, reason: "ambiguous-feature-name" },
+    ]);
   });
 
   it("keeps an explicit whole suite when it covers a direct-suite runtime row", () => {
