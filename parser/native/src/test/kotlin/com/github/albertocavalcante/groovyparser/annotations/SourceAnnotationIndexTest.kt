@@ -25,10 +25,9 @@ import kotlin.test.assertTrue
 class SourceAnnotationIndexTest {
     private val results = mutableListOf<ParseResult>()
 
-    private fun parse(source: String, phase: Int = Phases.CANONICALIZATION): ParseResult =
-        parse(
-            ParseRequest(URI.create("file:///Money.groovy"), source, compilePhase = phase),
-        )
+    private fun parse(source: String, phase: Int = Phases.CANONICALIZATION): ParseResult = parse(
+        ParseRequest(URI.create("file:///Money.groovy"), source, compilePhase = phase),
+    )
 
     private fun parse(request: ParseRequest): ParseResult =
         GroovyParserFacade(groovy.transform.CompileStatic::class.java.classLoader).parse(request).also(results::add)

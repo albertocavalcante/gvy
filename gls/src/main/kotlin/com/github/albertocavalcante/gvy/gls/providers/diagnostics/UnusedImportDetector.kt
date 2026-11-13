@@ -62,9 +62,8 @@ object UnusedImportDetector {
         // Check static imports (not star imports)
         moduleNode.staticImports.values.forEach { importNode ->
             val fieldName = importNode.fieldName
+            if (annotations.isSourceAnnotated(importNode) || fieldName == null) return@forEach
             if (
-                !annotations.isSourceAnnotated(importNode) &&
-                fieldName != null &&
                 fieldName !in usedStaticMembers &&
                 annotations.canRuleOutAnnotationUse(importNode)
             ) {

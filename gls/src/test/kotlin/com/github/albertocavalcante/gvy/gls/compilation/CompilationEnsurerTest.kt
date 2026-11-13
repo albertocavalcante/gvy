@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -46,8 +47,12 @@ class CompilationEnsurerTest {
         }
     }
 
-    private fun compiled(withAst: Boolean = true) =
-        CompilationResult(withAst, if (withAst) mockk<ModuleNode>() else null, emptyList())
+    private fun compiled(withAst: Boolean = true) = CompilationResult(
+        withAst,
+        if (withAst) mockk<ModuleNode>() else null,
+        emptyList(),
+        sourceAnnotations = SourceAnnotationIndex.UNAVAILABLE,
+    )
 
     @Test
     fun `documents indexed from their current text are not compiled again`(): Unit = runBlocking {
