@@ -1,0 +1,3318 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 504ca5ef5..d1c76a787 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -111,7 +111,7 @@ jobs:
+           fetch-depth: 0
+           persist-credentials: false
+       - name: Self-test CI policy
+-        run: node --test tools/ci/*.test.mjs
++        run: node --test tools/ci/*.test.mjs tools/lint/*.test.mjs
+       - name: Enforce temporary dependency accountability
+         run: node tools/ci/dependency-maintenance.mjs
+       - name: Classify exact revisions
+@@ -263,7 +263,7 @@ jobs:
+       !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+       needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
+     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
+-    timeout-minutes: 10
++    timeout-minutes: 20
+     permissions:
+       contents: read
+     steps:
+@@ -288,6 +288,17 @@ jobs:
+           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+ 
++      - name: Set up Node.js for analyzer controls
++        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
++        with:
++          node-version: 24
++
++      - name: Verify typed analysis controls
++        run: node tools/lint/detekt-analysis-health.mjs --report-root "$RUNNER_TEMP/gradle-evidence/analysis-health" -- --max-workers=2 --build-cache --stacktrace
++
++      - name: Verify Kotlin formatter controls
++        run: node tools/lint/kotlin-formatting-health.mjs --report-root "$RUNNER_TEMP/gradle-evidence/formatting-health" -- --max-workers=2 --build-cache --stacktrace
++
+       - name: Run Lint
+         run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer lint lint --parallel --max-workers=2 --build-cache --stacktrace
+ 
+diff --git a/build.gradle.kts b/build.gradle.kts
+index ddc1f115af803e6199ed1278541a0b83b30a23f6..d322e441720e8c357d396e8dc41ed978e270407f 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -2,12 +2,18 @@
+ // SPDX-License-Identifier: Apache-2.0
+ 
+ import com.diffplug.gradle.spotless.SpotlessTask
++import dev.detekt.gradle.Detekt
++import dev.detekt.gradle.DetektCreateBaselineTask
++import dev.detekt.gradle.extensions.FailOnSeverity
+ import org.gradle.api.artifacts.VersionCatalogsExtension
+ import org.gradle.api.tasks.compile.GroovyCompile
+ import org.gradle.api.tasks.testing.Test
+ import org.gradle.jvm.toolchain.JavaLanguageVersion
+ import org.gradle.jvm.toolchain.JavaToolchainService
+ import org.gradle.process.CommandLineArgumentProvider
++import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
++import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
++import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
+ 
+ plugins {
+     alias(libs.plugins.kotlin.jvm) apply false
+@@ -45,9 +51,16 @@ version =
+ extra["baseVersion"] = baseVersion
+ 
+ val testJavaVersion = providers.gradleProperty("testJavaVersion").orElse("17").map { JavaLanguageVersion.of(it) }
+-val testJavaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
+-    languageVersion.set(testJavaVersion)
+-}
++val testJavaLauncher =
++    extensions.getByType<JavaToolchainService>().launcherFor {
++        languageVersion.set(testJavaVersion)
++    }
++val detektJavaLauncher =
++    extensions.getByType<JavaToolchainService>().launcherFor {
++        languageVersion.set(JavaLanguageVersion.of(17))
++    }
++val detektLanguageVersion = libs.versions.kotlin.map { it.substringBeforeLast(".") }
++val analysisHealthProjectPath = ":tools:lint:analysis-health"
+ 
+ tasks.named<Test>("test") {
+     javaLauncher.set(testJavaLauncher)
+@@ -78,18 +91,47 @@ val licenseCheck = tasks.register<Exec>("licenseCheck") {
+ }
+ 
+ allprojects {
+-    tasks.matching {
+-        it.name in setOf("check", "lint", "quality") || it.name.startsWith("publish")
+-    }.configureEach {
+-        dependsOn(licenseCheck)
++    tasks.configureEach {
++        // Scan licensing before requested work can create ignored output trees.
++        if (path != ":licenseCheck") {
++            mustRunAfter(licenseCheck)
++        }
++
++        if (name in setOf("check", "lint", "quality") || name.startsWith("publish")) {
++            dependsOn(licenseCheck)
++        }
+     }
+ }
+ 
++// Parent project formatters include nested project sources. Finish every scheduled correction
++// before typed checks, even when lintFix executes projects in parallel.
++// Resolve exact task names lazily after child plugins register their tasks.
++// Iterating generic task collections would realize unrelated unscheduled tasks.
++val kotlinFormattingTasks =
++    providers.provider {
++        allprojects.flatMap { owner ->
++            owner.tasks.names
++                .filter { it == "spotlessApply" }
++                .map { owner.tasks.named(it) }
++        }
++    }
++val kotlinCorrectionTasks =
++    providers.provider {
++        allprojects.flatMap { owner ->
++            owner.tasks.names
++                .filter { it == "spotlessApply" || it == "detektAutoCorrect" }
++                .map { owner.tasks.named(it) }
++        }
++    }
++
+ subprojects {
++    val isAnalysisHealthFixture = path == analysisHealthProjectPath
+     apply(plugin = "com.autonomousapps.dependency-analysis")
+-    apply(plugin = "io.gitlab.arturbosch.detekt")
++    apply(plugin = "dev.detekt")
+     apply(plugin = "com.diffplug.spotless")
+-    apply(plugin = "org.jetbrains.kotlinx.kover")
++    if (!isAnalysisHealthFixture) {
++        apply(plugin = "org.jetbrains.kotlinx.kover")
++    }
+ 
+     repositories {
+         mavenCentral()
+@@ -103,6 +145,36 @@ subprojects {
+         detektPlugins(libs.findLibrary("detekt-formatting").get())
+     }
+ 
++    val detektTyped =
++        tasks.register("detektTyped") {
++            description = "Check every JVM Kotlin compilation with its actual analysis classpath"
++            group = "verification"
++        }
++
++    fun requireTypedDetektCheck(taskName: String) {
++        // This deliberately failing compilation is exercised only by the analysis-health oracle.
++        if (isAnalysisHealthFixture && taskName == "detektViolations") return
++        detektTyped.configure { dependsOn(taskName) }
++        tasks.withType<Detekt>().matching { it.name == taskName }.configureEach {
++            mustRunAfter(kotlinCorrectionTasks)
++        }
++    }
++
++    pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
++        extensions.getByType<KotlinJvmProjectExtension>().target.compilations.configureEach {
++            requireTypedDetektCheck("detekt${name.replaceFirstChar { it.uppercaseChar() }}")
++        }
++    }
++
++    pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
++        extensions.getByType<KotlinMultiplatformExtension>().targets.withType<KotlinJvmTarget>().configureEach {
++            val targetName = name.replaceFirstChar { it.uppercaseChar() }
++            compilations.configureEach {
++                requireTypedDetektCheck("detekt${name.replaceFirstChar { it.uppercaseChar() }}$targetName")
++            }
++        }
++    }
++
+     // Configure Java Toolchain for all subprojects to ensure hermetic builds
+     // Only apply to projects that have the 'java' plugin (or derived plugins like 'groovy', 'kotlin-jvm')
+     pluginManager.withPlugin("java") {
+@@ -131,36 +203,46 @@ subprojects {
+     // Code Quality Configuration
+     detekt {
+         config.setFrom(rootProject.files("tools/lint/detekt.yml"))
+-        buildUponDefaultConfig = true
++        buildUponDefaultConfig.set(true)
++        basePath.set(rootProject.layout.projectDirectory)
++        failOnSeverity.set(FailOnSeverity.Info)
++        ignoreFailures.set(false)
+         // Use per-module baseline if it exists, otherwise no baseline
+         val moduleBaseline = file("detekt-baseline.xml")
+         if (moduleBaseline.exists()) {
+-            baseline = moduleBaseline
++            baseline.set(moduleBaseline)
+         }
+     }
+ 
+-    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
++    tasks.withType<Detekt>().configureEach {
++        val reportName = name
++        val writeReports = reportName != "detektAutoCorrect"
+         reports {
+             html {
+-                required.set(true)
+-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.html"))
++                required.set(writeReports)
++                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.html"))
+             }
+-            xml {
+-                required.set(true)
+-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.xml"))
++            checkstyle {
++                required.set(writeReports)
++                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.xml"))
+             }
+             sarif {
+-                required.set(true)
+-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.sarif"))
++                required.set(writeReports)
++                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.sarif"))
++            }
++            markdown {
++                required.set(false)
++                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.md"))
+             }
+         }
+     }
+ 
+-    val generatedKotlin = rootProject.files(
+-        rootProject.allprojects.map { owner ->
+-            fileTree(owner.layout.buildDirectory) { include("**/*.kt") }
+-        },
+-    )
++    val generatedKotlin =
++        rootProject.files(
++            rootProject.allprojects.map { owner ->
++                fileTree(owner.layout.buildDirectory) { include("**/*.kt") }
++            },
++        )
+     spotless {
+         val ktlintVersion = "1.7.1"
+         kotlin {
+@@ -212,11 +294,15 @@ subprojects {
+         }
+     }
+ 
+-    kover {
+-        reports {
+-            verify {
+-                rule {
+-                    minBound(if (project.path == ":viz:desktop") 70 else 54)
++    // These deliberately unexecuted source fixtures are verified by analyzer controls. They are
++    // outside production runtime coverage; every production project retains its existing bound.
++    if (!isAnalysisHealthFixture) {
++        kover {
++            reports {
++                verify {
++                    rule {
++                        minBound(if (project.path == ":viz:desktop") 70 else 54)
++                    }
+                 }
+             }
+         }
+@@ -226,35 +312,29 @@ subprojects {
+     tasks.register("lint") {
+         description = "Run all linting tasks"
+         group = "verification"
+-        dependsOn("detekt", "spotlessCheck")
++        dependsOn("detekt", detektTyped, "spotlessCheck", ":verifyKotlinFormattingTargets")
+     }
+ 
+-    tasks.register<io.gitlab.arturbosch.detekt.Detekt>("detektAutoCorrect") {
++    tasks.register<Detekt>("detektAutoCorrect") {
+         description = "Run detekt with auto-correct enabled"
+-        parallel = true
++        parallel.set(true)
+         config.setFrom(rootProject.files("tools/lint/detekt.yml"))
+-        buildUponDefaultConfig = true
++        buildUponDefaultConfig.set(true)
+         // Same per-module baseline as the `detekt` check; without it lintFix fails on findings
+         // that `lint` deliberately tolerates.
+         file("detekt-baseline.xml").takeIf { it.exists() }?.let { baseline.set(it) }
+         // Fix exactly what `detekt` checks (its configured source dirs), not all of src/ (e.g. jmh).
+         setSource(detekt.source)
+-        autoCorrect = true
+-        reports {
+-            // Disable reports for auto-correct run to keep output clean
+-            html.required.set(false)
+-            xml.required.set(false)
+-            sarif.required.set(false)
+-        }
++        autoCorrect.set(true)
+     }
+ 
+     tasks.register("lintFix") {
+         description = "Fix all auto-correctable lint and formatting issues"
+         group = "formatting"
+-        dependsOn("spotlessApply", "detektAutoCorrect")
++        dependsOn("spotlessApply", "detektAutoCorrect", detektTyped, ":verifyKotlinFormattingTargets")
+     }
+ 
+-    tasks.named("detektAutoCorrect").configure { mustRunAfter("spotlessApply") }
++    tasks.named("detektAutoCorrect").configure { mustRunAfter(kotlinFormattingTasks) }
+ 
+     tasks.register("format") {
+         description = "Format all source code"
+@@ -263,14 +343,17 @@ subprojects {
+     }
+ 
+     tasks.register("quality") {
+-        description = "Run all code quality checks including coverage"
++        description = "Run source quality checks and applicable runtime coverage"
+         group = "verification"
+-        dependsOn("lint", "koverVerify")
++        dependsOn("lint")
++        if (!isAnalysisHealthFixture) {
++            dependsOn("koverVerify")
++        }
+     }
+ 
+-    // Make check task depend on quality checks
++    // Check source analysis and formatting; Kover wires coverage for production projects.
+     tasks.check {
+-        dependsOn("detekt", "spotlessCheck")
++        dependsOn("detekt", detektTyped, "spotlessCheck", ":verifyKotlinFormattingTargets")
+     }
+ 
+     // On GitHub Actions: two test JVMs with modest heaps (runner-sized)
+@@ -327,6 +410,39 @@ subprojects {
+     }
+ }
+ 
++allprojects {
++    val buildOutputDirectories = rootProject.allprojects.map { it.layout.buildDirectory }
++    tasks.withType<Detekt>().configureEach {
++        basePath.set(rootProject.layout.projectDirectory.asFile.absolutePath)
++        jdkHome.set(detektJavaLauncher.map { it.metadata.installationPath })
++        jvmTarget.set("17")
++        languageVersion.set(detektLanguageVersion)
++        apiVersion.set(detektLanguageVersion)
++        failOnSeverity.set(FailOnSeverity.Info)
++        ignoreFailures.set(false)
++        exclude { element ->
++            buildOutputDirectories.any { element.file.toPath().startsWith(it.get().asFile.toPath()) }
++        }
++    }
++    tasks.withType<DetektCreateBaselineTask>().configureEach {
++        basePath.set(rootProject.layout.projectDirectory.asFile.absolutePath)
++        jdkHome.set(detektJavaLauncher.map { it.metadata.installationPath })
++        jvmTarget.set("17")
++        languageVersion.set(detektLanguageVersion)
++        apiVersion.set(detektLanguageVersion)
++        exclude { element ->
++            buildOutputDirectories.any { element.file.toPath().startsWith(it.get().asFile.toPath()) }
++        }
++    }
++}
++
++spotless {
++    kotlinGradle {
++        target("*.gradle.kts")
++        ktlint("1.7.1")
++    }
++}
++
+ sonar {
+     properties {
+         property("sonar.projectKey", "albertocavalcante_groovy-lsp")
+@@ -350,70 +466,155 @@ data class KotlinFormattingTargetCase(
+     val targets: FileCollection,
+ )
+ 
+-val verifyKotlinFormattingTargets = tasks.register("verifyKotlinFormattingTargets") {
+-    description = "Verify Kotlin source layouts are formatted while generated output is excluded"
+-    group = "verification"
+-    val cases = mapOf(
+-        ":build-tool" to listOf(
+-            "src/main/kotlin/com/github/albertocavalcante/gvy/build/BuildToolManager.kt",
+-            "src/test/kotlin/com/github/albertocavalcante/gvy/build/GradleBuildStrategyTest.kt",
+-        ),
+-        ":common" to listOf("src/main/kotlin/com/github/albertocavalcante/gvy/common/text/TextIndex.kt"),
+-        ":viz:ast-model" to listOf(
+-            "src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
+-        ),
+-        ":parser" to listOf(
+-            "native/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParserFacade.kt",
+-        ),
+-        ":semantics" to listOf(
+-            "native/src/main/kotlin/com/github/albertocavalcante/gvy/semantics/native/NativeScope.kt",
+-        ),
+-        ":viz" to listOf(
+-            "ast-model/src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
+-        ),
+-        ":tests" to listOf(
+-            "e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/JsonBridge.kt",
+-            "lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt",
+-        ),
+-    ).flatMap { (path, sources) ->
+-        val owner = project(path)
+-        val targets = owner.tasks.named<SpotlessTask>("spotlessKotlin").get().target
+-        rootProject.allprojects
+-            .filter { it.projectDir.toPath().startsWith(owner.projectDir.toPath()) }
+-            .map { outputOwner ->
+-                KotlinFormattingTargetCase(
+-                    "$path -> ${outputOwner.path}",
+-                    sources.map { owner.file(it) }.toSet(),
+-                    outputOwner.layout.buildDirectory.file("format-target-probe/Generated.kt").get().asFile,
+-                    targets,
++data class KotlinFormattingScope(
++    val projectPath: String,
++    val projectDirectory: File,
++    val detektTaskNames: Set<String>,
++    val analyzedSources: List<FileCollection>,
++    val formatterTargets: List<FileCollection>,
++)
++
++val verifyKotlinFormattingTargets =
++    tasks.register("verifyKotlinFormattingTargets") {
++        description = "Verify Kotlin source layouts are formatted while generated output is excluded"
++        group = "verification"
++        // Capture input collections, not producers, and enumerate files only in the action. Reading
++        // source membership during configuration makes it a build-script input and can prevent cache reuse.
++        val scopes =
++            rootProject.allprojects.map { owner ->
++                // Realizing a task may register adjacent tasks; iterate names instead of the live collection.
++                val detektNames =
++                    owner.tasks
++                        .withType<Detekt>()
++                        .names
++                        .toSet()
++                val registeredNames = owner.tasks.names
++                KotlinFormattingScope(
++                    owner.path,
++                    owner.projectDir,
++                    detektNames,
++                    detektNames.map {
++                        owner.tasks
++                            .named<Detekt>(it)
++                            .get()
++                            .source
++                    },
++                    listOf("spotlessKotlin", "spotlessKotlinGradle")
++                        .filter { it in registeredNames }
++                        .map {
++                            owner.tasks
++                                .named<SpotlessTask>(it)
++                                .get()
++                                .target
++                        },
+                 )
+             }
+-    }
+-    doLast {
+-        for (case in cases) {
+-            check(case.sources.all { it.isFile }) { "Missing formatter regression source for ${case.name}" }
+-            check(!case.generated.exists()) { "Refusing to overwrite formatter probe ${case.generated}" }
+-            case.generated.parentFile.mkdirs()
+-            try {
+-                case.generated.writeText("val generated=1\n")
+-                val targets = case.targets.files
+-                check(targets.containsAll(case.sources)) { "Formatter excludes tracked sources for ${case.name}" }
+-                check(case.generated !in targets) { "Formatter includes generated output for ${case.name}" }
+-            } finally {
+-                check(case.generated.delete() || !case.generated.exists()) {
+-                    "Could not remove formatter probe ${case.generated}"
++        for (scope in scopes) {
++            check(
++                rootProject
++                    .project(scope.projectPath)
++                    .tasks
++                    .withType<Detekt>()
++                    .names == scope.detektTaskNames,
++            ) {
++                "Detekt task registrations changed while collecting formatter coverage for ${scope.projectPath}"
++            }
++        }
++        val cases =
++            mapOf(
++                ":build-tool" to
++                    listOf(
++                        "src/main/kotlin/com/github/albertocavalcante/gvy/build/BuildToolManager.kt",
++                        "src/test/kotlin/com/github/albertocavalcante/gvy/build/GradleBuildStrategyTest.kt",
++                    ),
++                ":common" to listOf("src/main/kotlin/com/github/albertocavalcante/gvy/common/text/TextIndex.kt"),
++                ":viz:ast-model" to
++                    listOf(
++                        "src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
++                    ),
++                ":parser" to
++                    listOf(
++                        "native/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParserFacade.kt",
++                    ),
++                ":semantics" to
++                    listOf(
++                        "native/src/main/kotlin/com/github/albertocavalcante/gvy/semantics/native/NativeScope.kt",
++                    ),
++                ":viz" to
++                    listOf(
++                        "ast-model/src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
++                    ),
++                ":tests" to
++                    listOf(
++                        "e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/JsonBridge.kt",
++                        "lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt",
++                    ),
++            ).flatMap { (path, sources) ->
++                val owner = project(path)
++                val targets =
++                    owner.tasks
++                        .named<SpotlessTask>("spotlessKotlin")
++                        .get()
++                        .target
++                rootProject.allprojects
++                    .filter { it.projectDir.toPath().startsWith(owner.projectDir.toPath()) }
++                    .map { outputOwner ->
++                        KotlinFormattingTargetCase(
++                            "$path -> ${outputOwner.path}",
++                            sources.map { owner.file(it) }.toSet(),
++                            outputOwner.layout.buildDirectory
++                                .file("format-target-probe/Generated.kt")
++                                .get()
++                                .asFile,
++                            targets,
++                        )
++                    }
++            }
++        doLast {
++            for (scope in scopes) {
++                val analyzedSources =
++                    scope.analyzedSources
++                        .flatMap { it.files }
++                        .filter { it.extension in setOf("kt", "kts") }
++                        .map { it.canonicalFile }
++                        .toSet()
++                val formatterTargets =
++                    scope.formatterTargets
++                        .flatMap { it.files }
++                        .map { it.canonicalFile }
++                        .toSet()
++                val uncovered = analyzedSources - formatterTargets
++                check(uncovered.isEmpty()) {
++                    "Spotless excludes Detekt Kotlin sources in ${scope.projectPath}: " +
++                        uncovered.map { it.relativeTo(scope.projectDirectory).invariantSeparatorsPath }.sorted()
+                 }
+-                case.generated.parentFile.delete()
+             }
++            for (case in cases) {
++                check(case.sources.all { it.isFile }) { "Missing formatter regression source for ${case.name}" }
++                check(!case.generated.exists()) { "Refusing to overwrite formatter probe ${case.generated}" }
++                case.generated.parentFile.mkdirs()
++                try {
++                    case.generated.writeText("val generated=1\n")
++                    val targets = case.targets.files
++                    check(targets.containsAll(case.sources)) { "Formatter excludes tracked sources for ${case.name}" }
++                    check(case.generated !in targets) { "Formatter includes generated output for ${case.name}" }
++                } finally {
++                    check(case.generated.delete() || !case.generated.exists()) {
++                        "Could not remove formatter probe ${case.generated}"
++                    }
++                    case.generated.parentFile.delete()
++                }
++            }
++            logger.lifecycle("Verified Kotlin formatter source and generated-output targets for ${cases.size} layouts")
++            logger.lifecycle("Verified formatter coverage for Detekt Kotlin inputs in ${scopes.size} projects")
+         }
+-        logger.lifecycle("Verified Kotlin formatter source and generated-output targets for ${cases.size} layouts")
+     }
+-}
+ 
+ tasks.register("lint") {
+     description = "Run all linting tasks"
+     group = "verification"
+     dependsOn(subprojects.map { it.tasks.named("lint") })
++    dependsOn("spotlessCheck")
+     dependsOn(verifyKotlinFormattingTargets)
+ }
+ 
+@@ -421,6 +622,7 @@ tasks.register("lintFix") {
+     description = "Fix all auto-correctable lint and formatting issues"
+     group = "formatting"
+     dependsOn(subprojects.map { it.tasks.named("lintFix") })
++    dependsOn("spotlessApply")
+ }
+ 
+ tasks.register("format") {
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index 991a6ebef..f75792514 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -3,7 +3,7 @@
+ 
+ [versions]
+ kotlin = "2.3.0"
+-detekt = "1.23.8"
++detekt = "2.0.0-alpha.6"
+ spotless = "8.11.0"
+ kover = "0.9.11"
+ sonarqube = "7.2.2.6593"
+@@ -60,7 +60,7 @@ mordant = "3.0.2"
+ 
+ [libraries]
+ # Plugins (libraries for plugins block)
+-detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
++detekt-formatting = { module = "dev.detekt:detekt-rules-ktlint-wrapper", version.ref = "detekt" }
+ 
+ # Groovy
+ groovy-core = { module = "org.apache.groovy:groovy", version.ref = "groovy" }
+@@ -173,7 +173,7 @@ kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref
+ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
+ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+-detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
++detekt = { id = "dev.detekt", version.ref = "detekt" }
+ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+ kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
+ sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index 6f8bf2861..38d243202 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -54,6 +54,7 @@ include("jupyter:kernels:groovy")
+ include("jupyter:kernels:jenkins")
+ include("repl")
+ include("tools:jenkins-extractor")
++include("tools:lint:analysis-health")
+ include("viz:ast-model")
+ include("viz:desktop")
+ include("semantics:core")
+diff --git a/tools/ci/check-gradle-diagnostics.test.mjs b/tools/ci/check-gradle-diagnostics.test.mjs
+index 9f5d5e1b1..0324d5137 100644
+--- a/tools/ci/check-gradle-diagnostics.test.mjs
++++ b/tools/ci/check-gradle-diagnostics.test.mjs
+@@ -1,5 +1,6 @@
+ // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+ // SPDX-License-Identifier: Apache-2.0
++
+ import assert from 'node:assert/strict';
+ import { spawnSync } from 'node:child_process';
+ import { createHash } from 'node:crypto';
+@@ -346,13 +347,15 @@ test('retired Spotless provisioning warnings fail in project and formatter task
+   }
+ });
+ 
+-test('the inspected pinned-plugin trace matches only its exact reviewed debt ledger', () => {
++test('the historical trace rejects retired Detekt 1 callers while retaining the other exact debt', () => {
+   const log = readFileSync(new URL('./fixtures/gradle-plugin-origins.txt', import.meta.url), 'utf8');
+   const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
+   const result = check(log, { exceptions });
+-  assert.equal(result.ok, true);
++  assert.equal(result.ok, false);
+   assert.equal(result.diagnostics.length, 32);
+-  assert.equal(result.accepted.length, 32);
++  assert.equal(result.accepted.length, 29);
++  assert.equal(result.unexpected.length, 3);
++  assert.ok(result.unexpected.every(value => value.includes('io.gitlab.arturbosch.detekt.')));
+   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
+   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
+   assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
+@@ -678,3 +681,22 @@ test('CLI always publishes structured evidence and a raw copy, including warning
+   assert.deepEqual(JSON.parse(readFileSync(join(report, 'diagnostics.json'))).diagnostics, [diagnostic]);
+   assert.equal(readFileSync(liveSummary, 'utf8').length, 'Live job evidence only.\n'.length);
+ });
++
++// Exact trace excerpts from the failed R5R2 native run; this unit control supplies its own completion marker.
++test('Detekt 2 visibility debt accepts only the measured projects and callers until its existing expiry', () => {
++  const excerpt = readFileSync(new URL('./fixtures/gradle-detekt2-plugin-origins.txt', import.meta.url), 'utf8');
++  const log = excerpt + 'BUILD SUCCESSFUL in 1s\n';
++  const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
++  const result = check(log, { exceptions });
++  assert.equal(result.ok, true);
++  assert.equal(result.diagnostics.length, 3);
++  assert.equal(result.accepted.length, 3);
++  assert.deepEqual(result.unexpected, []);
++  for (const changed of [
++    log.replace('DetektBasePlugin.kt:60', 'DetektBasePlugin.kt:61'),
++    log.replaceAll('DetektPlugin.kt:124', 'DetektPlugin.kt:125'),
++    log.replace('> Configure project :build-tool', '> Configure project :other'),
++    log.replace('dev.detekt.gradle.plugin.DetektBasePlugin', 'other.plugin.DetektBasePlugin'),
++  ]) assert.equal(check(changed, { exceptions }).ok, false);
++  assert.equal(check(log, { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
++});
+diff --git a/tools/ci/fixtures/gradle-detekt2-plugin-origins.txt b/tools/ci/fixtures/gradle-detekt2-plugin-origins.txt
+new file mode 100644
+index 000000000..262f8eaf0
+--- /dev/null
++++ b/tools/ci/fixtures/gradle-detekt2-plugin-origins.txt
+@@ -0,0 +1,17 @@
++> Configure project :
++The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
++	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
++	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
++	at dev.detekt.gradle.plugin.DetektBasePlugin$apply$2.invoke(DetektBasePlugin.kt:60)
++
++> Configure project :
++The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
++	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
++	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
++	at dev.detekt.gradle.plugin.DetektPlugin$configurePluginDependencies$1.invoke(DetektPlugin.kt:124)
++
++> Configure project :build-tool
++The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
++	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
++	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
++	at dev.detekt.gradle.plugin.DetektPlugin$configurePluginDependencies$1.invoke(DetektPlugin.kt:124)
+diff --git a/tools/ci/fixtures/gradle-detekt2-plugin-origins.txt.license b/tools/ci/fixtures/gradle-detekt2-plugin-origins.txt.license
+new file mode 100644
+index 000000000..157d41fdd
+--- /dev/null
++++ b/tools/ci/fixtures/gradle-detekt2-plugin-origins.txt.license
+@@ -0,0 +1,2 @@
++SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++SPDX-License-Identifier: Apache-2.0
+diff --git a/tools/ci/gradle-arguments.mjs b/tools/ci/gradle-arguments.mjs
+new file mode 100644
+index 000000000..7a07b9882
+--- /dev/null
++++ b/tools/ci/gradle-arguments.mjs
+@@ -0,0 +1,30 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++// Gradle 9.8 built-in value options. Task-specific options remain untouched after --.
++const valueOptions = new Set([
++  '--console', '--console-unicode', '--warning-mode', '--gradle-user-home', '-g', '--include-build',
++  '--init-script', '-I', '--project-cache-dir', '--project-dir', '-p', '--project-prop', '-P',
++  '--system-prop', '-D', '--max-workers', '--priority', '--exclude-task', '-x',
++  '--dependency-verification', '-F', '--update-locks', '--write-verification-metadata', '-M',
++  '--configuration-cache-problems', '--develocity-plugin-version', '--develocity-url',
++]);
++
++export function splitGradleArguments(args) {
++  const options = [];
++  let index = 0;
++  for (; index < args.length && args[index] !== '--'; index++) {
++    const argument = args[index];
++    const equals = argument.indexOf('=');
++    const name = equals < 0 ? argument : argument.slice(0, equals);
++    let value = equals < 0 ? undefined : argument.slice(equals + 1);
++    const tokens = [argument];
++    if (equals < 0 && valueOptions.has(name)) {
++      if (args[index + 1] === undefined || args[index + 1] === '--') throw new Error('Missing Gradle argument for ' + name);
++      value = args[++index];
++      tokens.push(value);
++    }
++    options.push({ name, value, args: tokens });
++  }
++  return { options, taskArguments: args.slice(index) };
++}
+diff --git a/tools/ci/gradle-diagnostics.json b/tools/ci/gradle-diagnostics.json
+index bf88d418e..d8d6347da 100644
+--- a/tools/ci/gradle-diagnostics.json
++++ b/tools/ci/gradle-diagnostics.json
+@@ -1,20 +1,29 @@
+ [
+   {
+-    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies(DetektPlugin.kt:99)]",
++    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin dev.detekt.gradle.plugin.DetektBasePlugin$apply$2.invoke(DetektBasePlugin.kt:60)]",
+     "owner": "gvy build and CI maintainers",
+     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+-    "reason": "Detekt 1.23.8 mutates obsolete configuration visibility on Gradle 9.8.2; the property has no resolution effect and becomes unavailable in Gradle 11. Current stable 1.23.8 source proves these calls; no claim is made that the newer 2.0 alpha is affected.",
+-    "nextAction": "Build maintainers must evaluate Detekt 2.0 alpha compatibility and verify plugin/rule configuration before removing these inspected 1.23.8 call-site exceptions.",
+-    "acceptance": "Detekt dependency resolution and lint reports pass without visibility API warnings; remove both exact exceptions.",
++    "reason": "Detekt 2.0.0-alpha.6 still sets obsolete configuration visibility on Gradle 9.8.2 at DetektBasePlugin.kt:60 and DetektPlugin.kt:124. Released source and original R5R2 traces prove these exact callers. The property has no resolution effect and is removed in Gradle 11; the analyzer migration does not resolve this dependency debt.",
++    "nextAction": "Build maintainers must test a released Detekt plugin that removes these calls or prepare a narrow source patch locally for human upstream review. Revalidate dependency resolution, typed analysis and reports before retiring these three exact caller/project exceptions.",
++    "acceptance": "The adopted plugin resolves the same analyzer/rule classpaths and passes typed analysis and report controls without these visibility warnings; remove all three exact entries.",
+     "expires": "2026-12-11"
+   },
+   {
+-    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies$lambda$14(DetektPlugin.kt:107)]",
++    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin dev.detekt.gradle.plugin.DetektPlugin$configurePluginDependencies$1.invoke(DetektPlugin.kt:124)]",
+     "owner": "gvy build and CI maintainers",
+     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+-    "reason": "Detekt 1.23.8 mutates obsolete configuration visibility on Gradle 9.8.2; the property has no resolution effect and becomes unavailable in Gradle 11. Current stable 1.23.8 source proves these calls; no claim is made that the newer 2.0 alpha is affected.",
+-    "nextAction": "Build maintainers must evaluate Detekt 2.0 alpha compatibility and verify plugin/rule configuration before removing these inspected 1.23.8 call-site exceptions.",
+-    "acceptance": "Detekt dependency resolution and lint reports pass without visibility API warnings; remove both exact exceptions.",
++    "reason": "Detekt 2.0.0-alpha.6 still sets obsolete configuration visibility on Gradle 9.8.2 at DetektBasePlugin.kt:60 and DetektPlugin.kt:124. Released source and original R5R2 traces prove these exact callers. The property has no resolution effect and is removed in Gradle 11; the analyzer migration does not resolve this dependency debt.",
++    "nextAction": "Build maintainers must test a released Detekt plugin that removes these calls or prepare a narrow source patch locally for human upstream review. Revalidate dependency resolution, typed analysis and reports before retiring these three exact caller/project exceptions.",
++    "acceptance": "The adopted plugin resolves the same analyzer/rule classpaths and passes typed analysis and report controls without these visibility warnings; remove all three exact entries.",
++    "expires": "2026-12-11"
++  },
++  {
++    "diagnostic": "[project :build-tool] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin dev.detekt.gradle.plugin.DetektPlugin$configurePluginDependencies$1.invoke(DetektPlugin.kt:124)]",
++    "owner": "gvy build and CI maintainers",
++    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
++    "reason": "Detekt 2.0.0-alpha.6 still sets obsolete configuration visibility on Gradle 9.8.2 at DetektBasePlugin.kt:60 and DetektPlugin.kt:124. Released source and original R5R2 traces prove these exact callers. The property has no resolution effect and is removed in Gradle 11; the analyzer migration does not resolve this dependency debt.",
++    "nextAction": "Build maintainers must test a released Detekt plugin that removes these calls or prepare a narrow source patch locally for human upstream review. Revalidate dependency resolution, typed analysis and reports before retiring these three exact caller/project exceptions.",
++    "acceptance": "The adopted plugin resolves the same analyzer/rule classpaths and passes typed analysis and report controls without these visibility warnings; remove all three exact entries.",
+     "expires": "2026-12-11"
+   },
+   {
+@@ -53,15 +62,6 @@
+     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
+     "expires": "2026-12-11"
+   },
+-  {
+-    "diagnostic": "[project :] The ReportingExtension.file(String) method has been deprecated. This is scheduled to be removed in Gradle 10. Please use the getBaseDirectory().file(String) or getBaseDirectory().dir(String) method instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#reporting_extension_file [origin io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:28)]",
+-    "owner": "gvy build and CI maintainers",
+-    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+-    "reason": "Detekt 1.23.8 calls the deprecated report-directory API during application on Gradle 9.8.2; it will fail on Gradle 10. The latest stable release checked remains 1.23.8; the 2.0 alpha migration is not yet validated in gvy.",
+-    "nextAction": "Build maintainers must evaluate the released Detekt 2.0 alpha migration or prepare a narrow upstream API patch for human review, preserving rule configuration and report paths.",
+-    "acceptance": "Detekt runs all existing lint checks and emits the same report formats without this API warning; remove the exact exception.",
+-    "expires": "2026-12-11"
+-  },
+   {
+     "diagnostic": "[project :build-tool] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)]",
+     "owner": "gvy build and CI maintainers",
+diff --git a/tools/ci/run-gradle.mjs b/tools/ci/run-gradle.mjs
+index 4fcac6632..253746fa3 100644
+--- a/tools/ci/run-gradle.mjs
++++ b/tools/ci/run-gradle.mjs
+@@ -15,6 +15,7 @@ import { effectiveGradleJvmArgs, gradleMemoryPlan, gradleMemoryObservationProfil
+ import { gradleLaunch } from './gradle-launch.mjs';
+ import { startGradleMemoryProbe } from './gradle-memory-probe.mjs';
+ import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
++import { splitGradleArguments } from './gradle-arguments.mjs';
+ 
+ function parseArgs(args) {
+   const options = {};
+@@ -35,6 +36,22 @@ function parseArgs(args) {
+   return { reportRoot: options['--report-root'], producer: options['--producer'], nativeTarget: options['--native-provisioning'], gradleArgs: args.slice(index) };
+ }
+ 
++function diagnosticArguments(args) {
++  const allowed = new Map([
++    ['--console', new Set(['plain', 'colored', 'auto', 'rich', 'verbose'])],
++    ['--warning-mode', new Set(['all', 'fail', 'summary', 'none'])],
++  ]);
++  const { options, taskArguments } = splitGradleArguments(args);
++  const forwarded = [];
++  for (const { name, value, args: tokens } of options) {
++    if (allowed.has(name)) {
++      if (!allowed.get(name).has(value?.toLowerCase())) throw new Error('Missing or invalid Gradle argument for ' + name);
++      // The capture producer owns these singleton options, rather than appending conflicting values.
++    } else forwarded.push(...tokens);
++  }
++  return { forwarded, taskArguments };
++}
++
+ function git(args) {
+   const result = spawnSync('git', args, { encoding: 'utf8' });
+   if (result.status !== 0) throw new Error('Cannot determine checkout identity');
+@@ -146,7 +163,7 @@ async function main(args) {
+     context = createContext(invocationId);
+     writeFileSync(join(dir, 'context.json'), `${JSON.stringify(context, null, 2)}\n`, { flag: 'wx' });
+     worktreeDirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));
+-    const gradleArgs = [...options.gradleArgs];
++    const { forwarded: gradleArgs, taskArguments } = diagnosticArguments(options.gradleArgs);
+     if (options.nativeTarget) {
+       if (memoryRequired || process.env.GVY_GRADLE_MEMORY_PROFILE !== undefined) {
+         throw new Error('Native provisioning does not support numeric memory observation');
+@@ -175,7 +192,7 @@ async function main(args) {
+       memoryProbe = startGradleMemoryProbe({ ...memoryProfile, ownerArgument: memoryPlan.ownerArgument, identity: memoryPlan.identity,
+         reportPath: memoryPath });
+     }
+-    status = await capture([...gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir, nativePlan?.childEnv);
++    status = await capture([...gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true', ...taskArguments], dir, nativePlan?.childEnv);
+     // Oversize logs stay intact as artifacts; evidence fails instead of truncating.
+     bytes = readEvidenceBytes(join(dir, 'console.log'), 128 * 1024 * 1024);
+   } catch (error) { errors.push(error.message); }
+diff --git a/tools/ci/run-gradle.test.mjs b/tools/ci/run-gradle.test.mjs
+index ef72d950a..4ef7fe3e9 100644
+--- a/tools/ci/run-gradle.test.mjs
++++ b/tools/ci/run-gradle.test.mjs
+@@ -4,7 +4,7 @@
+ import assert from 'node:assert/strict';
+ import { spawn, spawnSync } from 'node:child_process';
+ import { createHash } from 'node:crypto';
+-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
++import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+ import { tmpdir } from 'node:os';
+ import { join, resolve } from 'node:path';
+ import test from 'node:test';
+@@ -82,8 +82,65 @@ test('wrapper captures both streams in unique reports and forces full plain warn
+   }
+ });
+ 
++test('wrapper normalizes repeated joined and split diagnostic options before the actual Gradle argv', t => {
++  const f = fixture(t);
++  const result = f.run(['lint', '--console=rich', '--console', 'auto', '--warning-mode', 'none', '--warning-mode=summary'],
++    { FAKE_GRADLE_MODE: 'failure' });
++  assert.equal(result.status, 3, result.stderr);
++  const args = JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8'));
++  assert.deepEqual(args, ['lint', '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
++  assert.equal(f.summaries()[0].commandExitCode, 3);
++});
++
++test('wrapper preserves flag-looking property values and task arguments after the option terminator', t => {
++  const f = fixture(t);
++  const properties = ['-P', '--console=rich', '-D', '--warning-mode=none', '--project-prop', '--console',
++    '--system-prop', '--warning-mode', '-Dorg.gradle.deprecation.trace=false'];
++  const tail = ['--', '--console', 'task-console', '--warning-mode=task-warning', '--no-parallel'];
++  assert.equal(f.run(['lint', ...properties, '--console', 'auto', '--warning-mode=none', ...tail]).status, 0);
++  const args = JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8'));
++  assert.deepEqual(args, ['lint', ...properties, '--console=plain', '--warning-mode=all',
++    '-Dorg.gradle.deprecation.trace=true', ...tail]);
++});
++
++test('wrapper accepts case-insensitive diagnostic values supported by Gradle before enforcing capture policy', t => {
++  const f = fixture(t);
++  const result = f.run(['lint', '--console', 'RICH', '--warning-mode=AlL']);
++  assert.equal(result.status, 0, result.stderr);
++  assert.deepEqual(JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8')),
++    ['lint', '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
++});
++
++test('wrapper keeps split built-in path and selector values opaque to diagnostic option ownership', t => {
++  const f = fixture(t);
++  const values = ['--console-unicode', '--gradle-user-home', '-g', '--include-build', '--init-script', '-I',
++    '--project-cache-dir', '--project-dir', '-p', '--max-workers', '--priority', '--exclude-task', '-x',
++    '--dependency-verification', '-F', '--update-locks', '--write-verification-metadata', '-M',
++    '--configuration-cache-problems', '--develocity-plugin-version', '--develocity-url']
++    .flatMap((option, index) => [option, index % 2 ? '--warning-mode=none' : '--console=rich']);
++  // Byte preservation does not make these flag-looking values valid paths/enums for real Gradle.
++  const result = f.run(['lint', ...values, '--console=auto', '--warning-mode=none']);
++  assert.equal(result.status, 0, result.stderr);
++  assert.deepEqual(JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8')),
++    ['lint', ...values, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
++});
++
++for (const args of [
++  ['--console'], ['--console='], ['--console', '--'], ['--console', '--warning-mode=none'], ['--console=unknown'],
++  ['--warning-mode'], ['--warning-mode='], ['--warning-mode', '--'], ['--warning-mode=unknown'],
++  ['-P'], ['-D', '--'], ['--project-prop'], ['--system-prop', '--'], ['--init-script'],
++]) {
++  test(`wrapper rejects malformed reserved options ${JSON.stringify(args)} before Gradle starts`, t => {
++    const f = fixture(t);
++    const result = f.run(['lint', ...args]);
++    assert.equal(result.status, 2, result.stderr);
++    assert.equal(existsSync(join(f.dir, 'args.json')), false);
++  });
++}
++
+ for (const scenario of [
+   { name: 'no warning', warning: false, status: 0 },
++  { name: 'task option terminator', warning: false, status: 0, tail: ['--', '--console=task-console', '--warning-mode=task-warning'] },
+   { name: 'one eligible warning', warning: true, status: 0 },
+   { name: 'missing proof', warning: true, status: 1, failure: 'FAKE_NO_PROOF' },
+   { name: 'occupied verdict', warning: true, status: 1, failure: 'FAKE_OCCUPIED_VERDICT' },
+@@ -130,7 +187,7 @@ if (process.env.FAKE_EXIT_7) process.exitCode = 7;
+     const reportRoot = join(temp, 'reports');
+     env.FAKE_REPORT_ROOT = reportRoot;
+     const result = spawnSync(process.execPath, [runner, '--report-root', reportRoot, '--producer', `launcher-${host[1]}`,
+-      '--native-provisioning', host[0], ':launcher:test'], { cwd: f.dir, env, encoding: 'utf8', timeout: 10000 });
++      '--native-provisioning', host[0], ':launcher:test', ...(scenario.tail ?? [])], { cwd: f.dir, env, encoding: 'utf8', timeout: 10000 });
+     assert.equal(result.status, scenario.status, result.stderr);
+     const dir = join(reportRoot, readdirSync(reportRoot)[0]);
+     const report = JSON.parse(readFileSync(join(dir, 'diagnostics.json'), 'utf8'));
+@@ -155,7 +212,8 @@ if (process.env.FAKE_EXIT_7) process.exitCode = 7;
+     assert.equal(child.data, proof.konanDataDir);
+     assert.equal(child.args.filter(arg => arg.startsWith('-Pkonan.data.dir=')).length, 1);
+     assert.ok(child.args.includes(`-Pkonan.data.dir=${child.data}`));
+-    assert.deepEqual(child.args.slice(-3), ['--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
++    assert.deepEqual(child.args.slice(-3 - (scenario.tail?.length ?? 0)),
++      ['--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true', ...(scenario.tail ?? [])]);
+   });
+ }
+ 
+diff --git a/tools/lint/README.md b/tools/lint/README.md
+index e621b580b..61d6cb227 100644
+--- a/tools/lint/README.md
++++ b/tools/lint/README.md
+@@ -13,7 +13,37 @@ This directory contains shared lint configuration files.
+   - `actionlint -color -config-file tools/lint/actionlint.yml`
+ - ghalint:
+   - `ghalint -c tools/lint/ghalint.yaml run`
+-- detekt (via Gradle):
+-  - `./gradlew detekt`
++- Kotlin quality checks (Spotless formatting and Detekt analysis):
++  - `./gradlew lint`
++  - `./gradlew lintFix` to apply formatting fixes and check typed analysis.
++- Detekt analysis alone:
++  - `./gradlew detektTyped` checks every JVM Kotlin compilation with its own analysis classpath.
++  - `./gradlew detekt` runs syntax-only analysis. Some rules require typed analysis.
++  - These commands omit Spotless's comma formatting check; use `lint` for the complete policy.
+ - shellcheck:
+   - `shellcheck --rcfile tools/lint/shellcheckrc path/to/script.sh`
++
++## Analyzer and formatter controls
++
++CI runs the lint tool tests with `node --test tools/lint/*.test.mjs`. To exercise the real Gradle producers locally:
++
++```bash
++node tools/lint/detekt-analysis-health.mjs --report-root build/analysis-health
++node tools/lint/kotlin-formatting-health.mjs --report-root build/formatting-health
++```
++
++The analysis control requires a clean typed run and an exact deliberately unsafe finding. The formatting control checks
++clean input, rejection, correction, rechecking, and idempotence. Each retains the original Gradle exit and evidence;
++expected negative runs succeed only when the intended finding or formatting rejection is proved. Append
++`-- GRADLE_ARGS...` to pass toolchain or resource options. Ordinary Gradle lint also checks that Spotless covers every
++Detekt Kotlin source while excluding generated build output.
++
++The controls always rerun analysis without parallel execution; formatter controls also disable the build and
++configuration caches. The capture wrapper owns plain console output and all-warning diagnostics. Forwarded options
++cannot weaken those controls; invalid values for wrapper-owned options fail before Gradle starts.
++
++## Detekt path filters
++
++Use YAML lists for rule `includes` and `excludes`, with repository-relative globs such as `**/test/**`. Detekt 2 does
++not accept the scalar filter values supported by Detekt 1. A missing or null filter inherits the default; an empty list
++overrides it. The configured repository root supplies the filter base path.
+diff --git a/tools/lint/analysis-health/build.gradle.kts b/tools/lint/analysis-health/build.gradle.kts
+new file mode 100644
+index 000000000..e84560acc
+--- /dev/null
++++ b/tools/lint/analysis-health/build.gradle.kts
+@@ -0,0 +1,232 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import dev.detekt.gradle.Detekt
++import dev.detekt.gradle.plugin.getSupportedKotlinVersion
++import groovy.json.JsonOutput
++import org.gradle.api.file.ConfigurableFileCollection
++import org.gradle.api.file.RegularFileProperty
++import org.gradle.api.provider.Property
++import org.gradle.api.tasks.Classpath
++import org.gradle.api.tasks.Input
++import org.gradle.api.tasks.InputFiles
++import org.gradle.api.tasks.Optional
++import org.gradle.api.tasks.OutputFile
++import org.gradle.api.tasks.TaskAction
++import java.io.File
++import java.io.IOException
++import java.io.OutputStream
++import java.security.DigestInputStream
++import java.security.MessageDigest
++import java.util.HexFormat
++
++plugins {
++    alias(libs.plugins.kotlin.jvm)
++}
++
++// These are real Kotlin compilations; the root applies/configures the actual Detekt plugin.
++sourceSets.create("violations")
++
++// Health controls must not configure unrelated lazy tasks while resolving typed ordering.
++if (providers.gradleProperty("detektHealth.invocationId").isPresent) {
++    tasks.register("detektHealthUnrelatedConfigurationSentinel") {
++        error("GVY_DETEKT_HEALTH_UNRELATED_TASK_CONFIGURED")
++    }
++}
++
++abstract class RecordDetektAnalysisHealth : DefaultTask() {
++    @get:Input
++    abstract val invocationId: Property<String>
++
++    @get:Input
++    abstract val consumerPath: Property<String>
++
++    @get:Input
++    abstract val consumerClass: Property<String>
++
++    @get:Input
++    abstract val toolVersion: Property<String>
++
++    @get:Input
++    abstract val basePath: Property<String>
++
++    @get:Input
++    abstract val jvmTarget: Property<String>
++
++    @get:Input
++    abstract val languageVersion: Property<String>
++
++    @get:Input
++    abstract val apiVersion: Property<String>
++
++    @get:Input
++    abstract val ignoreFailures: Property<Boolean>
++
++    @get:Input
++    abstract val failOnSeverity: Property<String>
++
++    @get:Input
++    abstract val buildUponDefaultConfig: Property<Boolean>
++
++    @get:Input
++    @get:Optional
++    abstract val baselinePath: Property<String>
++
++    @get:Input
++    abstract val reportPath: Property<String>
++
++    @get:InputFiles
++    abstract val sources: ConfigurableFileCollection
++
++    @get:InputFiles
++    abstract val configs: ConfigurableFileCollection
++
++    @get:Classpath
++    abstract val analysisClasspath: ConfigurableFileCollection
++
++    @get:Classpath
++    abstract val friends: ConfigurableFileCollection
++
++    @get:Classpath
++    abstract val tools: ConfigurableFileCollection
++
++    @get:Classpath
++    abstract val plugins: ConfigurableFileCollection
++
++    @get:OutputFile
++    abstract val observation: RegularFileProperty
++
++    @TaskAction
++    fun record() {
++        val model =
++            mapOf(
++                "schemaVersion" to 1,
++                "invocationId" to invocationId.get(),
++                "taskPath" to consumerPath.get(),
++                "taskClass" to consumerClass.get(),
++                "taskType" to Detekt::class.java.name,
++                "toolVersion" to toolVersion.get(),
++                "supportedKotlinVersion" to getSupportedKotlinVersion(),
++                "gradleJvm" to System.getProperty("java.runtime.version"),
++                "analysisMode" to if (analysisClasspath.isEmpty) "light" else "full",
++                "analysisClasspath" to analysisClasspath.files.map { it.canonicalPath }.sorted(),
++                "toolClasspath" to records(tools.files),
++                "pluginClasspath" to records(plugins.files),
++                "basePath" to basePath.get(),
++                "jvmTarget" to jvmTarget.get(),
++                "languageVersion" to languageVersion.get(),
++                "apiVersion" to apiVersion.get(),
++                "friendPaths" to friends.files.map { it.canonicalPath }.sorted(),
++                "ignoreFailures" to ignoreFailures.get(),
++                "failOnSeverity" to failOnSeverity.get(),
++                "buildUponDefaultConfig" to buildUponDefaultConfig.get(),
++                "baselineEnabled" to (baselinePath.orNull?.let { File(it).isFile } == true),
++                "sourceFiles" to records(sources.files),
++                "configFiles" to records(configs.files),
++                "report" to report(File(reportPath.get())),
++            )
++        val output = observation.get().asFile
++        output.parentFile.mkdirs()
++        output.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(model)) + "\n")
++    }
++
++    companion object {
++        private const val REPORT_LIMIT_BYTES = 1024 * 1024
++        private const val REPORT_ERROR_LIMIT_CHARS = 512
++
++        private fun hash(bytes: ByteArray): String =
++            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
++
++        private fun hash(file: File): String {
++            val digest = MessageDigest.getInstance("SHA-256")
++            DigestInputStream(file.inputStream(), digest).use { input ->
++                input.transferTo(OutputStream.nullOutputStream())
++            }
++            return HexFormat.of().formatHex(digest.digest())
++        }
++
++        private fun records(files: Set<File>): List<Map<String, String>> =
++            files.sortedBy { it.canonicalPath }.map {
++                mapOf("path" to it.canonicalPath, "sha256" to hash(it))
++            }
++
++        private fun report(file: File): Map<String, Any?> {
++            val invalid = { message: String ->
++                mapOf(
++                    "path" to file.canonicalPath,
++                    "error" to message.take(REPORT_ERROR_LIMIT_CHARS),
++                    "sha256" to null,
++                    "bytes" to null,
++                )
++            }
++            if (!file.isFile) return invalid("Missing SARIF report")
++            return try {
++                val bytes = file.inputStream().use { it.readNBytes(REPORT_LIMIT_BYTES + 1) }
++                require(bytes.size <= REPORT_LIMIT_BYTES) { "SARIF report exceeds its byte limit" }
++                mapOf("path" to file.canonicalPath, "sha256" to hash(bytes), "bytes" to bytes.size, "error" to null)
++            } catch (error: IOException) {
++                invalid(error.message.orEmpty())
++            } catch (error: IllegalArgumentException) {
++                invalid(error.message.orEmpty())
++            }
++        }
++    }
++}
++
++for (taskName in listOf("detektMain", "detektViolations")) {
++    val consumer = tasks.named<Detekt>(taskName)
++    val output =
++        providers
++            .gradleProperty("detektHealth.outputRoot")
++            .map { File(it) }
++            .orElse(layout.buildDirectory.dir("reports/analysis-health/$taskName").map { it.asFile })
++    val reportFile = layout.file(output.map { it.resolve("report.sarif") })
++    val observationFile = layout.file(output.map { it.resolve("observation.json") })
++    val recorderName = "record${taskName.replaceFirstChar { it.uppercase() }}Health"
++    val record =
++        tasks.register<RecordDetektAnalysisHealth>(recorderName) {
++            val actual = consumer.get()
++            invocationId.set(providers.gradleProperty("detektHealth.invocationId").orElse("manual"))
++            consumerPath.set(actual.path)
++            consumerClass.set(actual.javaClass.name)
++            toolVersion.set(libs.versions.detekt.get())
++            basePath.set(File(actual.basePath.get()).canonicalPath)
++            jvmTarget.set(actual.jvmTarget.get())
++            languageVersion.set(actual.languageVersion.get())
++            apiVersion.set(actual.apiVersion.get())
++            ignoreFailures.set(actual.ignoreFailures.get())
++            failOnSeverity.set(actual.failOnSeverity.get().name)
++            buildUponDefaultConfig.set(actual.buildUponDefaultConfig.get())
++            actual.baseline.orNull
++                ?.asFile
++                ?.let { baselinePath.set(it.path) }
++            reportPath.set(
++                actual.reports.sarif.outputLocation
++                    .get()
++                    .asFile.canonicalPath,
++            )
++            sources.from(actual.source)
++            configs.from(actual.config)
++            analysisClasspath.from(actual.classpath)
++            friends.from(actual.friendPaths)
++            tools.from(actual.detektClasspath)
++            plugins.from(actual.pluginClasspath)
++            observation.set(observationFile)
++            // Always observe this invocation, including the intentionally failing analysis.
++            outputs.upToDateWhen { false }
++        }
++    consumer.configure {
++        debug.set(true)
++        reports.checkstyle.required.set(false)
++        reports.html.required.set(false)
++        reports.markdown.required.set(false)
++        reports.sarif.required.set(true)
++        reports.sarif.outputLocation.set(reportFile)
++        doFirst {
++            for (file in listOf(reportFile.get().asFile, observationFile.get().asFile)) {
++                check(!file.exists() || file.delete()) { "Cannot retire prior health evidence: $file" }
++            }
++        }
++        finalizedBy(record)
++    }
++}
+diff --git a/tools/lint/analysis-health/src/main/kotlin/health/Clean.kt b/tools/lint/analysis-health/src/main/kotlin/health/Clean.kt
+new file mode 100644
+index 000000000..5e215a83c
+--- /dev/null
++++ b/tools/lint/analysis-health/src/main/kotlin/health/Clean.kt
+@@ -0,0 +1,6 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++package health
++
++fun identity(text: String): String = text
+diff --git a/tools/lint/analysis-health/src/main/kotlin/health/CommaFormatting.kt b/tools/lint/analysis-health/src/main/kotlin/health/CommaFormatting.kt
+new file mode 100644
+index 000000000..eae7d92d4
+--- /dev/null
++++ b/tools/lint/analysis-health/src/main/kotlin/health/CommaFormatting.kt
+@@ -0,0 +1,11 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++package health
++
++/** A separator token is `,`. */
++fun documentedComma(value: String): String = value
++
++fun commaText(value: String): String = "1,2$value"
++
++fun commaSeparatedValues(): List<Int> = listOf(1, 2)
+diff --git a/tools/lint/analysis-health/src/main/kotlin/health/Regex.kt b/tools/lint/analysis-health/src/main/kotlin/health/Regex.kt
+new file mode 100644
+index 000000000..40bc5b4b3
+--- /dev/null
++++ b/tools/lint/analysis-health/src/main/kotlin/health/Regex.kt
+@@ -0,0 +1,9 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++package health
++
++fun regexGuard(text: String) {
++    val match = Regex("x").find(text) ?: return
++    throw AssertionError("Matched ${match.value}")
++}
+diff --git a/tools/lint/analysis-health/src/violations/kotlin/health/Unsafe.kt b/tools/lint/analysis-health/src/violations/kotlin/health/Unsafe.kt
+new file mode 100644
+index 000000000..e6f757741
+--- /dev/null
++++ b/tools/lint/analysis-health/src/violations/kotlin/health/Unsafe.kt
+@@ -0,0 +1,6 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++package health
++
++fun unsafeLength(value: String?): Int = value!!.length
+diff --git a/tools/lint/detekt-analysis-health.mjs b/tools/lint/detekt-analysis-health.mjs
+new file mode 100644
+index 000000000..a637a68c1
+--- /dev/null
++++ b/tools/lint/detekt-analysis-health.mjs
+@@ -0,0 +1,359 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import { createHash, randomUUID } from 'node:crypto';
++import { isUtf8 } from 'node:buffer';
++import { spawn } from 'node:child_process';
++import { mkdirSync, realpathSync, readdirSync, writeFileSync } from 'node:fs';
++import { basename, join, posix, relative, resolve } from 'node:path';
++import { setImmediate as yieldEvents } from 'node:timers/promises';
++import { fileURLToPath } from 'node:url';
++
++const digest = bytes => createHash('sha256').update(bytes).digest('hex');
++const plain = text => text.replace(/\x1b\[[0-9;]*m/g, '').replaceAll('\r\n', '\n');
++const pathKey = path => posix.normalize(path.replaceAll('\\', '/'));
++const regexLiteral = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++const validHash = hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash);
++const negativeRule = 'UnsafeCallOnNullableType';
++const qualifiedNegativeRule = 'detekt.potential-bugs.UnsafeCallOnNullableType';
++const reportLimit = 1024 * 1024;
++const sarifSchema = 'https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json';
++const negativeFinding = {
++  line: 6, column: 41, rule: negativeRule, severity: 'error',
++  message: 'Calling !! on a nullable type will throw a NullPointerException at runtime in case the value is null. It should be avoided.',
++};
++const taskType = 'dev.detekt.gradle.Detekt';
++
++function sameFiles(actual, expected) {
++  const entries = values => Array.isArray(values) && values.every(value =>
++    typeof value?.path === 'string' && validHash(value.sha256)) ?
++    values.map(value => `${pathKey(value.path)}\0${value.sha256}`).sort() : null;
++  const left = entries(actual);
++  const right = entries(expected);
++  return left !== null && right !== null && JSON.stringify(left) === JSON.stringify(right);
++}
++
++function findingAt(findings, file, line, column, rule) {
++  return findings.find(finding => pathKey(finding.file) === pathKey(file) &&
++    finding.line === Number(line) && finding.column === Number(column) && finding.rule === rule);
++}
++
++function sameFinding(actual, expected) {
++  return typeof actual?.file === 'string' && typeof expected?.file === 'string' &&
++    pathKey(actual.file) === pathKey(expected.file) &&
++    ['line', 'column', 'rule', 'severity', 'message'].every(key => actual[key] === expected[key]);
++}
++
++// Validate the native fixture subset, not arbitrary SARIF; JSON.parse retains standard duplicate-key semantics.
++function sarifFindings(bytes, expected) {
++  if (!Buffer.isBuffer(bytes) || bytes.length > reportLimit || !isUtf8(bytes)) {
++    throw new Error('Missing, oversized or non-UTF-8 report');
++  }
++  let document;
++  try { document = JSON.parse(bytes.toString('utf8')); }
++  catch { throw new Error('Malformed JSON'); }
++  if (document?.version !== '2.1.0' || document.$schema !== sarifSchema ||
++      Object.keys(document).some(key => !['$schema', 'version', 'runs'].includes(key)) ||
++      !Array.isArray(document.runs) || document.runs.length !== 1) throw new Error('Unexpected SARIF envelope');
++  const run = document.runs[0];
++  const driver = run?.tool?.driver;
++  if (driver?.name !== 'detekt' || !Array.isArray(driver.rules) || !Array.isArray(run.results) ||
++      run.originalUriBaseIds !== undefined) throw new Error('Unsupported Detekt run');
++  const rules = new Map();
++  for (const rule of driver.rules) {
++    if (typeof rule?.id !== 'string' || !rule.id.startsWith('detekt.') ||
++        typeof rule.name !== 'string' || !rule.name || rules.has(rule.id)) throw new Error('Invalid or duplicate rule descriptor');
++    rules.set(rule.id, rule);
++  }
++  const negative = expected.kind === 'negative';
++  if (run.results.length !== (negative ? 1 : 0)) throw new Error('Unexpected finding count');
++  if (!negative) return [];
++  const result = run.results[0];
++  const descriptor = rules.get(result?.ruleId);
++  if (result?.ruleId !== qualifiedNegativeRule || descriptor?.name !== negativeRule) {
++    throw new Error('Wrong qualified negative rule or descriptor');
++  }
++  const level = result.level === undefined ? descriptor.defaultConfiguration?.level : result.level;
++  if (level !== 'error') throw new Error('Missing or incorrect effective finding severity');
++  if (!Array.isArray(result.locations) || result.locations.length !== 1) throw new Error('Ambiguous finding location');
++  const location = result.locations[0]?.physicalLocation;
++  const artifact = location?.artifactLocation;
++  const region = location?.region;
++  const source = expected.sourceFiles?.[0]?.path;
++  // Detekt emits raw invariant paths. Bind the owned source without interpreting URI escapes or external base maps.
++  if (expected.sourceFiles?.length !== 1 || typeof source !== 'string' || typeof expected.basePath !== 'string' ||
++      artifact?.uriBaseId !== '%SRCROOT%' || artifact.uri !== relative(expected.basePath, source).replaceAll('\\', '/')) {
++    throw new Error('Unsupported source path or URI base');
++  }
++  if (!Number.isSafeInteger(region?.startLine) || region.startLine <= 0 ||
++      !Number.isSafeInteger(region?.startColumn) || region.startColumn <= 0 ||
++      typeof result.message?.text !== 'string' || !result.message.text) throw new Error('Invalid finding position or message');
++  return [{
++    file: source, line: region.startLine, column: region.startColumn,
++    rule: descriptor.name, severity: level, message: result.message.text,
++  }];
++}
++
++function lintDiagnostic(raw, findings) {
++  const line = raw.trim();
++  const full = line.match(/^e: (.+):(\d+):(\d+) (.+) \[([A-Za-z][A-Za-z0-9]*)\]$/);
++  if (full) {
++    const finding = findingAt(findings, full[1], full[2], full[3], full[5]);
++    return finding?.message === full[4];
++  }
++  // Detekt also emits indented, abbreviated console summaries of the same finding.
++  const brief = /^\s/.test(raw) && line.match(/^e: ([A-Za-z][A-Za-z0-9]*) - \[(.+)\] at (.+):(\d+):(\d+)$/);
++  if (!brief) return false;
++  const finding = findingAt(findings, brief[3], brief[4], brief[5], brief[1]);
++  const prefix = brief[2].replace(/\(\.\.\.\)$/, '');
++  return prefix.length > 0 && finding?.message.startsWith(prefix) === true;
++}
++
++/** Assess one actual Gradle Detekt consumer; an expected lint failure stays failed in its producer receipt. */
++export function assessDetektAnalysis({ expected, summary, observation, log, reportBytes } = {}) {
++  const errors = [];
++  const compilerErrors = [];
++  const metadataErrors = [];
++  const skippedTypedRules = [];
++  const fail = message => errors.push(message);
++  if (!expected || !['positive', 'negative'].includes(expected.kind)) {
++    return { ok: false, errors: ['Missing expected health-control identity'], compilerErrors, metadataErrors, skippedTypedRules };
++  }
++  if (!summary?.complete || summary.captureExitCode !== 0) fail('Incomplete Gradle capture');
++  if (!Array.isArray(summary?.unexpected) || summary.unexpected.length) fail('Unaccounted Gradle diagnostics');
++  if (!/^[a-f0-9]{40}$/.test(summary?.context?.headSha ?? '') ||
++      !/^[a-f0-9]{40}$/.test(summary?.context?.testedSha ?? '')) fail('Missing tested source identity');
++  const negative = expected.kind === 'negative';
++  const exit = negative ? 1 : 0;
++  if (summary?.commandExitCode !== exit || summary?.ok !== !negative) fail('Unexpected original command outcome');
++  const allowedErrors = negative ? ['Gradle command failed with exit 1'] : [];
++  if (JSON.stringify(summary?.errors) !== JSON.stringify(allowedErrors)) fail('Unexpected producer errors');
++  const rawLog = typeof log === 'string' ? log : '';
++  if (typeof log !== 'string' || !log.endsWith('\n') || log.includes('\0') ||
++      summary?.log?.bytes !== Buffer.byteLength(rawLog) || summary?.log?.sha256 !== digest(rawLog)) {
++    fail('Missing, changed or incomplete raw log');
++  }
++  const text = plain(rawLog);
++  const markers = [...text.matchAll(/^BUILD (SUCCESSFUL|FAILED) in .+$/gm)];
++  if (markers.length !== 1 || markers[0]?.[1] !== (negative ? 'FAILED' : 'SUCCESSFUL')) fail('Wrong Gradle completion evidence');
++  const failedTasks = [...text.matchAll(/^> Task (:\S+) FAILED$/gm)].map(match => match[1]);
++  if (JSON.stringify(failedTasks) !== JSON.stringify(negative ? [expected.taskPath] : [])) fail('Unexpected failed task');
++  if (!text.split('\n').includes(`> Task ${expected.taskPath}${negative ? ' FAILED' : ''}`)) {
++    fail('The actual typed consumer did not execute');
++  }
++  const cli = text.split('\n').filter(line => /^java -jar detekt-cli-\S+ /.test(line));
++  if (cli.length !== 1 || !/--analysis-mode full(?:\s|$)/.test(cli[0] ?? '') ||
++      /--analysis-mode light(?:\s|$)/.test(cli[0] ?? '') ||
++      !(cli[0] ?? '').includes(`--report sarif:${expected.reportPath}`)) fail('Missing actual full-analysis/report arguments');
++  if (!/^Phase ValidateClasspath took .+$/m.test(text)) fail('Missing classpath-validation phase');
++  const model = observation;
++  if (model?.schemaVersion !== 1 || model.invocationId !== expected.invocationId || model.taskPath !== expected.taskPath) {
++    fail('Missing or stale consumer observation');
++  }
++  if (model?.taskType !== taskType || !model?.taskClass?.startsWith(`${taskType}_`)) fail('Not the actual Detekt plugin task');
++  if (model?.toolVersion !== expected.toolVersion) fail('Wrong analyzer version');
++  if (model?.basePath !== expected.basePath) fail('Wrong source/report base path');
++  if (model?.analysisMode !== 'full' || !Array.isArray(model.analysisClasspath) || !model.analysisClasspath.length) {
++    fail('Consumer has no typed-analysis classpath');
++  }
++  for (const [field, flag] of [
++    ['jvmTarget', 'jvm-target'], ['languageVersion', 'language-version'], ['apiVersion', 'api-version'],
++  ]) {
++    const value = expected.compilerOptions?.[field];
++    if (typeof value !== 'string' || model?.[field] !== value ||
++        !new RegExp(`(?:^|\\s)--${flag} ${regexLiteral(value)}(?:\\s|$)`).test(cli[0] ?? '')) {
++      fail(`Missing or incorrect ${field} compiler option`);
++    }
++  }
++  if (!Array.isArray(model?.friendPaths) || !model.friendPaths.every(path => typeof path === 'string' && path.length > 0)) {
++    fail('Missing actual compilation friend-path evidence');
++  }
++  if (!Array.isArray(model?.toolClasspath) || !model.toolClasspath.some(file =>
++    typeof file?.path === 'string' && basename(file.path) === `detekt-cli-${expected.toolVersion}.jar` && validHash(file.sha256))) {
++    fail('Missing resolved analyzer identity');
++  }
++  if (!Array.isArray(model?.pluginClasspath) || !model.pluginClasspath.length ||
++      !model.pluginClasspath.every(file => typeof file?.path === 'string' && validHash(file.sha256))) fail('Missing rule-plugin identity');
++  if (model?.ignoreFailures !== false || model.failOnSeverity !== 'Info' || model.buildUponDefaultConfig !== true ||
++      model.baselineEnabled !== false) fail('Consumer weakens the expected lint policy');
++  if (!sameFiles(model?.sourceFiles, expected.sourceFiles)) fail('Wrong or changed source inputs');
++  if (!sameFiles(model?.configFiles, expected.configFiles)) fail('Wrong or changed root policy');
++  const report = model?.report;
++  const bounded = Buffer.isBuffer(reportBytes) && reportBytes.length <= reportLimit;
++  if (report?.error !== null || report?.path !== expected.reportPath || !bounded ||
++      report.bytes !== reportBytes.length || report.sha256 !== digest(reportBytes)) {
++    fail('Missing, invalid or stale structured report');
++  }
++  let findings = [];
++  try { findings = sarifFindings(reportBytes, expected); }
++  catch (error) { fail(`Native SARIF: ${error.message}`); }
++  const wellFormed = findings.every(finding => typeof finding?.file === 'string' &&
++    Number.isInteger(finding.line) && finding.line > 0 && Number.isInteger(finding.column) && finding.column > 0 &&
++    typeof finding.rule === 'string' && typeof finding.message === 'string');
++  if (!wellFormed) fail('Invalid structured finding');
++  if (!negative && findings.length !== 0) fail('Positive control reported lint findings');
++  if (negative && (findings.length !== 1 || findings[0]?.rule !== negativeRule ||
++      pathKey(findings[0]?.file ?? '') !== pathKey(expected.sourceFiles?.[0]?.path ?? '') ||
++      !sameFinding(findings[0], expected.finding))) fail('Wrong genuine-violation control');
++  const trustedFindings = wellFormed ? findings : [];
++  for (const line of text.split('\n')) {
++    if (/compiled with an incompatible version of Kotlin|binary version of its metadata|actual metadata version/i.test(line)) {
++      metadataErrors.push(line);
++    }
++    if (/requires type resolution but it was run without it|rules? .*requires analysis API/i.test(line)) skippedTypedRules.push(line);
++    if (/^\s*(?:e:|error:)|:\s+error:/i.test(line) && !lintDiagnostic(line, trustedFindings)) compilerErrors.push(line);
++    if (/Exception in thread|OutOfMemoryError|NoClassDefFoundError|LinkageError/.test(line)) compilerErrors.push(line);
++  }
++  if (metadataErrors.length) fail('Analyzer emitted incompatible Kotlin metadata errors');
++  if (compilerErrors.length) fail('Analyzer or compiler emitted errors outside its exact lint report');
++  if (skippedTypedRules.length) fail('Typed rules were skipped');
++  return { ok: errors.length === 0, errors, compilerErrors, metadataErrors, skippedTypedRules };
++}
++
++class Interrupted extends Error {
++  constructor(signal) {
++    super(`Detekt analysis health interrupted by ${signal}`);
++    this.signal = signal;
++    this.exitCode = signal === 'SIGINT' ? 130 : 143;
++  }
++}
++
++function withControlArguments(args, controls, splitGradleArguments) {
++  const owned = new Set(['--rerun-tasks', '--parallel', '--no-parallel']);
++  const { options, taskArguments } = splitGradleArguments(args);
++  for (const option of options) {
++    if (owned.has(option.name) && option.value !== undefined) throw new Error('Gradle option takes no argument: ' + option.name);
++  }
++  return [...options.filter(option => !owned.has(option.name)).flatMap(option => option.args), ...controls, ...taskArguments];
++}
++
++function runProducer(args, signal) {
++  signal.throwIfAborted();
++  return new Promise((accept, reject) => {
++    const child = spawn(process.execPath, ['tools/ci/run-gradle.mjs', ...args], { stdio: 'inherit' });
++    const cancel = () => child.kill(signal.reason.signal);
++    signal.addEventListener('abort', cancel, { once: true });
++    child.once('error', error => {
++      signal.removeEventListener('abort', cancel);
++      reject(signal.aborted ? signal.reason : error);
++    });
++    child.once('close', (code, terminatedBy) => {
++      signal.removeEventListener('abort', cancel);
++      accept({ code, signal: terminatedBy });
++    });
++  }).then(status => {
++    signal.throwIfAborted();
++    return status;
++  });
++}
++
++async function main(args) {
++  if (args[0] !== '--report-root' || !args[1] || args[1].startsWith('-') ||
++      (args.length !== 2 && (args[2] !== '--' || args.length < 4))) {
++    throw new Error('Usage: detekt-analysis-health.mjs --report-root DIR [-- GRADLE_ARGS...]');
++  }
++  const gradleArgs = args.slice(3);
++  mkdirSync(resolve(args[1]), { recursive: true });
++  const reportRoot = realpathSync(args[1]);
++  const receipt = join(reportRoot, 'analysis-health.json');
++  // Retire an earlier verdict before imports, input reads or producers can fail.
++  writeFileSync(receipt, JSON.stringify({ schemaVersion: 1, complete: false, ok: false, runs: [] }, null, 2) + '\n');
++  const cancellation = new AbortController();
++  const interrupt = () => cancellation.abort(new Interrupted('SIGINT'));
++  const terminate = () => cancellation.abort(new Interrupted('SIGTERM'));
++  process.on('SIGINT', interrupt);
++  process.on('SIGTERM', terminate);
++  try { await verifyControls(reportRoot, receipt, cancellation.signal, gradleArgs); }
++  finally {
++    process.off('SIGINT', interrupt);
++    process.off('SIGTERM', terminate);
++  }
++}
++
++async function verifyControls(reportRoot, receipt, signal, gradleArgs) {
++  // Reuse the established evidence reader and capture/provenance producer; ordinary Gradle lint does not invoke Node.
++  const { readEvidenceBytes, readEvidenceText } = await import('../ci/read-evidence.mjs');
++  const { splitGradleArguments } = await import('../ci/gradle-arguments.mjs');
++  signal.throwIfAborted();
++  const checkout = realpathSync(process.cwd());
++  const moduleRoot = join(checkout, 'tools/lint/analysis-health');
++  const config = join(checkout, 'tools/lint/detekt.yml');
++  const catalog = readEvidenceText(join(checkout, 'gradle/libs.versions.toml'), 1024 * 1024);
++  const version = [...catalog.matchAll(/^detekt\s*=\s*"([^"]+)"\s*$/gm)];
++  if (version.length !== 1) throw new Error('Cannot identify the catalog Detekt version');
++  const language = catalog.match(/^kotlin\s*=\s*"(\d+\.\d+)\.\d+[^"]*"\s*$/m)?.[1];
++  if (!language) throw new Error('Cannot identify the catalog Kotlin language/API version');
++  const record = path => ({ path: realpathSync(path), sha256: digest(readEvidenceBytes(path, 1024 * 1024)) });
++  const configFiles = [record(config)];
++  const runs = [];
++  for (const kind of ['positive', 'negative']) {
++    signal.throwIfAborted();
++    const invocationId = randomUUID();
++    const output = join(reportRoot, `${kind}-${invocationId}`);
++    mkdirSync(output);
++    const taskPath = `:tools:lint:analysis-health:${kind === 'positive' ? 'detektMain' : 'detektViolations'}`;
++    const sourceRoot = join(moduleRoot, kind === 'positive' ? 'src/main/kotlin/health' : 'src/violations/kotlin/health');
++    const sourceFiles = (kind === 'positive' ? ['Clean.kt', 'Regex.kt', 'CommaFormatting.kt'] : ['Unsafe.kt'])
++      .map(name => record(join(sourceRoot, name)));
++    const expected = {
++      kind, invocationId, taskPath, basePath: checkout,
++      toolVersion: version[0][1], reportPath: join(output, 'report.sarif'),
++      compilerOptions: { jvmTarget: '17', languageVersion: language, apiVersion: language },
++      sourceFiles, configFiles,
++      ...(kind === 'negative' ? { finding: { file: sourceFiles[0].path, ...negativeFinding } } : {}),
++    };
++    const captureRoot = join(output, 'gradle');
++    const command = [
++      '--report-root', captureRoot, '--producer', `detekt-health-${kind}`,
++      kind === 'positive' ? ':tools:lint:analysis-health:detektTyped' : taskPath,
++      ...withControlArguments(gradleArgs, ['--rerun-tasks', '--no-parallel',
++        `-PdetektHealth.outputRoot=${output}`, `-PdetektHealth.invocationId=${invocationId}`], splitGradleArguments),
++    ];
++    writeFileSync(receipt, JSON.stringify({ schemaVersion: 1, complete: false, ok: false, runs,
++      activeRun: { kind, command, expected } }, null, 2) + '\n');
++    const status = await runProducer(command, signal);
++    const directories = readdirSync(captureRoot, { withFileTypes: true }).filter(value => value.isDirectory());
++    if (directories.length !== 1) throw new Error('Expected one fresh Gradle invocation receipt');
++    const receiptRoot = join(captureRoot, directories[0].name);
++    const summary = JSON.parse(readEvidenceText(join(receiptRoot, 'summary.json'), 8 * 1024 * 1024));
++    const log = readEvidenceText(join(receiptRoot, 'raw.log'), 128 * 1024 * 1024);
++    let observation;
++    let reportBytes;
++    const evidenceErrors = [];
++    try { observation = JSON.parse(readEvidenceText(join(output, 'observation.json'), 8 * 1024 * 1024)); }
++    catch (error) { evidenceErrors.push(`Consumer observation: ${error.message}`); }
++    try { reportBytes = readEvidenceBytes(expected.reportPath, reportLimit); }
++    catch (error) { evidenceErrors.push(`SARIF report: ${error.message}`); }
++    const result = assessDetektAnalysis({ expected, summary, observation, log, reportBytes });
++    result.errors.push(...evidenceErrors);
++    if (status.signal || status.code !== (summary.commandExitCode === 0 && summary.ok ? 0 : 1)) {
++      result.errors.push('Capture wrapper exit contradicts its original-command receipt');
++    }
++    result.ok &&= result.errors.length === 0;
++    runs.push({ kind, command, expected, result, receiptRoot, originalCommandExitCode: summary.commandExitCode, context: summary.context });
++  }
++  const sameHead = runs.every(run => run.context?.headSha === runs[0].context?.headSha &&
++    run.context?.testedSha === runs[0].context?.testedSha);
++  const result = {
++    schemaVersion: 1, complete: true, ok: sameHead && runs.every(run => run.result.ok), sameTestedHead: sameHead, runs,
++  };
++  writeFileSync(receipt, JSON.stringify(result, null, 2) + '\n');
++  // The first check phase can precede queued OS signal delivery; keep handlers for the next turn too.
++  await yieldEvents();
++  await yieldEvents();
++  if (signal.aborted) {
++    result.complete = false;
++    result.ok = false;
++    result.interruptedSignal = signal.reason.signal;
++    result.error = signal.reason.message;
++    writeFileSync(receipt, JSON.stringify(result, null, 2) + '\n');
++    signal.throwIfAborted();
++  }
++  console.log(`Detekt typed-analysis controls ${result.ok ? 'verified' : 'failed'}; original producer exits retained: ${reportRoot}`);
++  process.exitCode = result.ok ? 0 : 1;
++}
++
++if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
++  try { await main(process.argv.slice(2)); }
++  catch (error) { console.error(error.message); process.exitCode = error instanceof Interrupted ? error.exitCode : 1; }
++}
+diff --git a/tools/lint/detekt-analysis-health.test.mjs b/tools/lint/detekt-analysis-health.test.mjs
+new file mode 100644
+index 000000000..4190fc7e7
+--- /dev/null
++++ b/tools/lint/detekt-analysis-health.test.mjs
+@@ -0,0 +1,787 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import assert from 'node:assert/strict';
++import { fork, spawnSync } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { once } from 'node:events';
++import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { delimiter, join } from 'node:path';
++import test from 'node:test';
++import { fileURLToPath, pathToFileURL } from 'node:url';
++import { assessDetektAnalysis } from './detekt-analysis-health.mjs';
++
++const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
++const root = '/repo';
++const moduleRoot = `${root}/tools/lint/analysis-health`;
++const source = name => `${moduleRoot}/src/main/kotlin/health/${name}.kt`;
++const sourceRecord = name => ({ path: source(name), sha256: sha256(name) });
++const configFiles = [{ path: `${root}/tools/lint/detekt.yml`, sha256: sha256('root policy') }];
++const message = 'Calling !! on a nullable type will throw a NullPointerException at runtime in case the value is null. It should be avoided.';
++const compilerOptions = { jvmTarget: '17', languageVersion: '2.3', apiVersion: '2.3' };
++const compilerArguments = '--jvm-target 17 --language-version 2.3 --api-version 2.3';
++const reportLimit = 1024 * 1024;
++const qualifiedRule = 'detekt.potential-bugs.UnsafeCallOnNullableType';
++const relativeUnsafe = 'tools/lint/analysis-health/src/violations/kotlin/health/Unsafe.kt';
++
++function sarif(finding) {
++  return {
++    $schema: 'https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json',
++    version: '2.1.0',
++    runs: [{
++      tool: { driver: {
++        name: 'detekt',
++        rules: [{
++          id: qualifiedRule, name: 'UnsafeCallOnNullableType',
++          defaultConfiguration: { enabled: true, level: finding?.severity ?? 'error' },
++        }],
++      } },
++      results: finding ? [{
++        ruleId: qualifiedRule, message: { text: finding.message },
++        locations: [{ physicalLocation: {
++          artifactLocation: { uri: relativeUnsafe, uriBaseId: '%SRCROOT%' },
++          region: { startLine: finding.line, startColumn: finding.column },
++        } }],
++      }] : [],
++    }],
++  };
++}
++
++function withReportBytes(input, reportBytes) {
++  input.reportBytes = reportBytes;
++  input.observation.report.sha256 = sha256(reportBytes);
++  input.observation.report.bytes = reportBytes.length;
++  return input;
++}
++
++function withSarif(input, document) {
++  return withReportBytes(input, Buffer.from(JSON.stringify(document) + '\n'));
++}
++
++function changeSarif(input, change) {
++  const document = JSON.parse(input.reportBytes);
++  change(document, document.runs[0]);
++  return withSarif(input, document);
++}
++
++function withLog(input, log) {
++  input.log = log;
++  input.summary.log = { bytes: Buffer.byteLength(log), sha256: sha256(log) };
++  return input;
++}
++
++function healthy() {
++  const reportBytes = Buffer.from(JSON.stringify(sarif()) + '\n');
++  const expected = {
++    kind: 'positive', invocationId: 'health-positive-token',
++    taskPath: ':tools:lint:analysis-health:detektMain',
++    basePath: root,
++    reportPath: '/evidence/positive/report.sarif',
++    toolVersion: '2.0.0-alpha.6',
++    compilerOptions,
++    sourceFiles: [sourceRecord('Clean'), sourceRecord('Regex'), sourceRecord('CommaFormatting')], configFiles,
++  };
++  const input = {
++    expected,
++    summary: {
++      complete: true, ok: true, commandExitCode: 0, captureExitCode: 0,
++      errors: [], unexpected: [],
++      context: { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40) },
++    },
++    observation: {
++      schemaVersion: 1, invocationId: expected.invocationId,
++      taskPath: expected.taskPath, taskClass: 'dev.detekt.gradle.Detekt_Decorated',
++      taskType: 'dev.detekt.gradle.Detekt', toolVersion: expected.toolVersion,
++      ...compilerOptions, friendPaths: [`${moduleRoot}/build/classes/kotlin/main`],
++      analysisMode: 'full', analysisClasspath: ['/deps/kotlin-stdlib-2.3.0.jar'],
++      toolClasspath: [{ path: '/deps/detekt-cli-2.0.0-alpha.6.jar', sha256: sha256('analyzer') }],
++      pluginClasspath: [{ path: '/deps/detekt-rules-ktlint-wrapper-2.0.0-alpha.6.jar', sha256: sha256('rules') }],
++      basePath: root, ignoreFailures: false, failOnSeverity: 'Info', buildUponDefaultConfig: true, baselineEnabled: false,
++      sourceFiles: expected.sourceFiles, configFiles,
++      report: { path: expected.reportPath, sha256: sha256(reportBytes), bytes: reportBytes.length, error: null },
++    },
++    reportBytes,
++  };
++  return withLog(input, [
++    `> Task ${expected.taskPath}`,
++    `java -jar detekt-cli-2.0.0-alpha.6-all.jar --analysis-mode full ${compilerArguments} --fail-on-severity info --report sarif:${expected.reportPath}`,
++    'Phase ValidateClasspath took 1ms',
++    'BUILD SUCCESSFUL in 1s', '',
++  ].join('\n'));
++}
++
++function violation(overrides = {}) {
++  const input = healthy();
++  const file = `${moduleRoot}/src/violations/kotlin/health/Unsafe.kt`;
++  const expectedFinding = { file, line: 6, column: 41, rule: 'UnsafeCallOnNullableType', severity: 'error', message };
++  const finding = { ...expectedFinding, ...overrides };
++  input.expected = {
++    ...input.expected, kind: 'negative', invocationId: 'health-negative-token',
++    taskPath: ':tools:lint:analysis-health:detektViolations',
++    reportPath: '/evidence/negative/report.sarif',
++    sourceFiles: [{ path: file, sha256: sha256('unsafe source') }],
++    finding: expectedFinding,
++  };
++  input.reportBytes = Buffer.from(JSON.stringify(sarif(finding)) + '\n');
++  input.observation = {
++    ...input.observation,
++    invocationId: input.expected.invocationId, taskPath: input.expected.taskPath,
++    sourceFiles: input.expected.sourceFiles,
++    report: {
++      path: input.expected.reportPath, sha256: sha256(input.reportBytes), bytes: input.reportBytes.length, error: null,
++    },
++  };
++  input.summary = {
++    ...input.summary, ok: false, commandExitCode: 1, errors: ['Gradle command failed with exit 1'],
++  };
++  return withLog(input, [
++    `> Task ${input.expected.taskPath} FAILED`,
++    `java -jar detekt-cli-2.0.0-alpha.6-all.jar --analysis-mode full ${compilerArguments} --fail-on-severity info --report sarif:${input.expected.reportPath}`,
++    'potential-bugs',
++    `\t\u001b[33me: ${finding.rule} - [${finding.message.slice(0, 29)}(...)] at ${file}:${finding.line}:${finding.column}\u001b[0m`,
++    `e: ${file}:${finding.line}:${finding.column} ${finding.message} [${finding.rule}]`,
++    'Phase ValidateClasspath took 1ms',
++    'Analysis failed with 1 issues.',
++    'BUILD FAILED in 1s', '',
++  ].join('\n'));
++}
++
++function healthyCli(t) {
++  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'gvy-detekt-finalization-')));
++  t.after(() => rmSync(directory, { recursive: true, force: true }));
++  for (const path of ['tools/ci', 'tools/lint/analysis-health/src/main/kotlin/health',
++    'tools/lint/analysis-health/src/violations/kotlin/health', 'gradle', 'report']) mkdirSync(join(directory, path), { recursive: true });
++  const cli = join(directory, 'tools/lint/detekt-analysis-health.mjs');
++  copyFileSync(new URL('./detekt-analysis-health.mjs', import.meta.url), cli);
++  copyFileSync(new URL('../ci/gradle-arguments.mjs', import.meta.url), join(directory, 'tools/ci/gradle-arguments.mjs'));
++  writeFileSync(join(directory, 'tools/lint/detekt.yml'), 'config: {}\n');
++  writeFileSync(join(directory, 'gradle/libs.versions.toml'), 'detekt = "2.0.0-alpha.6"\nkotlin = "2.3.0"\n');
++  for (const path of ['main/kotlin/health/Clean.kt', 'main/kotlin/health/Regex.kt', 'main/kotlin/health/CommaFormatting.kt',
++    'violations/kotlin/health/Unsafe.kt']) writeFileSync(join(directory, 'tools/lint/analysis-health/src', path), 'package health\n');
++  writeFileSync(join(directory, 'tools/ci/read-evidence.mjs'), `
++import { readFileSync } from 'node:fs';
++export const readEvidenceBytes = path => readFileSync(path);
++export const readEvidenceText = path => readFileSync(path, 'utf8');
++`);
++  writeFileSync(join(directory, 'tools/ci/run-gradle.mjs'), `
++import { createHash } from 'node:crypto';
++import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
++import { dirname, join } from 'node:path';
++const value = flag => process.argv[process.argv.indexOf(flag) + 1];
++const output = dirname(value('--report-root'));
++const expected = JSON.parse(readFileSync(join(dirname(output), 'analysis-health.json'))).activeRun.expected;
++const negative = expected.kind === 'negative';
++const qualifiedRule = ${JSON.stringify(qualifiedRule)};
++const relativeUnsafe = ${JSON.stringify(relativeUnsafe)};
++${sarif.toString()}
++const bytes = Buffer.from(JSON.stringify(sarif(expected.finding)) + '\\n');
++const hash = data => createHash('sha256').update(data).digest('hex');
++const model = { ...${JSON.stringify(healthy().observation)}, invocationId: expected.invocationId,
++  taskPath: expected.taskPath, basePath: expected.basePath, sourceFiles: expected.sourceFiles, configFiles: expected.configFiles,
++  report: { path: expected.reportPath, sha256: hash(bytes), bytes: bytes.length, error: null } };
++const lines = ['> Task ' + expected.taskPath + (negative ? ' FAILED' : ''),
++  'java -jar detekt-cli-' + expected.toolVersion + '-all.jar --analysis-mode full --jvm-target 17 --language-version 2.3 --api-version 2.3 --fail-on-severity info --report sarif:' + expected.reportPath,
++  ...(negative ? ['e: ' + expected.finding.file + ':' + expected.finding.line + ':' + expected.finding.column + ' ' + expected.finding.message + ' [UnsafeCallOnNullableType]'] : []),
++  'Phase ValidateClasspath took 1ms', ...(negative ? ['Analysis failed with 1 issues.'] : []),
++  'BUILD ' + (negative ? 'FAILED' : 'SUCCESSFUL') + ' in 1s', ''];
++const log = lines.join('\\n');
++const receipt = join(value('--report-root'), 'invocation'); mkdirSync(receipt, { recursive: true });
++writeFileSync(expected.reportPath, bytes); writeFileSync(join(output, 'observation.json'), JSON.stringify(model));
++writeFileSync(join(receipt, 'raw.log'), log);
++writeFileSync(join(receipt, 'summary.json'), JSON.stringify({ complete: true, ok: !negative,
++  commandExitCode: Number(negative), captureExitCode: 0, unexpected: [], errors: negative ? ['Gradle command failed with exit 1'] : [],
++  context: { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40) }, log: { bytes: Buffer.byteLength(log), sha256: hash(log) } }));
++process.exitCode = Number(negative);
++`);
++  return { directory, cli, report: join(directory, 'report') };
++}
++
++test('healthy Detekt CLI preserves the genuine negative producer exit while accepting both controls', t => {
++  const fixture = healthyCli(t);
++  const result = spawnSync(process.execPath, ['--max-old-space-size=128', fixture.cli, '--report-root', fixture.report], {
++    cwd: fixture.directory, timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024,
++  });
++  assert.ifError(result.error); assert.equal(result.status, 0, result.stderr);
++  const receipt = JSON.parse(readFileSync(join(fixture.report, 'analysis-health.json')));
++  assert.equal(receipt.complete, true); assert.equal(receipt.ok, true);
++  assert.deepEqual(receipt.runs.map(run => run.originalCommandExitCode), [0, 1]);
++});
++
++test('a missing shared argument dependency retires an earlier successful Detekt receipt', t => {
++  const fixture = healthyCli(t);
++  const receiptPath = join(fixture.report, 'analysis-health.json');
++  writeFileSync(receiptPath, JSON.stringify({ schemaVersion: 1, complete: true, ok: true }));
++  unlinkSync(join(fixture.directory, 'tools/ci/gradle-arguments.mjs'));
++  const result = spawnSync(process.execPath, ['--max-old-space-size=128', fixture.cli, '--report-root', fixture.report], {
++    cwd: fixture.directory, timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024,
++  });
++  assert.ifError(result.error);
++  assert.equal(result.status, 1);
++  const receipt = JSON.parse(readFileSync(receiptPath));
++  assert.equal(receipt.complete, false);
++  assert.equal(receipt.ok, false);
++});
++
++for (const signal of ['SIGINT', 'SIGTERM']) test(`queued ${signal} during the final Detekt receipt write retains original runs and fails cancellation`, t => {
++  if (process.platform === 'win32') return t.skip('POSIX self-signal delivery required');
++  const fixture = healthyCli(t);
++  const receipt = join(fixture.report, 'analysis-health.json');
++  const proofPath = join(fixture.directory, 'queued-proof.json');
++  const driver = join(fixture.directory, 'queued-driver.mjs');
++  writeFileSync(driver, `
++import fs from 'node:fs'; import { syncBuiltinESMExports } from 'node:module'; import { setImmediate as turn } from 'node:timers/promises';
++const original = fs.writeFileSync; let sent = false, delivered = 0, handlersAtWrite = 0;
++const sentinel = () => { delivered++; }; process.on(${JSON.stringify(signal)}, sentinel);
++fs.writeFileSync = (path, bytes, ...rest) => {
++  const result = original(path, bytes, ...rest);
++  if (path === ${JSON.stringify(receipt)} && !sent) {
++    const model = JSON.parse(bytes); if (model.complete === true && model.ok === true) {
++      sent = true; handlersAtWrite = process.listenerCount(${JSON.stringify(signal)}); process.kill(process.pid, ${JSON.stringify(signal)});
++    }
++  } return result;
++}; syncBuiltinESMExports();
++process.argv = [process.execPath, ${JSON.stringify(fixture.cli)}, '--report-root', ${JSON.stringify(fixture.report)}];
++await import(${JSON.stringify(pathToFileURL(fixture.cli).href)});
++const until = performance.now() + 1000; while (!delivered && performance.now() < until) await turn();
++const receipt = JSON.parse(fs.readFileSync(${JSON.stringify(receipt)}));
++original(${JSON.stringify(proofPath)}, JSON.stringify({ sent, delivered, handlersAtWrite, exitCode: process.exitCode ?? 0, receipt }));
++process.off(${JSON.stringify(signal)}, sentinel);
++`);
++  const result = spawnSync(process.execPath, ['--max-old-space-size=128', driver], { cwd: fixture.directory,
++    timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024 });
++  assert.ifError(result.error);
++  const proof = JSON.parse(readFileSync(proofPath));
++  t.diagnostic(JSON.stringify({ signal, sent: proof.sent, delivered: proof.delivered, handlersAtWrite: proof.handlersAtWrite,
++    exitCode: proof.exitCode, complete: proof.receipt.complete, ok: proof.receipt.ok, originalExits: proof.receipt.runs.map(run => run.originalCommandExitCode) }));
++  assert.equal(proof.sent, true); assert(proof.delivered >= 1); assert(proof.handlersAtWrite >= 2);
++  assert.equal(result.status, signal === 'SIGINT' ? 130 : 143, result.stderr);
++  assert.equal(proof.receipt.complete, false); assert.equal(proof.receipt.ok, false);
++  assert.deepEqual(proof.receipt.runs.map(run => run.originalCommandExitCode), [0, 1]);
++});
++
++test('accepts a complete clean typed run with matching source, policy and report evidence', () => {
++  assert.equal(assessDetektAnalysis(healthy()).ok, true);
++});
++
++test('rejects the recorded old analyzer metadata failure even with exit zero and an empty report', () => {
++  const input = healthy();
++  const oldDiagnostics = [
++    '/deps/kotlin-stdlib-2.3.0.jar!/META-INF/kotlin-stdlib.kotlin_module: error: module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.3.0, expected version is 2.0.0.',
++    '//repo/Regex.kt:4:17: error: class \'kotlin.text.Regex\' was compiled with an incompatible version of Kotlin. The actual metadata version is 2.3.0, but the compiler version 2.0.0 can read versions up to 2.1.0.',
++  ].join('\n');
++  withLog(input, input.log.replace('BUILD SUCCESSFUL', `${oldDiagnostics}\nBUILD SUCCESSFUL`));
++  assert.equal(input.summary.commandExitCode, 0);
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('accepts an expected genuine typed-rule failure without calling its e lines compiler errors', () => {
++  const result = assessDetektAnalysis(violation());
++  assert.equal(result.ok, true);
++  assert.deepEqual(result.compilerErrors, []);
++});
++
++test('rejects compiler e lines even beside a genuine lint finding', () => {
++  const input = violation();
++  withLog(input, input.log.replace('BUILD FAILED', 'e: /repo/Broken.kt:1:1 Unresolved reference: absent\nBUILD FAILED'));
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('a bracket suffix cannot disguise a compiler error as the expected lint rule', () => {
++  const input = violation();
++  withLog(input, input.log.replace(message, `Unresolved reference: absent`));
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('unrelated file positions cannot borrow a report finding to excuse an e line', () => {
++  const input = violation();
++  withLog(input, input.log.replace(`e: ${input.expected.sourceFiles[0].path}:6:41`, 'e: /repo/Other.kt:6:41'));
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('missing, malformed and stale report evidence cannot pass', () => {
++  for (const change of [
++    input => { input.reportBytes = undefined; },
++    input => { input.observation.report.error = 'Invalid native report'; },
++    input => { input.observation.report.sha256 = 'c'.repeat(64); },
++    input => { input.observation.report.path = '/old/report.xml'; },
++    input => {
++      changeSarif(input, (_document, run) => { delete run.results; });
++    },
++  ]) {
++    const input = healthy();
++    change(input);
++    assert.equal(assessDetektAnalysis(input).ok, false);
++  }
++});
++
++test('requires both actual full-mode arguments and the classpath-validation phase', () => {
++  for (const evidence of ['--analysis-mode full', 'Phase ValidateClasspath took 1ms']) {
++    const input = healthy();
++    withLog(input, input.log.replace(evidence, ''));
++    assert.equal(assessDetektAnalysis(input).ok, false);
++  }
++  const light = healthy();
++  light.observation.analysisMode = 'light';
++  assert.equal(assessDetektAnalysis(light).ok, false);
++  const empty = healthy();
++  empty.observation.analysisClasspath = [];
++  assert.equal(assessDetektAnalysis(empty).ok, false);
++  const cached = healthy();
++  withLog(cached, cached.log.replace(`> Task ${cached.expected.taskPath}`, `> Task ${cached.expected.taskPath} FROM-CACHE`));
++  assert.equal(assessDetektAnalysis(cached).ok, false);
++});
++
++test('rejects skipped typed rules even when the producer otherwise succeeds', () => {
++  const input = healthy();
++  withLog(input, input.log.replace('BUILD SUCCESSFUL',
++    "The rule 'UnsafeCallOnNullableType' requires type resolution but it was run without it.\nBUILD SUCCESSFUL"));
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('expected positive and negative outcomes require exact command/report agreement', () => {
++  const positive = healthy();
++  withReportBytes(positive, violation().reportBytes);
++  assert.equal(assessDetektAnalysis(positive).ok, false);
++  const noViolation = violation();
++  changeSarif(noViolation, (_document, run) => { run.results = []; });
++  assert.equal(assessDetektAnalysis(noViolation).ok, false);
++  const failedPositive = healthy();
++  failedPositive.summary.commandExitCode = 1;
++  assert.equal(assessDetektAnalysis(failedPositive).ok, false);
++  const successfulNegative = violation();
++  successfulNegative.summary.commandExitCode = 0;
++  assert.equal(assessDetektAnalysis(successfulNegative).ok, false);
++  const wrongRule = violation();
++  changeSarif(wrongRule, (_document, run) => {
++    run.results[0].ruleId = 'detekt.potential-bugs.UnreachableCode';
++    run.tool.driver.rules[0].id = run.results[0].ruleId;
++    run.tool.driver.rules[0].name = 'UnreachableCode';
++  });
++  assert.equal(assessDetektAnalysis(wrongRule).ok, false);
++});
++
++test('rejects incomplete capture and unexpected existing diagnostic debt', () => {
++  for (const change of [
++    input => { input.summary.complete = false; },
++    input => { input.summary.captureExitCode = 1; },
++    input => { input.summary.unexpected = ['new warning']; },
++    input => { input.summary.errors = ['Incomplete log']; },
++    input => { input.summary.log.sha256 = 'd'.repeat(64); },
++    input => { input.summary.context = null; },
++  ]) {
++    const input = healthy();
++    change(input);
++    assert.equal(assessDetektAnalysis(input).ok, false);
++  }
++});
++
++test('rejects stale invocation, source/config hashes, wrong consumer and unsafe failure policy', () => {
++  for (const change of [
++    input => { input.observation.invocationId = 'previous-invocation'; },
++    input => { input.observation.taskPath = ':other:detektMain'; },
++    input => { input.observation.taskType = 'io.gitlab.arturbosch.detekt.Detekt'; },
++    input => { input.observation.taskClass = 'example.ManualCliTask'; },
++    input => { input.observation.basePath = '/different-checkout'; },
++    input => { input.observation.toolVersion = '1.23.8'; },
++    input => { input.observation.sourceFiles = []; },
++    input => { input.observation.sourceFiles = [{ ...sourceRecord('Regex'), sha256: 'e'.repeat(64) }]; },
++    input => { input.observation.configFiles = [{ ...configFiles[0], sha256: 'f'.repeat(64) }]; },
++    input => { input.observation.ignoreFailures = true; },
++    input => { input.observation.failOnSeverity = 'Never'; },
++    input => { input.observation.buildUponDefaultConfig = false; },
++    input => { input.observation.baselineEnabled = true; },
++    input => { input.observation.baselineEnabled = undefined; },
++  ]) {
++    const input = healthy();
++    change(input);
++    assert.equal(assessDetektAnalysis(input).ok, false);
++  }
++});
++
++for (const [field, changed] of [
++  ['line', 4], ['column', 42], ['severity', 'warning'], ['message', 'Some other unsafe-call diagnostic'],
++]) {
++  test(`rejects a different negative-control ${field} even when its report, hash and raw e lines agree`, () => {
++    assert.equal(assessDetektAnalysis(violation({ [field]: changed })).ok, false);
++  });
++}
++
++test('an early CLI failure replaces a previous successful receipt with incomplete failed evidence', t => {
++  const temporary = mkdtempSync(join(tmpdir(), 'gvy-analysis-health-'));
++  t.after(() => rmSync(temporary, { recursive: true, force: true }));
++  const output = join(temporary, 'report');
++  mkdirSync(output);
++  const receipt = join(output, 'analysis-health.json');
++  writeFileSync(receipt, JSON.stringify({ schemaVersion: 1, complete: true, ok: true }));
++  // An empty working directory fails before any Gradle producer can start.
++  const result = spawnSync(process.execPath, [
++    fileURLToPath(new URL('./detekt-analysis-health.mjs', import.meta.url)), '--report-root', output,
++  ], { cwd: temporary, timeout: 10_000, maxBuffer: 1024 * 1024, encoding: 'utf8' });
++  assert.ifError(result.error);
++  assert.equal(result.status, 1);
++  const observed = JSON.parse(readFileSync(receipt, 'utf8'));
++  assert.equal(observed.ok, false);
++  assert.equal(observed.complete, false);
++});
++
++const forwardedOptions = ['--offline', '--init-script', 'native profile.gradle', '-Dnative.token=profile-token',
++  '-Dorg.gradle.java.installations.paths=/jdk17,/jdk21', '-Dorg.gradle.jvmargs=-Xmx512m -XX:MaxMetaspaceSize=512m',
++  '-PdetektHealth.outputRoot=caller-output', '-PdetektHealth.invocationId=caller-token'];
++for (const [name, forwarded, retained, tail] of [
++  ['default', [], [], []],
++  ['explicit', [...forwardedOptions, '--parallel', '--no-parallel', '--rerun-tasks', '--rerun-tasks'], forwardedOptions, []],
++  ['properties paths and task tail', ['-P', '--parallel', '-D', '--rerun-tasks', '--project-dir', '--parallel', '--parallel', '--', '--parallel', '--rerun-tasks'],
++    ['-P', '--parallel', '-D', '--rerun-tasks', '--project-dir', '--parallel'], ['--', '--parallel', '--rerun-tasks']],
++  ['real capture wrapper', ['--init-script', 'native.gradle', '--console=rich', '--warning-mode', 'none',
++    '--no-daemon', '--max-workers=1', '--rerun-tasks', '--no-parallel'],
++    ['--init-script', 'native.gradle', '--console=rich', '--warning-mode', 'none', '--no-daemon', '--max-workers=1'], []],
++  ['valued owned --parallel', ['--parallel=true'], [], []],
++  ['valued owned --rerun-tasks', ['--rerun-tasks=false'], [], []],
++]) {
++  test(`records both actual Detekt producer commands with ${name} Gradle arguments and singleton owned invariants`, t => {
++    const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'gvy-analysis-health-args-')));
++    t.after(() => rmSync(temporary, { recursive: true, force: true }));
++    for (const directory of ['tools/ci', 'tools/lint', 'gradle',
++      'tools/lint/analysis-health/src/main/kotlin/health', 'tools/lint/analysis-health/src/violations/kotlin/health']) {
++      mkdirSync(join(temporary, directory), { recursive: true });
++    }
++    const guard = join(temporary, 'tools/lint/detekt-analysis-health.mjs');
++    copyFileSync(new URL('./detekt-analysis-health.mjs', import.meta.url), guard);
++    copyFileSync(new URL('../ci/gradle-arguments.mjs', import.meta.url), join(temporary, 'tools/ci/gradle-arguments.mjs'));
++    writeFileSync(join(temporary, 'tools/lint/detekt.yml'), 'config: {}\n');
++    writeFileSync(join(temporary, 'gradle/libs.versions.toml'), 'detekt = "2.0.0-alpha.6"\nkotlin = "2.3.0"\n');
++    for (const source of ['main/kotlin/health/Clean.kt', 'main/kotlin/health/Regex.kt', 'main/kotlin/health/CommaFormatting.kt',
++      'violations/kotlin/health/Unsafe.kt']) {
++      writeFileSync(join(temporary, 'tools/lint/analysis-health/src', source), 'package health\n');
++    }
++    writeFileSync(join(temporary, 'tools/ci/read-evidence.mjs'), `
++      import { readFileSync } from 'node:fs';
++      export const readEvidenceBytes = path => readFileSync(path);
++      export const readEvidenceText = path => readFileSync(path, 'utf8');
++    `);
++    // Capture arguments through the real CLI/orchestrator, then deliberately return failed fixture evidence.
++    writeFileSync(join(temporary, 'tools/ci/run-gradle.mjs'), `
++      import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
++      import { join } from 'node:path';
++      const args = process.argv.slice(2);
++      appendFileSync('calls.jsonl', JSON.stringify(args) + '\\n');
++      const receipt = join(args[1], 'invocation');
++      mkdirSync(receipt, { recursive: true });
++      writeFileSync(join(receipt, 'summary.json'), JSON.stringify({ complete: false, ok: false,
++        commandExitCode: 1, captureExitCode: 0, unexpected: [], errors: ['Controlled fixture failure'],
++        context: { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40) } }));
++      writeFileSync(join(receipt, 'raw.log'), 'Controlled fixture failure\\n');
++      process.exitCode = 1;
++    `);
++    if (name === 'real capture wrapper') {
++      for (const file of ['run-gradle.mjs', 'check-gradle-diagnostics.mjs', 'bazel-diagnostics.mjs', 'native-provisioning.mjs',
++        'gradle-memory-options.mjs', 'gradle-memory-probe.mjs', 'gradle-launch.mjs', 'read-evidence.mjs',
++        'windows-private-root.mjs', 'windows-evidence.mjs', 'gradle-diagnostics.json', 'native-provisioning-diagnostics.json']) {
++        copyFileSync(new URL('../ci/' + file, import.meta.url), join(temporary, 'tools/ci', file));
++      }
++      writeFileSync(join(temporary, 'git'), `#!${process.execPath}
++if (process.argv[2] === 'rev-parse') console.log('a'.repeat(40));
++else if (process.argv[2] === 'status') console.log('');
++else process.exitCode = 1;
++`, { mode: 0o755 });
++      writeFileSync(join(temporary, 'gradlew'), `#!${process.execPath}
++import { appendFileSync } from 'node:fs';
++appendFileSync('gradle-argv.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n');
++console.log('BUILD SUCCESSFUL in 1s');
++`, { mode: 0o755 });
++    }
++    const output = join(temporary, 'report');
++    const env = { ...process.env, PATH: temporary + delimiter + process.env.PATH };
++    for (const key of Object.keys(env)) if (key.startsWith('GITHUB_') || key === 'GVY_GRADLE_MEMORY_PROBE' || key === 'GVY_GRADLE_MEMORY_PROFILE') delete env[key];
++    const result = spawnSync(process.execPath, [guard, '--report-root', output, ...(forwarded.length ? ['--', ...forwarded] : [])], {
++      cwd: temporary, env, timeout: 10_000, maxBuffer: 1024 * 1024, encoding: 'utf8',
++    });
++    assert.ifError(result.error);
++    assert.equal(result.status, 1);
++    if (name.startsWith('valued owned')) {
++      assert.equal(existsSync(join(temporary, 'calls.jsonl')), false, 'Malformed owned booleans must refuse before any producer');
++      assert.match(result.stderr, /Gradle option takes no argument/);
++      return;
++    }
++    const receipt = JSON.parse(readFileSync(join(output, 'analysis-health.json'), 'utf8'));
++    const calls = name === 'real capture wrapper' ? receipt.runs.map(run => run.command) :
++      readFileSync(join(temporary, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
++    assert.equal(calls.length, 2);
++    assert.equal(receipt.ok, false);
++    for (const [index, call] of calls.entries()) {
++      assert.equal(call[4], ':tools:lint:analysis-health:' + (index === 0 ? 'detektTyped' : 'detektViolations'));
++      assert.deepEqual(call.slice(5), [...retained, '--rerun-tasks', '--no-parallel',
++        `-PdetektHealth.outputRoot=${join(output, receipt.runs[index].kind + '-' + receipt.runs[index].expected.invocationId)}`,
++        `-PdetektHealth.invocationId=${receipt.runs[index].expected.invocationId}`, ...tail]);
++      assert.deepEqual(receipt.runs[index].command, call);
++      assert.equal(receipt.runs[index].result.ok, false);
++      if (index === 1) {
++        const lines = readFileSync(new URL('./analysis-health/src/violations/kotlin/health/Unsafe.kt', import.meta.url), 'utf8').split('\n');
++        const line = lines.findIndex(value => value.includes('value!!.length'));
++        assert.ok(line >= 0, 'The negative control must retain its actual unsafe expression');
++        assert.equal(receipt.runs[index].expected.finding.line, line + 1);
++        assert.equal(receipt.runs[index].expected.finding.column, lines[line].indexOf('value!!') + 1);
++      }
++    }
++    if (name === 'real capture wrapper') {
++      const actual = readFileSync(join(temporary, 'gradle-argv.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
++      assert.equal(actual.length, 2);
++      for (const [index, args] of actual.entries()) {
++        assert.deepEqual(args, [calls[index][4], '--init-script', 'native.gradle', '--no-daemon', '--max-workers=1',
++          ...calls[index].slice(-4), '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
++        assert.equal(receipt.runs[index].originalCommandExitCode, 0);
++      }
++    }
++  });
++}
++
++for (const args of [[], ['--report-root'], ['--report-root', ''], ['--report-root', '--offline'],
++  ['--report-root', 'report', '--offline'], ['--report-root', 'report', 'unexpected'], ['--report-root', 'report', '--']]) {
++  test(`rejects malformed Detekt CLI arguments ${JSON.stringify(args)} before launching a producer`, t => {
++    const temporary = mkdtempSync(join(tmpdir(), 'gvy-analysis-health-usage-'));
++    t.after(() => rmSync(temporary, { recursive: true, force: true }));
++    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./detekt-analysis-health.mjs', import.meta.url)), ...args], {
++      cwd: temporary, timeout: 10_000, maxBuffer: 1024 * 1024, encoding: 'utf8',
++    });
++    assert.ifError(result.error);
++    assert.equal(result.status, 1);
++    assert.match(result.stderr, /^Usage: detekt-analysis-health\.mjs --report-root DIR \[-- GRADLE_ARGS\.\.\.\]\s*$/);
++    assert.equal(existsSync(join(temporary, 'calls.jsonl')), false);
++  });
++}
++
++for (const [field, flag, changed] of [
++  ['jvmTarget', 'jvm-target', '21'],
++  ['languageVersion', 'language-version', '2.0'],
++  ['apiVersion', 'api-version', '2.0'],
++]) {
++  test(`requires actual ${field} matching the project target in both consumer model and CLI arguments`, () => {
++    const missing = healthy();
++    delete missing.observation[field];
++    assert.equal(assessDetektAnalysis(missing).ok, false);
++    const wrong = healthy();
++    wrong.observation[field] = changed;
++    assert.equal(assessDetektAnalysis(wrong).ok, false);
++    const wrongCli = healthy();
++    withLog(wrongCli, wrongCli.log.replace(`--${flag} ${compilerOptions[field]}`, `--${flag} ${changed}`));
++    assert.equal(assessDetektAnalysis(wrongCli).ok, false);
++  });
++}
++
++test('requires explicit friend-path evidence while allowing a compilation with no friends', () => {
++  const input = healthy();
++  input.observation.friendPaths = [];
++  assert.equal(assessDetektAnalysis(input).ok, true);
++  delete input.observation.friendPaths;
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++for (const [description, change] of [
++  ['a different SARIF version', document => { document.version = '2.0.0'; }],
++  ['no run', document => { document.runs = []; }],
++  ['a missing results array', (_document, run) => { delete run.results; }],
++  ['multiple runs', document => { document.runs.push(document.runs[0]); }],
++  ['a non-Detekt driver', (_document, run) => { run.tool.driver.name = 'other'; }],
++  ['duplicate rule descriptors', (_document, run) => { run.tool.driver.rules.push(run.tool.driver.rules[0]); }],
++  ['an unresolved rule ID', (_document, run) => { run.results[0].ruleId = 'detekt.potential-bugs.Unknown'; }],
++  ['a different qualified rule with the same short name', (_document, run) => {
++    run.results[0].ruleId = 'detekt.other.UnsafeCallOnNullableType';
++    run.tool.driver.rules[0].id = run.results[0].ruleId;
++  }],
++  ['a mismatched descriptor name', (_document, run) => { run.tool.driver.rules[0].name = 'OtherRule'; }],
++  ['missing effective severity', (_document, run) => { delete run.tool.driver.rules[0].defaultConfiguration.level; }],
++  ['an explicit warning overriding an error default', (_document, run) => { run.results[0].level = 'warning'; }],
++  ['an informational note instead of an error', (_document, run) => {
++    run.tool.driver.rules[0].defaultConfiguration.level = 'note';
++  }],
++  ['multiple physical locations', (_document, run) => { run.results[0].locations.push(run.results[0].locations[0]); }],
++  ['a missing physical location', (_document, run) => { delete run.results[0].locations[0].physicalLocation; }],
++  ['a string instead of a numeric position', (_document, run) => {
++    run.results[0].locations[0].physicalLocation.region.startColumn = '41';
++  }],
++  ['an unrecognized URI base', (_document, run) => {
++    run.results[0].locations[0].physicalLocation.artifactLocation.uriBaseId = '%OTHER%';
++  }],
++  ['a supplied URI-base mapping instead of the known producer convention', (_document, run) => {
++    run.originalUriBaseIds = { '%SRCROOT%': { uri: 'file:///other/' } };
++  }],
++  ['a path to a different source', (_document, run) => {
++    run.results[0].locations[0].physicalLocation.artifactLocation.uri = relativeUnsafe.replace('Unsafe.kt', 'Other.kt');
++  }],
++  ['an encoded path that a generic URI decoder would alias to the fixture', (_document, run) => {
++    run.results[0].locations[0].physicalLocation.artifactLocation.uri = relativeUnsafe.replaceAll('/', '%2F');
++  }],
++]) {
++  test(`rejects SARIF containing ${description}, even when receipt hashes match`, () => {
++    const input = changeSarif(violation(), change);
++    assert.equal(assessDetektAnalysis(input).ok, false);
++  });
++}
++
++test('uses explicit result severity before the matching descriptor default', () => {
++  const input = changeSarif(violation(), (_document, run) => {
++    run.results[0].level = 'error';
++    run.tool.driver.rules[0].defaultConfiguration.level = 'warning';
++  });
++  assert.equal(assessDetektAnalysis(input).ok, true);
++});
++
++test('rejects findings misplaced outside the run instead of treating the run as clean', () => {
++  const input = changeSarif(healthy(), document => {
++    document.results = JSON.parse(violation().reportBytes).runs[0].results;
++  });
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('rejects malformed native JSON even if an old reconstructed envelope claims no findings', () => {
++  const input = withReportBytes(healthy(), Buffer.from('{"version":"2.1.0","runs":['));
++  input.observation.report.findings = [];
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('rejects invalid UTF-8 rather than accepting replacement characters in report metadata', () => {
++  const document = sarif();
++  document.runs[0].tool.driver.informationUri = 'https://detekt.dev/ENCODING_MARKER';
++  const [before, after] = JSON.stringify(document).split('ENCODING_MARKER');
++  const input = withReportBytes(healthy(), Buffer.concat([Buffer.from(before), Buffer.from([0xff]), Buffer.from(after)]));
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++test('rejects a deeply nested invalid report without rendering its untrusted object tree', () => {
++  const bytes = Buffer.from('{"version":"2.1.0","runs":' + '['.repeat(10_000) + '0' + ']'.repeat(10_000) + '}');
++  assert.equal(assessDetektAnalysis(withReportBytes(healthy(), bytes)).ok, false);
++});
++
++test('accepts a wide legitimate descriptor table within the report byte budget', () => {
++  const document = sarif();
++  document.runs[0].tool.driver.rules.push(...Array.from({ length: 4_000 }, (_unused, index) => ({
++    id: `detekt.probe.Rule${index}`, name: `Rule${index}`,
++    defaultConfiguration: { enabled: true, level: 'error' },
++    shortDescription: { text: 'A safe bounded descriptor description.' },
++  })));
++  const input = withSarif(healthy(), document);
++  assert.ok(input.reportBytes.length > reportLimit / 2);
++  assert.ok(input.reportBytes.length < reportLimit);
++  assert.equal(assessDetektAnalysis(input).ok, true);
++});
++
++test('accepts a valid report exactly at the byte limit', () => {
++  const input = healthy();
++  withReportBytes(input, Buffer.from(input.reportBytes.toString().padEnd(reportLimit, ' ')));
++  assert.equal(assessDetektAnalysis(input).ok, true);
++});
++
++test('rejects a valid JSON report exceeding the byte limit by one byte', () => {
++  const input = healthy();
++  withReportBytes(input, Buffer.from(input.reportBytes.toString().padEnd(reportLimit + 1, ' ')));
++  assert.equal(assessDetektAnalysis(input).ok, false);
++});
++
++for (const bytes of [undefined, 1]) {
++  test(`rejects report receipt byte count ${bytes} instead of accepting matching hashes alone`, () => {
++    const input = healthy();
++    input.observation.report.bytes = bytes;
++    assert.equal(assessDetektAnalysis(input).ok, false);
++  });
++}
++
++for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
++  test(`${signal} during the positive CLI producer stops before the negative control and retains incomplete failed evidence`,
++    { timeout: 15_000 }, async t => {
++      const temporary = mkdtempSync(join(tmpdir(), 'gvy-analysis-health-cancel-'));
++      let driver;
++      t.after(() => {
++        driver?.stdin.destroy();
++        if (driver?.connected) driver.disconnect();
++        if (driver && driver.exitCode === null && driver.signalCode === null) driver.kill('SIGKILL');
++        rmSync(temporary, { recursive: true, force: true });
++      });
++      const output = join(temporary, 'report');
++      const guard = join(temporary, 'tools/lint/detekt-analysis-health.mjs');
++      mkdirSync(join(temporary, 'tools/lint/analysis-health/src/main/kotlin/health'), { recursive: true });
++      mkdirSync(join(temporary, 'tools/lint/analysis-health/src/violations/kotlin/health'), { recursive: true });
++      mkdirSync(join(temporary, 'tools/ci'), { recursive: true });
++      mkdirSync(join(temporary, 'gradle'));
++      copyFileSync(new URL('./detekt-analysis-health.mjs', import.meta.url), guard);
++      copyFileSync(new URL('../ci/gradle-arguments.mjs', import.meta.url), join(temporary, 'tools/ci/gradle-arguments.mjs'));
++      writeFileSync(join(temporary, 'tools/lint/detekt.yml'), 'config: {}\n');
++      writeFileSync(join(temporary, 'gradle/libs.versions.toml'), 'detekt = "2.0.0-alpha.6"\nkotlin = "2.3.0"\n');
++      for (const source of [
++        'main/kotlin/health/Clean.kt', 'main/kotlin/health/Regex.kt', 'main/kotlin/health/CommaFormatting.kt',
++        'violations/kotlin/health/Unsafe.kt',
++      ]) {
++        writeFileSync(join(temporary, 'tools/lint/analysis-health/src', source), 'package health\n');
++      }
++      writeFileSync(join(temporary, 'tools/ci/read-evidence.mjs'), `
++        import { readFileSync } from 'node:fs';
++        export const readEvidenceBytes = path => readFileSync(path);
++        export const readEvidenceText = path => readFileSync(path, 'utf8');
++      `);
++      writeFileSync(join(temporary, 'tools/ci/run-gradle.mjs'), `
++        import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
++        import { join } from 'node:path';
++        const value = flag => process.argv[process.argv.indexOf(flag) + 1];
++        const kind = value('--producer').endsWith('-positive') ? 'positive' : 'negative';
++        appendFileSync('launched.txt', kind + '\\n');
++        const receipt = join(value('--report-root'), 'invocation');
++        mkdirSync(receipt, { recursive: true });
++        writeFileSync(join(receipt, 'summary.json'), JSON.stringify({
++          complete: false, ok: false, commandExitCode: kind === 'positive' ? ${exitCode} : 1,
++          captureExitCode: 0, unexpected: [], errors: ['Interrupted producer'],
++          context: { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40) },
++        }));
++        writeFileSync(join(receipt, 'raw.log'), 'Interrupted producer\\n');
++        if (kind === 'negative') process.exit(1);
++        process.on('SIGINT', () => process.exit(130));
++        process.on('SIGTERM', () => process.exit(143));
++        // An open inherited stdin keeps the producer waiting and also gives cleanup an EOF exit.
++        process.stdin.on('end', () => process.exit(1));
++        process.stdin.resume();
++        console.log('positive started');
++      `);
++      const driverPath = join(temporary, 'driver.mjs');
++      // IPC invokes the CLI's actual signal listeners on every platform; its child.kill remains real.
++      writeFileSync(driverPath, `
++        import { realpathSync } from 'node:fs';
++        const disconnected = () => process.exit(1);
++        process.on('disconnect', disconnected);
++        process.on('message', signal => process.emit(signal));
++        process.argv = [process.execPath, realpathSync(${JSON.stringify(guard)}), '--report-root', ${JSON.stringify(output)}];
++        await import(${JSON.stringify(pathToFileURL(guard).href)});
++        process.off('disconnect', disconnected);
++        process.disconnect();
++      `);
++      driver = fork(driverPath, [], { cwd: temporary, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
++      const cancellation = new AbortController();
++      const timeout = setTimeout(() => cancellation.abort(new Error('CLI did not finish after cancellation')), 10_000);
++      t.after(() => clearTimeout(timeout));
++      let bytes = 0;
++      let signalSent = false;
++      const captured = { stdout: '', stderr: '' };
++      const capture = (stream, chunk) => {
++        bytes += chunk.length;
++        if (bytes > 64 * 1024) cancellation.abort(new Error('CLI output exceeded the test byte limit'));
++        else captured[stream] += chunk.toString('utf8');
++      };
++      driver.stderr.on('data', chunk => capture('stderr', chunk));
++      driver.stdout.on('data', chunk => {
++        capture('stdout', chunk);
++        if (!signalSent && captured.stdout.includes('positive started\n')) {
++          signalSent = true;
++          driver.send(signal, error => { if (error) cancellation.abort(error); });
++        }
++      });
++      const [status, terminatedBy] = await once(driver, 'exit', { signal: cancellation.signal });
++      assert.equal(signalSent, true, captured.stdout + captured.stderr);
++      const receipt = JSON.parse(readFileSync(join(output, 'analysis-health.json'), 'utf8'));
++      assert.deepEqual({
++        signalSent, status, terminatedBy,
++        launched: readFileSync(join(temporary, 'launched.txt'), 'utf8').trim().split('\n'),
++        complete: receipt.complete, ok: receipt.ok,
++      }, {
++        signalSent: true, status: exitCode, terminatedBy: null,
++        launched: ['positive'], complete: false, ok: false,
++      }, captured.stdout + captured.stderr);
++    });
++}
+diff --git a/tools/lint/detekt.yml b/tools/lint/detekt.yml
+index e2d976620..e68c4d40c 100644
+--- a/tools/lint/detekt.yml
++++ b/tools/lint/detekt.yml
+@@ -1,9 +1,6 @@
+ # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+ # SPDX-License-Identifier: Apache-2.0
+ 
+-build:
+-  maxIssues: 0
+-  excludeCorrectable: false
+ config:
+   validation: true
+   warningsAsErrors: false
+@@ -11,30 +8,33 @@ complexity:
+   active: true
+   CyclomaticComplexMethod:
+     active: true
+-    threshold: 15
++    allowedComplexity: 14
+   LongMethod:
+     active: true
+-    threshold: 60
++    allowedLines: 59
+   LongParameterList:
+     active: true
+-    functionThreshold: 6
+-    constructorThreshold: 7
++    allowedFunctionParameters: 5
++    allowedConstructorParameters: 6
+     ignoreDefaultParameters: false
+     ignoreDataClasses: true
+   LargeClass:
+     active: true
+-    threshold: 600
++    allowedLines: 599
++  NestedBlockDepth:
++    active: true
++    allowedDepth: 3
+   TooManyFunctions:
+     active: true
+     excludes:
+     - '**/dsl/**'
+     - '**/test/**'
+     - '**/visitor/**'
+-    thresholdInFiles: 20
+-    thresholdInClasses: 18
+-    thresholdInInterfaces: 13
+-    thresholdInObjects: 13
+-    thresholdInEnums: 5
++    allowedFunctionsPerFile: 19
++    allowedFunctionsPerClass: 17
++    allowedFunctionsPerInterface: 12
++    allowedFunctionsPerObject: 12
++    allowedFunctionsPerEnum: 4
+ coroutines:
+   active: true
+   SleepInsteadOfDelay:
+@@ -69,10 +69,15 @@ exceptions:
+     - ParseException
+     - MalformedURLException
+     allowedExceptionNameRegex: _|(ignore|expected).*
+-formatting:
++ktlint:
+   active: true
+-  android: false
++  code_style: intellij_idea
+   autoCorrect: true
++  # Spotless owns comma formatting; the bundled comma rule treats comma-only KDoc leaves as code.
++  # TODO(#1757): Recheck the bundled rule after its comment handling is fixed upstream.
++  #   See: https://github.com/albertocavalcante/gvy/issues/1757
++  SpacingAroundComma:
++    active: false
+   NoWildcardImports:
+     active: true
+     autoCorrect: true
+@@ -100,12 +105,69 @@ formatting:
+   NoConsecutiveBlankLines:
+     active: true
+     autoCorrect: true
+-  SpacingBetweenPackageAndImports:
+-    active: true
+-    autoCorrect: true
+   ArgumentListWrapping:
+     active: true
+     autoCorrect: true
++  # Preserve the previous formatter activation policy across the ktlint upgrade.
++  # StatementWrapping retains the semicolon check moved from Wrapping.
++  StatementWrapping:
++    active: true
++  BackingPropertyNaming:
++    active: false
++  BinaryExpressionWrapping:
++    active: false
++  BlankLineBetweenWhenConditions:
++    active: false
++  ClassSignature:
++    active: false
++  ConditionWrapping:
++    active: false
++  ContextReceiverListWrapping:
++    active: false
++  ContextReceiverMapping:
++    active: false
++  EnumWrapping:
++    active: false
++  FunctionExpressionBody:
++    active: false
++  FunctionLiteral:
++    active: false
++  FunctionSignature:
++    active: false
++  FunctionTypeModifierSpacing:
++    active: false
++  Kdoc:
++    active: false
++  MixedConditionOperators:
++    active: false
++  MultilineLoop:
++    active: false
++  NoEmptyFile:
++    active: false
++  ParameterListSpacing:
++    active: false
++  PropertyName:
++    active: false
++  SpacingAroundSquareBrackets:
++    active: false
++  ThenSpacing:
++    active: false
++  TrailingCommaOnCallSite:
++    active: false
++  TrailingCommaOnDeclarationSite:
++    active: false
++  TypeArgumentComment:
++    active: false
++  TypeArgumentListSpacing:
++    active: false
++  TypeParameterComment:
++    active: false
++  TypeParameterListSpacing:
++    active: false
++  ValueArgumentComment:
++    active: false
++  ValueParameterComment:
++    active: false
+ naming:
+   active: true
+   ClassNaming:
+@@ -134,6 +196,11 @@ performance:
+     - '**/test/**'
+ potential-bugs:
+   active: true
++  IgnoredReturnValue:
++    returnValueTypes:
++    - kotlin.sequences.Sequence
++    - kotlinx.coroutines.flow.*Flow
++    - java.util.stream.*Stream
+   EqualsAlwaysReturnsTrueOrFalse:
+     active: true
+   IteratorHasNextCallsNextMethod:
+@@ -152,6 +219,13 @@ potential-bugs:
+     active: true
+ style:
+   active: true
++  AbstractClassCanBeConcreteClass:
++    active: true
++  AbstractClassCanBeInterface:
++    active: true
++    ignoreSealedClasses: true
++  ExplicitItLambdaMultipleParameters:
++    active: false
+   ForbiddenMethodCall:
+     active: true
+     # Forbid println/print in main source code - use logging instead
+@@ -200,15 +274,22 @@ style:
+     excludeLabeled: false
+     excludeReturnFromLambda: true
+     excludeGuardClauses: true
+-  UnusedImports:
++  UnusedImport:
+     active: true
+   UnusedParameter:
+     active: true
+     allowedNames: ignored|_
+   UnusedPrivateClass:
+     active: true
+-  UnusedPrivateMember:
++  UnusedPrivateFunction:
++    active: true
++    allowedNames: ''
++  UnusedPrivateProperty:
++    active: true
++    allowedNames: _|ignored|expected|serialVersionUID
++  UnusedVariable:
+     active: true
++    allowedNames: _|ignored|expected|serialVersionUID
+   UseCheckNotNull:
+     active: true
+   UseRequire:
+diff --git a/tools/lint/kotlin-formatting-health.mjs b/tools/lint/kotlin-formatting-health.mjs
+new file mode 100644
+index 000000000..67cf5593b
+--- /dev/null
++++ b/tools/lint/kotlin-formatting-health.mjs
+@@ -0,0 +1,305 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import { spawn } from 'node:child_process';
++import { createHash, randomUUID } from 'node:crypto';
++import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
++import { basename, join, relative, resolve } from 'node:path';
++import { setImmediate as yieldEvents } from 'node:timers/promises';
++import { fileURLToPath } from 'node:url';
++import { isDeepStrictEqual } from 'node:util';
++
++const project = ':tools:lint:analysis-health';
++const sourceTask = `${project}:spotlessKotlin`;
++const hash = bytes => createHash('sha256').update(bytes).digest('hex');
++const canonical = [
++  'package formattinghealth', '',
++  '/** A separator token is `,`. */',
++  'fun commaText(): String = "1,2"', '',
++  '/**',
++  " * Like [removeCommentsAndStrings], but keeps the code's shape: every character of a comment or string literal",
++  ' * becomes a space and every newline is kept, so the result has the same length and the same lines as [code].',
++  ' * Line-based scanners can then clean a whole prefix once and still read it line by line, with strings and',
++  ' * comments that span lines handled (#1281).',
++  ' *',
++  ' * Also blanks dollar-slashy strings (`$/ ... /$`) and slashy strings (`/ ... /`). A `/` opens a slashy',
++  ' * string only where an expression starts (at the start of the code, after `(`, `[`, `{`, `,`, `=`, `:`,',
++  " * `;`, `!`, `&`, `|`, `?`, `~`, `>` (a closure's `->`) or a newline, or after `return`, `case`, `in` or",
++  ' * `assert`), so division stays code. `\'...\'` and `"..."` end at the end of their line even when',
++  ' * unterminated, as Groovy does not let them span lines, except inside a `"${...}"` interpolation; triple-quoted,',
++  ' * slashy and dollar-slashy strings may span lines.',
++  ' */',
++  'fun originalDocumentation(value: String): String = value', '',
++  'fun missingAfter(): List<Int> = listOf(1, 2)', '',
++  'fun unexpectedBefore(): List<Int> = listOf(1, 2)', '',
++  'fun adjacentComment(): List<Int> = listOf(1 /* item */, 2)', '',
++  'fun newlineComment(): List<Int> =',
++  '    listOf(',
++  '        1, // first',
++  '        2,',
++  '    )', '',
++].join('\n');
++const violations = canonical
++  .replace('missingAfter(): List<Int> = listOf(1, 2)', 'missingAfter(): List<Int> = listOf(1,2)')
++  .replace('unexpectedBefore(): List<Int> = listOf(1, 2)', 'unexpectedBefore(): List<Int> = listOf(1 , 2)')
++  .replace('/* item */,', '/* item */ ,')
++  .replace('1, // first\n        2,', '1 // first\n        , 2,');
++const stages = [
++  { name: 'positive', action: 'Check', exit: 0, before: canonical, after: canonical },
++  { name: 'negative', action: 'Check', exit: 1, before: violations, after: violations },
++  { name: 'apply', action: 'Apply', exit: 0, before: violations, after: canonical },
++  { name: 'recheck', action: 'Check', exit: 0, before: canonical, after: canonical },
++  { name: 'idempotent', action: 'Apply', exit: 0, before: canonical, after: canonical },
++];
++
++function requireEvidence(condition, message) {
++  if (!condition) throw new Error(message);
++}
++
++class Interrupted extends Error {
++  constructor(signal) {
++    super(`Kotlin formatting health interrupted by ${signal}`);
++    this.signal = signal;
++    this.exitCode = signal === 'SIGINT' ? 130 : 143;
++  }
++}
++
++function withControlArguments(args, controls, splitGradleArguments) {
++  const owned = new Set(['--rerun-tasks', '--parallel', '--no-parallel', '--build-cache', '--no-build-cache',
++    '--configuration-cache', '--no-configuration-cache']);
++  const { options, taskArguments } = splitGradleArguments(args);
++  for (const option of options) {
++    if (owned.has(option.name) && option.value !== undefined) throw new Error('Gradle option takes no argument: ' + option.name);
++  }
++  return [...options.filter(option => !owned.has(option.name)).flatMap(option => option.args), ...controls, ...taskArguments];
++}
++
++function runProducer(args, signal) {
++  signal.throwIfAborted();
++  return new Promise((accept, reject) => {
++    const child = spawn(process.execPath, ['tools/ci/run-gradle.mjs', ...args], { stdio: 'inherit' });
++    let failure;
++    const cancel = () => child.kill(signal.reason.signal);
++    signal.addEventListener('abort', cancel, { once: true });
++    child.once('error', error => { failure = error; });
++    child.once('close', (code, terminatedBy) => {
++      signal.removeEventListener('abort', cancel);
++      if (signal.aborted) reject(signal.reason);
++      else if (failure) reject(failure);
++      else accept({ code, signal: terminatedBy });
++    });
++  });
++}
++
++// The override controls only the fixture target. Normal steps/configuration remain inherited.
++function initScript(controlPath) {
++  const quoted = controlPath.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
++  return `
++import groovy.json.JsonOutput
++import groovy.json.JsonSlurper
++import java.security.MessageDigest
++def control = new JsonSlurper().parse(new File('${quoted}'))
++gradle.projectsEvaluated {
++    def owner = gradle.rootProject.project('${project}')
++    def fixture = new File(control.fixture).canonicalFile
++    def record = { File file, String path ->
++        assert file.isFile() && file.length() <= 65536 : 'Invalid formatter evidence file'
++        [path: path, bytes: file.length(), sha256: MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString()]
++    }
++    def source = owner.tasks.named('spotlessKotlin')
++    def assertTarget = { task ->
++        assert task.target.files.collect { it.canonicalFile }.toSet() == ([fixture] as Set) : 'Formatter target escaped its owned fixture'
++    }
++    source.configure { task ->
++        task.setTarget(owner.files(fixture))
++        task.doFirst {
++            assertTarget(task)
++            new File(control.observation).text = JsonOutput.toJson([
++                schemaVersion: 1,
++                sourceTask: [path: task.path, className: task.class.name, inputs: [record(fixture, fixture.path)]]
++            ]) + '\\n'
++        }
++    }
++    owner.tasks.named(control.taskPath.tokenize(':').last()).configure { task ->
++        task.doFirst {
++            assertTarget(source.get())
++            def output = new File(control.observation)
++            def model = new JsonSlurper().parse(output)
++            model.actionTask = [path: task.path, className: task.class.name]
++            model.cleanFiles = owner.fileTree(source.get().cleanDirectory).files.collect { file ->
++                def path = source.get().cleanDirectory.toPath().relativize(file.toPath()).toString().replace('\\\\', '/')
++                assert path == owner.projectDir.toPath().relativize(fixture.toPath()).toString().replace('\\\\', '/') : 'Unrelated formatter output'
++                record(file, path)
++            }
++            output.text = JsonOutput.toJson(model) + '\\n'
++        }
++    }
++}
++`;
++}
++
++function verifyCapture({ summary, context, log, status, producer, taskPath, expectedExit, fixturePath }) {
++  requireEvidence(summary.schemaVersion === 1 && summary.complete === true && summary.captureExitCode === 0 &&
++    typeof summary.worktreeDirty === 'boolean' &&
++    summary.commandSignal === null && status.signal === null && status.code === expectedExit &&
++    summary.commandExitCode === expectedExit && summary.ok === (expectedExit === 0), 'Unexpected original producer outcome');
++  requireEvidence(summary.producer === producer && isDeepStrictEqual(summary.context, context) &&
++    context.schemaVersion === 1 && context.command === 'gradle' &&
++    [context.headSha, context.testedSha].every(value => /^[a-f0-9]{40}$/.test(value ?? '')) &&
++    typeof context.runId === 'string' && context.runId.length > 0 && Number.isSafeInteger(context.runAttempt) && context.runAttempt > 0 &&
++    typeof context.invocationId === 'string' && context.invocationId.length > 0, 'Wrong producer/source provenance');
++  requireEvidence(Array.isArray(summary.unexpected) && summary.unexpected.length === 0 &&
++    isDeepStrictEqual(summary.errors, expectedExit ? ['Gradle command failed with exit 1'] : []), 'Unexpected Gradle diagnostics');
++  requireEvidence(log.endsWith('\n') && !log.includes('\0') && summary.log?.bytes === Buffer.byteLength(log) &&
++    summary.log.sha256 === hash(log), 'Changed or incomplete producer log');
++  const text = log.replace(/\x1b\[[0-9;]*m/g, '').replaceAll('\r\n', '\n');
++  const lines = text.split('\n');
++  requireEvidence(lines.includes(`> Task ${sourceTask}`) && lines.includes(`> Task ${taskPath}${expectedExit ? ' FAILED' : ''}`),
++    'The actual formatter tasks did not execute');
++  requireEvidence(isDeepStrictEqual([...text.matchAll(/^> Task (:\S+) FAILED$/gm)].map(match => match[1]), expectedExit ? [taskPath] : []) &&
++    [...text.matchAll(/^BUILD (SUCCESSFUL|FAILED) in .+$/gm)].length === 1 &&
++    lines.some(line => line.startsWith(`BUILD ${expectedExit ? 'FAILED' : 'SUCCESSFUL'} in `)), 'Wrong Gradle completion evidence');
++  if (expectedExit) requireEvidence(text.includes('The following files had format violations:') &&
++    text.includes(`Execution failed for task '${taskPath}'`) && text.replaceAll('\\', '/').includes(fixturePath),
++  'Expected formatting rejection was a setup failure');
++  requireEvidence(!/^(?:\s*e:|\s*error:)|Exception in thread|OutOfMemoryError|NoClassDefFoundError|LinkageError|incompatible version of Kotlin|requires type resolution|requires analysis API/im.test(text),
++    'Formatter emitted setup/compiler errors or skipped analysis');
++}
++
++async function main(args) {
++  requireEvidence(args[0] === '--report-root' && args[1] && !args[1].startsWith('-') &&
++    (args.length === 2 || (args[2] === '--' && args.length >= 4)),
++  'Usage: kotlin-formatting-health.mjs --report-root DIR [-- GRADLE_ARGS...]');
++  const gradleArgs = args.slice(3);
++  mkdirSync(resolve(args[1]), { recursive: true });
++  const reportRoot = realpathSync(args[1]);
++  const receipt = join(reportRoot, 'formatting-health.json');
++  const result = { schemaVersion: 1, complete: false, ok: false, fixtureCleanedUp: true, runs: [] };
++  const save = () => writeFileSync(receipt, JSON.stringify(result, null, 2) + '\n');
++  save();
++  const cancellation = new AbortController();
++  const interrupt = () => cancellation.abort(new Interrupted('SIGINT'));
++  const terminate = () => cancellation.abort(new Interrupted('SIGTERM'));
++  process.on('SIGINT', interrupt);
++  process.on('SIGTERM', terminate);
++  let owned;
++  try {
++    const { readEvidenceBytes, readEvidenceText } = await import('../ci/read-evidence.mjs');
++    const { splitGradleArguments } = await import('../ci/gradle-arguments.mjs');
++    const root = realpathSync(process.cwd());
++    const module = realpathSync(join(root, 'tools/lint/analysis-health'));
++    const record = path => {
++      const bytes = readEvidenceBytes(path, 64 * 1024);
++      return { path, bytes: bytes.length, sha256: hash(bytes) };
++    };
++    const policy = ['build.gradle.kts', '.editorconfig', 'gradle/libs.versions.toml', 'tools/lint/analysis-health/build.gradle.kts',
++      'tools/ci/run-gradle.mjs', 'tools/ci/gradle-arguments.mjs', 'tools/ci/read-evidence.mjs', 'tools/lint/kotlin-formatting-health.mjs']
++      .map(file => record(join(root, file)));
++    const verifyPolicy = () => requireEvidence(policy.every(file => isDeepStrictEqual(record(file.path), file)), 'Control source/configuration changed during controls');
++    result.policy = policy;
++    result.targetMode = 'controlled health-project SpotlessTask.setTarget; canonical target coverage is separate';
++    owned = mkdtempSync(join(module, 'formatting-health-'));
++    result.fixtureCleanedUp = false;
++    const fixture = join(owned, 'FormattingControl.kt');
++    result.fixture = fixture;
++    writeFileSync(fixture, canonical, { flag: 'wx' });
++    for (const stage of stages) {
++      cancellation.signal.throwIfAborted();
++      verifyPolicy();
++      if (stage.name === 'negative') writeFileSync(fixture, violations);
++      requireEvidence(readEvidenceText(fixture, 64 * 1024) === stage.before, 'Unexpected fixture before formatter');
++      const output = join(reportRoot, `${stage.name}-${randomUUID()}`);
++      mkdirSync(output);
++      const taskPath = `${sourceTask}${stage.action}`;
++      const producer = `kotlin-formatting-health-${stage.name}`;
++      const observation = join(output, 'inputs.json');
++      const control = join(output, 'control.json');
++      writeFileSync(control, JSON.stringify({ fixture, observation, taskPath, sourceTaskPath: sourceTask }) + '\n', { flag: 'wx' });
++      const init = join(output, 'control.gradle');
++      writeFileSync(init, initScript(control), { flag: 'wx' });
++      const captureRoot = join(output, 'gradle');
++      const command = ['--report-root', captureRoot, '--producer', producer, taskPath,
++        ...withControlArguments(gradleArgs, ['--init-script', init,
++          '--rerun-tasks', '--no-build-cache', '--no-configuration-cache', '--no-parallel'], splitGradleArguments)];
++      result.activeRun = { name: stage.name, command, control: record(control), init: record(init),
++        input: { text: stage.before, sha256: hash(stage.before) }, output };
++      save();
++      const status = await runProducer(command, cancellation.signal);
++      const directories = readdirSync(captureRoot, { withFileTypes: true });
++      requireEvidence(directories.length === 1 && directories[0].isDirectory(), 'Expected one fresh capture receipt');
++      const receiptRoot = join(captureRoot, directories[0].name);
++      const summary = JSON.parse(readEvidenceText(join(receiptRoot, 'summary.json'), 1024 * 1024));
++      const context = JSON.parse(readEvidenceText(join(receiptRoot, 'context.json'), 1024 * 1024));
++      const log = readEvidenceText(join(receiptRoot, 'raw.log'), 16 * 1024 * 1024);
++      const run = { ...result.activeRun, receiptRoot, originalCommandExitCode: summary.commandExitCode,
++        producerOk: summary.ok, worktreeDirty: summary.worktreeDirty, context, outcomeSatisfied: false };
++      result.runs.push(run);
++      delete result.activeRun;
++      verifyCapture({ summary, context, log, status, producer, taskPath, expectedExit: stage.exit,
++        fixturePath: relative(module, fixture).replaceAll('\\', '/') });
++      requireEvidence(basename(receiptRoot) === `${producer}-${context.invocationId}`, 'Mismatched capture invocation');
++      const model = JSON.parse(readEvidenceText(observation, 64 * 1024));
++      const input = { path: fixture, bytes: Buffer.byteLength(stage.before), sha256: hash(stage.before) };
++      const clean = stage.before === canonical ? [] : [{
++        path: relative(module, fixture).replaceAll('\\', '/'), bytes: Buffer.byteLength(canonical), sha256: hash(canonical),
++      }];
++      const taskClass = `com.diffplug.gradle.spotless.Spotless${stage.action}`;
++      requireEvidence(model.schemaVersion === 1 && model.sourceTask?.path === sourceTask &&
++        ['com.diffplug.gradle.spotless.SpotlessTaskImpl', 'com.diffplug.gradle.spotless.SpotlessTaskImpl_Decorated'].includes(model.sourceTask.className) &&
++        isDeepStrictEqual(model.sourceTask.inputs, [input]) && model.actionTask?.path === taskPath &&
++        [taskClass, `${taskClass}_Decorated`].includes(model.actionTask.className) && isDeepStrictEqual(model.cleanFiles, clean),
++      'Wrong actual formatter task/input/canonical-output evidence');
++      const after = readEvidenceText(fixture, 64 * 1024);
++      requireEvidence(after === stage.after, 'Formatter changed valid content or did not perform the exact correction');
++      requireEvidence(isDeepStrictEqual(record(control), run.control) && isDeepStrictEqual(record(init), run.init), 'Formatter control changed during execution');
++      verifyPolicy();
++      run.observation = observation;
++      run.outputSource = { text: after, sha256: hash(after) };
++      run.outcomeSatisfied = true;
++      save();
++    }
++    requireEvidence(result.runs.every(run => isDeepStrictEqual(run.context.headSha, result.runs[0].context.headSha) &&
++      isDeepStrictEqual(run.context.testedSha, result.runs[0].context.testedSha)), 'Controls used different tested sources');
++    result.complete = true;
++    result.ok = true;
++  } catch (error) {
++    result.complete = false;
++    result.ok = false;
++    result.error = error.message;
++    throw error;
++  } finally {
++    try {
++      if (owned) rmSync(owned, { recursive: true, force: true });
++      result.fixtureCleanedUp = true;
++    } catch (error) {
++      result.complete = false;
++      result.ok = false;
++      result.error = `Owned fixture cleanup failed: ${error.message}`;
++      throw error;
++    } finally {
++      try {
++        save();
++        // The first check phase can precede queued OS signal delivery; keep handlers for the next turn too.
++        await yieldEvents();
++        await yieldEvents();
++        if (cancellation.signal.aborted) {
++          result.complete = false;
++          result.ok = false;
++          result.interruptedSignal = cancellation.signal.reason.signal;
++          result.error ??= cancellation.signal.reason.message;
++          save();
++          cancellation.signal.throwIfAborted();
++        }
++      } finally {
++        process.off('SIGINT', interrupt);
++        process.off('SIGTERM', terminate);
++      }
++    }
++  }
++  console.log(`Kotlin formatting controls verified; original producer exits retained: ${reportRoot}`);
++}
++
++if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
++  try { await main(process.argv.slice(2)); }
++  catch (error) { console.error(error.message); process.exitCode = error instanceof Interrupted ? error.exitCode : 1; }
++}
+diff --git a/tools/lint/kotlin-formatting-health.test.mjs b/tools/lint/kotlin-formatting-health.test.mjs
+new file mode 100644
+index 000000000..37d0ab5e8
+--- /dev/null
++++ b/tools/lint/kotlin-formatting-health.test.mjs
+@@ -0,0 +1,354 @@
++// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
++// SPDX-License-Identifier: Apache-2.0
++
++import assert from 'node:assert/strict';
++import { fork, spawnSync } from 'node:child_process';
++import { once } from 'node:events';
++import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { delimiter, join } from 'node:path';
++import test from 'node:test';
++import { pathToFileURL } from 'node:url';
++
++const source = new URL('./kotlin-formatting-health.mjs', import.meta.url);
++const taskPrefix = ':tools:lint:analysis-health:';
++
++function checkout(t, mode = 'healthy', reader = true) {
++  const root = realpathSync(mkdtempSync(join(tmpdir(), 'gvy-formatting-health-')));
++  const cleanup = [];
++  t.after(() => {
++    cleanup.forEach(close => close());
++    rmSync(root, { recursive: true, force: true });
++  });
++  const module = join(root, 'tools/lint/analysis-health');
++  mkdirSync(module, { recursive: true });
++  mkdirSync(join(root, 'tools/ci'));
++  copyFileSync(new URL('../ci/gradle-arguments.mjs', import.meta.url), join(root, 'tools/ci/gradle-arguments.mjs'));
++  mkdirSync(join(root, 'gradle'));
++  const cli = join(root, 'tools/lint/kotlin-formatting-health.mjs');
++  if (existsSync(source)) copyFileSync(source, cli);
++  for (const file of ['build.gradle.kts', '.editorconfig', 'gradle/libs.versions.toml', 'tools/lint/analysis-health/build.gradle.kts']) {
++    writeFileSync(join(root, file), 'fixture policy\n');
++  }
++  if (reader) writeFileSync(join(root, 'tools/ci/read-evidence.mjs'), `
++    import { readFileSync } from 'node:fs';
++    export const readEvidenceBytes = path => readFileSync(path);
++    export const readEvidenceText = path => readFileSync(path, 'utf8');
++  `);
++  writeFileSync(join(root, 'tools/ci/run-gradle.mjs'), `
++    import { createHash, randomUUID } from 'node:crypto';
++    import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
++    import { dirname, join, relative } from 'node:path';
++    const mode = ${JSON.stringify(mode)};
++    const value = flag => process.argv[process.argv.lastIndexOf(flag) + 1];
++    const control = JSON.parse(readFileSync(join(dirname(value('--init-script')), 'control.json'), 'utf8'));
++    const before = readFileSync(control.fixture, 'utf8');
++    const format = text => text.replaceAll('(1,2)', '(1, 2)').replaceAll('(1 , 2)', '(1, 2)')
++      .replaceAll('/* item */ ,', '/* item */,').replace('1 // first\\n        , 2,', '1, // first\\n        2,');
++    const formatted = mode === 'no-detection' ? before : format(before);
++    const applying = control.taskPath.endsWith('Apply');
++    const failed = !applying && formatted !== before;
++    const exit = mode === 'setup-failure' ? 1 : Number(failed);
++    const producer = value('--producer');
++    appendFileSync('calls.jsonl', JSON.stringify({ command: process.argv.slice(2), task: control.taskPath, fixture: control.fixture, before }) + '\\n');
++    const hash = text => createHash('sha256').update(text).digest('hex');
++    const record = (path, text) => ({ path, bytes: Buffer.byteLength(text), sha256: hash(text) });
++    const model = {
++      schemaVersion: 1,
++      sourceTask: { path: control.sourceTaskPath, className: 'com.diffplug.gradle.spotless.SpotlessTaskImpl_Decorated',
++        inputs: [record(control.fixture, before)] },
++      actionTask: { path: control.taskPath, className: 'com.diffplug.gradle.spotless.Spotless' + (applying ? 'Apply' : 'Check') + '_Decorated' },
++      cleanFiles: formatted === before ? [] : [record(relative(join(process.cwd(), 'tools/lint/analysis-health'), control.fixture).replaceAll('\\\\', '/'), formatted)],
++    };
++    if (mode === 'wrong-target') model.sourceTask.inputs.push(record('/other/File.kt', 'unrelated'));
++    if (mode === 'changed-input') model.sourceTask.inputs[0].sha256 = 'e'.repeat(64);
++    if (mode === 'wrong-clean-output' && model.cleanFiles.length) model.cleanFiles[0].sha256 = 'e'.repeat(64);
++    if (mode !== 'missing-model') writeFileSync(control.observation, JSON.stringify(model));
++    if (applying) writeFileSync(control.fixture, mode === 'wrong-correction' ? formatted + '// changed\\n' : formatted);
++    if (mode === 'mutated-check' && !applying) writeFileSync(control.fixture, before + '// changed\\n');
++    if (mode === 'changed-policy') writeFileSync('build.gradle.kts', 'changed policy\\n');
++    if (mode === 'changed-control') writeFileSync(value('--init-script'), '// changed\\n');
++    const context = { schemaVersion: 1, headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40),
++      runId: 'local-fixture', runAttempt: 1, invocationId: randomUUID(), command: 'gradle' };
++    if (mode === 'head-drift' && applying) context.testedSha = 'e'.repeat(40);
++    const output = join(value('--report-root'), producer + '-' + context.invocationId);
++    mkdirSync(output, { recursive: true });
++    let log = '> Task ' + control.sourceTaskPath + (mode === 'cached-task' ? ' FROM-CACHE' : '') + '\\n' +
++      '> Task ' + control.taskPath + (exit ? ' FAILED' : '') + '\\n';
++    if (exit) log += mode === 'setup-failure' ? 'Could not resolve formatter dependency\\n' :
++      "Execution failed for task '" + control.taskPath + "'.\\nThe following files had format violations:\\n" + control.fixture + '\\n';
++    log += 'BUILD ' + (exit ? 'FAILED' : 'SUCCESSFUL') + ' in 1s\\n';
++    if (mode === 'missing-format-rejection') log = log.replace('The following files had format violations:', 'Unexpected task failure:');
++    if (mode === 'extra-failed-task') log = '> Task :other FAILED\\n' + log;
++    const summary = { schemaVersion: 1, producer, context, complete: true, ok: exit === 0,
++      commandExitCode: exit, captureExitCode: 0, commandSignal: null, worktreeDirty: true, diagnostics: [], unexpected: [],
++      errors: exit ? ['Gradle command failed with exit 1'] : [], log: record('unused', log) };
++    delete summary.log.path;
++    if (mode === 'unexpected-diagnostic') { summary.unexpected = ['new warning']; summary.ok = false; }
++    if (mode === 'changed-log') summary.log.sha256 = 'c'.repeat(64);
++    if (mode === 'wrong-producer') summary.producer = 'other-producer';
++    writeFileSync(join(output, 'summary.json'), JSON.stringify(summary));
++    writeFileSync(join(output, 'context.json'), JSON.stringify(mode === 'changed-context' ? { ...context, headSha: 'd'.repeat(40) } : context));
++    writeFileSync(join(output, 'raw.log'), log);
++    if (mode === 'cancel') {
++      const stop = signal => {
++        writeFileSync('fixture-at-child-close.json', JSON.stringify({ exists: existsSync(control.fixture), signal }));
++        process.exit(signal === 'SIGINT' ? 130 : 143);
++      };
++      process.on('SIGINT', () => stop('SIGINT'));
++      process.on('SIGTERM', () => stop('SIGTERM'));
++      process.stdin.on('end', () => process.exit(1));
++      process.stdin.resume();
++      console.log('positive started');
++    } else process.exit(summary.ok ? 0 : 1);
++  `);
++  if (mode === 'actual-wrapper') {
++    for (const file of ['run-gradle.mjs', 'check-gradle-diagnostics.mjs', 'bazel-diagnostics.mjs', 'native-provisioning.mjs',
++      'gradle-memory-options.mjs', 'gradle-memory-probe.mjs', 'gradle-launch.mjs', 'read-evidence.mjs',
++      'windows-private-root.mjs', 'windows-evidence.mjs', 'gradle-diagnostics.json', 'native-provisioning-diagnostics.json']) {
++      copyFileSync(new URL('../ci/' + file, import.meta.url), join(root, 'tools/ci', file));
++    }
++    writeFileSync(join(root, 'git'), `#!${process.execPath}
++if (process.argv[2] === 'rev-parse') console.log('a'.repeat(40));
++else if (process.argv[2] === 'status') console.log('');
++else process.exitCode = 1;
++`, { mode: 0o755 });
++    writeFileSync(join(root, 'gradlew'), `#!${process.execPath}
++import { appendFileSync } from 'node:fs';
++appendFileSync('gradle-argv.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n');
++console.log('BUILD SUCCESSFUL in 1s');
++`, { mode: 0o755 });
++  }
++  return { root, module, cli, report: join(root, 'report'), cleanup };
++}
++
++function run(t, mode, reader, args = []) {
++  const fixture = checkout(t, mode, reader);
++  const env = { ...process.env, PATH: fixture.root + delimiter + process.env.PATH };
++  for (const key of Object.keys(env)) if (key.startsWith('GITHUB_') || key === 'GVY_GRADLE_MEMORY_PROBE' || key === 'GVY_GRADLE_MEMORY_PROFILE') delete env[key];
++  const result = spawnSync(process.execPath, [fixture.cli, '--report-root', fixture.report, ...args], {
++    cwd: fixture.root, env, encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024,
++  });
++  assert.ifError(result.error);
++  return { ...fixture, result, receipt: () => JSON.parse(readFileSync(join(fixture.report, 'formatting-health.json'), 'utf8')) };
++}
++
++function assertCleaned(fixture) {
++  assert.deepEqual(readdirSync(fixture.module).filter(name => name.startsWith('formatting-health-')), []);
++}
++
++test('a missing shared argument dependency retires an earlier successful formatter receipt', t => {
++  const fixture = checkout(t);
++  mkdirSync(fixture.report);
++  const receiptPath = join(fixture.report, 'formatting-health.json');
++  writeFileSync(receiptPath, JSON.stringify({ schemaVersion: 1, complete: true, ok: true }));
++  unlinkSync(join(fixture.root, 'tools/ci/gradle-arguments.mjs'));
++  const result = spawnSync(process.execPath, ['--max-old-space-size=128', fixture.cli, '--report-root', fixture.report], {
++    cwd: fixture.root, timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024,
++  });
++  assert.ifError(result.error); assert.equal(result.status, 1);
++  const receipt = JSON.parse(readFileSync(receiptPath));
++  assert.equal(receipt.complete, false); assert.equal(receipt.ok, false);
++  assertCleaned(fixture);
++});
++
++for (const signal of ['SIGINT', 'SIGTERM']) test(`queued ${signal} during the final formatter receipt write retains original runs and fails cancellation`, t => {
++  if (process.platform === 'win32') return t.skip('POSIX self-signal delivery required');
++  const fixture = checkout(t);
++  const receipt = join(fixture.report, 'formatting-health.json');
++  const proofPath = join(fixture.root, 'queued-proof.json');
++  const driver = join(fixture.root, 'queued-driver.mjs');
++  writeFileSync(driver, `
++import fs from 'node:fs'; import { syncBuiltinESMExports } from 'node:module'; import { setImmediate as turn } from 'node:timers/promises';
++const original = fs.writeFileSync; let sent = false, delivered = 0, handlersAtWrite = 0;
++const sentinel = () => { delivered++; }; process.on(${JSON.stringify(signal)}, sentinel);
++fs.writeFileSync = (path, bytes, ...rest) => {
++  const result = original(path, bytes, ...rest);
++  if (path === ${JSON.stringify(receipt)} && !sent) {
++    const model = JSON.parse(bytes); if (model.complete === true && model.ok === true) {
++      sent = true; handlersAtWrite = process.listenerCount(${JSON.stringify(signal)}); process.kill(process.pid, ${JSON.stringify(signal)});
++    }
++  } return result;
++}; syncBuiltinESMExports();
++process.argv = [process.execPath, ${JSON.stringify(fixture.cli)}, '--report-root', ${JSON.stringify(fixture.report)}];
++await import(${JSON.stringify(pathToFileURL(fixture.cli).href)});
++const until = performance.now() + 1000; while (!delivered && performance.now() < until) await turn();
++const receipt = JSON.parse(fs.readFileSync(${JSON.stringify(receipt)}));
++original(${JSON.stringify(proofPath)}, JSON.stringify({ sent, delivered, handlersAtWrite, exitCode: process.exitCode ?? 0, receipt }));
++process.off(${JSON.stringify(signal)}, sentinel);
++`);
++  const result = spawnSync(process.execPath, ['--max-old-space-size=128', driver], { cwd: fixture.root,
++    timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024 });
++  assert.ifError(result.error);
++  const proof = JSON.parse(readFileSync(proofPath));
++  t.diagnostic(JSON.stringify({ signal, sent: proof.sent, delivered: proof.delivered, handlersAtWrite: proof.handlersAtWrite,
++    exitCode: proof.exitCode, complete: proof.receipt.complete, ok: proof.receipt.ok, originalExits: proof.receipt.runs.map(run => run.originalCommandExitCode) }));
++  assert.equal(proof.sent, true); assert(proof.delivered >= 1); assert(proof.handlersAtWrite >= 2);
++  assert.equal(result.status, signal === 'SIGINT' ? 130 : 143, result.stderr);
++  assert.equal(proof.receipt.complete, false); assert.equal(proof.receipt.ok, false);
++  assert.deepEqual(proof.receipt.runs.map(run => run.originalCommandExitCode), [0, 1, 0, 0, 0]);
++  assertCleaned(fixture);
++});
++
++test('validates all five CLI stages and preserves the expected negative producer failure', t => {
++  const fixture = run(t);
++  assert.equal(fixture.result.status, 0, fixture.result.stderr);
++  const receipt = fixture.receipt();
++  assert.equal(receipt.ok, true);
++  assert.equal(receipt.complete, true);
++  assert.equal(receipt.fixtureCleanedUp, true);
++  assert.deepEqual(receipt.runs.map(run => run.originalCommandExitCode), [0, 1, 0, 0, 0]);
++  assert.equal(receipt.runs[1].producerOk, false);
++  const calls = readFileSync(join(fixture.root, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
++  assert.deepEqual(calls.map(call => call.task), ['Check', 'Check', 'Apply', 'Check', 'Apply'].map(suffix => taskPrefix + 'spotlessKotlin' + suffix));
++  assert.equal(new Set(calls.map(call => call.fixture)).size, 1);
++  assert.ok(calls[1].before.includes('(1,2)'));
++  assert.ok(calls[1].before.includes('(1 , 2)'));
++  assert.ok(calls[1].before.includes('/* item */ ,'));
++  assert.ok(calls[1].before.includes('1 // first\n        , 2,'));
++  assert.equal(calls[3].before, calls[0].before);
++  assert.equal(calls[4].before, calls[0].before);
++  assertCleaned(fixture);
++});
++
++for (const tail of [[], ['--', '--parallel', '--no-build-cache']]) test(`normalizes owned formatter controls with ${tail.length ? 'task arguments' : 'explicit Gradle options'} in every producer command`, t => {
++  const retained = ['--offline', '--init-script', 'native profile.gradle', '-Dnative.token=profile-token',
++    '-Dorg.gradle.java.installations.paths=/jdk17,/jdk21', '-Dorg.gradle.jvmargs=-Xmx512m -XX:MaxMetaspaceSize=512m',
++    '-P', '--no-build-cache', '-D', '--parallel', '--project-dir', '--no-build-cache'];
++  const args = [...retained, '--build-cache', '--no-build-cache', '--configuration-cache', '--no-configuration-cache',
++    '--parallel', '--no-parallel', '--rerun-tasks', '--rerun-tasks', ...tail];
++  const fixture = run(t, 'healthy', true, ['--', ...args]);
++  assert.equal(fixture.result.status, 0, fixture.result.stderr);
++  const calls = readFileSync(join(fixture.root, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
++  assert.equal(calls.length, 5);
++  for (const [index, call] of calls.entries()) {
++    assert.equal(call.command[4], call.task);
++    assert.deepEqual(call.command.slice(5), [...retained, '--init-script',
++      join(fixture.receipt().runs[index].output, 'control.gradle'),
++      '--rerun-tasks', '--no-build-cache', '--no-configuration-cache', '--no-parallel', ...tail]);
++    assert.deepEqual(fixture.receipt().runs[index].command, call.command);
++  }
++  assert.deepEqual(fixture.receipt().runs.map(run => run.originalCommandExitCode), [0, 1, 0, 0, 0]);
++  assertCleaned(fixture);
++});
++
++test('formatter composes singleton controls through the actual capture wrapper to fake Gradle', t => {
++  const fixture = run(t, 'actual-wrapper', true, ['--', '--init-script', 'native.gradle', '--console', 'rich', '--warning-mode=none',
++    '--no-daemon', '--max-workers=1', '--no-build-cache', '--build-cache', '--no-configuration-cache', '--configuration-cache',
++    '--parallel', '--no-parallel', '--rerun-tasks']);
++  // Fake Gradle records argv only; missing formatter model must still fail the health oracle.
++  assert.equal(fixture.result.status, 1);
++  const receipt = fixture.receipt();
++  const actual = readFileSync(join(fixture.root, 'gradle-argv.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
++  assert.equal(actual.length, 1);
++  assert.deepEqual(actual[0], [taskPrefix + 'spotlessKotlinCheck', '--init-script', 'native.gradle', '--no-daemon', '--max-workers=1',
++    '--init-script', join(receipt.runs[0].output, 'control.gradle'), '--rerun-tasks', '--no-build-cache',
++    '--no-configuration-cache', '--no-parallel', '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true']);
++  assert.equal(receipt.runs[0].originalCommandExitCode, 0);
++  assert.equal(receipt.ok, false);
++  assertCleaned(fixture);
++});
++
++for (const argument of ['--parallel=true', '--rerun-tasks=false', '--no-build-cache=false', '--configuration-cache=']) {
++  test(`formatter rejects valued owned boolean ${argument} before a producer starts`, t => {
++    const fixture = run(t, 'healthy', true, ['--', argument]);
++    assert.equal(fixture.result.status, 1);
++    assert.match(fixture.result.stderr, /Gradle option takes no argument/);
++    assert.equal(existsSync(join(fixture.root, 'calls.jsonl')), false);
++    assertCleaned(fixture);
++  });
++}
++
++for (const args of [[], ['--report-root'], ['--report-root', ''], ['--report-root', '--offline'],
++  ['--report-root', 'report', '--offline'], ['--report-root', 'report', 'unexpected'], ['--report-root', 'report', '--']]) {
++  test(`rejects malformed formatter CLI arguments ${JSON.stringify(args)} before launching a producer`, t => {
++    const fixture = checkout(t);
++    const result = spawnSync(process.execPath, [fixture.cli, ...args], {
++      cwd: fixture.root, encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024,
++    });
++    assert.ifError(result.error);
++    assert.equal(result.status, 1);
++    assert.match(result.stderr, /^Usage: kotlin-formatting-health\.mjs --report-root DIR \[-- GRADLE_ARGS\.\.\.\]\s*$/);
++    assert.equal(existsSync(join(fixture.root, 'calls.jsonl')), false);
++    assertCleaned(fixture);
++  });
++}
++
++for (const mode of ['no-detection', 'wrong-correction', 'mutated-check', 'wrong-target', 'missing-model',
++  'setup-failure', 'unexpected-diagnostic', 'changed-log', 'changed-context', 'wrong-producer', 'cached-task',
++  'changed-input', 'wrong-clean-output', 'missing-format-rejection', 'extra-failed-task', 'head-drift', 'changed-policy', 'changed-control']) {
++  test(`rejects ${mode} and cleans its owned fixture`, t => {
++    const fixture = run(t, mode);
++    assert.equal(fixture.result.status, 1, fixture.result.stderr);
++    assert.equal(fixture.receipt().ok, false);
++    assert.equal(fixture.receipt().complete, false);
++    assertCleaned(fixture);
++  });
++}
++
++test('an unavailable capture dependency retires an earlier successful receipt before creating a fixture', t => {
++  const fixture = checkout(t, 'healthy', false);
++  mkdirSync(fixture.report);
++  writeFileSync(join(fixture.report, 'formatting-health.json'), JSON.stringify({ complete: true, ok: true }));
++  const result = spawnSync(process.execPath, [fixture.cli, '--report-root', fixture.report], {
++    cwd: fixture.root, timeout: 10_000, maxBuffer: 1024 * 1024, encoding: 'utf8',
++  });
++  assert.ifError(result.error);
++  assert.equal(result.status, 1);
++  const receipt = JSON.parse(readFileSync(join(fixture.report, 'formatting-health.json'), 'utf8'));
++  assert.equal(receipt.ok, false);
++  assert.equal(receipt.complete, false);
++  assertCleaned(fixture);
++});
++
++for (const [signal, status] of [['SIGINT', 130], ['SIGTERM', 143]]) {
++  test(`${signal} waits for the active producer to close before fixture cleanup`, { timeout: 15_000 }, async t => {
++    const fixture = checkout(t, 'cancel');
++    const driverPath = join(fixture.root, 'driver.mjs');
++    writeFileSync(driverPath, `
++      import { realpathSync } from 'node:fs';
++      const disconnected = () => process.exit(1);
++      process.on('disconnect', disconnected);
++      process.on('message', signal => process.emit(signal));
++      process.argv = [process.execPath, realpathSync(${JSON.stringify(fixture.cli)}), '--report-root', ${JSON.stringify(fixture.report)}];
++      await import(${JSON.stringify(pathToFileURL(fixture.cli).href)});
++      process.off('disconnect', disconnected);
++      process.disconnect();
++    `);
++    const child = fork(driverPath, [], { cwd: fixture.root, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
++    fixture.cleanup.push(() => {
++      child.stdin.destroy();
++      if (child.connected) child.disconnect();
++      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
++    });
++    const cancel = new AbortController();
++    const timer = setTimeout(() => cancel.abort(new Error('Cancellation did not finish')), 10_000);
++    t.after(() => clearTimeout(timer));
++    let output = '';
++    let sent = false;
++    let bytes = 0;
++    child.stderr.on('data', chunk => {
++      bytes += chunk.length;
++      if (bytes > 64 * 1024) cancel.abort(new Error('Unexpected output volume'));
++    });
++    child.stdout.on('data', chunk => {
++      output += chunk.toString('utf8');
++      bytes += chunk.length;
++      if (bytes > 64 * 1024) cancel.abort(new Error('Unexpected output volume'));
++      if (!sent && output.includes('positive started\n')) {
++        sent = true;
++        child.send(signal, error => { if (error) cancel.abort(error); });
++      }
++    });
++    const [code, terminatedBy] = await once(child, 'exit', { signal: cancel.signal });
++    assert.equal(sent, true);
++    assert.equal(code, status);
++    assert.equal(terminatedBy, null);
++    assert.deepEqual(JSON.parse(readFileSync(join(fixture.root, 'fixture-at-child-close.json'), 'utf8')), { exists: true, signal });
++    assert.equal(readFileSync(join(fixture.root, 'calls.jsonl'), 'utf8').trim().split('\n').length, 1);
++    const receipt = JSON.parse(readFileSync(join(fixture.report, 'formatting-health.json'), 'utf8'));
++    assert.equal(receipt.complete, false);
++    assert.equal(receipt.ok, false);
++    assertCleaned(fixture);
++  });
++}

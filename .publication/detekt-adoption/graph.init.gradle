@@ -1,0 +1,137 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+import groovy.json.JsonOutput
+import org.gradle.api.configuration.BuildFeatures
+import javax.inject.Inject
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
+abstract class R6Services { @Inject abstract BuildFeatures getBuildFeatures() }
+File expectedRoot = new File(System.getenv('GVY_HOSTED_PROOF_ROOT')).canonicalFile
+String fixturePath = ':tools:lint:analysis-health'
+String koverPlugin = 'org.jetbrains.kotlinx.kover'
+String sentinelOwner = ':viz'
+String sentinelName = 'gvyUnscheduledCorrectionSelectionSentinel'
+boolean sentinelRegistered = false
+boolean sentinelRealized = false
+gradle.beforeProject { owner ->
+    if (owner.path == sentinelOwner && gradle.startParameter.projectProperties['r6.graphMode'] == 'ordering') {
+        owner.tasks.register(sentinelName) {
+            sentinelRealized = true
+            throw new GradleException('GVY_HOSTED_UNRELATED_TASK_REALIZED: ' + sentinelOwner + ':' + sentinelName)
+        }
+        sentinelRegistered = true
+    }
+}
+gradle.beforeSettings { settings ->
+ assert settings.settingsDir.canonicalFile == expectedRoot
+ assert System.getenv('GVY_HOSTED_PROOF_TOKEN') ==~ /[a-f0-9]{32}/
+}
+gradle.projectsEvaluated {
+ def root = gradle.rootProject
+ String mode = gradle.startParameter.projectProperties['r6.graphMode']
+ assert mode in ['fixture', 'ordering']
+ List<String> requested = mode == 'fixture' ? ['check','quality','build'].collect { fixturePath + ':' + it } :
+  [':spotlessApply', fixturePath + ':lintFix', ':parser:lintFix', ':parser:core:lintFix']
+ assert gradle.startParameter.taskNames == requested && gradle.startParameter.excludedTaskNames.empty
+ assert gradle.startParameter.dryRun == (mode == 'ordering')
+ assert root.objects.newInstance(R6Services).buildFeatures.configurationCache.active.get() == false
+ File output = new File(System.getenv('GVY_HOSTED_PROOF_OUTPUT'), 'graph-' + mode + '.json')
+ String rootScriptSha256 = gradle.startParameter.projectProperties['r6.rootScriptSha256']
+ assert rootScriptSha256 ==~ /[0-9a-f]{64}/
+    // These getters are public in pinned Kover 0.9.11. Existing rule/bound collections are not
+    // exposed by that public DSL; do not read implementation-only rules/bounds or task inputs.
+    def observeProjects = { List<String> errors ->
+        root.allprojects.toList().sort { it.path }.collect { owner ->
+            boolean fixture = owner.path == fixturePath
+            boolean rootAggregator = owner == root
+            boolean applied = owner.plugins.hasPlugin(koverPlugin)
+            def quality = owner.tasks.named('quality').get()
+            List<String> qualityMembers = quality.taskDependencies.getDependencies(quality).collect { it.path }.sort()
+            Map row = [projectPath: owner.path, fixture: fixture, rootAggregator: rootAggregator,
+                koverApplied: applied, qualityPath: quality.path, qualityMembers: qualityMembers]
+            if (fixture) {
+                if (applied || owner.extensions.findByName('kover') != null) errors.add('Fixture owns a Kover plugin/extension')
+                if (qualityMembers != [fixturePath + ':lint']) errors.add('Fixture quality dependencies differ from lint only')
+                row.runtimeCoveragePolicy = 'Analyzer fixtures have no production runtime coverage ownership'
+            } else {
+                if (!applied) errors.add("Kover plugin absent from existing owner ${owner.path}")
+                if (applied) {
+                    def extension = owner.extensions.getByName('kover')
+                    row.totalVerificationOnCheck = extension.reports.total.verify.onCheck.orNull
+                    row.warningInsteadOfFailure = extension.reports.total.verify.warningInsteadOfFailure.orNull
+                    def verify = owner.tasks.named('koverVerify').get()
+                    row.verificationTask = [path: verify.path, enabled: verify.enabled]
+                    if (row.totalVerificationOnCheck != true || row.warningInsteadOfFailure != false) {
+                        errors.add("Existing Kover verification policy changed in ${owner.path}")
+                    }
+                    if (!rootAggregator && !(verify.path in qualityMembers)) {
+                        errors.add("Subproject quality lost Kover verification in ${owner.path}")
+                    }
+                }
+                row.min54 = [status: 'not-inspected-through-public-api',
+                    reason: 'KoverVerificationRulesConfig exposes rule mutators; no public getter for existing rules/bounds',
+                    sourcePolicyApplies: !rootAggregator, sourceBound: !rootAggregator ? (owner.path == ':viz:desktop' ? 70 : 54) : null,
+                    rootScriptSha256: rootScriptSha256,
+                    runtimeBoundVerified: false]
+            }
+            row.koverTaskNames = owner.tasks.names.toList().findAll {
+                it.toLowerCase(Locale.ROOT).startsWith('kover')
+            }.sort()
+            if (fixture && !row.koverTaskNames.isEmpty()) errors.add('Fixture still owns Kover tasks')
+            row
+        }
+    }
+    gradle.taskGraph.whenReady { graph ->
+        List<String> errors = []
+        Map model = [schemaVersion: 1, kind: 'r6-ownership-ordering', mode: mode,
+            sourceHashBinding: 'supplied by bounded native driver; driver rechecks sources around producers', requestedTasks: requested, dryRun: gradle.startParameter.dryRun,
+            executedOutcomesVerified: false, runtimeMin54Verified: false,
+            projects: observeProjects(errors), executionPlan: graph.allTasks.collect { [path: it.path, className: it.class.name, enabled: it.enabled] }]
+        if (mode == 'ordering') {
+            String sentinelPath = sentinelOwner + ':' + sentinelName
+            boolean scheduled = graph.allTasks.any { it.path == sentinelPath }
+            boolean ownerScheduled = graph.allTasks.any { it.project.path == sentinelOwner }
+            model.nonRealization = [projectPath: sentinelOwner, taskName: sentinelName,
+                registered: sentinelRegistered, realized: sentinelRealized, scheduled: scheduled, ownerScheduled: ownerScheduled,
+                requested: requested.any { it == sentinelPath || it.startsWith(sentinelOwner + ':') }]
+            if (!sentinelRegistered || sentinelRealized || scheduled || ownerScheduled || model.nonRealization.requested) {
+                errors.add('Unrelated unscheduled task/project was selected or realized: ' + sentinelPath)
+            }
+        }
+        if (mode == 'fixture') {
+            List<String> required = requested + [fixturePath + ':lint', fixturePath + ':detektTyped', fixturePath + ':detektMain', fixturePath + ':spotlessCheck', ':verifyKotlinFormattingTargets']
+            required.each { path -> if (!graph.allTasks.any { it.path == path && it.enabled }) errors.add('Required graph member absent: ' + path) }
+            graph.allTasks.each { task ->
+                String name = task.name
+                if (!(task.project.path in [':', fixturePath])) errors.add('Fixture graph escaped project: ' + task.path)
+                if (task.project.path == fixturePath && (name.toLowerCase(Locale.ROOT).startsWith('kover') || name.startsWith('compileViolations') || name.startsWith('detektViolations') || name in ['violationsClasses','recordDetektViolationsHealth'])) errors.add('Forbidden fixture graph member: ' + task.path)
+            }
+        }
+        def formatting = graph.allTasks.findAll { it.name == 'spotlessApply' }
+        def corrections = graph.allTasks.findAll { it.name in ['spotlessApply','detektAutoCorrect'] }
+        def typed = graph.allTasks.findAll { it.class.name in ['dev.detekt.gradle.Detekt','dev.detekt.gradle.Detekt_Decorated'] && !(it.name in ['detekt','detektAutoCorrect']) }
+        model.ordering = typed.collect { task ->
+            def after = task.mustRunAfter.getDependencies(task).collect { it.path }.toSet()
+            def direct = task.taskDependencies.getDependencies(task).collect { it.path }.toSet()
+            corrections.each { correction ->
+                if (!(correction.path in after)) errors.add('Missing global typed correction ordering: ' + task.path + ' after ' + correction.path)
+                if (correction.path in direct) errors.add('Correction became an unintended typed dependency: ' + task.path)
+                if (graph.allTasks.indexOf(correction) >= graph.allTasks.indexOf(task)) errors.add('Actual correction plan order wrong: ' + task.path)
+            }
+            [task: task.path, mustRunAfter: after.sort(), dependencies: direct.sort()]
+        }
+        graph.allTasks.findAll { it.name == 'detektAutoCorrect' }.each { task ->
+            def after = task.mustRunAfter.getDependencies(task).collect { it.path }.toSet()
+            def direct = task.taskDependencies.getDependencies(task).collect { it.path }.toSet()
+            formatting.each { correction ->
+                if (!(correction.path in after)) errors.add('Missing global autocorrect formatting ordering: ' + task.path)
+                if (correction.path in direct) errors.add('Formatting became an unintended autocorrect dependency: ' + task.path)
+                if (graph.allTasks.indexOf(correction) >= graph.allTasks.indexOf(task)) errors.add('Actual formatting plan order wrong: ' + task.path)
+            }
+        }
+        if (mode == 'ordering' && (typed.empty || corrections.size() < 4 || !corrections.any { it.project.path == ':parser' })) errors.add('Ordering control did not observe cross-project scheduled corrections')
+        model.complete = errors.empty; model.ok = errors.empty; model.errors = errors
+        Files.writeString(output.toPath(), JsonOutput.prettyPrint(JsonOutput.toJson(model)) + '\n', StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+        assert errors.empty : 'R6 graph ownership/ordering failed: ' + errors
+    }
+}
