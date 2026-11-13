@@ -282,7 +282,7 @@ class DiagnosticTests(unittest.TestCase):
             b'    raise ValueError("PRIVATE SOURCE")\nTOKEN=PRIVATE ENVIRONMENT\n'
             b"ValueError: secret/value failed /private/input.toml\nwarning: continuing\n"
         )
-        with patch.dict(os.environ, {"GVY_TEST_PASSWORD": "secret/value"}):
+        with patch.dict(os.environ, {"GVY_TEST_PASSWORD": "secret/value"}, clear=True):
             _, errors, _ = self.invoke(2, None, stderr=stderr)
         text = "\n".join(errors)
         self.assertIn("unexpected exit 2", text)
