@@ -23,7 +23,7 @@ import java.net.URI
  */
 interface LanguageEngine {
     /**
-     * Unique identifier for this engine (e.g. "native", "core", "rewrite")
+     * Unique identifier for this engine (e.g. "native", "rewrite")
      */
     val id: String
 

@@ -60,7 +60,7 @@ class LanguageEngineManager(
     /** Reads the configured and already-created hover engine under the owner lock without creating one. */
     internal fun observeHoverEngine(): HoverEngineObservation = synchronized(activeEngineLock) {
         val instance = activeEngineInstance
-        val actual = instance?.id?.takeIf { it == "native" || it == "core" || it == "rewrite" }
+        val actual = instance?.id?.takeIf { it == "native" || it == "rewrite" }
         val state = when {
             instance == null -> "not_instantiated"
             actual == null -> "unknown"
