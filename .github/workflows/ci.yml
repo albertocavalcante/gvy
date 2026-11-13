@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -m 700 "$RUNNER_TEMP/noise-proof"
-          printf 'support=%s\ncandidate=%s\n' "$GITHUB_SHA" 21904c9591c2ce64b209c49f58d6856ec13365dd >"$RUNNER_TEMP/noise-proof/preparation-identity.txt"
+          printf 'support=%s\ncandidate=%s\n' "$GITHUB_SHA" f4ee9eb5ccaa7ab17f44f7fbec4db8654cfb361f >"$RUNNER_TEMP/noise-proof/preparation-identity.txt"
       - name: Checkout support
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,13 +31,13 @@ jobs:
       - name: Checkout red
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: b9ccd3afca508ee897fd026ca6c47b32a4b8626b
+          ref: a2baf77a1f5808e1fc2f222e3d178e4d6fd51a2c
           path: red
           persist-credentials: false
       - name: Checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 21904c9591c2ce64b209c49f58d6856ec13365dd
+          ref: f4ee9eb5ccaa7ab17f44f7fbec4db8654cfb361f
           path: candidate
           fetch-depth: 0
           persist-credentials: false

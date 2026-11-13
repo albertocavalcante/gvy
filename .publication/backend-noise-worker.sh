@@ -8,9 +8,9 @@ candidate="$GITHUB_WORKSPACE/candidate"
 red="$GITHUB_WORKSPACE/red"
 init="$GITHUB_WORKSPACE/support/.publication/parity.init.gradle"
 parent=f04406dac415a5b7cc1698ca8feb0d0de3e9e956
-candidate_head=21904c9591c2ce64b209c49f58d6856ec13365dd
-candidate_tree=36d1e66ddb92662a133e1d7689bf3a98f0f6571f
-red_head=b9ccd3afca508ee897fd026ca6c47b32a4b8626b
+candidate_head=f4ee9eb5ccaa7ab17f44f7fbec4db8654cfb361f
+candidate_tree=20b4322f3bdc25dba8b0cdb044c87ba1fd156cc9
+red_head=a2baf77a1f5808e1fc2f222e3d178e4d6fd51a2c
 jenkins_test=jenkins/src/test/kotlin/com/github/albertocavalcante/gvy/jenkins/JenkinsContextLoggingTest.kt
 paths=(
   build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleBuildToolTest.kt
