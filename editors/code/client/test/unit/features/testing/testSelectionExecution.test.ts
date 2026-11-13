@@ -197,22 +197,162 @@ describe("test selection execution boundary", () => {
     assert.ok(run.end.calledOnce);
   });
 
-  it("refuses the entire mixed request when a later runtime row is unrepresentable", async () => {
+  function row(parent: Item, id = "iteration"): Item {
+    return { ...parent, id, parent };
+  }
+
+  function output(): string {
+    return run.appendOutput.args.map(([text]) => String(text)).join("");
+  }
+
+  it("runs the runnable part of a mixed request and errors only a runtime row", async () => {
     const first = suite("example.First");
     const second = suite("example.Second");
-    const row: Item = {
-      ...second.children[0],
-      id: "iteration",
-      parent: second.children[0],
+    const iteration = row(second.children[0]);
+    await runner.runTests(
+      { include: [first.item, iteration] },
+      requestToken,
+      controller,
+    );
+    assert.deepStrictEqual(
+      getTestCommand.args.map((args) => args.slice(1)),
+      [["example.First", undefined]],
+    );
+    assert.ok(spawn.calledOnce);
+    assert.ok(run.errored.calledOnce);
+    assert.strictEqual(run.errored.firstCall.args[0], iteration);
+    assert.match(run.errored.firstCall.args[1].message, /iteration/);
+    // The output names the refused item and why it was not run.
+    assert.match(output(), /iteration: Not run: A single test iteration/);
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("runs the other suites of Run All when one iteration row is excluded", async () => {
+    const first = suite("example.First");
+    suite("example.Second");
+    await runner.runTests(
+      { exclude: [row(first.children[0])] },
+      requestToken,
+      controller,
+    );
+    assert.deepStrictEqual(
+      getTestCommand.args.map((args) => args.slice(1)),
+      [["example.Second", undefined]],
+    );
+    assert.ok(spawn.calledOnce);
+    assert.ok(run.errored.calledOnce);
+    assert.strictEqual(run.errored.firstCall.args[0], first.item);
+    assert.match(
+      output(),
+      /opaque suite 0: Not run: .*excluded test iteration/,
+    );
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("errors every runtime row and runs nothing when only rows are requested", async () => {
+    const { children } = suite("example.Spec");
+    const rows = [row(children[0], "one"), row(children[1], "two")];
+    await runner.runTests({ include: rows }, requestToken, controller);
+    assert.ok(getTestCommand.notCalled);
+    assert.ok(spawn.notCalled);
+    assert.deepStrictEqual(
+      run.errored.args.map((args) => args[0]),
+      rows,
+    );
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("marks the item errored when the whole plan is refused", async () => {
+    const first = suite("example.First");
+    const stale: Item = {
+      id: "stale",
+      children: { forEach: () => {} },
     };
     await runner.runTests(
-      { include: [first.item, row] },
+      { include: [first.item, stale] },
       requestToken,
       controller,
     );
     assert.ok(getTestCommand.notCalled);
     assert.ok(spawn.notCalled);
-    assert.ok(run.appendOutput.called);
+    assert.ok(run.errored.calledOnce);
+    assert.strictEqual(run.errored.firstCall.args[0], stale);
+    assert.match(output(), /Nothing was run\. Cause: stale/);
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("names an excluded refusal cause without marking it errored", async () => {
+    const first = suite("example.First");
+    const stale: Item = {
+      id: "stale excluded",
+      children: { forEach: () => {} },
+    };
+    await runner.runTests(
+      { include: [first.item], exclude: [stale] },
+      requestToken,
+      controller,
+    );
+    assert.ok(getTestCommand.notCalled);
+    assert.ok(spawn.notCalled);
+    assert.ok(run.errored.notCalled);
+    assert.match(output(), /Cause: stale excluded/);
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("runs Run All with overloaded test names as whole classes", async () => {
+    suite("example.Overloaded", ["check", "check", "other"]);
+    suite("example.Plain");
+    await runner.runTests({}, requestToken, controller);
+    assert.deepStrictEqual(
+      getTestCommand.args.map((args) => args.slice(1)),
+      [
+        ["example.Overloaded", undefined],
+        ["example.Plain", undefined],
+      ],
+    );
+    assert.equal(spawn.callCount, 2);
+    assert.ok(run.errored.notCalled);
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("refuses only the class whose overload is cut by an exclusion", async () => {
+    const overloaded = suite("example.Overloaded", ["check", "check"]);
+    const plain = suite("example.Plain");
+    await runner.runTests(
+      { exclude: [overloaded.children[1]] },
+      requestToken,
+      controller,
+    );
+    assert.deepStrictEqual(
+      getTestCommand.args.map((args) => args.slice(1)),
+      [["example.Plain", undefined]],
+    );
+    assert.ok(spawn.calledOnce);
+    assert.ok(run.errored.calledOnce);
+    assert.strictEqual(run.errored.firstCall.args[0], overloaded.item);
+    assert.notStrictEqual(run.errored.firstCall.args[0], plain.item);
+    assert.match(output(), /opaque suite 0: Not run: .*same name/);
+    assert.ok(run.end.calledOnce);
+  });
+
+  it("runs both selected overloads with one command beside another class", async () => {
+    // The shape of Rerun Failed Tests after both overloads failed.
+    const overloaded = suite("example.Overloaded", ["check", "check"]);
+    const plain = suite("example.Plain");
+    await runner.runTests(
+      { include: [...overloaded.children, plain.item] },
+      requestToken,
+      controller,
+    );
+    assert.deepStrictEqual(
+      getTestCommand.args.map((args) => args.slice(1)),
+      [
+        ["example.Overloaded", "check"],
+        ["example.Plain", undefined],
+      ],
+    );
+    assert.equal(spawn.callCount, 2);
+    assert.ok(run.errored.notCalled);
     assert.ok(run.end.calledOnce);
   });
 
@@ -296,7 +436,9 @@ describe("test selection execution boundary", () => {
     );
     assert.ok(getTestCommand.notCalled);
     assert.ok(spawn.notCalled);
-    assert.ok(run.errored.notCalled);
+    // Only the refused suite is marked; the excluded child keeps its status.
+    assert.ok(run.errored.calledOnce);
+    assert.strictEqual(run.errored.firstCall.args[0], item);
     assert.ok(run.appendOutput.called);
     assert.ok(run.end.calledOnce);
   });

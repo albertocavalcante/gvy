@@ -32,10 +32,21 @@ export type TestSelectionDescriptor<T> =
   | { readonly kind: "feature"; readonly test: string }
   | { readonly kind: "unrepresentable" };
 
+/**
+ * Why a selected item cannot be run exactly:
+ * - `unrunnable-iteration`: a runtime iteration row has no server target.
+ * - `excluded-iteration`: an excluded iteration row lies inside it, and a run
+ *   cannot leave out a single iteration.
+ * - `ambiguous-feature-name`: a same-named feature (an overload) is excluded,
+ *   and the server's name filter cannot run one without the other.
+ */
+export type RefusalReason =
+  "unrunnable-iteration" | "excluded-iteration" | "ambiguous-feature-name";
+
 /** A selected item that cannot be run exactly; the rest of the plan still can. */
 export interface RefusedSelection<T> {
   readonly item: T;
-  readonly reason: "unrunnable-iteration" | "ambiguous-feature-name";
+  readonly reason: RefusalReason;
 }
 
 export type TestSelectionPlan<T> =
@@ -58,6 +69,9 @@ export type TestSelectionPlan<T> =
  * features have structural server targets; individual runtime rows do not.
  * Server names come from discovery descriptors, never opaque UI item IDs.
  * The execution backend owns interpretation of test-name filters.
+ * A selected item that cannot be run exactly is returned in `refused` while
+ * the rest still runs; a stale, cyclic or contradictory tree, or splitting an
+ * incomplete suite, refuses the whole plan.
  * `completeChildren` must be a discovery-owned feature snapshot, with undefined
  * meaning incomplete and [] meaning known empty. Never derive it from the live
  * children collection or canResolveChildren.
@@ -146,19 +160,18 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
       byName: ReadonlyMap<string, { feature: T; entry: T }>;
       rows: ReadonlyMap<T, T>;
       firstRow: T | undefined;
+      unownedRow: T | undefined;
     }
   >();
-  const append = (item: T, target: Readonly<TestTarget>): boolean => {
+  const append = (item: T, target: Readonly<TestTarget>): void => {
     const suite = item.parent ?? item;
     const suiteTargets = targets.get(suite) ?? new Map<string | undefined, T>();
-    const previous = suiteTargets.get(target.test);
-    if (previous) {
-      return previous === item;
-    }
+    // Selected same-named features (overloads) share one name filter, so a
+    // single command runs every one of them; never issue it twice.
+    if (suiteTargets.has(target.test)) return;
     suiteTargets.set(target.test, item);
     targets.set(suite, suiteTargets);
     selections.push({ item, target });
-    return true;
   };
 
   for (const item of selected) {
@@ -166,11 +179,18 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
     const suite = path[path.length - 1];
     const suiteDescriptor = descriptor(suite);
     const itemDescriptor = descriptor(item);
+    if (!rootItems.has(suite) || suiteDescriptor.kind !== "suite") {
+      return unsupported(item);
+    }
+    if (item !== suite && itemDescriptor.kind === "unrepresentable") {
+      // A runtime iteration row of a current suite has no server target.
+      // Report it and still run everything else.
+      refused.push({ item, reason: "unrunnable-iteration" });
+      continue;
+    }
     if (
-      !rootItems.has(suite) ||
-      suiteDescriptor.kind !== "suite" ||
-      (item !== suite &&
-        (item.parent !== suite || itemDescriptor.kind !== "feature"))
+      item !== suite &&
+      (item.parent !== suite || itemDescriptor.kind !== "feature")
     ) {
       return unsupported(item);
     }
@@ -211,6 +231,7 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
       const byName = new Map<string, { feature: T; entry: T }>();
       const rows = new Map<T, T>();
       let firstRow: T | undefined;
+      let unownedRow: T | undefined;
       // Validate once per selected suite. Do not interpret unrelated roots'
       // descriptors or rescan all exclusions for every selected feature.
       for (const entry of relevant) {
@@ -218,6 +239,13 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
         const feature = entryPath[entryPath.length - 2];
         if (!feature) return unsupported(entry);
         const featureDescriptor = descriptor(feature);
+        if (featureDescriptor.kind === "unrepresentable") {
+          // A runtime row attached to the suite itself: discovery does not
+          // say which feature owns it, so it may cut any of them.
+          unownedRow ??= entry;
+          firstRow ??= entry;
+          continue;
+        }
         if (
           featureDescriptor.kind !== "feature" ||
           (features !== undefined && !features.all.has(feature))
@@ -231,11 +259,14 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
           firstRow ??= entry;
         }
       }
-      exclusionIndex = { byName, rows, firstRow };
+      exclusionIndex = { byName, rows, firstRow, unownedRow };
       excludedFeatures.set(suite, exclusionIndex);
     }
+    // A run cannot leave out one iteration: refuse only what the excluded row
+    // cuts, and still run the rest of the request.
     if (item === suite && exclusionIndex.firstRow) {
-      return unsupported(exclusionIndex.firstRow);
+      refused.push({ item, reason: "excluded-iteration" });
+      continue;
     }
     if (itemDescriptor.kind === "feature") {
       const alias = exclusionIndex.byName.get(itemDescriptor.test);
@@ -245,8 +276,10 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
         refused.push({ item, reason: "ambiguous-feature-name" });
         continue;
       }
-      const row = exclusionIndex.rows.get(item);
-      if (row) return unsupported(row);
+      if (exclusionIndex.rows.has(item) || exclusionIndex.unownedRow) {
+        refused.push({ item, reason: "excluded-iteration" });
+        continue;
+      }
     }
 
     if (item === suite && relevant.length) {
@@ -269,12 +302,10 @@ export function planRunItems<T extends TestItemLike & { readonly parent?: T }>(
         continue;
       }
       for (const { child, test } of remaining) {
-        if (!append(child, { suite: suiteDescriptor.suite, test })) {
-          return unsupported(child);
-        }
+        append(child, { suite: suiteDescriptor.suite, test });
       }
-    } else if (!append(item, target)) {
-      return unsupported(item);
+    } else {
+      append(item, target);
     }
   }
   return { kind: "ready", selections, refused };
