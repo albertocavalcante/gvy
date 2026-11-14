@@ -167,6 +167,7 @@ class GroovyLanguageServer(
         textDocumentService,
         classpathRestamper = classpathRestamper,
         reportEngineSetting = coreEngineDeprecation::report,
+        onBuildFilesChanged = { paths -> startupManager.dependencyManager?.onWatchedFilesChanged(paths) },
     )
 
     // Helpers

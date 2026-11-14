@@ -60,6 +60,7 @@ class GroovyWorkspaceService(
     private val classpathRestamper: ClasspathRestamper? = null,
     /** Shared with startup so a saved legacy setting produces one migration notice per server. */
     private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
+    private val onBuildFilesChanged: (List<Path>) -> Unit = {},
 ) : WorkspaceService {
 
     private val logger = KotlinLogging.logger {}
@@ -140,6 +141,11 @@ class GroovyWorkspaceService(
 
     override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
         logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
+        onBuildFilesChanged(
+            params.changes.orEmpty().mapNotNull { change ->
+                uriOf(change.uri)?.let(UriPathConverter::toPath)
+            },
+        )
         classpathRestamper?.onWatchedPaths(
             params.changes.orEmpty().mapNotNull { change -> uriOf(change.uri)?.let(UriPathConverter::toPath) },
         )
@@ -190,7 +196,7 @@ class GroovyWorkspaceService(
         } + changes[FileType.OTHER].orEmpty().filter { it.type != FileChangeType.Changed }
         if (queued.isNotEmpty()) enqueue(queued)
 
-        // Build file changes are handled by BuildToolFileWatcher in DependencyManager
+        // Build file notifications were forwarded to DependencyManager before source filtering.
     }
 
     /**

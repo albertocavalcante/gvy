@@ -26,7 +26,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.ClosedWatchServiceException
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardWatchEventKinds
+import java.nio.file.WatchEvent
 import java.nio.file.WatchKey
 import java.nio.file.WatchService
 import java.util.concurrent.CompletableFuture
@@ -36,6 +39,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
+import kotlin.io.path.deleteExisting
 import kotlin.io.path.writeText
 
 class DefaultBuildFileWatcherTest {
@@ -103,6 +107,110 @@ class DefaultBuildFileWatcherTest {
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for file modification event")
         assertTrue(events.isNotEmpty())
         assertTrue(events.all { it == tempDir })
+    }
+
+    @Test
+    fun `deleting a build file triggers refresh`() {
+        val buildFile = tempDir.resolve("build.gradle")
+        buildFile.writeText("// initial")
+        val changed = CountDownLatch(1)
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = { changed.countDown() },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 50,
+        ).also { it.startWatching(tempDir) }
+
+        buildFile.deleteExisting()
+
+        assertTrue(changed.await(5, TimeUnit.SECONDS), "Deleting a build file must trigger refresh")
+    }
+
+    @Test
+    fun `client and native build events coalesce while source changes are ignored`() = runBlocking {
+        val events = CopyOnWriteArrayList<Path>()
+        val changed = CountDownLatch(1)
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = {
+                events.add(it)
+                changed.countDown()
+            },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 200,
+        ).also { it.startWatching(tempDir) }
+
+        watcher?.onFileChanged(tempDir.resolve("src/Main.groovy"))
+        tempDir.resolve("build.gradle").writeText("// changed")
+        watcher?.onFileChanged(tempDir.resolve("build.gradle"))
+
+        assertTrue(changed.await(5, TimeUnit.SECONDS))
+        delay(500)
+        assertEquals(listOf(tempDir), events)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `overflow schedules a conservative refresh`() {
+        val scheduler = TestCoroutineScheduler()
+        val dispatcher = StandardTestDispatcher(scheduler)
+        val events = mutableListOf<Path>()
+        val sessionScope = CoroutineScope(SupervisorJob())
+        val session = DefaultBuildFileWatcher.WatchSession(
+            mockk(relaxed = true),
+            sessionScope,
+            BuildFileChangeDebouncer(sessionScope, dispatcher, 0) { path, _ -> events.add(path) },
+            ConcurrentHashMap(),
+        )
+        val event = mockk<WatchEvent<Any>>()
+        every { event.kind() } returns StandardWatchEventKinds.OVERFLOW
+        val subject = DefaultBuildFileWatcher("Test", testScope, {}, setOf("build.gradle"))
+
+        subject.processWatchEvent(event, tempDir, session)
+        scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(tempDir), events)
+        session.close()
+    }
+
+    @Test
+    fun `client events refresh after native watch registration fails`() {
+        val changed = CountDownLatch(1)
+        val missing = tempDir.resolve("missing")
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = { changed.countDown() },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 0,
+        ).also { it.startWatching(missing) }
+
+        watcher?.onFileChanged(missing.resolve("build.gradle"))
+
+        assertTrue(changed.await(5, TimeUnit.SECONDS), "Client events must work when native registration fails")
+    }
+
+    @Test
+    fun `client events refresh after the native watch loop ends`() = runBlocking {
+        val root = Files.createDirectory(tempDir.resolve("watched"))
+        val changed = CountDownLatch(1)
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = { changed.countDown() },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 0,
+        ).also { it.startWatching(root) }
+
+        root.deleteExisting()
+        withTimeout(10_000) {
+            while (watcher?.isWatching() == true) delay(10)
+        }
+        watcher?.onFileChanged(root.resolve("build.gradle"))
+
+        assertTrue(changed.await(5, TimeUnit.SECONDS), "Client events must outlive the native watch loop")
     }
 
     @Test
