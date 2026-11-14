@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readEvidenceText } from './read-evidence.mjs';
 
@@ -77,6 +77,33 @@ gradle.taskGraph.whenReady {
     rootProject.file("selected-tasks.txt").writeText(selected.joinToString("\\n") { it.path })
 }
 `;
+}
+
+function cacheFixture(policy) {
+  return `val licenseCheck = tasks.register("licenseCheck") {
+    doLast { System.out.println("LICENSE_CACHE_LICENSE") }
+}
+project(":producer") {
+    tasks.register("lint") { doLast { System.out.println("LICENSE_CACHE_PRODUCER") } }
+}
+project(":consumer") {
+    tasks.register("check") { doLast { System.out.println("LICENSE_CACHE_CONSUMER") } }
+}
+
+${policy}`;
+}
+
+export function verifyCacheLog(log, phase) {
+  assert.ok(phase === 'store' || phase === 'reuse');
+  const lines = log.split(/\r?\n/);
+  const store = lines.filter(line => line === 'Configuration cache entry stored.').length;
+  const reuse = lines.filter(line => line === 'Reusing configuration cache.').length;
+  assert.equal(store, phase === 'store' ? 1 : 0, 'Expected cache store only on the first invocation');
+  assert.equal(reuse, phase === 'reuse' ? 1 : 0, 'Expected cache reuse only on the second invocation');
+  const markers = lines.filter(line => line.startsWith('LICENSE_CACHE_'));
+  assert.equal(markers.length, 3, 'Each task action must run exactly once');
+  assert.equal(markers[0], 'LICENSE_CACHE_LICENSE', 'License must run before both producer actions');
+  assert.deepEqual(markers.slice(1).sort(), ['LICENSE_CACHE_CONSUMER', 'LICENSE_CACHE_PRODUCER']);
 }
 
 function mutations(policy) {
@@ -172,7 +199,10 @@ export async function verifyLicenseTaskOrdering(reportRoot) {
   const report = { schemaVersion: 1, buildFileSha256: hash(source), policySha256: hash(policy), cases: [], currentCase: null, ok: false,
     limits: ['Real Gradle fixtures exercise the extracted policy. They do not execute gvy Kotlin compilation, REUSE, or full lint.',
       'Full-repository lintFix, explicit root formatting, parallel lint and focused compile remain separate checks.',
-      'No numeric daemon-memory, RSS, Native provisioning or uploaded-artifact consumption claim.'] };
+      'No numeric daemon-memory, RSS, Native provisioning or uploaded-artifact consumption claim.',
+      'Cache-reuse checks target only the isolated policy fixture; actual project reuse remains unresolved in #1948.'] };
+  let cacheProject;
+  const failures = [];
   try {
     for (const control of mutations(policy)) {
       report.currentCase = control.name;
@@ -222,12 +252,64 @@ export async function verifyLicenseTaskOrdering(reportRoot) {
         policySha256: hash(control.policy), log: summary.log, selected, ok: true };
       report.cases.push(result);
     }
+    cacheProject = mkdtempSync(join(dirname(reportRoot), 'license-cache-fixture-'));
+    for (const name of ['producer', 'consumer']) mkdirSync(join(cacheProject, name));
+    writeFileSync(join(cacheProject, 'settings.gradle.kts'), 'rootProject.name = "license-cache-fixture"\ninclude("producer", "consumer")\n');
+    writeFileSync(join(cacheProject, 'build.gradle.kts'), cacheFixture(policy));
+    for (const phase of ['store', 'reuse']) {
+      const name = `cache-${phase}`;
+      report.currentCase = name;
+      const producer = `license-ordering-${name}`;
+      const evidence = join(reportRoot, name, 'evidence');
+      const args = [join(repository, 'tools/ci/run-gradle.mjs'), '--report-root', evidence, '--producer', producer,
+        '--project-dir', cacheProject, ':producer:lint', ':consumer:check', '--offline', '--no-daemon',
+        '--parallel', '--max-workers=2', '--configuration-cache', '--configuration-cache-problems=fail',
+        '-Dorg.gradle.jvmargs=-Xms64m -Xmx512m -XX:MaxMetaspaceSize=384m', '-Dorg.gradle.scan=false', '--stacktrace'];
+      const exitCode = await runGradle(args);
+      const directories = readdirSync(evidence);
+      assert.equal(directories.length, 1, 'Expected exactly one fresh canonical invocation');
+      const invocation = join(evidence, directories[0]);
+      const summary = JSON.parse(boundedText(join(invocation, 'summary.json'), 256 * 1024));
+      const log = boundedText(join(invocation, 'console.log'), 4 * 1024 * 1024);
+      verifyInvocation(summary, exitCode, log, { name }, producer);
+      verifyCacheLog(log, phase);
+      report.cases.push({ name, expectedFailure: null, commandExitCode: summary.commandExitCode,
+        captureExitCode: summary.captureExitCode, complete: summary.complete, context: summary.context,
+        policySha256: hash(policy), log: summary.log, ok: true });
+    }
     report.currentCase = null;
     report.ok = true;
-    return report;
+  } catch (error) {
+    failures.push(error);
+    report.ok = false;
   } finally {
-    writeFileSync(join(reportRoot, 'ordering-verification.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    // Retain fixture source, selected tasks and canonical evidence; discard only owned build outputs.
+    for (const name of ['missing-order', 'eager-selection', 'ordered', 'focused', 'license-rejected']) {
+      const project = join(reportRoot, name, 'fixture');
+      for (const output of ['.gradle', 'build', 'producer/build', 'consumer/build', 'publisher/build']) {
+        try {
+          rmSync(join(project, output), { recursive: true, force: true });
+        } catch (error) {
+          failures.push(error);
+          report.ok = false;
+        }
+      }
+    }
+    try {
+      if (cacheProject) rmSync(cacheProject, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+      report.ok = false;
+    }
+    try {
+      writeFileSync(join(reportRoot, 'ordering-verification.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    } catch (error) {
+      failures.push(error);
+      report.ok = false;
+    }
   }
+  if (failures.length) throw new AggregateError(failures, 'License ordering verification or evidence cleanup failed');
+  return report;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

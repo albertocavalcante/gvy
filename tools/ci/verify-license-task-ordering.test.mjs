@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { verifyInvocation } from './verify-license-task-ordering.mjs';
+import { verifyCacheLog, verifyInvocation } from './verify-license-task-ordering.mjs';
 
 const producer = 'license-ordering-missing-order';
 const control = { name: 'missing-order', expected: 'LICENSE_ORDERING_MISSING' };
@@ -64,4 +64,23 @@ test('GREEN requires actual original exit zero, empty errors and successful comp
   assert.throws(() => verifyInvocation({ ...summary, commandExitCode: 1 }, 0, greenLog, success, producer));
   assert.throws(() => verifyInvocation({ ...summary, captureExitCode: 1 }, 0, greenLog, success, producer));
   assert.throws(() => verifyInvocation({ ...summary, ok: false }, 0, greenLog, success, producer));
+});
+
+const cacheMarkers = 'LICENSE_CACHE_LICENSE\nLICENSE_CACHE_PRODUCER\nLICENSE_CACHE_CONSUMER\n';
+const stored = `${cacheMarkers}Configuration cache entry stored.\n`;
+const reused = `Reusing configuration cache.\n${cacheMarkers}`;
+
+test('cache fixture requires a real store then reuse with ordered task actions', () => {
+  assert.doesNotThrow(() => verifyCacheLog(stored, 'store'));
+  assert.doesNotThrow(() => verifyCacheLog(reused, 'reuse'));
+  for (const bad of [
+    stored,
+    reused.replace('Reusing configuration cache.', 'Calculating task graph as configuration cache cannot be reused.'),
+    reused.replace('LICENSE_CACHE_CONSUMER\n', ''),
+    reused.replace('LICENSE_CACHE_LICENSE\n', ''),
+    reused.replace('LICENSE_CACHE_LICENSE\nLICENSE_CACHE_PRODUCER', 'LICENSE_CACHE_PRODUCER\nLICENSE_CACHE_LICENSE'),
+    reused + 'LICENSE_CACHE_LICENSE\n',
+    reused + 'Configuration cache entry stored.\n',
+  ]) assert.throws(() => verifyCacheLog(bad, 'reuse'));
+  assert.throws(() => verifyCacheLog(reused, 'store'));
 });
