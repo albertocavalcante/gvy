@@ -305,7 +305,7 @@ function main(argv = process.argv.slice(2)) {
   ].filter(Boolean);
   if (selectors.length > 1)
     throw new Error(
-      "Choose exactly one source: --from-source, --local, --vsix, --tag, --latest, --nightly, --channel, or --url",
+      "Choose exactly one source: --from-ci, --from-source, --local, --vsix, --tag, --latest, --nightly, --channel, or --url",
     );
   if (args.fromCi) {
     if (args.buildRoot)
@@ -397,6 +397,7 @@ function main(argv = process.argv.slice(2)) {
 module.exports = {
   parseArgs,
   main,
+  reportError,
   buildEnv,
   packageCommand,
   installerCommand,

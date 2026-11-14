@@ -209,11 +209,12 @@ function download(endpoint, file, timeoutMs = 300000) {
     child.stdout.pipe(output);
   });
 }
-/** @param {string} command @param {string[]} args */
-function run(command, args) {
+/** @param {string} command @param {string[]} args @param {number} [timeoutMs] */
+function run(command, args, timeoutMs = 30000) {
   const r = spawnSync(command, args, {
     encoding: "utf8",
-    timeout: 30000,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
     maxBuffer: 1024 * 1024,
   });
   if (r.error || r.status !== 0)
@@ -228,6 +229,46 @@ function compatible(engine, version) {
   const a = m.slice(1).map(Number),
     b = v.slice(1).map(Number);
   return a[0] === b[0] && (b[1] > a[1] || (b[1] === a[1] && b[2] >= a[2]));
+}
+/** Resolve a command as a POSIX PATH search does: skip missing and non-executable files.
+ * @param {string[]} directories @param {string} name @returns {string|null} */
+function findOnPath(directories, name) {
+  for (const directory of directories) {
+    const file = path.join(directory, name);
+    try {
+      if (!fs.statSync(file).isFile()) continue;
+      fs.accessSync(file, fs.constants.X_OK);
+      return file;
+    } catch (error) {
+      const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+      if (code !== "ENOENT" && code !== "EACCES" && code !== "ENOTDIR")
+        throw error;
+    }
+  }
+  return null;
+}
+/** @param {string} binDir */
+function preflightCommandPath(binDir) {
+  const directories = (process.env.PATH || "")
+    .split(path.delimiter)
+    .map((p) => path.resolve(p || "."));
+  const index = directories.indexOf(binDir);
+  if (index < 0) throw new Error(`Command directory is not on PATH: ${binDir}`);
+  const shadow = findOnPath(directories.slice(0, index), "gvy");
+  if (shadow)
+    throw new Error(
+      `Another gvy shadows ${path.join(binDir, "gvy")}: ${shadow}`,
+    );
+}
+/** @param {string} link */
+function verifyCommandPath(link) {
+  const directories = (process.env.PATH || "")
+    .split(path.delimiter)
+    .map((p) => path.resolve(p || "."));
+  if (findOnPath(directories, "gvy") !== link)
+    throw new Error(
+      `Installed command is not executable or is shadowed on PATH: ${link}`,
+    );
 }
 /** @param {string} bin @param {string} target */
 function checkLink(bin, target) {
@@ -295,6 +336,7 @@ function cachedInstallMatches(receipt, runtime, state, options, java) {
       wrapper = path.join(runtime, "gvy");
     for (const file of [jar, vsix, wrapper])
       if (!fs.lstatSync(file).isFile()) return false;
+    fs.accessSync(wrapper, fs.constants.X_OK);
     const jarBytes = fs.readFileSync(jar),
       vsixBytes = fs.readFileSync(vsix);
     if (
@@ -320,11 +362,8 @@ function cachedInstallMatches(receipt, runtime, state, options, java) {
         "gvy",
       );
     if (!checkLink(stable, wrapper) || !checkLink(link, stable)) return false;
-    const found = spawnSync("which", ["gvy"], {
-      encoding: "utf8",
-      timeout: 10000,
-    });
-    return found.status === 0 && path.resolve(found.stdout.trim()) === link;
+    verifyCommandPath(link);
+    return true;
   } catch {
     return false;
   }
@@ -404,20 +443,7 @@ async function installFromCi(options) {
     if (!options.packageOnly) {
       checkLink(link, stable);
       checkStable(stable, state);
-      const existing = spawnSync("which", ["gvy"], {
-        encoding: "utf8",
-        timeout: 10000,
-        killSignal: "SIGKILL",
-      });
-      if (existing.error)
-        throw new Error(`Cannot inspect gvy PATH: ${existing.error.message}`);
-      if (
-        existing.status === 0 &&
-        path.resolve(existing.stdout.trim()) !== link
-      )
-        throw new Error(
-          `Another gvy shadows ${link}: ${existing.stdout.trim()}`,
-        );
+      preflightCommandPath(binDir);
     }
     stage = "resolve";
     if (options.resume) {
@@ -717,6 +743,13 @@ async function installFromCi(options) {
             mode: 0o700,
             flag: "wx",
           });
+        try {
+          fs.accessSync(wrapper, fs.constants.X_OK);
+        } catch (error) {
+          throw new Error(`Wrapper is not executable: ${wrapper}`, {
+            cause: error,
+          });
+        }
         const noop =
           installedMatches(
             os.homedir(),
@@ -750,6 +783,7 @@ async function installFromCi(options) {
           }
           if (!checkLink(link, stable)) fs.symlinkSync(stable, link);
         }
+        verifyCommandPath(link);
       }
       receipt.stage = options.packageOnly ? "packaged" : "installed";
       receipt.success = true;
@@ -781,5 +815,7 @@ module.exports = {
   zipEntry,
   compatible,
   installedMatches,
+  wrapperText,
   download,
+  run,
 };

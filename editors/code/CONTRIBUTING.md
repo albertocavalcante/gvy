@@ -402,6 +402,8 @@ An automatic nightly update channel in the extension remains follow-up work in
 For a current `main` snapshot, reuse its source-built server and VSIX without a local Gradle or extension build:
 
 ```sh
+node editors/code/tools/gvy-install.js --ref main --wait 600 --json
+# Equivalent direct entrypoint:
 node editors/code/tools/install-extension.js --from-ci --ref main --wait 600 --json
 ```
 
@@ -419,6 +421,10 @@ records that state and the receipt needed to resume. Resume that receipt to keep
 `--state-root` and local configuration. An explicit `--ref <full-40-character-SHA>` also selects that exact commit. The
 command never substitutes a release or an older green commit. Extension CI success does not establish that the broader
 project CI has passed.
+
+Resume keeps the original CI run attempt as well as the SHA. A failed or canceled run does not become successful by
+waiting. If that run is rerun, start a fresh invocation with `--ref <saved-full-SHA>` to verify the new attempt without
+following a newer `main` commit.
 
 Use `--java-home` to select an installed JDK, `--installer code` to select VS Code, `--state-root` for artifact and
 receipt storage, and `--bin-dir` for the standalone `gvy` command. The command preserves unrelated files and reports a
