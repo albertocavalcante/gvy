@@ -1,0 +1,16 @@
+---
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+---
+
+<StarlightPage frontmatter={{
+  title: 'Page not found',
+  description: 'The requested gvy documentation page could not be found.',
+  template: 'splash',
+  editUrl: false,
+  lastUpdated: false,
+}}>
+  <p>That page may have moved. Try search or return to the documentation home.</p>
+  <p><a href={import.meta.env.BASE_URL}>Go to gvy docs →</a></p>
+</StarlightPage>

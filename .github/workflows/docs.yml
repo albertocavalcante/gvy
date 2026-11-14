@@ -7,11 +7,15 @@ on:
   push:
     branches: [main]
     paths:
-      - "docs/website/**"
+      - "docs/**"
+      - "editors/code/package.json"
+      - "CONTRIBUTING.md"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
-      - "docs/website/**"
+      - "docs/**"
+      - "editors/code/package.json"
+      - "CONTRIBUTING.md"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -50,9 +54,9 @@ jobs:
         working-directory: docs/website
         run: bun install --frozen-lockfile
 
-      - name: Build
+      - name: Validate documentation
         working-directory: docs/website
-        run: bun run build
+        run: bun run validate
 
       - name: Assert pages were generated
         run: |

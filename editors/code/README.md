@@ -8,6 +8,11 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 > [feature matrix](https://github.com/albertocavalcante/gvy/blob/main/docs/lsp/feature-support.md) for current support
 > and limits.
 
+This README describes the current source checkout. The stable v0.5.4 VSIX bundles the older v0.4.8 server; read the
+[stable release limitation](https://github.com/albertocavalcante/gvy/blob/main/docs/installation.md#stable-release-limitation)
+before comparing its behavior with development features. For a first project, follow the
+[quickstart](https://github.com/albertocavalcante/gvy/blob/main/docs/user/quickstart.md).
+
 ## Features
 
 ### Core Language Support
@@ -216,10 +221,7 @@ For Jenkins shared libraries:
 
   // Optional: Jenkins plugin discovery overrides
   "groovy.jenkins.pluginsTxtPath": "/path/to/plugins.txt",
-  "groovy.jenkins.plugins": [
-    "workflow-basic-steps",
-    "pipeline-model-definition"
-  ],
+  "groovy.jenkins.plugins": ["workflow-basic-steps", "pipeline-model-definition"],
   "groovy.jenkins.includeDefaultPlugins": true
 }
 ```

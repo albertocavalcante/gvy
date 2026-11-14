@@ -72,3 +72,27 @@ default.
   a [GitHub issue](https://github.com/albertocavalcante/gvy/issues).
 
 Contributor debugging notes live in the [knowledge base](../../kb/TROUBLESHOOTING.md).
+
+## Requirements
+
+Use Java 17 or newer to run the released standalone JAR. See [installation](../installation.md) for editor API
+compatibility and the v0.5.4 bundled-server limitation.
+
+## Build
+
+For a source build, use the [contributor build instructions](../../CONTRIBUTING.md#build-and-run-the-server).
+
+## Run
+
+### Stdio mode (default)
+
+Use the [standard input/output procedure](#connect-over-standard-inputoutput).
+
+### Socket mode
+
+Use the [socket procedure](#connect-over-a-socket).
+
+## Editors
+
+See the [editor guide](../../editors/code/README.md) for VS Code, Cursor, and VSCodium. Other editors need an LSP
+client.

@@ -5,7 +5,15 @@ Start with the guide for your task. For a short introduction and installation st
 
 ## Use gvy
 
+- [Quickstart](user/quickstart.md): install and open a first Groovy file.
 - [Install and update gvy](installation.md): Homebrew, direct VSIX installation, Java setup, and updates.
+- [Groovy](user/groovy.md), [Gradle](user/gradle.md), [Jenkins](user/jenkins.md), and [Spock](user/spock.md): work with
+  common project types.
+- [Java](user/java.md), [diagnostics and formatting](user/diagnostics-formatting.md), and
+  [private environments](user/private-environments.md): configure and understand your environment.
+- [Troubleshooting](user/troubleshooting.md): diagnose startup and dependency problems.
+- [Settings](user/reference-settings.md) and [commands](user/reference-commands.md): extension reference.
+- [SemanticDB design](user/semanticdb.md): orientation to the semantic model.
 - [Editor guide](../editors/code/README.md): install the extension, configure Java and language features, and
   troubleshoot.
 - [Standalone language server](lsp/usage.md): connect another editor over standard input/output or a socket.
@@ -14,7 +22,8 @@ Start with the guide for your task. For a short introduction and installation st
 
 ## Contribute
 
-- [Contributor guide](../CONTRIBUTING.md): build, test, and prepare a pull request.
+- [Contributing overview](user/contributing.md) and [contributor guide](../CONTRIBUTING.md): build, test, and prepare a
+  pull request.
 - [Kotlin style and readability](kotlin-style.md): write and review clear, idiomatic Kotlin.
 - [Visual writing](visual-writing.md): write readable issues, PRs and Markdown with diagrams, evidence and accessible
   rich formats.

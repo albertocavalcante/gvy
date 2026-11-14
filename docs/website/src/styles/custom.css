@@ -2,17 +2,44 @@
  * SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
  * SPDX-License-Identifier: Apache-2.0
  */
-
-/* Minimal custom styles for Groovy Devtools docs */
-
 :root {
-  --sl-color-accent-low: #1a365d;
-  --sl-color-accent: #2563eb;
-  --sl-color-accent-high: #60a5fa;
+  --sl-color-accent-low: #073c4c;
+  --sl-color-accent: #39c7cb;
+  --sl-color-accent-high: #b1f4ee;
 }
-
 :root[data-theme="light"] {
-  --sl-color-accent-low: #dbeafe;
-  --sl-color-accent: #2563eb;
-  --sl-color-accent-high: #1e40af;
+  --sl-color-accent-low: #d7f4f0;
+  --sl-color-accent: #087b83;
+  --sl-color-accent-high: #07525d;
 }
+.hero { padding-block: clamp(3rem, 8vw, 7rem); }
+.hero h1 { max-width: 14ch; letter-spacing: -.055em; line-height: 1.02; }
+.hero .tagline { max-width: 48ch; line-height: 1.55; }
+.hero .actions { margin-top: 2rem; }
+.sl-markdown-content .home-intro { border-top: 1px solid var(--sl-color-gray-5); padding-top: 2rem; margin-top: 2rem; }
+.eyebrow, .workflow-number, .example-label { color: var(--sl-color-accent); font-size: .72rem; font-weight: 700; letter-spacing: .14em; }
+.home-intro p { font-size: clamp(1.5rem, 3vw, 2.3rem); font-weight: 600; letter-spacing: -.035em; max-width: 24ch; }
+.home-workflows, .home-start { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(2rem, 6vw, 6rem); align-items: center; padding-block: 4rem; }
+.home-workflows h2, .home-split h2 { letter-spacing: -.035em; line-height: 1.1; }
+.home-workflows a, .home-split a, .home-start a { font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: .25em; }
+.example-panel { background: #102c3e; color: #d9f6f4; border: 1px solid #285066; border-radius: 1rem; padding: 1.4rem; box-shadow: 0 20px 60px #00283822; }
+.example-label { display: flex; justify-content: space-between; color: #7eddd8; }
+.sl-markdown-content .example-panel pre { background: transparent; border: 0; padding: 2rem 0; margin: 0; white-space: pre-wrap; }
+.code-muted { color: #90b4bd; }
+.example-note { border-top: 1px solid #41616e; padding-top: 1rem; font-size: .8rem; color: #b1d5d6; }
+.home-split, .home-details { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.home-split section { border-top: 2px solid var(--sl-color-accent); padding: 1.5rem 1rem 1.5rem 0; }
+.home-start { margin-top: 3rem; border-block: 1px solid var(--sl-color-gray-5); }
+.home-details { padding-block: 2rem 4rem; }
+.home-details h2 { font-size: 1.2rem; }
+@media (max-width: 50rem) {
+  .home-workflows, .home-start, .home-split, .home-details { grid-template-columns: 1fr; gap: 1.5rem; }
+  .home-workflows, .home-start { padding-block: 2.5rem; }
+}
+.release-notice { border-left: 3px solid var(--sl-color-accent); padding: .8rem 1rem; background: var(--sl-color-accent-low); font-size: .9rem; }
+.home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; margin-top: -3rem; margin-bottom: 4rem; }
+.home-actions a { font-weight: 600; text-underline-offset: .25em; }
+.home-actions .primary-action { background: var(--sl-color-accent); color: #fff; border-radius: 999px; padding: .8rem 1.3rem; text-decoration: none; }
+@media (max-width: 50rem) { .home-actions { margin-top: -1rem; margin-bottom: 2rem; } }
+
+:root:not([data-theme="light"]) .home-actions .primary-action { color: #073c4c; }
