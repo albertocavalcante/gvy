@@ -43,8 +43,10 @@ suite("GDSL cold startup", () => {
     assert.ok(extension);
     if (process.env.GVY_TEST_EXTENSION_ROOT) {
       assert.strictEqual(
-        fs.realpathSync(extension.extensionPath),
-        fs.realpathSync(process.env.GVY_TEST_EXTENSION_ROOT),
+        fs.realpathSync(extension.extensionUri.fsPath),
+        fs.realpathSync(
+          vscode.Uri.file(process.env.GVY_TEST_EXTENSION_ROOT).fsPath,
+        ),
         "The packaged extension must be loaded",
       );
     }
