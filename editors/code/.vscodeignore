@@ -18,3 +18,8 @@
 
 !server/gls.jar
 !server/.gls-version
+
+!runtime/*.jar
+!runtime/*.jar.LICENSE
+!runtime/*.jar.NOTICE
+!runtime/manifest.json

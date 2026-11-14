@@ -40,6 +40,7 @@ import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
 import { CommandProvider } from "./features/ai/CommandProvider";
 import { TestFeature } from "./features/testing/TestFeature";
+import { registerFileExecution } from "./features/fileExecution";
 import { registerAstFeatures } from "./features/ast/AstProvider";
 
 /**
@@ -96,6 +97,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => disposeLanguageStatusManager() });
 
   registerCommands(context, requestInitialStart);
+  registerFileExecution(context, requestInitialStart);
   context.subscriptions.push(setupConfigurationWatcher());
 
   replService.initialize(context);

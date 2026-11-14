@@ -41,6 +41,8 @@ before comparing its behavior with development features. For a first project, fo
 - [x] Gradle project support
 - [x] Automatic dependency resolution
 - [x] Multi-workspace support
+- [Run and compile Groovy files](https://github.com/albertocavalcante/gvy/blob/main/docs/file-execution.md), with
+  standalone and qualified Gradle contexts. See the guide for platform limits.
 
 ### Jenkins Pipeline
 

@@ -10,6 +10,8 @@ internal interface GradleScopedDependencyModel {
     val enumerationComplete: Boolean? get() = null
 }
 
+internal interface GradleExecutionModel : GradleScopedDependencyModel
+
 internal interface GradleSourceSetModel {
     val projectPath: String?
     val projectDirectory: String?
@@ -22,6 +24,13 @@ internal interface GradleSourceSetModel {
     val sourceRoots: List<String?>?
     val sourceFiles: List<String?>? get() = null
     val artifacts: List<GradleClasspathEntryModel?>?
+    val executionState: String? get() = null
+    val sourceFiles: List<String?>? get() = null
+    val inputFiles: List<String?>? get() = null
+    val runtimeClasspath: List<String?>? get() = null
+    val runtimeArtifacts: List<GradleClasspathEntryModel?>? get() = null
+    val outputDirectories: List<String?>? get() = null
+    val preparationTask: String? get() = null
 }
 
 internal interface GradleClasspathEntryModel {
