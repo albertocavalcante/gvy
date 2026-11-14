@@ -170,6 +170,276 @@ class HeaderTests(unittest.TestCase):
             self.assertTrue(check.header_errors(path, shebang + hash_header + b"pipeline {}\n"))
 
 
+class DiagnosticTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+
+    def report(
+        self,
+        *,
+        compliant: bool = False,
+        categories: dict[str, list[str]] | None = None,
+        files: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        return {
+            "lint_version": "1.0",
+            "reuse_spec_version": "3.3",
+            "reuse_tool_version": "6.3.0",
+            "summary": {"compliant": compliant},
+            "non_compliant": {name: (categories or {}).get(name, []) for name in check.NON_COMPLIANT_CATEGORIES},
+            "files": files or [],
+        }
+
+    def invoke(
+        self, code: int, report: object, *, stdout: bytes | None = None, stderr: bytes = b""
+    ) -> tuple[dict[Path, set[str]] | None, list[str], list[str]]:
+        result = subprocess.CompletedProcess(
+            ["reuse"], code, json.dumps(report).encode() if stdout is None else stdout, stderr
+        )
+        with patch.object(check.subprocess, "run", return_value=result) as run:
+            outcome = check.run_reuse(self.root)
+        self.assertEqual(1, run.call_count)
+        self.assertNotIn("text", run.call_args.kwargs)
+        self.assertEqual(120, run.call_args.kwargs["timeout"])
+        return outcome
+
+    def test_every_category_and_invalid_expression_count_is_actionable(self) -> None:
+        categories = {
+            name: [str(self.root / "nested/a.txt") if name in check.PATH_CATEGORIES else "MIT"]
+            for name in check.NON_COMPLIANT_CATEGORIES
+        }
+        report = self.report(
+            categories=categories,
+            files=[
+                {
+                    "path": "invalid.txt",
+                    "copyrights": ["DO NOT LOG HOLDER"],
+                    "source": "DO NOT LOG SOURCE",
+                    "spdx_expressions": [{"value": "DO NOT LOG EXPRESSION", "is_valid": False}],
+                }
+            ],
+        )
+        _, errors, warnings = self.invoke(1, report)
+        self.assertEqual([], warnings)
+        text = "\n".join(errors)
+        for name in check.NON_COMPLIANT_CATEGORIES:
+            self.assertIn(f"{name} count=1", text)
+            self.assertIn(f'{name} item="', text)
+        self.assertIn('invalid_expressions count=1 file="invalid.txt"', text)
+        self.assertIn('read_errors item="nested/a.txt"', text)
+        self.assertNotIn(str(self.root), text)
+        self.assertNotIn("DO NOT LOG", text)
+
+    def test_diagnostic_paths_are_lexical_and_redact_outside_or_traversal(self) -> None:
+        with patch.object(Path, "resolve", side_effect=AssertionError("must not resolve diagnostic paths")):
+            self.assertEqual("a/file.txt", check.diagnostic_path(str(self.root / "a/./file.txt"), self.root))
+            self.assertEqual("[outside-root]", check.diagnostic_path(str(self.root.parent / "other.txt"), self.root))
+            self.assertEqual("[outside-root]", check.diagnostic_path("C:\\outside\\private.txt", self.root))
+            self.assertEqual("[outside-root]", check.diagnostic_path("/outside/private.txt", Path("C:/project")))
+            self.assertEqual("[unsafe-path]", check.diagnostic_path("a/../private.txt", self.root))
+            self.assertEqual("[unsafe-path]", check.diagnostic_path("a\\..\\private.txt", self.root))
+
+    def test_details_are_sorted_escaped_and_redact_known_credentials(self) -> None:
+        names = ["z\n::error title=forged::payload\x1b[31m\u202e", "a credential-value"]
+        with patch.dict(os.environ, {"GVY_TEST_API_TOKEN": "credential-value"}):
+            a = check.reuse_diagnostics(self.report(categories={"bad_licenses": names}), self.root, None)
+            b = check.reuse_diagnostics(
+                self.report(categories={"bad_licenses": list(reversed(names))}), self.root, None
+            )
+        self.assertEqual(a, b)
+        text = "\n".join(a)
+        self.assertIn("[redacted]", text)
+        self.assertNotIn("credential-value", text)
+        self.assertIn("\\n::error", text)
+        self.assertIn("\\u001b", text)
+        self.assertIn("\\u202e", text)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\u202e", text)
+        self.assertTrue(all(line.startswith("REUSE diagnostic: ") and "\n" not in line for line in a))
+
+    def test_item_field_and_total_byte_limits_have_explicit_omission_counts(self) -> None:
+        small = check.reuse_diagnostics(
+            self.report(categories={"unused_licenses": [f"id-{i:03}" for i in range(80)]}), self.root, None
+        )
+        self.assertEqual(50, sum(" item=" in line for line in small))
+        self.assertIn("omitted items=30", small[-1])
+        huge = check.reuse_diagnostics(
+            self.report(categories={"bad_licenses": [f"{i:03}" + "\u202e" * 1000 for i in range(80)]}), self.root, None
+        )
+        self.assertLessEqual(len("\n".join(huge).encode()), 16 * 1024)
+        self.assertIn("bad_licenses count=80", huge[0])
+        self.assertIn("truncated characters=", huge[-1])
+        self.assertNotIn("omitted items=0", huge[-1])
+        for line in huge:
+            if " item=" in line:
+                self.assertLessEqual(len(json.loads(line.split(" item=", 1)[1])), 256)
+
+    def test_stderr_keeps_summaries_without_traceback_source_or_environment_dump(self) -> None:
+        stderr = (
+            b'Traceback (most recent call last):\n  File "/private/runner.py", line 3\n'
+            b'    raise ValueError("PRIVATE SOURCE")\nTOKEN=PRIVATE ENVIRONMENT\n'
+            b"ValueError: secret/value failed /private/input.toml\nwarning: continuing\n"
+        )
+        with patch.dict(os.environ, {"GVY_TEST_PASSWORD": "secret/value"}, clear=True):
+            _, errors, _ = self.invoke(2, None, stderr=stderr)
+        text = "\n".join(errors)
+        self.assertIn("unexpected exit 2", text)
+        self.assertIn("ValueError: [redacted] failed [outside-root detail redacted]", text)
+        self.assertIn("warning: continuing", text)
+        self.assertIn("omitted unrecognized lines=4", text)
+        for forbidden in ("Traceback", "PRIVATE SOURCE", "PRIVATE ENVIRONMENT", "/private/", "secret/value"):
+            self.assertNotIn(forbidden, text)
+
+    def test_stderr_rejects_traceback_source_and_level_named_environment_assignments(self) -> None:
+        stderr = (
+            'Traceback (most recent call last):\n  File "example.py", line 1\n'
+            '    error = "PRIVATE_SOURCE_SENTINEL"\nRuntimeError: safe terminal summary\n'
+            'WARNING=PRIVATE_ENV_SENTINEL\nerror = "PRIVATE_ASSIGNMENT"\n'
+            "reuse.report - ERROR - useful logger summary\n"
+        )
+        text = "\n".join(check.reuse_diagnostics(None, self.root, stderr))
+        for forbidden in ("PRIVATE_SOURCE_SENTINEL", "PRIVATE_ENV_SENTINEL", "PRIVATE_ASSIGNMENT"):
+            self.assertNotIn(forbidden, text)
+        self.assertIn("RuntimeError: safe terminal summary", text)
+        self.assertIn("reuse.report - ERROR - useful logger summary", text)
+
+    def test_stderr_preserves_nested_project_paths_and_redacts_whole_outside_path_tails(self) -> None:
+        stderr = (
+            f"ERROR: cannot parse {self.root / 'editors/code/REUSE.toml'}: invalid syntax\n"
+            "Error: '/Users/Other Person/private-file.txt' is inaccessible\n"
+            "Error: C:\\Users\\Other Person\\private-file.txt is inaccessible\n"
+            "Error: \\\\server\\Other Person\\private-file.txt is inaccessible\n"
+        )
+        text = "\n".join(check.reuse_diagnostics(None, self.root, stderr))
+        self.assertIn("editors/code/REUSE.toml: invalid syntax", text.replace("\\\\", "/"))
+        for forbidden in ("Other", "Person", "private-file", "server", str(self.root)):
+            self.assertNotIn(forbidden, text)
+
+    def test_json_decoder_recursion_failure_keeps_same_invocation_stderr(self) -> None:
+        _, errors, _ = self.invoke(1, None, stdout=b"[" * 10000, stderr=b"error: retained context\n")
+        self.assertIn("malformed JSON nesting", errors[0])
+        self.assertIn("exit 1", errors[0])
+        self.assertIn("retained context", "\n".join(errors))
+
+    def test_all_category_counts_survive_exhausted_detail_budget(self) -> None:
+        categories = {name: ["\0" * 1000] * 80 for name in check.NON_COMPLIANT_CATEGORIES}
+        lines = check.reuse_diagnostics(self.report(categories=categories), self.root, None)
+        for name in check.NON_COMPLIANT_CATEGORIES:
+            self.assertIn(f"REUSE diagnostic: {name} count=80", lines)
+
+    def test_exit_and_report_disagreement_fails_in_both_directions(self) -> None:
+        for code, compliant in ((1, True), (0, False)):
+            with self.subTest(code=code):
+                _, errors, _ = self.invoke(code, self.report(compliant=compliant))
+                self.assertIn("exit/report mismatch", errors[0])
+                self.assertIn(f"exit {code}", errors[0])
+
+    def test_malformed_json_decode_schema_and_unexpected_exit_remain_distinct(self) -> None:
+        cases = [
+            (1, None, b'{\n"private payload":', "malformed JSON at line 2 column 19 char 20"),
+            (1, None, b"\xff", "UTF-8 decode failure at byte 0"),
+            (1, {"lint_version": "future"}, None, "invalid report schema"),
+            (7, None, b"PRIVATE STDOUT", "unexpected exit 7"),
+        ]
+        for code, report, stdout, expected in cases:
+            with self.subTest(expected=expected):
+                _, errors, _ = self.invoke(code, report, stdout=stdout, stderr=b"error: useful context\n")
+                text = "\n".join(errors)
+                self.assertIn(expected, text)
+                self.assertIn("useful context", text)
+                self.assertNotIn("private payload", text)
+                self.assertNotIn("PRIVATE STDOUT", text)
+
+    def test_schema_rejects_incomplete_categories_or_non_string_items(self) -> None:
+        for categories in ({}, {name: [3] for name in check.NON_COMPLIANT_CATEGORIES}):
+            report = self.report()
+            report["non_compliant"] = categories
+            _, errors, _ = self.invoke(1, report)
+            self.assertIn("invalid report schema", errors[0])
+
+    def test_launch_and_timeout_keep_bounded_partial_stderr_without_command_dump(self) -> None:
+        for failure, expected in (
+            (OSError(13, "private executable"), "launch error errno=13"),
+            (subprocess.TimeoutExpired(["PRIVATE COMMAND"], 120, stderr=b"error: partial context\n"), "timeout"),
+        ):
+            with self.subTest(expected=expected):
+                with patch.object(check.subprocess, "run", side_effect=failure) as run:
+                    _, errors, _ = check.run_reuse(self.root)
+                self.assertEqual(1, run.call_count)
+                self.assertIn(expected, errors[0])
+                text = "\n".join(errors)
+                self.assertNotIn("PRIVATE COMMAND", text)
+                self.assertNotIn("private executable", text)
+                if expected == "timeout":
+                    self.assertIn("partial context", text)
+
+    def test_compliant_warning_is_visible_in_cli_and_fails_diagnostic_policy(self) -> None:
+        result = subprocess.CompletedProcess(
+            ["reuse"], 0, json.dumps(self.report(compliant=True)).encode(), b"warning: note\n"
+        )
+        with (
+            patch.object(check.subprocess, "run", return_value=result),
+            patch.object(check, "REQUIRED_LICENSE_PATHS", set()),
+            patch.object(check.tomllib, "loads", return_value={"license": []}),
+            patch.object(Path, "read_text", return_value=""),
+            patch.object(sys, "argv", ["check.py", "--root", str(self.root)]),
+            patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
+        ):
+            self.assertEqual(1, check.main())
+        self.assertIn("warning: note", stderr.getvalue())
+        self.assertIn("gvy diagnostic policy", stderr.getvalue())
+        self.assertNotIn("checks passed", stdout.getvalue())
+
+    def test_only_exact_empty_successful_stderr_passes_shared_api_and_cli(self) -> None:
+        captures = (
+            b"",
+            b"warning: note\n",
+            b"unknown text",
+            b" \r\n\t",
+            b"\x1b[31mwarning: note",
+            b"\x1b[0m",
+            b"\0",
+            b"\xff",
+        )
+        policy = "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)"
+        for capture in captures:
+            with self.subTest(capture=capture):
+                result = subprocess.CompletedProcess(
+                    ["reuse"], 0, json.dumps(self.report(compliant=True)).encode(), capture
+                )
+                with (
+                    patch.object(check.subprocess, "run", return_value=result) as run,
+                    patch.object(check, "REQUIRED_LICENSE_PATHS", set()),
+                    patch.object(check.tomllib, "loads", return_value={"license": []}),
+                    patch.object(Path, "read_text", return_value=""),
+                ):
+                    with self.subTest(channel="check without collector"):
+                        errors = check.check(self.root)
+                        self.assertEqual(1, run.call_count)
+                        self.assertEqual(bool(capture), bool(errors))
+                        if capture:
+                            self.assertIn(policy, errors)
+                            self.assertNotIn("REUSE lint failed", "\n".join(errors))
+                    run.reset_mock()
+                    with self.subTest(channel="CLI"):
+                        with (
+                            patch.object(sys, "argv", ["check.py", "--root", str(self.root)]),
+                            patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                            patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
+                        ):
+                            self.assertEqual(int(bool(capture)), check.main())
+                        self.assertEqual(1, run.call_count)
+                        if capture:
+                            self.assertIn(policy, stderr.getvalue())
+                            self.assertNotIn("checks passed", stdout.getvalue())
+                        else:
+                            self.assertEqual("", stderr.getvalue())
+                            self.assertIn("checks passed", stdout.getvalue())
+
+
 class IntegrationTests(unittest.TestCase):
     def git(self, *arguments: str, directory: Path | None = None) -> subprocess.CompletedProcess[bytes]:
         environment = {name: value for name, value in os.environ.items() if not name.upper().startswith("GIT_")}
@@ -240,6 +510,71 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([], check.check(self.root))
         (self.root / "LICENSES/Apache-2.0.txt").write_text("tampered")
         self.assertTrue(any("SHA-256" in error for error in check.check(self.root)))
+
+    def test_stderr_policy_failure_preserves_parsed_paths_and_remaining_repository_gates(self) -> None:
+        self.git("init", "-q")
+        (self.root / "src/unreported.txt").write_text("unreported data\n", encoding="utf-8")
+        self.git("add", "--", "src/a.py", "src/unreported.txt")
+        tracked = self.git("ls-files", "-z")
+        (self.root / "LICENSE").write_text("tampered\n", encoding="utf-8")
+        self.source.write_text("print(1)\n", encoding="utf-8")
+        report = {
+            "lint_version": "1.0",
+            "reuse_spec_version": "3.3",
+            "reuse_tool_version": "6.3.0",
+            "summary": {"compliant": True},
+            "non_compliant": {name: [] for name in check.NON_COMPLIANT_CATEGORIES},
+            "files": [{"path": "src/a.py", "spdx_expressions": [{"value": "MIT", "is_valid": True}]}],
+        }
+        result = subprocess.CompletedProcess(["reuse"], 0, json.dumps(report).encode(), b"unknown diagnostic\n")
+        with patch.object(check.subprocess, "run", side_effect=[result, tracked]) as run:
+            errors = check.check(self.root)
+        self.assertEqual(2, run.call_count)  # One REUSE invocation, then the existing tracked-file scan.
+        for expected in (
+            "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)",
+            "LICENSE: license text does not match approved SHA-256",
+            "LICENSES/MIT.txt: used MIT license must have an approved inventory entry",
+            "src/unreported.txt: tracked file omitted by REUSE",
+            "src/a.py: missing nonempty leading SPDX-FileCopyrightText",
+            "src/a.py: leading license must be Apache-2.0",
+            "src/a.py: effective REUSE license must be Apache-2.0",
+        ):
+            self.assertIn(expected, errors)
+
+    def test_missing_metadata_diagnostic_names_both_categories_and_relative_file(self) -> None:
+        (self.root / "unannotated.txt").write_text("payload must not be logged\n", encoding="utf-8")
+        with patch.object(check.subprocess, "run", wraps=subprocess.run) as run:
+            errors = "\n".join(check.check(self.root))
+        self.assertEqual(1, run.call_count)
+        self.assertIn('missing_copyright_info item="unannotated.txt"', errors)
+        self.assertIn('missing_licensing_info item="unannotated.txt"', errors)
+        self.assertNotIn(str(self.root), errors)
+        self.assertNotIn("payload must not be logged", errors)
+
+    def test_unused_license_diagnostic_names_identifier(self) -> None:
+        shutil.copy(Path(__file__).parents[2] / "LICENSES/MIT.txt", self.root / "LICENSES/MIT.txt")
+        self.write_inventory(include_mit=True)
+        errors = "\n".join(check.check(self.root))
+        self.assertIn('unused_licenses item="MIT"', errors)
+
+    def test_invalid_expression_diagnostic_names_file_without_expression(self) -> None:
+        self.source.write_text(
+            "# SPDX-FileCopyrightText: Private Holder\n# SPDX-License-Identifier: Apache-2.0 AND\nprint(1)\n",
+            encoding="utf-8",
+        )
+        errors = "\n".join(check.check(self.root))
+        self.assertIn('invalid_expressions count=1 file="src/a.py"', errors)
+        self.assertNotIn("Private Holder", errors)
+        self.assertNotIn("Apache-2.0 AND", errors)
+
+    def test_invalid_toml_diagnostic_preserves_exit_and_same_invocation_stderr(self) -> None:
+        (self.root / "REUSE.toml").write_text("version = [\n", encoding="utf-8")
+        with patch.object(check.subprocess, "run", wraps=subprocess.run) as run:
+            errors = "\n".join(check.check(self.root))
+        self.assertEqual(1, run.call_count)
+        self.assertIn("unexpected exit 2", errors)
+        self.assertIn("stderr", errors)
+        self.assertIn("REUSE.toml", errors)
 
     def test_used_mit_requires_approved_inventory(self) -> None:
         self.add_mit_data()
@@ -354,7 +689,7 @@ class IntegrationTests(unittest.TestCase):
         mit.write_bytes(canonical)
         for name in corpus_paths:
             (exported / name).unlink()
-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(exported))
+        self.assertIn("REUSE lint failed (exit 1)", check.check(exported))
         result = subprocess.run(
             [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(exported), "lint", "--json"],
             capture_output=True,
@@ -463,7 +798,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([], check.check(self.root))
 
         metadata.unlink()
-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
+        self.assertIn("REUSE lint failed (exit 1)", check.check(self.root))
 
         neighbor = relative.with_name("neighbor.groovy")
         (self.root / neighbor).write_text("println 'synthetic source'\n", encoding="utf-8")
@@ -476,7 +811,7 @@ class IntegrationTests(unittest.TestCase):
             encoding="utf-8",
         )
         errors = check.check(self.root)
-        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
+        self.assertNotIn("REUSE lint failed (exit 1)", errors)
         self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
 
     def test_editor_fixture_needs_metadata_and_cannot_exempt_annotated_neighbors(self) -> None:
@@ -496,7 +831,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([], check.check(self.root))
         self.assertEqual(payload, fixture.read_bytes())
         metadata.unlink()
-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
+        self.assertIn("REUSE lint failed (exit 1)", check.check(self.root))
         neighbor = relative.with_name("neighbor.groovy")
         (self.root / neighbor).write_bytes(b"println 'maintained source'\n")
         metadata.write_text(
@@ -508,7 +843,7 @@ class IntegrationTests(unittest.TestCase):
             encoding="utf-8",
         )
         errors = check.check(self.root)
-        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
+        self.assertNotIn("REUSE lint failed (exit 1)", errors)
         self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
 
     def test_metadata_cannot_mask_an_unlisted_jenkinsfile_header(self) -> None:
@@ -524,7 +859,7 @@ class IntegrationTests(unittest.TestCase):
             encoding="utf-8",
         )
         errors = check.check(self.root)
-        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
+        self.assertNotIn("REUSE lint failed (exit 1)", errors)
         self.assertTrue(any(error.startswith(f"{relative.as_posix()}:") and "leading" in error for error in errors))
 
         source.write_text(
@@ -552,7 +887,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([], check.check(self.root))
         (self.root / "ignored.bin").write_bytes(b"\x00\x01")
         self.git("add", "-f", "ignored.bin")
-        self.assertEqual(["REUSE lint failed; run reuse --root . lint for details"], check.check(self.root))
+        self.assertIn("REUSE lint failed (exit 1)", check.check(self.root))
 
     def test_tracked_report_omission_is_rejected(self) -> None:
         self.git("init", "-q")
