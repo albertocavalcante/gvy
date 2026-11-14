@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import org.junit.jupiter.api.Test
 import java.net.URI
 import java.nio.file.Path
@@ -37,19 +38,24 @@ class AdmittedCompilationInputsTest {
     }
 
     @Test
-    fun `request projection copies collections and keys admission rather than source bytes`() {
+    fun `request projection copies collections and captures secondary buffer contents`() {
         val roots = mutableListOf(Path.of("root"))
-        val buffers = linkedMapOf(URI.create("untitled:Example") to "before")
+        val uri = URI.create("untitled:Example")
+        val buffers = linkedMapOf(uri to "before")
         val captured = inputs(roots, open = buffers)
         val key = captured.fingerprint
         roots.clear()
         buffers.clear()
         assertEquals(listOf(Path.of("root")), captured.sourceRoots)
         assertEquals(key, captured.fingerprint)
-        assertEquals(
-            inputs(open = mapOf(URI.create("untitled:Example") to "before")).fingerprint,
-            inputs(open = mapOf(URI.create("untitled:Example") to "after")).fingerprint,
-        )
+        assertEquals(mapOf(uri to "before"), captured.openSources)
+        assertEquals(key, inputs(open = mapOf(uri to "before")).fingerprint)
+        assertNotEquals(key, inputs(open = mapOf(uri to "after")).fingerprint)
+    }
+
+    @Test
+    fun `content hashes preserve distinct malformed UTF16 code units`() {
+        assertNotEquals(contentHash("\uD800"), contentHash("\uD801"))
     }
 
     @Test
@@ -70,5 +76,10 @@ class AdmittedCompilationInputsTest {
         roots: List<Path> = emptyList(),
         workspace: List<Path> = emptyList(),
         open: Map<URI, String> = emptyMap(),
-    ) = AdmittedCompilationInputs(roots, workspace, open, SourceInputAdmission({ false }) {})
+    ) = AdmittedCompilationInputs(
+        roots,
+        workspace,
+        open.mapValues { (_, content) -> DocumentSnapshot(content, null) },
+        SourceInputAdmission({ false }) {},
+    )
 }

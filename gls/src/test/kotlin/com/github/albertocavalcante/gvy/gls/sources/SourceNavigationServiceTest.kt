@@ -57,6 +57,34 @@ class SourceNavigationServiceTest {
     }
 
     @Test
+    fun `Java member navigation selects fields enum constants and methods by exact name`(): Unit = runBlocking {
+        val content = """
+            package sample;
+            public enum Anno {
+                READY;
+                public static final int FIRST = 1, SECOND = 2;
+                public static int value() { return FIRST; }
+                public static int select() { return FIRST; }
+                public static int select(int input) { return input; }
+            }
+        """.trimIndent()
+        val source = sourceJar(directory.resolve("repo/library-sources.jar"), content)
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        val owner = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            for (member in listOf("READY", "SECOND", "value")) {
+                val symbol = owner.copy(memberName = member)
+                val located = assertIs<SourceLookupResult.Located>(navigation.locate(symbol, context()))
+                val span = located.definition.nameRange
+                val line = Files.readString(Path.of(located.uri)).lines()[span.startLine]
+                assertEquals(member, line.substring(span.startCharacter, span.endCharacter))
+                assertEquals(located, navigation.locate(symbol, context()))
+            }
+            assertIs<SourceLookupResult.FileOnly>(navigation.locate(owner.copy(memberName = "select"), context()))
+        }
+    }
+
+    @Test
     fun `a sibling sources jar without verified provenance is not trusted`() = runBlocking {
         val sibling = sourceJar(directory.resolve("selected/library-sources.jar"), JAVA_SOURCE)
         val resolver = RecordingResolver()

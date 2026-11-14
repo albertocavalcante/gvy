@@ -234,27 +234,38 @@ class SourceCommandServiceTest {
     fun `static source annotation imports cannot download or attach the owner binary`(): Unit = runBlocking {
         withCommands { fixture ->
             val nested = "import static sample.Outer.Mark\n@Mark class Money {}"
+            val ownerUri = URI.create("file:///workspace/sample/Outer.groovy")
             fixture.documents.put(
-                URI.create("file:///workspace/sample/Outer.groovy"),
+                ownerUri,
                 "package sample\nclass Outer { @interface Mark {} }",
                 1,
             )
-            fixture.documents.update(uri, nested, 1)
+            assertNotNull(fixture.documents.update(uri, nested, 2))
             fixture.compilation.clearCaches()
             assertTrue(fixture.compilation.compile(uri, nested).isSuccess)
             val held = assertNotNull(fixture.compilation.getCompiledSnapshot(uri)).parseResult
             val imported = assertNotNull(held.ast).staticImports.values.single()
-            assertEquals("sample.Outer\$Mark", held.sourceAnnotations.annotationImportedBy(imported)?.binaryName)
+            val annotation = assertNotNull(held.sourceAnnotations.annotationImportedBy(imported))
+            assertEquals("sample.Outer\$Mark", annotation.binaryName)
+            assertEquals(ownerUri.path, annotation.sourceUnitName)
             val importPosition = Position(0, nested.indexOf("Mark"))
 
-            val results = listOf(
-                fixture.commands.resolve(resolve().copy(position = importPosition, allowDownload = true)),
-                fixture.commands.resolve(resolve().copy(allowDownload = true)),
-                fixture.commands.attach(attach().copy(position = importPosition)),
-                fixture.commands.attach(attach()),
+            val results = mapOf(
+                "resolve import" to fixture.commands.resolve(
+                    resolve().copy(position = importPosition, documentVersion = 2, allowDownload = true),
+                ),
+                "resolve annotation" to fixture.commands.resolve(
+                    resolve().copy(documentVersion = 2, allowDownload = true),
+                ),
+                "attach import" to fixture.commands.attach(
+                    attach().copy(position = importPosition, documentVersion = 2),
+                ),
+                "attach annotation" to fixture.commands.attach(attach().copy(documentVersion = 2)),
             )
 
-            assertTrue(results.all { it.status == SourceResolveStatus.UNAVAILABLE })
+            results.forEach { (action, result) ->
+                assertEquals(SourceResolveStatus.UNAVAILABLE, result.status, "$action returned $result")
+            }
             assertTrue(
                 fixture.navigator.calls.isEmpty(),
                 "Neither selected source Mark nor its source owner is an external binary",

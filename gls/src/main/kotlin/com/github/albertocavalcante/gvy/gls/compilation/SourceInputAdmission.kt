@@ -15,7 +15,10 @@ internal class SourceInputAdmission(private val excluded: (Path) -> Boolean, val
 
     fun allows(path: Path): Boolean {
         checkCancelled()
-        val absolute = path.toAbsolutePath().normalize()
+        val raw = path.toAbsolutePath()
+        // Check before normalizing or looking up a decision cached under a different spelling.
+        if (raw.any { it.toString() == ".." }) return false
+        val absolute = raw.normalize()
         return decisions.getOrPut(absolute) {
             classifySourcePath(absolute, excluded) == SourcePathAdmission.ORDINARY
         }

@@ -16,6 +16,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
@@ -479,7 +480,8 @@ class GroovyCompilationService internal constructor(
         binaryName: String,
         memberName: String? = null,
         checkCancelled: () -> Unit = {},
-    ) = sourceRequests.capture(documentUri, binaryName, memberName, checkCancelled)
+        policy: SourceLookupPolicy = SourceLookupPolicy.LOCAL_ONLY,
+    ) = sourceRequests.capture(documentUri, binaryName, memberName, checkCancelled, policy = policy)
 
     /** Capture dependency provenance only if it is from the exact parse used to build a feature result. */
     internal suspend fun captureSourceRequestForSnapshot(

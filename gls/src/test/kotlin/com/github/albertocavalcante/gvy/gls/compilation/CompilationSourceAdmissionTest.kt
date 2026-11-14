@@ -33,6 +33,46 @@ class CompilationSourceAdmissionTest {
     lateinit var root: Path
 
     @Test
+    fun `editing an admitted open secondary buffer invalidates the primary compilation cache`() = runBlocking {
+        val primary = Files.writeString(root.resolve("Primary.groovy"), "class Primary { Secondary value }").toUri()
+        val secondary = root.resolve("Secondary.groovy").toUri()
+        val first = "class Secondary { int first }"
+        val second = "class Secondary { int second }"
+        val documents = DocumentProvider().apply { put(secondary, first, 1) }
+        val parses = AtomicInteger()
+        val openSourceContents = mutableListOf<String?>()
+        val loaders = PublishedParserLoaders()
+        val compilation = GroovyCompilationService(
+            documentProvider = documents,
+            workspaceManager = WorkspaceManager(),
+            workerSessionDecorator = { delegate ->
+                object : WorkerSession {
+                    override fun parse(request: ParseRequest): ParseResult {
+                        parses.incrementAndGet()
+                        openSourceContents += request.openSources[secondary]
+                        val parsed = delegate.parse(request)
+                        loaders.record(parsed.compilationUnit.classLoader)
+                        return parsed
+                    }
+                }
+            },
+        )
+        try {
+            assertTrue(compilation.compile(primary, "class Primary { Secondary value }").isSuccess)
+            assertEquals(1, parses.get())
+            assertEquals(first, openSourceContents.last())
+
+            assertNotNull(documents.update(secondary, second, 2))
+            assertTrue(compilation.compile(primary, "class Primary { Secondary value }").isSuccess)
+            assertEquals(2, parses.get(), "A changed secondary buffer must not reuse the old primary parse")
+            assertEquals(second, openSourceContents.last())
+        } finally {
+            compilation.shutdown()
+            loaders.close()
+        }
+    }
+
+    @Test
     fun `retargeted roots, buffers, and class-locator results are excluded before parsing`(): Unit = runBlocking {
         assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
         val ordinary = Files.createDirectory(root.resolve("ordinary"))
@@ -203,8 +243,8 @@ class CompilationSourceAdmissionTest {
 
             assertTrue(model === manager.current(), "No workspace model update may mask the alias transition")
             assertEquals(
-                selectedSource,
-                restored.sourceAnnotations.headAt(1, 1)?.sourceUnitName,
+                sourceUnitPath(selectedSource).toRealPath(),
+                sourceUnitPath(assertNotNull(restored.sourceAnnotations.headAt(1, 1)?.sourceUnitName)).toRealPath(),
                 "Restored ordinary inputs must recover their compiler-selected annotation declaration",
             )
             assertNotNull(
@@ -371,8 +411,8 @@ class CompilationSourceAdmissionTest {
             val restored = assertNotNull(compilation.getCompiledSnapshot(uri)).parseResult
 
             assertTrue(model === manager.current())
-            val restoredSource = assertNotNull(restored.sourceAnnotations.headAt(1, 1)?.sourceUri)
-            assertEquals(originalFile.toRealPath(), Path.of(restoredSource).toRealPath())
+            val restoredSource = assertNotNull(restored.sourceAnnotations.headAt(1, 1)?.sourceUnitName)
+            assertEquals(originalFile.toRealPath(), sourceUnitPath(restoredSource).toRealPath())
             assertEquals("p.Mode", restored.sourceAnnotations.headAt(1, 1)?.binaryName)
         } finally {
             compilation.shutdown()
@@ -473,6 +513,11 @@ class CompilationSourceAdmissionTest {
     @Test
     fun `an uncached closed disk failure cannot return bindings retired by secondary admission`(): Unit = runBlocking {
         assertAwaitedAdmissionRefresh(returnUncachedFailure = true, openPrimary = false)
+    }
+
+    private fun sourceUnitPath(sourceUnitName: String): Path {
+        val uri = runCatching { URI.create(sourceUnitName) }.getOrNull()
+        return if (uri?.scheme == "file") Path.of(uri) else Path.of(sourceUnitName)
     }
 
     private suspend fun assertAwaitedAdmissionRefresh(

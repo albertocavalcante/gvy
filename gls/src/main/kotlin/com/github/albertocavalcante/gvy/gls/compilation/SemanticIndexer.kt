@@ -19,9 +19,29 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-/** SHA-256 of [content], the key that says two compiles saw the same text. */
-internal fun contentHash(content: String): String =
-    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray()))
+/** SHA-256 of the exact UTF-16 code units in [content], including malformed surrogate pairs. */
+internal fun contentHash(content: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(CONTENT_HASH_DOMAIN)
+    val buffer = ByteArray(HASH_BUFFER_BYTES)
+    var offset = 0
+    while (offset < content.length) {
+        val count = minOf(buffer.size / CODE_UNIT_BYTES, content.length - offset)
+        for (index in 0 until count) {
+            val codeUnit = content[offset + index].code
+            buffer[index * CODE_UNIT_BYTES] = (codeUnit ushr BITS_PER_BYTE).toByte()
+            buffer[index * CODE_UNIT_BYTES + 1] = codeUnit.toByte()
+        }
+        digest.update(buffer, 0, count * CODE_UNIT_BYTES)
+        offset += count
+    }
+    return HexFormat.of().formatHex(digest.digest())
+}
+
+private const val CODE_UNIT_BYTES = 2
+private const val BITS_PER_BYTE = 8
+private const val HASH_BUFFER_BYTES = 2048
+private val CONTENT_HASH_DOMAIN = "gvy-content-utf16-v1\u0000".toByteArray(Charsets.US_ASCII)
 
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file

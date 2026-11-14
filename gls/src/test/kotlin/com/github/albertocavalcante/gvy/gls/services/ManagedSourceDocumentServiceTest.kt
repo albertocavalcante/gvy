@@ -20,10 +20,12 @@ import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.RenameParams
+import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.TypeHierarchyItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
@@ -81,7 +83,17 @@ class ManagedSourceDocumentServiceTest {
             parameter.javaClass.getMethod("setUri", String::class.java).invoke(parameter, uri)
             return parameter
         }
-        val identifier = getter.returnType.getConstructor().newInstance()
+        val identifier = if (getter.returnType == TypeHierarchyItem::class.java) {
+            TypeHierarchyItem(
+                "Test",
+                SymbolKind.Class,
+                uri,
+                Range(Position(0, 0), Position(0, 0)),
+                Range(Position(0, 0), Position(0, 0)),
+            )
+        } else {
+            getter.returnType.getConstructor().newInstance()
+        }
         identifier.javaClass.getMethod("setUri", String::class.java).invoke(identifier, uri)
         identifier.javaClass.methods.firstOrNull { it.name == "setText" }?.invoke(identifier, "")
         parameter.javaClass.getMethod(getter.name.replaceFirst("get", "set"), getter.returnType)
@@ -201,6 +213,33 @@ class ManagedSourceDocumentServiceTest {
         service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(alias.toString())))
         assertTrue(calls.isEmpty())
         assertFalse(registry.isManaged(alias), "Alias observations belong only to the open document lifetime")
+    }
+
+    @Test
+    fun `parent traversal through a link is guarded for open and edit targets`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privilege is not assumed")
+        val managed = Files.createDirectories(temporary.resolve("content"))
+        val child = Files.createDirectory(managed.resolve("child"))
+        val workspace = Files.createDirectory(temporary.resolve("workspace"))
+        val link = Files.createSymbolicLink(workspace.resolve("link"), child)
+        val traversed = link.resolve("../Mode.groovy").toUri().toString()
+        val calls = mutableListOf<String>()
+        val edit = TextEdit(Range(Position(0, 0), Position(0, 0)), "edited")
+        val original = object : TextDocumentService by delegate(calls) {
+            override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit?> =
+                CompletableFuture.completedFuture(WorkspaceEdit(mapOf(traversed to listOf(edit))))
+        }
+        val service = ManagedSourceDocumentService(
+            original,
+            registry(),
+            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
+        )
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(traversed, "groovy", 1, "class Mode {}")))
+        assertTrue(calls.isEmpty())
+        val rename = RenameParams().apply {
+            textDocument = TextDocumentIdentifier(workspace.resolve("Ordinary.groovy").toUri().toString())
+        }
+        assertEquals(null, service.rename(rename).get())
     }
 
     @Test

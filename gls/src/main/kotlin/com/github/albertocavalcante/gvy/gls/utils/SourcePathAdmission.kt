@@ -12,7 +12,10 @@ internal enum class SourcePathAdmission { ORDINARY, MANAGED, UNAVAILABLE }
 
 /** Explicit admission-time I/O. A new file is classified through its nearest existing ancestor. */
 internal fun classifySourcePath(path: Path, excluded: (Path) -> Boolean): SourcePathAdmission {
-    val absolute = path.toAbsolutePath().normalize()
+    val raw = path.toAbsolutePath()
+    // Normalizing a parent segment can change its meaning across a symbolic link.
+    if (raw.any { it.toString() == ".." }) return SourcePathAdmission.UNAVAILABLE
+    val absolute = raw.normalize()
     if (excluded(absolute)) return SourcePathAdmission.MANAGED
     return try {
         var existing = absolute

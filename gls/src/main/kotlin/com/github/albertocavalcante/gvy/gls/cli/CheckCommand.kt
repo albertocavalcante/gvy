@@ -102,11 +102,9 @@ class CheckCommand : CliktCommand(name = "check") {
     }
 
     private fun checkFiles(server: GroovyLanguageServer) {
-        val service = server.getTextDocumentService() as? GroovyTextDocumentService
-        if (service == null) {
-            logger.error { "Failed to retrieve GroovyTextDocumentService" }
-            throw ProgramResult(1)
-        }
+        // Protocol requests use a managed-document wrapper. The CLI checks workspace files
+        // directly through the server's internal workspace service.
+        val service = server.workspaceDocumentService
 
         // Collect all diagnostics per file
         val allDiagnostics = mutableMapOf<File, List<Diagnostic>>()

@@ -63,6 +63,52 @@ class JavaSourceInspectorTest {
     }
 
     @Test
+    fun `returns exact field enum constant and method ranges within the selected owner`() {
+        val source = """
+            package sample;
+            class Example {
+                /* 😀 */ public static final int FIRST = 1, SECOND = 2;
+                public static int value() { return FIRST; }
+                enum State { READY, DONE }
+                class Other { public static final int SECOND = 3; }
+            }
+        """.trimIndent()
+        val cases = listOf(
+            Triple("sample.Example", "SECOND", 2),
+            Triple("sample.Example", "value", 3),
+            Triple("sample.Example\$State", "DONE", 4),
+        )
+        for ((owner, member, line) in cases) {
+            val definition = requireNotNull(inspector.inspectMemberDefinitionFromContent(source, owner, member))
+            val column = source.lines()[line].indexOf(member)
+            assertEquals(SourceSpan(line, column, line, column + member.length), definition.nameRange)
+            assertTrue(definition.declarationRange.contains(definition.nameRange))
+        }
+        val field = requireNotNull(inspector.inspectMemberDefinitionFromContent(source, "sample.Example", "SECOND"))
+        val fieldLine = source.lines()[2]
+        assertEquals(SourceSpan(2, fieldLine.indexOf("public"), 2, fieldLine.length), field.declarationRange)
+    }
+
+    @Test
+    fun `member lookup declines overloads and field method collisions instead of choosing a declaration`() {
+        val source = """
+            package sample;
+            class Example {
+                public static int value = 1;
+                public static int value() { return 1; }
+                public static int select() { return 1; }
+                public static int select(int input) { return input; }
+            }
+        """.trimIndent()
+        for (member in listOf("value", "select", "missing")) {
+            org.junit.jupiter.api.Assertions.assertNull(
+                inspector.inspectMemberDefinitionFromContent(source, "sample.Example", member),
+            )
+        }
+        assertNotNull(inspector.inspectMethodFromContent(source, "sample.Example", "value"))
+    }
+
+    @Test
     fun `returns exact method ranges and declines ambiguous overloads`() {
         val source = """
             package sample;

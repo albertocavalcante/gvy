@@ -185,7 +185,7 @@ class ExternalSourceRegistry(
 
         private fun filePath(uri: URI): Path? = if (uri.scheme.equals("file", ignoreCase = true)) {
             try {
-                Path.of(uri).toAbsolutePath().normalize()
+                Path.of(uri).toAbsolutePath()
             } catch (_: IllegalArgumentException) {
                 null
             }

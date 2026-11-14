@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -26,6 +27,7 @@ class ClasspathResolutionStrategy(
             className,
             member,
             checkCancelled = requestContext::ensureActive,
+            policy = SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
         )
             ?: return SymbolResolutionStrategy.notFound("Current dependency context unavailable", STRATEGY_NAME)
         return sourceResolution(navigator.locate(request.symbol, request.context), className, STRATEGY_NAME)

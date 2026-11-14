@@ -69,7 +69,10 @@ class WorkspaceManager internal constructor(
         sourceExclusion = sourceExclusion,
     )
 
-    fun isExcludedSource(path: Path): Boolean = sourceExclusion(path.toAbsolutePath().normalize())
+    fun isExcludedSource(path: Path): Boolean {
+        val absolute = path.toAbsolutePath()
+        return absolute.any { it.toString() == ".." } || sourceExclusion(absolute.normalize())
+    }
 
     fun isExcludedSource(uri: URI): Boolean = UriPathConverter.toPath(uri)?.let(::isExcludedSource) == true
 
@@ -490,7 +493,9 @@ class WorkspaceManager internal constructor(
         private val aliasOf = scannedRoots(roots, workspaceRoot).aliasOf
 
         fun inRoot(path: Path): Path? {
-            val absolute = path.toAbsolutePath().normalize()
+            val raw = path.toAbsolutePath()
+            if (raw.any { it.toString() == ".." }) return null
+            val absolute = raw.normalize()
             val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
             return translated?.let(::ontoScannedRoot)
                 ?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
@@ -827,6 +832,7 @@ internal fun collectGroovySources(
     // A walk does not follow links: a root that is itself a link is walked at the [start] its caller trusts, and
     // what it finds is spelled through the root (#1424).
     val found = mutableListOf<Path>()
+    if (excludedSourceAlias(root, sourceExclusion) || excludedSourceAlias(start, sourceExclusion)) return found
     val excluded = sourceExclusionForRoot(start, sourceExclusion)
     if (excluded(start) || sourceExclusion(root)) return found
     Files.walkFileTree(
