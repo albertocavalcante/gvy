@@ -252,10 +252,18 @@ jobs:
           retention-days: 1
 
   package:
-    name: Package VSIX
+    name: Package VSIX (${{ matrix.os }})
     needs: [build-server, validate]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: editors/code
+        shell: bash
+    timeout-minutes: 20
     permissions:
       contents: read
 
@@ -322,44 +330,46 @@ jobs:
           FORCE_DOWNLOAD: 'true'
         working-directory: editors/code
 
-      - name: Verify VSIX
+      - name: Unpack and verify VSIX
         env:
           GLS_LOCAL_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
-        shell: bash
         run: |
           set -euo pipefail
-          echo "Generated VSIX files:"
           ls -la -- ./*.vsix
           pnpm exec vsce ls -- ./*.vsix
-          candidate_checksum=$(sha256sum "$GLS_LOCAL_JAR")
-          for vsix in ./*.vsix; do
-            packaged_checksum=$(unzip -p "$vsix" extension/server/gls.jar | sha256sum)
-            test "${candidate_checksum%% *}" = "${packaged_checksum%% *}"
-          done
-        working-directory: editors/code
+          cp ./*.vsix "$RUNNER_TEMP/gvy-package.zip"
+          pwsh -NoProfile -Command "Expand-Archive -LiteralPath (Join-Path \$env:RUNNER_TEMP 'gvy-package.zip') -DestinationPath (Join-Path \$env:RUNNER_TEMP 'gvy-packaged-extension')"
+          node -e 'const fs = require("fs"); const crypto = require("crypto"); const path = require("path"); const hash = p => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex"); if (hash(process.env.GLS_LOCAL_JAR) !== hash(path.join(process.env.RUNNER_TEMP, "gvy-packaged-extension/extension/server/gls.jar"))) throw new Error("Packaged server checksum mismatch");'
 
-      - name: Unpack VSIX
-        run: unzip -q ./*.vsix -d "$RUNNER_TEMP/gvy-packaged-extension"
-
-      - name: Test packaged implementation navigation
+      - name: Test packaged GDSL and implementation navigation
         env:
           # Exercise the workspace fallback even when an override is present but empty.
           GVY_TEST_SERVER_JAR: ''
           GVY_TEST_EXTENSION_ROOT: ${{ runner.temp }}/gvy-packaged-extension/extension
         run: |
-          /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-          export DISPLAY=:99
-          pnpm exec vscode-test --label integrationTests --grep "Implementation navigation" --fail-zero --forbid-pending
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Linux ]; then
+            /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+            xvfb_pid=$!
+            trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+            export DISPLAY=:99
+          fi
+          node --test tools/tests/gdsl-contract.test.js
+          pnpm exec vscode-test --label integrationTests --grep "Implementation navigation|GDSL authoring" --fail-zero --forbid-pending
+          pnpm exec vscode-test --label gdslLifecycle --fail-zero --forbid-pending
 
       - name: Upload failed editor logs
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: editor-logs-package
-          path: editors/code/.vscode-test/user-data/logs
+          name: editor-logs-package-${{ matrix.os }}
+          path: |
+            editors/code/.vscode-test/user-data/logs
+            editors/code/.vscode-test/gdsl-user-data/logs
           retention-days: 1
 
       - name: Upload VSIX
+        if: matrix.os == 'ubuntu-24.04'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: vsix

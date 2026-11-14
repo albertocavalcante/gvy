@@ -8,8 +8,9 @@ const test = require("node:test");
 const textmate = require("vscode-textmate");
 const oniguruma = require("vscode-oniguruma");
 
-const root = path.resolve(__dirname, "../..");
-const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const harnessRoot = path.resolve(__dirname, "../..");
+const extensionRoot = process.env.GVY_TEST_EXTENSION_ROOT || harnessRoot;
+const read = (file) => fs.readFileSync(path.join(extensionRoot, file), "utf8");
 
 test("GDSL snippets offer only the supported global script scope", () => {
   const snippets = JSON.parse(read("resources/snippets/gdsl.json"));
@@ -44,7 +45,10 @@ test("the registered GDSL grammar tokenizes descriptor comments and strings", as
   });
   const grammar = await registry.loadGrammar(binding.scopeName);
   assert.ok(grammar, "registered GDSL grammar must load");
-  const fixture = read("client/src/test/fixtures/jenkins-descriptor.gdsl");
+  const fixture = fs.readFileSync(
+    path.join(harnessRoot, "client/src/test/fixtures/jenkins-descriptor.gdsl"),
+    "utf8",
+  );
   let state = textmate.INITIAL;
   const tokensByLine = fixture.split(/\r?\n/).map((line) => {
     const result = grammar.tokenizeLine(line, state);

@@ -3,6 +3,7 @@
 
 import * as assert from "assert";
 import * as path from "path";
+import * as fs from "fs";
 import * as vscode from "vscode";
 
 suite("GDSL cold startup", () => {
@@ -40,6 +41,13 @@ suite("GDSL cold startup", () => {
   test("keeps standalone GDSL editing quiet with an unusable Java configuration", async () => {
     const extension = vscode.extensions.getExtension("albertocavalcante.gvy");
     assert.ok(extension);
+    if (process.env.GVY_TEST_EXTENSION_ROOT) {
+      assert.strictEqual(
+        fs.realpathSync(extension.extensionPath),
+        fs.realpathSync(process.env.GVY_TEST_EXTENSION_ROOT),
+        "The packaged extension must be loaded",
+      );
+    }
     assert.ok(!extension.isActive, "This case requires a cold extension host");
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder);
@@ -88,9 +96,11 @@ suite("GDSL cold startup", () => {
 
   test("starts the language service when a Groovy document opens afterward", async () => {
     const extensionRoot = path.resolve(__dirname, "../../../..");
-    const server =
-      process.env.GVY_TEST_SERVER_JAR ||
-      path.resolve(extensionRoot, "../../gls/build/editor-server/gls.jar");
+    const server = process.env.GVY_TEST_EXTENSION_ROOT
+      ? path.join(process.env.GVY_TEST_EXTENSION_ROOT, "server", "gls.jar")
+      : process.env.GVY_TEST_SERVER_JAR ||
+        path.resolve(extensionRoot, "../../gls/build/editor-server/gls.jar");
+    assert.ok(fs.existsSync(server), `Server JAR not found: ${server}`);
     await config.update(
       "languageServer.javaHome",
       previousJava,
