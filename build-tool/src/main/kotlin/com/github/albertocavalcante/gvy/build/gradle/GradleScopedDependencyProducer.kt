@@ -18,6 +18,7 @@ import org.gradle.tooling.ResultHandler
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -109,11 +110,12 @@ class GradleScopedDependencyProducer(
 
     private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? {
         val cancellation = GradleConnector.newCancellationTokenSource()
-        // The lease spans the whole asynchronous operation so the idle sweep cannot close the connection under it.
-        return connectionFactory.acquire(projectDirectory, null).use { lease ->
+        val lease = connectionFactory.acquire(projectDirectory, null)
+        var configured = false
+        val builder = try {
             // The idle timeout is what bounds the daemon this may start; it is not part of daemon compatibility, so
             // reuse of the user's own daemon is unchanged.
-            val builder = lease.connection
+            val model = lease.connection
                 .model(GradleScopedDependencyModel::class.java)
                 .withArguments(
                     "--no-configure-on-demand",
@@ -122,17 +124,48 @@ class GradleScopedDependencyProducer(
                     GradleOperationArguments.idleTimeoutArgument(daemonSettings),
                 )
                 .withCancellationToken(cancellation.token())
-            javaHome?.let { builder.setJavaHome(it.toFile()) }
-            suspendCancellableCoroutine<GradleScopedDependencyModel?> { continuation ->
-                continuation.invokeOnCancellation { cancellation.cancel() }
+            javaHome?.let { model.setJavaHome(it.toFile()) }
+            configured = true
+            model
+        } finally {
+            if (!configured) lease.close()
+        }
+        return suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancellation.cancel() }
+            if (!continuation.isActive) {
+                lease.close()
+                return@suspendCancellableCoroutine
+            }
+            // Once launch begins, only its callback (or synchronous launch failure) acknowledges completion.
+            val completed = AtomicBoolean(false)
+            var launched = false
+            try {
                 builder.get(
                     object : ResultHandler<GradleScopedDependencyModel> {
-                        override fun onComplete(result: GradleScopedDependencyModel?) = continuation.resume(result)
+                        override fun onComplete(result: GradleScopedDependencyModel?) {
+                            if (completed.compareAndSet(false, true)) {
+                                try {
+                                    lease.close()
+                                } finally {
+                                    continuation.resume(result)
+                                }
+                            }
+                        }
 
-                        override fun onFailure(failure: GradleConnectionException) =
-                            continuation.resumeWithException(failure)
+                        override fun onFailure(failure: GradleConnectionException) {
+                            if (completed.compareAndSet(false, true)) {
+                                try {
+                                    lease.close()
+                                } finally {
+                                    continuation.resumeWithException(failure)
+                                }
+                            }
+                        }
                     },
                 )
+                launched = true
+            } finally {
+                if (!launched && completed.compareAndSet(false, true)) lease.close()
             }
         }
     }
