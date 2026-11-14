@@ -41,6 +41,27 @@ class GradleScopedDependencyProjectionTest {
     }
 
     @Test
+    fun `enumeration completeness is explicit and unknown by default`() {
+        assertEquals(false, scoped(Model()).enumerationComplete)
+        assertEquals(false, scoped(Model(enumerationComplete = false)).enumerationComplete)
+        assertEquals(true, scoped(Model(enumerationComplete = true)).enumerationComplete)
+    }
+
+    @Test
+    fun `preserves unknown empty and enumerated source membership`() {
+        val unknown = scoped(Model(targets = listOf(Target()))).snapshots.single()
+        val empty = scoped(Model(targets = listOf(Target(sourceFiles = emptyList())))).snapshots.single()
+        val member = scoped(Model(targets = listOf(Target(sourceFiles = listOf(path("src/A.groovy"))))))
+            .snapshots.single()
+        assertNull(unknown.sourceFiles)
+        assertEquals(emptyList(), empty.sourceFiles)
+        assertEquals(listOf(Path.of(path("src/A.groovy"))), member.sourceFiles)
+        assertFailsWith<IllegalArgumentException> {
+            scoped(Model(targets = listOf(Target(sourceFiles = listOf("relative.groovy")))))
+        }
+    }
+
+    @Test
     fun `conflicting coordinate candidates remain unknown while identical candidates retain exact facts`() {
         val first = Coordinates("group", "module", "1")
         val second = Coordinates("group", "module", "2")
@@ -137,6 +158,7 @@ class GradleScopedDependencyProjectionTest {
     private data class Model(
         override val buildDirectory: String? = Path.of("model-root").toAbsolutePath().toString(),
         override val targets: List<GradleSourceSetModel?>? = listOf(Target()),
+        override val enumerationComplete: Boolean? = null,
     ) : GradleScopedDependencyModel
 
     private data class Target(
@@ -149,6 +171,7 @@ class GradleScopedDependencyProjectionTest {
         override val sourceRoots: List<String?>? =
             listOf(Path.of("model-root/custom-groovy").toAbsolutePath().toString()),
         override val artifacts: List<GradleClasspathEntryModel?>? = emptyList(),
+        override val sourceFiles: List<String?>? = null,
     ) : GradleSourceSetModel
 
     private data class Entry(
