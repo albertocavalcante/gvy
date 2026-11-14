@@ -40,14 +40,24 @@ suite("GDSL authoring", () => {
     );
   });
 
-  test("closes quotes and indents a contributor block", async () => {
-    await vscode.commands.executeCommand("type", { text: "'" });
-    assert.strictEqual(editor.document.getText(), "''");
-    await vscode.commands.executeCommand("undo");
-    await vscode.commands.executeCommand("type", { text: "contributor {" });
-    await vscode.commands.executeCommand("type", { text: "\n" });
-    assert.match(editor.document.getText(), /contributor \{\n\s+\n?\}/);
-  });
+  for (const [name, eol] of [
+    ["LF", vscode.EndOfLine.LF],
+    ["CRLF", vscode.EndOfLine.CRLF],
+  ] as const) {
+    test(`closes quotes and indents a contributor block with ${name}`, async () => {
+      await editor.edit((edit) => edit.setEndOfLine(eol));
+      await vscode.commands.executeCommand("type", { text: "'" });
+      assert.strictEqual(editor.document.getText(), "''");
+      await vscode.commands.executeCommand("undo");
+      await vscode.commands.executeCommand("type", { text: "contributor {" });
+      await vscode.commands.executeCommand("type", { text: "\n" });
+      assert.strictEqual(editor.document.lineCount, 3);
+      assert.strictEqual(editor.document.lineAt(0).text, "contributor {");
+      assert.match(editor.document.lineAt(1).text, /^[\t ]+$/);
+      assert.strictEqual(editor.document.lineAt(2).text, "}");
+      assert.strictEqual(editor.document.eol, eol);
+    });
+  }
 
   test("selects and advances editable method snippet fields", async () => {
     await vscode.commands.executeCommand("editor.action.insertSnippet", {
@@ -93,26 +103,34 @@ suite("GDSL authoring", () => {
       "parameter(name: 'myParam', type: 'java.lang.String', doc: 'Description')",
     ],
   ]) {
-    test(`inserts the contributed ${name} snippet`, async () => {
-      await vscode.commands.executeCommand("editor.action.insertSnippet", {
-        langId: "gdsl",
-        name,
+    for (const [eolName, eol] of [
+      ["LF", vscode.EndOfLine.LF],
+      ["CRLF", vscode.EndOfLine.CRLF],
+    ] as const) {
+      test(`inserts the contributed ${name} snippet with ${eolName}`, async () => {
+        await editor.edit((edit) => edit.setEndOfLine(eol));
+        await vscode.commands.executeCommand("editor.action.insertSnippet", {
+          langId: "gdsl",
+          name,
+        });
+        const expanded = editor.document.getText().replace(/\t/g, "    ");
+        const expectedEol = eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n";
+        assert.strictEqual(expanded, expected.replace(/\n/g, expectedEol));
+        assert.strictEqual(editor.document.eol, eol);
+        const fixturePath = path.resolve(
+          vscode.workspace.workspaceFolders![0].uri.fsPath,
+          "gdsl-snippet-defaults.gdsl",
+        );
+        const compact = (value: string) => value.replace(/\s+/g, "");
+        const fixture = compact(fs.readFileSync(fixturePath, "utf8"));
+        const fragment =
+          name === "GDSL contributor" ? expanded.split("{")[0] + "{" : expanded;
+        assert.ok(
+          fixture.includes(compact(fragment)),
+          `${name} differs from the consumer fixture`,
+        );
+        assert.ok(!editor.document.getText().includes("${"));
       });
-      const expanded = editor.document.getText().replace(/\t/g, "    ");
-      assert.strictEqual(expanded, expected);
-      const fixturePath = path.resolve(
-        vscode.workspace.workspaceFolders![0].uri.fsPath,
-        "gdsl-snippet-defaults.gdsl",
-      );
-      const compact = (value: string) => value.replace(/\s+/g, "");
-      const fixture = compact(fs.readFileSync(fixturePath, "utf8"));
-      const fragment =
-        name === "GDSL contributor" ? expanded.split("{")[0] + "{" : expanded;
-      assert.ok(
-        fixture.includes(compact(fragment)),
-        `${name} differs from the consumer fixture`,
-      );
-      assert.ok(!editor.document.getText().includes("${"));
-    });
+    }
   }
 });
