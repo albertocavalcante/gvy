@@ -49,6 +49,10 @@
     ],
     "commands": [
       {
+        "command": "groovy.showAnalysisDetails",
+        "title": "Groovy: Show Analysis Details"
+      },
+      {
         "command": "groovy.restartServer",
         "title": "Groovy: Restart Language Server"
       },

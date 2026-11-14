@@ -186,6 +186,33 @@ The extension finds Java from your PATH or `JAVA_HOME`.
 }
 ```
 
+### Analysis status and Problems
+
+When connected to a server that supports document analysis, **Groovy: Analysis limited** describes the active document's
+last completed analysis. Open **Groovy: Show Analysis Details** to see its compiler phase and the available recovery
+actions.
+
+- **Type analysis is limited:** Compilation could not reach the requested phase, for example because an annotation
+  transform needs a missing dependency. Check the named dependency, then run **Groovy: Refresh Dependencies**.
+- **Linting failed:** A diagnostic provider failed or its workspace configuration was rejected. Follow the Problems link
+  to the configuration literal and use **Open configuration** when offered.
+- **Source membership or source lookup is inferred:** The build model cannot fully establish which project sources
+  belong to this analysis. Refresh dependencies after build changes and read the source model details before relying on
+  cross-project results.
+
+Problems includes informational analysis notices alongside ordinary compiler and lint findings. Configuration errors
+appear on their configuration file, with related links from affected sources. Successful reanalysis clears obsolete
+notices. Changes to workspace rulesets use Problems and status without repeated popup notifications.
+
+Gradle compiler-source membership is imported by default, including source-set and compiler-task exclusions. An
+explicitly opened excluded file, or a new file awaiting a model refresh, is analyzed independently. The separate
+`groovy.gradle.targetClasspaths.enabled` setting continues to control target-specific dependency classpaths.
+
+Dependency source ownership can remain unknown even after source membership is imported. gvy retains its recovery lookup
+for those unknown dependencies and reports that limitation. Proven exclusions remain filtered. If changes to an external
+source tree do not update analysis, use **Groovy: Refresh Dependencies**; new external roots and filenames containing
+wildcard characters may require this manual refresh.
+
 ### Jenkins Pipeline Support
 
 For Jenkins shared libraries:
@@ -221,7 +248,10 @@ For Jenkins shared libraries:
 
   // Optional: Jenkins plugin discovery overrides
   "groovy.jenkins.pluginsTxtPath": "/path/to/plugins.txt",
-  "groovy.jenkins.plugins": ["workflow-basic-steps", "pipeline-model-definition"],
+  "groovy.jenkins.plugins": [
+    "workflow-basic-steps",
+    "pipeline-model-definition"
+  ],
   "groovy.jenkins.includeDefaultPlugins": true
 }
 ```
