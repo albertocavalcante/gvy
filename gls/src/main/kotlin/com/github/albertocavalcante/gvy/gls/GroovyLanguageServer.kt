@@ -207,6 +207,8 @@ class GroovyLanguageServer(
         compilationService,
         CoreAstConverter(),
         NativeAstConverter(),
+        documentProvider,
+        coroutineScope,
     )
 
     // State
@@ -427,7 +429,7 @@ class GroovyLanguageServer(
     }, dispatcher.asExecutor())
 
     @JsonRequest("groovy/ast")
-    fun getAst(params: AstParams): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
+    fun getAst(params: AstParams?): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
 
     @JsonRequest("groovy/getTestResults")
     fun getTestResults(params: GetTestResultsParams): CompletableFuture<TestResultsResponse> =
