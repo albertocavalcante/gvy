@@ -35,6 +35,7 @@ class GroovyTokenIndex private constructor(
     private val spans: List<TokenSpan>,
     internal val diagnosticTokens: List<DiagnosticToken>,
     internal val complete: Boolean,
+    internal val delimiterFacts: DelimiterFacts = DelimiterFacts(),
 ) {
     /** Lexer facts use UTF-16 offsets; channel and symbolic name retain statement boundaries. */
     internal data class DiagnosticToken(
@@ -118,9 +119,10 @@ class GroovyTokenIndex private constructor(
 
             handleShebang(source, collector)
             val tokens = mutableListOf<DiagnosticToken>()
-            val complete = processAllTokens(lexer, collector, codePointToUtf16, tokens)
+            val delimiters = DelimiterFacts()
+            val complete = processAllTokens(lexer, collector, codePointToUtf16, tokens, delimiters)
 
-            return GroovyTokenIndex(collector.toSortedList(), tokens, complete && !lexerFailed)
+            return GroovyTokenIndex(collector.toSortedList(), tokens, complete && !lexerFailed, delimiters)
         }
 
         private fun createLexer(source: String): GroovyLangLexer? = runCatching {
@@ -159,22 +161,23 @@ class GroovyTokenIndex private constructor(
             collector: SpanCollector,
             codePointToUtf16: IntArray?,
             tokens: MutableList<DiagnosticToken>,
+            delimiters: DelimiterFacts,
         ): Boolean = runCatching {
             var token = fetchNextToken(lexer, collector)
             while (token != null && token.type != Token.EOF) {
                 val symbolicName = lexer.vocabulary.getSymbolicName(token.type) ?: ""
                 val start = codePointToUtf16?.get(token.startIndex) ?: token.startIndex
                 val end = codePointToUtf16?.get(token.stopIndex + 1) ?: token.stopIndex + 1
-                tokens.add(
-                    DiagnosticToken(
-                        token.type,
-                        symbolicName,
-                        start,
-                        end,
-                        token.channel,
-                        mapTokenToContext(symbolicName, token.text ?: ""),
-                    ),
+                val fact = DiagnosticToken(
+                    token.type,
+                    symbolicName,
+                    start,
+                    end,
+                    token.channel,
+                    mapTokenToContext(symbolicName, token.text ?: ""),
                 )
+                tokens.add(fact)
+                delimiters.accept(fact)
                 processToken(token, lexer, collector, codePointToUtf16)
                 token = fetchNextToken(lexer, collector)
             }

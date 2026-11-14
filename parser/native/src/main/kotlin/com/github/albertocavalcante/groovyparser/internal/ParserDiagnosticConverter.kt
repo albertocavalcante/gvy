@@ -94,9 +94,12 @@ internal object ParserDiagnosticConverter {
                 "${syntaxException.originalMessage} at line ${syntaxException.line}, " +
                 "columns ${syntaxException.startColumn}-${syntaxException.endColumn}"
         }
-        if (context != null) {
-            importDiagnostic(syntaxException, context.source, context.tokens)?.let { return it }
+        val refined = context?.let {
+            importDiagnostic(syntaxException, it.source, it.tokens)
+                ?: expressionDiagnostic(syntaxException, it.source, it.tokens)
+                ?: delimiterDiagnostic(syntaxException, it.source, it.tokens)
         }
+        if (refined != null) return refined
         val source = context?.source
         val range = if (source == null) {
             ParserRange.singleLine(line, start, end)
