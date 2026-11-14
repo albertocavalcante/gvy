@@ -18,9 +18,11 @@ class PluginFoundationTest : BasePlatformTestCase() {
         assertTrue("GVY plugin must be enabled", plugin!!.isEnabled)
 
         myFixture.configureByText("sample.groovy", "println 'hello'")
-        val providers = ExtensionPointName.create<LspServerSupportProvider>(
-            "com.intellij.platform.lsp.serverSupportProvider",
-        ).extensionList
+        val providers =
+            ExtensionPointName
+                .create<LspServerSupportProvider>(
+                    "com.intellij.platform.lsp.serverSupportProvider",
+                ).extensionList
         assertFalse(
             "The foundation must not register a server provider",
             providers.any { it.javaClass.name.startsWith("org.gvy.jetbrains.") },
