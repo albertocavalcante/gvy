@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.nativeapi.AnnotationCoverage
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -27,9 +28,123 @@ class UnusedImportDetectorTest {
         compilationService = GroovyCompilationService()
     }
 
-    private fun compile(code: String): ModuleNode = runBlocking {
-        compilationService.compile(uri, code)
+    private fun compile(code: String, phase: Int = Phases.CANONICALIZATION): ModuleNode = runBlocking {
+        compilationService.compile(uri, code, phase)
         compilationService.getAst(uri) as ModuleNode
+    }
+
+    @Test
+    fun `enclosing imports are used in every nested type position`() {
+        val declarations = listOf(
+            "class Example implements Map.Entry {}",
+            "class Example extends AbstractMap.SimpleEntry { Example() { super(null, null) } }",
+            "class Example { void method(Map.Entry value) {} }",
+            "class Example { Map.Entry method() { null } }",
+            "class Example { Map.Entry value }",
+            "class Example { void method() { Map.Entry value = null } }",
+            "class Example { void method(Object value) { def result = (Map.Entry) value } }",
+            "class Example { List<Map.Entry> values }",
+            "class Example { void method() { new AbstractMap.SimpleEntry(null, null) } }",
+            "class Example { void method() { Map.Entry.comparingByKey() } }",
+        )
+
+        declarations.forEach { declaration ->
+            val ast = compile("import java.util.Map\nimport java.util.AbstractMap\n$declaration")
+            val expectedUnused = if ("AbstractMap." in declaration) "java.util.Map" else "java.util.AbstractMap"
+            assertEquals(
+                listOf(expectedUnused),
+                UnusedImportDetector.detectUnusedImports(ast).map { it.className },
+                declaration,
+            )
+        }
+    }
+
+    @Test
+    fun `nested type use credits aliases and preserves direct nested imports`() {
+        val aliased = compile(
+            """
+            import java.util.Map as Container
+            import java.util.Set
+            class Example { Container.Entry value }
+            """.trimIndent(),
+        )
+        assertEquals(listOf("java.util.Set"), UnusedImportDetector.detectUnusedImports(aliased).map { it.className })
+
+        val direct = compile(
+            """
+            import java.util.Map
+            import java.util.Map.Entry
+            class Example { Entry value }
+            """.trimIndent(),
+        )
+        assertEquals(listOf("java.util.Map"), UnusedImportDetector.detectUnusedImports(direct).map { it.className })
+
+        val qualified = compile(
+            """
+            import java.util.Map
+            import java.util.Map.Entry
+            class Example { Map.Entry value }
+            """.trimIndent(),
+        )
+        assertEquals(listOf("Entry"), UnusedImportDetector.detectUnusedImports(qualified).map { it.alias })
+    }
+
+    @Test
+    fun `unresolved qualified nested type spelling credits enclosing alias`() {
+        val ast = compile(
+            """
+            import missing.Outer as Container
+            import java.util.Set
+            class Example { Container.Inner value }
+            """.trimIndent(),
+        )
+        assertTrue("Container" in TypeUsageCollector.collectUsedTypes(ast))
+    }
+
+    @Test
+    fun `lowercase aliases work in nested type and static access`() {
+        val declarations = listOf(
+            "class Example { container.Entry value }",
+            "class Example { void method() { container.Entry.comparingByKey() } }",
+        )
+        for (phase in listOf(Phases.CONVERSION, Phases.CANONICALIZATION)) {
+            declarations.forEach { declaration ->
+                val ast = compile("import java.util.Map as container\nimport java.util.Set\n$declaration", phase)
+                assertEquals(
+                    listOf("java.util.Set"),
+                    UnusedImportDetector.detectUnusedImports(ast).map { it.className },
+                    "phase=$phase: $declaration",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `static access credits only the type spelling used`() {
+        val sources = mapOf(
+            "Map.Entry.comparingByKey()" to "Entry",
+            "Entry.comparingByKey()" to "Map",
+            "java.util.Map.Entry.comparingByKey()" to null,
+        )
+        sources.forEach { (expression, expectedUnused) ->
+            val ast = compile(
+                "import java.util.Map\nimport java.util.Map.Entry\nclass Example { void method() { $expression } }",
+            )
+            val unused = UnusedImportDetector.detectUnusedImports(ast).map { it.alias }
+            val expected = expectedUnused?.let(::listOf) ?: listOf("Map", "Entry")
+            assertEquals(expected, unused, expression)
+        }
+    }
+
+    @Test
+    fun `local property access does not use a shadowed import`() {
+        val ast = compile(
+            """
+            import java.util.Map
+            class Example { void method() { def Map = [x: 1]; println Map.x } }
+            """.trimIndent(),
+        )
+        assertEquals(listOf("java.util.Map"), UnusedImportDetector.detectUnusedImports(ast).map { it.className })
     }
 
     @Test
