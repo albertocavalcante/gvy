@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.groovyparser.internal.DiagnosticDocument
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.groovyparser.internal.SourceSnapshot
 import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
@@ -208,6 +209,81 @@ class ParserDiagnosticConverterTest {
     }
 
     @Test
+    fun `scoped diagnostics retain simple and exception errors only for their owner`() {
+        val collector = ErrorCollector(configuration)
+        collector.addError(SimpleMessage("own simple error", source("Good.groovy")))
+        collector.addError(ExceptionMessage(IllegalStateException("own exception"), true, source("Good.groovy")))
+        collector.addError(SimpleMessage("other simple error", source("Other.groovy")))
+        collector.addError(ExceptionMessage(IllegalStateException("other exception"), true, source("Other.groovy")))
+
+        val diagnostics = ParserDiagnosticConverter.convert(
+            collector,
+            setOf("Good.groovy"),
+            document = DiagnosticDocument("class Good {}"),
+        )
+
+        assertEquals(2, diagnostics.size)
+        assertTrue(diagnostics.any { it.message.contains("own simple error") })
+        assertTrue(diagnostics.any { it.message.contains("IllegalStateException: own exception") })
+    }
+
+    @Test
+    fun `scoped unlocated errors without document content remain filtered`() {
+        val collector = ErrorCollector(configuration)
+        collector.addError(ExceptionMessage(IllegalStateException("own exception"), true, source("Good.groovy")))
+
+        assertTrue(ParserDiagnosticConverter.convert(collector, setOf("Good.groovy")).isEmpty())
+    }
+
+    @Test
+    fun `unlocated owned errors span the requested document in UTF-16 positions`() {
+        val collector = ErrorCollector(configuration)
+        collector.addError(ExceptionMessage(IllegalStateException("own exception"), true, source("Good.groovy")))
+
+        val diagnostic = ParserDiagnosticConverter.convert(
+            collector,
+            setOf("Good.groovy"),
+            document = DiagnosticDocument("first\r\n😀x"),
+        ).single()
+
+        assertEquals(0, diagnostic.range.start.line)
+        assertEquals(0, diagnostic.range.start.character)
+        assertEquals(1, diagnostic.range.end.line)
+        assertEquals(3, diagnostic.range.end.character)
+    }
+
+    @Test
+    fun `unscoped conversion preserves warnings and uses content only for its owner`() {
+        val collector = ErrorCollector(configuration)
+        collector.addError(ExceptionMessage(IllegalStateException("own exception"), true, source("Good.groovy")))
+        collector.addWarning(WarningMessage(WarningMessage.LIKELY_ERRORS, "warning", null, source("Good.groovy")))
+
+        val diagnostics = ParserDiagnosticConverter.convert(
+            collector,
+            emptySet(),
+            document = DiagnosticDocument("line one\nline two", "Good.groovy"),
+        )
+
+        assertEquals(1, diagnostics.single { it.severity == ParserSeverity.ERROR }.range.end.line)
+        assertEquals(1, diagnostics.count { it.severity == ParserSeverity.WARNING })
+    }
+
+    @Test
+    fun `document content is never assigned to a different or unknown owner`() {
+        val collector = ErrorCollector(configuration)
+        collector.addError(SimpleMessage("other", source("Other.groovy")))
+        collector.addError(SimpleMessage("unknown", null))
+
+        val diagnostics = ParserDiagnosticConverter.convert(
+            collector,
+            setOf("Good.groovy", "Other.groovy"),
+            document = DiagnosticDocument("Good source", "Good.groovy"),
+        )
+
+        assertTrue(diagnostics.isEmpty(), diagnostics.toString())
+    }
+
+    @Test
     fun `a located message keeps its text and its position`() {
         val token = Token.newString("x", 7, 5)
         val diagnostic = convertOne(LocatedMessage("bad thing here", token, source()))
@@ -274,6 +350,7 @@ class ParserDiagnosticConverterTest {
         .convert(
             ErrorCollector(configuration).also { it.addError(SimpleMessage(missingTransform, source(name))) },
             locators,
+            document = DiagnosticDocument("class Good {}"),
         ) { isProject }
 
     @Test
@@ -292,7 +369,7 @@ class ParserDiagnosticConverterTest {
 
     @Test
     fun `a missing transform that is not on the project classpath is not turned into a notice`() {
-        assertTrue(withLocators("Good.groovy", setOf("Good.groovy"), isProject = false).isEmpty())
+        assertEquals(ParserSeverity.ERROR, withLocators("Good.groovy", setOf("Good.groovy"), false).single().severity)
         val unscoped = withLocators("Good.groovy", emptySet(), isProject = false).single()
         assertEquals(ParserSeverity.ERROR, unscoped.severity)
     }

@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -186,6 +187,7 @@ class WorkspaceCompiler(
             when (result) {
                 is FileCompilationResult.Success -> {
                     modules[result.uri] = result.module
+                    errors.addAll(result.errors)
                 }
                 is FileCompilationResult.Failure -> {
                     errors.addAll(result.errors)
@@ -244,7 +246,10 @@ class WorkspaceCompiler(
                     parseResult.outcome.achievedPhase,
                     fromBuffer = false,
                 )
-                FileCompilationResult.Success(uri, module)
+                val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
+                    CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
+                }
+                FileCompilationResult.Success(uri, module, errors)
             } else {
                 val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
                     parseResult.diagnostics.joinToString("; ") { it.message }
@@ -284,7 +289,8 @@ class WorkspaceCompiler(
      * Internal result type for individual file compilation.
      */
     private sealed class FileCompilationResult {
-        data class Success(val uri: URI, val module: ModuleNode) : FileCompilationResult()
+        data class Success(val uri: URI, val module: ModuleNode, val errors: List<CompilationError>) :
+            FileCompilationResult()
         data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
     }
 
