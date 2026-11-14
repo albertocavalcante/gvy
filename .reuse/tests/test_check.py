@@ -236,6 +236,78 @@ class IntegrationTests(unittest.TestCase):
         self.source = self.root / "src/a.py"
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\nprint(1)\n")
 
+    @staticmethod
+    def reuse_result(
+        returncode: int, compliant: bool, stderr: str = "", expression: str = "Apache-2.0"
+    ) -> subprocess.CompletedProcess[str]:
+        report = {
+            "lint_version": "1.0",
+            "reuse_spec_version": "3.3",
+            "reuse_tool_version": "6.3.0",
+            "summary": {"compliant": compliant},
+            "files": [{"path": "src/a.py", "spdx_expressions": [{"value": expression, "is_valid": True}]}],
+            "private_field": "PRIVATE_REPORT_SENTINEL",
+        }
+        return subprocess.CompletedProcess(["reuse"], returncode, json.dumps(report), stderr)
+
+    def test_reuse_success_contract_in_shared_api_and_cli(self) -> None:
+        mismatch = "REUSE check failed: exit/report mismatch"
+        noncompliance = "REUSE lint failed; run reuse --root . lint for details"
+        policy = "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)"
+        cases: list[tuple[int, bool, str, list[str]]] = [
+            (0, True, "", []),
+            (1, False, "", [noncompliance]),
+            (1, True, "", [mismatch]),
+            (0, False, "", [mismatch, noncompliance]),
+        ]
+        for capture in ("warning: PRIVATE_STDERR_SENTINEL\n", "unclassified text", " \r\n\t", "\x1b[0m", "\0"):
+            cases.append((0, True, capture, [policy]))
+        for code, compliant, capture, expected in cases:
+            with self.subTest(code=code, compliant=compliant, capture=capture):
+                result = self.reuse_result(code, compliant, capture)
+                with patch.object(check.subprocess, "run", return_value=result) as run:
+                    self.assertEqual(expected, check.check(self.root))
+                    with (
+                        patch.object(sys, "argv", ["check.py", "--root", str(self.root)]),
+                        patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                        patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
+                    ):
+                        self.assertEqual(int(bool(expected)), check.main())
+                    self.assertEqual(2, run.call_count)
+                self.assertEqual("\n".join(expected) + ("\n" if expected else ""), stderr.getvalue())
+                self.assertEqual("" if expected else "REUSE and first-party header checks passed\n", stdout.getvalue())
+
+    def test_success_contract_failures_preserve_other_repository_gates(self) -> None:
+        self.git("init", "-q")
+        (self.root / "src/unreported.txt").write_text("unreported data\n", encoding="utf-8")
+        self.git("add", "--", "src/a.py", "src/unreported.txt")
+        tracked = self.git("ls-files", "-z")
+        (self.root / "LICENSE").write_text("tampered\n", encoding="utf-8")
+        self.source.write_text("print(1)\n", encoding="utf-8")
+        for code, capture, expected in (
+            (1, "", "REUSE check failed: exit/report mismatch"),
+            (
+                0,
+                "unclassified text",
+                "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)",
+            ),
+        ):
+            with self.subTest(code=code):
+                result = self.reuse_result(code, True, capture, "MIT")
+                with patch.object(check.subprocess, "run", side_effect=[result, tracked]) as run:
+                    errors = check.check(self.root)
+                self.assertEqual(2, run.call_count)
+                for error in (
+                    expected,
+                    "LICENSE: license text does not match approved SHA-256",
+                    "LICENSES/MIT.txt: used MIT license must have an approved inventory entry",
+                    "src/unreported.txt: tracked file omitted by REUSE",
+                    "src/a.py: missing nonempty leading SPDX-FileCopyrightText",
+                    "src/a.py: leading license must be Apache-2.0",
+                    "src/a.py: effective REUSE license must be Apache-2.0",
+                ):
+                    self.assertIn(error, errors)
+
     def test_compliant_and_tampered_license(self) -> None:
         self.assertEqual([], check.check(self.root))
         (self.root / "LICENSES/Apache-2.0.txt").write_text("tampered")

@@ -68,6 +68,11 @@ Bootstrap the pinned uv version with
 locked tools with `uv sync --project .reuse --locked`. Run `make license-check` and `make license-test` offline. The
 equivalent portable check is `uv run --offline --project .reuse --locked --no-dev python .reuse/check.py --root .`.
 
+The checker requires REUSE's exit status and compliance report to agree. A successful, compliant report also requires
+exactly empty stderr: even whitespace or unclassified output fails gvy's diagnostic policy. This policy failure does not
+assert a license violation. The checker reports a fixed message and continues the independent repository checks; it does
+not print raw REUSE stderr for this policy failure.
+
 When updating uv, update the version and all wheel SHA-256 hashes in `.reuse/bootstrap-requirements.txt` from the
 [uv release metadata](https://pypi.org/pypi/uv/0.13.7/json), then validate the Linux, macOS, and Windows tooling jobs.
 
