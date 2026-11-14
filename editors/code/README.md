@@ -51,6 +51,29 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 | Groovy Scripts   | `.groovy`, `.gvy`, `.gy`, `.gsh` | General Groovy code |
 | Gradle Build     | `.gradle`                        | Build scripts       |
 | Jenkins Pipeline | `Jenkinsfile`, `Jenkinsfile.*`   | CI/CD pipelines     |
+| Groovy DSL       | `.gdsl`                          | DSL contributions   |
+
+### Editing GDSL files
+
+`.gdsl` files open in **Groovy DSL** mode with Groovy syntax highlighting, line and block comments, bracket and quote
+pairing, automatic indentation, and indentation/region folding. These editing features work without Java or a running
+language server.
+
+Type `gdsl-` and select a snippet from suggestions, or use **Insert Snippet** from the Command Palette:
+
+| Prefix              | Inserts                                               |
+| ------------------- | ----------------------------------------------------- |
+| `gdsl-contributor`  | A contributor block with a scope choice               |
+| `gdsl-context`      | A reusable context with a scope choice                |
+| `gdsl-method`       | A method with positional parameters and documentation |
+| `gdsl-named-method` | A method with named parameters and documentation      |
+| `gdsl-property`     | A typed property with documentation                   |
+| `gdsl-parameter`    | A parameter for a method's `namedParams` list         |
+
+Press Tab to move through snippet fields. GDSL authoring currently provides these editing features and snippets;
+GDSL-specific semantic completion, hover, diagnostics, formatting, and navigation are not yet available. Loading a GDSL
+file to contribute Jenkins metadata uses the separate `groovy.jenkins.gdslPaths` and
+`groovy.jenkins.gdslExecution.enabled` user settings described below.
 
 ## Setup
 

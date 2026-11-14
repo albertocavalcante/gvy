@@ -35,6 +35,7 @@ path = [
   "client/tsconfig.json",
   "language-configuration.json",
   "package.json",
+  "resources/snippets/gdsl.json",
   "syntaxes/groovy.tmLanguage.json",
   "tools/tsconfig.json",
   "tsconfig.json",

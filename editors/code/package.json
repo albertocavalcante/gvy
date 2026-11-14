@@ -14,6 +14,7 @@
   "keywords": [
     "groovy",
     "gradle",
+    "gdsl",
     "jenkinsfile",
     "jenkins",
     "pipeline"
@@ -247,6 +248,17 @@
         "configuration": "./language-configuration.json"
       },
       {
+        "id": "gdsl",
+        "aliases": [
+          "Groovy DSL",
+          "GDSL"
+        ],
+        "extensions": [
+          ".gdsl"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
         "id": "jenkinsfile",
         "aliases": [
           "Jenkinsfile",
@@ -265,6 +277,12 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "gdsl",
+        "path": "./resources/snippets/gdsl.json"
+      }
+    ],
     "grammars": [
       {
         "language": "groovy",
@@ -273,6 +291,11 @@
       },
       {
         "language": "jenkinsfile",
+        "scopeName": "source.groovy",
+        "path": "./syntaxes/groovy.tmLanguage.json"
+      },
+      {
+        "language": "gdsl",
         "scopeName": "source.groovy",
         "path": "./syntaxes/groovy.tmLanguage.json"
       }

@@ -1,0 +1,49 @@
+{
+  "GDSL contributor": {
+    "prefix": "gdsl-contributor",
+    "body": [
+      "contributor(context(scope: ${1|scriptScope,closureScope,classScope,annotatedScope|}())) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declare a GDSL contributor with a scope and add method or property contributions."
+  },
+  "GDSL context": {
+    "prefix": "gdsl-context",
+    "body": [
+      "def ${1:ctx} = context(scope: ${2|scriptScope,closureScope,classScope,annotatedScope|}())",
+      "$0"
+    ],
+    "description": "Declare a reusable GDSL context for contributor(ctx)."
+  },
+  "GDSL method": {
+    "prefix": "gdsl-method",
+    "body": [
+      "method(name: '${1:myMethod}', type: '${2:void}', params: [${3:arg}: '${4:java.lang.String}'], doc: '${5:Description}')$0"
+    ],
+    "description": "Contribute a method with positional parameters inside a contributor block."
+  },
+  "GDSL named-parameter method": {
+    "prefix": "gdsl-named-method",
+    "body": [
+      "method(name: '${1:myMethod}', type: '${2:void}', namedParams: [",
+      "\tparameter(name: '${3:myParam}', type: '${4:java.lang.String}', doc: '${5:Parameter description}')",
+      "], doc: '${6:Description}')$0"
+    ],
+    "description": "Contribute a method with named parameters inside a contributor block."
+  },
+  "GDSL property": {
+    "prefix": "gdsl-property",
+    "body": [
+      "property(name: '${1:myProperty}', type: '${2:java.lang.Object}', doc: '${3:Description}')$0"
+    ],
+    "description": "Contribute a property inside a contributor block."
+  },
+  "GDSL parameter": {
+    "prefix": "gdsl-parameter",
+    "body": [
+      "parameter(name: '${1:myParam}', type: '${2:java.lang.String}', doc: '${3:Description}')$0"
+    ],
+    "description": "Add a named parameter inside a method's namedParams list."
+  }
+}
