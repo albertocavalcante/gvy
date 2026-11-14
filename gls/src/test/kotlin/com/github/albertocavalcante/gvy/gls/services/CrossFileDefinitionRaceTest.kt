@@ -7,6 +7,10 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.mockk.coAnswers
+import io.mockk.coEvery
+import io.mockk.firstArg
+import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -30,7 +34,6 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -53,16 +56,22 @@ class CrossFileDefinitionRaceTest {
     @BeforeEach
     fun setUp() {
         parseGate = ParseGate()
-        compilationService = GroovyCompilationService(
-            workerSessionDecorator = { delegate ->
-                object : WorkerSession {
-                    override fun parse(request: ParseRequest): ParseResult {
-                        parseGate.hold(request)
-                        return delegate.parse(request)
+        compilationService = spyk(
+            GroovyCompilationService(
+                workerSessionDecorator = { delegate ->
+                    object : WorkerSession {
+                        override fun parse(request: ParseRequest): ParseResult {
+                            parseGate.hold(request)
+                            return delegate.parse(request)
+                        }
                     }
-                }
-            },
+                },
+            ),
         )
+        coEvery { compilationService.ensureCompiled(any<URI>(), any<DocumentSnapshot>()) } coAnswers {
+            parseGate.definitionRequestedFor(firstArg())
+            callOriginal()
+        }
         scope = CoroutineScope(Dispatchers.Default)
         service = GroovyTextDocumentService(
             coroutineScope = scope,
@@ -126,13 +135,10 @@ class CrossFileDefinitionRaceTest {
         )
 
         val resultFuture = service.definition(params)
-        val completedWhileTargetCompiles = try {
-            resultFuture.get(100, TimeUnit.MILLISECONDS)
-        } catch (_: TimeoutException) {
-            null
-        }
+        assertTrue(parseGate.awaitDefinitionRequest(), "definition did not reach the pending target compile")
+        assertTrue(parseGate.isHeld(), "target compilation left the gate before definition reached it")
         parseGate.release()
-        val result = completedWhileTargetCompiles ?: resultFuture.get(10, TimeUnit.SECONDS)
+        val result = resultFuture.get(10, TimeUnit.SECONDS)
 
         // Assert: Should resolve to Calculator.groovy
         // WITHOUT the fix, this test may fail intermittently (race condition)
@@ -270,13 +276,10 @@ class CrossFileDefinitionRaceTest {
         )
 
         val resultFuture = service.definition(params)
-        val completedWhileTargetCompiles = try {
-            resultFuture.get(100, TimeUnit.MILLISECONDS)
-        } catch (_: TimeoutException) {
-            null
-        }
+        assertTrue(parseGate.awaitDefinitionRequest(), "definition did not reach the pending target compile")
+        assertTrue(parseGate.isHeld(), "target compilation left the gate before definition reached it")
         parseGate.release()
-        val result = completedWhileTargetCompiles ?: resultFuture.get(10, TimeUnit.SECONDS)
+        val result = resultFuture.get(10, TimeUnit.SECONDS)
 
         // Should resolve to Calculator.groovy despite reverse opening order
         assertTrue(result.isLeft, "Result should be Left (List<Location>)")
@@ -414,6 +417,7 @@ class CrossFileDefinitionRaceTest {
         private val target = AtomicReference<URI?>()
         private val claimed = AtomicBoolean()
         private val entered = CountDownLatch(1)
+        private val definitionRequested = CountDownLatch(1)
         private val released = CountDownLatch(1)
 
         fun hold(uri: URI) {
@@ -423,13 +427,19 @@ class CrossFileDefinitionRaceTest {
         fun hold(request: ParseRequest) {
             if (request.uri == target.get() && claimed.compareAndSet(false, true)) {
                 entered.countDown()
-                check(released.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                    "the definition test did not release its held compilation"
-                }
+                released.await()
             }
         }
 
+        fun definitionRequestedFor(uri: URI) {
+            if (uri == target.get()) definitionRequested.countDown()
+        }
+
         fun awaitEntered(): Boolean = entered.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        fun awaitDefinitionRequest(): Boolean = definitionRequested.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        fun isHeld(): Boolean = entered.count == 0L && released.count == 1L
 
         fun release() {
             released.countDown()
