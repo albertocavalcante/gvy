@@ -349,7 +349,7 @@ jobs:
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
-          pnpm exec vscode-test --grep "Implementation navigation" --fail-zero --forbid-pending
+          pnpm exec vscode-test --label integrationTests --grep "Implementation navigation" --fail-zero --forbid-pending
 
       - name: Upload failed editor logs
         if: failure()

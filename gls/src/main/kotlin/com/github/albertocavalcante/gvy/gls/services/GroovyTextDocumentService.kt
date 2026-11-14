@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
@@ -574,7 +575,10 @@ class GroovyTextDocumentService(
         params: DocumentSymbolParams,
     ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
         val uri = URI.create(params.textDocument.uri)
-        val storage = ensureSymbolStorage(uri) ?: return@future emptyList()
+        // Startup worker selection can retire a compile while this request is waiting. Resolve through
+        // the shared ownership policy and retain its model instead of rereading a cache that may be cleared.
+        val model = compilationService.ensureCompiled(uri)?.astModel ?: return@future emptyList()
+        val storage = SymbolIndex().buildFromVisitor(model)
 
         storage.getSymbols(uri).filter { it.shouldIncludeInDocumentSymbols() }.mapNotNull { symbol ->
             symbol.toDocumentSymbol()?.let { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
@@ -699,12 +703,6 @@ class GroovyTextDocumentService(
             logger.debug { "Semantic tokens requested for ${params.textDocument.uri}" }
             val uri = URI.create(params.textDocument.uri)
             semanticTokensHandler.getSemanticTokens(uri)
-        }
-
-    private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =
-        compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
-            compilationService.compile(uri, content)
-            compilationService.getSymbolStorage(uri)
         }
 
     /**

@@ -95,6 +95,22 @@ describe("LSPToolService", () => {
     sandbox.restore();
   });
 
+  it("awaits initial server startup before an explicit tool query", async () => {
+    const start = sandbox.stub().callsFake(async () => {
+      getClientStub.returns({});
+      return true;
+    });
+    service = new LSPToolService(
+      mockVscode as unknown as ConstructorParameters<typeof LSPToolService>[0],
+      getClientStub,
+      start,
+    );
+    executeCommandStub.resolves([]);
+    assert.deepStrictEqual(await service.findWorkspaceSymbol("Demo"), []);
+    assert.ok(start.calledOnce);
+    assert.ok(executeCommandStub.calledOnce);
+  });
+
   describe("findWorkspaceSymbol", () => {
     it("should throw error when client is not available", async () => {
       getClientStub.returns(undefined);

@@ -29,6 +29,7 @@ class CompilationResultMapper {
                 content,
                 parseCompleted = true,
                 sourceAnnotations = parseResult.sourceAnnotations,
+                astModel = parseResult.astModel,
             )
         } else {
             logger.debug { "Parse result has no AST, returning failure result" }
@@ -39,6 +40,7 @@ class CompilationResultMapper {
                 content,
                 parseCompleted = true,
                 sourceAnnotations = parseResult.sourceAnnotations,
+                astModel = parseResult.astModel,
             )
         }
     }
@@ -56,6 +58,7 @@ class CompilationResultMapper {
             content,
             parseCompleted = true,
             sourceAnnotations = parseResult.sourceAnnotations,
+            astModel = parseResult.astModel,
         )
     }
 
