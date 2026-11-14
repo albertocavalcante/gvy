@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
 import com.github.albertocavalcante.gvy.diagnostics.api.DiagnosticProvider
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
@@ -27,8 +28,10 @@ class DiagnosticProviderAdapter(
 ) : StreamingDiagnosticProvider {
 
     override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
-        // Call the legacy analyze method and emit all results
-        val diagnostics = delegate.analyze(content, uri)
-        diagnostics.forEach { emit(it) }
+        if (delegate is CodeNarcDiagnosticProvider) {
+            delegate.analyzeStreaming(content, uri) { emit(it) }
+        } else {
+            delegate.analyze(content, uri).forEach { emit(it) }
+        }
     }
 }

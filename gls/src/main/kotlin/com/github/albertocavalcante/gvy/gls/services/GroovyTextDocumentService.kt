@@ -83,8 +83,6 @@ import org.eclipse.lsp4j.InlayHint
 import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
-import org.eclipse.lsp4j.MessageParams
-import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior
 import org.eclipse.lsp4j.PrepareRenameParams
 import org.eclipse.lsp4j.PrepareRenameResult
@@ -199,8 +197,6 @@ class GroovyTextDocumentService(
     }
     private val diagnosticsOrchestrator by diagnosticsOrchestratorDelegate
 
-    private val notifiedIgnoredRulesets = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
     @Synchronized
     fun updateConfiguration(configuration: ServerConfiguration) {
         serverConfiguration = configuration
@@ -226,19 +222,6 @@ class GroovyTextDocumentService(
                 // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
                 rulesetResolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
                     .also { codeNarcRulesetResolver = it },
-                onWorkspaceRulesetIgnored = { ruleset ->
-                    // Service scope: updateConfiguration rebuilds the provider, which must not repeat the message
-                    if (notifiedIgnoredRulesets.add(ruleset)) {
-                        client()?.showMessage(
-                            MessageParams().apply {
-                                type = MessageType.Info
-                                message = "The workspace CodeNarc ruleset '$ruleset' uses features that are not " +
-                                    "supported for security reasons (workspace rulesets are never evaluated " +
-                                    "as Groovy) and is ignored."
-                            },
-                        )
-                    }
-                },
             )
             val codeNarcAdapter = DiagnosticProviderAdapter(
                 delegate = codeNarcProvider,
