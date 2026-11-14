@@ -171,7 +171,7 @@ class GradleFailureAnalyzer(
 
                 // Determine minimum Gradle version for this JDK
                 val minGradleVersion = minGradleVersionForJdk(jdkVersion)
-                val maxJdkVersion = null // Gradle doesn't have a max JDK, only minimum Gradle versions
+                val maxJdkVersion = null // The error does not identify the Gradle version needed to find its limit.
 
                 val suggestions = buildGradleJdkSuggestions(jdkVersion, minGradleVersion)
 
@@ -205,11 +205,18 @@ class GradleFailureAnalyzer(
     private fun buildGradleJdkSuggestions(jdkVersion: Int, minGradleVersion: String?): List<String> {
         val suggestions = mutableListOf<String>()
         if (minGradleVersion != null) {
-            suggestions.add("Update Gradle wrapper: `./gradlew wrapper --gradle-version=$minGradleVersion`")
+            val maxExclusive = compatibilityService.maxGradleVersionExclusiveForJdk(jdkVersion)
+            val range = if (maxExclusive == null) {
+                "Gradle $minGradleVersion or newer"
+            } else {
+                "Gradle $minGradleVersion up to, but excluding, $maxExclusive"
+            }
+            suggestions.add("If Gradle runs on JDK $jdkVersion, use $range")
         } else {
-            suggestions.add("Update Gradle wrapper to a newer version")
+            suggestions.add("Check the Gradle compatibility matrix for this JDK")
         }
-        suggestions.add("Set groovy.gradle.javaHome in VS Code settings to use JDK ${jdkVersion - 1} or earlier")
+        suggestions.add("A class file's Java target does not establish the JVM running Gradle; verify that JVM")
+        suggestions.add("Set groovy.gradle.javaHome in VS Code settings to a compatible Gradle JVM")
         return suggestions
     }
 
@@ -231,7 +238,7 @@ class GradleFailureAnalyzer(
         isJdkMismatch(t) -> {
             val info = extractGradleJdkIncompatibleInfo(t)
             val message = buildString {
-                append("Gradle is incompatible with JDK ${info?.jdkVersion ?: "version"}. ")
+                append("Gradle reported a Java compatibility error. ")
                 info?.suggestions?.firstOrNull()?.let { append(it) }
             }
             ResolutionStatus.Failed(

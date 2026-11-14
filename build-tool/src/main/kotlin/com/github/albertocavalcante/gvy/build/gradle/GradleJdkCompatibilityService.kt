@@ -11,12 +11,6 @@ import java.io.InputStream
 @Serializable
 private data class ClassFileVersions(val majorVersionToJdk: Map<String, Int>)
 
-@Serializable
-private data class GradleJdkVersions(val compatibility: List<GradleJdkVersion>)
-
-@Serializable
-private data class GradleJdkVersion(val jdk: Int, val minGradle: String?)
-
 /**
  * Service for loading and querying Gradle/JDK compatibility data from JSON resources.
  * Externalizes version mappings to allow updates without code changes.
@@ -28,7 +22,7 @@ class GradleJdkCompatibilityService internal constructor(private val resourceLoa
     private val json = Json { ignoreUnknownKeys = true }
 
     private val majorVersionToJdk: Map<Int, Int> by lazy { loadMajorVersionMapping() }
-    private val jdkToMinGradle: Map<Int, String> by lazy { loadJdkCompatibility() }
+    private val runtimeCompatibility = GradleRuntimeCompatibility(resourceLoader)
 
     /**
      * Maps class file major version to JDK version.
@@ -38,16 +32,12 @@ class GradleJdkCompatibilityService internal constructor(private val resourceLoa
 
     /**
      * Gets the minimum Gradle version required for a given JDK version.
-     * Returns null if JDK is compatible with very old Gradle versions.
+     * Returns null if the JDK is absent from the published matrix or the data is unavailable.
      */
-    fun minGradleVersionForJdk(jdkVersion: Int): String? =
-        jdkToMinGradle[jdkVersion] ?: inferMinGradleVersion(jdkVersion)
+    fun minGradleVersionForJdk(jdkVersion: Int): String? = runtimeCompatibility.minimum(jdkVersion)
 
-    private fun inferMinGradleVersion(jdkVersion: Int): String? = when {
-        jdkVersion <= 8 -> null
-        jdkVersion > 25 -> "9.1" // Future JDKs likely need latest Gradle
-        else -> null
-    }
+    /** Returns the exclusive upper bound for a known JDK, if documented. */
+    fun maxGradleVersionExclusiveForJdk(jdkVersion: Int): String? = runtimeCompatibility.maximumExclusive(jdkVersion)
 
     private fun loadMajorVersionMapping(): Map<Int, Int> {
         return try {
@@ -64,25 +54,6 @@ class GradleJdkCompatibilityService internal constructor(private val resourceLoa
             }
         } catch (e: Exception) {
             logger.warn { "Failed to load class-file-versions.json: ${e.message}" }
-            emptyMap()
-        }
-    }
-
-    private fun loadJdkCompatibility(): Map<Int, String> {
-        return try {
-            val stream = resourceLoader("/gradle-jdk-compatibility.json")
-            if (stream == null) {
-                logger.warn { "gradle-jdk-compatibility.json not found, using fallback mappings" }
-                return emptyMap()
-            }
-
-            val content = stream.bufferedReader().use { it.readText() }
-            val compatibility = json.decodeFromString<GradleJdkVersions>(content).compatibility
-            compatibility.mapNotNull { entry ->
-                entry.minGradle?.let { entry.jdk to it }
-            }.toMap()
-        } catch (e: Exception) {
-            logger.warn { "Failed to load gradle-jdk-compatibility.json: ${e.message}" }
             emptyMap()
         }
     }

@@ -38,13 +38,14 @@ class GradleJdkCompatibilityServiceTest {
     }
 
     @Test
-    fun `should return null for JDK 8`() {
-        assertNull(service.minGradleVersionForJdk(8))
+    fun `should return minimum for JDK 8`() {
+        assertEquals("2.0", service.minGradleVersionForJdk(8))
     }
 
     @Test
-    fun `should infer Gradle 9_1 for future JDK versions`() {
-        assertEquals("9.1", service.minGradleVersionForJdk(26))
+    fun `uses documented versions and does not guess future JDKs`() {
+        assertEquals("9.4", service.minGradleVersionForJdk(26))
+        assertNull(service.minGradleVersionForJdk(28))
     }
 
     @Test
@@ -53,7 +54,7 @@ class GradleJdkCompatibilityServiceTest {
 
         assertEquals(21, service.majorVersionToJdk(65))
         assertNull(service.minGradleVersionForJdk(21))
-        assertEquals("9.1", service.minGradleVersionForJdk(26))
+        assertNull(service.minGradleVersionForJdk(26))
     }
 
     @Test
@@ -61,6 +62,15 @@ class GradleJdkCompatibilityServiceTest {
         val service = GradleJdkCompatibilityService { "{ malformed".byteInputStream() }
 
         assertEquals(21, service.majorVersionToJdk(65))
+        assertNull(service.minGradleVersionForJdk(21))
+    }
+
+    @Test
+    fun `invalid Gradle bounds discard the matrix`() {
+        val service = GradleJdkCompatibilityService {
+            """{"compatibility":[{"jdk":21,"minGradle":"invalid"}]}""".byteInputStream()
+        }
+
         assertNull(service.minGradleVersionForJdk(21))
     }
 
