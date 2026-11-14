@@ -446,7 +446,9 @@ class GroovyTextDocumentService(
 
     override fun didSave(params: DidSaveTextDocumentParams) {
         logger.debug { "Document saved: ${params.textDocument.uri}" }
-        // Could trigger additional processing if needed
+        val uri = URI.create(params.textDocument.uri)
+        val snapshot = documentProvider.getSnapshot(uri) ?: return
+        diagnosticsOrchestrator.trigger(uri, snapshot.content)
     }
 
     /**

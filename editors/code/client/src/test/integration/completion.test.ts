@@ -3,7 +3,15 @@
 
 import * as assert from "assert";
 import { createHash } from "crypto";
-import { existsSync, readFileSync, realpathSync } from "fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
+import { tmpdir } from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 
@@ -115,6 +123,148 @@ suite("Manual completion with the current server", () => {
     assert.ok(await editor.insertSnippet(snippet, range));
     assert.ok(editor.document.getText().startsWith(declarations));
   }
+
+  function waitForDiagnostics(
+    uri: vscode.Uri,
+    predicate: (diagnostics: vscode.Diagnostic[]) => boolean,
+  ): Promise<vscode.Diagnostic[]> {
+    return new Promise((resolve, reject) => {
+      const subscription = vscode.languages.onDidChangeDiagnostics((event) => {
+        if (
+          event.uris.some((changed) => changed.toString() === uri.toString())
+        ) {
+          check();
+        }
+      });
+      const timeout = setTimeout(() => {
+        subscription.dispose();
+        reject(new Error("Timed out waiting for current syntax diagnostics"));
+      }, 30000);
+      function check() {
+        const diagnostics = vscode.languages.getDiagnostics(uri);
+        if (predicate(diagnostics)) {
+          clearTimeout(timeout);
+          subscription.dispose();
+          resolve(diagnostics);
+        }
+      }
+      check();
+    });
+  }
+
+  test("unfinished syntax keeps completion and signatures usable and clears on save", async function () {
+    this.timeout(60000);
+    const directory = mkdtempSync(path.join(tmpdir(), "gvy-syntax-"));
+    const uri = vscode.Uri.file(path.join(directory, "Typing.groovy"));
+    let openedDocument: vscode.TextDocument | undefined;
+    try {
+      writeFileSync(uri.fsPath, "import java.time.\n");
+      const document = await vscode.workspace.openTextDocument(uri);
+      openedDocument = document;
+      const editor = await vscode.window.showTextDocument(document);
+      const replace = async (source: string) => {
+        assert.ok(
+          await editor.edit((edit) => {
+            edit.replace(
+              new vscode.Range(
+                document.positionAt(0),
+                document.positionAt(document.getText().length),
+              ),
+              source,
+            );
+          }),
+        );
+      };
+      assertBundledServer(uri);
+      const diagnostics = await waitForDiagnostics(uri, (items) =>
+        items.some((item) => item.code === "incomplete-import"),
+      );
+      const incomplete = diagnostics.find(
+        (item) => item.code === "incomplete-import",
+      );
+      assert.ok(incomplete);
+      assert.strictEqual(incomplete.severity, vscode.DiagnosticSeverity.Error);
+      assert.strictEqual(incomplete.range.start.line, 0);
+      assert.strictEqual(incomplete.range.start.character, 16);
+      assert.strictEqual(incomplete.range.end.character, 17);
+      const imports =
+        await vscode.commands.executeCommand<vscode.CompletionList>(
+          "vscode.executeCompletionItemProvider",
+          uri,
+          new vscode.Position(0, 17),
+        );
+      const instant = imports?.items.find((item) => {
+        const label =
+          typeof item.label === "string" ? item.label : item.label.label;
+        return label === "Instant" || label === "java.time.Instant";
+      });
+      assert.ok(instant, "Import completion must offer java.time.Instant");
+      const importRange =
+        instant.range instanceof vscode.Range
+          ? instant.range
+          : instant.range?.replacing;
+      const importText = instant.insertText;
+      assert.ok(
+        importRange,
+        "Import completion must identify the replaced range",
+      );
+      assert.ok(
+        typeof importText === "string",
+        "Import completion must supply the replacement name",
+      );
+      assert.ok(
+        !instant.additionalTextEdits?.length,
+        "An import completion needs no additional import",
+      );
+      assert.ok(
+        await editor.edit((edit) => edit.replace(importRange, importText)),
+      );
+      assert.strictEqual(document.getText(), "import java.time.Instant\n");
+
+      await replace("import java.time.Instant\nInstant.\n");
+      const members =
+        await vscode.commands.executeCommand<vscode.CompletionList>(
+          "vscode.executeCompletionItemProvider",
+          uri,
+          new vscode.Position(1, 8),
+        );
+      assert.ok(members?.items.some((item) => item.label === "now"));
+
+      await replace("println(\n");
+      const signature =
+        await vscode.commands.executeCommand<vscode.SignatureHelp>(
+          "vscode.executeSignatureHelpProvider",
+          uri,
+          new vscode.Position(0, 8),
+        );
+      assert.ok(signature?.signatures.length);
+      await waitForDiagnostics(uri, (items) =>
+        items.some((item) => item.code === "unclosed-delimiter"),
+      );
+
+      await replace("import java.time.\n");
+      await replace("println('repaired')\n");
+      assert.ok(await document.save());
+      await waitForDiagnostics(
+        uri,
+        (items) =>
+          !items.some(
+            (item) => item.severity === vscode.DiagnosticSeverity.Error,
+          ),
+      );
+    } finally {
+      try {
+        if (openedDocument) {
+          await vscode.window.showTextDocument(openedDocument);
+          await vscode.commands.executeCommand(
+            "workbench.action.revertAndCloseActiveEditor",
+          );
+        }
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
+  });
 
   test("Ctrl+Space offers and inserts a class after an incomplete constructor", async () => {
     await withCompletion("new Gr", async (editor, position, items) => {

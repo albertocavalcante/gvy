@@ -226,6 +226,44 @@ class GroovyTokenIndexTest {
         assertContextSpan(source, index, source, TokenContext.StringLiteral)
     }
 
+    @Test
+    fun `code queries require a covered code token in a complete lexer pass`() {
+        val source = "println('text') // comment"
+        val index = GroovyTokenIndex.build(source)
+
+        assertTrue(index.hasCompleteLexicalCoverage)
+        assertTrue(index.isCodeAt(source.indexOf("println")))
+        assertTrue(index.isCodeAt(source.indexOf('(')))
+        assertFalse(index.isCodeAt(source.indexOf("text")))
+        assertFalse(index.isCodeAt(source.indexOf("comment")))
+        assertFalse(index.isCodeAt(source.indexOf(' ')))
+        assertFalse(index.isCodeAt(-1))
+        assertFalse(index.isCodeAt(source.length))
+        assertFalse(index.isCodeAt(source.length + 1))
+    }
+
+    @Test
+    fun `incomplete lexer pass does not certify earlier code`() {
+        val source = "println('ok'); def broken = \"unterminated"
+        val index = GroovyTokenIndex.build(source)
+
+        assertFalse(index.hasCompleteLexicalCoverage)
+        assertFalse(index.isCodeAt(source.indexOf("println")))
+        assertFalse(index.isCodeAt(source.indexOf('(')))
+    }
+
+    @Test
+    fun `code offsets count supplementary characters as UTF-16`() {
+        val source = "def text = '😀'; call()"
+        val index = GroovyTokenIndex.build(source)
+
+        assertTrue(index.hasCompleteLexicalCoverage)
+        assertFalse(index.isCodeAt(source.indexOf("😀")))
+        assertFalse(index.isCodeAt(source.indexOf("😀") + 1))
+        assertTrue(index.isCodeAt(source.indexOf("call")))
+        assertTrue(index.isCodeAt(source.indexOf('(')))
+    }
+
     private fun assertContextSpan(source: String, index: GroovyTokenIndex, token: String, expected: TokenContext) {
         // Kotlin String indices and lengths supply independent UTF-16 expectations.
         val start = source.indexOf(token)
