@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "gvy-native-secondary-contract"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[workspace]
+
+[dependencies]
+tree-sitter = "=0.26.8"
+tree-sitter-highlight = "=0.26.8"
+groovy = { package = "tree-sitter-groovy", git = "https://github.com/murtaza64/tree-sitter-groovy", rev = "2a6ddd558b6aa39c5b77d8db9fe9baf817486b2c" }
+serde_json = "=1.0.154"

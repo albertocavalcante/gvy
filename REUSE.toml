@@ -507,3 +507,20 @@ path = ["tools/perf/bench/corpus/authored.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# These exact owned files keep fixture, lock and declaration bytes unchanged.
+[[annotations]]
+path = [
+    "tools/perf/bench/native-contract/.gitignore",
+    "tools/perf/bench/native-contract/README.md",
+    "tools/perf/bench/native-contract/feasibility-policy.json",
+    "tools/perf/bench/native-contract/source-lock.json",
+    "tools/perf/bench/native-contract/syntax-contract.json",
+    "tools/perf/bench/native-contract/primary/Cargo.lock",
+    "tools/perf/bench/native-contract/secondary/Cargo.lock",
+    "tools/perf/bench/native-contract/fixtures/valid.groovy",
+    "tools/perf/bench/native-contract/fixtures/malformed.groovy",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
