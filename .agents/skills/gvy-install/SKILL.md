@@ -8,19 +8,20 @@ metadata:
 
 # Install GVY
 
-Use the installed `gvy-install` command when available; otherwise run `node editors/code/tools/gvy-install.js` from a
-gvy checkout containing this helper. Use the maintained installer instead of reconstructing GitHub downloads, ZIP
-extraction, smoke checks, wrappers, or receipts in a shell or REPL. The equivalent direct entrypoint is
-`node editors/code/tools/install-extension.js --from-ci`.
+For CI installations, use the installed `gvy-install` command when available; otherwise run
+`node editors/code/tools/gvy-install.js` from a gvy checkout containing this helper. That command selects CI mode. Use
+the maintained installer instead of reconstructing GitHub downloads, ZIP extraction, smoke checks, wrappers, or receipts
+in a shell or REPL.
 
 ## Choose the requested source
 
 - **Latest main or a remote commit:** use the CI artifact mode below. It resolves the ref once and uses the server and
   VSIX from the same successful Extension CI run at that full SHA.
-- **This checkout, including local changes:** use `--from-source`; follow the
-  [source-build instructions](../../../editors/code/CONTRIBUTING.md#build-and-install-this-checkout). Build in an
-  isolated worktree and respect the host's build admission controls. Carry the requested HEAD and local changes into
-  that worktree without modifying the shared checkout; a clean main build does not satisfy a dirty-checkout request.
+- **This checkout, including local changes:** use the separate direct entrypoint
+  `node editors/code/tools/install-extension.js --from-source --installer code --json`. Do not pass `--from-source` to
+  the CI-only `gvy-install` command. Read [local source preparation](references/local-source.md) when preserving dirty
+  or shared source, then follow the
+  [source-build instructions](../../../editors/code/CONTRIBUTING.md#build-and-install-this-checkout).
 - **Newest green commit:** use the separate
   [green-main workflow](../../../editors/code/CONTRIBUTING.md#run-the-latest-green-main). Its selection policy differs
   from exact HEAD.
@@ -37,10 +38,11 @@ command was updated.
 
 Capture stderr in a private local log. Inspect the JSON result first; read only the failed stage's log when needed. The
 receipt records the selected SHA, CI run and artifacts, verified hashes, installation stage, and retained files. For
-pending or interrupted work, use its recorded `resumeArgs` with the direct Node entrypoint, keeping any custom
-`--state-root` and local configuration. Resume only this helper's `ci-v1` receipts; older manual receipts document
-history. This keeps the original SHA. Do not restart with `--ref main` merely because another commit landed. Never
-substitute an older green build or a release for exact HEAD.
+pending or interrupted work, call `gvy-install` with its recorded `resumeArgs` array as argv. The direct equivalent is
+`node editors/code/tools/install-extension.js` followed by that array. Preserve custom `--state-root` and local
+configuration. Resume only this helper's `ci-v1` receipts; older manual receipts document history. This keeps the
+original SHA. Do not restart with `--ref main` merely because another commit landed. Never substitute an older green
+build or a release for exact HEAD.
 
 A failed or canceled producer is a failed result, not a pending installation. If GitHub reports a new run attempt,
 select the receipt's same full SHA in a fresh invocation to verify the new producer; an existing attempt receipt is not
