@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 // "/Applications/Visual Studio Code.app/Contents/MacOS/Code") to skip the
 // download of a test copy into .vscode-test/.
 const installed = process.env.VSCODE_TEST_EXECUTABLE;
+const userDataDir = process.env.GVY_TEST_USER_DATA_DIR;
 const runtime = installed
   ? { useInstallation: { fromPath: installed } }
   : { version: "1.144.0" };
@@ -18,6 +19,8 @@ export default defineConfig([
     files: "client/out/test/integration/**/*.test.js",
     // Packaged tests load the unpacked VSIX while fixtures stay in this workspace.
     extensionDevelopmentPath: process.env.GVY_TEST_EXTENSION_ROOT,
+    // macOS limits the IPC socket path; long worktree paths need a short test profile.
+    ...(userDataDir ? { launchArgs: [`--user-data-dir=${userDataDir}`] } : {}),
     // Without an installed binary, download the engines.vscode floor so the
     // tests exercise the oldest VS Code the manifest accepts. Bump together
     // with engines.vscode. (@vscode/test-electron >=3.1 resolves the macOS

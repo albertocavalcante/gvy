@@ -267,6 +267,17 @@ pnpm test
 pnpm run test:integration
 ```
 
+On macOS, long checkout paths can exceed the editor's IPC socket path limit before tests start. Choose a short,
+test-owned profile directory with `GVY_TEST_USER_DATA_DIR`:
+
+```bash
+GVY_TEST_USER_DATA_DIR="$HOME/.local/state/gvy/vscode-test" pnpm run test:integration
+```
+
+Use a separate directory for test settings. The
+[shared Jenkins authoring fixtures](../../gls/src/test/resources/fixtures/jenkins-declarative/README.md) describe the
+protocol, provider, widget-acceptance and private screenshot evidence paths.
+
 **Debugging Tests** You can debug tests directly in VS Code:
 
 1. Open the Debug view (`Cmd+Shift+D` / `Ctrl+Shift+D`).
