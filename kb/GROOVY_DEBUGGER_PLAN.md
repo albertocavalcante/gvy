@@ -10,6 +10,9 @@ name, line, stack frame and local value, resumes, checks that the retained JDI f
 target continues. It releases and cleans up the target even if the assertion fails. The fixture uses the version catalog
 pin; this is one compiler version and one script shape, not a support matrix.
 
+The Bazel target `//tests:groovy_attach_probe_test` is intended to run the same fixture through the JUnit console. Its
+execution is a separate qualification gate; adding the target alone is not proof that Bazel discovered or ran the tests.
+
 The test matches a source **filename** and line; that is not content, build or class-loader identity. Its stale-frame
 check establishes JDI behavior, not an adapter's session-local reference policy. It uses JDI directly as a control and
 is not a DAP server or evidence of editor interoperability.
