@@ -292,6 +292,8 @@ def check(root: Path) -> list[str]:
     env = os.environ.copy()
     env["REUSE_ENCODING_MODULE"] = "charset_normalizer"
     try:
+        # TODO(#1928): Bound subprocess capture and parsed report size before rendering.
+        #   See: https://github.com/albertocavalcante/gvy/issues/1928
         result = subprocess.run(
             [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(root), "lint", "--json"],
             capture_output=True,
@@ -303,8 +305,12 @@ def check(root: Path) -> list[str]:
         if result.returncode not in (0, 1):
             raise ValueError("REUSE did not return a lint report")
         compliant, paths = parse_report(json.loads(result.stdout))
+        if (result.returncode == 0) != compliant:
+            errors.append("REUSE check failed: exit/report mismatch")
         if not compliant:
             errors.append("REUSE lint failed; run reuse --root . lint for details")
+        elif result.returncode == 0 and result.stderr != "":
+            errors.append("gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)")
         # REUSE validates the SPDX expressions; recognize only the exact MIT
         # identifier, including compound expressions, for the approved inventory.
         uses_mit = any(
