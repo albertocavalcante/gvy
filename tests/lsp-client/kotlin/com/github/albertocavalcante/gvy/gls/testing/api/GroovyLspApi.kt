@@ -4,7 +4,15 @@
 package com.github.albertocavalcante.gvy.gls.testing.api
 
 import com.github.albertocavalcante.gvy.gls.diagnostics.AwaitDiagnosticsParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceAttachParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceContentResult
+import com.github.albertocavalcante.gvy.gls.sources.SourceDefinitionParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceDetailsResult
+import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceResolveParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceResolveResult
 import com.google.gson.JsonElement
+import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageServer
 import java.util.concurrent.CompletableFuture
@@ -18,8 +26,9 @@ import java.util.concurrent.CompletableFuture
  * [RemoteEndpoint.request] to return null for custom methods.
  *
  * This interface mirrors the @JsonRequest methods defined on [GroovyLanguageServer]
- * so that the E2E test harness can observe their responses. Existing test-discovery
- * routes retain typed DTOs; other extensions use raw JSON at the SDK boundary.
+ * so that the E2E test harness can observe their responses. Test-discovery and
+ * source-browser routes retain typed DTOs; other extensions use raw JSON at the
+ * SDK boundary.
  *
  * ## Why is this needed?
  *
@@ -85,6 +94,30 @@ interface GroovyLanguageServerProtocol : LanguageServer {
     /** Returns workspace dependency information. */
     @JsonRequest("groovy/workspace/dependencies")
     fun getDependencies(params: JsonElement?): CompletableFuture<JsonElement>
+
+    /** Attaches a selected local source archive to the dependency at the document position. */
+    @JsonRequest("groovy/sourceAttach")
+    fun sourceAttach(params: SourceAttachParams): CompletableFuture<SourceResolveResult>
+
+    /** Reads a managed dependency-source document. */
+    @JsonRequest("groovy/sourceContent")
+    fun sourceContent(params: SourceDocumentParams): CompletableFuture<SourceContentResult?>
+
+    /** Resolves a definition within a managed dependency-source document. */
+    @JsonRequest("groovy/sourceDefinition")
+    fun sourceDefinition(params: SourceDefinitionParams): CompletableFuture<List<LocationLink>>
+
+    /** Returns metadata for a managed dependency-source document. */
+    @JsonRequest("groovy/sourceDetails")
+    fun sourceDetails(params: SourceDocumentParams): CompletableFuture<SourceDetailsResult?>
+
+    /** Checks whether a URI belongs to the managed source namespace. */
+    @JsonRequest("groovy/sourceIsManaged")
+    fun sourceIsManaged(params: SourceDocumentParams): CompletableFuture<Boolean>
+
+    /** Resolves or explicitly downloads source for the selected dependency. */
+    @JsonRequest("groovy/sourceResolve")
+    fun sourceResolve(params: SourceResolveParams): CompletableFuture<SourceResolveResult>
 }
 
 // ============================================================================
