@@ -17,6 +17,7 @@ Start with the guide for your task. For a short introduction and installation st
 - [Editor guide](../editors/code/README.md): install the extension, configure Java and language features, and
   troubleshoot.
 - [Standalone language server](lsp/usage.md): connect another editor over standard input/output or a socket.
+- [Run or compile a file](file-execution.md): standalone scripts, main classes, Gradle contexts and task profiles.
 - [LSP feature support](lsp/feature-support.md): supported protocol methods and current limits.
 - [Quality Bar and roadmap](quality-bar.md): project goals, quality targets, and priorities.
 

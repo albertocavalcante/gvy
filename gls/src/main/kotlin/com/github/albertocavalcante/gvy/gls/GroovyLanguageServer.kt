@@ -15,6 +15,9 @@ import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRequestHandler
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
+import com.github.albertocavalcante.gvy.gls.execution.FileExecutionRequestHandler
+import com.github.albertocavalcante.gvy.gls.execution.FileExecutionResponse
+import com.github.albertocavalcante.gvy.gls.execution.PrepareFileExecutionParams
 import com.github.albertocavalcante.gvy.gls.project.DefaultProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.JenkinsProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
@@ -65,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.future.future
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
@@ -81,6 +85,7 @@ import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
+import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ForkJoinPool
@@ -189,6 +194,12 @@ class GroovyLanguageServer(
         strategyRegistry,
         classpathRestamper = classpathRestamper,
         reportEngineSetting = coreEngineDeprecation::report,
+    )
+    private val fileExecutionRequestHandler = FileExecutionRequestHandler(
+        documents = documentProvider,
+        workspaceFolders = { executionWorkspaceFolders() },
+        sourceRoots = { compilationService.workspaceManager.getSourceRoots() },
+        model = { root, javaHome -> startupManager.buildToolManager?.executionContexts(root, javaHome) },
     )
     private val testRequestDelegate =
         TestRequestDelegate(
@@ -407,6 +418,27 @@ class GroovyLanguageServer(
         !implementationRequestsReady ->
             ResponseError(ResponseErrorCode.ServerNotInitialized, "Server is not initialized", null)
         else -> null
+    }
+
+    @JsonRequest("groovy/prepareFileExecution")
+    fun prepareFileExecution(params: PrepareFileExecutionParams): CompletableFuture<FileExecutionResponse> {
+        val error = customRequestLifecycleError()
+        if (error != null) return CompletableFuture.failedFuture(ResponseErrorException(error))
+        return coroutineScope.future { fileExecutionRequestHandler.prepare(params) }
+    }
+
+    private fun executionWorkspaceFolders(): List<Path> {
+        val params = savedInitParams ?: return emptyList()
+        val folders = params.workspaceFolders
+        if (folders.isNullOrEmpty()) return listOfNotNull(startupManager.getWorkspaceRoot(params))
+        return folders.mapNotNull { folder ->
+            try {
+                val uri = URI.create(folder.uri)
+                if (uri.scheme == "file") Path.of(uri) else null
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
     }
 
     @JsonRequest("groovy/discoverTests")

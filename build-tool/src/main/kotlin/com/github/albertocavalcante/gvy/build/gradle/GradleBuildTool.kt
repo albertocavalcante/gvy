@@ -42,6 +42,15 @@ class GradleBuildTool(
         daemonSettings = daemonSettings,
     )
 
+    private val executionProducer = GradleScopedDependencyProducer(
+        connectionFactory = connectionFactory,
+        javaHome = javaHome,
+        daemonSettings = daemonSettings,
+    )
+
+    suspend fun executionContexts(workspaceRoot: Path, javaHome: Path? = null): List<GradleExecutionContext>? =
+        executionProducer.resolveExecutionContexts(workspaceRoot, javaHome = javaHome)
+
     override val name: String = "Gradle"
 
     /**
