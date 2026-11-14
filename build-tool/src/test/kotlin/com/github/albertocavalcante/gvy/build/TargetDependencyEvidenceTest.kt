@@ -20,6 +20,19 @@ class TargetDependencyEvidenceTest {
     private val spock24 = artifact("spock-2.4.jar", "2.4-groovy-4.0")
 
     @Test
+    fun `legacy JVM constructors remain available`() {
+        TargetDependencySnapshot::class.java.getConstructor(
+            DependencyTarget::class.java,
+            DependencyRole::class.java,
+            DependencyProvenance::class.java,
+            TargetDependencyState::class.java,
+            List::class.java,
+            List::class.java,
+        )
+        TargetDependencyEvidence.Scoped::class.java.getConstructor(List::class.java)
+    }
+
+    @Test
     fun `scoped records preserve project configuration role versions and artifact order`() {
         val compile = snapshot(
             target = DependencyTarget(URI("gradle:a:test"), projectA, "test", "testCompileClasspath"),
