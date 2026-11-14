@@ -51,6 +51,19 @@ class GroovySourceDeclarationInspectorTest {
     }
 
     @Test
+    fun `declines a method when a same-name static field or property makes selection ambiguous`() {
+        val source = """
+            package sample
+            class Example {
+                static int select = 1
+                static int select() { 2 }
+            }
+        """.trimIndent()
+
+        assertNull(inspector.inspectMember(source, "sample.Example", "select", URI.create("file:///Example.groovy")))
+    }
+
+    @Test
     fun `declines same-name methods outside the selected owner`() {
         val source = """
             package sample
