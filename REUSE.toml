@@ -7,6 +7,8 @@ version = 1
 # Exact paths make new files require an explicit licensing decision.
 [[annotations]]
 path = [
+  "build-tool/src/test/resources/network-policy/conformance.json",
+  "kb/network-policy-contract.md",
   ".agent/rules/code-quality.md",
   ".agent/rules/git-workflow.md",
   ".agent/workflows/bughunt.md",
