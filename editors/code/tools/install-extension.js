@@ -415,7 +415,7 @@ if (require.main === module) {
 /** @param {unknown} caught */
 function reportError(caught) {
   const error =
-    /** @type {Error & {stage?: string, installed?: boolean, receipt?: string}} */ (
+    /** @type {Error & {stage?: string, installed?: boolean, receipt?: string, receiptError?: string, cleanupError?: string}} */ (
       caught
     );
   if (process.argv.includes("--json"))
@@ -426,6 +426,8 @@ function reportError(caught) {
         stage: error.stage,
         installed: error.installed,
         receipt: error.receipt,
+        receiptError: error.receiptError,
+        cleanupError: error.cleanupError,
       }),
     );
   console.error(`Failed to install extension: ${error.message}`);

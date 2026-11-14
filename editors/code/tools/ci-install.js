@@ -7,6 +7,7 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
+const { isDeepStrictEqual } = require("node:util");
 const { spawn, spawnSync } = require("node:child_process");
 const {
   provenanceFromProperties,
@@ -16,7 +17,7 @@ const { smokeServerCommand } = require("./smoke-server.js");
 
 /** @typedef {{id: number, run_attempt: number, head_sha: string, head_branch: string, event: string, path: string, status: string, conclusion: string|null}} WorkflowRun */
 /** @typedef {{id: number, name: string, expired: boolean, digest: string}} Artifact */
-/** @typedef {{schemaVersion: number, repo: string, ref: string, sha: string, success: boolean, stage: string, runId?: number, runAttempt?: number, runStatus?: string, runConclusion?: string|null, hashes?: {jar: string, client: string, vsix: string}, jar?: string, vsix?: string, artifacts?: {id: number, name: string, digest: string}[], noop?: boolean, editorMayHaveChanged?: boolean, error?: string, createdAt?: string, verifiedAt?: string, runtimeVersion?: string, java?: string, command?: string, wrapper?: string, installer?: string, binDir?: string, resumeArgs?: string[]}} Receipt */
+/** @typedef {{schemaVersion: number, repo: string, ref: string, sha: string, success: boolean, stage: string, runId?: number, runAttempt?: number, runStatus?: string, runConclusion?: string|null, hashes?: {jar: string, client: string, vsix: string}, jar?: string, vsix?: string, artifacts?: {id: number, name: string, digest: string}[], noop?: boolean, editorMayHaveChanged?: boolean, error?: string, installed?: boolean, createdAt?: string, verifiedAt?: string, runtimeVersion?: string, java?: string, command?: string, wrapper?: string, installer?: string, binDir?: string, resumeArgs?: string[]}} Receipt */
 const LIMIT = 512 * 1024 * 1024;
 /** @param {Buffer} b */
 function hash(b) {
@@ -78,14 +79,26 @@ function publishFile(
 /** @param {string} file @param {object} data */
 function writeJson(file, data) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  /** @type {Error | null} */ let failure = null;
   try {
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", {
       mode: 0o600,
       flag: "wx",
     });
     fs.renameSync(tmp, file);
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error(String(error));
+    throw failure;
   } finally {
-    fs.rmSync(tmp, { force: true });
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch (error) {
+      const message = `Failed to clean ${tmp}: ${error instanceof Error ? error.message : String(error)}`;
+      if (failure) Object.assign(failure, { cleanupError: message });
+      // A cleanup failure after success must not disappear.
+      // eslint-disable-next-line no-unsafe-finally
+      else throw new Error(message, { cause: error });
+    }
   }
 }
 /** @param {string[]} args @param {number} [timeoutMs] */
@@ -338,8 +351,8 @@ function checkLink(bin, target) {
     throw e;
   }
 }
-/** @param {string} home @param {string} jarHash @param {string} clientHash */
-function installedMatches(home, jarHash, clientHash) {
+/** @param {string} home @param {string} jarHash @param {string} clientHash @param {object} expectedManifest */
+function installedMatches(home, jarHash, clientHash, expectedManifest) {
   try {
     /** @type {{identifier?: {id?: string}, location?: {scheme?: string, path: string}}[]} */
     const records = JSON.parse(
@@ -354,7 +367,14 @@ function installedMatches(home, jarHash, clientHash) {
     if (matches.length !== 1 || matches[0].location?.scheme !== "file")
       return false;
     const root = matches[0].location.path;
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(root, "package.json"), "utf8"),
+    );
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest))
+      return false;
+    delete manifest.__metadata;
     return (
+      isDeepStrictEqual(manifest, expectedManifest) &&
       hash(fs.readFileSync(path.join(root, "server/gls.jar"))) === jarHash &&
       hash(fs.readFileSync(path.join(root, "client/out/extension.js"))) ===
         clientHash
@@ -374,22 +394,46 @@ function checkStable(stable, state) {
     const prior = fs.lstatSync(stable);
     const target = path.resolve(path.dirname(stable), fs.readlinkSync(stable));
     const relative = path.relative(state, target);
-    if (!prior.isSymbolicLink() || !/^[a-f0-9]{40}\/gvy$/.test(relative))
+    if (
+      !prior.isSymbolicLink() ||
+      !/^[a-f0-9]{40}\/gvy(?:-[a-f0-9]{64})?$/.test(relative)
+    )
       throw new Error(`Refusing to replace unrelated ${stable}`);
   } catch (e) {
     if (/** @type {NodeJS.ErrnoException} */ (e).code !== "ENOENT") throw e;
   }
 }
-/** @param {Receipt} receipt @param {string} runtime @param {string} state @param {Options} options @param {string} java */
-function cachedInstallMatches(receipt, runtime, state, options, java) {
+/** @param {Receipt} receipt @param {string} runtime @param {string} state @param {Options} options @param {string} java @param {string} editorVersion */
+function cachedInstallMatches(
+  receipt,
+  runtime,
+  state,
+  options,
+  java,
+  editorVersion,
+) {
   try {
     if (!receipt.hashes) return false;
     const jar = path.join(runtime, "gls.jar"),
       vsix = path.join(runtime, "gvy.vsix"),
-      wrapper = path.join(runtime, "gvy");
+      wrapper = receipt.wrapper || path.join(runtime, "gvy");
+    if (
+      path.dirname(wrapper) !== runtime ||
+      !/^gvy(?:-[a-f0-9]{64})?$/.test(path.basename(wrapper))
+    )
+      return false;
     const jarBytes = readRegularFile(jar, LIMIT),
       vsixBytes = readRegularFile(vsix, LIMIT),
       wrapperBytes = readRegularFile(wrapper, 65536, true);
+    const manifest = JSON.parse(
+      zipEntry(
+        vsixBytes,
+        (n) => n === "extension/package.json",
+        1024 * 1024,
+      ).toString("utf8"),
+    );
+    if (!compatible(manifest.engines?.vscode, editorVersion))
+      throw new Error(`Editor does not satisfy ${manifest.engines?.vscode}`);
     if (
       hash(jarBytes) !== receipt.hashes.jar ||
       hash(vsixBytes) !== receipt.hashes.vsix ||
@@ -404,7 +448,12 @@ function cachedInstallMatches(receipt, runtime, state, options, java) {
         ),
       ) !== receipt.hashes.client ||
       wrapperBytes.toString("utf8") !== wrapperText(java, jar) ||
-      !installedMatches(os.homedir(), receipt.hashes.jar, receipt.hashes.client)
+      !installedMatches(
+        os.homedir(),
+        receipt.hashes.jar,
+        receipt.hashes.client,
+        manifest,
+      )
     )
       return false;
     const stable = path.join(state, "gvy"),
@@ -462,6 +511,8 @@ async function installFromCi(options) {
     stage = "preflight";
   /** @type {Receipt | null} */ let receipt = null;
   /** @type {Receipt | null} */ let priorReceipt = null;
+  /** @type {(Error & {stage?: string, installed?: boolean, receipt?: string, receiptError?: string, cleanupError?: string}) | null} */
+  let failure = null;
   try {
     fs.writeFileSync(
       path.join(lock, "owner.json"),
@@ -568,6 +619,8 @@ async function installFromCi(options) {
       ...(options.packageOnly ? ["--package-only"] : []),
     ];
     receipt.success = false;
+    delete receipt.error;
+    delete receipt.installed;
     receipt.stage = stage = "select-run";
     writeJson(receiptPath, receipt);
     const deadline = Date.now() + wait * 1000;
@@ -625,16 +678,26 @@ async function installFromCi(options) {
       priorReceipt.runId === selected.id &&
       priorReceipt.runAttempt === selected.run_attempt &&
       !options.packageOnly &&
-      cachedInstallMatches(priorReceipt, runtime, state, options, java)
+      cachedInstallMatches(
+        priorReceipt,
+        runtime,
+        state,
+        options,
+        java,
+        editorVersion,
+      )
     ) {
       receipt = {
         ...priorReceipt,
+        error: undefined,
+        installed: undefined,
         ref,
         success: true,
         noop: true,
         verifiedAt: new Date().toISOString(),
         resumeArgs: receipt.resumeArgs,
       };
+      stage = "installed";
       writeJson(receiptPath, receipt);
       return { ...receipt, receipt: receiptPath };
     }
@@ -647,6 +710,7 @@ async function installFromCi(options) {
     );
     fs.mkdirSync(runtime, { recursive: true, mode: 0o700 });
     const temp = fs.mkdtempSync(path.join(state, ".download-"));
+    /** @type {Error | null} */ let tempFailure = null;
     try {
       /** @type {Buffer[]} */
       const contents = [];
@@ -771,10 +835,13 @@ async function installFromCi(options) {
       }));
       if (!options.packageOnly) {
         fs.mkdirSync(binDir, { recursive: true });
-        const wrapper = path.join(runtime, "gvy");
+        const wrapperContents = wrapperText(java, jarPath);
+        const wrapper = path.join(
+          runtime,
+          `gvy-${hash(Buffer.from(wrapperContents))}`,
+        );
         receipt.wrapper = wrapper;
         receipt.command = link;
-        const wrapperContents = wrapperText(java, jarPath);
         const wrapperCandidate = path.join(temp, "gvy");
         const wrapperBytes = Buffer.from(wrapperContents);
         fs.writeFileSync(wrapperCandidate, wrapperBytes, {
@@ -782,17 +849,19 @@ async function installFromCi(options) {
           flag: "wx",
         });
         publishFile(wrapperCandidate, wrapper, wrapperBytes, 65536, true);
+        const extensionMatches = installedMatches(
+          os.homedir(),
+          receipt.hashes.jar,
+          receipt.hashes.client,
+          manifest,
+        );
         const noop =
-          installedMatches(
-            os.homedir(),
-            receipt.hashes.jar,
-            receipt.hashes.client,
-          ) &&
+          extensionMatches &&
           fs.existsSync(stable) &&
           fs.realpathSync(stable) === fs.realpathSync(wrapper) &&
           checkLink(link, stable);
         receipt.noop = noop;
-        if (!noop) {
+        if (!extensionMatches) {
           stage = "editor-install";
           receipt.stage = stage;
           receipt.editorMayHaveChanged = true;
@@ -803,41 +872,138 @@ async function installFromCi(options) {
               os.homedir(),
               receipt.hashes.jar,
               receipt.hashes.client,
+              manifest,
             )
           )
             throw new Error("Installed extension hashes do not match");
+        }
+        if (!noop) {
+          stage = "launcher-activation";
           const tmpLink = path.join(state, `.gvy-${process.pid}`);
+          /** @type {Error | null} */ let linkFailure = null;
           try {
             fs.symlinkSync(wrapper, tmpLink);
             fs.renameSync(tmpLink, stable);
+          } catch (error) {
+            linkFailure =
+              error instanceof Error ? error : new Error(String(error));
+            throw linkFailure;
           } finally {
-            fs.rmSync(tmpLink, { force: true });
+            try {
+              fs.rmSync(tmpLink, { force: true });
+            } catch (error) {
+              const message = `Failed to clean ${tmpLink}: ${error instanceof Error ? error.message : String(error)}`;
+              if (linkFailure)
+                Object.assign(linkFailure, { cleanupError: message });
+              // Cleanup failure must be reported even after successful activation.
+              // eslint-disable-next-line no-unsafe-finally
+              else throw new Error(message, { cause: error });
+            }
           }
           if (!checkLink(link, stable)) fs.symlinkSync(stable, link);
         }
         verifyCommandPath(link);
       }
-      receipt.stage = options.packageOnly ? "packaged" : "installed";
+      receipt.stage = stage = options.packageOnly ? "packaged" : "installed";
       receipt.success = true;
       receipt.verifiedAt = new Date().toISOString();
       writeJson(receiptPath, receipt);
       return { ...receipt, receipt: receiptPath };
+    } catch (error) {
+      tempFailure = error instanceof Error ? error : new Error(String(error));
+      throw tempFailure;
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      try {
+        fs.rmSync(temp, { recursive: true, force: true });
+      } catch (error) {
+        const message = `Failed to clean ${temp}: ${error instanceof Error ? error.message : String(error)}`;
+        if (tempFailure) {
+          const previous = /** @type {Error & {cleanupError?: string}} */ (
+            tempFailure
+          ).cleanupError;
+          Object.assign(tempFailure, {
+            cleanupError: [previous, message].filter(Boolean).join("; "),
+          });
+        }
+        // A cleanup failure after success must not disappear.
+        // eslint-disable-next-line no-unsafe-finally
+        else throw new Error(message, { cause: error });
+      }
     }
   } catch (e) {
-    if (receipt && receiptPath) {
-      receipt.success = false;
-      receipt.stage = stage;
-      receipt.error = e instanceof Error ? e.message : String(e);
-      writeJson(receiptPath, receipt);
-    }
-    throw Object.assign(e instanceof Error ? e : new Error(String(e)), {
+    failure = Object.assign(e instanceof Error ? e : new Error(String(e)), {
       stage,
+      installed: stage === "installed",
       receipt: receiptPath || undefined,
     });
+    if (receipt && receiptPath) {
+      receipt.success = false;
+      receipt.installed = stage === "installed";
+      receipt.stage = stage;
+      receipt.error = failure.message;
+      try {
+        writeJson(receiptPath, receipt);
+      } catch (receiptError) {
+        failure.receiptError =
+          receiptError instanceof Error
+            ? receiptError.message
+            : String(receiptError);
+        const receiptCleanup = /** @type {{cleanupError?: string}} */ (
+          receiptError
+        )?.cleanupError;
+        if (receiptCleanup)
+          failure.cleanupError = [failure.cleanupError, receiptCleanup]
+            .filter(Boolean)
+            .join("; ");
+      }
+    }
+    throw failure;
   } finally {
-    fs.rmSync(lock, { recursive: true, force: true });
+    try {
+      fs.rmSync(lock, { recursive: true, force: true });
+    } catch (cleanupError) {
+      const message =
+        cleanupError instanceof Error
+          ? cleanupError.message
+          : String(cleanupError);
+      if (failure)
+        failure.cleanupError = [
+          failure.cleanupError,
+          `Failed to clean ${lock}: ${message}`,
+        ]
+          .filter(Boolean)
+          .join("; ");
+      else {
+        const error = Object.assign(
+          new Error(`CI install lock cleanup failed: ${message}`, {
+            cause: cleanupError,
+          }),
+          {
+            stage,
+            installed: stage === "installed",
+            receipt: receiptPath || undefined,
+            cleanupError: `Failed to clean ${lock}: ${message}`,
+            receiptError: /** @type {string | undefined} */ (undefined),
+          },
+        );
+        if (receipt && receiptPath) {
+          receipt.success = false;
+          receipt.installed = stage === "installed";
+          receipt.error = error.message;
+          try {
+            writeJson(receiptPath, receipt);
+          } catch (writeError) {
+            error.receiptError =
+              writeError instanceof Error
+                ? writeError.message
+                : String(writeError);
+          }
+        }
+        // A cleanup failure after success must not disappear.
+        // eslint-disable-next-line no-unsafe-finally
+        throw error;
+      }
+    }
   }
 }
 module.exports = {
