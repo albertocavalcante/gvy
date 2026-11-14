@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.Formatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
@@ -24,6 +25,7 @@ class CodeActionProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     formatter: Formatter,
+    private val supportsAnalysisRemedies: () -> Boolean = { false },
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -97,27 +99,15 @@ class CodeActionProvider(
         }
 
         val content = snapshot.content
-        val compiled = compilationService.getCompiledSnapshot(uri)
         val actions = buildList {
-            if (compiled != null && compiled.sourceText == content) {
+            addAll(spockActions(uri, params, snapshot))
+
+            if (supportsAnalysisRemedies()) {
                 addAll(
-                    SpockTableAction.createActions(
-                        SpockTableRequest(
-                            params.textDocument.uri,
-                            content,
-                            compiled.parseResult.ast,
-                            params.range,
-                            params.context.only,
-                            snapshot.version,
-                            isPartial = !compiled.parseResult.isSuccessful,
-                            verdicts = verdictMemory.access(
-                                params.textDocument.uri,
-                                compilationService.workspaceManager.fingerprintFor(uri),
-                                compiled.parseResult.outcome,
-                                ::currentSourceText,
-                                ::packageFileSet,
-                            ),
-                        ),
+                    AnalysisRemedyAction.create(
+                        params.textDocument.uri,
+                        params.context.diagnostics,
+                        params.context.only,
                     ),
                 )
             }
@@ -144,8 +134,32 @@ class CodeActionProvider(
             )
         }
 
-        logger.debug { "Returning ${actions.size} code actions for ${params.textDocument.uri}" }
-        return actions
+        val filtered = actions.filter { it.kind != null && allowsKind(it.kind, params.context.only) }
+        logger.debug { "Returning ${filtered.size} code actions for ${params.textDocument.uri}" }
+        return filtered
+    }
+
+    private fun spockActions(uri: URI, params: CodeActionParams, snapshot: DocumentSnapshot): List<CodeAction> {
+        val compiled = compilationService.getCompiledSnapshot(uri) ?: return emptyList()
+        if (compiled.sourceText != snapshot.content) return emptyList()
+        return SpockTableAction.createActions(
+            SpockTableRequest(
+                params.textDocument.uri,
+                snapshot.content,
+                compiled.parseResult.ast,
+                params.range,
+                params.context.only,
+                snapshot.version,
+                isPartial = !compiled.parseResult.isSuccessful,
+                verdicts = verdictMemory.access(
+                    params.textDocument.uri,
+                    compilationService.workspaceManager.fingerprintFor(uri),
+                    compiled.parseResult.outcome,
+                    ::currentSourceText,
+                    ::packageFileSet,
+                ),
+            ),
+        )
     }
 }
 

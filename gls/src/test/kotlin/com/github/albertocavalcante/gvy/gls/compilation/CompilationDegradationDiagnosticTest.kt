@@ -52,10 +52,45 @@ class CompilationDegradationDiagnosticTest {
         assertEquals(0, diagnostic.range.start.line)
         assertEquals(0, diagnostic.range.start.character)
         assertEquals(
-            "Types are not resolved in this file: its last compile fell back to CONVERSION because " +
+            "Type analysis is limited: compilation could not finish. " +
                 "Base.groovy: unable to resolve class com.missing.Base",
             diagnostic.message,
         )
+    }
+
+    @Test
+    fun `missing dependencies get actionable summaries without compiler phase boilerplate`() {
+        val outcome = ParseOutcome(
+            requestedPhase = Phases.CANONICALIZATION,
+            achievedPhase = Phases.CONVERSION,
+            fallback = Fallback.COMPILATION_FAILED,
+            fallbackReason = "GroovyRuntimeException: Unable to load class: org.slf4j.Logger",
+        )
+        assertEquals(
+            "Type analysis is limited: compilation could not load org.slf4j.Logger. Check project dependencies.",
+            outcome.userMessage(),
+        )
+        assertTrue(outcome.describe("A.groovy").contains("CONVERSION"))
+        assertEquals(
+            outcome.userMessage(),
+            outcome.copy(fallbackReason = "NoClassDefFoundError: org/slf4j/Logger").userMessage(),
+        )
+    }
+
+    @Test
+    fun `compiler boilerplate is replaced and exclusion context stays bounded`() {
+        val outcome = ParseOutcome(
+            requestedPhase = Phases.CANONICALIZATION,
+            achievedPhase = Phases.CONVERSION,
+            fallback = Fallback.COMPILATION_FAILED,
+            fallbackReason = "Compilation failed: startup failed:",
+            excludedSources = (0..9).map { ExcludedSource("/w/Broken$it.groovy", "broken") },
+        )
+        val diagnostic = assertNotNull(outcome.toDegradationDiagnostic())
+        assertTrue(!diagnostic.message.contains("startup failed"))
+        assertTrue(!diagnostic.message.contains("CONVERSION"))
+        assertTrue(diagnostic.message.contains("and 7 more"))
+        assertTrue(!diagnostic.message.contains("Broken9.groovy"))
     }
 
     @Test

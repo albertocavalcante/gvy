@@ -147,8 +147,6 @@ class DiagnosticsService(
         } catch (failure: Exception) {
             currentCoroutineContext().ensureActive()
             logger.error(failure) { "Provider ${provider.id} failed for $uri: ${failure.message}" }
-            // TODO(#456): Surface provider failures to standard diagnostics consumers.
-            //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456
             DiagnosticProviderFailure(provider.id, failure.javaClass.name, failure.message)
         }
     }

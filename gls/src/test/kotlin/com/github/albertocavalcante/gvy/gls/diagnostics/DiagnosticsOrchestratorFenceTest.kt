@@ -62,6 +62,9 @@ class DiagnosticsOrchestratorFenceTest {
         init {
             every { parsed.diagnostics } returns emptyList()
             every { parsed.parseCompleted } returns true
+            every { parsed.outcome } returns null
+            every { parsed.sourceMembershipKnown } returns null
+            every { parsed.sourceVisibilityKnown } returns null
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(parsed)
             coEvery { providers.collectDiagnostics(uri, any(), any()) } returns healthyResult()
             every { client.publishDiagnostics(capture(publications)) } just Runs

@@ -15,6 +15,10 @@ import org.eclipse.lsp4j.services.LanguageClient
  * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending Protocol</a>
  */
 interface GroovyLanguageClient : LanguageClient {
+    /** Receives terminal analysis details for an advertised document-analysis capability. */
+    @JsonNotification("groovy/documentAnalysis")
+    fun documentAnalysis(analysis: DocumentAnalysisNotification)
+
     /**
      * Receives server status notifications.
      *
@@ -31,3 +35,29 @@ interface GroovyLanguageClient : LanguageClient {
     @JsonNotification("groovy/status")
     fun groovyStatus(status: StatusNotification)
 }
+
+/** A terminal analysis result for one document incarnation and version. */
+data class DocumentAnalysisNotification(
+    val uri: String,
+    val version: Int?,
+    val runId: Long,
+    val sessionId: String?,
+    val compiler: CompilerAnalysis,
+    val providerFailures: List<ProviderAnalysisFailure>,
+)
+
+data class CompilerAnalysis(
+    val complete: Boolean,
+    val phase: String?,
+    val reason: String?,
+    val sourceMembershipKnown: Boolean? = null,
+    val sourceVisibilityKnown: Boolean? = null,
+    val sourceModelMessage: String? = null,
+)
+
+data class ProviderAnalysisFailure(
+    val provider: String,
+    val message: String,
+    val configurationUri: String? = null,
+    val range: org.eclipse.lsp4j.Range? = null,
+)
