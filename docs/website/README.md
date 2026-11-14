@@ -21,8 +21,9 @@ the ignored `.md` projections under `src/content/docs`. The homepage remains han
 the source title's anchor, convert repository links to website routes when mapped, link other repository files to
 GitHub, convert GitHub alerts to readable labeled quotations, and point **Edit page** to the canonical Markdown.
 
-Run one generator at a time in a trusted checkout; keep the generated directory topology unchanged during the run. File
-ownership checks and writes bind to no-follow handles; this does not synchronize concurrent directory replacement.
+Run one generator at a time in a trusted checkout on a filesystem with hard-link support and writable parent
+directories; keep the generated directory topology unchanged during the run. File ownership checks and writes bind to
+no-follow handles; this does not synchronize concurrent directory replacement.
 
 The projector parses Markdown as an AST. It rejects unsupported HTML and ambiguous heading conversions rather than
 silently changing their meaning. Code fences remain literal. When introducing new Markdown constructs, extend the

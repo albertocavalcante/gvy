@@ -96,5 +96,21 @@ test('writes only owned regular files and refuses a swapped symlink', async () =
     await writeFile(target, 'manual');
     await expect(writeOwned(target, `new\n${marker}\n`)).rejects.toThrow('unmarked');
     expect(await readFile(target, 'utf8')).toBe('manual');
+    const { readdir } = await import('node:fs/promises');
+    expect((await readdir(dir)).filter(name => name.startsWith('.gvy-stage-'))).toEqual([]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('cleans staging and preserves existing files when link fails', async () => {
+  const { mkdtemp, readdir, readFile, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { marker, writeOwned } = await import('./owned.mjs');
+  const dir = await mkdtemp(path.join(tmpdir(), 'gvy-link-failure-'));
+  try {
+    await writeFile(path.join(dir, 'victim.md'), 'preserve');
+    await expect(writeOwned(path.join(dir, 'a'.repeat(300)), `${marker}\n`)).rejects.toMatchObject({ code: 'ENAMETOOLONG' });
+    expect(await readdir(dir)).toEqual(['victim.md']);
+    expect(await readFile(path.join(dir, 'victim.md'), 'utf8')).toBe('preserve');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

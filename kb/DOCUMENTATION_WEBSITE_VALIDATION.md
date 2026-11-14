@@ -89,7 +89,7 @@ until the applicable pre-merge gates are complete.
 ## Automated website checks
 
 The final local frozen install uses Bun 1.3.14, Node 26.13.1, Astro 7.4.12, Starlight 0.42.5, and pinned dprint 0.64.3.
-Fifteen regression tests cover title/heading conversion, links, admonitions, literal code fences, source/edit links,
+Sixteen regression tests cover title/heading conversion, links, admonitions, literal code fences, source/edit links,
 unsupported input, ownership-aware output cleanup and overwrite refusal, and built route/fragment/asset validation.
 Astro check reports zero errors, warnings, and hints. The production build generates 20 HTML pages and validates all
 internal links, assets, required legacy fragments, and the `/gvy/` base path. The three warning groups in #1888 no
@@ -104,8 +104,10 @@ records its exact publication head, independent review findings, and hosted CI r
 The initial publication head `8805e9197d0f30fbbadc877a7632d38a75da08bb` passed
 [the hosted documentation build](https://github.com/albertocavalcante/gvy/actions/runs/43597225883). CodeQL then
 identified a leaf-file check/read race in generator preflight (alert #373). Ownership checks now use no-follow file
-handles, and generation rechecks ownership and writes through the same handle; new files use exclusive creation. The
-generator assumes a trusted checkout and a single writer with no concurrent directory replacement.
+handles, and generation rechecks ownership and writes through the same handle; new files are seeded by an atomic hard
+link from a private staging file, without replacing an existing destination. A real link-failure regression verifies
+staging cleanup and preservation of existing content. The generator assumes a trusted checkout and a single writer with
+no concurrent directory replacement.
 
 Dependency review also rejected Astro 7.3.6 for [GHSA-r3h5-4585-7x3w](https://github.com/advisories/GHSA-r3h5-4585-7x3w)
 and [GHSA-mh32-jxcr-mh9f](https://github.com/advisories/GHSA-mh32-jxcr-mh9f). Their first patched Astro versions are
