@@ -46,7 +46,7 @@ Packaged manifest from the official v0.5.4 VSIX at tag commit `c441b8451ceed18a8
 
 ## Current checkout
 
-Manifest SHA-256 `5373604260a156449df724ef20f80f3d07fa8c124f4cdf1e569dba89f32c74d0`.
+Manifest SHA-256 `84cf175ddea465460a8d448862f2d0d3f595522193c2227fb68b9dcb21f1601b`.
 
 | Command                              | Title                                     |
 | ------------------------------------ | ----------------------------------------- |
@@ -70,6 +70,7 @@ Manifest SHA-256 `5373604260a156449df724ef20f80f3d07fa8c124f4cdf1e569dba89f32c74
 | `groovy.reportIssue`                 | Groovy: Report Issue                      |
 | `groovy.restartServer`               | Groovy: Restart Language Server           |
 | `groovy.setLogLevel`                 | Groovy: Set Log Level                     |
+| `groovy.showAnalysisDetails`         | Groovy: Show Analysis Details             |
 | `groovy.showStatusMenu`              | Groovy: Show Server Status Menu           |
 | `groovy.showVersion`                 | Groovy: Show Language Server Version      |
 | `groovy.stopServer`                  | Groovy: Stop Language Server              |
