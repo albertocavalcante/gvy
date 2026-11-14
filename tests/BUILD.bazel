@@ -1,7 +1,33 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_java//java:defs.bzl", "java_test")
 load("//tools/build_defs:kotlin.bzl", "kt_test")
+
+java_test(
+    name = "groovy_attach_probe_test",
+    size = "medium",
+    srcs = ["src/test/java/com/github/albertocavalcante/gvy/debugger/GroovyAttachProbeTest.java"],
+    args = [
+        "execute",
+        "--fail-if-no-tests",
+        "--select-class=com.github.albertocavalcante.gvy.debugger.GroovyAttachProbeTest",
+    ],
+    jvm_flags = ["-Xmx256m"],
+    main_class = "org.junit.platform.console.ConsoleLauncher",
+    resource_strip_prefix = "tests/src/test/resources",
+    resources = ["src/test/resources/debugger/Probe.groovy"],
+    use_testrunner = False,
+    runtime_deps = [
+        "//tools:junit_jupiter_engine",
+        "//tools:junit_platform_console",
+        "//tools:junit_platform_launcher",
+    ],
+    deps = [
+        "//tools:junit_jupiter_api",
+        "@maven//:org_apache_groovy_groovy",
+    ],
+)
 
 # E2E tests for the Groovy LSP
 kt_test(
