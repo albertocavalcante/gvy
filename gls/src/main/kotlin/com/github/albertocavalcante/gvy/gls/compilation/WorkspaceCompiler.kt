@@ -137,7 +137,7 @@ class WorkspaceCompiler(
             else -> {
                 val workspace = workspaceManager.current()
                 stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
-                    val result = compileFileWithAdmissionRetry(
+                    val result = compileRefreshWithAdmissionRetry(
                         checkNotNull(UriPathConverter.toPath(uri)),
                         workspace.sources,
                         workspace.classpath,
@@ -376,19 +376,42 @@ class WorkspaceCompiler(
 
         val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
         return if (completionAdmission.allows(sourcePath)) {
-            FileCompilationResult.Failure(
-                listOf(
-                    CompilationError(
-                        sourcePath.toUri(),
-                        "Source admission changed repeatedly while compiling",
-                        "admission",
-                    ),
-                ),
-            )
+            admissionChangedFailure(sourcePath)
         } else {
             retry
         }
     }
+
+    /** A refresh has no batch boundary, so recheck once after a skip before leaving the document absent. */
+    private suspend fun compileRefreshWithAdmissionRetry(
+        sourcePath: Path,
+        allSources: List<Path>,
+        classpath: List<Path>,
+        sourceRoots: List<Path>,
+    ): FileCompilationResult {
+        val first = compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
+        if (first !is FileCompilationResult.Skipped) return first
+
+        val context = currentCoroutineContext()
+        val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        if (!retryAdmission.allows(sourcePath)) return first
+
+        val retry = compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
+        if (retry !is FileCompilationResult.Skipped) return retry
+
+        val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        return if (completionAdmission.allows(sourcePath)) admissionChangedFailure(sourcePath) else retry
+    }
+
+    private fun admissionChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
+        listOf(
+            CompilationError(
+                sourcePath.toUri(),
+                "Source admission changed repeatedly while compiling",
+                "admission",
+            ),
+        ),
+    )
 
     private fun readSourceContent(sourcePath: Path, uri: URI, ticket: ArtifactOwnership.Ticket): String = try {
         sourcePath.readText()
