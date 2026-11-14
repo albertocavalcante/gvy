@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 
-function successful(main = true, bazel = true, zed = true) {
+function successful(main = true, bazel = true, zed = true, jetbrains = zed) {
   return {
     license: { result: 'success' },
-    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed) } },
+    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed), run_jetbrains_ci: String(jetbrains) } },
     'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
     build: { result: main ? 'success' : 'skipped' },
@@ -17,6 +17,7 @@ function successful(main = true, bazel = true, zed = true) {
     'smoke-test': { result: main ? 'success' : 'skipped' },
     bazel: { result: bazel ? 'success' : 'skipped' },
     zed: { result: zed ? 'success' : 'skipped' },
+    jetbrains: { result: jetbrains ? 'success' : 'skipped' },
   };
 }
 
@@ -50,7 +51,7 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
     assert.equal(evaluateReadiness(jobs).ok, false, String(result));
   }
   for (const value of [undefined, '', 'True', '0', 'null', true, false, {}, []]) {
-    for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci']) {
+    for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci', 'run_jetbrains_ci']) {
       const jobs = successful(false, false, false);
       jobs['check-paths'].outputs[field] = value;
       assert.equal(evaluateReadiness(jobs).ok, false, `${field}=${value}`);
@@ -59,7 +60,7 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
 });
 
 test('every applicable producer must succeed, including Bazel and the runner check', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed']) {
+  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
     for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
       const jobs = successful();
       jobs[name].result = result;
@@ -81,7 +82,7 @@ test('provisioning pending cannot satisfy required readiness', () => {
 });
 
 test('excluded jobs must be skipped; failures remain visible', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed']) {
+  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
     for (const result of ['success', 'failure', 'cancelled', undefined]) {
       const jobs = successful(false, false, false);
       jobs[name].result = result;
@@ -274,4 +275,19 @@ test('license receipt must contain exactly one fresh successful execution matchi
   const report = combineReadiness(inconsistent, receipt, context);
   assert.equal(report.ok, false, 'needs and receipt disagree');
   assert.ok(report.errors.some(error => /License compliance/.test(error)));
+});
+
+
+test('JetBrains applicability independently requires its producer', () => {
+  const jobs = successful(false, false, false, true);
+  assert.equal(evaluateReadiness(jobs).ok, true);
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    const changed = structuredClone(jobs);
+    changed.jetbrains.result = result;
+    assert.equal(evaluateReadiness(changed).ok, false, String(result));
+  }
+  const excluded = successful(false, false, true, false);
+  assert.equal(evaluateReadiness(excluded).ok, true);
+  excluded.jetbrains.result = 'success';
+  assert.equal(evaluateReadiness(excluded).ok, false);
 });

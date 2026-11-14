@@ -410,3 +410,33 @@ test('Nightly watches observer runtime, test, schema and JVM-profile inputs', ()
     assert.equal(watched(unrelated), false, `Unrelated input should not select Nightly: ${unrelated}`);
   }
 });
+
+test('JetBrains visibility exceptions apply only to its producer', t => {
+  const f = fixture(t);
+  writeFileSync(f.executable, `#!${process.execPath}
+console.log('> Configure project :');
+console.log('The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property');
+console.log('    at org.jetbrains.kotlin.gradle.plugin.DefaultKotlinBasePlugin.apply(KotlinPluginWrapper.kt:94)');
+console.log('BUILD SUCCESSFUL in 1s');
+`);
+  chmodSync(f.executable, 0o755);
+  const run = producer => spawnSync(process.execPath,
+    [runner, '--report-root', f.reportRoot, '--producer', producer, 'test'],
+    { encoding: 'utf8', cwd: f.dir, env: f.env, timeout: 10000 });
+  assert.equal(run('jetbrains').status, 0);
+  assert.equal(run('gradle-lint').status, 1);
+  const reports = f.artifactDirs().map(path => JSON.parse(readFileSync(join(path, 'diagnostics.json'), 'utf8')));
+  const accepted = reports.find(report => report.producer === 'jetbrains');
+  const rejected = reports.find(report => report.producer === 'gradle-lint');
+  assert.equal(accepted.accepted.length, 1);
+  assert.equal(rejected.unexpected.length, 1);
+  assert.equal(accepted.diagnostics[0], rejected.unexpected[0]);
+});
+
+test('JetBrains diagnostic debt remains exact, owned and current', async () => {
+  const { evaluate } = await import('./bazel-diagnostics.mjs');
+  const entries = JSON.parse(readFileSync(new URL('./gradle-jetbrains-diagnostics.json', import.meta.url), 'utf8'));
+  assert.equal(entries.length, 12);
+  assert.ok(entries.every(entry => entry.diagnostic.startsWith('[project :] The Configuration.setVisible(boolean)')));
+  assert.equal(evaluate([], entries, new Date()).ok, true);
+});

@@ -105,6 +105,7 @@ jobs:
       run_main_ci: ${{ steps.filter.outputs.run_main_ci }}
       run_bazel_ci: ${{ steps.filter.outputs.run_bazel_ci }}
       run_zed_ci: ${{ steps.filter.outputs.run_zed_ci }}
+      run_jetbrains_ci: ${{ steps.filter.outputs.run_jetbrains_ci }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -835,6 +836,48 @@ jobs:
           make zed-build 2>&1 | tee "$RUNNER_TEMP/zed-build.log"
           node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-build.log"
 
+  jetbrains:
+    name: JetBrains plugin validation
+    needs: [check-paths, license]
+    if: needs.license.result == 'success' && needs.check-paths.outputs.run_jetbrains_ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Test, package and verify plugin
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/jetbrains-gradle-evidence"
+          --producer jetbrains -p editors/jetbrains spotlessCheck test testIde20262 buildPlugin verifyPlugin --stacktrace
+      - name: Require plugin and test evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          find editors/jetbrains/build/distributions -name '*.zip' -print -quit | grep -q .
+          find editors/jetbrains/build/test-results/test -name 'TEST-*.xml' -print -quit | grep -q .
+          find editors/jetbrains/build/test-results/testIde20262 -name 'TEST-*.xml' -print -quit | grep -q .
+          find editors/jetbrains/build/reports/pluginVerifier -type f -print -quit | grep -q .
+      - name: Upload plugin and verification evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jetbrains-plugin-evidence
+          path: |
+            editors/jetbrains/build/distributions/*.zip
+            editors/jetbrains/build/reports/
+            editors/jetbrains/build/test-results/
+            ${{ runner.temp }}/jetbrains-gradle-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
   validate:
     name: Validation Check
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
@@ -843,7 +886,7 @@ jobs:
       contents: read
       actions: read
       checks: read
-    needs: [license, lint, build, e2e-test, smoke-test, launcher, zed, bazel, check-runner, check-paths]
+    needs: [license, lint, build, e2e-test, smoke-test, launcher, zed, bazel, jetbrains, check-runner, check-paths]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

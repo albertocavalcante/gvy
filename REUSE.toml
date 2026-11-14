@@ -395,6 +395,7 @@ path = [
   "tools/ci/fixtures/native-windows-x64.txt",
   "tools/ci/fixtures/native-windows-x64.events.json",
   "tools/ci/gradle-diagnostics.json",
+  "tools/ci/gradle-jetbrains-diagnostics.json",
   "tools/ci/native-provisioning-diagnostics.json",
   "tools/ci/run-gradle.schema.json",
   "tools/ci/runner-diagnostics.json",
