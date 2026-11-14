@@ -502,12 +502,14 @@ private fun staticClasspathReceiver(
     val module = ctx.baseContext.moduleNode ?: return null
     val receiver = receiverExpression(ctx) ?: return null
     val type = when (receiver) {
-        is ClassExpression -> receiver.type.name
+        is ClassExpression -> receiver.type
         is VariableExpression -> importedClassReceiver(receiver, module, ctx)
         else -> null
     } ?: return null
-    // Source declarations remain authoritative, even if a classpath contains the same name.
-    return type.takeIf { name ->
+    val owner = type.redirect()
+    // A compiler-bound source declaration wins over a stale classpath binary of the same name.
+    val sourceOwner = owner.isPrimaryClassNode && owner.module?.context?.name != null
+    return owner.name.takeUnless { sourceOwner }?.takeIf { name ->
         module.classes.none { it.name == name } && compilationService.classpathService.loadClass(name) != null
     }
 }
@@ -516,14 +518,14 @@ private fun importedClassReceiver(
     receiver: VariableExpression,
     module: ModuleNode,
     ctx: CompletionStrategyContext,
-): String? {
+): ClassNode? {
     val variable = receiver.accessedVariable
     if (variable != null && variable !is DynamicVariable) return null
     val name = receiver.name
     if (ctx.symbolContext.variables.any { it.name == name } || ctx.symbolContext.fields.any { it.name == name }) {
         return null
     }
-    return module.imports.singleOrNull { it.alias == name }?.className
+    return module.imports.singleOrNull { it.alias == name }?.type
 }
 
 private fun receiverExpression(ctx: CompletionStrategyContext): Expression? {
