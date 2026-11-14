@@ -78,10 +78,15 @@ val licenseCheck = tasks.register<Exec>("licenseCheck") {
 }
 
 allprojects {
-    tasks.matching {
-        it.name in setOf("check", "lint", "quality") || it.name.startsWith("publish")
-    }.configureEach {
-        dependsOn(licenseCheck)
+    tasks.configureEach {
+        // Scan licensing before requested work can create ignored output trees.
+        if (path != ":licenseCheck") {
+            mustRunAfter(licenseCheck)
+        }
+
+        if (name in setOf("check", "lint", "quality") || name.startsWith("publish")) {
+            dependsOn(licenseCheck)
+        }
     }
 }
 
