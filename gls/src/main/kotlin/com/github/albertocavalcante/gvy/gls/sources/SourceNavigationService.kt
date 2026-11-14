@@ -434,24 +434,35 @@ class SourceNavigationService(
         methodName: String,
     ): SourceNavigator.SourceResult = legacyLookup(classpathUri, className, methodName)
 
+    private suspend fun legacyJdkLookup(
+        resource: URI,
+        binaryName: String,
+        memberName: String?,
+    ): SourceNavigator.SourceResult =
+        when (val classResult = jdkSourceResolver.resolveJdkSource(resource, binaryName)) {
+            is SourceNavigator.SourceResult.BinaryOnly -> classResult
+            is SourceNavigator.SourceResult.SourceLocation -> {
+                val methodInspection = memberName?.let { member ->
+                    runCatching { Path.of(classResult.uri) }.getOrNull()?.let { sourcePath ->
+                        javaSourceInspector.inspectMethod(sourcePath, binaryName, member)
+                    }
+                }
+                methodInspection?.let { inspection ->
+                    classResult.copy(
+                        lineNumber = inspection.lineNumber,
+                        documentation = inspection.documentation,
+                        definition = inspection.definition,
+                    )
+                } ?: classResult
+            }
+        }
+
     private suspend fun legacyLookup(
         resource: URI,
         binaryName: String,
         memberName: String?,
     ): SourceNavigator.SourceResult {
-        if (resource.scheme == "jrt") {
-            val classResult = jdkSourceResolver.resolveJdkSource(resource, binaryName)
-            if (memberName == null) return classResult
-            val classLocation = classResult as? SourceNavigator.SourceResult.SourceLocation ?: return classResult
-            val sourcePath = runCatching { Path.of(classLocation.uri) }.getOrNull() ?: return classLocation
-            val methodInspection = javaSourceInspector.inspectMethod(sourcePath, binaryName, memberName)
-                ?: return classLocation
-            return classLocation.copy(
-                lineNumber = methodInspection.lineNumber,
-                documentation = methodInspection.documentation,
-                definition = methodInspection.definition,
-            )
-        }
+        if (resource.scheme == "jrt") return legacyJdkLookup(resource, binaryName, memberName)
         val origin = bundledSources.selectedOrigin(resource, binaryName)
             ?: parseJarClassResource(resource)?.let { SourceOrigin.Archive(it.archive) }
             ?: SourceOrigin.Unknown(resource)
