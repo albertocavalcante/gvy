@@ -93,6 +93,46 @@ class GroovyParserOutcomeTest {
     }
 
     @Test
+    fun `unlocated transform failure retains its useful cause despite locator filtering`() {
+        val uri = URI.create("file:///w/Logging.groovy")
+        val outcome = parser.parse(
+            ParseRequest(
+                uri = uri,
+                content = "import groovy.util.logging.Slf4j\n@Slf4j class Logging {}",
+                locatorCandidates = setOf(uri.toString(), uri.path),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        ).outcome
+
+        assertEquals(Fallback.COMPILATION_FAILED, outcome.fallback)
+        assertTrue(outcome.fallbackReason.orEmpty().contains("org.slf4j.Logger"), "${outcome.fallbackReason}")
+        assertTrue(!outcome.fallbackReason.orEmpty().contains('\n'))
+    }
+
+    @Test
+    fun `logging dependency restores requested phase with broken source excluded`() {
+        val uri = URI.create("file:///w/Logging.groovy")
+        val broken = tempDir.resolve("Broken.groovy").also { it.toFile().writeText("class Broken { void m( }") }
+        val content = "import groovy.util.logging.Slf4j\n@Slf4j class Logging {}"
+        val request = ParseRequest(
+            uri = uri,
+            content = content,
+            workspaceSources = listOf(broken),
+            locatorCandidates = setOf(uri.toString(), uri.path),
+            compilePhase = Phases.CANONICALIZATION,
+        )
+        val missing = parser.parse(request).outcome
+        assertTrue(missing.fallbackReason.orEmpty().contains("org.slf4j.Logger"), "${missing.fallbackReason}")
+        assertEquals(listOf(broken.toString()), missing.excludedSources.map { it.source })
+
+        val slf4j = Path.of(org.slf4j.Logger::class.java.protectionDomain.codeSource.location.toURI())
+        val restored = parser.parse(request.copy(classpath = listOf(slf4j))).outcome
+        assertEquals(Phases.CANONICALIZATION, restored.achievedPhase)
+        assertNull(restored.fallback)
+        assertEquals(listOf(broken.toString()), restored.excludedSources.map { it.source })
+    }
+
+    @Test
     fun `a missing superclass in the file itself is an ordinary error and not a fallback`() {
         val result = parser.parse(
             ParseRequest(
