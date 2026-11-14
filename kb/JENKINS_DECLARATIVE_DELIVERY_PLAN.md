@@ -12,47 +12,71 @@ distinguishes drafts from verified delivery.
 
 ## Current checkpoint
 
-The first authoring baseline is implemented; publication remains pending. The full 24-slice program is open.
+The authoring baseline is committed and its native gates pass. Publication-head review and applicable CI remain required
+before merge; the full 24-slice program is open.
 
-| Evidence layer              | Executed result                                                                | Scope / remaining gate                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Server JSON-RPC             | 3 fixture tests passed                                                         | Repeat with verified 1 GiB test-worker bound and the corrected raw transport capture.                               |
-| VS Code integration         | 6 tests passed on 1.146.0                                                      | 3 provider captures plus 3 real suggest-widget acceptances; bundled candidate hash checked.                         |
-| Desktop widget              | Settled blank lists and partial entry inspected                                | Both language modes showed the five parameter names in the controlled host; original noisy list was not reproduced. |
-| Generic collection fix (03) | Fail-first plus 17 pure tests passed; independent review clear                 | Provider test, final lint and publication still pending.                                                            |
-| Snippet capabilities (04)   | Omitted support reproduced as a failure; implementation reviewed and corrected | Separate omitted/false/true, wire/edit tests and lint await final execution.                                        |
-| Compatibility oracle (02)   | Official root versions and advertised checksums inspected                      | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.                  |
+| Evidence layer              | Executed result                                                  | Scope / remaining gate                                                                                          |
+| --------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Server JSON-RPC             | 3 tests passed, no failures/errors/skips                         | Actual framed client/server requests and responses correlate; complete lists contain 5, 5 and 11 items.         |
+| Native checks               | Root `lintFix`, server staging and diagnostic gate passed        | Effective test worker: `-Xms256m -Xmx1g`, one fork; all normal commit hooks passed.                             |
+| VS Code integration         | 6 tests passed on 1.146.0                                        | 3 provider captures plus 3 real suggest-widget acceptances; original baseline candidate hash checked.           |
+| Desktop widget              | Settled blank lists and partial entry inspected                  | Both language modes showed five parameter names in the controlled host; original noisy list was not reproduced. |
+| Generic collection fix (03) | Fail-first plus 17 pure tests passed; source review clear        | Provider test, final lint and publication remain pending.                                                       |
+| Snippet capabilities (04)   | Omitted support reproduced as a failure; implementation reviewed | Full capability/edit matrix and lint await execution.                                                           |
+| Document mode (05)          | Source reviewed after lifecycle and configuration race fixes     | Public-protocol, editor lifecycle and grammar tests remain unexecuted.                                          |
+| Typed metadata (06)         | Exploratory draft and architecture review                        | Canonical-list projection and legacy override adaptation remain unfinished; tests unexecuted.                   |
+| Compatibility oracle (02)   | Official roots and advertised checksums inspected                | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.              |
 
-**Publication gates:** complete final-head review and applicable CI are required. The native test worker was later found
-to be configured at 4 GiB by a root build override despite a requested 1 GiB profile; functional results are retained,
-but the bounded rerun is outstanding. No merge or full-program completion is claimed.
+The verified behavior source is commit `e75a3983ae8c2cc19edd7b2530f7296543dccfdd`, based on
+`71f7318e9397cc133b4172c097636be80db36c67`. Its complete diff matches the independently reviewed patch. The native run
+passed all three tests in 5.357 seconds and the diagnostic verdict reports no unexpected diagnostics. The framed streams
+retain the actual completion request/response ID (`2`) for each fixture. The initial JSON captures had reconstructed
+fixture-name envelopes; those remain historical evidence rather than raw transport captures.
 
-Private captures bind VS Code 1.146.0 to the candidate built from baseline `7caa1a59c`. The captured server hash is
+The initial native worker was configured at 4 GiB despite a requested 1 GiB profile. The corrected publication run
+verified the effective 1 GiB cap and one fork at execution and in the child command. These limits do not measure peak
+resident memory.
+
+Earlier editor captures bind VS Code 1.146.0 to the candidate built from baseline `7caa1a59c`. Its server hash is
 `33d42df2c5831e08f3d2782b9995a1de0733e56029b73c83d7fbee72793da23b`. With `snippetSuggestions=inline`,
-`suggest.showSnippets=true` and the built-in Groovy extension present, the controlled extension host showed exactly
+`suggest.showSnippets=true` and the built-in Groovy extension present, the controlled host showed exactly
 `booleanParam`, `choice`, `password`, `string` and `text` after settling in both Jenkinsfile and explicitly switched
-Groovy mode. This is a scoped counterexample, not proof about the original editor/profile. G01 stays open for
-lifecycle/isolation and final packaged verification. The argument response includes all four definition keys and seven
-globals, preserving the G06 key-site leakage evidence. Accepted entry text is a bare name, preserving the G02 insertion
-defect. Earlier infrastructure and harness failures remain in the private run record.
-
-Review found that the initial server JSON captures reconstructed response envelopes after deserialization. Their
-completion contents remain useful, but they are not raw protocol evidence. The corrected test records both actual framed
-byte streams, including the transport's request IDs. Execution of that capture remains a publication gate.
+Groovy mode. This is a scoped counterexample. G01 stays open for lifecycle/isolation and final packaged verification.
+The argument response contains four definition keys and seven globals, preserving G06 leakage evidence. Accepted entry
+text is a bare name, preserving G02. Current publication-head packaged tests remain part of slice 24.
 
 <details>
-<summary>Owned verification limits and next actions</summary>
+<summary>Owned verification limits and temporary editor-diagnostic exception</summary>
 
-| Item                         | Impact / reason                                                                                                                                                                                                 | Owner and next action                                                                                                                                                                                       | Closure gate                                                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Test-worker resource profile | Root Gradle configuration applied a 4 GiB worker cap in the initial native run. Functional results are retained; the requested 1 GiB bound was not established.                                                 | Coordinator; use the reviewed post-evaluation test-limit override and inspect its execution assertion and child arguments in the next unit run.                                                             | Passing applicable tests with the effective cap recorded; never rewrite the earlier result as compliant.                                         |
-| Raw transport capture        | Initial server captures serialized reconstructed envelopes with fixture-name IDs.                                                                                                                               | Coordinator; execute the reviewed client/server byte-stream recorder and correlate the actual completion request and response IDs.                                                                          | Framed request/response evidence from the final test source, with passing assertions.                                                            |
-| Editor helper diagnostics    | Installed Code 1.146.0 emitted Node `DEP0169` for `url.parse()` and AgentHost session/receipt messages. An attempted trace did not identify the callsite. These are outside the current Gradle diagnostic gate. | Editor-test harness / coordinator, tracked under [#1603](https://github.com/albertocavalcante/gvy/issues/1603); attribute the helper callsite and determine the supported fix or exact temporary exception. | Trace-bound ownership and a warning-free affected run or a separately reviewed, owned, expiring exception. No warning-free editor claim is made. |
-| Original popup attribution   | Settled controlled-host lists were clean in both modes despite enabled snippet settings and an available built-in Groovy extension. Original user-profile state is unknown.                                     | 05/24 editor integration; preserve this counterexample and verify actual association/provider conditions before claiming isolation.                                                                         | Language lifecycle and packaged authoring matrix with accurately identified providers.                                                           |
-| Compatibility inputs         | Root versions and advertised checksums are known; transitive graph hashes and boot receipts are absent.                                                                                                         | 02/12 extractor; generate and verify complete locks, then both oracle controls.                                                                                                                             | Both locked graphs boot, validate controls and regenerate deterministically.                                                                     |
+The controlled macOS ARM64 editor runs on 2026-11-14 passed their assertions with three uncovered diagnostic events.
+This temporary exception retains those specific baseline receipts while their attribution is completed.
 
-Raw private source, request and screenshot evidence stays outside Git. This table records unresolved work; it does not
-close it.
+| Field           | Recorded limit                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope           | The captured Code 1.146.0 baseline and trace run set, with the candidate hash above. Two `DEP0169` events and the repeated receipt-error fingerprint below.                        |
+| Owner / issue   | Editor-test harness coordinator; [#1603](https://github.com/albertocavalcante/gvy/issues/1603).                                                                                    |
+| Expiry          | **2026-11-21**. Renew only with fresh evidence and independent review.                                                                                                             |
+| Impact / reason | Assertions passed; the deprecation call sites and effect of receipt loading on this test environment remain unestablished. This is an attribution limit.                           |
+| Next action     | Capture each deprecation process's stack and investigate the receipt-loading failure; fix the supported emitter or replace this exception with a precisely attributed disposition. |
+| Closure         | Affected editor runs pass with the diagnostics resolved, or a fresh independently reviewed disposition identifies each emitter, impact, supported mitigation and expiry.           |
+
+Observed fingerprints:
+
+- Code Helper (Plugin) and AgentHost stderr each emitted `DEP0169` for `url.parse()`. Neither captured event includes a
+  stack, so the call sites remain unknown.
+- `[AgentHostCustomizationMarketplace] Unable to load session-bound SDK installation receipts { name: 'Error' }`.
+  Independent source inspection located this string in installed Code's `workbench.desktop.main.js`, in the
+  `getInstallations` catch around `agentHostService.listCustomizationInstallations`. Its cause remains unproven.
+
+CI and future runs retain their normal diagnostic gates. No warning-free editor claim is made. Original infrastructure
+and harness failures remain in private evidence, including the earlier reconstructed responses and 4 GiB configuration.
+
+| Other open item            | Owner / next action                                                                    | Closure gate                                                                 |
+| -------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Original popup attribution | 05/24 editor integration; verify associations and accurately identify providers.       | Actual lifecycle and packaged authoring matrix.                              |
+| Compatibility inputs       | 02/12 extractor; verify complete graphs and artifact bytes, then both oracle controls. | Both locked graphs boot, validate controls and regenerate deterministically. |
+
+Raw source, request and screenshot evidence stays outside Git. This exception and table record unresolved work.
 
 </details>
 
@@ -306,8 +330,8 @@ row's next action is to implement its change and satisfy the completion gate in 
 | 02    | Extractor/oracle                 | Pending     | Lock both complete graphs; boot and validate controls.                                                         |
 | 03    | Completion insertion             | Draft       | Generic collection fail-first work; independent review and publication follow 01.                              |
 | 04    | LSP capability negotiation       | Draft       | Omitted/false/true support across insertion fields and edits; follows 01.                                      |
-| 05    | Document lifecycle/editor        | Pending     | Preserve language ID and test actual editor isolation.                                                         |
-| 06    | Jenkins metadata                 | Pending     | Preserve typed namespaces and unknown provenance.                                                              |
+| 05    | Document lifecycle/editor        | Draft       | Preserve language ID and test actual editor isolation.                                                         |
+| 06    | Jenkins metadata                 | WIP         | Preserve typed namespaces and unknown provenance.                                                              |
 | 07    | Declarative syntax view          | Pending     | Snapshot identity, UTF-16 ranges and recovery confidence.                                                      |
 | 08    | Shared resolution/hover          | Pending     | Context-qualified calls with shadowing.                                                                        |
 | 09    | Insertion/signature help         | Pending     | Required arguments and accepted-call signatures.                                                               |
