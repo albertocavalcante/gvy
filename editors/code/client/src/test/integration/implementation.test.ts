@@ -20,7 +20,8 @@ suite("Implementation navigation with the current server", () => {
     if (packagedRoot) {
       assert.strictEqual(
         realpathSync(extension.extensionUri.fsPath),
-        realpathSync(packagedRoot),
+        // VS Code's file URI conversion normalizes Windows drive-letter casing.
+        realpathSync(vscode.Uri.file(packagedRoot).fsPath),
         "Editor must load the unpacked VSIX",
       );
     }
