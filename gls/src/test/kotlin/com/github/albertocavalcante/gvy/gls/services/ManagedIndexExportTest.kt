@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.sources.ExternalSourceRegistry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
@@ -47,13 +48,11 @@ class ManagedIndexExportTest {
     }
 
     @Test
-    fun `index export rejects managed files and filesystem aliases before opening output`() {
+    fun `index export rejects a managed file before opening output`() {
         val managed = root.resolve("managed")
         val managedFile = managed.resolve("p/Mode.groovy")
         source(managedFile)
         val original = Files.readString(managedFile)
-        val aliasRoot = root.resolve("managed-alias")
-        Files.createSymbolicLink(aliasRoot, managed)
         val registry = ExternalSourceRegistry(root.resolve("browser"), managedRoots = listOf(managed))
         val exporter = IndexExportService(
             isManagedDestination = { registry.isManagedDestination(it.toUri()) },
@@ -65,6 +64,33 @@ class ManagedIndexExportTest {
         }
         assertEquals(original, Files.readString(managedFile))
 
+        val normalOutput = root.resolve("normal.lsif")
+        exporter.exportIndex(ExportIndexParams(IndexFormat.LSIF, normalOutput.toString()), root)
+        assertTrue(Files.isRegularFile(normalOutput))
+    }
+
+    @Test
+    fun `index export rejects symlink aliases before opening output`() {
+        val managed = root.resolve("managed")
+        val managedFile = managed.resolve("p/Mode.groovy")
+        source(managedFile)
+        val original = Files.readString(managedFile)
+        val aliasRoot = root.resolve("managed-alias")
+        try {
+            Files.createSymbolicLink(aliasRoot, managed)
+        } catch (exception: UnsupportedOperationException) {
+            assumeTrue(false, "Symlinks are unsupported: $exception")
+        } catch (exception: IOException) {
+            assumeTrue(false, "Symlink creation is unavailable: $exception")
+        } catch (exception: SecurityException) {
+            assumeTrue(false, "Symlink creation is not permitted: $exception")
+        }
+        val registry = ExternalSourceRegistry(root.resolve("browser"), managedRoots = listOf(managed))
+        val exporter = IndexExportService(
+            isManagedDestination = { registry.isManagedDestination(it.toUri()) },
+            buildToolManagerProvider = { null },
+        )
+
         assertFailsWith<IOException> {
             exporter.exportIndex(
                 ExportIndexParams(IndexFormat.LSIF, aliasRoot.resolve("p/Mode.groovy").toString()),
@@ -72,10 +98,6 @@ class ManagedIndexExportTest {
             )
         }
         assertEquals(original, Files.readString(managedFile))
-
-        val normalOutput = root.resolve("normal.lsif")
-        exporter.exportIndex(ExportIndexParams(IndexFormat.LSIF, normalOutput.toString()), root)
-        assertTrue(Files.isRegularFile(normalOutput))
     }
 
     private fun documents(output: Path): List<String> = Files.readAllLines(output)
