@@ -1,41 +1,161 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-name: Dependency Maintenance
+name: Temporary license cache comparison
 
 on:
-  # Include stacked PR bases; runtime CI still runs after the final main retarget.
-  pull_request:
-  push:
-    branches: [main]
-  schedule:
-    - cron: '15 5 * * *' # Daily expiry check, independent of dependency/build cache changes
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  accountability:
+  compare:
+    if: github.ref == 'refs/heads/ci/license-cache-probe' && github.run_attempt == 1
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      JDK_JAVA_OPTIONS: '-Xmx256m -XX:MaxMetaspaceSize=256m'
+      GVY_GRADLE_MEMORY_PROBE: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
-          node-version: '24'
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: true
+      - name: Compare base and source overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/license-cache-evidence"
+          candidate="$HOME/wt/gvy/license-cache-candidate"
+          mkdir -p "$evidence" "$(dirname "$candidate")"
+          test ! -e "$candidate"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git diff --name-only 00af40f4a28f219b06f1756b189e1cc23ab062e1 HEAD)" = '.github/workflows/dependency-maintenance.yml'
+          test -z "$(git status --porcelain)"
+          test "$(sha256sum build.gradle.kts | cut -d' ' -f1)" = 4b25b822dc17da01be65187026e21bc8393b2cad416c8e4c2acdbede73ab432b
+          git worktree add --detach "$candidate" "$GITHUB_SHA"
+          CANDIDATE="$candidate" python3 - <<'PY'
+          import os
+          from pathlib import Path
 
-      - name: Test inventory and expiry enforcement
-        run: node --test tools/ci/dependency-maintenance.test.mjs
+          path = Path(os.environ["CANDIDATE"]) / "build.gradle.kts"
+          source = path.read_text()
+          old = """allprojects {
+              tasks.matching {
+                  it.name in setOf("check", "lint", "quality") || it.name.startsWith("publish")
+              }.configureEach {
+                  dependsOn(licenseCheck)
+              }
+          }"""
+          new = """allprojects {
+              tasks.configureEach {
+                  // Scan licensing before requested work can create ignored output trees.
+                  if (path != ":licenseCheck") {
+                      mustRunAfter(licenseCheck)
+                  }
 
-      - name: Enforce temporary dependency accountability
-        run: node tools/ci/dependency-maintenance.mjs
+                  if (name in setOf("check", "lint", "quality") || name.startsWith("publish")) {
+                      dependsOn(licenseCheck)
+                  }
+              }
+          }"""
+          assert source.count(old) == 1
+          path.write_text(source.replace(old, new))
+          PY
+          test "$(sha256sum "$candidate/build.gradle.kts" | cut -d' ' -f1)" = 8575b550ef5d9d8d09195e4f9e8a88e2169d535a70f103a26a6eaf5ab61c9fe1
+          test "$(git -C "$candidate" rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C "$candidate" status --porcelain)" = ' M build.gradle.kts'
+          {
+            printf 'tested_sha=%s\n' "$GITHUB_SHA"
+            printf 'base_head=%s\n' "$(git rev-parse HEAD)"
+            printf 'candidate_head=%s\n' "$(git -C "$candidate" rev-parse HEAD)"
+            printf 'base_root_sha256=%s\n' "$(sha256sum build.gradle.kts | cut -d' ' -f1)"
+            printf 'candidate_root_sha256=%s\n' "$(sha256sum "$candidate/build.gradle.kts" | cut -d' ' -f1)"
+            printf 'base_status=%s\n' "$(git status --porcelain)"
+            printf 'candidate_status=%s\n' "$(git -C "$candidate" status --porcelain)"
+          } >"$evidence/source.txt"
+          failed=0
+          for lane in base candidate; do
+            directory="$GITHUB_WORKSPACE"
+            if [[ "$lane" = candidate ]]; then directory="$candidate"; fi
+            cache="$RUNNER_TEMP/license-cache-$lane"
+            mkdir -p "$cache"
+            for attempt in 1 2; do
+              report="$evidence/$lane-$attempt"
+              mkdir -p "$report"
+              set +e
+              (cd "$directory" && node tools/ci/run-gradle.mjs --report-root "$report" --producer "$lane-$attempt" \
+                :gls:lint --dry-run --no-daemon --max-workers=1 --configuration-cache --configuration-cache-problems=fail \
+                --project-cache-dir "$cache" '-Dorg.gradle.jvmargs=-Xms64m -Xmx1536m -XX:MaxMetaspaceSize=768m' \
+                -Dorg.gradle.scan=false --stacktrace) \
+                2>&1 | tee "$evidence/$lane-$attempt.log"
+              statuses=("${PIPESTATUS[@]}")
+              set -e
+              printf 'wrapper=%s tee=%s\n' "${statuses[0]}" "${statuses[1]}" >"$evidence/$lane-$attempt.exit"
+              if [[ "${statuses[0]}" != 0 || "${statuses[1]}" != 0 ]]; then failed=1; fi
+            done
+          done
+          EVIDENCE="$evidence" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["EVIDENCE"])
+          failed = False
+          observations = []
+          for lane in ("base", "candidate"):
+              for attempt in (1, 2):
+                  name = f"{lane}-{attempt}"
+                  summaries = list((root / name).glob("*/summary.json"))
+                  if len(summaries) != 1:
+                      observations.append(f"{name}: missing or ambiguous canonical summary")
+                      failed = True
+                      continue
+                  summary = json.loads(summaries[0].read_text())
+                  if not isinstance(summary, dict):
+                      observations.append(f"{name}: canonical summary is not an object")
+                      failed = True
+                      continue
+                  console = (summaries[0].parent / "console.log").read_text(errors="replace")
+                  messages = [line for line in console.splitlines() if "configuration cache" in line.lower()]
+                  tasks = [line for line in console.splitlines() if line.startswith(":") and " SKIPPED" in line]
+                  observations.append(
+                      f"{name}: ok={summary.get('ok')} command={summary.get('commandExitCode')} capture={summary.get('captureExitCode')}\n  cache={messages}\n  tasks={tasks}"
+                  )
+                  if not (
+                      summary.get("ok") is True
+                      and summary.get("complete") is True
+                      and type(summary.get("commandExitCode")) is int
+                      and summary.get("commandExitCode") == 0
+                      and type(summary.get("captureExitCode")) is int
+                      and summary.get("captureExitCode") == 0
+                  ):
+                      failed = True
+                  if lane == "candidate":
+                      positions = [i for i, line in enumerate(tasks) if line.startswith(":licenseCheck ")]
+                      if positions != [0]:
+                          failed = True
+                          observations.append(f"{name}: licenseCheck was not the first recorded task")
+          (root / "observations.txt").write_text("\n".join(observations) + "\n")
+          if failed:
+              raise SystemExit(1)
+          PY
+          test "$failed" = 0
+      - name: Upload comparison evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: license-cache-comparison-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/license-cache-evidence/
+          if-no-files-found: error
+          retention-days: 7
