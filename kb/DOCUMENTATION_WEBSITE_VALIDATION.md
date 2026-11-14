@@ -123,10 +123,10 @@ privately with the task evidence.
 
 Private, ignored evidence is at `.agent/out/docs-website-pr2004/playwright-spike/` (reports, six screenshots and the
 disposable probe source/lockfile) and `.agent/out/docs-website-pr2004/component-spike/` (result JSON and tiny
-illustrative sources) in the retained `/Users/adsc/wt/gvy/w6` worktree. It is unpublished and is not part of a
-reproducible CI suite. Keep it until the findings have durable reproductions and the component experiment is reconciled
-into maintained contracts; then remove spent probe material. The private `handoff.json` in the parent directory tracks
-cleanup and remaining acceptance gates.
+illustrative sources) in the retained `~/wt/gvy/w6` worktree. It is unpublished and is not part of a reproducible CI
+suite. Keep it until the findings have durable reproductions and the component experiment is reconciled into maintained
+contracts; then remove spent probe material. The private `handoff.json` in the parent directory tracks cleanup and
+remaining acceptance gates.
 
 ## Automated website checks
 
