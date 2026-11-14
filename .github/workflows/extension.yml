@@ -283,9 +283,11 @@ jobs:
         with:
           version: 12.14.0
 
+      # Match the source-test store profile on every platform.
+      # Query the versioned path for caching; install into its unversioned base.
       - name: Get pnpm store directory
         shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+        run: echo "STORE_PATH=$(pnpm store path --silent --store-dir "${{ runner.temp }}/pnpm-store")" >> "$GITHUB_ENV"
 
       - name: Cache pnpm store
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -308,7 +310,7 @@ jobs:
           path: gls/build/editor-server
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --store-dir "${{ runner.temp }}/pnpm-store"
         working-directory: editors/code
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
