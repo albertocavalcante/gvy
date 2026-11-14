@@ -121,12 +121,13 @@ This verifies a minimal composition, not a production dependency change, perform
 The temporary project, cache, server and browser were removed; concise results and illustrative sources were retained
 privately with the task evidence.
 
-Private, ignored evidence is at `.agent/out/docs-website-pr2004/playwright-spike/` (reports, six screenshots and the
-disposable probe source/lockfile) and `.agent/out/docs-website-pr2004/component-spike/` (result JSON and tiny
-illustrative sources) in the retained `~/wt/gvy/w6` worktree. It is unpublished and is not part of a reproducible CI
-suite. Keep it until the findings have durable reproductions and the component experiment is reconciled into maintained
-contracts; then remove spent probe material. The private `handoff.json` in the parent directory tracks cleanup and
-remaining acceptance gates.
+Private, unpublished evidence was moved after merge to `~/dev/local/gvy-docs-evidence/pr-2004/`: `playwright-spike/`
+contains reports, six screenshots and the disposable probe source/lockfile; `component-spike/` contains result JSON and
+tiny illustrative sources. The copy was verified by per-file SHA-256 before its source was removed. Keep this evidence
+until the findings have durable reproductions and the component experiment is reconciled into maintained contracts, then
+remove spent probe material. The archive’s `handoff.json` tracks cleanup and remaining work. The original `~/wt/gvy/w6`
+checkout and task branch were removed after verified merge and deployment; reusable tools were moved to the active
+follow-up checkout.
 
 ## Automated website checks
 
@@ -167,3 +168,30 @@ integration drift failure, not a passing check or an intermittent browser failur
 The task branch was rebased onto `71f7318e9397cc133b4172c097636be80db36c67` and both references regenerated. Incoming
 exact-main CI installation and GDSL scope guidance were preserved. The PR records subsequent validation and the exact
 reviewed publication head; earlier browser evidence remains explicitly tied to its original input revision.
+
+## Permanent browser follow-up (#2020)
+
+The new suite uses Playwright 1.65.1 and axe integration 4.14.0 against a built artifact. Against deployed commit
+`573d0affca10415569ca3e56634b42190a6e1a03`, its corrected baseline had 16 failing matrix cases, six passing tests and
+one skipped clipboard test. Routes/legacy fragments, five search queries/focus, 404 and essential no-JavaScript content
+passed. A subsequent real Tab/ArrowRight check also passed in this Chrome version while axe still flagged the scrolling
+regions; that distinction is retained rather than claiming every keyboard operation failed.
+
+With the fixes, the full local suite passed 22 tests and skipped only the explicit clipboard opt-in. This run used Node
+26.13.1, Bun 1.3.14 and isolated system Chrome 157.0.8103.79. All six viewport/theme projects passed overflow and axe
+gates. Full website validation passed 16 script tests, zero Astro diagnostics, 20 pages and link/asset/fragment checks;
+headers, formatting and workflow lint also passed. CI's bundled Chromium and real clipboard are separate
+publication-head checks, recorded in the follow-up PR.
+
+The fixes use shrinkable grid tracks, readable light-theme colors and a plain semantic illustration, static focus
+attributes on generated code/tables, and a small search adapter that includes the visible platform shortcut in its
+accessible name. Screenshot inspection also found MDX-generated nested paragraphs separating links and punctuation in
+the homepage facts; explicit JSX text nodes restore continuous paragraph flow. These changes do not change release
+claims. Six home screenshots were inspected; they are review evidence rather than approved Linux golden images.
+
+The suite retains source/Node/Bun metadata and actual browser-version annotations in its report. Its server binds only
+to loopback, enforces the /gvy/ base and returns the built 404 with HTTP 404; it is stopped after tests. Real clipboard
+access requires `GVY_E2E_CLIPBOARD=1`, set only in ephemeral Ubuntu CI. No test executes installation commands. Private
+follow-up reports are in the active task's ignored `.agent/out/docs-browser-followup/` directory until publication and
+evidence retention are reconciled. Reviewed Linux baselines, Firefox/WebKit, full manual keyboard/zoom/screen-reader
+coverage remain in #2020; release/workflow verification remains in #2021 and component/renderer work in #2022.

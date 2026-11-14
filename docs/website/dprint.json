@@ -11,7 +11,12 @@
     "src/content/docs/*.mdx",
     "../../.github/workflows/docs.yml",
     "src/content/i18n/*.yaml",
-    "../../editors/code/README.md"
+    "../../editors/code/README.md",
+    "astro.config.ts",
+    "playwright.config.ts",
+    "tests/e2e/*.ts",
+    "tests/e2e/*.mjs",
+    "src/components/*.mjs"
   ],
   "excludes": [
     "node_modules",
@@ -26,7 +31,9 @@
     "associations": [
       "**/*.mdx",
       "**/*.yml",
-      "**/*.yaml"
+      "**/*.yaml",
+      "**/*.ts",
+      "**/*.mjs"
     ]
   },
   "plugins": [

@@ -14,11 +14,11 @@ and built links, assets, fragments, and compatibility URLs. Production search is
 To test search locally, run `bun run preview` after building; stop the owned background preview with
 `bunx astro preview stop` (or press Ctrl-C for a foreground server).
 
-The [browser testing and platform plan](../../kb/DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) defines the next
-Playwright suite, MDX/Svelte component contracts and alternatives to Starlight. A disposable headless probe found mobile
-overflow and accessibility defects; it does not replace a committed test suite. Track those open gates in the
-[validation record](../../kb/DOCUMENTATION_WEBSITE_VALIDATION.md). Keep canonical Markdown and route contracts
-independent of the current theme while candidate renderers are evaluated.
+The [browser testing and platform plan](../../kb/DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) defines coverage,
+MDX/Svelte component contracts and alternatives to Starlight. The permanent Playwright suite now reproduces the initial
+probe's overflow and accessibility defects and checks their fixes. Keep canonical Markdown and route contracts
+independent of the current theme while candidate renderers are evaluated. Remaining visual, cross-browser and manual
+checks are tracked in [#2020](https://github.com/albertocavalcante/gvy/issues/2020).
 
 ## Source of truth
 
@@ -42,6 +42,32 @@ the development table reads `editors/code/package.json` from the checkout. `bun 
 drift; `bun run generate` refreshes it. Manifest presence describes configuration declarations, not tested runtime
 support. Keep the [feature support matrix](../lsp/feature-support.md) provisional until the quality harness supplies the
 scorecard required by [#1550](https://github.com/albertocavalcante/gvy/issues/1550).
+
+## Browser regression checks
+
+After building, run the suite with an installed Chrome and an isolated browser context:
+
+```bash
+bun run validate
+GVY_E2E_SYSTEM_CHROME=1 bun run test:e2e
+```
+
+The default uses Playwright's matching bundled Chromium instead. CI installs it with
+`bunx playwright install --with-deps chromium`, then tests the same `dist` artifact produced by validation. One worker
+serves `/gvy/` on a private loopback port and shuts the server down afterward. It checks mapped routes and legacy
+fragments, search/focus, no-JavaScript content, keyboard scrolling, local assets/runtime errors, document overflow and
+axe findings. Representative pages run at 360/768/1440 px in both themes. Failed tests retain screenshots and traces;
+`playwright-report/` and `test-results/` are ignored locally and uploaded for seven days in CI.
+
+`GVY_E2E_BASE_URL=https://albertocavalcante.github.io/gvy/` tests the public artifact instead of starting a local
+server. Use the trailing slash. The real clipboard assertion is skipped by default; CI opts in with
+`GVY_E2E_CLIPBOARD=1` on an ephemeral runner. Browser contexts do not isolate the operating-system clipboard, so a local
+CI-style run should keep that opt-in unset. The suite does not execute installation commands.
+
+These are regression checks, not accessibility certification or a visual-baseline approval. Firefox/WebKit, reviewed
+Linux screenshot baselines, zoom/reflow and manual assistive-technology review remain explicit follow-ups. Record the
+tested input and browser/tool versions with results, as in the
+[validation record](../../kb/DOCUMENTATION_WEBSITE_VALIDATION.md).
 
 ## Release refresh
 

@@ -80,3 +80,7 @@ buck-out/
 prelude/
 .buck2-prelude/
 user.buckconfig
+
+# Documentation browser reports
+docs/website/playwright-report/
+docs/website/test-results/

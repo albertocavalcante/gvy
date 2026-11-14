@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -57,6 +57,28 @@ jobs:
       - name: Validate documentation
         working-directory: docs/website
         run: bun run validate
+
+      - name: Install browser
+        working-directory: docs/website
+        run: bunx playwright install --with-deps chromium
+
+      - name: Test documentation in Chromium
+        id: browser-tests
+        working-directory: docs/website
+        env:
+          GVY_E2E_CLIPBOARD: "1"
+        run: bun run test:e2e
+
+      - name: Upload browser report
+        if: always() && steps.browser-tests.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-browser-report
+          path: |
+            docs/website/playwright-report
+            docs/website/test-results
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Assert pages were generated
         run: |

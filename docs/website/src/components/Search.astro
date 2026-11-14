@@ -1,0 +1,15 @@
+---
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+import DefaultSearch from '@astrojs/starlight/components/Search.astro';
+---
+
+<DefaultSearch {...Astro.props} />
+<script is:inline>
+  // Include the visible platform-specific shortcut in the accessible name as well.
+  const searchButton = document.querySelector('button[data-open-modal]');
+  const shortcut = searchButton?.querySelector('kbd');
+  if (searchButton && shortcut) {
+    searchButton.setAttribute('aria-label', `${searchButton.getAttribute('aria-label')} ${shortcut.textContent}`);
+  }
+</script>

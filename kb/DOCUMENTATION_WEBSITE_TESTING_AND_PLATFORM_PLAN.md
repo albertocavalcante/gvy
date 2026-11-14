@@ -5,12 +5,28 @@
 
 Status: proposed implementation sequence, researched and probed on 2026-11-14. Owner: website maintainers. This extends
 the [approved revamp](DOCUMENTATION_WEBSITE_REVAMP.md) and its [validation record](DOCUMENTATION_WEBSITE_VALIDATION.md).
-The revamp remains draft [PR #2004](https://github.com/albertocavalcante/gvy/pull/2004).
+The revamp merged in [PR #2004](https://github.com/albertocavalcante/gvy/pull/2004); the owner authorized the remaining
+acceptance work in follow-up PRs. Track browser work in [#2020](https://github.com/albertocavalcante/gvy/issues/2020),
+workflow evidence in [#2021](https://github.com/albertocavalcante/gvy/issues/2021), and component/renderer work in
+[#2022](https://github.com/albertocavalcante/gvy/issues/2022).
 
 Make the documentation's behavior measurable before changing its renderer. Keep Starlight for the current increment;
 evaluate a custom Astro shell first and SvelteKit with mdsvex second. This is a recommendation for experiments, not a
-decision to remain on Starlight or a framework migration. A permanent Playwright suite and production Svelte integration
-are not implemented by this plan.
+decision to remain on Starlight or a framework migration. The first follow-up now implements a Chromium regression suite
+and B01–B04 fixes. Production Svelte integration and renderer migration remain separate experiments.
+
+## First follow-up implementation
+
+[#2020](https://github.com/albertocavalcante/gvy/issues/2020) now has a production-artifact Playwright harness with
+pinned Playwright 1.65.1 and axe integration 4.14.0. It checks mapped routes/legacy anchors, 404, search and focus,
+no-JavaScript content, actual keyboard scrolling, runtime/assets, overflow and axe findings across six Chromium
+width/theme projects. Tests reproduced the deployed defects; the fixed local build passes 22 tests with the explicit
+CI-only clipboard assertion skipped. CI is configured to use bundled Chromium and upload reports and six homepage
+screenshots.
+
+The harness and supported theme adapters address B01–B04. This does not complete reviewed Linux visual baselines,
+Firefox/WebKit, full keyboard/zoom/screen-reader review or the separate workflow matrix. Keep those remaining gates in
+#2020 and #2021. Component and migration work remains in #2022.
 
 ## Evidence already collected
 
@@ -21,7 +37,7 @@ reproducible CI baseline.
 
 | Probe                                                              | Observed result                                                                                    |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Home, installation and settings, at 360/768/1440 px in both themes | All 18 visits returned 200; theme selection matched; four finding families below remain            |
+| Home, installation and settings, at 360/768/1440 px in both themes | All 18 visits returned 200; theme selection matched; four finding families remained at probe time  |
 | Production search                                                  | Installation, Java, Jenkins, Spock and troubleshooting each found the expected guide               |
 | Search keyboard dismissal                                          | Escape closed the dialog and returned focus to the search button                                   |
 | Homepage without JavaScript at 360 px                              | Headline, installation link, Homebrew command and stable bundled-server warning remained available |
@@ -33,8 +49,9 @@ five queries. Neither exploratory error is a site defect.
 
 ### Findings to reproduce before fixing
 
-These are open acceptance blockers, owned by website maintainers. Keep their tests failing until the behavior is fixed;
-do not approve current screenshots as the desired baseline or suppress axe rules to obtain a pass.
+These were acceptance blockers in the initial probe, owned by website maintainers and subsequently deferred to #2020.
+The first follow-up now addresses them with reproductions and fixes; CI and independent review still verify each
+publication head. Do not approve known-bad screenshots as baselines or suppress axe rules to obtain a pass.
 
 | ID  | Impact and observation                                                                                                 | Next action and completion gate                                                                                                                                  |
 | --- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
