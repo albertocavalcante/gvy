@@ -58,7 +58,7 @@ class SyntaxDiagnosticTest {
     @Test
     fun `an unrelated error does not reuse a preceding import`() {
         val diagnostic = diagnostic("import java.util.List\nprintln(]\n")
-        assertEquals("syntax-error", diagnostic.code)
+        assertEquals("mismatched-delimiter", diagnostic.code)
     }
 
     @Test
@@ -78,10 +78,10 @@ class SyntaxDiagnosticTest {
     }
 
     @Test
-    fun `fallback coordinates count supplementary characters as UTF-16`() {
+    fun `expression coordinates count supplementary characters as UTF-16`() {
         val source = "'😀'; def x = )"
         val diagnostic = diagnostic(source)
-        assertEquals(source.indexOf(')'), diagnostic.range.start.character)
+        assertEquals(source.indexOf('='), diagnostic.range.start.character)
         assertTrue(diagnostic.range.end.character <= source.length)
     }
 
@@ -93,7 +93,7 @@ class SyntaxDiagnosticTest {
 
     @Test
     fun `fallback messages do not duplicate compiler coordinates`() {
-        val diagnostic = diagnostic("def x = )")
+        val diagnostic = diagnostic("println(1,,2)")
         assertEquals("syntax-error", diagnostic.code)
         assertTrue(!diagnostic.message.contains(" @ line "), diagnostic.message)
     }
