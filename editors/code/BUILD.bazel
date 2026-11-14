@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 # Link all NPM packages from pnpm-lock.yaml
@@ -11,6 +12,15 @@ load("@npm//:defs.bzl", "npm_link_all_packages")
 # workspace member (see pnpm-workspace.yaml). After changing dependencies, run
 # `pnpm install` in editors/code to regenerate the lockfile.
 npm_link_all_packages(name = "node_modules")
+
+js_library(
+    name = "network_policy",
+    srcs = [
+        "shared/networkPolicy.d.ts",
+        "shared/networkPolicy.js",
+    ],
+    visibility = ["//editors/code/client:__pkg__"],
+)
 
 # Export configuration files for reference by other targets
 exports_files([

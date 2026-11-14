@@ -23,6 +23,7 @@ node_modules/
 # TypeScript
 **/*.js.map
 **/*.d.ts
+!shared/networkPolicy.d.ts
 *.tsbuildinfo
 
 # VSCode

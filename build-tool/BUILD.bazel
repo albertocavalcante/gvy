@@ -43,6 +43,7 @@ kt_test(
     ]),
     # Resources: files loaded via classloader (txt, xml files)
     resources = glob([
+        "src/test/resources/network-policy/*.json",
         "src/test/resources/**/*.txt",
         "src/test/resources/**/*.xml",
     ]),
@@ -58,6 +59,8 @@ kt_test(
         "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_api",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
