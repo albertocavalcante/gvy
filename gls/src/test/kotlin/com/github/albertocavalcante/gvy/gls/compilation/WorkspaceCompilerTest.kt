@@ -218,6 +218,39 @@ class WorkspaceCompilerTest {
         }
 
     @Test
+    fun `disk refresh retries a skipped source when admission recovers during parsing`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Refreshed.groovy").apply { writeText("class Refreshed {}") }
+        val rejectNextProbe = AtomicBoolean(false)
+        val rejectDuringNextParse = AtomicBoolean(false)
+        val manager = WorkspaceManager(sourceExclusion = { candidate ->
+            candidate == file && rejectNextProbe.compareAndSet(true, false)
+        })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val parseCalls = AtomicInteger()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parseCalls.incrementAndGet()
+            if (rejectDuringNextParse.compareAndSet(true, false)) rejectNextProbe.set(true)
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+
+        assertTrue(compiler.compileWorkspace().success)
+        val updated = "class Refreshed { String value }"
+        file.writeText(updated)
+        rejectDuringNextParse.set(true)
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertEquals(3, parseCalls.get(), "The refresh must retry after its first admitted parse is discarded")
+        assertTrue(indexer.isCurrent(file.toUri(), updated))
+    }
+
+    @Test
     fun `compileWorkspace compiles multiple files together`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
