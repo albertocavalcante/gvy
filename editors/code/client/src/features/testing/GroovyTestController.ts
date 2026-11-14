@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { TestService, TestSuite, Test } from "./TestService";
 import { CoverageService } from "./CoverageService";
+import type { TestItemRegistry } from "./TestItemRegistry";
 
 /**
  * Tag for runnable test items - enables native Test Explorer play buttons.
@@ -17,18 +18,6 @@ export const runnableTag = new vscode.TestTag("runnable");
 function getCodiconLabel(kind: "suite" | "test"): string {
   return kind === "suite" ? "$(symbol-class)" : "$(symbol-method)";
 }
-
-/**
- * Metadata for test items stored in cache.
- */
-interface TestItemMetadata {
-  kind: "suite" | "test";
-  suiteName: string;
-  line?: number;
-}
-
-/** Cache for test item metadata. */
-const dataCache = new WeakMap<vscode.TestItem, TestItemMetadata>();
 
 interface TestCommandArgs {
   suite: string;
@@ -81,6 +70,7 @@ export class GroovyTestController {
     context: vscode.ExtensionContext,
     // TODO(#715): Using interface for hacky Maven support
     private readonly executionService: ITestExecutionService,
+    private readonly itemRegistry: TestItemRegistry,
     private readonly testService?: TestService,
     private readonly coverageService?: CoverageService,
   ) {
@@ -399,14 +389,14 @@ export class GroovyTestController {
     suiteItem.tags = [runnableTag];
     suiteItem.canResolveChildren = true;
 
-    // Store metadata
-    dataCache.set(suiteItem, { kind: "suite", suiteName: suite.suite });
-
     // Add child test items
+    const features: vscode.TestItem[] = [];
     for (const test of suite.tests) {
       const testItem = this.createTestItem(test, suite.suite, uri);
       suiteItem.children.add(testItem);
+      features.push(testItem);
     }
+    this.itemRegistry.registerSuite(suiteItem, suite.suite, features);
 
     // Set suite range using the actual class line from the LSP
     // suite.line is 1-indexed, VS Code positions are 0-indexed
@@ -446,12 +436,7 @@ export class GroovyTestController {
     // Preserve source order with sortText
     testItem.sortText = String(test.line).padStart(6, "0");
 
-    // Store metadata
-    dataCache.set(testItem, {
-      kind: "test",
-      suiteName: parentId,
-      line: test.line,
-    });
+    this.itemRegistry.registerFeature(testItem, test.test);
 
     return testItem;
   }
@@ -697,6 +682,7 @@ export class GroovyTestController {
         uri,
       );
       this.ctrl.items.add(suiteItem);
+      this.itemRegistry.registerSuite(suiteItem, suiteName, undefined);
     }
 
     // Check if test item already exists under the suite
@@ -709,6 +695,10 @@ export class GroovyTestController {
       testItem = this.ctrl.createTestItem(testId, testName, uri);
       // We don't have line information for on-the-fly items, so skip setting range
       suiteItem.children.add(testItem);
+      this.itemRegistry.registerFeature(testItem, testName);
+      // An extra command target means the earlier discovery is no longer a
+      // complete child snapshot. Never expand exclusions from a partial tree.
+      this.itemRegistry.registerSuite(suiteItem, suiteName, undefined);
     }
 
     return testItem;
