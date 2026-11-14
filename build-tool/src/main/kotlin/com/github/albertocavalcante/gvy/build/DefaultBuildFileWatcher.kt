@@ -59,6 +59,10 @@ internal class DefaultBuildFileWatcher(
     @Volatile
     private var session: WatchSession? = null
 
+    private data class ChangeSession(val root: Path, val scope: CoroutineScope, val changes: BuildFileChangeDebouncer)
+
+    private var changeSession: ChangeSession? = null
+
     internal class WatchSession(
         val service: WatchService,
         val scope: CoroutineScope,
@@ -99,8 +103,12 @@ internal class DefaultBuildFileWatcher(
 
         stopWatching()
         if (!coroutineScope.isActive) return
+        val parentContext = coroutineScope.coroutineContext
+        val changeScope = CoroutineScope(parentContext + SupervisorJob(parentContext[Job]))
+        val changes = BuildFileChangeDebouncer(changeScope, dispatcher, debounceDelayMs, ::notifyBuildFileChanged)
+        changeSession = ChangeSession(projectDir, changeScope, changes)
         try {
-            val created = createSession(projectDir)
+            val created = createSession(projectDir, changeScope, changes)
             session = created
             val job = created.scope.launch(Dispatchers.IO) { watchLoop(created) }
             created.job = job
@@ -115,13 +123,19 @@ internal class DefaultBuildFileWatcher(
 
     @Synchronized
     override fun stopWatching() {
-        val stopping = session ?: return
+        val stopping = session
         session = null
-        closeSession(stopping)
+        changeSession?.scope?.cancel()
+        changeSession = null
+        if (stopping != null) closeSession(stopping)
         logger.info { "Stopped $logLabel build file watcher" }
     }
 
-    private fun createSession(projectDir: Path): WatchSession {
+    private fun createSession(
+        projectDir: Path,
+        changeScope: CoroutineScope,
+        changes: BuildFileChangeDebouncer,
+    ): WatchSession {
         val service = FileSystems.getDefault().newWatchService()
         var handedOff = false
         try {
@@ -131,9 +145,8 @@ internal class DefaultBuildFileWatcher(
                 StandardWatchEventKinds.ENTRY_CREATE,
                 StandardWatchEventKinds.ENTRY_DELETE,
             )
-            val parentContext = coroutineScope.coroutineContext
+            val parentContext = changeScope.coroutineContext
             val scope = CoroutineScope(parentContext + SupervisorJob(parentContext[Job]))
-            val changes = BuildFileChangeDebouncer(scope, dispatcher, debounceDelayMs, ::notifyBuildFileChanged)
             return WatchSession(service, scope, changes, ConcurrentHashMap(mapOf(key to projectDir)))
                 .also { handedOff = true }
         } finally {
@@ -224,11 +237,12 @@ internal class DefaultBuildFileWatcher(
     }
 
     @Suppress("TooGenericExceptionCaught")
-    private fun processWatchEvent(event: WatchEvent<*>, projectDir: Path, session: WatchSession) {
+    internal fun processWatchEvent(event: WatchEvent<*>, projectDir: Path, session: WatchSession) {
         val kind = event.kind()
 
         if (kind == StandardWatchEventKinds.OVERFLOW) {
             logger.warn { "File system watch overflow - some events may have been lost" }
+            session.changes.submit(projectDir, "watch overflow")
             return
         }
 
@@ -269,36 +283,16 @@ internal class DefaultBuildFileWatcher(
         when (kind) {
             StandardWatchEventKinds.ENTRY_CREATE,
             StandardWatchEventKinds.ENTRY_MODIFY,
-            -> handleBuildFileModification(fullPath, filenameStr, projectDir, session)
+            -> if (fullPath.exists()) {
+                logger.info { "$logLabel build file changed: $filenameStr" }
+                session.changes.submit(projectDir, filenameStr)
+            }
 
             StandardWatchEventKinds.ENTRY_DELETE -> {
                 logger.info { "$logLabel build file deleted: $filenameStr" }
+                session.changes.submit(projectDir, filenameStr)
             }
         }
-    }
-
-    /**
-     * Handles build file creation or modification events.
-     *
-     * Schedules a debounced callback to process the change. If the file doesn't exist,
-     * the event is ignored (might be a transient editor operation).
-     *
-     * @param fullPath The full path to the modified file.
-     * @param filenameStr The filename string for logging.
-     * @param projectDir The project directory path.
-     */
-    private fun handleBuildFileModification(
-        fullPath: Path,
-        filenameStr: String,
-        projectDir: Path,
-        session: WatchSession,
-    ) {
-        if (!fullPath.exists()) {
-            return
-        }
-
-        logger.info { "$logLabel build file changed: $filenameStr" }
-        session.changes.submit(projectDir, filenameStr)
     }
 
     /**
@@ -319,4 +313,13 @@ internal class DefaultBuildFileWatcher(
     }
 
     override fun isWatching(): Boolean = session?.job?.isActive == true
+
+    @Synchronized
+    override fun onFileChanged(path: Path) {
+        val active = changeSession ?: return
+        val parent = path.toAbsolutePath().normalize().parent ?: return
+        if (active.root.toAbsolutePath().normalize() != parent) return
+        val filename = path.fileName?.toString() ?: return
+        if (shouldHandleBuildFile(filename)) active.changes.submit(active.root, filename)
+    }
 }

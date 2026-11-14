@@ -31,6 +31,7 @@ private const val PROGRESS_COMPLETE = 100
  * Asynchronous dependency resolution with retryable failures and publication fenced by attempt identity.
  * With a [targetObserver], a usable resolution is published only after its target evidence is observed.
  */
+@Suppress("TooManyFunctions") // Coordinates dependency state, resolution, and watcher lifecycle as one facade.
 class DependencyManager(
     private val buildToolManager: BuildToolManager,
     private val scope: CoroutineScope,
@@ -232,6 +233,13 @@ class DependencyManager(
     }
 
     fun getCurrentDependencies(): List<Path> = dependencies.get()
+
+    /** Routes client notifications through the native watcher's debounce and filtering. */
+    fun onWatchedFilesChanged(paths: List<Path>) {
+        synchronized(lock) {
+            paths.forEach { buildFileWatcher?.onFileChanged(it) }
+        }
+    }
     fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
     fun getState(): State = state.get()
     fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot

@@ -19,6 +19,7 @@ internal class BuildFileChangeDebouncer(
 ) {
     private var pending: Job? = null
 
+    @Synchronized
     fun submit(projectDir: Path, filename: String) {
         pending?.cancel()
         pending = scope.launch(dispatcher) {
