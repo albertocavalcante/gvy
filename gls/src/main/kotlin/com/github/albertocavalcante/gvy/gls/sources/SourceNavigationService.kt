@@ -439,7 +439,19 @@ class SourceNavigationService(
         binaryName: String,
         memberName: String?,
     ): SourceNavigator.SourceResult {
-        if (resource.scheme == "jrt") return jdkSourceResolver.resolveJdkSource(resource, binaryName)
+        if (resource.scheme == "jrt") {
+            val classResult = jdkSourceResolver.resolveJdkSource(resource, binaryName)
+            if (memberName == null) return classResult
+            val classLocation = classResult as? SourceNavigator.SourceResult.SourceLocation ?: return classResult
+            val sourcePath = runCatching { Path.of(classLocation.uri) }.getOrNull() ?: return classLocation
+            val methodInspection = javaSourceInspector.inspectMethod(sourcePath, binaryName, memberName)
+                ?: return classLocation
+            return classLocation.copy(
+                lineNumber = methodInspection.lineNumber,
+                documentation = methodInspection.documentation,
+                definition = methodInspection.definition,
+            )
+        }
         val origin = bundledSources.selectedOrigin(resource, binaryName)
             ?: parseJarClassResource(resource)?.let { SourceOrigin.Archive(it.archive) }
             ?: SourceOrigin.Unknown(resource)
