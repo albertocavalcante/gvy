@@ -95,10 +95,12 @@ Approved scope recorded on 2026-11-14. Canonical task record: this page. Related
 [documentation truth #1550](https://github.com/albertocavalcante/gvy/issues/1550),
 [Astro warnings #1888](https://github.com/albertocavalcante/gvy/issues/1888), and
 [stable packaging #1751](https://github.com/albertocavalcante/gvy/issues/1751). Installation work in
-[#1999](https://github.com/albertocavalcante/gvy/pull/1999) remains a separate workstream.
+[#1999](https://github.com/albertocavalcante/gvy/pull/1999) merged separately; its exact-main CI installation guidance
+is preserved here.
 
 Implementation base: `f101e5bf5a5a2fae42d0cfcadba838bcfc6e3d14`. The shared main checkout and unrelated changes are
-preserved.
+preserved. The publication branch was subsequently rebased onto `71f7318e9397cc133b4172c097636be80db36c67` to retain
+incoming installer/GDSL guidance and refresh manifest provenance against the current integration trunk.
 
 | Work package                                | Owner                           | Completion gate                                                                       | State                            |
 | ------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------- |

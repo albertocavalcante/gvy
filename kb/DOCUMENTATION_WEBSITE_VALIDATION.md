@@ -156,3 +156,14 @@ and [GHSA-mh32-jxcr-mh9f](https://github.com/advisories/GHSA-mh32-jxcr-mh9f). Th
 7.4.7 and 7.4.5 respectively; the dependency is now pinned to 7.4.12. The correction requires passing CodeQL and
 dependency review on its actual publication head; the PR retains those results. No alert dismissal or diagnostic
 suppression is used.
+
+## Main synchronization and reference drift
+
+The documentation follow-up's hosted build at `3551707d8a0867fef3dc7841174eca333c1794f5` passed formatting and all 16
+script tests, then failed reference drift. Concurrent main-branch work added extension development dependencies; CI's
+merged checkout therefore had different manifest bytes from the branch's recorded full-manifest hash. This was an
+integration drift failure, not a passing check or an intermittent browser failure.
+
+The task branch was rebased onto `71f7318e9397cc133b4172c097636be80db36c67` and both references regenerated. Incoming
+exact-main CI installation and GDSL scope guidance were preserved. The PR records subsequent validation and the exact
+reviewed publication head; earlier browser evidence remains explicitly tied to its original input revision.
