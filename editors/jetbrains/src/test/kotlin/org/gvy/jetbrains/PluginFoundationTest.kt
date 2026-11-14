@@ -13,9 +13,8 @@ import org.junit.Test
 class PluginFoundationTest : BasePlatformTestCase() {
     @Test
     fun `test plugin loads without registering a server provider`() {
-        val plugin = PluginManagerCore.getPlugin(PluginId.getId("org.gvy.jetbrains"))
-        assertNotNull("GVY plugin must load in the fixture", plugin)
-        assertTrue("GVY plugin must be enabled", plugin!!.isEnabled)
+        val pluginId = PluginId.getId("org.gvy.jetbrains")
+        assertTrue("GVY plugin must be loaded", PluginManagerCore.isLoaded(pluginId))
 
         myFixture.configureByText("sample.groovy", "println 'hello'")
         val providers =
