@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovyparser.ast.safePosition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.GdkExtensionMethod
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
@@ -19,6 +20,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.displayName
 import com.github.albertocavalcante.gvy.semantics.native.displayType
+import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.Script
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -40,7 +42,10 @@ import org.eclipse.lsp4j.ParameterInformation
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.net.URI
@@ -48,7 +53,6 @@ import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPos
 
 /** Regex pattern to match synthetic parameter names like arg0, arg1, etc. */
 private val SYNTHETIC_PARAM_PATTERN = Regex("arg\\d+")
-
 class SignatureHelpProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
@@ -56,14 +60,55 @@ class SignatureHelpProvider(
 ) {
 
     private val logger = KotlinLogging.logger {}
+    private val receiverTypeRefiner = ReceiverTypeRefiner(semanticResolver)
 
     suspend fun provideSignatureHelp(uri: String, position: Position): SignatureHelp {
         val documentUri = URI.create(uri)
+        val snapshot = documentProvider.getSnapshot(documentUri)
+        return snapshot?.let { provideForSnapshot(documentUri, position, it) }
+            ?: provideFromCachedDocument(documentUri, position)
+    }
+
+    private suspend fun provideForSnapshot(
+        documentUri: URI,
+        position: Position,
+        snapshot: DocumentSnapshot,
+    ): SignatureHelp {
+        val cached = compilationService.getCompiledSnapshot(documentUri)
+            ?.takeIf { it.sourceText == snapshot.content }
+        val currentParse = cached?.parseResult
+            ?: parseTransient(documentUri, snapshot.content)
+            ?: return emptySignatureHelp()
+        requireCurrentSnapshot(documentUri, snapshot)
+
+        resolveSignatureContext(documentUri, position, currentParse)?.let { context ->
+            requireCurrentSnapshot(documentUri, snapshot)
+            return buildSignatureHelp(context, position)
+        }
+
+        return recoverIncompleteCall(documentUri, position, snapshot, currentParse)
+            ?.let { buildSignatureHelp(it, position) }
+            ?: emptySignatureHelp()
+    }
+
+    private suspend fun provideFromCachedDocument(documentUri: URI, position: Position): SignatureHelp {
         ensureAstPrepared(documentUri)
-
-        val context = resolveSignatureContext(documentUri, position) ?: return emptySignatureHelp()
-
+        val cached = compilationService.getParseResult(documentUri) ?: return emptySignatureHelp()
+        val context = resolveSignatureContext(documentUri, position, cached) ?: return emptySignatureHelp()
         return buildSignatureHelp(context, position)
+    }
+
+    private suspend fun recoverIncompleteCall(
+        documentUri: URI,
+        position: Position,
+        snapshot: DocumentSnapshot,
+        currentParse: ParseResult,
+    ): SignatureContext? {
+        val repairedSource = IncompleteCallRecovery.parsingCopy(snapshot.content, position, currentParse.tokenIndex)
+            ?: return null
+        val repairedParse = parseTransient(documentUri, repairedSource) ?: return null
+        requireCurrentSnapshot(documentUri, snapshot)
+        return resolveSignatureContext(documentUri, position, repairedParse)?.copy(activeParameterOverride = 0)
     }
 
     private data class SignatureContext(
@@ -71,19 +116,24 @@ class SignatureHelpProvider(
         val nodeAtPosition: ASTNode,
         val signatures: List<SignatureInformation>,
         val astVisitor: GroovyAstModel,
+        val activeParameterOverride: Int? = null,
     )
 
     private data class ResolvedSignatureInputs(
-        val documentUri: URI,
         val methodCall: MethodCallExpression,
         val nodeAtPosition: ASTNode,
         val methodName: String,
         val astVisitor: GroovyAstModel,
         val symbolTable: SymbolTable,
+        val moduleNode: ModuleNode,
     )
 
-    private suspend fun resolveSignatureContext(documentUri: URI, position: Position): SignatureContext? {
-        val inputs = resolveSignatureInputs(documentUri, position) ?: return null
+    private fun resolveSignatureContext(
+        documentUri: URI,
+        position: Position,
+        parseResult: ParseResult,
+    ): SignatureContext? {
+        val inputs = resolveSignatureInputs(documentUri, position, parseResult) ?: return null
 
         val signatures = collectSignatures(documentUri, inputs).distinctBy { it.label }
         if (signatures.isEmpty()) {
@@ -94,50 +144,34 @@ class SignatureHelpProvider(
         return SignatureContext(inputs.methodCall, inputs.nodeAtPosition, signatures, inputs.astVisitor)
     }
 
-    private suspend fun resolveSignatureInputs(documentUri: URI, position: Position): ResolvedSignatureInputs? {
-        val astVisitor = compilationService.getAstModel(documentUri)
-        if (astVisitor == null) {
-            logger.debug { "No AST visitor available for $documentUri" }
-        }
-        val symbolTable = compilationService.getSymbolTable(documentUri)
-        if (symbolTable == null) {
-            logger.debug { "No symbol table available for $documentUri" }
-        }
+    private fun resolveSignatureInputs(
+        documentUri: URI,
+        position: Position,
+        parseResult: ParseResult,
+    ): ResolvedSignatureInputs? {
+        val moduleNode = parseResult.ast ?: return null
+        val astVisitor = parseResult.astModel
+        val symbolTable = parseResult.symbolTable
 
         val groovyPos = position.toGroovyPosition()
-        val nodeAtPosition = astVisitor?.getNodeAt(documentUri, groovyPos)
-        if (astVisitor != null && nodeAtPosition == null) {
-            logger.debug { "No AST node found at $position for $documentUri" }
-        }
-
-        val canFindMethodCall = astVisitor != null && nodeAtPosition != null
-        val methodCall = if (canFindMethodCall) {
-            findMethodCall(astVisitor, documentUri, nodeAtPosition, groovyPos)
-        } else {
-            null
-        }
-        // If we can't find a method call here, we just return null without logging.
-
+        val nodeAtPosition = astVisitor.getNodeAt(documentUri, groovyPos)
+        val methodCall = nodeAtPosition?.let { findMethodCall(astVisitor, documentUri, it, groovyPos) }
         val methodName = methodCall?.extractMethodName()
-        if (methodCall != null && methodName == null) {
-            logger.debug { "Could not resolve method name for call at $position in $documentUri" }
+        if (nodeAtPosition == null || methodCall == null || methodName == null) {
+            if (methodCall != null && methodName == null) {
+                logger.debug { "Could not resolve method name for call at $position in $documentUri" }
+            }
+            return null
         }
 
-        val hasCompilationContext = astVisitor != null && symbolTable != null
-        val hasCallContext = methodName != null && nodeAtPosition != null
-
-        return if (hasCompilationContext && hasCallContext) {
-            ResolvedSignatureInputs(
-                documentUri = documentUri,
-                methodCall = methodCall,
-                nodeAtPosition = nodeAtPosition,
-                methodName = methodName,
-                astVisitor = astVisitor,
-                symbolTable = symbolTable,
-            )
-        } else {
-            null
-        }
+        return ResolvedSignatureInputs(
+            methodCall = methodCall,
+            nodeAtPosition = nodeAtPosition,
+            methodName = methodName,
+            astVisitor = astVisitor,
+            symbolTable = symbolTable,
+            moduleNode = moduleNode,
+        )
     }
 
     private fun collectSignatures(documentUri: URI, inputs: ResolvedSignatureInputs): List<SignatureInformation> =
@@ -149,26 +183,26 @@ class SignatureHelpProvider(
             // 2-4. Resolved Methods (Superclass, GDK, Classpath)
             addAll(
                 resolveMethodsOnReceiver(
-                    inputs.documentUri,
                     inputs.methodCall,
                     inputs.methodName,
                     inputs.symbolTable,
                     inputs.astVisitor,
+                    inputs.moduleNode,
                 ),
             )
         }
 
     private fun resolveMethodsOnReceiver(
-        documentUri: URI,
         methodCall: MethodCallExpression,
         methodName: String,
         symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
+        moduleNode: ModuleNode,
     ): List<SignatureInformation> {
         val signatures = mutableListOf<SignatureInformation>()
 
         // Determine the type of the object the method is being called on
-        val receiverType = resolveReceiverType(documentUri, methodCall, symbolTable, astVisitor)
+        val receiverType = resolveReceiverType(methodCall, symbolTable, astVisitor, moduleNode)
         val targetType = receiverType.substringBefore("<")
 
         // 2. Script Methods (Implicit 'this')
@@ -201,18 +235,16 @@ class SignatureHelpProvider(
     // TODO(#650): Consolidate with InlayHintsCandidates.resolveReceiverType() - similar logic.
     //   See: https://github.com/albertocavalcante/gvy/issues/650
     private fun resolveReceiverType(
-        documentUri: URI,
         methodCall: MethodCallExpression,
         symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
+        moduleNode: ModuleNode,
     ): String {
         if (methodCall.isImplicitThis) {
             return resolveImplicitThisReceiverType(methodCall, astVisitor)
         }
 
         val objExpr = methodCall.objectExpression
-        val moduleNode = compilationService.getAst(documentUri) as? ModuleNode
-
         // Check static type first (like HoverContentGenerator:114-117)
         // For explicitly typed variables (String text, ArrayList list), use static type
         val staticType = objExpr.type
@@ -224,62 +256,9 @@ class SignatureHelpProvider(
         }
 
         // Only use SemanticTypeResolver for dynamic types that need inference
-        if (moduleNode == null) {
-            return "java.lang.Object"
-        }
-
         val semanticType = semanticResolver.resolveType(objExpr, moduleNode)
-        var type = formatSemanticTypeToFqn(semanticType)
-
-        // Refine type from initializer for def/Object variables
-        val canRefine = (type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression
-        if (canRefine) {
-            val initExpr = findInitializerExpression(objExpr, astVisitor, symbolTable)
-            if (initExpr != null) {
-                // Handle ConstructorCallExpression specially - use .type directly
-                // (no semantic calculator exists for constructor calls)
-                val refinedFqn = if (initExpr is ConstructorCallExpression) {
-                    initExpr.type.name
-                } else {
-                    val refinedType = runCatching { semanticResolver.resolveType(initExpr, moduleNode) }
-                        .getOrNull()
-                    refinedType?.let { formatSemanticTypeToFqn(it) }
-                }
-                if (refinedFqn != null && refinedFqn != "java.lang.Object") {
-                    type = refinedFqn
-                }
-            }
-        }
-        return type
-    }
-
-    /**
-     * Find the initializer expression for a variable by checking:
-     * 1. The Variable interface's initialExpression (for Parameters, FieldNodes)
-     * 2. The parent DeclarationExpression's rightExpression (for local variables)
-     */
-    private fun findInitializerExpression(
-        varExpr: VariableExpression,
-        astVisitor: GroovyAstModel,
-        symbolTable: SymbolTable,
-    ): Expression? {
-        // First, try symbol table lookup (works for fields and parameters)
-        val resolvedVar = symbolTable.resolveSymbol(varExpr, astVisitor)
-        if (resolvedVar != null && resolvedVar.hasInitialExpression()) {
-            return resolvedVar.initialExpression
-        }
-
-        // For local variables, find the DeclarationExpression in AST
-        // Look for DeclarationExpression where left side matches our variable name
-        val varName = varExpr.name
-        val declarations = astVisitor.getNodes(astVisitor.getUri(varExpr) ?: return null)
-            .filterIsInstance<DeclarationExpression>()
-            .filter { decl ->
-                val left = decl.leftExpression
-                left is VariableExpression && left.name == varName
-            }
-
-        return declarations.firstOrNull()?.rightExpression
+        val type = formatSemanticTypeToFqn(semanticType)
+        return receiverTypeRefiner.refine(type, objExpr, astVisitor, symbolTable, moduleNode)
     }
 
     /**
@@ -298,7 +277,7 @@ class SignatureHelpProvider(
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
         val signatures = context.signatures
-        val activeParameter = determineActiveParameter(
+        val activeParameter = context.activeParameterOverride ?: determineActiveParameter(
             context.methodCall,
             context.nodeAtPosition,
             position.toGroovyPosition(),
@@ -351,6 +330,19 @@ class SignatureHelpProvider(
             }
     }
 
+    private suspend fun parseTransient(uri: URI, source: String): ParseResult? =
+        runSuspendCatching { compilationService.compileTransient(uri, source) }
+            .onFailure { error -> logger.debug(error) { "Unable to parse current source for signature help: $uri" } }
+            .getOrNull()
+
+    private fun requireCurrentSnapshot(uri: URI, snapshot: DocumentSnapshot) {
+        if (documentProvider.getSnapshot(uri) !== snapshot) {
+            throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.ContentModified, "Document changed during signature help", null),
+            )
+        }
+    }
+
     // --- Script Method Helpers ---
 
     private val scriptMethodsByName by lazy {
@@ -380,6 +372,53 @@ class SignatureHelpProvider(
             null,
         )
     }
+}
+
+/** Refines dynamic receiver types from declarations in the request's own AST and symbol table. */
+private class ReceiverTypeRefiner(private val semanticResolver: SemanticTypeResolver) {
+    fun refine(
+        type: String,
+        objExpr: Expression,
+        astVisitor: GroovyAstModel,
+        symbolTable: SymbolTable,
+        moduleNode: ModuleNode,
+    ): String {
+        val initExpr = if (type == "java.lang.Object" || type == "java.lang.Class") {
+            (objExpr as? VariableExpression)?.let { findInitializerExpression(it, astVisitor, symbolTable) }
+        } else {
+            null
+        }
+        val refinedType = initExpr?.let { resolveInitializerType(it, moduleNode) }
+        return refinedType?.takeIf { it != "java.lang.Object" } ?: type
+    }
+
+    private fun resolveInitializerType(initExpr: Expression, moduleNode: ModuleNode): String? =
+        if (initExpr is ConstructorCallExpression) {
+            initExpr.type.name
+        } else {
+            runCatching { semanticResolver.resolveType(initExpr, moduleNode) }
+                .getOrNull()
+                ?.let { SemanticTypeFormatter.formatToFqn(it) }
+        }
+
+    private fun findInitializerExpression(
+        varExpr: VariableExpression,
+        astVisitor: GroovyAstModel,
+        symbolTable: SymbolTable,
+    ): Expression? {
+        val resolvedVar = symbolTable.resolveSymbol(varExpr, astVisitor)
+        val declaredInitializer = resolvedVar?.takeIf { it.hasInitialExpression() }?.initialExpression
+        return declaredInitializer ?: findLocalInitializer(varExpr, astVisitor)
+    }
+
+    private fun findLocalInitializer(varExpr: VariableExpression, astVisitor: GroovyAstModel): Expression? =
+        astVisitor.getUri(varExpr)?.let { uri ->
+            astVisitor.getNodes(uri).filterIsInstance<DeclarationExpression>()
+                .firstOrNull { declaration ->
+                    val left = declaration.leftExpression
+                    left is VariableExpression && left.name == varExpr.name
+                }?.rightExpression
+        }
 }
 
 // --- Converters ---

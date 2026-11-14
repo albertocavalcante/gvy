@@ -32,7 +32,12 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.DynamicVariable
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemLabelDetails
@@ -95,6 +100,11 @@ internal class MemberAccessCompletionStrategy(
     ) {
         val qualifierName = completionContext.qualifierName
         val module = ctx.baseContext.moduleNode
+        val staticType = staticClasspathReceiver(ctx, compilationService)
+        if (staticType != null) {
+            addStaticClasspathMembers(staticType, compilationService)
+            return
+        }
         val receiverType = module?.let { explicitReceiverType(qualifierName, it, ctx.baseContext) }
             ?: completionContext.qualifierType
         val rawType = receiverType.substringBefore('<')
@@ -464,6 +474,67 @@ internal class MemberAccessCompletionStrategy(
             return candidates.filter { service.classpathService.loadClass(it) != null }
         }
         return emptyList()
+    }
+}
+
+private fun CompletionsBuilder.addStaticClasspathMembers(type: String, compilationService: GroovyCompilationService) {
+    val classpath = compilationService.classpathService
+    classpath.getMethods(type).filter { it.isPublic && it.isStatic }.forEach { reflected ->
+        val parameters = reflected.qualifiedParameters.zip(reflected.displayParameters, ::CandidateParameter)
+        method(
+            name = reflected.name,
+            returnType = reflected.returnType,
+            parameters = parameters.map { it.display },
+            doc = reflected.doc,
+            signature = parameters.joinToString(",") { it.identity },
+        )
+    }
+    classpath.getFields(type).filter { it.isPublic && it.isStatic }.forEach { member ->
+        field(name = member.name, type = member.type)
+    }
+}
+
+/** A class expression names the owner; its semantic type may instead be java.lang.Class. */
+private fun staticClasspathReceiver(
+    ctx: CompletionStrategyContext,
+    compilationService: GroovyCompilationService,
+): String? {
+    val module = ctx.baseContext.moduleNode ?: return null
+    val receiver = receiverExpression(ctx) ?: return null
+    val type = when (receiver) {
+        is ClassExpression -> receiver.type
+        is VariableExpression -> importedClassReceiver(receiver, module, ctx)
+        else -> null
+    } ?: return null
+    val owner = type.redirect()
+    // A compiler-bound source declaration wins over a stale classpath binary of the same name.
+    val sourceOwner = owner.isPrimaryClassNode && owner.module?.context?.name != null
+    return owner.name.takeUnless { sourceOwner }?.takeIf { name ->
+        module.classes.none { it.name == name } && compilationService.classpathService.loadClass(name) != null
+    }
+}
+
+private fun importedClassReceiver(
+    receiver: VariableExpression,
+    module: ModuleNode,
+    ctx: CompletionStrategyContext,
+): ClassNode? {
+    val variable = receiver.accessedVariable
+    if (variable != null && variable !is DynamicVariable) return null
+    val name = receiver.name
+    if (ctx.symbolContext.variables.any { it.name == name } || ctx.symbolContext.fields.any { it.name == name }) {
+        return null
+    }
+    return module.imports.singleOrNull { it.alias == name }?.type
+}
+
+private fun receiverExpression(ctx: CompletionStrategyContext): Expression? {
+    val node = ctx.nodeAtCursor
+    val parent = node?.let { ctx.baseContext.astModel.getParent(it) }
+    return when {
+        node is PropertyExpression -> node.objectExpression
+        parent is PropertyExpression -> parent.objectExpression
+        else -> null
     }
 }
 

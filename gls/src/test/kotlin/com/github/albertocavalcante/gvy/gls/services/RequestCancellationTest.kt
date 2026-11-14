@@ -42,6 +42,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 import com.github.albertocavalcante.groovyparser.ast.types.Position as ParserPosition
 
 /**
@@ -80,11 +81,15 @@ class RequestCancellationTest {
 
     @Test
     fun `a cancelled signature help compile is not swallowed`(): Unit = runBlocking {
-        every { compilation.getAst(uri) } returns null
-        coEvery { compilation.compile(uri, any()) } throws CancellationException("compile cancelled")
+        val cancelled = CancellationException("compile cancelled")
+        every { compilation.getCompiledSnapshot(uri) } returns null
+        coEvery { compilation.compileTransient(uri, any(), any()) } throws cancelled
         val provider = SignatureHelpProvider(compilation, documents, mockk(relaxed = true))
 
-        assertFailsWith<CancellationException> { provider.provideSignatureHelp(uri.toString(), Position(0, 30)) }
+        val failure = assertFailsWith<CancellationException> {
+            provider.provideSignatureHelp(uri.toString(), Position(0, 30))
+        }
+        assertSame(cancelled, failure)
     }
 
     @Test
