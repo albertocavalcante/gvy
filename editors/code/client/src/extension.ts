@@ -12,7 +12,9 @@ import {
   startClient,
   stopClient,
   getClient,
+  onClientStarted,
 } from "./server/client";
+import { startServerForActivation } from "./server/activation";
 import { registerStatusBarItem, getStatusBarManager } from "./ui/statusBar";
 import {
   createLanguageStatusManager,
@@ -65,11 +67,35 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(serverOutputChannel);
   setServerOutputChannel(serverOutputChannel);
   getStatusBarManager()?.setOutputChannel(serverOutputChannel);
+  let initialStart: Promise<boolean> | undefined;
+  const requestInitialStart = (): Promise<boolean> => {
+    initialStart ??= (async () => {
+      try {
+        await startClient(serverOutputChannel);
+        return true;
+      } catch (error) {
+        // startClient already reports failures; keep the registered commands usable.
+        console.error("Groovy Language Server did not start:", error);
+        return false;
+      }
+    })();
+    return initialStart;
+  };
+  context.subscriptions.push(
+    onClientStarted(() => {
+      initialStart = Promise.resolve(true);
+      vscode.commands
+        .executeCommand("setContext", "groovy.hasProject", true)
+        .then(undefined, (error: unknown) => {
+          console.error("Could not update Groovy project context:", error);
+        });
+    }),
+  );
 
   createLanguageStatusManager();
   context.subscriptions.push({ dispose: () => disposeLanguageStatusManager() });
 
-  registerCommands(context);
+  registerCommands(context, requestInitialStart);
   context.subscriptions.push(setupConfigurationWatcher());
 
   replService.initialize(context);
@@ -83,7 +109,11 @@ export async function activate(context: vscode.ExtensionContext) {
   registerDependencyFeatures(context);
 
   // AI tools
-  const lspToolService = new LSPToolService(vscode, getClient);
+  const lspToolService = new LSPToolService(
+    vscode,
+    getClient,
+    requestInitialStart,
+  );
   const toolRegistry = new ToolRegistry();
   context.subscriptions.push(
     new LMToolProvider(lspToolService, toolRegistry),
@@ -107,18 +137,10 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  // startClient reports failures to the user itself; activation still
-  // succeeds so Restart/Configure Java remain usable.
-  try {
-    await startClient(serverOutputChannel);
-    await vscode.commands.executeCommand(
-      "setContext",
-      "groovy.hasProject",
-      true,
-    );
-  } catch (error) {
-    console.error("Groovy Language Server did not start:", error);
-  }
+  // Static GDSL editing waits for a supported document or an explicit server command.
+  await startServerForActivation(context, async () => {
+    await requestInitialStart();
+  });
 }
 
 /**

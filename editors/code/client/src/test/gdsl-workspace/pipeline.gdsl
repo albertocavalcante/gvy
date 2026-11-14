@@ -1,0 +1,7 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// This workspace deliberately contains no Groovy or Jenkins pipeline source files.
+contributor(context(scope: scriptScope())) {
+    property(name: 'buildInfo', type: 'java.util.Map')
+}
