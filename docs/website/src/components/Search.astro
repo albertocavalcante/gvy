@@ -10,6 +10,9 @@ import DefaultSearch from '@astrojs/starlight/components/Search.astro';
   const searchButton = document.querySelector('button[data-open-modal]');
   const shortcut = searchButton?.querySelector('kbd');
   if (searchButton && shortcut) {
+    const label = searchButton.querySelector('span[aria-hidden="true"]');
+    // Flex gaps separate items visually but do not insert DOM word separators.
+    label?.after(document.createTextNode(' '));
     const keyElements = Array.from(shortcut.querySelectorAll('kbd'));
     // The upstream component separates keys visually with CSS but not in the text.
     if (keyElements.length === 2) keyElements[0].after(document.createTextNode(' '));

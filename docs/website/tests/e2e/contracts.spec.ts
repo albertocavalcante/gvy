@@ -162,6 +162,7 @@ for (const [platform, shortcut, modifier] of [
     }, platform);
     await page.goto("");
     const button = page.locator("button[data-open-modal]");
+    await expect(button).toHaveText(`Search gvy docs ${shortcut}`);
     const keys = button.locator("kbd kbd");
     await expect(keys.nth(0)).toHaveText(shortcut.split(" ")[0]);
     await expect(keys.nth(1)).toHaveText("K");
