@@ -50,6 +50,31 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
+    fun `nested type use agrees across diagnostics and dimming`(): Unit = runBlocking {
+        val source = """
+            import java.util.Map
+            import java.util.Set
+            class Example { Map.Entry value }
+        """.trimIndent()
+        val held = compilationService.compile(uri, source)
+        val diagnostics = diagnosticProvider.provideDiagnostics(uri, source, held).toList()
+        assertEquals(1, diagnostics.size)
+        assertTrue(diagnostics.single().message.contains("java.util.Set"))
+
+        val parsed = assertNotNull(compilationService.getParseResult(uri))
+        val ast = assertNotNull(parsed.ast)
+        val unused = UnusedImportDetector.detectUnusedImports(ast, parsed.sourceAnnotations).toSet()
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(parsed.astModel, uri, unused, ast)
+        for (line in 0..1) {
+            val token = assertNotNull(
+                tokens.find { it.line == line && it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS },
+            )
+            val unnecessary = token.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY != 0
+            assertEquals(line == 1, unnecessary, "Only the unused Set import should dim")
+        }
+    }
+
+    @Test
     fun `source collector imports and generated component imports agree across hints and dimming`(): Unit =
         runBlocking {
             val source = """

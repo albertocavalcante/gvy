@@ -69,7 +69,12 @@ object TypeUsageCollector {
      */
     fun collectUsedTypes(moduleNode: ModuleNode, includeAnnotations: Boolean = true): Set<String> {
         val usedTypes = mutableSetOf<String>()
-        val visitor = TypeUsageVisitor(usedTypes)
+        val importAliases = moduleNode.imports.mapNotNull { importNode ->
+            val alias = importNode.alias
+            val typeName = importNode.type?.name
+            if (alias == null || typeName == null) null else alias to typeName
+        }.toMap()
+        val visitor = TypeUsageVisitor(usedTypes, importAliases)
 
         // Visit all classes
         moduleNode.classes.forEach { classNode ->
@@ -94,7 +99,10 @@ object TypeUsageCollector {
         return usedTypes
     }
 
-    private class TypeUsageVisitor(private val usedTypes: MutableSet<String>) {
+    private class TypeUsageVisitor(
+        private val usedTypes: MutableSet<String>,
+        private val importAliases: Map<String, String>,
+    ) {
         private val visitedTypes = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
 
         val codeVisitor = TypeUsageCodeVisitor()
@@ -104,14 +112,14 @@ object TypeUsageCollector {
             if (classNode.isSynthetic) return
 
             // Collect superclass (skip Object)
-            classNode.superClass?.let { superClass ->
+            classNode.unresolvedSuperClass?.let { superClass ->
                 if (superClass.nameWithoutPackage != "Object") {
                     collectTypeReference(superClass)
                 }
             }
 
             // Collect interfaces
-            classNode.interfaces?.forEach { collectTypeReference(it) }
+            classNode.unresolvedInterfaces?.forEach { collectTypeReference(it) }
 
             // Visit fields
             classNode.fields.forEach { visitField(it) }
@@ -163,8 +171,7 @@ object TypeUsageCollector {
         private fun collectTypeReference(classNode: ClassNode?) {
             if (classNode == null || !visitedTypes.add(classNode)) return
 
-            // Get simple name
-            val simpleName = classNode.nameWithoutPackage
+            val simpleName = importUsageName(classNode)
             if (simpleName.isNotEmpty() && simpleName !in PRIMITIVES && simpleName != "Object") {
                 usedTypes.add(simpleName)
             }
@@ -175,6 +182,30 @@ object TypeUsageCollector {
                 genericType.upperBounds?.forEach { collectTypeReference(it) }
                 genericType.lowerBound?.let { collectTypeReference(it) }
             }
+        }
+
+        private fun importUsageName(classNode: ClassNode): String {
+            // Canonicalization may turn the separator in written nested types into '$'.
+            // Match the resolved import and its suffix so '$' within an alias remains unambiguous.
+            val spelling = classNode.unresolvedName
+            val qualifier = spelling.substringBefore('.')
+            val isQualifiedType = '.' in spelling &&
+                (qualifier in importAliases || qualifier.firstOrNull()?.isUpperCase() == true)
+            val resolvedAlias = matchingResolvedImport(classNode, spelling)
+            return when {
+                isQualifiedType -> spelling.substringBefore('.')
+                resolvedAlias != null -> resolvedAlias
+                '$' in classNode.name -> spelling.takeUnless { '.' in it || '$' in it }.orEmpty()
+                else -> classNode.nameWithoutPackage
+            }
+        }
+
+        private fun matchingResolvedImport(classNode: ClassNode, spelling: String): String? {
+            val resolvedName = classNode.name
+            return importAliases.entries.firstOrNull { (alias, importedName) ->
+                val isImportedType = resolvedName == importedName || resolvedName.startsWith("${importedName}\$")
+                isImportedType && spelling == alias + resolvedName.removePrefix(importedName)
+            }?.key
         }
 
         inner class TypeUsageCodeVisitor : CodeVisitorSupport() {
@@ -215,20 +246,21 @@ object TypeUsageCollector {
             }
 
             override fun visitPropertyExpression(expression: PropertyExpression) {
-                // Handle TypeName.class access patterns
+                // Handle qualified access to a type or nested type.
                 val obj = expression.objectExpression
-                val prop = expression.propertyAsString
 
                 // Case 1: ClassExpression.class (e.g., Date.class in simple assignments)
                 if (obj is ClassExpression) {
                     collectTypeReference(obj.type)
-                } else if (obj is VariableExpression && prop == "class") {
-                    // Case 2: VariableExpression.class where the variable name is a type
-                    // In Groovy, "SimpleDateFormat.class" inside a method body is parsed as
-                    // PropertyExpression(VariableExpression("SimpleDateFormat"), "class")
+                } else if (obj is VariableExpression) {
+                    // Case 2: a qualified access where the variable name is a type
+                    // At conversion, the receiver may still be a VariableExpression.
                     val typeName = obj.name
-                    // Only collect if it looks like a type name (starts with uppercase)
-                    if (typeName.isNotEmpty() && typeName[0].isUpperCase()) {
+                    val property = expression.propertyAsString
+                    val isTypeAccess = property == "class" || property?.firstOrNull()?.isUpperCase() == true
+                    val isLocalVariable = obj.accessedVariable is VariableExpression
+                    val isTypeName = typeName in importAliases || typeName.firstOrNull()?.isUpperCase() == true
+                    if (isTypeName && isTypeAccess && !isLocalVariable) {
                         usedTypes.add(typeName)
                     }
                 }
