@@ -41,6 +41,10 @@ class JavaSourceInspectorTest {
 
         listOf("Nested", "State").forEachIndexed { index, name ->
             val definition = requireNotNull(inspector.inspectDefinitionFromContent(source, "sample.Outer\$$name"))
+            val sourceNameDefinition = requireNotNull(
+                inspector.inspectDefinitionFromContent(source, "sample.Outer.$name"),
+            )
+            assertEquals(definition.nameRange, sourceNameDefinition.nameRange)
             val selectedName = definition.nameRange
             val annotationSearchStart = if (index == 0) {
                 0
@@ -820,6 +824,11 @@ class JavaSourceInspectorTest {
             assertEquals(listOf("value"), innerResult["innerMethod(int)"]) {
                 "InnerClass should have innerMethod"
             }
+            assertEquals(
+                innerResult,
+                inspector.extractAllMethodParametersFromContent(source, "com.example.OuterClass\$InnerClass"),
+                "The established binary owner name remains supported",
+            )
 
             // Test extraction from StaticInnerClass
             val staticInnerResult = inspector.extractAllMethodParametersFromContent(

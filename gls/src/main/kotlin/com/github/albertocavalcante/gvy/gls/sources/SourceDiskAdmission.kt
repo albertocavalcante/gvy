@@ -50,13 +50,11 @@ private fun requireAdmissionCapacity(maximumBytes: Long, reservationBytes: Long)
 private fun measureManagedCache(root: Path, maximumBytes: Long, reservationBytes: Long) {
     val usage = ManagedCacheUsage(reservationBytes, MAX_POTENTIAL_WRITE_PATHS)
     try {
-        if (Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
-            Files.walk(root).use { stream ->
-                val iterator = stream.iterator()
-                while (iterator.hasNext()) {
-                    checkSourceInterruption()
-                    addManagedPath(iterator.next(), maximumBytes, usage)
-                }
+        Files.walk(root).use { stream ->
+            val iterator = stream.iterator()
+            while (iterator.hasNext()) {
+                checkSourceInterruption()
+                addManagedPath(iterator.next(), maximumBytes, usage)
             }
         }
     } catch (failure: UncheckedIOException) {
@@ -66,13 +64,21 @@ private fun measureManagedCache(root: Path, maximumBytes: Long, reservationBytes
 }
 
 private fun addManagedPath(path: Path, maximumBytes: Long, usage: ManagedCacheUsage) {
+    countManagedPath(usage)
+    if (isSupportedManagedPath(path)) addManagedFileSize(path, maximumBytes, usage)
+}
+
+private fun countManagedPath(usage: ManagedCacheUsage) {
     if (++usage.paths > MAX_MANAGED_CACHE_PATHS) throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
+}
+
+private fun isSupportedManagedPath(path: Path): Boolean {
     if (Files.isSymbolicLink(path)) throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
-    when {
-        Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) -> addManagedFileSize(path, maximumBytes, usage)
-        Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) -> Unit
-        else -> throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
+    val regularFile = Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+    if (!regularFile && !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+        throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
     }
+    return regularFile
 }
 
 private fun addManagedFileSize(path: Path, maximumBytes: Long, usage: ManagedCacheUsage) {

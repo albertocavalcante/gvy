@@ -59,13 +59,21 @@ private fun checkInterrupted() {
 }
 
 private fun addCachePath(path: Path, maximumBytes: Long, usage: CacheUsage) {
+    countCachePath(usage)
+    if (isSupportedCachePath(path)) addCacheFileSize(path, maximumBytes, usage)
+}
+
+private fun countCachePath(usage: CacheUsage) {
     if (++usage.paths > MAX_RESOLVER_CACHE_PATHS) throw SourceResolverCacheLimit()
+}
+
+private fun isSupportedCachePath(path: Path): Boolean {
     if (Files.isSymbolicLink(path)) throw IOException("Verified source cache contains a link")
-    if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-        addCacheFileSize(path, maximumBytes, usage)
-    } else if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+    val regularFile = Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+    if (!regularFile && !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
         throw IOException("Verified source cache contains an unsupported file")
     }
+    return regularFile
 }
 
 private fun addCacheFileSize(path: Path, maximumBytes: Long, usage: CacheUsage) {

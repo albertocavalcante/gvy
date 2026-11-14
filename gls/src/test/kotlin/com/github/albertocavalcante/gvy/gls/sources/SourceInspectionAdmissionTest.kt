@@ -72,6 +72,23 @@ class SourceInspectionAdmissionTest {
     }
 
     @Test
+    fun `Java lexing preserves persistent parser cancellation`() {
+        var checks = 0
+        val cancelled = CancellationException("stop persistent Java source lexing")
+        val inspector = JavaSourceInspector { JavaParser() }
+
+        assertSame(
+            cancelled,
+            assertFailsWith<CancellationException> {
+                inspector.inspectDefinitionFromContent("class Example {}", "Example") {
+                    if (++checks >= 2) throw cancelled
+                }
+            },
+        )
+        assertEquals(2, checks)
+    }
+
+    @Test
     fun `Groovy declaration inspection propagates cancellation inside the native compile phase`() {
         var checks = 0
         val cancelled = CancellationException("stop Groovy source conversion")

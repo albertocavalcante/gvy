@@ -3,11 +3,19 @@
 
 package com.github.albertocavalcante.gvy.gls.sources
 
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.nativeapi.AnnotationCoverage
+import com.github.albertocavalcante.nativeapi.AnnotationReferenceKind
+import com.github.albertocavalcante.nativeapi.ParseMode
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
+import java.net.URI
 import java.util.concurrent.CancellationException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -25,6 +33,29 @@ class GroovySourceTypeIndexTest {
             @Target([ElementType.TYPE])
             @interface Immutable {}
         """.trimIndent()
+        val captured = GroovyParserFacade().parse(
+            ParseRequest(
+                URI.create("file:///AnnotationArgument.groovy"),
+                source,
+                compilePhase = Phases.CONVERSION,
+                parseMode = ParseMode.MINIMAL,
+            ),
+        )
+        captured.compilationUnit.classLoader.use {
+            assertTrue(captured.isSuccessful, captured.diagnostics.toString())
+            assertEquals(
+                AnnotationCoverage.Complete,
+                captured.sourceAnnotations.coverage,
+                "Captured refs: ${captured.sourceAnnotations.references}",
+            )
+            assertEquals(
+                1,
+                captured.sourceAnnotations.references.count {
+                    it.kind == AnnotationReferenceKind.ARGUMENT && it.spelling == "Handler"
+                },
+                "Captured refs: ${captured.sourceAnnotations.references}",
+            )
+        }
         val index = GroovySourceTypeIndex.build(source)
 
         assertEquals(
@@ -35,9 +66,10 @@ class GroovySourceTypeIndexTest {
             listOf(listOf("groovy.transform.options.ImmutablePropertyHandler")),
             assertNotNull(index.at(position(source, "Handler", occurrence = 1))).candidates,
         )
+        assertNull(index.at(position(source, "Handler", occurrence = 2)))
         assertEquals(
             listOf(listOf("groovy.transform.options.ImmutablePropertyHandler")),
-            assertNotNull(index.at(position(source, "Handler", occurrence = 2))).candidates,
+            assertNotNull(index.at(position(source, "Handler", occurrence = 3))).candidates,
         )
         assertEquals(
             listOf("groovy.transform.PropertyOptions"),
@@ -47,6 +79,59 @@ class GroovySourceTypeIndexTest {
             listOf(listOf("java.lang.annotation.ElementType")),
             assertNotNull(index.at(position(source, "ElementType", occurrence = 1))).candidates,
         )
+    }
+
+    @Test
+    fun `partial annotation coverage keeps verified argument metadata but does not publish the argument link`() {
+        val source = "import java.lang.String as Text\n" +
+            "@interface Marker { Class value() }\n" +
+            "@Marker(Text) class Model {}\n" +
+            "@Unknown({ -> 1 }) class Other {}"
+        val parsed = GroovyParserFacade().parse(
+            ParseRequest(
+                URI.create("file:///Partial.groovy"),
+                source,
+                compilePhase = Phases.CONVERSION,
+                parseMode = ParseMode.MINIMAL,
+            ),
+        )
+        assertTrue(parsed.isSuccessful, parsed.diagnostics.toString())
+        parsed.compilationUnit.classLoader.use {
+            val argument = parsed.sourceAnnotations.references.single { it.kind == AnnotationReferenceKind.ARGUMENT }
+            assertIs<AnnotationCoverage.Partial>(parsed.sourceAnnotations.coverage)
+            assertEquals("Text", argument.spelling)
+        }
+
+        val index = GroovySourceTypeIndex.build(source)
+        assertNull(index.at(position(source, "Text", occurrence = 1)))
+    }
+
+    @Test
+    fun `inherited nested class shadow prevents linking an imported class literal alias`() {
+        val source = """
+            import java.lang.String as Text
+            @interface Marker { Class value() }
+            class Parent { static class Text {} }
+            class Model extends Parent { @Marker(Text) void method() {} }
+        """.trimIndent()
+        val captured = GroovyParserFacade().parse(
+            ParseRequest(
+                URI.create("file:///InheritedArgument.groovy"),
+                source,
+                compilePhase = Phases.CONVERSION,
+                parseMode = ParseMode.MINIMAL,
+            ),
+        )
+        captured.compilationUnit.classLoader.use {
+            assertTrue(captured.isSuccessful, captured.diagnostics.toString())
+            assertEquals(AnnotationCoverage.Complete, captured.sourceAnnotations.coverage)
+            assertEquals(
+                "Text",
+                captured.sourceAnnotations.references.single { it.kind == AnnotationReferenceKind.ARGUMENT }.spelling,
+            )
+        }
+
+        assertNull(GroovySourceTypeIndex.build(source).at(position(source, "Text", occurrence = 2)))
     }
 
     @Test

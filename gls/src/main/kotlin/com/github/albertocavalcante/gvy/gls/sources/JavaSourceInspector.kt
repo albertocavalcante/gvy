@@ -43,7 +43,9 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
 
     private fun parseContent(content: String, checkCancelled: () -> Unit) =
         CancellableSourceReader(StringReader(content), checkCancelled).use { reader ->
-            newParser().parse(ParseStart.COMPILATION_UNIT, Providers.provider(reader))
+            val parsed = newParser().parse(ParseStart.COMPILATION_UNIT, Providers.provider(reader))
+            reader.cancellation?.let { throw it }
+            parsed
         }
 
     private fun readSource(path: Path): String? {
@@ -72,7 +74,7 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
      * Inspect a Java source file to find the definition of the given class.
      *
      * @param sourcePath Path to the .java file
-     * @param className Fully qualified class name (e.g., "java.util.Date")
+     * @param className Fully qualified class name, using either source or binary nested-type names
      * @return InspectionResult containing line number and documentation, or null if not found
      */
     fun inspectClass(sourcePath: Path, className: String): InspectionResult? {
@@ -408,7 +410,7 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
 
             val compilationUnit = parseResult.result.orElse(null) ?: return emptyMap()
 
-            // Match the complete package and lexical binary name.
+            // Match the complete package and unique source or binary owner path.
             val classDecl = findJavaTypeDeclaration(compilationUnit, className, checkCancelled)
 
             if (classDecl == null) {
@@ -452,18 +454,20 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
 
 private fun findJavaTypeDeclaration(
     unit: CompilationUnit,
-    binaryName: String,
+    qualifiedName: String,
     checkCancelled: () -> Unit,
 ): TypeDeclaration<*>? = unit.findAll(TypeDeclaration::class.java).singleOrNull { declaration ->
     checkCancelled()
-    val owners = binaryTypeOwners(declaration, checkCancelled) ?: return@singleOrNull false
     val packageName = unit.packageDeclaration.map { it.nameAsString }.orElse("")
-    val declaredName = if (packageName.isEmpty()) owners else "$packageName.$owners"
-    declaredName == binaryName
+    val packagePrefix = if (packageName.isEmpty()) "" else "$packageName."
+    val typeNames = javaTypeNames(declaration, checkCancelled) ?: return@singleOrNull false
+    packagePrefix + typeNames.binaryName == qualifiedName || packagePrefix + typeNames.sourceName == qualifiedName
 }
 
-/** Local and anonymous classes have compiler-assigned binary names and cannot be selected by source name alone. */
-private fun binaryTypeOwners(declaration: TypeDeclaration<*>, checkCancelled: () -> Unit): String? {
+private data class JavaTypeNames(val binaryName: String, val sourceName: String)
+
+/** Local and anonymous classes have no stable member-owner path and cannot be selected by source name alone. */
+private fun javaTypeNames(declaration: TypeDeclaration<*>, checkCancelled: () -> Unit): JavaTypeNames? {
     val owners = mutableListOf<String>()
     var current = declaration
     while (true) {
@@ -475,7 +479,8 @@ private fun binaryTypeOwners(declaration: TypeDeclaration<*>, checkCancelled: ()
             else -> return null
         }
     }
-    return owners.asReversed().joinToString("$")
+    val outerToInner = owners.asReversed()
+    return JavaTypeNames(outerToInner.joinToString("$"), outerToInner.joinToString("."))
 }
 
 private fun newJavaSourceParser(): JavaParser = JavaParser(
