@@ -82,6 +82,10 @@ test('writes only owned regular files and refuses a swapped symlink', async () =
     const target = path.join(dir, 'target.md');
     const victim = path.join(dir, 'victim.md');
     await writeFile(victim, 'victim');
+    await symlink(path.join(dir, 'missing'), target);
+    await expect(writeOwned(target, `new\n${marker}\n`)).rejects.toThrow();
+    expect(await Bun.file(path.join(dir, 'missing')).exists()).toBe(false);
+    await rm(target);
     await symlink(victim, target);
     await expect(writeOwned(target, `new\n${marker}\n`)).rejects.toThrow();
     expect(await readFile(victim, 'utf8')).toBe('victim');
