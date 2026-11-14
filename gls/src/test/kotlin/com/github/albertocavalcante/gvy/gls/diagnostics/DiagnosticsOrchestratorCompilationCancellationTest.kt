@@ -146,5 +146,8 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
     private fun result(message: String): CompilationResult = mockk {
         every { diagnostics } returns listOf(Diagnostic().apply { this.message = message })
         every { parseCompleted } returns true
+        every { outcome } returns null
+        every { sourceMembershipKnown } returns null
+        every { sourceVisibilityKnown } returns null
     }
 }

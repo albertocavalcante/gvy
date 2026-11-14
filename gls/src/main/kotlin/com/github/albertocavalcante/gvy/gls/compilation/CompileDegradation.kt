@@ -26,9 +26,14 @@ private val PHASE_NAMES = mapOf(
     Phases.FINALIZATION to "FINALIZATION",
 )
 
-private fun phaseName(phase: Int) = PHASE_NAMES[phase] ?: phase.toString()
+fun phaseName(phase: Int) = PHASE_NAMES[phase] ?: phase.toString()
 
-private fun fileName(source: String) = source.trimEnd('/').substringAfterLast('/')
+private const val MAX_EXCLUDED_CONTEXT = 3
+private const val MAX_EXCLUDED_FILE_NAME_LENGTH = 80
+private val CLASS_NAME = Regex("[A-Za-z_$][A-Za-z0-9_$]*(?:[./][A-Za-z_$][A-Za-z0-9_$]*)*")
+private val UNLOADABLE_CLASS = Regex("Unable to load class: ([A-Za-z0-9_.$]+)")
+
+private fun fileName(source: String) = source.trimEnd('/').substringAfterLast('/').take(MAX_EXCLUDED_FILE_NAME_LENGTH)
 
 /** One line for the log: the file, requested vs achieved phase, the reason, the excluded and stubbed classes. */
 fun ParseOutcome.describe(file: String): String = buildString {
@@ -46,6 +51,21 @@ fun ParseOutcome.describe(file: String): String = buildString {
     }
 }
 
+/** Actionable summary for both the Problems view and document status. */
+fun ParseOutcome.userMessage(): String {
+    val missing = fallbackReason?.let { UNLOADABLE_CLASS.find(it)?.groupValues?.get(1) }
+    val definition = fallbackReason?.substringAfter("NoClassDefFoundError:", "")
+        ?.substringBefore(" (caused by:")?.trim()?.takeIf { CLASS_NAME.matches(it) }
+    val name = (missing ?: definition)?.replace('/', '.')
+    if (name != null) {
+        return "Type analysis is limited: compilation could not load $name. Check project dependencies."
+    }
+    val detail = fallbackReason?.removePrefix("Compilation failed:")?.trim()
+        ?.takeUnless { it.isBlank() || it == "startup failed:" || it == "startup failed" }
+    return "Type analysis is limited: compilation could not finish." +
+        (detail?.let { " $it" } ?: " Open analysis details and check project dependencies.")
+}
+
 /**
  * The Information diagnostic telling the user that types are not resolved in this file, or null when the
  * requested phase was reached. Excluded sources alone do not degrade the file, so they only add detail.
@@ -54,11 +74,14 @@ fun ParseOutcome.toDegradationDiagnostic(): Diagnostic? {
     if (!typesUnresolved) return null
     val message = buildString {
         // Worded as of the last compile of this file: a cached result outlives a fix in another file.
-        append("Types are not resolved in this file: its last compile fell back to ${phaseName(achievedPhase)}")
-        fallbackReason?.let { append(" because $it") }
+        val summary = userMessage()
+        append(summary)
         if (excludedSources.isNotEmpty()) {
-            append(". Excluded from this compile because they fail to compile: ")
-            append(excludedSources.joinToString { fileName(it.source) })
+            if (!summary.endsWith('.')) append('.')
+            append(" Excluded from this compile because they fail to compile: ")
+            append(excludedSources.take(MAX_EXCLUDED_CONTEXT).joinToString { fileName(it.source) })
+            val remaining = excludedSources.size - MAX_EXCLUDED_CONTEXT
+            if (remaining > 0) append(" (and $remaining more)")
         }
     }
     return Diagnostic(

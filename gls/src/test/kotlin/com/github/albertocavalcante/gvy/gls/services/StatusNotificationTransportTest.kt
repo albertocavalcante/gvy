@@ -194,6 +194,8 @@ class StatusNotificationTransportTest {
         val statuses = mutableListOf<StatusNotification>()
         var requestsHandled = 0
 
+        override fun documentAnalysis(analysis: DocumentAnalysisNotification) = Unit
+
         override fun groovyStatus(status: StatusNotification) {
             statuses.add(status)
         }

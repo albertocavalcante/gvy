@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls
 
+import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisNotification
 import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import org.eclipse.lsp4j.MessageActionItem
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Uses per-URI queues to support concurrent tests without race conditions.
  */
 class SynchronizingTestLanguageClient : GroovyLanguageClient {
+    override fun documentAnalysis(analysis: DocumentAnalysisNotification) = Unit
 
     // Per-URI diagnostics queues for thread-safe, order-preserving storage
     private val diagnosticsQueues = ConcurrentHashMap<String, LinkedBlockingQueue<PublishDiagnosticsParams>>()

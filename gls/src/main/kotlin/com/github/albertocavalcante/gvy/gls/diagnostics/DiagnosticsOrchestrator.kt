@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.toSourceModelDiagnostic
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
@@ -22,7 +23,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.control.CompilationFailedException
-import org.eclipse.lsp4j.PublishDiagnosticsParams
+import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.services.LanguageClient
 import java.io.IOException
 import java.net.URI
@@ -53,6 +54,7 @@ class DiagnosticsOrchestrator(
     serverConfiguration: ServerConfiguration,
     private val client: () -> LanguageClient?,
     private val debounceMillis: Long = DEFAULT_DIAGNOSTICS_DEBOUNCE_MS,
+    private val documentAnalysisSupported: () -> Boolean = { false },
 ) {
     private val logger = KotlinLogging.logger {}
     private data class Runtime(
@@ -61,7 +63,13 @@ class DiagnosticsOrchestrator(
         val generation: Long = 0,
     )
 
-    private class Run(val uri: URI, val snapshot: DocumentSnapshot, val settings: Runtime, val id: Long) {
+    private class Run(
+        val uri: URI,
+        val snapshot: DocumentSnapshot,
+        val settings: Runtime,
+        val id: Long,
+        val sessionId: String?,
+    ) {
         // No parent: cancelling an individual waiter must not cancel shared analysis or other waiters.
         val result = CompletableDeferred<DiagnosticsRunResult>()
 
@@ -74,15 +82,30 @@ class DiagnosticsOrchestrator(
     private val runIds = AtomicLong()
 
     private val publicationLock = Any()
+    private val configurationOwners = ConfigurationDiagnosticOwners()
+    private val ownDiagnostics = mutableMapOf<URI, List<Diagnostic>>()
+    private val configurationPublication = ConfigurationPublicationState(ownDiagnostics, configurationOwners)
+    private val analysisPublisher =
+        DocumentAnalysisPublisher(documentProvider, publicationLock, client, documentAnalysisSupported)
 
     @Volatile
     private var runtime = Runtime(serverConfiguration, diagnosticsService)
 
     /** Replace provider configuration and cancel work computed under the previous settings. */
     fun updateConfiguration(configuration: ServerConfiguration, service: DiagnosticsService) {
-        val (retiredJobs, retiredRuns) = synchronized(publicationLock) {
-            runtime = Runtime(configuration, service, Math.incrementExact(runtime.generation))
-            (diagnosticJobs.values.toList() to runs.values.toList()).also { runs.clear() }
+        val recipient = client()
+        val (retiredJobs, retiredRuns) = documentProvider.withLifecycleLock {
+            synchronized(publicationLock) {
+                runtime = Runtime(configuration, service, Math.incrementExact(runtime.generation))
+                clearConfigurationNotices(
+                    recipient,
+                    null,
+                    documentProvider,
+                    runtime.configuration.maxNumberOfProblems,
+                    configurationPublication,
+                )
+                (diagnosticJobs.values.toList() to runs.values.toList()).also { runs.clear() }
+            }
         }
         // Completion/cancellation handlers may reenter lifecycle operations. Invoke them outside monitors.
         retiredRuns.forEach { it.invalidate() }
@@ -112,8 +135,9 @@ class DiagnosticsOrchestrator(
     // The owned job records infrastructure failure; cancellation and Errors propagate.
     @Suppress("TooGenericExceptionCaught")
     fun trigger(uri: URI, content: String, debounce: Boolean = false) {
-        val captured = documentProvider.getSnapshot(uri)?.takeIf { it.content == content } ?: return
-        val run = Run(uri, captured, runtime, runIds.incrementAndGet())
+        val buffer = documentProvider.getBuffer(uri) ?: return
+        val captured = buffer.snapshot.takeIf { it.content == content } ?: return
+        val run = Run(uri, captured, runtime, runIds.incrementAndGet(), buffer.incarnation.analysisSessionId)
         // Register before starting; a fast completion must not leave a completed job in the active map.
         val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
             val currentJob = coroutineContext.job
@@ -176,7 +200,8 @@ class DiagnosticsOrchestrator(
             "parser",
             enabledByDefault = true,
         )
-        val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+        val parserDiagnostics = (if (parserEnabled) result.diagnostics else emptyList()) +
+            listOfNotNull(result.toSourceModelDiagnostic())
         checkCurrentRun(publishDiagnostics(run.uri, run.snapshot, owner, parserDiagnostics, run.settings)) {
             "Parser publication is no longer current for ${run.uri}"
         }
@@ -185,17 +210,24 @@ class DiagnosticsOrchestrator(
         // Keep its ordinary parser publication, but never certify it as a settled analysis result.
         check(result.parseCompleted) { "Parsing did not complete for ${run.uri}" }
         val collected = run.settings.service.collectDiagnostics(run.uri, run.snapshot.content, result)
-        val allDiagnostics = parserDiagnostics + collected.diagnostics
         scope.ensureActive()
-        if (collected.diagnostics.isNotEmpty()) {
-            checkCurrentRun(publishDiagnostics(run.uri, run.snapshot, owner, allDiagnostics, run.settings)) {
-                "Final publication is no longer current for ${run.uri}"
-            }
-        }
-        checkCurrentRun(isCurrentRun(run, owner)) {
-            "Completed diagnostics are obsolete for ${run.uri}"
-        }
+        val candidates = configurationCandidates(documentProvider, run.uri, collected.diagnostics)
+        val allDiagnostics =
+            publishFinalDiagnostics(
+                run,
+                owner,
+                parserDiagnostics,
+                collected.diagnostics,
+                collected.failures,
+                candidates,
+            )
+                ?: throw DiagnosticsRunUnavailableException("Final diagnostics are obsolete for ${run.uri}")
         val cohort = (if (parserEnabled) listOf("parser") else emptyList()) + collected.providerIds
+        analysisPublisher.publish(
+            DocumentAnalysisContext(run.uri, run.snapshot, run.id, run.sessionId),
+            result,
+            allDiagnostics,
+        ) { runtime === run.settings && runs[run.uri] === run && owner.isActive && diagnosticJobs[run.uri] === owner }
         run.result.complete(
             DiagnosticsRunResult(
                 run.uri.toString(),
@@ -205,18 +237,12 @@ class DiagnosticsOrchestrator(
                 allDiagnostics.take(run.settings.configuration.maxNumberOfProblems.coerceAtLeast(0)),
                 cohort,
                 collected.failures,
+                result.outcome,
+                sourceMembershipKnown = result.sourceMembershipKnown,
+                sourceVisibilityKnown = result.sourceVisibilityKnown,
             ),
         )
         logger.debug { "Completed diagnostics run ${run.id} for ${run.uri}" }
-    }
-
-    private fun logFailure(uri: URI, failure: Exception) {
-        when (failure) {
-            is CompilationFailedException -> logger.error(failure) { "Compilation failed for: $uri" }
-            is IllegalArgumentException -> logger.error(failure) { "Invalid arguments for: $uri" }
-            is IOException -> logger.error(failure) { "I/O error for: $uri" }
-            else -> logger.error(failure) { "Unexpected error during diagnostics for: $uri" }
-        }
     }
 
     private fun isCurrentRun(run: Run, owner: Job? = null): Boolean {
@@ -246,10 +272,6 @@ class DiagnosticsOrchestrator(
             "Diagnostics changed while awaiting $uri"
         }
         return result
-    }
-
-    private inline fun checkCurrentRun(current: Boolean, message: () -> String) {
-        if (!current) throw DiagnosticsRunUnavailableException(message())
     }
 
     /** A shared compile may belong to another request; only a still-current waiter may retry it once. */
@@ -310,7 +332,24 @@ class DiagnosticsOrchestrator(
                 synchronized(publicationLock) {
                     retired = diagnosticJobs.remove(uri)
                     retiredRun = runs.remove(uri)
-                    recipient?.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), emptyList()))
+                    val affected = configurationOwners.remove(uri)
+                    ownDiagnostics.remove(uri)
+                    publishCombined(
+                        recipient,
+                        uri,
+                        null,
+                        runtime.configuration.maxNumberOfProblems,
+                        configurationPublication,
+                    )
+                    affected.filter { it != uri }.forEach {
+                        publishCombined(
+                            recipient,
+                            it,
+                            documentProvider.getSnapshot(it)?.version,
+                            runtime.configuration.maxNumberOfProblems,
+                            configurationPublication,
+                        )
+                    }
                 }
             }
         } finally {
@@ -362,13 +401,101 @@ class DiagnosticsOrchestrator(
         documentProvider.withCurrentSnapshot(uri, captured) {
             synchronized(publicationLock) {
                 if (runtime !== settings || !owner.isActive || diagnosticJobs[uri] !== owner) return@synchronized
-                val limited = diagnostics.take(settings.configuration.maxNumberOfProblems.coerceAtLeast(0))
-                logger.debug { "Publishing ${limited.size} diagnostics for $uri" }
-                recipient.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), limited, captured.version))
+                ownDiagnostics[uri] = diagnostics
+                publishCombined(
+                    recipient,
+                    uri,
+                    captured.version,
+                    settings.configuration.maxNumberOfProblems,
+                    configurationPublication,
+                )
                 published = true
             }
         }
         return published
+    }
+
+    private fun publishFinalDiagnostics(
+        run: Run,
+        owner: Job,
+        parserDiagnostics: List<Diagnostic>,
+        providerDiagnostics: List<Diagnostic>,
+        failures: List<com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure>,
+        candidates: List<ConfigurationCandidate>,
+    ): List<Diagnostic>? {
+        val recipient = client() ?: return null
+        var published: List<Diagnostic>? = null
+        documentProvider.withCurrentSnapshot(run.uri, run.snapshot) {
+            // The lifecycle lock covers the source and every open configuration. Filesystem reads are bounded
+            // and happen before publicationLock; a watched-file event invalidates this run's runtime generation.
+            val valid = currentConfigurationCandidates(documentProvider, candidates)
+            val filtered = filterConfigurationDiagnostics(providerDiagnostics, valid)
+            val presented = consolidateProviderFailures(filtered, failures)
+            val all = parserDiagnostics + presented
+            synchronized(publicationLock) {
+                if (runtime !== run.settings || runs[run.uri] !== run) return@synchronized
+                if (!owner.isActive || diagnosticJobs[run.uri] !== owner) return@synchronized
+                ownDiagnostics[run.uri] = all
+                if (presented.isNotEmpty()) {
+                    publishCombined(
+                        recipient,
+                        run.uri,
+                        run.snapshot.version,
+                        run.settings.configuration.maxNumberOfProblems,
+                        configurationPublication,
+                    )
+                }
+                val contributions = valid.filter { it.uri != run.uri }.groupBy({ it.uri }, { it.diagnostic })
+                val affected = configurationOwners.replace(run.uri, contributions)
+                affected.filter { it != run.uri }.forEach {
+                    publishCombined(
+                        recipient,
+                        it,
+                        documentProvider.getSnapshot(it)?.version,
+                        run.settings.configuration.maxNumberOfProblems,
+                        configurationPublication,
+                    )
+                }
+                published = all
+            }
+        }
+        return published
+    }
+
+    /** Drop ranges for an edited configuration before any later source run can republish them. */
+    fun documentChanged(uri: URI) {
+        val recipient = client()
+        documentProvider.withLifecycleLock {
+            synchronized(publicationLock) {
+                clearConfigurationNotices(
+                    recipient,
+                    uri,
+                    documentProvider,
+                    runtime.configuration.maxNumberOfProblems,
+                    configurationPublication,
+                )
+            }
+        }
+    }
+
+    /** Refresh invalidates both source runs and their configuration contributions. */
+    fun invalidateWorkspaceConfiguration() {
+        val recipient = client()
+        val (jobs, retiredRuns) = documentProvider.withLifecycleLock {
+            synchronized(publicationLock) {
+                runtime = runtime.copy(generation = Math.incrementExact(runtime.generation))
+                clearConfigurationNotices(
+                    recipient,
+                    null,
+                    documentProvider,
+                    runtime.configuration.maxNumberOfProblems,
+                    configurationPublication,
+                )
+                (diagnosticJobs.values.toList() to runs.values.toList()).also { runs.clear() }
+            }
+        }
+        retiredRuns.forEach { it.invalidate() }
+        jobs.forEach { it.cancel() }
     }
 
     /**
@@ -387,4 +514,19 @@ class DiagnosticsOrchestrator(
      * @return The diagnostic jobs map
      */
     internal fun getDiagnosticJobsMap(): ConcurrentHashMap<URI, Job> = diagnosticJobs
+}
+
+private val diagnosticsFailureLogger = KotlinLogging.logger {}
+
+private fun logFailure(uri: URI, failure: Exception) {
+    when (failure) {
+        is CompilationFailedException -> diagnosticsFailureLogger.error(failure) { "Compilation failed for: $uri" }
+        is IllegalArgumentException -> diagnosticsFailureLogger.error(failure) { "Invalid arguments for: $uri" }
+        is IOException -> diagnosticsFailureLogger.error(failure) { "I/O error for: $uri" }
+        else -> diagnosticsFailureLogger.error(failure) { "Unexpected error during diagnostics for: $uri" }
+    }
+}
+
+private inline fun checkCurrentRun(current: Boolean, message: () -> String) {
+    if (!current) throw DiagnosticsRunUnavailableException(message())
 }

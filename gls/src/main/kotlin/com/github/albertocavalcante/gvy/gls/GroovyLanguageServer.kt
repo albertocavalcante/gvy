@@ -74,6 +74,7 @@ import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
@@ -89,6 +90,8 @@ import java.util.concurrent.TimeoutException
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
 private const val PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS = 20L
+private const val MAX_PENDING_ANALYSIS_SESSIONS = 1024
+private const val MAX_ANALYSIS_SESSION_LENGTH = 128
 
 class GroovyLanguageServer(
     private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
@@ -141,12 +144,22 @@ class GroovyLanguageServer(
         sourceNavigator = sourceNavigator,
     )
 
+    private val documentAnalysisSessions = java.util.concurrent.ConcurrentHashMap<URI, String>()
+
     // Services
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
         options = GroovyTextDocumentServiceOptions(
             client = { baseClient },
+            documentAnalysisSupported = {
+                val experimental = Gson().toJsonTree(clientCapabilities?.experimental)
+                experimental?.isJsonObject == true &&
+                    experimental.asJsonObject.get("groovyDocumentAnalysis")?.let {
+                        it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean
+                    } == true
+            },
+            documentAnalysisSession = { documentAnalysisSessions.remove(it) },
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
         ),
@@ -381,6 +394,23 @@ class GroovyLanguageServer(
      * Versioned server runtime and current hover-engine facts. The engine is observed at request time and is not
      * an attribution to any earlier hover. Optional values are omitted unless their state is known.
      */
+    @JsonNotification("groovy/documentAnalysisSession")
+    fun documentAnalysisSession(params: JsonElement?) {
+        val obj = params?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+        val uri = obj.get("uri")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return
+        val session = obj.get("sessionId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            ?: return
+        if (session.length > MAX_ANALYSIS_SESSION_LENGTH || session.isEmpty()) return
+        val parsed = runCatching { URI.create(uri) }.getOrNull() ?: return
+        synchronized(documentAnalysisSessions) {
+            if (documentAnalysisSessions.size < MAX_PENDING_ANALYSIS_SESSIONS ||
+                documentAnalysisSessions.containsKey(parsed)
+            ) {
+                documentAnalysisSessions[parsed] = session
+            }
+        }
+    }
+
     @JsonRequest("groovy/runtimeFacts")
     fun runtimeFacts(): CompletableFuture<JsonElement> {
         val error = customRequestLifecycleError()
