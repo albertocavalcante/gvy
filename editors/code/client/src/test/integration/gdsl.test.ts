@@ -59,6 +59,60 @@ suite("GDSL authoring", () => {
     });
   }
 
+  test("folds an indented contributor body", async () => {
+    await editor.edit((edit) =>
+      edit.insert(
+        new vscode.Position(0, 0),
+        "contributor {\n    method(name: 'deploy')\n}\ndef after = true",
+      ),
+    );
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("editor.fold");
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      2,
+      "body should be hidden while the closing brace stays visible",
+    );
+    await vscode.commands.executeCommand("editor.unfold", {
+      selectionLines: [0],
+    });
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      1,
+      "unfold should reveal the body",
+    );
+  });
+
+  test("folds marker regions and keeps the following line visible", async () => {
+    await editor.edit((edit) =>
+      edit.insert(
+        new vscode.Position(0, 0),
+        "// region methods\nmethod(name: 'deploy')\n// endregion\ndef after = true",
+      ),
+    );
+    await vscode.commands.executeCommand("editor.foldAllMarkerRegions");
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      3,
+      "region contents and end marker should be hidden",
+    );
+    await vscode.commands.executeCommand("editor.unfold", {
+      selectionLines: [0],
+    });
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      1,
+      "unfold should reveal the region contents",
+    );
+  });
+
   test("selects and advances editable method snippet fields", async () => {
     await vscode.commands.executeCommand("editor.action.insertSnippet", {
       langId: "gdsl",
