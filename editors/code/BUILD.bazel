@@ -77,3 +77,13 @@ alias(
     actual = "//editors/code/client:ast_webview_bundle",
     visibility = ["//visibility:public"],
 )
+
+js_library(
+    name = "guarded_http",
+    srcs = [
+        "shared/guardedHttp.d.ts",
+        "shared/guardedHttp.js",
+    ],
+    visibility = ["//editors/code/client:__pkg__"],
+    deps = [":network_policy"],
+)
