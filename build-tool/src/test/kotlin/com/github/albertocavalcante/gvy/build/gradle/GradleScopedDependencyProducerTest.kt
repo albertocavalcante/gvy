@@ -35,6 +35,9 @@ import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -206,6 +209,118 @@ class GradleScopedDependencyProducerTest {
         assertFailsWith<CancellationException> { pending.await() }
         assertTrue(tokens.single().isCancellationRequested)
         handlers.single().onFailure(BuildCancelledException("late acknowledgement")) // Ignored after cancellation.
+    }
+
+    @Test
+    fun `cancelled operation retains lease until failure acknowledgement`() = runBlocking {
+        val releases = AtomicInteger()
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
+        builder.neverCompletes()
+        val pending = async {
+            GradleScopedDependencyProducer(leasing, initScriptDirectory = temporary.resolve("init-scripts"))
+                .resolve(directory, provenance)
+        }
+        withTimeout(5.seconds) { while (handlers.isEmpty()) yield() }
+
+        pending.cancelAndJoin()
+
+        assertTrue(tokens.single().isCancellationRequested)
+        assertEquals(0, releases.get(), "cancellation alone does not acknowledge completion")
+        handlers.single().onFailure(BuildCancelledException("acknowledged"))
+        assertEquals(1, releases.get())
+        handlers.single().onComplete(model)
+        handlers.single().onFailure(BuildCancelledException("duplicate"))
+        assertEquals(1, releases.get())
+    }
+
+    @Test
+    fun `cancel before launch releases lease without starting model fetch`() = runBlocking {
+        val releases = AtomicInteger()
+        val entered = CountDownLatch(1)
+        val proceed = CountDownLatch(1)
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.acquire(directory, null) } answers {
+            entered.countDown()
+            check(proceed.await(5, TimeUnit.SECONDS))
+            ConnectionLease(connection) { releases.incrementAndGet() }
+        }
+        builder.neverCompletes()
+        val pending = async {
+            GradleScopedDependencyProducer(leasing, initScriptDirectory = temporary.resolve("init-scripts"))
+                .resolve(directory, provenance)
+        }
+        withTimeout(5.seconds) { while (entered.count != 0L) yield() }
+        pending.cancel()
+        proceed.countDown()
+        pending.join()
+
+        assertEquals(1, releases.get())
+        assertTrue(handlers.isEmpty())
+    }
+
+    @Test
+    fun `cancellation during launch retains lease until callback`() = runBlocking {
+        val releases = AtomicInteger()
+        val entered = CountDownLatch(1)
+        val proceed = CountDownLatch(1)
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
+        every { builder.get(any<ResultHandler<in GradleScopedDependencyModel>>()) } answers {
+            handlers.add(firstArg())
+            entered.countDown()
+            check(proceed.await(5, TimeUnit.SECONDS))
+        }
+        val pending = async {
+            GradleScopedDependencyProducer(leasing, initScriptDirectory = temporary.resolve("init-scripts"))
+                .resolve(directory, provenance)
+        }
+        withTimeout(5.seconds) { while (entered.count != 0L) yield() }
+        pending.cancel()
+        assertEquals(0, releases.get())
+        proceed.countDown()
+        pending.join()
+        assertEquals(0, releases.get())
+        handlers.single().onComplete(model)
+        assertEquals(1, releases.get())
+    }
+
+    @Test
+    fun `synchronous launch failure releases lease`() = runBlocking {
+        val releases = AtomicInteger()
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
+        every { builder.get(any<ResultHandler<in GradleScopedDependencyModel>>()) } answers {
+            handlers.add(firstArg())
+            error("launch failed")
+        }
+
+        val result = GradleScopedDependencyProducer(leasing, initScriptDirectory = temporary.resolve("init-scripts"))
+            .resolve(directory, provenance)
+
+        assertSame(TargetDependencyEvidence.Legacy, result)
+        assertEquals(1, releases.get())
+        handlers.single().onComplete(model)
+        assertEquals(1, releases.get())
+    }
+
+    @Test
+    fun `duplicate callbacks after success do not resume twice or release twice`() = runBlocking {
+        val releases = AtomicInteger()
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
+        builder.neverCompletes()
+        val pending = async {
+            GradleScopedDependencyProducer(leasing, initScriptDirectory = temporary.resolve("init-scripts"))
+                .resolve(directory, provenance)
+        }
+        withTimeout(5.seconds) { while (handlers.isEmpty()) yield() }
+        handlers.single().onComplete(model)
+        handlers.single().onComplete(model)
+        handlers.single().onFailure(BuildCancelledException("late duplicate"))
+
+        assertIs<TargetDependencyEvidence.Scoped>(pending.await())
+        assertEquals(1, releases.get())
     }
 
     @Test
