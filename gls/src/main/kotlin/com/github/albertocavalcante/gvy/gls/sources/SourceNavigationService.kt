@@ -453,13 +453,19 @@ class SourceNavigationService(
                         javaSourceInspector.inspectMethod(sourcePath, binaryName, member)
                     }
                 }
-                methodInspection?.let { inspection ->
-                    classResult.copy(
-                        lineNumber = inspection.lineNumber,
-                        documentation = inspection.documentation,
-                        definition = inspection.definition,
+                when {
+                    memberName == null -> classResult
+                    methodInspection == null -> classResult.copy(
+                        lineNumber = null,
+                        documentation = null,
+                        definition = null,
                     )
-                } ?: classResult
+                    else -> classResult.copy(
+                        lineNumber = methodInspection.lineNumber,
+                        documentation = methodInspection.documentation,
+                        definition = methodInspection.definition,
+                    )
+                }
             }
         }
 

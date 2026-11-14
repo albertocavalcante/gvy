@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class LegacyJdkMethodNavigationTest {
     @TempDir lateinit var directory: Path
@@ -45,6 +46,29 @@ class LegacyJdkMethodNavigationTest {
             )
             assertEquals(definition.nameRange.startLine + 1, methodLineNumber)
             assertNotEquals(classLineNumber, methodLineNumber)
+        }
+    }
+
+    @Test
+    @EnabledIf("hasJdkSources")
+    fun `legacy JDK method navigation leaves overloads and unknown methods unresolved`() = runBlocking {
+        val className = "java.lang.String"
+        val classUri = URI.create("jrt:/java.base/java/lang/String.class")
+        val jdkSources = JdkSourceResolver(directory.resolve("jdk-sources"))
+        SourceNavigationService(
+            sourceCacheRoot = directory.resolve("jdk-navigation"),
+            jdkSourceResolver = jdkSources,
+        ).use { navigation ->
+            for (methodName in listOf("indexOf", "missingMethod")) {
+                val result = assertIs<SourceNavigator.SourceResult.SourceLocation>(
+                    navigation.navigateToMethodSource(classUri, className, methodName),
+                )
+
+                assertEquals(className, result.className)
+                assertNull(result.lineNumber, "$methodName must not inherit the class line")
+                assertNull(result.documentation, "$methodName must not inherit class documentation")
+                assertNull(result.definition, "$methodName must not be reported as the class declaration")
+            }
         }
     }
 
