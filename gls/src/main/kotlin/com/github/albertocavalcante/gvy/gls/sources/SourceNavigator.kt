@@ -30,7 +30,7 @@ interface SourceNavigator {
          *
          * @property uri URI pointing to the source file (file: scheme for extracted sources)
          * @property className Fully qualified class name
-         * @property lineNumber Optional line number where the class declaration starts
+         * @property lineNumber Optional one-based line number where the selected declaration starts
          * @property documentation Optional documentation extracted from the source
          */
         data class SourceLocation(
