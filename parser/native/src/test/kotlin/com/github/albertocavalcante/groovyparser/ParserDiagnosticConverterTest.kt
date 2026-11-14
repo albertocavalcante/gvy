@@ -4,6 +4,9 @@
 package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
+import com.github.albertocavalcante.groovyparser.internal.SourceSnapshot
+import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
+import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.control.CompilerConfiguration
@@ -51,6 +54,70 @@ class ParserDiagnosticConverterTest {
         assertEquals(1, diagnostic.range.start.line)
         assertEquals(3, diagnostic.range.start.character)
         assertTrue(diagnostic.message.contains("boom"))
+    }
+
+    @Test
+    fun `syntax errors from another source cannot use the current snapshot`() {
+        val exception = SyntaxException("other error", 1, 7).apply { sourceLocator = "Other.groovy" }
+        val collector = ErrorCollector(configuration).also {
+            it.addError(SyntaxErrorMessage(exception, source("Other.groovy")))
+        }
+        val content = "import"
+        val diagnostics = ParserDiagnosticConverter.convert(
+            collector,
+            setOf("Test.groovy"),
+            SyntaxSourceContext(SourceSnapshot(content), GroovyTokenIndex.build(content), setOf("Test.groovy")),
+        )
+        assertTrue(diagnostics.isEmpty())
+    }
+
+    @Test
+    fun `invalid compiler positions cannot be clamped into an incomplete import`() {
+        val content = "import"
+        val exception = SyntaxException("other error", 1, 100).apply { sourceLocator = "Test.groovy" }
+        val collector = ErrorCollector(configuration).also {
+            it.addError(SyntaxErrorMessage(exception, source()))
+        }
+        val diagnostic = ParserDiagnosticConverter.convert(
+            collector,
+            setOf("Test.groovy"),
+            SyntaxSourceContext(SourceSnapshot(content), GroovyTokenIndex.build(content), setOf("Test.groovy")),
+        ).single()
+        assertEquals("syntax-error", diagnostic.code)
+        assertEquals("other error", diagnostic.message)
+        assertEquals(content.length, diagnostic.range.start.character)
+    }
+
+    @Test
+    fun `unscoped syntax errors cannot use a supplied source snapshot`() {
+        val exception = SyntaxException("other error", 1, 7).apply { sourceLocator = "Other.groovy" }
+        val collector = ErrorCollector(configuration).also {
+            it.addError(SyntaxErrorMessage(exception, source("Other.groovy")))
+        }
+        val content = "import"
+        val diagnostic = ParserDiagnosticConverter.convert(
+            collector,
+            emptySet(),
+            SyntaxSourceContext(SourceSnapshot(content), GroovyTokenIndex.build(content), setOf("Test.groovy")),
+        ).single()
+        assertEquals("syntax-error", diagnostic.code)
+        assertEquals("other error", diagnostic.message)
+    }
+
+    @Test
+    fun `fallback retains a valid compiler span`() {
+        val content = "abcdef"
+        val exception = SyntaxException("other error", 1, 2, 1, 6).apply { sourceLocator = "Test.groovy" }
+        val collector = ErrorCollector(configuration).also {
+            it.addError(SyntaxErrorMessage(exception, source()))
+        }
+        val diagnostic = ParserDiagnosticConverter.convert(
+            collector,
+            setOf("Test.groovy"),
+            SyntaxSourceContext(SourceSnapshot(content), GroovyTokenIndex.build(content), setOf("Test.groovy")),
+        ).single()
+        assertEquals(1, diagnostic.range.start.character)
+        assertEquals(5, diagnostic.range.end.character)
     }
 
     @Test

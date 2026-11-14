@@ -9,6 +9,8 @@ import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
+import com.github.albertocavalcante.groovyparser.internal.SourceSnapshot
+import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
@@ -482,7 +484,11 @@ class GroovyParserFacade internal constructor(
 
             val ast = extractAst(compilationUnit, request.sourceUnitName)
             val diagnostics =
-                ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates) { name ->
+                ParserDiagnosticConverter.convert(
+                    compilationUnit.errorCollector,
+                    request.locatorCandidates,
+                    SyntaxSourceContext(SourceSnapshot(request.content), tokenIndex, setOf(request.sourceUnitName)),
+                ) { name ->
                     classLoader.hasClass(name)
                 }.toMutableList()
 

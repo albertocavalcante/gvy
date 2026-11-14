@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.groovyparser.internal
 
+import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
 import com.github.albertocavalcante.nativeapi.ParserSeverity
@@ -21,6 +22,12 @@ import org.codehaus.groovy.syntax.Token
 import java.io.PrintWriter
 import java.io.StringWriter
 
+internal data class SyntaxSourceContext(
+    val source: SourceSnapshot,
+    val tokens: GroovyTokenIndex,
+    val locators: Set<String>,
+)
+
 internal object ParserDiagnosticConverter {
     private val logger = KotlinLogging.logger {}
 
@@ -34,6 +41,7 @@ internal object ParserDiagnosticConverter {
     fun convert(
         errorCollector: ErrorCollector,
         allowedLocators: Set<String>,
+        context: SyntaxSourceContext? = null,
         isProjectClass: (String) -> Boolean = { false },
     ): List<ParserDiagnostic> {
         val diagnostics = mutableListOf<ParserDiagnostic>()
@@ -47,7 +55,10 @@ internal object ParserDiagnosticConverter {
                     ) {
                         return@forEach
                     }
-                    diagnostics += convertSyntaxError(syntaxException)
+                    val matchingContext = context?.takeIf {
+                        matchesLocator(syntaxException.sourceLocator, it.locators)
+                    }
+                    diagnostics += convertSyntaxError(syntaxException, matchingContext)
                 }
 
                 else -> {
@@ -74,7 +85,7 @@ internal object ParserDiagnosticConverter {
         return diagnostics
     }
 
-    private fun convertSyntaxError(syntaxException: SyntaxException): ParserDiagnostic {
+    private fun convertSyntaxError(syntaxException: SyntaxException, context: SyntaxSourceContext?): ParserDiagnostic {
         val line = maxOf(0, syntaxException.line - 1)
         val start = maxOf(0, syntaxException.startColumn - 1)
         val end = maxOf(start, syntaxException.endColumn - 1)
@@ -83,10 +94,28 @@ internal object ParserDiagnosticConverter {
                 "${syntaxException.originalMessage} at line ${syntaxException.line}, " +
                 "columns ${syntaxException.startColumn}-${syntaxException.endColumn}"
         }
+        if (context != null) {
+            importDiagnostic(syntaxException, context.source, context.tokens)?.let { return it }
+        }
+        val source = context?.source
+        val range = if (source == null) {
+            ParserRange.singleLine(line, start, end)
+        } else {
+            val startOffset = source.compilerOffset(syntaxException.line, syntaxException.startColumn)
+            val endOffset = source.compilerOffset(syntaxException.endLine, syntaxException.endColumn)
+            val cap = (startOffset + MAX_SYNTAX_RANGE).coerceAtMost(source.text.length)
+            val safeCap = if (cap < source.text.length && cap > 0 && Character.isLowSurrogate(source.text[cap])) {
+                cap - 1
+            } else {
+                cap
+            }
+            val boundedEnd = endOffset.coerceIn(startOffset, safeCap)
+            source.range(startOffset, boundedEnd)
+        }
         return ParserDiagnostic(
-            range = ParserRange.singleLine(line, start, end),
+            range = range,
             severity = ParserSeverity.ERROR,
-            message = syntaxException.message ?: "Syntax error",
+            message = syntaxException.originalMessage ?: "Syntax error",
             source = "groovy-parser",
             code = "syntax-error",
         )
@@ -168,6 +197,7 @@ internal object ParserDiagnosticConverter {
         .trim().take(MAX_MESSAGE_CHARS)
 
     private const val MAX_MESSAGE_CHARS = 300
+    private const val MAX_SYNTAX_RANGE = 80
 
     private fun matchesLocator(sourceLocator: String?, allowedLocators: Set<String>): Boolean {
         if (sourceLocator == null) return false
