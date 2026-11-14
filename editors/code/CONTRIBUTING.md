@@ -441,9 +441,10 @@ before reporting success. A failure during final receipt or cleanup work does no
 **Developer: Reload Window** in an existing VS Code window; file verification does not establish which server that
 window has loaded.
 
-JSON failures retain the primary error, stage, and receipt path. `installed: true` means activation was verified before
-a later failure; it does not turn `success: false` into success. `receiptError` and `cleanupError`, when present,
-identify additional finalization failures. Preserve that evidence and inspect any retained lock before retrying.
+JSON failures report the primary error and, when available, stage and receipt path. `installed: true` means activation
+was verified before a later failure; it does not turn `success: false` into success. `receiptError` and `cleanupError`,
+when present, identify additional finalization failures. Preserve that evidence and inspect any retained lock before
+retrying.
 
 The macOS state root defaults to `~/Library/Application Support/gvy/source-installs`; Linux uses
 `${XDG_STATE_HOME:-~/.local/state}/gvy/source-installs`. CI receipts and commit directories live in its `ci-v1`

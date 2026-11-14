@@ -997,6 +997,10 @@ async function installFromCi(options) {
               writeError instanceof Error
                 ? writeError.message
                 : String(writeError);
+            const receiptCleanup = /** @type {{cleanupError?: string}} */ (
+              writeError
+            )?.cleanupError;
+            if (receiptCleanup) error.cleanupError += `; ${receiptCleanup}`;
           }
         }
         // A cleanup failure after success must not disappear.

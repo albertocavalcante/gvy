@@ -582,7 +582,7 @@ test(
       const preload = path.join(root, "inject.js");
       fs.writeFileSync(
         preload,
-        `const fs=require('node:fs'); if(process.argv[1]?.endsWith('install-extension.js')) { const rename=fs.renameSync, rm=fs.rmSync; fs.renameSync=function(a,b) { if(process.env.INJECT_RECEIPT && String(b).endsWith('.json') && String(a).endsWith('.tmp')) { const r=JSON.parse(fs.readFileSync(a,'utf8')); if((process.env.INJECT_RECEIPT==='success' && r.success) || (process.env.INJECT_RECEIPT==='failure' && r.error)) throw Object.assign(new Error('receipt EIO'),{code:'EIO'}); } return rename.apply(this,arguments); }; fs.rmSync=function(p) { if(process.env.INJECT_TEMP && String(p).includes('/.download-')) throw Object.assign(new Error('temp EIO'),{code:'EIO'}); if(process.env.INJECT_LOCK && String(p).endsWith('/.lock')) throw Object.assign(new Error('lock EIO'),{code:'EIO'}); return rm.apply(this,arguments); }; }`,
+        `const fs=require('node:fs'); if(process.argv[1]?.endsWith('install-extension.js')) { const rename=fs.renameSync, rm=fs.rmSync; fs.renameSync=function(a,b) { if(process.env.INJECT_RECEIPT && String(b).endsWith('.json') && String(a).endsWith('.tmp')) { const r=JSON.parse(fs.readFileSync(a,'utf8')); if((process.env.INJECT_RECEIPT==='success' && r.success) || (process.env.INJECT_RECEIPT==='failure' && r.error)) throw Object.assign(new Error('receipt EIO'),{code:'EIO'}); } return rename.apply(this,arguments); }; fs.rmSync=function(p) { if(process.env.INJECT_RECEIPT_TEMP && String(p).endsWith('.tmp') && fs.existsSync(p) && JSON.parse(fs.readFileSync(p,'utf8')).error) throw Object.assign(new Error('receipt temp EIO'),{code:'EIO'}); if(process.env.INJECT_TEMP && String(p).includes('/.download-')) throw Object.assign(new Error('temp EIO'),{code:'EIO'}); if(process.env.INJECT_LOCK && String(p).endsWith('/.lock')) throw Object.assign(new Error('lock EIO'),{code:'EIO'}); return rm.apply(this,arguments); }; }`,
       );
       const injectedEnv = { ...env, NODE_OPTIONS: `--require=${preload}` };
       const successReceipt = spawnSync(process.execPath, args, {
@@ -614,6 +614,26 @@ test(
       const cleanupReceipt = JSON.parse(fs.readFileSync(cleanupResult.receipt));
       assert.equal(cleanupReceipt.success, false);
       assert.equal(cleanupReceipt.installed, true);
+      fs.rmSync(path.join(root, "state/ci-v1/.lock"), { recursive: true });
+      const compound = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: {
+          ...injectedEnv,
+          INJECT_LOCK: "1",
+          INJECT_RECEIPT: "failure",
+          INJECT_RECEIPT_TEMP: "1",
+        },
+        timeout: 30000,
+      });
+      const compoundResult = JSON.parse(compound.stdout);
+      assert.equal(compound.status, 1);
+      assert.equal(compoundResult.stage, "installed");
+      assert.equal(compoundResult.installed, true);
+      assert.match(compoundResult.error, /lock EIO/);
+      assert.match(compoundResult.receiptError, /receipt EIO/);
+      assert.match(compoundResult.cleanupError, /lock EIO/);
+      assert.match(compoundResult.cleanupError, /receipt temp EIO/);
+      assert.match(compoundResult.cleanupError, /\.json\..*\.tmp/);
       fs.rmSync(path.join(root, "state/ci-v1/.lock"), { recursive: true });
       fs.writeFileSync(path.join(extension, "package.json"), "{}");
       const failure = spawnSync(process.execPath, args, {
