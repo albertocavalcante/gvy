@@ -65,21 +65,35 @@ internal class GroovySourceDeclarationInspector {
             ),
         )
         return try {
-            val owner = parsed.ast?.classes.orEmpty().singleOrNull { it.name == binaryName } ?: return null
-            val methods = owner.methods.filter { method ->
-                checkCancelled()
-                method.name == memberName && method.declaringClass.name == binaryName && !method.isSynthetic
+            parsed.ast?.classes.orEmpty().singleOrNull { it.name == binaryName }?.let { owner ->
+                inspectOwnerMember(owner, binaryName, memberName, content, checkCancelled)
             }
-            if (hasSameNameStaticFieldOrProperty(owner, binaryName, memberName, checkCancelled)) return null
-            val method = methods.singleOrNull() ?: return null
-            val ranges = CompilerSourceRanges(content)
-            val declarationRange = ranges.range(method) ?: return null
-            val nameRange = methodNameRange(method, memberName, content, ranges, declarationRange, checkCancelled)
-                ?: return null
-            SourceDefinition(declarationRange.toSourceSpan(), nameRange.toSourceSpan())
         } finally {
             // Only detached spans escape. The separate shared transform loader remains owned by the native parser.
             parsed.compilationUnit.classLoader.close()
+        }
+    }
+
+    private fun inspectOwnerMember(
+        owner: org.codehaus.groovy.ast.ClassNode,
+        binaryName: String,
+        memberName: String,
+        content: String,
+        checkCancelled: () -> Unit,
+    ): SourceDefinition? {
+        val methods = owner.methods.filter { method ->
+            checkCancelled()
+            method.name == memberName && method.declaringClass.name == binaryName && !method.isSynthetic
+        }
+        if (hasSameNameStaticFieldOrProperty(owner, binaryName, memberName, checkCancelled)) return null
+
+        return methods.singleOrNull()?.let { method ->
+            val ranges = CompilerSourceRanges(content)
+            ranges.range(method)?.let { declarationRange ->
+                methodNameRange(method, content, ranges, declarationRange, checkCancelled)?.let { nameRange ->
+                    SourceDefinition(declarationRange.toSourceSpan(), nameRange.toSourceSpan())
+                }
+            }
         }
     }
 
@@ -116,43 +130,66 @@ internal class GroovySourceDeclarationInspector {
 
     private fun methodNameRange(
         method: MethodNode,
-        expectedName: String,
         content: String,
         ranges: CompilerSourceRanges,
         declarationRange: ParserRange,
         checkCancelled: () -> Unit,
     ): ParserRange? {
-        val start = method.annotations.map { annotation ->
-            val annotationRange = ranges.range(annotation) ?: return null
-            ranges.offset(annotationRange.end)
-        }.maxOrNull() ?: ranges.offset(declarationRange.start)
-        val end = method.code?.let { code ->
-            val codeRange = ranges.range(code) ?: return null
-            ranges.offset(codeRange.start)
-        } ?: ranges.offset(declarationRange.end)
-        if (start >= end) return null
+        val searchRange = methodNameSearchRange(method, ranges, declarationRange) ?: return null
+        return findMethodName(content, ranges, method.name, searchRange, checkCancelled)
+    }
 
-        var offset = start
+    private fun methodNameSearchRange(
+        method: MethodNode,
+        ranges: CompilerSourceRanges,
+        declarationRange: ParserRange,
+    ): OffsetRange? {
+        var latestAnnotationEnd: Int? = null
+        for (annotation in method.annotations) {
+            val annotationEnd = ranges.range(annotation)?.end ?: return null
+            val annotationEndOffset = ranges.offset(annotationEnd)
+            latestAnnotationEnd = latestAnnotationEnd?.let { maxOf(it, annotationEndOffset) } ?: annotationEndOffset
+        }
+        val start = latestAnnotationEnd ?: ranges.offset(declarationRange.start)
+        val bodyStart = method.code?.let { code -> ranges.range(code)?.let { ranges.offset(it.start) } }
+        if (method.code != null && bodyStart == null) return null
+        val end = bodyStart ?: ranges.offset(declarationRange.end)
+        return OffsetRange(start, end).takeIf { it.start < it.endExclusive }
+    }
+
+    private fun findMethodName(
+        content: String,
+        ranges: CompilerSourceRanges,
+        expectedName: String,
+        searchRange: OffsetRange,
+        checkCancelled: () -> Unit,
+    ): ParserRange? {
+        var offset = searchRange.start
         var lastIdentifier: ParserRange? = null
-        while (offset < end) {
+        var result: ParserRange? = null
+        var searching = true
+        while (offset < searchRange.endExclusive && searching) {
             checkCancelled()
             when {
                 content[offset].isWhitespace() -> offset++
                 content.startsWith("/*", offset) -> {
                     val commentEnd = content.indexOf("*/", offset + 2)
-                    if (commentEnd < 0 || commentEnd + 2 > end) return null
-                    offset = commentEnd + 2
+                    if (commentEnd < 0 || commentEnd + 2 > searchRange.endExclusive) {
+                        searching = false
+                    } else {
+                        offset = commentEnd + 2
+                    }
                 }
                 content.startsWith("//", offset) -> {
-                    while (offset < end && content[offset] != '\r' && content[offset] != '\n') offset++
+                    offset = lineCommentEnd(content, offset, searchRange.endExclusive)
                 }
                 content[offset] == '(' -> {
-                    val nameRange = lastIdentifier ?: return null
-                    return nameRange.takeIf { ranges.text(it) == expectedName }
+                    result = lastIdentifier?.takeIf { ranges.text(it) == expectedName }
+                    searching = false
                 }
-                content[offset] == '\'' || content[offset] == '"' -> return null
+                content[offset] == '\'' || content[offset] == '"' -> searching = false
                 else -> {
-                    val identifierEnd = groovyIdentifierEnd(content, offset, end)
+                    val identifierEnd = groovyIdentifierEnd(content, offset, searchRange.endExclusive)
                     if (identifierEnd == null) {
                         lastIdentifier = null
                         offset += Character.charCount(content.codePointAt(offset))
@@ -163,7 +200,13 @@ internal class GroovySourceDeclarationInspector {
                 }
             }
         }
-        return null
+        return result
+    }
+
+    private fun lineCommentEnd(content: String, start: Int, endExclusive: Int): Int {
+        var offset = start
+        while (offset < endExclusive && content[offset] != '\r' && content[offset] != '\n') offset++
+        return offset
     }
 
     private fun groovyIdentifierEnd(content: String, start: Int, end: Int): Int? {
@@ -180,4 +223,6 @@ internal class GroovySourceDeclarationInspector {
 
     private fun ParserRange.toSourceSpan(): SourceSpan =
         SourceSpan(start.line, start.character, end.line, end.character)
+
+    private data class OffsetRange(val start: Int, val endExclusive: Int)
 }

@@ -22,6 +22,7 @@ import org.codehaus.groovy.control.Phases
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Path
+import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.extension
 import kotlin.io.path.readText
 
@@ -365,20 +366,8 @@ class WorkspaceCompiler(
         sourceRoots: List<Path>,
     ): FileCompilationResult {
         val first = compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
-        if (first !is FileCompilationResult.Skipped) return first
-
-        val context = currentCoroutineContext()
-        val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
-        if (!retryAdmission.allows(sourcePath)) return first
-
-        val retry = compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
-        if (retry !is FileCompilationResult.Skipped) return retry
-
-        val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
-        return if (completionAdmission.allows(sourcePath)) {
-            admissionChangedFailure(sourcePath)
-        } else {
-            retry
+        return retryAfterAdmissionSkip(sourcePath, first) {
+            compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
         }
     }
 
@@ -390,17 +379,34 @@ class WorkspaceCompiler(
         sourceRoots: List<Path>,
     ): FileCompilationResult {
         val first = compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
-        if (first !is FileCompilationResult.Skipped) return first
+        return retryAfterAdmissionSkip(sourcePath, first) {
+            compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
+        }
+    }
+
+    private suspend fun retryAfterAdmissionSkip(
+        sourcePath: Path,
+        initialResult: FileCompilationResult,
+        retryAttempt: suspend () -> FileCompilationResult,
+    ): FileCompilationResult {
+        if (initialResult !is FileCompilationResult.Skipped) return initialResult
 
         val context = currentCoroutineContext()
         val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
-        if (!retryAdmission.allows(sourcePath)) return first
+        if (!retryAdmission.allows(sourcePath)) return initialResult
 
-        val retry = compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
-        if (retry !is FileCompilationResult.Skipped) return retry
+        return reportRepeatedAdmissionSkip(sourcePath, retryAttempt(), context)
+    }
+
+    private suspend fun reportRepeatedAdmissionSkip(
+        sourcePath: Path,
+        retryResult: FileCompilationResult,
+        context: CoroutineContext,
+    ): FileCompilationResult {
+        if (retryResult !is FileCompilationResult.Skipped) return retryResult
 
         val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
-        return if (completionAdmission.allows(sourcePath)) admissionChangedFailure(sourcePath) else retry
+        return if (completionAdmission.allows(sourcePath)) admissionChangedFailure(sourcePath) else retryResult
     }
 
     private fun admissionChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
