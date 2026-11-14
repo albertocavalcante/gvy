@@ -162,6 +162,52 @@ class ParserDiagnosticConverterTest {
     }
 
     @Test
+    fun `fallback skips compiler boilerplate before a useful raw exception`() {
+        val messages = listOf(
+            SimpleMessage("startup failed:", source()),
+            SimpleMessage("Compilation failed: startup failed:", source()),
+            ExceptionMessage(IllegalStateException("Unable to load class: org.slf4j.Logger"), true, source()),
+        )
+        assertEquals("Unable to load class: org.slf4j.Logger", firstCompilerCause(messages))
+    }
+
+    @Test
+    fun `fallback skips multiline compiler wrapper and keeps its useful detail`() {
+        val messages = listOf(
+            SimpleMessage("startup failed:\nUnable to load class: org.slf4j.Logger", source()),
+        )
+        assertEquals("Unable to load class: org.slf4j.Logger", firstCompilerCause(messages))
+    }
+
+    @Test
+    fun `fallback skips blank syntax and never renders unknown messages`() {
+        val unknown = object : Message() {
+            override fun write(writer: java.io.PrintWriter, owner: org.codehaus.groovy.control.Janitor): Unit =
+                throw java.util.concurrent.CancellationException("must not be swallowed")
+        }
+        val messages = listOf(
+            SyntaxErrorMessage(SyntaxException("", 1, 1), source("Good.groovy")),
+            unknown,
+            SimpleMessage("Unable to load class: org.slf4j.Logger", source("Good.groovy")),
+        )
+        assertEquals("Unable to load class: org.slf4j.Logger", firstCompilerCause(messages))
+    }
+
+    @Test
+    fun `unlocated compiler exceptions are not assigned to requested tokens`() {
+        val collector = ErrorCollector(configuration)
+        collector.addError(
+            ExceptionMessage(IllegalStateException("own unlocated failure"), true, source("Good.groovy")),
+        )
+        collector.addError(ExceptionMessage(IllegalStateException("other failure"), true, source("Other.groovy")))
+        collector.addError(SimpleMessage("other unlocated failure", source("Other.groovy")))
+
+        val diagnostics = ParserDiagnosticConverter.convert(collector, setOf("Good.groovy"))
+
+        assertTrue(diagnostics.isEmpty(), diagnostics.toString())
+    }
+
+    @Test
     fun `a located message keeps its text and its position`() {
         val token = Token.newString("x", 7, 5)
         val diagnostic = convertOne(LocatedMessage("bad thing here", token, source()))

@@ -33,6 +33,10 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
+import org.codehaus.groovy.control.messages.ExceptionMessage
+import org.codehaus.groovy.control.messages.LocatedMessage
+import org.codehaus.groovy.control.messages.Message
+import org.codehaus.groovy.control.messages.SimpleMessage
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import java.net.URI
 import java.net.URL
@@ -58,15 +62,43 @@ private const val UNATTRIBUTED_ERROR_REASON =
 private const val SCRIPT_FALLBACK_REASON =
     "a class was compiled as a Script because its superclass could not be resolved"
 
-/** The first compile error, naming the file it came from (the error may not be this file's). */
-private fun firstErrorMessage(result: ParseResult): String? {
-    val cause = (result.compilationUnit.errorCollector.errors.orEmpty().firstOrNull() as? SyntaxErrorMessage)?.cause
-    return if (cause != null) {
-        listOfNotNull(cause.sourceLocator?.substringAfterLast('/'), cause.originalMessage).joinToString(": ")
-    } else {
-        result.diagnostics.firstOrNull { it.severity == ParserSeverity.ERROR }?.message
+/** A useful raw cause, before source-location filtering discards unit-wide errors. */
+internal fun firstCompilerCause(messages: List<Message>): String? = messages.asSequence().mapNotNull { message ->
+    val text = when (message) {
+        is SyntaxErrorMessage -> {
+            val cause = message.cause
+            val detail = cause.originalMessage?.let(::firstMeaningfulLine)
+            detail?.let { listOfNotNull(cause.sourceLocator?.substringAfterLast('/'), it).joinToString(": ") }
+        }
+        is LocatedMessage -> message.message
+        is SimpleMessage -> message.message
+        is ExceptionMessage -> message.cause?.message
+        // Unknown compiler messages may execute arbitrary write() logic; never render them for fallback text.
+        else -> null
     }
+    text?.let(::firstMeaningfulLine)?.let(ParseOutcome::truncate)
+}.firstOrNull()
+
+private fun firstMeaningfulLine(text: String): String? = text.lineSequence()
+    .map { it.trim() }
+    .firstOrNull { it.isNotBlank() && !isCompilerBoilerplate(it) }
+
+private fun isCompilerBoilerplate(text: String): Boolean {
+    val trimmed = text.trim()
+    val withoutPrefix = if (trimmed.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX, ignoreCase = true)) {
+        trimmed.substring(COMPILATION_FAILED_MESSAGE_PREFIX.length)
+    } else {
+        trimmed
+    }
+    val stripped = withoutPrefix.trim().trimEnd(':').trim()
+    return stripped.equals("startup failed", ignoreCase = true) ||
+        stripped.equals("compilation failed", ignoreCase = true)
 }
+
+/** The first meaningful raw compiler error, or a filtered diagnostic when none is available. */
+private fun firstErrorMessage(result: ParseResult): String? =
+    firstCompilerCause(result.compilationUnit.errorCollector.errors.orEmpty())
+        ?: result.diagnostics.firstOrNull { it.severity == ParserSeverity.ERROR }?.message
 
 private val compileLogger = KotlinLogging.logger {}
 
