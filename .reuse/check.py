@@ -36,6 +36,7 @@ BYTE_SENSITIVE_FIXTURE_PATHS: frozenset[str] = frozenset(
         "tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile",
         "tools/perf/bench/corpus/fixtures/upstream/spock-feature-methods/FeatureMethods.groovy",
         "tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy",
+        "tools/perf/bench/parse/sample.groovy",
         "tools/perf/bench/native-contract/fixtures/valid.groovy",
         "tools/perf/bench/native-contract/fixtures/malformed.groovy",
     }

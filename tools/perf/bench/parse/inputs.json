@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "inputs": [
+    {
+      "id": "sample",
+      "path": "sample.groovy",
+      "byteLength": 42,
+      "sha256": "350b181b863a855df6081b25f16fdb02caae407022ca9e2f7494f153c751da1e"
+    },
+    {
+      "id": "cli-builder-exception",
+      "path": "../corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy",
+      "byteLength": 1034,
+      "sha256": "3fda51167bdd4f018e23622c3ee62b633c5ae58e0fa18674fc6d925f6037e28c"
+    }
+  ]
+}

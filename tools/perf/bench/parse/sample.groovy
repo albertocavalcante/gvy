@@ -1,0 +1,1 @@
+class Sample { int alpha() { return 17 } }

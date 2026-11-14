@@ -527,3 +527,9 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["tools/perf/bench/parse/inputs.json", "tools/perf/bench/parse/sample.groovy"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
