@@ -9,6 +9,6 @@ requires-python = ">=3.11"
 [dependency-groups]
 dev = [
     "basedpyright==1.40.2",
-    "ruff==0.17.4",
+    "ruff==0.17.5",
     "ty==0.0.100",
 ]
