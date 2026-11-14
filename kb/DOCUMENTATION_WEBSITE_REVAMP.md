@@ -102,31 +102,39 @@ Implementation base: `f101e5bf5a5a2fae42d0cfcadba838bcfc6e3d14`. The shared main
 preserved. The publication branch was subsequently rebased onto `71f7318e9397cc133b4172c097636be80db36c67` to retain
 incoming installer/GDSL guidance and refresh manifest provenance against the current integration trunk.
 
-| Work package                                | Owner                           | Completion gate                                                                       | State                            |
-| ------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
-| Content projection and reference generation | Documentation maintainers       | Deterministic output, unsupported-input tests, frozen install and link checks         | Implemented and checked          |
-| User journey and workflows                  | Documentation maintainers       | Source-verified examples and explicit release limits                                  | Implemented; runtime gates open  |
-| Homepage and navigation                     | Website maintainers             | Responsive, accessible rendered review in both themes                                 | Implemented; browser fixes open  |
-| Release upkeep and validation               | Release and website maintainers | Drift checks, independent complete-diff review, CI and public deployment verification | Implemented; publication pending |
+| Work package                                | Owner                           | Completion gate                                                                       | State                           |
+| ------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------- |
+| Content projection and reference generation | Documentation maintainers       | Deterministic output, unsupported-input tests, frozen install and link checks         | Implemented and checked         |
+| User journey and workflows                  | Documentation maintainers       | Source-verified examples and explicit release limits                                  | Implemented; runtime gates open |
+| Homepage and navigation                     | Website maintainers             | Responsive, accessible rendered review in both themes                                 | Implemented; browser fixes open |
+| Release upkeep and validation               | Release and website maintainers | Drift checks, independent complete-diff review, CI and public deployment verification | Merged; follow-ups tracked      |
 
 Validation evidence and unresolved acceptance gates are recorded below before publication. A source inspection does not
 establish a successful editor workflow.
 
 ## Current handoff
 
-The revamp implementation and source/build checks are complete locally. Runtime and clean stable VSIX evidence is in
-[the validation record](DOCUMENTATION_WEBSITE_VALIDATION.md). The PR remains a draft until the approved acceptance gates
-below pass. A subsequent Playwright probe found real browser defects; it is not a passing browser gate. The
-[testing and platform plan](DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) records reproduction, ownership,
-MDX/Svelte evidence and a path beyond Starlight. The owner requested that follow-up on 2026-11-14; a permanent browser
-suite and renderer migration remain planned. No runtime-feature implementation or distribution publishing is included.
+[PR #2004](https://github.com/albertocavalcante/gvy/pull/2004) was squash-merged as
+`573d0affca10415569ca3e56634b42190a6e1a03` on 2026-11-14. The reviewed publication head
+`4f6987f3824e2af86053414bf198eae0398dca46` passed 35 checks with four expected skips. The owner explicitly requested
+merging this increment and completing the remaining acceptance work in later PRs. This changes delivery order; the
+original browser and workflow limitations were not declared resolved.
 
-| Remaining item                                          | Impact and reason                                                                                                                                                            | Owner and next action                                                                                            | Completion gate                                                                                                                                             |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Responsive, keyboard, search and accessibility review   | Headless Playwright now works. Its probe found mobile overflow, light-theme contrast failures, code/table keyboard-focus gaps and a desktop search label mismatch (B01–B04). | Website maintainers: implement reproductions and fixes in the testing plan, then complete browser/manual review. | Home and representative guides at 360/768/1440 in both themes; no page overflow or serious accessibility violations; keyboard and five search queries pass. |
-| Gradle and restricted-environment workflow verification | Source-inspected guidance is not a successful authenticated import or clean network/offline test.                                                                            | Build and documentation maintainers: exercise the guide in a controlled fixture with approved repository access. | Imports resolve documented dependency; credentials remain private; network/offline limits match observations.                                               |
-| Minimum Java and full editor workflow coverage          | Probes used Java 21 and a development JAR; stable clean installation tested Groovy hover only. Jenkins used cached core; Spock used degraded analysis without running tests. | Documentation maintainers: repeat advertised release-specific workflows and minimum Java 17 checks.              | Record exact editor, extension, server, Java, dependencies and outputs for each supported claim.                                                            |
-| Hosted checks and publication                           | Hosted checks passed on implementation head `5962d30aabff50e188df0eff5e5a699c31eb01cd`; browser/workflow gates still block merge/deployment.                                 | Coordinator: inspect final-head CI and independent review, then squash merge and verify Pages.                   | Required CI passes, exact head reviewed, public home/guides/search/legacy URLs/404 verified; owned branch and worktree cleaned.                             |
+[Pages run 43606666193](https://github.com/albertocavalcante/gvy/actions/runs/43606666193) built and deployed that
+merged commit successfully. A subsequent public smoke passed routes, five search journeys, essential no-JavaScript
+content and the 404 page. Browser findings B01–B04 remain separately reproducible against this deployed snapshot.
+
+| Follow-up                                                                                           | Owner and next action                                                                                                                      | Completion gate                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#2020: browser tests and B01–B04](https://github.com/albertocavalcante/gvy/issues/2020)            | Website maintainers and coordinating agent: land a permanent Playwright harness and fixes in the first follow-up PR; reconcile this record | No document overflow at 360/768/1440 in both themes; contrast, code/table keyboard focus and search naming fixed; CI and independent review; remaining visual/manual coverage explicit |
+| [#2021: release/workflow verification](https://github.com/albertocavalcante/gvy/issues/2021)        | Build/release and documentation maintainers: exercise exact release and controlled dependency fixtures                                     | Record Java 17, editor/server versions, Gradle/private/offline observations, Jenkins without accidental cached core and actual Spock execution; retain qualifications when unverified  |
+| [#2022: components and renderer alternatives](https://github.com/albertocavalcante/gvy/issues/2022) | Website maintainers: establish useful component contracts, then compare custom Astro and SvelteKit/mdsvex on the same corpus               | Preserve routes/anchors, source/edit links, search, no-JavaScript content, accessibility and static /gvy/ hosting; record conversion costs and measured decision evidence              |
+
+The [testing and platform plan](DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) describes the sequence and the
+[validation record](DOCUMENTATION_WEBSITE_VALIDATION.md) preserves exact probe versions and limits. Private source
+evidence is retained at `~/dev/local/gvy-docs-evidence/pr-2004` until maintained reproductions/contracts replace it. The
+merged task branch and worktree were removed; warm tools were reused in the active follow-up checkout.
 
 The stable packaging limitation remains owned by release maintainers in #1751; the provisional quality scorecard remains
-owned by #1550. Documentation records these limits and does not resolve them.
+owned by #1550. Documentation records these limits and does not resolve them. No runtime-feature implementation or
+distribution publishing is included.

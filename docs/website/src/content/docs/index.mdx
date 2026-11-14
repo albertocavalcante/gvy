@@ -6,8 +6,6 @@ hero:
   tagline: Stay in the flow with language-aware tools for Groovy code, Jenkins pipelines, and Spock tests.
 ---
 
-import { Code } from "@astrojs/starlight/components";
-
 {/* SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors */}
 {/* SPDX-License-Identifier: Apache-2.0 */}
 
@@ -48,10 +46,9 @@ import { Code } from "@astrojs/starlight/components";
       <span>ILLUSTRATIVE EXAMPLE</span>
       <span>hello.groovy</span>
     </div>
-    <Code
-      lang="groovy"
-      code={`// Navigate from a call to its definition\ndef greet(String name) {\n  "Hello, \${name}!"\n}\n\nprintln greet('Groovy')`}
-    />
+    <pre>
+      <code>{`// Navigate from a call to its definition\ndef greet(String name) {\n  "Hello, \${name}!"\n}\n\nprintln greet('Groovy')`}</code>
+    </pre>
     <div class="example-note">
       Illustration based on source at f101e5b · capabilities vary by version
     </div>
@@ -107,42 +104,44 @@ gvy-install-extension
   <section>
     <h2 id="requirements">Requirements</h2>
     <p>
-      Java 17 or newer and a compatible editor. Homebrew installs Java along
-      with gvy. For other installation methods, see the{" "}
+      {
+        "Java 17 or newer and a compatible editor. Homebrew installs Java along with gvy. For other installation methods, see the "
+      }
       <a
         href={`${import.meta.env.BASE_URL}/getting-started/installation/`.replace(
           "//",
           "/",
         )}
       >
-        installation guide
+        {"installation guide"}
       </a>
-      .
+      {"."}
     </p>
   </section>
   <section>
     <h2 id="status">Status</h2>
     <p>
-      gvy is in early development. Coverage and correctness vary by project, and
-      Jenkins and Spock support is evolving. See the{" "}
+      {
+        "gvy is in early development. Coverage and correctness vary by project, and Jenkins and Spock support is evolving. See the "
+      }
       <a
         href={`${import.meta.env.BASE_URL}/lsp/feature-support/`.replace(
           "//",
           "/",
         )}
       >
-        feature matrix
+        {"feature matrix"}
       </a>{" "}
-      and{" "}
+      {"and "}
       <a
         href={`${import.meta.env.BASE_URL}/overview/roadmap/`.replace(
           "//",
           "/",
         )}
       >
-        quality bar
+        {"quality bar"}
       </a>{" "}
-      for current limits and priorities.
+      {"for current limits and priorities."}
     </p>
   </section>
 </div>

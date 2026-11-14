@@ -11,7 +11,8 @@
     "preview": "astro preview",
     "check": "bun run test && bun run scripts/generate.mjs --check && astro check",
     "validate": "bun run fmt:check && bun run check && astro build && bun run scripts/validate.mjs",
-    "fmt:check": "dprint check --config dprint.json"
+    "fmt:check": "dprint check --config dprint.json",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.5",
@@ -29,6 +30,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.1",
     "dprint": "0.64.3",
     "typescript": "^5.7.3"
   }
