@@ -221,10 +221,26 @@ For Jenkins shared libraries:
 
   // Optional: Jenkins plugin discovery overrides
   "groovy.jenkins.pluginsTxtPath": "/path/to/plugins.txt",
-  "groovy.jenkins.plugins": ["workflow-basic-steps", "pipeline-model-definition"],
+  "groovy.jenkins.plugins": [
+    "workflow-basic-steps",
+    "pipeline-model-definition"
+  ],
   "groovy.jenkins.includeDefaultPlugins": true
 }
 ```
+
+Shared-library entries currently use local, prebuilt JARs. A reference such as `@Library('my-pipeline-lib@main')`
+selects the configured library by name; `main` does not fetch a Git revision or select a different JAR.
+
+| Entry fields                                          | Current behavior                                |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| No `source`: `name`, `jar`, optional `sourcesJar`     | Uses the existing JAR selection rules           |
+| `source`, neither `jar` nor `sourcesJar`              | Inactive; logs an indexed configuration warning |
+| `source` with either `jar` or `sourcesJar`, even null | Inactive; logs a format conflict                |
+
+The presence of `source` prevents fallback to a legacy JAR, including when its value is malformed. These settings do not
+import the controller's library definitions or implicit-loading configuration. Source-based libraries and full Jenkins
+loading context are tracked in the [shared-library design](https://github.com/albertocavalcante/gvy/issues/1953).
 
 ### Compilation Settings
 

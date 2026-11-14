@@ -57,6 +57,7 @@ kt_test(
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        "@maven//:org_junit_jupiter_junit_jupiter_params",
         "@maven//:org_ow2_asm_asm",
     ],
 )
