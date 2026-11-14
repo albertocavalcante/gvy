@@ -61,20 +61,21 @@
       "reason": "Use Coursier 2.1.25-M23 to obtain GMM support absent from the bundled stable 2.1.24.",
       "upstreamStatus": "Stable Coursier 2.1.26 exists; upstream rules_jvm_external 7.2 still bundles 2.1.24. The old milestone-only availability claim is obsolete.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. The reviewed GMM source fingerprint covers the entire canonical maven.install argument body, including current selected artifact versions, exclusions, resolver and options; dependency-list changes invalidate this graph-specific review. This remains static drift detection, not universal resolver validation.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. The reviewed GMM source fingerprint covers the entire canonical maven.install argument body, including current selected artifact versions, exclusions, resolver and options; dependency-list changes invalidate this graph-specific review. This remains static drift detection, not universal resolver validation. The 2026-11-14 logging-expression candidate changes only the Rewrite core/Java versions in this fingerprinted install body from 8.79.0 to 8.84.1; the existing resolver, variant options and exclusions are unchanged. The source change is tied to #2003 and must pass the candidate Bazel integration checks; this fingerprint does not claim a newer Coursier replacement has been validated.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
         "https://github.com/albertocavalcante/gvy/issues/1029",
-        "https://github.com/albertocavalcante/gvy/pull/1642"
+        "https://github.com/albertocavalcante/gvy/pull/1642",
+        "https://github.com/albertocavalcante/gvy/issues/2003"
       ],
       "nextAction": "Compare stable Coursier GMM and current variant selection on the same dependency graph; validate metadata-only modules and generated targets.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
       "sources": [
         {
           "id": "MODULE.bazel:maven.install:maven:gmm",
-          "sha256": "b15f2d2622c4820d8097c538fa472418a5fcccc8e4d376c74473b8c7281221fe"
+          "sha256": "2b0a93c9f9c4601d154da95028205b526e8c2550a591b6b7cf393af24a22f54a"
         },
         {
           "id": "MODULE.bazel:single_version_override:rules_jvm_external",
