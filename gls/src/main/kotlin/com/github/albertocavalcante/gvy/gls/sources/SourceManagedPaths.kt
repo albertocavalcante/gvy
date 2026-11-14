@@ -71,7 +71,9 @@ internal class SourceManagedPaths(initialRoots: List<Path>) {
 
     private fun path(uri: URI): Path? = if (uri.scheme.equals("file", ignoreCase = true)) {
         try {
-            Path.of(uri).toAbsolutePath().normalize()
+            val path = Path.of(uri).toAbsolutePath()
+            // Lexical normalization of '..' can cross a symlink and change its meaning.
+            if (path.any { it.toString() == ".." }) null else path.normalize()
         } catch (_: IllegalArgumentException) {
             null
         }
@@ -81,7 +83,7 @@ internal class SourceManagedPaths(initialRoots: List<Path>) {
 
     private fun realPath(path: Path): Path? {
         return try {
-            var ancestor = path.toAbsolutePath().normalize()
+            var ancestor = path.toAbsolutePath()
             val missing = ArrayDeque<Path>()
             while (true) {
                 try {

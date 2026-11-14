@@ -12,12 +12,15 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.io.UncheckedIOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -28,6 +31,8 @@ import java.util.jar.JarOutputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -213,13 +218,14 @@ class VerifiedSourceArtifactResolverTest {
 
     private suspend fun assertSnapshotBudgetRejection(cache: SnapshotCache, repository: TestRepository) {
         val resolver = MavenSourceArtifactResolver(directory, repository, verifiedCacheBytes = cache.maximumBytes)
-        val peakBytes = DiskUsageProbe(cache.root).use { probe ->
+        val probe = DiskUsageProbe(cache.root)
+        probe.use {
             assertEquals(
                 VerifiedSourceArtifactResult.LimitExceeded,
                 resolver.resolveVerifiedSourceArtifact(snapshotRequest()),
             )
-            probe.peakBytes.get()
         }
+        val peakBytes = probe.peakBytes.get()
 
         assertEquals("preserve", Files.readString(cache.retained))
         assertEquals(8L * 1_024L, Files.size(cache.filler))
@@ -498,14 +504,68 @@ class VerifiedSourceArtifactResolverTest {
         paths.filter { Files.isRegularFile(it) }.toList()
     }
 
-    private inner class DiskUsageProbe(private val root: Path) : AutoCloseable {
+    @Test
+    fun `disk usage probe skips disappearing files and propagates other sampling failures`() {
+        val missingFileObserved = CountDownLatch(1)
+        val samples = AtomicInteger()
+        val probe = DiskUsageProbe(directory) {
+            if (samples.getAndIncrement() == 0) {
+                missingFileObserved.countDown()
+                throw NoSuchFileException(directory.resolve("transient.tmp").toString())
+            }
+            7L
+        }
+
+        try {
+            assertTrue(missingFileObserved.await(5, TimeUnit.SECONDS))
+        } finally {
+            probe.close()
+        }
+        assertFalse(probe.isWorkerAlive)
+        assertEquals(7L, probe.peakBytes.get())
+
+        val unexpectedFailureObserved = CountDownLatch(1)
+        val failingSamples = AtomicInteger()
+        val failingProbe = DiskUsageProbe(directory) {
+            if (failingSamples.getAndIncrement() == 0) {
+                unexpectedFailureObserved.countDown()
+                throw IOException("disk usage sample failed")
+            }
+            7L
+        }
+
+        try {
+            assertTrue(unexpectedFailureObserved.await(5, TimeUnit.SECONDS))
+            val failure = assertFailsWith<AssertionError> { failingProbe.close() }
+            assertIs<IOException>(failure.cause)
+            assertFalse(failingProbe.isWorkerAlive)
+        } finally {
+            if (failingProbe.isWorkerAlive) {
+                runCatching { failingProbe.close() }
+            }
+        }
+    }
+
+    private inner class DiskUsageProbe(
+        private val root: Path,
+        private val sampleBytes: () -> Long = { managedFileBytes(root) },
+    ) : AutoCloseable {
         val peakBytes = AtomicLong()
         private val running = AtomicBoolean(true)
+        private val workerFailure = AtomicReference<Throwable?>()
+
+        val isWorkerAlive: Boolean get() = worker.isAlive
+
         private val worker = Thread({
-            while (running.get()) {
-                val current = managedFileBytes(root)
-                peakBytes.updateAndGet { previous -> maxOf(previous, current) }
-                Thread.sleep(1)
+            try {
+                while (running.get()) {
+                    sample()
+                    Thread.sleep(1)
+                }
+            } catch (interrupted: InterruptedException) {
+                if (running.get()) workerFailure.compareAndSet(null, interrupted)
+            } catch (failure: Throwable) {
+                workerFailure.compareAndSet(null, failure)
             }
         }, "source-cache-usage-probe").apply {
             isDaemon = true
@@ -514,9 +574,25 @@ class VerifiedSourceArtifactResolverTest {
 
         override fun close() {
             running.set(false)
+            worker.interrupt()
             worker.join(TimeUnit.SECONDS.toMillis(5))
-            val finalSize = managedFileBytes(root)
+            check(!worker.isAlive) { "Source cache usage probe did not stop" }
+            val finalSize = sampleBytes()
             peakBytes.updateAndGet { previous -> maxOf(previous, finalSize) }
+            workerFailure.get()?.let { failure ->
+                throw AssertionError("Source cache usage probe failed").apply { initCause(failure) }
+            }
+        }
+
+        private fun sample() {
+            try {
+                val current = sampleBytes()
+                peakBytes.updateAndGet { previous -> maxOf(previous, current) }
+            } catch (_: NoSuchFileException) {
+                // Files.walk and Files.size can race with cache cleanup between probes.
+            } catch (failure: UncheckedIOException) {
+                if (failure.cause !is NoSuchFileException) throw failure
+            }
         }
     }
 }

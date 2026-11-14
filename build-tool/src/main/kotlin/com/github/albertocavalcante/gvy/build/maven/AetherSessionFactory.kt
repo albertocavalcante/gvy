@@ -9,7 +9,10 @@ import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.repository.LocalRepository
 import org.eclipse.aether.repository.RemoteRepository
+import org.eclipse.aether.spi.connector.transport.TransporterFactory
 import org.eclipse.aether.supplier.RepositorySystemSupplier
+import org.eclipse.aether.transport.http.ChecksumExtractor
+import org.eclipse.aether.transport.http.HttpTransporterFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -128,7 +131,15 @@ object AetherSessionFactory {
         RemoteRepository.Builder("jenkins", "default", JENKINS_REPO_URL).build(),
     )
 
-    private fun createRepositorySystem(): RepositorySystem = RepositorySystemSupplier().get()
+    private fun createRepositorySystem(): RepositorySystem = object : RepositorySystemSupplier() {
+        override fun getTransporterFactories(
+            checksumExtractors: MutableMap<String, ChecksumExtractor>,
+        ): MutableMap<String, TransporterFactory> = super.getTransporterFactories(checksumExtractors).apply {
+            replaceAll { _, factory ->
+                if (factory is HttpTransporterFactory) CancellableSourceTransporterFactory(factory) else factory
+            }
+        }
+    }.get()
 
     // Standard Maven repository URLs
     const val MAVEN_CENTRAL_URL = "https://repo.maven.apache.org/maven2/"

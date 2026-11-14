@@ -27,6 +27,7 @@ internal class SourceTransferBudget(
     private val maxSourceBytes: Long,
     private val maxMetadataBytes: Long,
     private val maxChecksumBytes: Long,
+    private val cancelTransfers: () -> Unit = {},
 ) : AbstractTransferListener() {
     private val attempts = IdentityHashMap<TransferResource, TransferProgress>()
     private var operationBytes = 0L
@@ -127,7 +128,7 @@ internal class SourceTransferBudget(
         val path = resourceName.substringBefore('?').lowercase(Locale.ROOT)
         return when {
             path.endsWith(".sha256") -> TransferKind.CHECKSUM
-            path.contains("maven-metadata") -> TransferKind.METADATA
+            path.substringAfterLast('/') == "maven-metadata.xml" -> TransferKind.METADATA
             path.endsWith("-sources.jar") -> TransferKind.SOURCE
             else -> TransferKind.UNKNOWN
         }
@@ -137,6 +138,7 @@ internal class SourceTransferBudget(
 
     private fun exceedBudget(cancelTransfer: Boolean) {
         exceeded = true
+        cancelTransfers()
         if (cancelTransfer) throw TransferCancelledException("Source transfer budget exceeded")
     }
 

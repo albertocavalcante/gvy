@@ -23,6 +23,11 @@ internal object ZipDirectoryValidator {
     private const val ZIP_COMMENT_LENGTH_OFFSET = 20
     private const val ZIP_UNSIGNED_SHORT_MASK = 0xffff
     private const val ZIP_UNSIGNED_INTEGER_MASK = 0xffff_ffffL
+    private const val ZIP_CENTRAL_HEADER_LENGTH = 46
+    private const val ZIP_CENTRAL_HEADER_SIGNATURE = 0x02014b50
+    private const val ZIP_CENTRAL_NAME_LENGTH_OFFSET = 28
+    private const val ZIP_CENTRAL_EXTRA_LENGTH_OFFSET = 30
+    private const val ZIP_CENTRAL_COMMENT_LENGTH_OFFSET = 32
 
     private data class DirectoryRecord(
         val recordOffset: Int,
@@ -41,6 +46,7 @@ internal object ZipDirectoryValidator {
             val tail = readTail(channel, size)
             val record = findRecord(tail) ?: throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
             validateRecord(record, size, tail.limit(), limits)
+            countEntries(channel, record, size - tail.limit() + record.recordOffset, limits)
         }
     }
 
@@ -102,6 +108,44 @@ internal object ZipDirectoryValidator {
             throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
         }
     }
+
+    private fun countEntries(
+        channel: FileChannel,
+        record: DirectoryRecord,
+        eocdOffset: Long,
+        limits: SourceStoreLimits,
+    ) {
+        // ZipFile locates the table relative to the EOCD, including for prefixed archives.
+        var position = eocdOffset - record.centralBytes
+        val end = eocdOffset
+        var count = 0
+        val header = ByteBuffer.allocate(ZIP_CENTRAL_HEADER_LENGTH).order(ByteOrder.LITTLE_ENDIAN)
+        while (position < end) {
+            checkSourceInterruption()
+            readCentralHeader(channel, position, end, header)
+            count++
+            if (count > limits.maxArchiveEntries) throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
+            val variableBytes =
+                (header.getShort(ZIP_CENTRAL_NAME_LENGTH_OFFSET).toInt() and ZIP_UNSIGNED_SHORT_MASK) +
+                    (header.getShort(ZIP_CENTRAL_EXTRA_LENGTH_OFFSET).toInt() and ZIP_UNSIGNED_SHORT_MASK) +
+                    (header.getShort(ZIP_CENTRAL_COMMENT_LENGTH_OFFSET).toInt() and ZIP_UNSIGNED_SHORT_MASK)
+            position += ZIP_CENTRAL_HEADER_LENGTH + variableBytes
+            if (position > end) unsafeArchive()
+        }
+        if (count != record.entries) unsafeArchive()
+    }
+
+    private fun readCentralHeader(channel: FileChannel, position: Long, end: Long, header: ByteBuffer) {
+        if (end - position < ZIP_CENTRAL_HEADER_LENGTH) unsafeArchive()
+        header.clear()
+        while (header.hasRemaining()) {
+            val read = channel.read(header, position + header.position())
+            if (read <= 0) unsafeArchive()
+        }
+        if (header.getInt(0) != ZIP_CENTRAL_HEADER_SIGNATURE) unsafeArchive()
+    }
+
+    private fun unsafeArchive(): Nothing = throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
 }
 
 /** Validates archive paths before source entries are indexed. */

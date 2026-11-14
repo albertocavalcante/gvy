@@ -119,7 +119,8 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
             .distinct()
         private val candidateCache = mutableMapOf<String, List<List<String>>>()
         private val exposedCache = mutableMapOf<String, List<List<String>>?>()
-        private val typeVariables = hashSetOf<String>()
+        private var methodScope: MethodNode? = null
+        private val genericMethods = mutableListOf<MethodNode>()
         private val values = hashSetOf<String>()
         private val classes = identitySet<ClassNode>()
         private val types = identitySet<ClassNode>()
@@ -146,7 +147,15 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                 reference.nameSegments.forEach { segment ->
                     val span = segment.toSpan()
                     val enclosing = reference.enclosingBinaryName?.let(classNodes::get)
-                    put(Pending(reference.spelling, span, kind, enclosing))
+                    put(
+                        Pending(
+                            reference.spelling,
+                            span,
+                            kind,
+                            enclosing,
+                            isTypeVariable(reference.spelling, enclosing, span, annotation = true),
+                        ),
+                    )
                 }
             }
             val references = direct.values + pending.values.mapNotNull(::bind)
@@ -166,7 +175,7 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
             val packageQualified = isPackageQualified(reference)
             val hasHierarchy = hasHierarchy(reference.scope)
             return when {
-                firstName in typeVariables -> null
+                reference.typeVariable -> null
                 !canBindArgument(reference, firstName, hasHierarchy) -> null
                 packageQualified -> bindGlobally(reference)
                 hasHierarchy -> bindInCurrentHierarchy(reference)
@@ -337,7 +346,7 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
                         )
                     }
                 }
-                node.genericsTypes?.forEach { typeVariables.add(budget.name(it.name)) }
+                node.genericsTypes?.forEach { budget.name(it.name) }
                 generic(node.genericsTypes, node)
                 type(node.unresolvedSuperClass, node)
                 node.interfaces.forEach { type(it, node) }
@@ -349,17 +358,32 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
         }
 
         override fun visitMethod(node: MethodNode) {
-            signature(node)
-            super.visitMethod(node)
+            withMethodScope(node) {
+                signature(node)
+                super.visitMethod(node)
+            }
         }
 
         override fun visitConstructor(node: ConstructorNode) {
-            signature(node)
-            super.visitConstructor(node)
+            withMethodScope(node) {
+                signature(node)
+                super.visitConstructor(node)
+            }
+        }
+
+        private inline fun withMethodScope(node: MethodNode, visit: () -> Unit) {
+            val previous = methodScope
+            methodScope = node
+            node.genericsTypes?.forEach { budget.name(it.name) }
+            if (!node.genericsTypes.isNullOrEmpty()) genericMethods.add(node)
+            try {
+                visit()
+            } finally {
+                methodScope = previous
+            }
         }
 
         private fun signature(node: MethodNode) {
-            node.genericsTypes?.forEach { typeVariables.add(budget.name(it.name)) }
             generic(node.genericsTypes, node)
             type(node.returnType, node)
             node.parameters.forEach(::parameter)
@@ -436,7 +460,6 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
 
         private fun generic(generics: Array<GenericsType>?, owner: ASTNode) {
             generics?.forEach { generic ->
-                if (generic.isPlaceholder) typeVariables.add(budget.name(generic.name))
                 type(generic.type, owner)
                 generic.upperBounds?.forEach { type(it, owner) }
                 type(generic.lowerBound, owner)
@@ -463,7 +486,10 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
 
         private fun addTypeReferences(spelling: String, pieces: List<ParserRange>) {
             if (spelling !in NON_TYPES) {
-                pieces.forEach { piece -> put(Pending(spelling, piece.toSpan(), Kind.TYPE, scope)) }
+                pieces.forEach { piece ->
+                    val span = piece.toSpan()
+                    put(Pending(spelling, span, Kind.TYPE, scope, isTypeVariable(spelling, scope, span)))
+                }
             }
         }
 
@@ -498,6 +524,22 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
             return names.joinToString(".") to pieces
         }
 
+        private fun isTypeVariable(
+            spelling: String,
+            owner: ClassNode?,
+            span: SourceSpan,
+            annotation: Boolean = false,
+        ): Boolean {
+            val name = spelling.substringBefore('.')
+            fun matches(generics: Array<GenericsType>?): Boolean = generics?.any { it.name == name } == true
+            if (generateSequence(owner) { it.outerClass }.any { matches(it.genericsTypes) }) return true
+            if (methodScope?.let { matches(it.genericsTypes) } == true) return true
+            // Annotation references are collected after the visitor has left method scopes.
+            return annotation && genericMethods.any { method ->
+                matches(method.genericsTypes) && ranges.range(method)?.toSpan()?.contains(span) == true
+            }
+        }
+
         private fun put(reference: Pending) {
             if (reference.range in pending) return
             checkReferenceCapacity()
@@ -510,7 +552,13 @@ internal class GroovySourceTypeIndex private constructor(private val byLine: Map
         }
 
         private enum class Kind { TYPE, ANNOTATION, ARGUMENT }
-        private data class Pending(val spelling: String, val range: SourceSpan, val kind: Kind, val scope: ClassNode?)
+        private data class Pending(
+            val spelling: String,
+            val range: SourceSpan,
+            val kind: Kind,
+            val scope: ClassNode?,
+            val typeVariable: Boolean,
+        )
         private data class Declaration(val definition: SourceDefinition)
     }
 }

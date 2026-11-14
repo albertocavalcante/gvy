@@ -72,6 +72,7 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
         return share(pendingImports, expected) {
             synchronized(monitor) { importedArchives[expected] }?.let { cached ->
                 if (runInterruptible(Dispatchers.IO) { Files.isRegularFile(cached.path, LinkOption.NOFOLLOW_LINKS) }) {
+                    runInterruptible(Dispatchers.IO) { verifyFileDigest(cached.path, expected, limits.maxArchiveBytes) }
                     return@share cached
                 }
             }

@@ -37,10 +37,59 @@ class JavaSourceTypeIndexTest {
     }
 
     @Test
+    fun `static method imports leave same package type candidates available`() {
+        val content = "package sample; import static java.util.Collections.emptyList; " +
+            "class C { emptyList value; }"
+        val candidates = at(content, "emptyList value")?.candidates.orEmpty()
+
+        assertEquals(listOf("java.util.Collections.emptyList"), candidates.first())
+        assertEquals(listOf("sample.emptyList"), candidates[1])
+    }
+
+    @Test
+    fun `static member type imports retain their qualified candidate`() {
+        val content = "package sample; import static dependency.Outer.Inner; class C { Inner value; }"
+        val candidates = at(content, "Inner value")?.candidates.orEmpty()
+
+        assertEquals(listOf("dependency.Outer.Inner"), candidates.first())
+        assertEquals(listOf("sample.Inner"), candidates[1])
+    }
+
+    @Test
     fun `strings comments and generic type variables are not external types`() {
         val content = "class A<T> { String text = \"TypeCheckingMode\"; T value; /* TypeCheckingMode */ }"
         assertNull(at(content, "TypeCheckingMode"))
         assertNull(at(content, "T value"))
+    }
+
+    @Test
+    fun `type parameters only suppress references in their lexical scope`() {
+        val content = "import dependency.Item; class Box<Item> { Item value; " +
+            "<Item> Item method(Item value) { return value; } } class Other { Item field; }"
+        assertNull(at(content, "Item value"))
+        assertEquals(listOf(listOf("dependency.Item")), at(content, "Item field")?.candidates)
+        val methods = "import dependency.Item; class Box { <Item> Item method() { return null; } Item field; }"
+        assertNull(at(methods, "Item method"))
+        assertEquals(listOf(listOf("dependency.Item")), at(methods, "Item field")?.candidates)
+    }
+
+    @Test
+    fun `supertype headers resolve outside their own member scope`() {
+        val content = "import dependency.Base; class Model extends Base { static class Base {} Base field; }"
+        assertEquals(listOf(listOf("dependency.Base")), at(content, "Base {")?.candidates)
+        assertNull(at(content, "Base field"))
+        val implemented = "import dependency.Parent; class Model implements Parent { static class Parent {} }"
+        assertEquals(listOf(listOf("dependency.Parent")), at(implemented, "Parent {")?.candidates)
+    }
+
+    @Test
+    fun `enums and records do not guess imported types shadowed by inherited members`() {
+        val enumSource = "import external.Mode; interface Parent { enum Mode { ON } } " +
+            "enum Child implements Parent { VALUE; Mode field; }"
+        val recordSource = "import external.Mode; interface Parent { enum Mode { ON } } " +
+            "record Child() implements Parent { Mode field() { return null; } }"
+        assertNull(at(enumSource, "Mode field"))
+        assertNull(at(recordSource, "Mode field"))
     }
 
     @Test

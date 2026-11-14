@@ -11,12 +11,14 @@ import com.github.javaparser.Providers
 import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.Node
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
+import com.github.javaparser.ast.body.EnumDeclaration
+import com.github.javaparser.ast.body.RecordDeclaration
 import com.github.javaparser.ast.body.TypeDeclaration
 import com.github.javaparser.ast.expr.AnnotationExpr
 import com.github.javaparser.ast.expr.Name
 import com.github.javaparser.ast.expr.SimpleName
+import com.github.javaparser.ast.nodeTypes.NodeWithTypeParameters
 import com.github.javaparser.ast.type.ClassOrInterfaceType
-import com.github.javaparser.ast.type.TypeParameter
 import org.eclipse.lsp4j.Position
 import java.io.StringReader
 import java.util.Collections
@@ -41,9 +43,6 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
         private val declarationNames = IdentityHashMap<TypeDeclaration<*>, String>()
         private val lines = Utf16LineIndex(content)
         private val packageName = unit.packageDeclaration.map { budget.name(it.nameAsString) }.orElse("")
-        private val typeVariables = unit.findAll(TypeParameter::class.java).mapTo(hashSetOf()) { parameter ->
-            budget.name(parameter.nameAsString)
-        }
         private val declarations = unit.findAll(TypeDeclaration::class.java)
         private val localDeclarations = declarations.filter { type ->
             val parent = type.parentNode.orElse(null)
@@ -54,7 +53,13 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
             parent !is CompilationUnit && parent !is TypeDeclaration<*>
         }.mapTo(hashSetOf()) { it.nameAsString }
 
-        private val explicitImports = unit.imports.filter { !it.isAsterisk }.groupBy { it.name.identifier }
+        private val explicitImports = unit.imports.filter {
+            !it.isAsterisk && !it.isStatic
+        }.groupBy { it.name.identifier }
+            .mapValues { (_, imports) -> imports.map { budget.name(it.nameAsString) }.distinct() }
+        private val explicitStaticImports = unit.imports
+            .filter { it.isStatic && !it.isAsterisk }
+            .groupBy { it.name.identifier }
             .mapValues { (_, imports) -> imports.map { budget.name(it.nameAsString) }.distinct() }
         private val onDemandImports = unit.imports
             .filter { it.isAsterisk }
@@ -102,7 +107,11 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
         private fun addSelectedReference(spelling: String, occurrence: Node, range: SourceSpan) {
             budget.name(spelling)
             val first = spelling.substringBefore('.')
-            if (first !in typeVariables && first !in unmodelledLocalNames && !hasUnmodelledHierarchy(occurrence)) {
+            if (
+                !isTypeVariable(first, occurrence) &&
+                first !in unmodelledLocalNames &&
+                !hasUnmodelledHierarchy(occurrence)
+            ) {
                 addLocalOrImportedReference(spelling, occurrence, first, range)
             }
         }
@@ -130,10 +139,16 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
         }
 
         private fun addCandidateReference(spelling: String, range: SourceSpan) {
+            val first = spelling.substringBefore('.')
             val candidates = candidateTiers.getOrPut(spelling) {
                 val samePackage = if (packageName.isEmpty()) spelling else packageName + "." + spelling
                 budget.candidates(
                     buildList {
+                        // Static imports can name methods, fields, or member types; a non-type must fall through.
+                        explicitStaticImports[first]?.let { imports ->
+                            val suffix = spelling.removePrefix(first)
+                            add(imports.map { it + suffix }.distinct())
+                        }
                         if (spelling.contains('.')) {
                             add(listOf(spelling, samePackage).distinct())
                         } else {
@@ -149,7 +164,7 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
         }
 
         private fun localTarget(spelling: String, occurrence: Node): SourceDefinition? {
-            val currentNames = enclosingTypes(occurrence).map(::typeName)
+            val currentNames = lexicalTypes(occurrence).map(::typeName)
             val wanted = currentNames.map { it + "." + spelling } + qualify(spelling)
             val declaration = wanted.firstNotNullOfOrNull { candidate ->
                 localDeclarations[candidate].orEmpty().takeIf { matches -> matches.size == 1 }?.single()
@@ -181,8 +196,30 @@ internal class JavaSourceTypeIndex private constructor(private val byLine: Map<I
 
         private fun qualify(name: String): String = if (packageName.isEmpty()) name else packageName + "." + name
 
-        private fun hasUnmodelledHierarchy(node: Node): Boolean = enclosingTypes(node).any {
-            it is ClassOrInterfaceDeclaration && (it.extendedTypes.isNotEmpty() || it.implementedTypes.isNotEmpty())
+        private fun isTypeVariable(name: String, node: Node): Boolean =
+            generateSequence(node.parentNode.orElse(null)) { it.parentNode.orElse(null) }
+                .filterIsInstance<NodeWithTypeParameters<*>>()
+                .any { owner -> owner.typeParameters.any { it.nameAsString == name } }
+
+        // A type's own supertypes and type parameter bounds are outside its member scope.
+        private fun lexicalTypes(node: Node): List<TypeDeclaration<*>> = enclosingTypes(node).filterNot { type ->
+            val headers: List<Node> = when (type) {
+                is ClassOrInterfaceDeclaration -> type.extendedTypes + type.implementedTypes + type.typeParameters
+                is EnumDeclaration -> type.implementedTypes
+                is RecordDeclaration -> type.implementedTypes + type.typeParameters
+                else -> emptyList()
+            }
+            generateSequence(node) { it.parentNode.orElse(null) }.takeWhile { it !== type }
+                .any { ancestor -> headers.any { it === ancestor } }
+        }
+
+        private fun hasUnmodelledHierarchy(node: Node): Boolean = lexicalTypes(node).any {
+            when (it) {
+                is ClassOrInterfaceDeclaration -> it.extendedTypes.isNotEmpty() || it.implementedTypes.isNotEmpty()
+                is EnumDeclaration -> it.implementedTypes.isNotEmpty()
+                is RecordDeclaration -> it.implementedTypes.isNotEmpty()
+                else -> false
+            }
         }
 
         private fun put(reference: SourceTypeReference) {

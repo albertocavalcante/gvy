@@ -298,6 +298,19 @@ class GroovySourceTypeIndexTest {
     }
 
     @Test
+    fun `type variables only suppress their lexical scopes`() {
+        val source = "import dependency.Item\nclass Box<Item> { Item value }\nclass Other { Item field }"
+        val index = GroovySourceTypeIndex.build(source)
+        assertNull(index.at(position(source, "Item value")))
+        assertEquals(listOf(listOf("dependency.Item")), index.at(position(source, "Item field"))?.candidates)
+
+        val methods = "import dependency.Item\nclass Box { def <Item> Item method(Item value) { value }; Item field }"
+        val methodIndex = GroovySourceTypeIndex.build(methods)
+        assertNull(methodIndex.at(position(methods, "Item method")))
+        assertEquals(listOf(listOf("dependency.Item")), methodIndex.at(position(methods, "Item field"))?.candidates)
+    }
+
+    @Test
     fun `on-demand import candidates are grouped for origin validation rather than choosing the first`() {
         val source = "package example\nimport first.*\nimport second.*\nclass Model { Item value }"
         val reference = assertNotNull(GroovySourceTypeIndex.build(source).at(position(source, "Item value")))

@@ -35,6 +35,34 @@ class SourceContentStoreTest {
     lateinit var temporary: Path
 
     @Test
+    fun `same store rejects corrupted cached archive`(): Unit = runBlocking {
+        val jar = archive("original.jar", "example/Foo.java" to "class Foo {}")
+        SourceContentStore(temporary.resolve("store")).use { store ->
+            val imported = store.importArchive(SourceArchiveInput.Local(jar))
+            Files.writeString(imported.path, "corrupt cache bytes")
+            val failure = assertFailsWith<SourceStoreException> { store.importArchive(SourceArchiveInput.Local(jar)) }
+            assertEquals(SourceFailure.INTEGRITY_MISMATCH, failure.failure)
+            assertEquals("corrupt cache bytes", Files.readString(imported.path))
+        }
+    }
+
+    @Test
+    fun `underreported central directory entry count is bounded before opening zip`() {
+        val jar = archive("underreported.jar", "example/Foo.java" to "x", "example/Bar.java" to "y")
+        val bytes = Files.readAllBytes(jar)
+        val eocd = bytes.size - ZIP_EOCD_LENGTH
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort(eocd + 8, 1)
+            putShort(eocd + 10, 1)
+        }
+        Files.write(jar, bytes)
+        val failure = assertFailsWith<SourceStoreException> {
+            ZipDirectoryValidator.validate(jar, SourceStoreLimits(maxArchiveEntries = 1))
+        }
+        assertEquals(SourceFailure.LIMIT_EXCEEDED, failure.failure)
+    }
+
+    @Test
     fun `source files from same named archives and class names remain distinct`(): Unit = runBlocking {
         val first = archive("one/lib-sources.jar", "example/Foo.java" to "package example; class Foo { int one; }")
         val second = archive("two/lib-sources.jar", "example/Foo.java" to "package example; class Foo { int two; }")

@@ -16,6 +16,19 @@ class SourceManagedPathsTest {
     lateinit var temporary: Path
 
     @Test
+    fun `parent segments after symlinks fail closed at both boundaries`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privilege is not assumed on Windows")
+        val root = Files.createDirectory(temporary.resolve("managed"))
+        val child = Files.createDirectory(root.resolve("child"))
+        val workspace = Files.createDirectory(temporary.resolve("workspace"))
+        val link = Files.createSymbolicLink(workspace.resolve("link"), child)
+        val destination = link.resolve("../A.java").toUri()
+        val paths = SourceManagedPaths(listOf(root))
+        assertTrue(paths.destinationIsManaged(destination))
+        assertTrue(paths.resourceOperationIsManaged(destination))
+    }
+
+    @Test
     fun `immutable stores and missing metadata paths remain protected`() {
         val root = temporary.resolve("content-v2")
         val paths = SourceManagedPaths(listOf(root))

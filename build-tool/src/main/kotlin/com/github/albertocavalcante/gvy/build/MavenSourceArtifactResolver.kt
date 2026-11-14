@@ -6,9 +6,12 @@ package com.github.albertocavalcante.gvy.build
 import com.github.albertocavalcante.gvy.build.maven.AetherSessionFactory
 import com.github.albertocavalcante.gvy.build.maven.DefaultRepositoryProvider
 import com.github.albertocavalcante.gvy.build.maven.RepositoryProvider
+import com.github.albertocavalcante.gvy.build.maven.SourceTransferCancellation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -103,31 +106,73 @@ class MavenSourceArtifactResolver(
     /** Repositories are tried in order; source metadata and bytes must come from the repository proving this binary. */
     override suspend fun resolveVerifiedSourceArtifact(
         request: VerifiedSourceArtifactRequest,
-    ): VerifiedSourceArtifactResult = withTimeoutOrNull(SOURCE_REQUEST_TIMEOUT_MS) {
-        runInterruptible(Dispatchers.IO) {
-            if (
-                !supportsVerifiedSourceCoordinates(request.coordinates) ||
-                !SHA256.matches(request.selectedBinarySha256)
-            ) {
-                return@runInterruptible VerifiedSourceArtifactResult.UnsupportedArtifact
+    ): VerifiedSourceArtifactResult {
+        val cancellation = SourceTransferCancellation()
+        return withTimeoutOrNull(SOURCE_REQUEST_TIMEOUT_MS) {
+            coroutineScope {
+                val resolution = async(Dispatchers.IO) {
+                    runInterruptible { resolveVerifiedRequest(request, cancellation) }
+                }
+                try {
+                    resolution.await()
+                } catch (cancelled: CancellationException) {
+                    // Abort HTTP sockets before this scope waits for its interrupted worker to finish.
+                    // Thread interruption alone does not stop Apache HTTP response-body cleanup drains.
+                    cancellation.cancel()
+                    throw cancelled
+                }
             }
-            try {
-                resolveVerified(request, defaultVerifiedSourceCacheRoot(cacheDir))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: SourceResolverCacheLimit) {
-                VerifiedSourceArtifactResult.LimitExceeded
-            } catch (_: java.io.IOException) {
-                VerifiedSourceArtifactResult.Failed
-            }
-        }
-    } ?: VerifiedSourceArtifactResult.Failed
+        } ?: VerifiedSourceArtifactResult.Failed
+    }
 
-    private fun resolveVerified(request: VerifiedSourceArtifactRequest, root: Path): VerifiedSourceArtifactResult {
+    private fun resolveVerifiedRequest(
+        request: VerifiedSourceArtifactRequest,
+        cancellation: SourceTransferCancellation,
+    ): VerifiedSourceArtifactResult {
+        if (
+            !supportsVerifiedSourceCoordinates(request.coordinates) ||
+            !SHA256.matches(request.selectedBinarySha256)
+        ) {
+            return VerifiedSourceArtifactResult.UnsupportedArtifact
+        }
+        return try {
+            resolveVerified(request, defaultVerifiedSourceCacheRoot(cacheDir), cancellation)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: SourceResolverCacheLimit) {
+            VerifiedSourceArtifactResult.LimitExceeded
+        } catch (_: java.io.IOException) {
+            VerifiedSourceArtifactResult.Failed
+        }
+    }
+
+    private fun resolveVerified(
+        request: VerifiedSourceArtifactRequest,
+        root: Path,
+        cancellation: SourceTransferCancellation,
+    ): VerifiedSourceArtifactResult {
         var binaryMismatchObserved = false
         for (repository in repositoryProvider.getRepositories()) {
             val key = repositoryCacheKey(request, repository)
             if (!request.allowDownload && !Files.isDirectory(root.resolve(key))) continue
+            // Release artifacts already verified in this repository can be reused without admitting
+            // another download. Snapshots must still consult the repository for newer metadata.
+            if (shouldTryCachedRelease(request, root.resolve(key))) {
+                val cached = withSourceResolverCapacity(
+                    root,
+                    verifiedCacheBytes,
+                    CACHE_OFFLINE_RESERVATION_BYTES,
+                    CACHE_OFFLINE_RESERVATION_PATHS,
+                ) { canonical ->
+                    resolveRepository(
+                        request.copy(allowDownload = false),
+                        repository,
+                        canonical.resolve(key),
+                        cancellation,
+                    )
+                }
+                if (cached is VerifiedSourceArtifactResult.Available) return cached
+            }
             val reservationBytes =
                 if (request.allowDownload) SOURCE_CACHE_RESERVATION_BYTES else CACHE_OFFLINE_RESERVATION_BYTES
             val reservationPaths =
@@ -138,7 +183,7 @@ class MavenSourceArtifactResolver(
                 reservationBytes = reservationBytes,
                 reservationPaths = reservationPaths,
             ) { canonical ->
-                resolveRepository(request, repository, canonical.resolve(key))
+                resolveRepository(request, repository, canonical.resolve(key), cancellation)
             }
             if (result == VerifiedSourceArtifactResult.BinaryMismatch) {
                 binaryMismatchObserved = true
@@ -153,10 +198,16 @@ class MavenSourceArtifactResolver(
         }
     }
 
+    private fun shouldTryCachedRelease(request: VerifiedSourceArtifactRequest, local: Path): Boolean =
+        request.allowDownload &&
+            !request.coordinates.version.endsWith("-SNAPSHOT") &&
+            Files.isDirectory(local)
+
     private fun resolveRepository(
         request: VerifiedSourceArtifactRequest,
         repository: RemoteRepository,
         local: Path,
+        cancellation: SourceTransferCancellation,
     ): VerifiedSourceArtifactResult? {
         val coordinate = request.coordinates
         val budget = SourceTransferBudget(
@@ -164,8 +215,9 @@ class MavenSourceArtifactResolver(
             maxSourceBytes = VERIFIED_SOURCE_MAX_ARTIFACT_BYTES,
             maxMetadataBytes = VERIFIED_SOURCE_MAX_METADATA_BYTES,
             maxChecksumBytes = VERIFIED_SOURCE_MAX_CHECKSUM_BYTES,
+            cancelTransfers = cancellation::cancel,
         )
-        val session = verifiedSession(local, request.allowDownload, budget)
+        val session = verifiedSession(local, request.allowDownload, budget, cancellation)
         val context = ResolutionContext(coordinate, listOf(repository), session, budget)
         return when (val binary = verifySelectedBinary(context, request.selectedBinarySha256)) {
             BinaryCheck.TryNextRepository -> null
@@ -228,9 +280,13 @@ class MavenSourceArtifactResolver(
         local: Path,
         allowDownload: Boolean,
         budget: SourceTransferBudget,
+        cancellation: SourceTransferCancellation,
     ): DefaultRepositorySystemSession =
         DefaultRepositorySystemSession(AetherSessionFactory.createSession(local)).apply {
             isOffline = !allowDownload
+            data.set(SourceTransferCancellation.SESSION_KEY, cancellation)
+            // A private connection manager lets transporter.close abort this operation's sockets only.
+            setConfigProperty("aether.connector.http.cacheState", false)
             // SHA sidecars are fetched explicitly and verified below; ignore disables Aether's unobserved fetch path.
             checksumPolicy = "ignore"
             updatePolicy = "always" // Explicit Retry can recover from earlier missing/auth/transport results.
@@ -240,7 +296,7 @@ class MavenSourceArtifactResolver(
             setConfigProperty("aether.connector.basic.threads", 1)
             setConfigProperty(ConfigurationProperties.CONNECT_TIMEOUT, SOURCE_CONNECT_TIMEOUT_MS)
             setConfigProperty(ConfigurationProperties.REQUEST_TIMEOUT, SOURCE_READ_TIMEOUT_MS)
-            setConfigProperty("aether.transport.http.retryHandler.count", 0)
+            setConfigProperty("aether.connector.http.retryHandler.count", 0)
             transferListener = budget
         }
 
