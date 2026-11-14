@@ -531,17 +531,19 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             return awaitShared(uri, pending.identity)
         }
 
-        val sourceInputs = captureAdmittedInputs(uri, workspace, admission.checkCancelled, admission)
-            ?: return Awaited.Done(null)
-        // A closed file can reuse only the same observed admission, including stable filtered inputs.
-        cacheService.getCachedRecord(uri, configFingerprint)
-            ?.takeIf { it.admissionFingerprint == sourceInputs.fingerprint }
-            ?.let { cached ->
+        // Only cached results need a full workspace admission scan here. A cold miss will capture fresh inputs
+        // after taking its publication ticket below; doing both scans would classify every workspace source twice.
+        val cached = cacheService.getCachedRecord(uri, configFingerprint)
+        if (cached != null) {
+            val sourceInputs = captureAdmittedInputs(uri, workspace, admission.checkCancelled, admission)
+                ?: return Awaited.Done(null)
+            if (cached.admissionFingerprint == sourceInputs.fingerprint) {
                 logger.debug { "Using cached result for: $uri" }
                 val result = resultMapper.mapFromCache(cached.parseResult, cached.content)
                     ?.copy(admissionFingerprint = cached.admissionFingerprint)
                 return Awaited.Done(result)
             }
+        }
 
         // Use on-demand compilation from disk if file exists
         // This handles cases where file is in symbol index but not yet opened/compiled

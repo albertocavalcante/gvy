@@ -412,7 +412,13 @@ class SourceNavigationService(
     } else if (symbol.memberName == null) {
         groovySourceInspector.inspect(content, symbol.binaryName, source.contentPath.toUri(), checkCancelled)
     } else {
-        null
+        groovySourceInspector.inspectMember(
+            content,
+            symbol.binaryName,
+            symbol.memberName,
+            source.contentPath.toUri(),
+            checkCancelled,
+        )
     }
 
     private fun displayName(origin: SourceOrigin): String = when (origin) {

@@ -21,6 +21,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
 import com.github.albertocavalcante.gvy.gls.sources.SourceSpan
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -168,6 +169,7 @@ class DefinitionResolverFallbackTest {
             )
         } returns listOf(symbol)
         val module = mockk<org.codehaus.groovy.ast.ModuleNode>()
+        every { module.getNodeMetaData<SourceAnnotationIndex>(SourceAnnotationIndex::class.java) } returns null
         coEvery { compilation.ensureCompiled(workspaceUri) } returns CompilationResult.success(module)
         every { compilation.getAst(workspaceUri) } returns module
         every { module.classes } returns listOf(declaration)
