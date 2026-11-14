@@ -29,6 +29,12 @@ interface FakeErrorHandler {
 }
 
 interface FakeClientOptions {
+  middleware?: {
+    didOpen: (
+      document: unknown,
+      next: (document: unknown) => Promise<void>,
+    ) => Promise<void>;
+  };
   outputChannel?: unknown;
   stdioOptions?: { stdout: (input: PassThrough, channel: unknown) => void };
   errorHandler?: FakeErrorHandler;
@@ -36,6 +42,9 @@ interface FakeClientOptions {
 
 class FakeClient {
   static instances: FakeClient[] = [];
+  registerFeature = sinon.stub();
+  sendNotification = sinon.stub().resolves();
+  onNotification = sinon.stub().returns({ dispose: () => {} });
   static nextStart: (() => Promise<void>) | undefined;
   state = State.Stopped;
   initializeResult: unknown = { serverInfo: { name: "gls", version: "9.9.9" } };
@@ -84,6 +93,7 @@ class FakeClient {
 describe("server/client lifecycle", () => {
   let mod: {
     initializeClient: (ctx: unknown) => void;
+    setAnalysisUi: (ui: unknown) => void;
     startClient: (channel?: unknown) => Promise<void>;
     stopClient: () => Promise<void>;
     restartClient: () => Promise<void>;
@@ -173,6 +183,25 @@ describe("server/client lifecycle", () => {
       subscriptions: [],
       asAbsolutePath: (p: string) => p,
     });
+  });
+
+  it("sends the incarnation token before opening a document", async () => {
+    const events: string[] = [];
+    mod.setAnalysisUi({ setClient: () => {}, beginSession: () => "session-1" });
+    await mod.startClient();
+    const instance = FakeClient.instances[0];
+    instance.sendNotification.callsFake(async () => {
+      events.push("session");
+    });
+    const document = { uri: { toString: () => "file:///a.groovy" } };
+    await instance.clientOptions.middleware!.didOpen(document, async () => {
+      events.push("open");
+    });
+    assert.deepStrictEqual(events, ["session", "open"]);
+    assert.deepStrictEqual(instance.sendNotification.firstCall.args, [
+      "groovy/documentAnalysisSession",
+      { uri: "file:///a.groovy", sessionId: "session-1" },
+    ]);
   });
 
   it("serializes restart behind an in-flight start (no second server)", async () => {

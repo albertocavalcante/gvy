@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 
+import { AnalysisUi } from "../analysis/ui";
 import * as vscode from "vscode";
 import { workspace, ExtensionContext, window, commands } from "vscode";
 import {
@@ -447,6 +448,18 @@ function createClientOptions(
       fileEvents: fileWatcher,
     },
     initializationOptions: buildInitializationOptions(),
+    middleware: {
+      didOpen: async (document, next) => {
+        const sessionId = analysisUi?.beginSession(document);
+        if (sessionId && client) {
+          await client.sendNotification("groovy/documentAnalysisSession", {
+            uri: toProtocolUri(document.uri.toString()),
+            sessionId,
+          });
+        }
+        await next(document);
+      },
+    },
     outputChannel: outputChannel,
     outputChannelName: outputChannel ? undefined : "Groovy Language Server",
     // Keep the server's own log severity: the default logs all stderr as errors.
@@ -535,6 +548,18 @@ async function doStart(): Promise<void> {
       clientOptions,
     );
     client = created;
+    created.registerFeature({
+      fillClientCapabilities: (capabilities) => {
+        capabilities.experimental = {
+          ...capabilities.experimental,
+          groovyDocumentAnalysis: true,
+        };
+      },
+      initialize: () => {},
+      getState: () => ({ kind: "static" }),
+      clear: () => {},
+    });
+    analysisUi?.setClient(created);
 
     // Update status bar with new client
     setClient(client);
@@ -573,7 +598,13 @@ async function doStart(): Promise<void> {
   }
 }
 
+let analysisUi: AnalysisUi | undefined;
+export function setAnalysisUi(ui: AnalysisUi): void {
+  analysisUi = ui;
+}
+
 async function doStop(): Promise<void> {
+  analysisUi?.setClient(undefined);
   const current = client;
   client = undefined;
   setClient(undefined);

@@ -49,7 +49,13 @@ describe("extension activation", () => {
     };
     const ext = proxyquire.noCallThru()("../../src/extension", {
       vscode: vscodeMock,
+      "./analysis/ui": {
+        AnalysisUi: class {
+          dispose() {}
+        },
+      },
       "./server/client": {
+        setAnalysisUi: () => {},
         initializeClient: () => {},
         startClient: async () => {
           await startClient();
