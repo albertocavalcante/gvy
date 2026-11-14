@@ -401,7 +401,11 @@ class GroovyLanguageServer(
         val session = obj.get("sessionId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
             ?: return
         if (session.length > MAX_ANALYSIS_SESSION_LENGTH || session.isEmpty()) return
-        val parsed = runCatching { URI.create(uri) }.getOrNull() ?: return
+        val parsed = try {
+            URI.create(uri)
+        } catch (_: IllegalArgumentException) {
+            return
+        }
         synchronized(documentAnalysisSessions) {
             if (documentAnalysisSessions.size < MAX_PENDING_ANALYSIS_SESSIONS ||
                 documentAnalysisSessions.containsKey(parsed)
