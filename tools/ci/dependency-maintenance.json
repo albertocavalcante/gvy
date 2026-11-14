@@ -545,7 +545,7 @@
       "reason": "CodeNarc final-newline violations use a zero-based final logical line while ordinary violation positions are one-based; normalize only the known rule type and final logical index.",
       "upstreamStatus": "Actual pinned 3.7.0 reproduces the invalid zero/previous-line positions. Inspected v4.0.0 source retains lines.size() - 1; this is source evidence, not a 4.0.0 integration test. No upstream report was submitted.",
       "upstreamTrigger": "A released final-newline rule reports the correct one-based final logical line, including CR EOF and blank final rows.",
-      "verification": "270 native CodeNarc controls passed with zero failures/errors/skips after the position correction, including real DefaultCodeAnalyzer LF, CRLF, CR-EOF, repeated-CR, empty and terminated-input cases, four corrected one-based producer controls, null file-level handling and unchanged generic invalid-position failures. Independent review found and verified the terminal-empty-row correction. The separate SDK catch-and-omit rule-engine failure remains tracked by #1740; these results do not certify complete CodeNarc failure observability.",
+      "verification": "270 native CodeNarc controls passed with zero failures/errors/skips after the position correction, including real DefaultCodeAnalyzer LF, CRLF, CR-EOF, repeated-CR, empty and terminated-input cases, four corrected one-based producer controls, null file-level handling and unchanged generic invalid-position failures. Independent review found and verified the terminal-empty-row correction. The separate SDK catch-and-omit rule-engine failure remains tracked by #1740; these results do not certify complete CodeNarc failure observability. On 2026-11-14, PR #2037 source head 1dd046603204061ced977e58ea61d131986738e0 changed the containing provider while leaving the newline positioning mitigation unchanged; all 281 native CodeNarc tests passed with zero failures, errors or skips, including 10 real final-newline and 11 conversion outcome controls. The full publication-head CI remains required.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1708",
         "https://github.com/albertocavalcante/gvy/issues/1740",
@@ -557,7 +557,7 @@
       "sources": [
         {
           "id": "manual:codenarc-final-newline-position",
-          "sha256": "94cd74ed089fb27dd8f55593b26c49c500763d8c41541e2fab51f377572db497"
+          "sha256": "eb115a5b1cf542106c298ec7873b1d6ecf828a6e87d7a971f452e6df122e83f1"
         }
       ]
     }
