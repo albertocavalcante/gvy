@@ -136,6 +136,8 @@ path = [
   "dsl/gdsl/src/test/resources/gdsl-golden/jenkins-sample.gdsl",
   "dsl/gdsl/src/test/resources/gdsl-golden/jenkins-sample.golden.txt",
   "dsl/gdsl/src/test/resources/gdsl-golden/spock.golden.txt",
+  "editors/code/client/src/test/fixtures/gdsl-snippet-defaults.gdsl",
+  "editors/code/client/src/test/fixtures/jenkins-descriptor.gdsl",
   "editors/zed/.gitignore",
   "editors/zed/Cargo.lock",
   "editors/zed/README.md",

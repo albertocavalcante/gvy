@@ -54,6 +54,12 @@ dependencies {
     detektPlugins(libs.detekt.formatting)
 }
 
+tasks.processTestResources {
+    from(rootProject.file("editors/code/client/src/test/fixtures/gdsl-snippet-defaults.gdsl")) {
+        into("editors/code/client/src/test/fixtures")
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }

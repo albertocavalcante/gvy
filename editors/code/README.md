@@ -63,12 +63,16 @@ Type `gdsl-` and select a snippet from suggestions, or use **Insert Snippet** fr
 
 | Prefix              | Inserts                                               |
 | ------------------- | ----------------------------------------------------- |
-| `gdsl-contributor`  | A contributor block with a scope choice               |
-| `gdsl-context`      | A reusable context with a scope choice                |
+| `gdsl-contributor`  | A contributor block for global script scope           |
+| `gdsl-context`      | A reusable global script context                      |
 | `gdsl-method`       | A method with positional parameters and documentation |
 | `gdsl-named-method` | A method with named parameters and documentation      |
 | `gdsl-property`     | A typed property with documentation                   |
 | `gdsl-parameter`    | A parameter for a method's `namedParams` list         |
+
+The snippets use `scriptScope()` for global contributions. When gvy loads GDSL for Jenkins metadata, it flattens
+contributions and does not filter them by context; class, closure, and annotation scopes are therefore not offered by
+these snippets. Other GDSL consumers may handle scopes differently.
 
 Press Tab to move through snippet fields. GDSL authoring currently provides these editing features and snippets;
 GDSL-specific semantic completion, hover, diagnostics, formatting, and navigation are not yet available. Loading a GDSL
