@@ -69,7 +69,11 @@ object TypeUsageCollector {
      */
     fun collectUsedTypes(moduleNode: ModuleNode, includeAnnotations: Boolean = true): Set<String> {
         val usedTypes = mutableSetOf<String>()
-        val importAliases = moduleNode.imports.mapNotNull { it.alias }.toSet()
+        val importAliases = moduleNode.imports.mapNotNull { importNode ->
+            val alias = importNode.alias
+            val typeName = importNode.type?.name
+            if (alias == null || typeName == null) null else alias to typeName
+        }.toMap()
         val visitor = TypeUsageVisitor(usedTypes, importAliases)
 
         // Visit all classes
@@ -95,7 +99,10 @@ object TypeUsageCollector {
         return usedTypes
     }
 
-    private class TypeUsageVisitor(private val usedTypes: MutableSet<String>, private val importAliases: Set<String>) {
+    private class TypeUsageVisitor(
+        private val usedTypes: MutableSet<String>,
+        private val importAliases: Map<String, String>,
+    ) {
         private val visitedTypes = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
 
         val codeVisitor = TypeUsageCodeVisitor()
@@ -178,19 +185,27 @@ object TypeUsageCollector {
         }
 
         private fun importUsageName(classNode: ClassNode): String {
-            // Nested types retain their written spelling in unresolvedName even after resolution.
-            // The binary name alone cannot tell `Outer.Inner` from an imported `Inner`.
+            // Canonicalization may turn the separator in written nested types into '$'.
+            // Match the resolved import and its suffix so '$' within an alias remains unambiguous.
             val spelling = classNode.unresolvedName
             val qualifier = spelling.substringBefore('.')
             val isQualifiedType = '.' in spelling &&
                 (qualifier in importAliases || qualifier.firstOrNull()?.isUpperCase() == true)
-            val binaryQualifier = spelling.substringBefore('$')
+            val resolvedAlias = matchingResolvedImport(classNode, spelling)
             return when {
                 isQualifiedType -> spelling.substringBefore('.')
-                '$' in spelling && binaryQualifier in importAliases -> binaryQualifier
+                resolvedAlias != null -> resolvedAlias
                 '$' in classNode.name -> spelling.takeUnless { '.' in it || '$' in it }.orEmpty()
                 else -> classNode.nameWithoutPackage
             }
+        }
+
+        private fun matchingResolvedImport(classNode: ClassNode, spelling: String): String? {
+            val resolvedName = classNode.name
+            return importAliases.entries.firstOrNull { (alias, importedName) ->
+                val isImportedType = resolvedName == importedName || resolvedName.startsWith("${importedName}\$")
+                isImportedType && spelling == alias + resolvedName.removePrefix(importedName)
+            }?.key
         }
 
         inner class TypeUsageCodeVisitor : CodeVisitorSupport() {

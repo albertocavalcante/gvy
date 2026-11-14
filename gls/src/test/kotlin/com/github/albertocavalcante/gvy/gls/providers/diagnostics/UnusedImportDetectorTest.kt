@@ -137,6 +137,25 @@ class UnusedImportDetectorTest {
     }
 
     @Test
+    fun `static nested access preserves dollar signs in import aliases`() {
+        val outerAlias = "Container${'$'}Alias"
+        val nestedAlias = "Entry${'$'}Alias"
+        val imports = "import java.util.Map as $outerAlias\nimport java.util.Map.Entry as $nestedAlias"
+        val cases = mapOf(
+            "$outerAlias.Entry.comparingByKey()" to nestedAlias,
+            "$nestedAlias.comparingByKey()" to outerAlias,
+        )
+        cases.forEach { (expression, expectedUnused) ->
+            val ast = compile("$imports\nclass Example { void method() { $expression } }")
+            assertEquals(
+                listOf(expectedUnused),
+                UnusedImportDetector.detectUnusedImports(ast).map { it.alias },
+                expression,
+            )
+        }
+    }
+
+    @Test
     fun `local property access does not use a shadowed import`() {
         val ast = compile(
             """
