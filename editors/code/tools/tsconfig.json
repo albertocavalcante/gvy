@@ -11,6 +11,7 @@
   },
   "include": [
     "source-install.js",
+    "ci-install.js",
     "editor-command.js",
     "smoke-server.js",
     "install-extension.js"

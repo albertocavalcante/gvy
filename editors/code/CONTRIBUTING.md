@@ -397,6 +397,47 @@ snapshot, use the
 An automatic nightly update channel in the extension remains follow-up work in
 [#1736](https://github.com/albertocavalcante/gvy/issues/1736).
 
+## Install an exact main commit from CI
+
+For a current `main` snapshot, reuse its source-built server and VSIX without a local Gradle or extension build:
+
+```sh
+node editors/code/tools/install-extension.js --from-ci --ref main --wait 600 --json
+```
+
+This mode needs Node 24+, authenticated `gh`, Java 21+, and a compatible VS Code `code` command. It supports macOS and
+Linux. Unlike a local source build, it does not need Gradle, pnpm dependencies, or a separate build checkout.
+
+The installer resolves the ref to a full SHA once. It selects both artifacts from the same successful Extension CI run
+for that SHA, verifies GitHub's artifact digests, verifies the bundled server and its clean source identity, checks
+editor compatibility, and smoke-checks the server before installation. It then verifies the actual installed server and
+client hashes. A matching package version alone does not make an installation current.
+
+The fixed wait limit bounds polling. If the selected run is pending, missing, canceled, or failed, the JSON result
+records that state and the receipt needed to resume. Resume that receipt to keep the selected SHA; rerunning a fresh
+`--ref main` selects a new snapshot. Use `--from-ci --resume <receipt> --wait 600 --json`, preserving a custom
+`--state-root` and local configuration. An explicit `--ref <full-40-character-SHA>` also selects that exact commit. The
+command never substitutes a release or an older green commit. Extension CI success does not establish that the broader
+project CI has passed.
+
+Use `--java-home` to select an installed JDK, `--installer code` to select VS Code, `--state-root` for artifact and
+receipt storage, and `--bin-dir` for the standalone `gvy` command. The command preserves unrelated files and reports a
+conflicting or shadowed command. `--package-only` downloads, verifies, and smoke-checks the pair without changing the
+editor or standalone command. Capture stderr in a local log when using `--json`; normal stdout contains the result.
+
+The installer keeps the verified runtime, paired VSIX, and receipt for resuming or recovery. The standalone command's
+symlink changes atomically; the editor CLI's installation is a separate operation. A partial failure is recorded as such
+and must be resumed or recovered before reporting success. After an update, run **Developer: Reload Window** in an
+existing VS Code window.
+
+The macOS state root defaults to `~/Library/Application Support/gvy/source-installs`; Linux uses
+`${XDG_STATE_HOME:-~/.local/state}/gvy/source-installs`. CI receipts and commit directories live in its `ci-v1`
+subdirectory. Older manual installations are preserved and are not automatically adopted as tool-owned commands.
+
+This CI path is for supported POSIX installations using VS Code. For a requested local checkout or local changes, use
+the source-build command below. For a policy that chooses the newest fully green commit, use
+[the green-main workflow](#run-the-latest-green-main).
+
 ## Build and install this checkout
 
 From the repository root:

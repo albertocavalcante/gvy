@@ -3,11 +3,12 @@
 Install the released extension for VS Code, Cursor, or VSCodium. To build your current checkout instead, use the
 [contributor instructions](../editors/code/CONTRIBUTING.md#build-and-install-this-checkout).
 
-| Choose              | What you get                                                              | Install                                 |
-| ------------------- | ------------------------------------------------------------------------- | --------------------------------------- |
-| Stable              | A tagged release; see the [v0.5.4 limitation](#stable-release-limitation) | Homebrew or the released VSIX below     |
-| Nightly             | A prebuilt, tested snapshot of `main`                                     | [Nightly VSIX](#nightly-download)       |
-| Latest green `main` | The newest commit with passing required CI, built locally                 | [`make ext-latest`](#latest-green-main) |
+| Choose              | What you get                                                              | Install                                                                              |
+| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Stable              | A tagged release; see the [v0.5.4 limitation](#stable-release-limitation) | Homebrew or the released VSIX below                                                  |
+| Nightly             | A prebuilt, tested snapshot of `main`                                     | [Nightly VSIX](#nightly-download)                                                    |
+| Exact `main` HEAD   | Server and extension from one verified CI build of the selected commit    | [CI installer](../editors/code/CONTRIBUTING.md#install-an-exact-main-commit-from-ci) |
+| Latest green `main` | The newest commit with passing required CI, built locally                 | [`make ext-latest`](#latest-green-main)                                              |
 
 Use VS Code 1.144 or newer, or an editor compatible with that VS Code API. Homebrew installs the Java runtime; it does
 not install the editor. Cursor and VSCodium have separate product version numbers. Some builds use an older VS Code API
