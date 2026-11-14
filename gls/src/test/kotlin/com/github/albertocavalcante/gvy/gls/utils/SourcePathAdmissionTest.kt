@@ -44,6 +44,19 @@ class SourcePathAdmissionTest {
     }
 
     @Test
+    fun `parent traversal is unavailable before lexical normalization`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managed = Files.createDirectory(root.resolve("managed"))
+        val child = Files.createDirectory(managed.resolve("child"))
+        val workspace = Files.createDirectory(root.resolve("workspace"))
+        val link = Files.createSymbolicLink(workspace.resolve("link"), child)
+        assertEquals(
+            SourcePathAdmission.UNAVAILABLE,
+            classifySourcePath(link.resolve("../Mode.groovy")) { it.startsWith(managed) },
+        )
+    }
+
+    @Test
     fun `broken or non-directory ancestors cannot be admitted as ordinary files`() {
         val file = Files.writeString(root.resolve("file"), "content")
         assertEquals(SourcePathAdmission.UNAVAILABLE, classifySourcePath(file.resolve("Mode.groovy")) { false })

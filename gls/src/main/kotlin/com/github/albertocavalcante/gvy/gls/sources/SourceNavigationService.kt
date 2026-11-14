@@ -397,13 +397,13 @@ class SourceNavigationService(
                 checkCancelled,
             )
         } else {
-            javaSourceInspector.inspectMethodFromContent(
+            javaSourceInspector.inspectMemberDefinitionFromContent(
                 content,
                 symbol.binaryName,
                 symbol.memberName,
                 source.entryName,
                 checkCancelled,
-            )?.definition
+            )
         }
     } else if (symbol.memberName == null) {
         groovySourceInspector.inspect(content, symbol.binaryName, source.contentPath.toUri(), checkCancelled)

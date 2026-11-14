@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.net.URI
 
 /**
  * Tests for issue #749: Cross-file definition resolution race condition.
@@ -94,9 +95,8 @@ class CrossFileDefinitionRaceTest {
             ),
         )
 
-        // Simulate a small delay (like E2E test waiting for ONE diagnostics notification)
-        // This creates the race condition: definition request may happen before Calculator compiles
-        delay(50)
+        service.awaitCurrentDiagnostics(URI.create(calculatorUri), version = 1)
+        service.awaitCurrentDiagnostics(URI.create(mainUri), version = 1)
 
         // Act: Request definition for "Calculator" in Main.groovy
         val params = DefinitionParams(
@@ -229,11 +229,11 @@ class CrossFileDefinitionRaceTest {
 
         // Open Main first (reverse order)
         service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(mainUri, "groovy", 1, mainContent)))
-        delay(50)
 
         // Open Calculator second
         service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(calculatorUri, "groovy", 1, calculatorContent)))
-        delay(50)
+        service.awaitCurrentDiagnostics(URI.create(calculatorUri), version = 1)
+        service.awaitCurrentDiagnostics(URI.create(mainUri), version = 1)
 
         // Request definition in Main
         val params = DefinitionParams(

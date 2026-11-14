@@ -13,10 +13,6 @@ internal class CompiledSnapshotAccess(
     private val workspace: WorkspaceManager,
     private val documents: DocumentProvider?,
 ) {
-    /** Cheap cache identity checks only; the caller supplies a freshly observed admission receipt. */
-    fun capture(uri: URI, admissionFingerprint: String): CompiledDocumentSnapshot? =
-        captureCached(uri)?.takeIf { it.admissionFingerprint == admissionFingerprint }
-
     /** Atomic raw receipt pair with primary/cache checks, without physical source admission. */
     fun captureCached(uri: URI): CompiledDocumentSnapshot? {
         val ticket = cache.ownership.begin(uri)

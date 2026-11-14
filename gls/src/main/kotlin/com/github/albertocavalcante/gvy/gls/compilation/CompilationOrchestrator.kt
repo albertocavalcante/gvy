@@ -587,7 +587,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         return AdmittedCompilationInputs(
             workspace.sourceRoots.filter(admission::allows),
             getWorkspaceSourcesForCompilation(uri, workspace).filter(admission::allows),
-            openSourcesFor(uri).filterKeys(admission::allows),
+            openSourceSnapshotsFor(uri).filterKeys(admission::allows),
             admission,
         )
     }
@@ -625,8 +625,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * two new files can reference each other before either is saved. The parser keeps only
      * `.groovy` sources and lets each buffer replace its on-disk copy.
      */
-    private fun openSourcesFor(uri: URI): Map<URI, String> =
-        documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
+    private fun openSourceSnapshotsFor(uri: URI): Map<URI, DocumentSnapshot> =
+        documentProvider?.snapshotDocuments()?.filterKeys { it != uri }.orEmpty()
 }
 
 private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {

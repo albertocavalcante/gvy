@@ -44,7 +44,7 @@ class CustomRequestMetadataTest {
 
     @TestFactory
     fun `generic custom results retain their JSON through the SDK`(): List<DynamicTest> =
-        productMethods().filterNot { it in LEGACY_TYPED_METHODS }.flatMap { method ->
+        productMethods().filterNot { it in TYPED_RESULT_METHODS }.flatMap { method ->
             RESULTS.map { (shape, expected) ->
                 dynamicTest("$method $shape") {
                     assertEquals(expected, observedResult(method, expected))
@@ -114,7 +114,16 @@ class CustomRequestMetadataTest {
 
     private companion object {
         const val TIMEOUT_SECONDS = 5L
-        val LEGACY_TYPED_METHODS = setOf("groovy/discoverTests", "groovy/runTest")
+        val TYPED_RESULT_METHODS = setOf(
+            "groovy/discoverTests",
+            "groovy/runTest",
+            "groovy/sourceAttach",
+            "groovy/sourceContent",
+            "groovy/sourceDefinition",
+            "groovy/sourceDetails",
+            "groovy/sourceIsManaged",
+            "groovy/sourceResolve",
+        )
         val RESULTS = listOf(
             "object" to Json.parseToJsonElement("""{"value":"control","optional":null,"nested":{"missing":null}}"""),
             "array" to Json.parseToJsonElement("""[null,{"value":"control"},17]"""),

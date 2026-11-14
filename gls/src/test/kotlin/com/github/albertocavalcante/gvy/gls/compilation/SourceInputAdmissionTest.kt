@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -42,6 +43,22 @@ class SourceInputAdmissionTest {
 
         managed = true
         assertFalse(SourceInputAdmission(excluded) {}.allows(source), "No observation is cached across requests")
+    }
+
+    @Test
+    fun `parent traversal cannot reuse an ordinary cached admission`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privilege is not assumed")
+        val managed = Files.createDirectory(root.resolve("managed"))
+        val child = Files.createDirectory(managed.resolve("child"))
+        val workspace = Files.createDirectory(root.resolve("workspace"))
+        val link = Files.createSymbolicLink(workspace.resolve("link"), child)
+        val traversed = link.resolve("../Mode.groovy")
+        val admission = SourceInputAdmission({ it.startsWith(managed) }) {}
+
+        assertTrue(admission.allows(workspace.resolve("Mode.groovy")))
+        assertFalse(admission.allows(traversed))
+        assertFalse(admission.allows(traversed.toUri()))
+        assertFailsWith<IllegalArgumentException> { admission.requireDocument(traversed.toUri()) }
     }
 
     @Test

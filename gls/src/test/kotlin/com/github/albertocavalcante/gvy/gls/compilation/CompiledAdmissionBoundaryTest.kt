@@ -34,7 +34,7 @@ class CompiledAdmissionBoundaryTest {
         Fixture(WorkspaceManager()).use { fixture ->
             val service = fixture.service
             assertTrue(service.compile(uri, source).isSuccess)
-            val before = assertNotNull(service.getCompiledSnapshot(uri))
+            val before = assertNotNull(service.getAdmittedCompiledSnapshot(uri) {})
             val cache = service.compilationCacheService
             assertTrue(
                 cache.publish(
@@ -64,7 +64,7 @@ class CompiledAdmissionBoundaryTest {
         Fixture(manager).use { fixture ->
             val service = fixture.service
             assertTrue(service.compile(uri, source).isSuccess)
-            val held = assertNotNull(service.getCompiledSnapshot(uri))
+            val held = assertNotNull(service.getAdmittedCompiledSnapshot(uri) {})
             val cache = service.compilationCacheService
             val fingerprint = assertNotNull(held.configurationFingerprint)
             assertTrue(
@@ -131,8 +131,7 @@ class CompiledAdmissionBoundaryTest {
 
                 assertSame(model, manager.current())
                 assertFalse(service.isAdmittedCompiledSnapshotCurrent(uri, snapshot) {})
-                assertNull(service.getCompiledSnapshot(uri))
-                assertNull(service.getSession(uri))
+                assertNull(service.getAdmittedCompiledSnapshot(uri) {})
                 assertNull(service.captureSourceRequest(uri, "java.lang.String"))
                 assertFalse(request.context.isCurrent())
                 assertFalse(session.validateCurrent())

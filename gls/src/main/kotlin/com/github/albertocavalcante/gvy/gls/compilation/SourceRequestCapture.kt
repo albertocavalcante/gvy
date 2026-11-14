@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceContextIdentity
 import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
 import com.github.albertocavalcante.gvy.gls.sources.SourceFailure
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupContext
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
 import com.github.albertocavalcante.gvy.gls.sources.SourceStoreException
 import com.github.albertocavalcante.gvy.gls.sources.copyAndDigest
@@ -68,6 +69,7 @@ internal class SourceRequestCapture(
         memberName: String? = null,
         checkCancelled: () -> Unit = {},
         expectedSnapshot: CompiledDocumentSnapshot? = null,
+        policy: SourceLookupPolicy = SourceLookupPolicy.LOCAL_ONLY,
     ): ResolvedSourceRequest? {
         val environment = environment(uri, checkCancelled = checkCancelled) ?: return null
         if (
@@ -82,6 +84,7 @@ internal class SourceRequestCapture(
             binaryName,
             memberName,
             environment.validateCurrent,
+            policy,
         ) { origin ->
             environment.validateCurrent() &&
                 originFreshlyCurrent(origin, environment) &&
@@ -199,8 +202,10 @@ internal class SourceRequestCapture(
         checkCancelled: () -> Unit = {},
     ): CapturedEnvironment? {
         val model = workspace.current()
+        // Avoid a workspace-wide admission pass when there is no receipt-bearing compilation to capture.
+        val snapshot = snapshots.captureCached(uri) ?: return null
         val admitted = captureInputs(uri, model, checkCancelled) ?: return null
-        val snapshot = snapshots.capture(uri, admitted.fingerprint) ?: return null
+        if (snapshot.admissionFingerprint != admitted.fingerprint) return null
         if (snapshot.parseResult.outcome.achievedPhase < Phases.SEMANTIC_ANALYSIS) return null
         val inputs = snapshot.parseResult.classpathInputs ?: return null
         val bootJdk = inputs.bootJdk ?: return null
@@ -250,6 +255,7 @@ internal class SourceRequestCapture(
         binaryName: String,
         memberName: String?,
         requestCurrent: () -> Boolean = environment.isCurrent,
+        policy: SourceLookupPolicy = SourceLookupPolicy.LOCAL_ONLY,
         validateForPublication: suspend (SourceOrigin) -> Boolean = { origin ->
             requestCurrent() && originCurrent(origin, environment.bootJdk)
         },
@@ -293,6 +299,7 @@ internal class SourceRequestCapture(
         } ?: return SourceRequestSelection.ContextUnavailable
         val context = SourceLookupContext(
             environment.identity,
+            policy = policy,
             isCurrent = { requestCurrent() && originCurrent(origin, environment.bootJdk) },
             validateCurrent = { validateForPublication(origin) },
         )

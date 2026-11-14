@@ -13,6 +13,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ManagedWorkspaceSourcesTest {
@@ -63,6 +64,36 @@ class ManagedWorkspaceSourcesTest {
         manager.updateWorkspaceModel(root, emptyList(), listOf(root.resolve("src"), rootAlias))
         assertEquals(listOf(ordinary), manager.getWorkspaceSources())
         assertTrue(manager.applySourceChanges(listOf(fileAlias), emptyList()).added.isEmpty())
+    }
+
+    @Test
+    fun `parent traversal through a linked source root is refused before scanning or indexing`(): Unit = runBlocking {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managed = root.resolve("managed")
+        source(managed.resolve("Mode.groovy"))
+        val child = Files.createDirectory(managed.resolve("child"))
+        val workspace = Files.createDirectory(root.resolve("workspace"))
+        val link = Files.createSymbolicLink(workspace.resolve("link"), child)
+        val traversed = link.resolve("..")
+        val registry = registry(managed)
+        val excluded: (Path) -> Boolean = { registry.isManaged(it.toUri()) }
+        val manager = WorkspaceManager(sourceExclusion = excluded)
+
+        assertTrue(WorkspaceScanner(excluded).findGroovyFiles(listOf(traversed)).none())
+        assertTrue(collectGroovySources(traversed, sourceExclusion = excluded).isEmpty())
+        manager.updateWorkspaceModel(workspace, emptyList(), listOf(traversed))
+        assertTrue(manager.getSourceRoots().isEmpty())
+        assertTrue(manager.getWorkspaceSources().isEmpty())
+        manager.updateWorkspaceModel(workspace, emptyList(), listOf(workspace))
+        assertTrue(manager.applySourceChanges(listOf(traversed.resolve("Mode.groovy")), emptyList()).added.isEmpty())
+
+        val compilation = GroovyCompilationService(workspaceManager = manager)
+        try {
+            assertNull(compilation.symbolIndexingService.indexFile(traversed.resolve("Mode.groovy").toUri()))
+            assertTrue(compilation.symbolIndexingService.getAllSymbolIndices().isEmpty())
+        } finally {
+            compilation.shutdown()
+        }
     }
 
     @Test

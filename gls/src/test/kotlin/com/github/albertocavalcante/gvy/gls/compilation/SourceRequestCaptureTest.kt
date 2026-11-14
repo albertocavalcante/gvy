@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
@@ -40,6 +41,34 @@ class SourceRequestCaptureTest {
             documents.update(uri, original, 2)
 
             assertFalse(request.context.isCurrent())
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
+    fun `lookup policy is local by default and explicit for definition navigation`(): Unit = runBlocking {
+        val documents = DocumentProvider()
+        val service = GroovyCompilationService(documentProvider = documents)
+        try {
+            documents.put(uri, original, 1)
+            assertTrue(service.compile(uri, original).isSuccess)
+            val local = assertNotNull(service.captureSourceRequest(uri, "java.lang.String"))
+            val snapshot = assertNotNull(service.getCompiledSnapshot(uri))
+            val hover = assertNotNull(service.captureSourceRequestForSnapshot(uri, "java.lang.String", snapshot))
+            val navigation = assertNotNull(
+                service.captureSourceRequest(
+                    uri,
+                    "java.lang.String",
+                    policy = SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+                ),
+            )
+            assertEquals(SourceLookupPolicy.LOCAL_ONLY, local.context.policy)
+            assertEquals(SourceLookupPolicy.LOCAL_ONLY, hover.context.policy)
+            assertEquals(SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS, navigation.context.policy)
+            assertTrue(navigation.context.validateCurrent())
+            documents.update(uri, original, 2)
+            assertFalse(navigation.context.validateCurrent())
         } finally {
             service.shutdown()
         }

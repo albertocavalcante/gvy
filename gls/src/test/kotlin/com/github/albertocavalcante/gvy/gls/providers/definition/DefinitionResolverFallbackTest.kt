@@ -15,6 +15,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceContextIdentity
 import com.github.albertocavalcante.gvy.gls.sources.SourceDefinition
 import com.github.albertocavalcante.gvy.gls.sources.SourceFailure
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupContext
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
@@ -122,7 +123,11 @@ class DefinitionResolverFallbackTest {
     @Test
     fun `missing held compilation cannot fall back to process-global classpath`() = runBlocking {
         val resolver = resolver()
-        coEvery { compilation.captureSourceRequest(document, symbol.binaryName, null, any()) } returns null
+        coEvery {
+            compilation.captureSourceRequest(
+                document, symbol.binaryName, null, any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            )
+        } returns null
         assertEquals(null, resolver.findDefinitionAt(document, position))
         coVerify(exactly = 0) { navigator.locate(any(), any()) }
     }
@@ -145,7 +150,7 @@ class DefinitionResolverFallbackTest {
         every { compilation.getAst(workspaceUri) } returns module
         every { module.classes } returns listOf(declaration)
         val result = assertIs<DefinitionResolver.DefinitionResult.Source>(
-            DefinitionResolver(ast, mockk<SymbolTable>(), compilation, navigator).findDefinitionAt(document, position),
+            DefinitionResolver(ast, SymbolTable(), compilation, navigator).findDefinitionAt(document, position),
         )
         assertEquals(workspaceUri, result.uri)
         assertSame(declaration, result.node)
@@ -157,8 +162,12 @@ class DefinitionResolverFallbackTest {
         every { ast.getAllClassNodes() } returns emptyList()
         every { compilation.getAllSymbolStorages() } returns emptyMap()
         every { compilation.getAst(document) } returns null
-        coEvery { compilation.captureSourceRequest(document, symbol.binaryName, null, any()) } returns request
-        return DefinitionResolver(ast, mockk<SymbolTable>(), compilation, navigator)
+        coEvery {
+            compilation.captureSourceRequest(
+                document, symbol.binaryName, null, any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            )
+        } returns request
+        return DefinitionResolver(ast, SymbolTable(), compilation, navigator)
     }
 
     private fun classNode() = ClassNode(symbol.binaryName, 0, null).apply {
