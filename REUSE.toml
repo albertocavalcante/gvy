@@ -30,6 +30,7 @@ path = [
   ".agent/workflows/solve.md",
   ".agent/workflows/stale-pr.md",
   ".agent/workflows/tests-tests-tests.md",
+  ".agents/skills/gvy-install/SKILL.md",
   ".bazelignore",
   ".bazelversion",
   ".buckversion",

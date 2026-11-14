@@ -35,6 +35,13 @@ function parseArgs(argv = []) {
     vsix: /** @type {string | null} */ (null),
     help: false,
     fromSource: false,
+    fromCi: false,
+    ref: /** @type {string | null} */ (null),
+    repo: /** @type {string | null} */ (null),
+    stateRoot: /** @type {string | null} */ (null),
+    binDir: /** @type {string | null} */ (null),
+    wait: /** @type {string | null} */ (null),
+    resume: /** @type {string | null} */ (null),
     doctor: false,
     json: false,
     buildRoot: /** @type {string | null} */ (null),
@@ -45,6 +52,27 @@ function parseArgs(argv = []) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
+      case "--from-ci":
+        parsed.fromCi = true;
+        break;
+      case "--ref":
+        parsed.ref = expectValue(argv, ++i, arg);
+        break;
+      case "--repo":
+        parsed.repo = expectValue(argv, ++i, arg);
+        break;
+      case "--state-root":
+        parsed.stateRoot = expectValue(argv, ++i, arg);
+        break;
+      case "--bin-dir":
+        parsed.binDir = expectValue(argv, ++i, arg);
+        break;
+      case "--wait":
+        parsed.wait = expectValue(argv, ++i, arg);
+        break;
+      case "--resume":
+        parsed.resume = expectValue(argv, ++i, arg);
+        break;
       case "--from-source":
         parsed.fromSource = true;
         break;
@@ -221,11 +249,18 @@ function printHelp() {
 Usage: node tools/install-extension.js [options]
 
 Options:
+  --from-ci             Install exact main commit artifacts from Extension CI
+  --ref <ref>            CI ref (main or full commit SHA)
+  --repo <owner/repo>    CI repository (albertocavalcante/gvy only)
+  --state-root <path>    CI installation state root
+  --bin-dir <path>       Directory for standalone gvy link
+  --wait <seconds>       Wait for exact-commit CI (0–3600)
+  --resume <receipt>     Resume a previously pinned selection
   --from-source         Build, verify, and install this checkout (no release fallback)
   --doctor              Check source-build prerequisites without building
   --build-root <path>   Place Gradle cache, build outputs and artifacts here
   --java-home <path>    JDK 21+ for the source build
-  --json                Emit a JSON source-install result; logs go to stderr
+  --json                Emit a JSON source/CI result; logs go to stderr
   --tag <tag>            Bundle a specific Groovy LSP release tag
   --nightly              Bundle the latest nightly/prerelease Groovy LSP
   --latest               Bundle the latest stable Groovy LSP release
@@ -235,7 +270,7 @@ Options:
   --checksum <sha256>    Optional SHA256 checksum for URL downloads
   --force-download       Force download/copy of the selected JAR
   --installer <cmd>      Installer binary to use (code, agy, cursor, etc.)
-  --package-only         Only build the VSIX; do not install
+  --package-only         Verify the package without installing
   --vsix <path>          Install a specific VSIX path (skip auto-detect)
   -h, --help             Show this help message
 
@@ -266,11 +301,33 @@ function main(argv = process.argv.slice(2)) {
     args.url,
     args.vsix,
     args.fromSource || args.doctor,
+    args.fromCi,
   ].filter(Boolean);
   if (selectors.length > 1)
     throw new Error(
-      "Choose exactly one source: --from-source, --local, --vsix, --tag, --latest, --nightly, --channel, or --url",
+      "Choose exactly one source: --from-ci, --from-source, --local, --vsix, --tag, --latest, --nightly, --channel, or --url",
     );
+  if (args.fromCi) {
+    if (args.buildRoot)
+      throw new Error("--build-root is not supported with --from-ci");
+    const { installFromCi } = require("./ci-install.js");
+    return installFromCi(args).then((result) => {
+      if (args.json) console.log(JSON.stringify(result));
+      else
+        console.log(
+          `CI ${args.packageOnly ? "package" : "installation"} verified: ${result.receipt}`,
+        );
+    });
+  }
+  if (
+    args.ref ||
+    args.repo ||
+    args.stateRoot ||
+    args.binDir ||
+    args.wait ||
+    args.resume
+  )
+    throw new Error("CI options require --from-ci");
   if (args.fromSource || args.doctor) {
     const { installFromSource } = require("./source-install.js");
     const result = installFromSource({
@@ -340,6 +397,7 @@ function main(argv = process.argv.slice(2)) {
 module.exports = {
   parseArgs,
   main,
+  reportError,
   buildEnv,
   packageCommand,
   installerCommand,
@@ -348,23 +406,28 @@ module.exports = {
 
 if (require.main === module) {
   try {
-    main();
+    Promise.resolve(main()).catch(reportError);
   } catch (caught) {
-    const error =
-      /** @type {Error & {stage?: string, installed?: boolean, receipt?: string}} */ (
-        caught
-      );
-    if (process.argv.includes("--json"))
-      console.log(
-        JSON.stringify({
-          success: false,
-          error: error.message,
-          stage: error.stage,
-          installed: error.installed,
-          receipt: error.receipt,
-        }),
-      );
-    console.error(`Failed to install extension: ${error.message}`);
-    process.exit(1);
+    reportError(caught);
   }
+}
+
+/** @param {unknown} caught */
+function reportError(caught) {
+  const error =
+    /** @type {Error & {stage?: string, installed?: boolean, receipt?: string}} */ (
+      caught
+    );
+  if (process.argv.includes("--json"))
+    console.log(
+      JSON.stringify({
+        success: false,
+        error: error.message,
+        stage: error.stage,
+        installed: error.installed,
+        receipt: error.receipt,
+      }),
+    );
+  console.error(`Failed to install extension: ${error.message}`);
+  process.exitCode = 1;
 }

@@ -134,6 +134,11 @@ The git workflow rules apply to any branch, commit, or PR work.
 
 ## Source installation
 
+For an installation or update, read [the project install skill](.agents/skills/gvy-install/SKILL.md). For a requested
+remote `main` HEAD or SHA, use `node editors/code/tools/install-extension.js --from-ci --ref main --wait 600 --json`.
+This pins the ref once and reuses verified source-built CI artifacts. Resume the recorded SHA instead of chasing
+subsequent pushes. Inspect the JSON result before reading build or installer logs.
+
 To install both components from this checkout, use
 `node editors/code/tools/install-extension.js --from-source --installer code --json`. Redirect stderr to a local build
 log; inspect the JSON receipt first and read the log only for a failed stage. Use `--doctor` for prerequisites and
