@@ -21,6 +21,7 @@ import org.codehaus.groovy.control.io.StringReaderSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -186,6 +187,37 @@ class SourceAnnotationIndexTest {
         )
         assertEquals(emptyMap<URI, String>(), requestStateValue(capture, "openSources"))
         capture.discard()
+        assertNull(requestState(capture))
+    }
+
+    @Test
+    fun `minimal locator selected buffers preserve their original URI without retaining request text`() {
+        val secondary = URI.create("file:///open%20annotations/Mode.groovy")
+        val secondaryPath = Path.of(secondary)
+        val locatedNames = mutableListOf<String>()
+        val result = parse(
+            ParseRequest(
+                uri = URI.create("file:///Money.groovy"),
+                content = "import p.Mode\n@Mode class Money {}",
+                compilePhase = Phases.SEMANTIC_ANALYSIS,
+                parseMode = ParseMode.MINIMAL,
+                openSources = mapOf(secondary to "package p\n@interface Mode {}"),
+                workspaceClassLocator = { name ->
+                    locatedNames += name
+                    if (name == "p.Mode") listOf(secondaryPath) else emptyList()
+                },
+            ),
+        )
+
+        assertTrue(result.isSuccessful, result.diagnostics.toString())
+        assertTrue("p.Mode" in locatedNames, "The compiler must select the buffered annotation source")
+        assertEquals(Phases.SEMANTIC_ANALYSIS, result.outcome.achievedPhase)
+        val reference = assertNotNull(result.sourceAnnotations.headAt(1, 1))
+        assertEquals("p.Mode", reference.binaryName)
+        assertEquals(secondary.path, reference.sourceUnitName)
+        assertEquals(secondary, reference.sourceUri)
+        val capture = result.compilationUnit.configuration.compilationCustomizers
+            .filterIsInstance<SourceAnnotationCapture>().single()
         assertNull(requestState(capture))
     }
 

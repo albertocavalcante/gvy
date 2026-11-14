@@ -93,6 +93,8 @@ data class ParseRequest(
      * exact name is added, read when the compile reaches it. Null: no lookup beyond file names.
      */
     val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
+    /** Fresh path check for source files discovered implicitly below [sourceRoots]. */
+    val sourcePathAdmission: ((Path) -> Boolean)? = null,
 ) {
     val sourceUnitName: String = uri.path ?: uri.toString()
 }

@@ -63,7 +63,13 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
         request.content,
         null,
         request.uri,
-        if (request.parseMode == ParseMode.MINIMAL) emptyMap() else request.openSources,
+        // A minimal locator can still select a buffered source whose StringReaderSource has no original URI.
+        // Keep this borrowed table only until finish freezes the compiler-selected entries and discards it.
+        if (request.parseMode == ParseMode.MINIMAL && request.workspaceClassLocator == null) {
+            emptyMap()
+        } else {
+            request.openSources
+        },
     )
     private val content: String
         get() = checkNotNull(requestState?.content) { "Source annotation capture was discarded" }

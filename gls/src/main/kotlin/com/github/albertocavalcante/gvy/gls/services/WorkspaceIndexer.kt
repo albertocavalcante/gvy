@@ -124,9 +124,6 @@ internal class WorkspaceIndexer(
             "Workspace compilation complete: ${compilationResult.modules.size} modules, " +
                 "${compilationResult.errors.size} errors"
         }
-        if (!compilationResult.success) {
-            logger.warn { "Workspace compilation had errors, but proceeding with partial results" }
-        }
     }
 
     private fun skipCompilationForLargeWorkspace(total: Int, limit: Int, client: LanguageClient?) {

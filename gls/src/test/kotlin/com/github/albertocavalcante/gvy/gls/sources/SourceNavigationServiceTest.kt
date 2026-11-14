@@ -3,699 +3,491 @@
 
 package com.github.albertocavalcante.gvy.gls.sources
 
+import com.github.albertocavalcante.gvy.build.ResolvedArtifactCoordinates
 import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactRequest
+import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactResult
+import com.github.javaparser.JavaParser
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import java.net.URI
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertNotNull
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
-/**
- * Tests for SourceNavigationService.
- */
+/** Public source behavior: no inferred coordinates, stale results, wrong versions or fabricated declaration ranges. */
 class SourceNavigationServiceTest {
+    @TempDir lateinit var directory: Path
 
-    @TempDir
-    lateinit var tempDir: Path
-
-    @Nested
-    inner class StatisticsTest {
-
-        @Test
-        fun `getStatistics returns expected keys`() {
-            val service = SourceNavigationService()
-
-            val stats = service.getStatistics()
-
-            assertTrue(stats.containsKey("extractorStats"), "Should contain extractorStats key")
-        }
-
-        @Test
-        fun `getStatistics returns correct types`() {
-            val service = SourceNavigationService()
-
-            val stats = service.getStatistics()
-
-            assertTrue(stats["extractorStats"] is Map<*, *>, "extractorStats should be Map")
-        }
-
-        @Test
-        fun `getStatistics starts with zero extracted jars`() {
-            val service = SourceNavigationService()
-
-            val stats = service.getStatistics()
-            val extractorStats = stats["extractorStats"] as Map<*, *>
-
-            assertTrue((extractorStats["extractedJars"] as Int) == 0, "Should start with 0 extracted jars")
+    @Test
+    @Timeout(10)
+    fun `closing navigation while its presentation waits prevents a late source result`(): Unit = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val navigation = SourceNavigationService(
+            sourceResolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) },
+            sourceCacheRoot = directory.resolve("managed"),
+            sourcePresentation = SourcePresentation { descriptor ->
+                entered.complete(Unit)
+                check(release.await(5, TimeUnit.SECONDS)) { "The test must release source presentation" }
+                descriptor.contentPath.toUri()
+            },
+        )
+        val request = async { navigation.locate(binary("selected/library.jar"), context()) }
+        try {
+            entered.await()
+            navigation.close()
+            release.countDown()
+            assertFailsWith<CancellationException> { request.await() }
+        } finally {
+            release.countDown()
+            navigation.close()
+            request.cancelAndJoin()
         }
     }
 
-    @Nested
-    inner class SourceResultTest {
-
-        @Test
-        fun `SourceResult SourceLocation holds all data`() {
-            val uri = URI.create("file:///test/Foo.java")
-            val result = SourceNavigator.SourceResult.SourceLocation(
-                uri = uri,
-                className = "com.example.Foo",
-                lineNumber = 42,
-            )
-
-            assertTrue(result.uri == uri)
-            assertTrue(result.className == "com.example.Foo")
-            assertTrue(result.lineNumber == 42)
-        }
-
-        @Test
-        fun `SourceResult SourceLocation with default lineNumber`() {
-            val uri = URI.create("file:///test/Bar.java")
-            val result = SourceNavigator.SourceResult.SourceLocation(
-                uri = uri,
-                className = "com.example.Bar",
-            )
-
-            assertEquals(null, result.lineNumber, "Default lineNumber should be null")
-        }
-
-        @Test
-        fun `SourceResult BinaryOnly includes reason`() {
-            val uri = URI.create("jar:file:///test.jar!/Foo.class")
-            val result = SourceNavigator.SourceResult.BinaryOnly(
-                uri = uri,
-                className = "com.example.Foo",
-                reason = "No source available",
-            )
-
-            assertTrue(result.reason.isNotBlank())
-            assertEquals("com.example.Foo", result.className)
+    @Test
+    @Timeout(10)
+    fun `a store finishing initialization after close is closed instead of published`(): Unit = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val initialized = CompletableDeferred<SourceContentStore>()
+        val release = CountDownLatch(1)
+        val creations = AtomicInteger()
+        val symbol = binary("selected/library.jar")
+        val navigation = SourceNavigationService(
+            sourceResolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) },
+            sourceCacheRoot = directory.resolve("managed"),
+            contentStoreFactory = { root ->
+                creations.incrementAndGet()
+                val candidate = SourceContentStore(root)
+                var returned = false
+                try {
+                    initialized.complete(candidate)
+                    check(release.await(5, TimeUnit.SECONDS)) { "The test must release source store initialization" }
+                    returned = true
+                    candidate
+                } finally {
+                    if (!returned) candidate.close()
+                }
+            },
+        )
+        var initializedStore: SourceContentStore? = null
+        val request = async { navigation.locate(symbol, context()) }
+        try {
+            val candidate = initialized.await()
+            initializedStore = candidate
+            navigation.close()
+            release.countDown()
+            assertFailsWith<CancellationException> { request.await() }
+            assertFailsWith<CancellationException> { candidate.importArchive(SourceArchiveInput.Local(source)) }
+            navigation.close()
+            assertFailsWith<CancellationException> { navigation.locate(symbol, context()) }
+            assertEquals(1, creations.get(), "A closed navigator must not create another store")
+        } finally {
+            release.countDown()
+            navigation.close()
+            request.cancelAndJoin()
+            initializedStore?.close()
         }
     }
 
-    @Nested
-    inner class NavigateToSourceTest {
-
-        @Test
-        fun `returns BinaryOnly for invalid jar URI scheme`(): Unit = runBlocking {
-            val service = SourceNavigationService()
-
-            // file: scheme is not a jar: URI
-            val fileUri = URI.create("file:///some/path/Class.java")
-            val result = service.navigateToSource(fileUri, "SomeClass")
-
-            assertTrue(result is SourceNavigator.SourceResult.BinaryOnly)
-            val binaryResult = result as SourceNavigator.SourceResult.BinaryOnly
-            assertTrue(binaryResult.reason.contains("extract JAR path") || binaryResult.reason.contains("JDK"))
-        }
-
-        @Test
-        fun `handles jrt URI for JDK classes`(): Unit = runBlocking {
-            val service = SourceNavigationService()
-
-            val jrtUri = URI.create("jrt:/java.base/java/util/Date.class")
-            val result = service.navigateToSource(jrtUri, "java.util.Date")
-
-            // Should delegate to JdkSourceResolver - result depends on src.zip availability
-            assertNotNull(result)
-            assertTrue(
-                result is SourceNavigator.SourceResult.SourceLocation ||
-                    result is SourceNavigator.SourceResult.BinaryOnly,
-            )
-        }
-
-        @Test
-        fun `returns BinaryOnly when jar path does not exist`(): Unit = runBlocking {
-            val service = SourceNavigationService()
-
-            val nonExistentJar = URI.create("jar:file:///nonexistent/lib.jar!/com/example/Foo.class")
-            val result = service.navigateToSource(nonExistentJar, "com.example.Foo")
-
-            assertTrue(result is SourceNavigator.SourceResult.BinaryOnly)
-        }
-
-        @Test
-        fun `finds adjacent source JAR for local dependencies`(): Unit = runBlocking {
-            // Create binary JAR and matching source JAR
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-
-            val binaryJar = libDir.resolve("mylib.jar")
-            val sourceJar = libDir.resolve("mylib-sources.jar")
-
-            createMinimalJar(binaryJar)
-            createSourceJar(sourceJar, "com/example/MyClass.java", "package com.example; public class MyClass {}")
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            val service = SourceNavigationService(
-                sourceExtractor = extractor,
-            )
-
-            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
-            val result = service.navigateToSource(jarUri, "com.example.MyClass")
-
-            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
-                "Expected SourceLocation but got: $result"
-            }
-        }
-
-        @Test
-        fun `returns SourceLocation for groovy sources`(): Unit = runBlocking {
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-
-            val binaryJar = libDir.resolve("mylib.jar")
-            val sourceJar = libDir.resolve("mylib-sources.jar")
-
-            createMinimalJar(binaryJar)
-
-            val groovySource = """
-                package com.example
-
-                class MyGroovy {
-                }
-            """.trimIndent()
-            createSourceJar(sourceJar, "com/example/MyGroovy.groovy", groovySource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            val service = SourceNavigationService(sourceExtractor = extractor)
-
-            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyGroovy.class")
-            val result = service.navigateToSource(jarUri, "com.example.MyGroovy")
-
-            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
-                "Expected SourceLocation but got: $result"
-            }
-            val location = result as SourceNavigator.SourceResult.SourceLocation
-            assertTrue(location.uri.toString().endsWith("MyGroovy.groovy"))
-            assertEquals(3, location.lineNumber)
-        }
-
-        @Test
-        fun `derives maven coordinates from gradle cache paths`(): Unit = runBlocking {
-            val resolver = RecordingSourceArtifactResolver()
-            val service = SourceNavigationService(sourceResolver = resolver)
-
-            val jarPath = Paths.get(
-                tempDir.toString(),
-                ".gradle",
-                "caches",
-                "modules-2",
-                "files-2.1",
-                "com.lesfurets.jenkins.unit",
-                "jenkins-pipeline-unit",
-                "1.9",
-                "abcdef",
-                "jenkins-pipeline-unit-1.9.jar",
-            )
-            val jarUri = URI.create(
-                "jar:file://${jarPath.toAbsolutePath()}!/com/lesfurets/jenkins/unit/DeclarativePipelineTest.class",
-            )
-
-            service.navigateToSource(jarUri, "com.lesfurets.jenkins.unit.declarative.DeclarativePipelineTest")
-
-            assertEquals("com.lesfurets.jenkins.unit", resolver.groupId)
-            assertEquals("jenkins-pipeline-unit", resolver.artifactId)
-            assertEquals("1.9", resolver.version)
+    @Test
+    fun `closing an initialized navigator closes its published store and rejects later requests`(): Unit = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val creations = AtomicInteger()
+        val initialized = CompletableDeferred<SourceContentStore>()
+        val navigation = SourceNavigationService(
+            sourceResolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) },
+            sourceCacheRoot = directory.resolve("managed"),
+            contentStoreFactory = { root ->
+                creations.incrementAndGet()
+                SourceContentStore(root).also { initialized.complete(it) }
+            },
+        )
+        try {
+            val symbol = binary("selected/library.jar")
+            assertIs<SourceLookupResult.Located>(navigation.locate(symbol, context()))
+            val storage = initialized.await()
+            navigation.close()
+            navigation.close()
+            assertFailsWith<CancellationException> { storage.importArchive(SourceArchiveInput.Local(source)) }
+            assertFailsWith<CancellationException> { navigation.locate(symbol, context()) }
+            assertEquals(1, creations.get())
+        } finally {
+            navigation.close()
         }
     }
 
-    @Nested
-    inner class NavigateToMethodSourceTest {
-
-        @Test
-        fun `navigates to method line number in Java source`(): Unit = runBlocking {
-            // Create a JAR with source code
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-
-            val binaryJar = libDir.resolve("mylib.jar")
-            val sourceJar = libDir.resolve("mylib-sources.jar")
-
-            createMinimalJar(binaryJar)
-
-            // Create Java source with a method at a specific line
-            val javaSource = """
-                package com.example;
-
-                public class MyClass {
-                    public void doSomething() {
-                        // Method body
-                    }
-
-                    public int calculate(int x) {
-                        return x * 2;
-                    }
-                }
-            """.trimIndent()
-            createSourceJar(sourceJar, "com/example/MyClass.java", javaSource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            val service = SourceNavigationService(sourceExtractor = extractor)
-
-            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
-            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "doSomething")
-
-            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
-                "Expected SourceLocation but got: $result"
-            }
-            val location = result as SourceNavigator.SourceResult.SourceLocation
-            val lineNumber = assertNotNull(location.lineNumber, "Should have line number for method")
-            assertTrue(lineNumber > 3, "Method should be after class declaration")
-        }
-
-        @Test
-        fun `falls back to class-level navigation when method not found`(): Unit = runBlocking {
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-
-            val binaryJar = libDir.resolve("mylib.jar")
-            val sourceJar = libDir.resolve("mylib-sources.jar")
-
-            createMinimalJar(binaryJar)
-
-            val javaSource = """
-                package com.example;
-
-                public class MyClass {
-                    public void existingMethod() {
-                    }
-                }
-            """.trimIndent()
-            createSourceJar(sourceJar, "com/example/MyClass.java", javaSource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            val service = SourceNavigationService(sourceExtractor = extractor)
-
-            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
-            // Try to navigate to a method that doesn't exist
-            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "nonExistentMethod")
-
-            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
-                "Should fall back to class-level navigation"
-            }
-            val location = result as SourceNavigator.SourceResult.SourceLocation
-            // Should return class-level location (no method-specific line)
-            assertEquals("com.example.MyClass", location.className, "Should preserve class name on fallback")
-        }
-
-        @Test
-        fun `returns BinaryOnly when source not available for method`(): Unit = runBlocking {
-            val service = SourceNavigationService()
-
-            // Use a non-existent JAR
-            val jarUri = URI.create("jar:file:///nonexistent/lib.jar!/com/example/MyClass.class")
-            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "someMethod")
-
-            assertTrue(result is SourceNavigator.SourceResult.BinaryOnly) {
-                "Expected BinaryOnly when source not available"
-            }
-        }
-
-        @Test
-        fun `handles method overloads by name only`(): Unit = runBlocking {
-            // Note: Current implementation matches by method name only (not signature)
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-
-            val binaryJar = libDir.resolve("mylib.jar")
-            val sourceJar = libDir.resolve("mylib-sources.jar")
-
-            createMinimalJar(binaryJar)
-
-            val javaSource = """
-                package com.example;
-
-                public class MyClass {
-                    public void add(int x) {
-                    }
-
-                    public void add(int x, int y) {
-                    }
-                }
-            """.trimIndent()
-            createSourceJar(sourceJar, "com/example/MyClass.java", javaSource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            val service = SourceNavigationService(sourceExtractor = extractor)
-
-            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
-            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "add")
-
-            // With overloads, JavaSourceInspector returns null (ambiguous)
-            // So we should fall back to class-level navigation
-            assertTrue(result is SourceNavigator.SourceResult.SourceLocation)
-            val location = result as SourceNavigator.SourceResult.SourceLocation
-            assertEquals("com.example.MyClass", location.className)
-        }
-
-        @Test
-        fun `works with JDK classes that have source available`(): Unit = runBlocking {
-            val service = SourceNavigationService()
-
-            // Test with a JDK class - result depends on src.zip availability
-            val jrtUri = URI.create("jrt:/java.base/java/util/ArrayList.class")
-            val result = service.navigateToMethodSource(jrtUri, "java.util.ArrayList", "add")
-
-            assertNotNull(result, "Should return a result for JDK method")
-            // Result type depends on whether src.zip is present
-            assertTrue(
-                result is SourceNavigator.SourceResult.SourceLocation ||
-                    result is SourceNavigator.SourceResult.BinaryOnly,
-            )
+    @Test
+    fun `fresh context validation after presentation rejects a retired binary`(): Unit = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val valid = AtomicBoolean(true)
+        val validations = AtomicInteger()
+        val held = SourceLookupContext(
+            SourceContextIdentity("held"),
+            validateCurrent = {
+                validations.incrementAndGet()
+                valid.get()
+            },
+        ) { true }
+        SourceNavigationService(
+            sourceResolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) },
+            sourceCacheRoot = directory.resolve("managed"),
+            sourcePresentation = SourcePresentation { descriptor ->
+                valid.set(false)
+                descriptor.contentPath.toUri()
+            },
+        ).use { navigation ->
+            assertEquals(SourceLookupResult.Stale, navigation.locate(binary("selected/library.jar"), held))
+            assertEquals(1, validations.get())
         }
     }
 
-    @Nested
-    inner class InstanceTest {
-
-        @Test
-        fun `multiple instances are independent`() {
-            val service1 = SourceNavigationService()
-            val service2 = SourceNavigationService()
-
-            val stats1 = service1.getStatistics()
-            val stats2 = service2.getStatistics()
-
-            // Both should work independently
-            assertNotNull(stats1)
-            assertNotNull(stats2)
+    @Test
+    fun `fresh validation distinguishes a retired context from a current presentation failure`(): Unit = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        for (stillCurrent in listOf(false, true)) {
+            val valid = AtomicBoolean(true)
+            val validations = AtomicInteger()
+            val held = SourceLookupContext(
+                SourceContextIdentity("failed-presentation-$stillCurrent"),
+                validateCurrent = {
+                    validations.incrementAndGet()
+                    valid.get()
+                },
+            ) { true }
+            SourceNavigationService(
+                sourceResolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) },
+                sourceCacheRoot = directory.resolve("failed-presentation-$stillCurrent"),
+                sourcePresentation = SourcePresentation {
+                    valid.set(stillCurrent)
+                    throw IOException("Presentation failed")
+                },
+            ).use { navigation ->
+                val expected = if (stillCurrent) {
+                    SourceLookupResult.Failed(SourceFailure.IO_FAILURE)
+                } else {
+                    SourceLookupResult.Stale
+                }
+                assertEquals(expected, navigation.locate(binary("selected/library.jar"), held))
+                assertEquals(1, validations.get())
+            }
         }
     }
 
-    @Nested
-    inner class RegexInjectionTest {
+    @Test
+    fun `cancellation during final context validation remains cancellation`(): Unit = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val cancelled = CancellationException("Final validation cancelled")
+        val held = SourceLookupContext(
+            SourceContextIdentity("cancelled-validation"),
+            validateCurrent = { throw cancelled },
+        ) { true }
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        service(resolver).use { navigation ->
+            val failure = assertFailsWith<CancellationException> {
+                navigation.locate(binary("selected/library.jar"), held)
+            }
+            assertTrue(failure === cancelled)
+        }
+    }
 
-        @Test
-        fun `findGroovyClassLineNumber handles dot in class name - regex injection via inner class`(): Unit =
-            runBlocking {
-                // Test case: Dot (.) in regex matches ANY character, not literal dot
-                // This is a realistic scenario with inner classes
-                val groovySource = """
-                package com.example
+    @Test
+    fun `local-only policy is passed through and explicit retry bypasses missing-source cache`() = runBlocking {
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.NotAvailable }
+        val symbol = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            repeat(2) { assertIs<SourceLookupResult.Unavailable>(navigation.locate(symbol, context())) }
+            assertEquals(1, resolver.calls.get())
+            assertEquals(false, resolver.lastAllowDownload)
+            navigation.retrySource(symbol, context(download = true))
+            assertEquals(2, resolver.calls.get())
+            assertEquals(true, resolver.lastAllowDownload)
+        }
+    }
 
-                class MyClass {
-                    // Wrong match: FooXBar (dot matches X)
-                    static class FooXBar {
-                    }
+    @Test
+    fun `retry does not join an older pending request`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val resolver = RecordingResolver { call ->
+            if (call == 1) {
+                started.complete(Unit)
+                release.await()
+                VerifiedSourceArtifactResult.NotAvailable
+            } else {
+                VerifiedSourceArtifactResult.Available(source, digest(source))
+            }
+        }
+        val symbol = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            val older = async { navigation.locate(symbol, context(download = true)) }
+            started.await()
+            val retried = assertIs<SourceLookupResult.Located>(navigation.retrySource(symbol, context(download = true)))
+            release.complete(Unit)
+            older.await()
+            assertEquals(retried, navigation.locate(symbol, context(download = true)))
+            assertEquals(2, resolver.calls.get())
+        }
+    }
 
-                    // Correct match: Foo.Bar (literal dot from inner class syntax)
-                    static class Bar {
-                    }
-                }
-                """.trimIndent()
-
-                val libDir = tempDir.resolve("libs")
-                Files.createDirectories(libDir)
-                val binaryJar = libDir.resolve("test.jar")
-                val sourceJar = libDir.resolve("test-sources.jar")
-                createMinimalJar(binaryJar)
-                createSourceJar(sourceJar, "com/example/MyClass.groovy", groovySource)
-
-                val extractionDir = tempDir.resolve("extracted")
-                val extractor = SourceJarExtractor(extractionDir)
-                extractor.extractAndIndex(sourceJar)
-                val sourcePath = extractor.findSourceForClass("com.example.MyClass")
-
-                assertNotNull(sourcePath, "Source should be extracted")
-
-                // Call the private method via reflection to test it directly
-                val service = SourceNavigationService(sourceExtractor = extractor)
-                val findMethod = service.javaClass.getDeclaredMethod(
-                    "findGroovyClassLineNumber",
-                    Path::class.java,
-                    String::class.java,
+    @Test
+    fun `transport failures are not cached as source absence`() = runBlocking {
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Failed }
+        service(resolver).use { navigation ->
+            val symbol = binary("selected/library.jar")
+            repeat(2) {
+                assertEquals(
+                    SourceLookupResult.Failed(SourceFailure.IO_FAILURE),
+                    navigation.locate(symbol, context(download = true)),
                 )
-                findMethod.isAccessible = true
-
-                // Looking for "Foo.Bar" - after fix, dot should be escaped and treated literally
-                // Should NOT match "FooXBar" anymore (line 5)
-                val lineNumber = findMethod.invoke(service, sourcePath, "Foo.Bar") as Int?
-
-                // FIXED: Should NOT match "FooXBar" (which would be line 5)
-                // The function extracts simple name "Bar" from "Foo.Bar" and matches class "Bar" on line 9
-                // This is acceptable behavior - the key is it doesn't match "FooXBar"
-                assertNotNull(lineNumber, "Should find class Bar")
-                assertNotEquals(5, lineNumber, "FIXED: Should NOT match FooXBar on line 5")
-                assertEquals(9, lineNumber, "Finds class Bar (simple name from Foo.Bar)")
             }
-
-        @Test
-        fun `findGroovyMethodLineNumber handles dot in method name - realistic regex injection`(): Unit = runBlocking {
-            // Test case: Method name with dot treated as regex wildcard
-            val groovySource = """
-                package com.example
-
-                class TestClass {
-                    def testXmethod() {
-                        println "wrong method"
-                    }
-
-                    def "test.method"() {
-                        println "correct method"
-                    }
-                }
-            """.trimIndent()
-
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-            val binaryJar = libDir.resolve("test.jar")
-            val sourceJar = libDir.resolve("test-sources.jar")
-            createMinimalJar(binaryJar)
-            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            extractor.extractAndIndex(sourceJar)
-            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
-
-            assertNotNull(sourcePath, "Source should be extracted")
-
-            val service = SourceNavigationService(sourceExtractor = extractor)
-            val findMethod = service.javaClass.getDeclaredMethod(
-                "findGroovyMethodLineNumber",
-                Path::class.java,
-                String::class.java,
-            )
-            findMethod.isAccessible = true
-
-            // Looking for method "test.method" - after fix, dot should be escaped
-            // Should NOT match "testXmethod" (line 3), should match quoted "test.method" (line 7) or return null
-            val lineNumber = findMethod.invoke(service, sourcePath, "test.method") as Int?
-
-            // FIXED: With escaped regex, it should either find the literal quoted method name
-            // or return null if quoted methods aren't handled by the regex
-            // The key is it should NOT match "testXmethod"
-            if (lineNumber != null) {
-                assertNotEquals(3, lineNumber, "FIXED: Should NOT match testXmethod due to escaped dot")
-            }
-            // Either finds line 7 (quoted method) or null (can't match quoted names) - both are acceptable
+            assertEquals(2, resolver.calls.get())
         }
+    }
 
-        @Test
-        fun `findGroovyMethodLineNumber handles star quantifier - catastrophic backtracking risk`(): Unit =
-            runBlocking {
-                // Test case: Asterisk (*) is a regex quantifier meaning "zero or more"
-                // This demonstrates a security vulnerability
-                val groovySource = """
-                package com.example
-
-                class TestClass {
-                    def testMethod() {
-                        println "decoy"
-                    }
-
-                    def testAnotherMethod() {
-                        println "decoy 2"
-                    }
-
-                    def "test*" () {
-                        println "actual target"
-                    }
-                }
-                """.trimIndent()
-
-                val libDir = tempDir.resolve("libs")
-                Files.createDirectories(libDir)
-                val binaryJar = libDir.resolve("test.jar")
-                val sourceJar = libDir.resolve("test-sources.jar")
-                createMinimalJar(binaryJar)
-                createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
-
-                val extractionDir = tempDir.resolve("extracted")
-                val extractor = SourceJarExtractor(extractionDir)
-                extractor.extractAndIndex(sourceJar)
-                val sourcePath = extractor.findSourceForClass("com.example.TestClass")
-
-                assertNotNull(sourcePath, "Source should be extracted")
-
-                val service = SourceNavigationService(sourceExtractor = extractor)
-                val findMethod = service.javaClass.getDeclaredMethod(
-                    "findGroovyMethodLineNumber",
-                    Path::class.java,
-                    String::class.java,
-                )
-                findMethod.isAccessible = true
-
-                // Looking for "test*" - after fix, * should be escaped and treated literally
-                // Should NOT match "testMethod" anymore
-                val lineNumber = findMethod.invoke(service, sourcePath, "test*") as Int?
-
-                // FIXED: Should NOT match "testMethod" (line 3) with escaped asterisk
-                // May find quoted method "test*" or return null - both acceptable
-                if (lineNumber != null) {
-                    assertNotEquals(3, lineNumber, "FIXED: Should NOT match testMethod with escaped asterisk")
-                }
-                // Either finds line 11 (quoted method) or null (can't match quoted names) - both acceptable
-            }
-
-        @Test
-        fun `findGroovyMethodLineNumber handles plus quantifier - another regex injection`(): Unit = runBlocking {
-            // Test case: Plus (+) is a regex quantifier meaning "one or more"
-            val groovySource = """
-                package com.example
-
-                class TestClass {
-                    def testMethod() {
-                        println "will be matched incorrectly"
-                    }
-
-                    def "test+"() {
-                        println "actual target with literal plus"
-                    }
-                }
-            """.trimIndent()
-
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-            val binaryJar = libDir.resolve("test.jar")
-            val sourceJar = libDir.resolve("test-sources.jar")
-            createMinimalJar(binaryJar)
-            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            extractor.extractAndIndex(sourceJar)
-            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
-
-            assertNotNull(sourcePath, "Source should be extracted")
-
-            val service = SourceNavigationService(sourceExtractor = extractor)
-            val findMethod = service.javaClass.getDeclaredMethod(
-                "findGroovyMethodLineNumber",
-                Path::class.java,
-                String::class.java,
-            )
-            findMethod.isAccessible = true
-
-            // Looking for "test+" - after fix, + should be escaped and treated literally
-            // Should NOT match "testMethod" anymore
-            val lineNumber = findMethod.invoke(service, sourcePath, "test+") as Int?
-
-            // FIXED: Should NOT match "testMethod" (line 3) with escaped plus
-            // May find quoted method "test+" or return null - both acceptable
-            if (lineNumber != null) {
-                assertNotEquals(3, lineNumber, "FIXED: Should NOT match testMethod with escaped plus")
-            }
-            // Either finds line 7 (quoted method) or null (can't match quoted names) - both acceptable
+    @Test
+    fun `context retired during lookup cannot publish a location`() = runBlocking {
+        var current = true
+        val resolver = RecordingResolver {
+            current = false
+            VerifiedSourceArtifactResult.NotAvailable
         }
+        service(resolver).use { navigation ->
+            val held = SourceLookupContext(
+                SourceContextIdentity("held"),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            ) { current }
+            assertEquals(SourceLookupResult.Stale, navigation.locate(binary("selected/library.jar"), held))
+        }
+    }
 
-        @Test
-        fun `findPatternInGroovySource handles multiple block comments on same line`(): Unit = runBlocking {
-            // Test case: Multiple block comments on the same line should ALL be stripped
-            // Bug scenario: `def x /* c1 */ = foo /* c2 */ bar` only removes first comment
-            val groovySource = """
-                package com.example
+    @Test
+    fun `repeated requests reuse verified acquisition indexing extraction and declaration parsing`() = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        val symbol = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            val first = assertIs<SourceLookupResult.Located>(navigation.locate(symbol, context(download = true)))
+            repeat(11) {
+                assertEquals(first, navigation.locate(symbol, context(download = true)))
+            }
+            assertEquals(1, resolver.calls.get())
+            assertEquals(1L, navigation.getStatistics()["declarationInspections"])
+            assertEquals(1L, navigation.getStatistics()["sourceMaterializations"])
+            assertEquals(1L, navigation.getStatistics()["archiveImports"])
+        }
+    }
 
-                class TestClass {
-                    // This line has TWO block comments, second one contains the class name
-                    def x /* first comment */ = new /* TestClass */ Object()
-
-                    // Real class should be found here
-                    class InnerClass {
-                    }
-                }
-            """.trimIndent()
-
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-            val binaryJar = libDir.resolve("test.jar")
-            val sourceJar = libDir.resolve("test-sources.jar")
-            createMinimalJar(binaryJar)
-            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
-
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            extractor.extractAndIndex(sourceJar)
-            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
-
-            assertNotNull(sourcePath, "Source should be extracted")
-
-            val service = SourceNavigationService(sourceExtractor = extractor)
-            val findMethod = service.javaClass.getDeclaredMethod(
-                "findGroovyClassLineNumber",
-                Path::class.java,
-                String::class.java,
-            )
-            findMethod.isAccessible = true
-
-            // Looking for "TestClass" - with fix, should NOT match line 5 (inside second block comment)
-            // Should match line 1 (class TestClass) or line 8 (class InnerClass - though looking for TestClass)
-            val lineNumber = findMethod.invoke(service, sourcePath, "TestClass") as Int?
-
-            // FIXED: The search for TestClass should find line 3 (class TestClass {...})
-            // NOT line 5 (where TestClass appears inside /* TestClass */ block comment)
-            assertNotNull(lineNumber, "Should find class TestClass")
+    @Test
+    fun `local attachment survives service restart but rejects changed binary content`() = runBlocking {
+        val symbol = binary("selected/library.jar", coordinates = null)
+        val attached = sourceJar(directory.resolve("chosen-sources.zip"), JAVA_SOURCE)
+        service().use { assertIs<SourceLookupResult.Located>(it.attachSource(symbol, context(), attached, null)) }
+        service().use { assertIs<SourceLookupResult.Located>(it.locate(symbol, context())) }
+        Files.writeString((symbol.origin as SourceOrigin.Archive).binaryJar, "changed binary")
+        service().use { navigation ->
             assertEquals(
-                3,
-                lineNumber,
-                "Should find TestClass on line 3 (class declaration), NOT line 5 (in block comment)",
+                SourceLookupResult.Failed(SourceFailure.INTEGRITY_MISMATCH),
+                navigation.locate(symbol, context()),
             )
         }
     }
 
-    private fun createMinimalJar(path: Path) {
-        java.util.jar.JarOutputStream(Files.newOutputStream(path)).use { jar ->
-            val manifestEntry = java.util.jar.JarEntry("META-INF/MANIFEST.MF")
-            jar.putNextEntry(manifestEntry)
-            jar.write("Manifest-Version: 1.0\n".toByteArray())
-            jar.closeEntry()
+    @Test
+    fun `attachment expected digest is enforced before malformed archive parsing`(): Unit = runBlocking {
+        val symbol = binary("selected/library.jar")
+        val malformed = directory.resolve("chosen.jar").also { Files.writeString(it, "not an archive") }
+        service().use { navigation ->
+            assertEquals(
+                SourceLookupResult.Failed(SourceFailure.INTEGRITY_MISMATCH),
+                navigation.attachSource(symbol, context(), malformed, "0".repeat(64)),
+            )
+            assertIs<SourceLookupResult.Unavailable>(navigation.locate(symbol, context()))
         }
     }
 
-    private fun createSourceJar(path: Path, entryPath: String, content: String) {
-        java.util.jar.JarOutputStream(Files.newOutputStream(path)).use { jar ->
-            val entry = java.util.jar.JarEntry(entryPath)
-            jar.putNextEntry(entry)
-            jar.write(content.toByteArray())
-            jar.closeEntry()
+    @Test
+    fun `downloaded verified sources are immediately reusable by ordinary local-only navigation`() = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val resolver = RecordingResolver { call ->
+            if (call == 1) {
+                VerifiedSourceArtifactResult.NotAvailable
+            } else {
+                VerifiedSourceArtifactResult.Available(source, digest(source))
+            }
+        }
+        val symbol = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            assertIs<SourceLookupResult.Unavailable>(navigation.locate(symbol, context()))
+            val downloaded = assertIs<SourceLookupResult.Located>(
+                navigation.retrySource(symbol, context(download = true)),
+            )
+            assertEquals(downloaded, navigation.locate(symbol, context()))
+            assertEquals(2, resolver.calls.get())
         }
     }
 
-    private class RecordingSourceArtifactResolver : SourceArtifactResolver {
-        var groupId: String? = null
-        var artifactId: String? = null
-        var version: String? = null
-        override val cacheDir: Path = Paths.get(System.getProperty("java.io.tmpdir"))
+    @Test
+    fun `selected binary mismatch remains explicit source absence without parsing public source bytes`() = runBlocking {
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.BinaryMismatch }
+        service(resolver).use { navigation ->
+            assertEquals(
+                SourceLookupResult.Unavailable(MissingSourceReason.BINARY_ORIGIN_MISMATCH),
+                navigation.locate(binary("selected/library.jar"), context(download = true)),
+            )
+            assertEquals(0L, navigation.getStatistics()["archiveIndexes"])
+        }
+    }
 
-        override suspend fun resolveSourceJar(groupId: String, artifactId: String, version: String): Path? {
-            this.groupId = groupId
-            this.artifactId = artifactId
-            this.version = version
-            return null
+    @Test
+    fun `retired context takes precedence over a delayed transport failure`() = runBlocking {
+        var current = true
+        val resolver = RecordingResolver {
+            current = false
+            VerifiedSourceArtifactResult.Failed
+        }
+        val held = SourceLookupContext(
+            SourceContextIdentity("held"),
+            SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+        ) { current }
+        service(resolver).use { navigation ->
+            assertEquals(SourceLookupResult.Stale, navigation.locate(binary("selected/library.jar"), held))
+        }
+    }
+
+    @Test
+    fun `privately changed same-version core binary never uses the canonical bundled sources`() = runBlocking {
+        val runtime = Path.of(groovy.lang.GroovyObject::class.java.protectionDomain.codeSource.location.toURI())
+        val binary = directory.resolve("private/groovy-4.0.33.jar")
+        Files.createDirectories(binary.parent)
+        Files.copy(runtime, binary)
+        Files.write(binary, byteArrayOf(1), java.nio.file.StandardOpenOption.APPEND)
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.BinaryMismatch }
+        service(resolver).use { navigation ->
+            val symbol = ResolvedExternalSymbol(
+                "groovy.transform.CompileStatic",
+                SourceOrigin.Archive(binary, COORDINATES),
+            )
+            assertEquals(
+                SourceLookupResult.Unavailable(MissingSourceReason.BINARY_ORIGIN_MISMATCH),
+                navigation.locate(symbol, context(download = true)),
+            )
+            assertEquals(digest(binary), resolver.lastBinaryDigest)
+            assertEquals(0L, navigation.getStatistics()["archiveIndexes"])
+        }
+    }
+
+    @Test
+    fun `invalid UTF8 in an otherwise valid Java comment fails before parsing or publishing a source URI`() =
+        runBlocking {
+            val symbol = binary("selected/library.jar")
+            val malformed = "package sample; /* ".toByteArray(Charsets.UTF_8) +
+                byteArrayOf(0xC3.toByte(), 0x28) + " */ public @interface Anno {}".toByteArray(Charsets.UTF_8)
+            val source = sourceJar(directory.resolve("repository/library-sources.jar"), malformed)
+            val parsers = AtomicInteger()
+            val presentations = AtomicInteger()
+            SourceNavigationService(
+                sourceResolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) },
+                sourceCacheRoot = directory.resolve("managed"),
+                javaSourceInspector = JavaSourceInspector {
+                    parsers.incrementAndGet()
+                    JavaParser()
+                },
+                sourcePresentation = SourcePresentation {
+                    presentations.incrementAndGet()
+                    error("Malformed UTF8 must never publish a source view")
+                },
+            ).use { navigation ->
+                repeat(2) {
+                    assertEquals(
+                        SourceLookupResult.Failed(SourceFailure.IO_FAILURE),
+                        navigation.locate(symbol, context()),
+                    )
+                }
+                assertEquals(0L, navigation.getStatistics()["declarationInspections"])
+            }
+            assertEquals(0, parsers.get())
+            assertEquals(0, presentations.get())
         }
 
-        override fun isSourcesCached(groupId: String, artifactId: String, version: String): Boolean = false
+    private fun service(resolver: SourceArtifactResolver = RecordingResolver()) = SourceNavigationService(
+        sourceResolver = resolver,
+        sourceCacheRoot = directory.resolve("managed"),
+    )
+
+    private fun binary(
+        relative: String,
+        coordinates: ResolvedArtifactCoordinates? = COORDINATES,
+    ): ResolvedExternalSymbol {
+        val path = directory.resolve(relative)
+        Files.createDirectories(path.parent)
+        Files.writeString(path, "selected binary")
+        return ResolvedExternalSymbol("sample.Anno", SourceOrigin.Archive(path, coordinates))
+    }
+
+    private fun sourceJar(path: Path, content: String, entryName: String = "sample/Anno.java"): Path =
+        sourceJar(path, content.toByteArray(Charsets.UTF_8), entryName)
+
+    private fun sourceJar(path: Path, content: ByteArray, entryName: String = "sample/Anno.java"): Path {
+        Files.createDirectories(path.parent)
+        JarOutputStream(Files.newOutputStream(path)).use { jar ->
+            jar.putNextEntry(JarEntry(entryName))
+            jar.write(content)
+            jar.closeEntry()
+        }
+        return path
+    }
+
+    private fun context(id: String = "context", download: Boolean = false) = SourceLookupContext(
+        SourceContextIdentity(id),
+        if (download) SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS else SourceLookupPolicy.LOCAL_ONLY,
+    ) { true }
+
+    private fun digest(path: Path): String = Files.newInputStream(path).use { copyAndDigest(it, 64L * 1024 * 1024) }
+
+    private class RecordingResolver(
+        private val resolve: suspend (Int) -> VerifiedSourceArtifactResult = {
+            VerifiedSourceArtifactResult.NotAvailable
+        },
+    ) : SourceArtifactResolver,
+        VerifiedSourceArtifactResolver {
+        override val cacheDir: Path = Path.of("unused-test-resolver-cache")
+        val calls = AtomicInteger()
+        var lastAllowDownload: Boolean? = null
+        var lastBinaryDigest: String? = null
+        override suspend fun resolveVerifiedSourceArtifact(
+            request: VerifiedSourceArtifactRequest,
+        ): VerifiedSourceArtifactResult {
+            lastBinaryDigest = request.selectedBinarySha256
+            lastAllowDownload = request.allowDownload
+            return resolve(calls.incrementAndGet())
+        }
+        override suspend fun resolveSourceJar(groupId: String, artifactId: String, version: String): Path? =
+            error("Legacy guessed-coordinate resolver must not run")
+        override fun isSourcesCached(groupId: String, artifactId: String, version: String) = false
+    }
+
+    companion object {
+        private val COORDINATES = ResolvedArtifactCoordinates("producer.exact", "artifact", "7.3")
+        private const val JAVA_SOURCE = "package sample;\n@Deprecated\npublic @interface Anno {}"
     }
 }

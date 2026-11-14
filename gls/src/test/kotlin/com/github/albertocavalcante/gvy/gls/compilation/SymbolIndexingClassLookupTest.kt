@@ -10,8 +10,10 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
@@ -20,6 +22,9 @@ import kotlin.io.path.writeText
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Class lookups by simple name or prefix track every way an entry is added, replaced or dropped (#861). */
@@ -92,6 +97,63 @@ class SymbolIndexingClassLookupTest {
 
         assertTrue(service.findClasses(ClassNameQuery.Exact("Deleted")).isEmpty())
         assertEquals(emptySet(), service.classNameKeys)
+    }
+
+    @Test
+    fun `a source retargeted to managed content hides and removes its old index`(): Unit = runBlocking {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managed = Files.createDirectory(tempDir.resolve("managed"))
+        val target = Files.writeString(managed.resolve("Mode.groovy"), "class Managed {}")
+        val source = tempDir.resolve("Mode.groovy")
+        Files.writeString(source, "class Original {}")
+        val uri = source.toUri()
+        val workers = mockk<WorkerSessionManager>()
+        coEvery { workers.parse(any<ParseRequest>()) } answers { parser.parse(firstArg()) }
+        val workspace = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        var open = false
+        val guarded = SymbolIndexingService(Dispatchers.Unconfined, workers, workspace, ownership, isOpen = { open })
+        guarded.indexFile(uri)
+        assertNotNull(guarded.getSymbolIndex(uri))
+        assertEquals(setOf("original"), guarded.classNameKeys)
+
+        val stale = ownership.begin(uri)
+        ownership.retire(uri)
+        Files.delete(source)
+        Files.createSymbolicLink(source, target)
+
+        assertNull(guarded.getSymbolIndex(uri), "reads must not expose an alias before the watcher runs")
+        assertTrue(guarded.getAllSymbolIndices().isEmpty())
+        assertTrue(guarded.findClasses(ClassNameQuery.Exact("Original")).isEmpty())
+        guarded.refreshAfterClose(uri, stale)
+        assertEquals(setOf("original"), guarded.classNameKeys, "retired disk work cannot remove newer facts")
+        open = true
+        guarded.refreshAfterClose(uri)
+        assertEquals(setOf("original"), guarded.classNameKeys, "disk work cannot erase an open buffer's facts")
+
+        open = false
+        guarded.indexFile(uri)
+        assertEquals(emptySet(), guarded.classNameKeys)
+        assertNull(guarded.getSymbolIndex(uri))
+    }
+
+    @Test
+    fun `indexing parse carries a fresh implicit source admission check`(): Unit = runBlocking {
+        val managed = Files.createDirectory(tempDir.resolve("managed"))
+        val managedSource = Files.writeString(managed.resolve("Hidden.groovy"), "class Hidden {}")
+        val source = write("Visible.groovy", "class Visible {}")
+        val workers = mockk<WorkerSessionManager>()
+        val captured = slot<ParseRequest>()
+        coEvery { workers.parse(capture(captured)) } answers { parser.parse(firstArg()) }
+        val workspace = mockk<WorkspaceManager>(relaxed = true)
+        every { workspace.current() } returns
+            WorkspaceModel(null, emptyList(), listOf(tempDir), emptyList()) { _, _ -> "fp" }
+        every { workspace.isExcludedSource(any<Path>()) } answers { firstArg<Path>().startsWith(managed) }
+        val guarded = SymbolIndexingService(Dispatchers.Unconfined, workers, workspace, ownership)
+
+        guarded.indexFile(source)
+
+        val sourcePathAdmission = requireNotNull(captured.captured.sourcePathAdmission)
+        assertFalse(sourcePathAdmission(managedSource))
     }
 
     @Test

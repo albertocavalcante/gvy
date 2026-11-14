@@ -7,17 +7,24 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.SourceAnnotationDeclaration
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
@@ -27,6 +34,9 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
 import java.util.concurrent.CancellationException
 
@@ -34,6 +44,8 @@ import java.util.concurrent.CancellationException
  * Main provider for go-to-definition functionality.
  * Uses Flow pattern inspired by kotlin-lsp for clean async handling.
  */
+// The provider implements both LSP definition forms and shares their request validation.
+@Suppress("TooManyFunctions")
 class DefinitionProvider(
     private val compilationService: GroovyCompilationService,
     private val sourceNavigator: SourceNavigator? = null,
@@ -56,13 +68,13 @@ class DefinitionProvider(
         logger.debug { "Providing definitions for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
-        spockDefinition(compilationService, documentUri, position)?.let {
+        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
+        spockDefinition(context.snapshot, documentUri, position)?.let {
+            requireCurrent(documentUri, context)
             telemetrySink.report(DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS))
             emit(it)
             return@flow
         }
-        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
-
         emitDefinitions(uri, documentUri, position.toGroovyPosition(), context)
     }
 
@@ -73,33 +85,44 @@ class DefinitionProvider(
         logger.debug { "Providing definition links for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
-        spockDefinition(compilationService, documentUri, position)?.let {
+        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
+        spockDefinition(context.snapshot, documentUri, position)?.let {
+            requireCurrent(documentUri, context)
             emit(LocationLink(it.uri, it.range, it.range))
             return@flow
         }
-        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
-
         val resolver = DefinitionResolver(
             context.visitor,
             context.symbolTable,
             compilationService,
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
+            context.snapshot.parseResult.sourceAnnotations,
+            context.snapshot.parseResult.compilationUnit.ast?.modules?.toList().orEmpty(),
         )
 
         // Find the origin node at the position
-        val originNode = context.visitor.getNodeAt(documentUri, position.toGroovyPosition())
-        if (originNode == null) {
+        val originNode = heldImportAt(context, position)
+            ?: context.visitor.getNodeAt(documentUri, position.toGroovyPosition())
+        val annotation = context.snapshot.parseResult.sourceAnnotations.headAt(position.line, position.character)
+        if (originNode == null && annotation == null) {
             logger.debug { "No origin node found at position" }
             return@flow
         }
         logger.debug {
-            "originNode for selectionRange: ${originNode.javaClass.simpleName} at " +
-                "${originNode.lineNumber}:${originNode.columnNumber}"
+            "originNode for selectionRange: ${originNode?.javaClass?.simpleName} at " +
+                "${originNode?.lineNumber}:${originNode?.columnNumber}"
         }
 
-        val locationLink = resolveDefinitionLink(resolver, documentUri, position, originNode, context.visitor)
+        val locationLink = resolveDefinitionLink(
+            resolver,
+            documentUri,
+            position,
+            originNode,
+            context,
+        )
         if (locationLink != null) {
+            requireCurrent(documentUri, context)
             emit(locationLink)
         }
     }
@@ -109,13 +132,20 @@ class DefinitionProvider(
         resolver: DefinitionResolver,
         documentUri: URI,
         position: Position,
-        originNode: ASTNode,
-        visitor: GroovyAstModel,
+        originNode: ASTNode?,
+        context: DefinitionContext,
     ): LocationLink? = try {
         val result = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
-        result?.let { createLocationLink(it, originNode, visitor) }
+        val annotationRange = context.snapshot.parseResult.sourceAnnotations
+            .headAt(position.line, position.character)?.nameRange
+        val importRange = heldImportAt(context, position)?.let { import ->
+            context.snapshot.parseResult.sourceAnnotations.importSelectionRange(import)
+                ?: context.snapshot.parseResult.sourceAnnotations.importRange(import)
+        }
+        result?.let { createLocationLink(it, originNode, context, documentUri, annotationRange ?: importRange) }
     } catch (e: Exception) {
         when (e) {
+            is ResponseErrorException -> throw e
             is CancellationException -> {
                 logger.debug { "Definition link resolution cancelled by client" }
                 throw e // Must re-throw to preserve coroutine cancellation
@@ -130,19 +160,23 @@ class DefinitionProvider(
 
     private fun createLocationLink(
         result: DefinitionResolver.DefinitionResult,
-        originNode: ASTNode,
-        visitor: GroovyAstModel,
+        originNode: ASTNode?,
+        context: DefinitionContext,
+        documentUri: URI,
+        annotationRange: ParserRange?,
     ): LocationLink {
-        val originSelectionRange = computeOriginSelectionRange(originNode) ?: EMPTY_RANGE
+        val originSelectionRange = annotationRange?.toRange()
+            ?: originNode?.let(::computeOriginSelectionRange) ?: EMPTY_RANGE
 
         return when (result) {
             is DefinitionResolver.DefinitionResult.Source -> {
-                val targetUri = result.node.toLspLocation(visitor)?.uri ?: result.uri.toString()
-                val targetRange = result.node.toLspRange() ?: EMPTY_RANGE
+                val targetUri = result.uri.toString()
+                val declaration = annotationDeclaration(result, context, documentUri)
+                val targetRange = declaration?.declarationRange?.toRange() ?: result.node.toLspRange() ?: EMPTY_RANGE
                 LocationLink().apply {
                     this.targetUri = targetUri
                     this.targetRange = targetRange
-                    this.targetSelectionRange = targetRange
+                    this.targetSelectionRange = declaration?.nameRange?.toRange() ?: targetRange
                     this.originSelectionRange = originSelectionRange
                 }.also {
                     logger.debug { "Found definition link to ${it.targetUri}:${it.targetRange}" }
@@ -152,7 +186,7 @@ class DefinitionProvider(
                 val range = result.range ?: EMPTY_RANGE
                 LocationLink().apply {
                     this.targetUri = result.uri.toString()
-                    this.targetRange = range
+                    this.targetRange = result.declarationRange ?: range
                     this.targetSelectionRange = range
                     this.originSelectionRange = originSelectionRange
                 }.also {
@@ -323,9 +357,9 @@ class DefinitionProvider(
             return@flow
         }
 
-        val ast = compilationService.getAst(documentUri) ?: return@flow
-        val visitor = compilationService.getAstModel(documentUri) ?: return@flow
-        val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
+        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
+        val visitor = context.visitor
+        val symbolTable = context.symbolTable
 
         val resolver = DefinitionResolver(
             visitor,
@@ -333,6 +367,8 @@ class DefinitionProvider(
             compilationService,
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
+            context.snapshot.parseResult.sourceAnnotations,
+            context.snapshot.parseResult.compilationUnit.ast?.modules?.toList().orEmpty(),
         )
         val targets = resolver.findTargetsAt(documentUri, position.toGroovyPosition(), targetKinds)
 
@@ -340,6 +376,7 @@ class DefinitionProvider(
         targets.forEach { targetNode ->
             val location = targetNode.toLspLocation(visitor)
             if (location != null) {
+                requireCurrent(documentUri, context)
                 emit(location)
             }
         }
@@ -357,32 +394,31 @@ class DefinitionProvider(
     fun findReferencesOnly(uri: String, position: Position): Flow<Location> =
         findTargetsAt(uri, position, setOf(TargetKind.REFERENCE))
 
-    private data class DefinitionContext(val visitor: GroovyAstModel, val symbolTable: SymbolTable)
+    private data class DefinitionContext(val snapshot: CompiledDocumentSnapshot) {
+        val visitor: GroovyAstModel get() = snapshot.parseResult.astModel
+        val symbolTable: SymbolTable get() = snapshot.parseResult.symbolTable
+    }
+
+    private fun heldImportAt(context: DefinitionContext, position: Position): ImportNode? {
+        val module = context.snapshot.parseResult.ast ?: return null
+        return context.snapshot.parseResult.sourceAnnotations.importAt(
+            module.imports + module.staticImports.values,
+            position.line,
+            position.character,
+        )
+    }
 
     @Suppress("ReturnCount")
-    private fun obtainDefinitionContext(documentUri: URI, originalUri: String): DefinitionContext? {
-        val ast = compilationService.getAst(documentUri)
-        if (ast == null) {
+    private suspend fun obtainDefinitionContext(documentUri: URI, originalUri: String): DefinitionContext? {
+        val coroutine = currentCoroutineContext()
+        val snapshot = compilationService.getAdmittedCompiledSnapshot(documentUri) { coroutine.ensureActive() }
+        if (snapshot?.parseResult?.ast == null) {
             logger.warn { "No AST available for $originalUri - this might indicate compilation service cache issue" }
             telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.AST_MISSING))
             return null
         }
 
-        val visitor = compilationService.getAstModel(documentUri)
-        if (visitor == null) {
-            logger.warn { "No AST visitor available for $originalUri - this might indicate visitor cache issue" }
-            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.VISITOR_MISSING))
-            return null
-        }
-
-        val symbolTable = compilationService.getSymbolTable(documentUri)
-        if (symbolTable == null) {
-            logger.warn { "No symbol table available for $originalUri - this might indicate symbol table cache issue" }
-            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.SYMBOL_TABLE_MISSING))
-            return null
-        }
-
-        return DefinitionContext(visitor = visitor, symbolTable = symbolTable)
+        return DefinitionContext(snapshot)
     }
 
     @Suppress("LongMethod", "TooGenericExceptionCaught")
@@ -398,6 +434,8 @@ class DefinitionProvider(
             compilationService,
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
+            context.snapshot.parseResult.sourceAnnotations,
+            context.snapshot.parseResult.compilationUnit.ast?.modules?.toList().orEmpty(),
         )
         var definitionFound = false
         try {
@@ -406,11 +444,10 @@ class DefinitionProvider(
             if (result != null) {
                 when (result) {
                     is DefinitionResolver.DefinitionResult.Source -> {
-                        // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
-                        // (e.g., Jenkins vars) that aren't in the visitor's AST.
-                        val targetUri = result.node.toLspLocation(context.visitor)?.uri
-                            ?: result.uri.toString()
-                        val range = result.node.toLspRange()
+                        // The selected declaration carries its origin; a tracked reference URI cannot replace it.
+                        val targetUri = result.uri.toString()
+                        val range = annotationDeclaration(result, context, documentUri)?.nameRange?.toRange()
+                            ?: result.node.toLspRange()
                             ?: EMPTY_RANGE
                         val location = Location(targetUri, range)
                         logger.debug {
@@ -424,6 +461,7 @@ class DefinitionProvider(
                             ),
                         )
                         definitionFound = true
+                        requireCurrent(documentUri, context)
                         emit(location)
                     }
 
@@ -441,6 +479,7 @@ class DefinitionProvider(
                             ),
                         )
                         definitionFound = true
+                        requireCurrent(documentUri, context)
                         emit(location)
                     }
                 }
@@ -458,6 +497,8 @@ class DefinitionProvider(
                 ),
             )
             throw e
+        } catch (e: ResponseErrorException) {
+            throw e
         } catch (e: Exception) {
             handleResolutionException(e, uri)
         }
@@ -470,6 +511,36 @@ class DefinitionProvider(
                 ),
             )
         }
+    }
+
+    private suspend fun requireCurrent(uri: URI, context: DefinitionContext) {
+        val coroutine = currentCoroutineContext()
+        coroutine.ensureActive()
+        if (!compilationService.isAdmittedCompiledSnapshotCurrent(uri, context.snapshot) { coroutine.ensureActive() }) {
+            throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.ContentModified, "Document or compilation context changed", null),
+            )
+        }
+    }
+
+    private fun annotationDeclaration(
+        result: DefinitionResolver.DefinitionResult.Source,
+        context: DefinitionContext,
+        documentUri: URI,
+    ): SourceAnnotationDeclaration? {
+        val node = result.node as? ClassNode ?: return null
+        node.module?.context?.name?.let { name ->
+            context.snapshot.parseResult.sourceAnnotations.foreignDeclaration(name, node.name)?.let { return it }
+        }
+        // A cross-file result carries its own module's frozen evidence, not a new lookup by target URI.
+        // TODO(#1713): On-disk foreign declarations retain whole-declaration selection until their compiler input
+        //   text is frozen; precision must not come from rereading a possibly newer file.
+        val index = if (result.uri == documentUri) {
+            context.snapshot.parseResult.sourceAnnotations
+        } else {
+            node.module?.let(SourceAnnotationIndex::fromModule) ?: return null
+        }
+        return index.declarations.singleOrNull { it.binaryName == node.name }
     }
 
     /**
@@ -529,14 +600,18 @@ class DefinitionProvider(
     }
 }
 
-private fun spockDefinition(service: GroovyCompilationService, uri: URI, position: Position): Location? {
-    val snapshot = service.getCompiledSnapshot(uri) ?: return null
+private fun spockDefinition(snapshot: CompiledDocumentSnapshot, uri: URI, position: Position): Location? {
     val module = snapshot.parseResult.ast ?: return null
     val origin = snapshot.parseResult.astModel.getNodeAt(uri, position.toGroovyPosition())
     val isPartial = !snapshot.parseResult.isSuccessful
     val target = SpockDefinitionLookup.find(module, snapshot.sourceText, position, origin, isPartial) ?: return null
     return target.toLspRange()?.let { Location(uri.toString(), it) }
 }
+
+private fun ParserRange.toRange(): Range = Range(
+    Position(start.line, start.character),
+    Position(end.line, end.character),
+)
 
 data class DefinitionTelemetryEvent(val uri: String, val status: DefinitionStatus, val reason: String? = null)
 

@@ -100,5 +100,7 @@ class DocumentProvider {
 
     fun snapshot(): Map<URI, String> = documents.mapValues { it.value.snapshot.content }
 
+    internal fun snapshotDocuments(): Map<URI, DocumentSnapshot> = documents.mapValues { it.value.snapshot }
+
     fun getAllUris(): Set<URI> = documents.keys.toSet()
 }

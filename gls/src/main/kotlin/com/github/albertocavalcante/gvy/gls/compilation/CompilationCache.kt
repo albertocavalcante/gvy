@@ -10,7 +10,12 @@ import java.net.URI
  * Cache entry storing content, parse result, and configuration fingerprint.
  * The fingerprint ensures cache coherency when workspace configuration changes (Issue #743).
  */
-private data class CacheEntry(val content: String, val parseResult: ParseResult, val configFingerprint: String)
+internal data class CachedCompilation(
+    val content: String,
+    val parseResult: ParseResult,
+    val configFingerprint: String,
+    val admissionFingerprint: String?,
+)
 
 /**
  * In-memory cache of compilation results, bounded by an LRU policy.
@@ -40,8 +45,8 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     private var evictions = 0L
 
     /**
-     * Gets cached result if content AND configuration fingerprint match.
-     * Returns null if not cached or if either content or fingerprint has changed.
+     * Raw structural lookup when content and configuration fingerprint match.
+     * This does not observe current physical source admission.
      */
     fun get(uri: URI, content: String, configFingerprint: String): ParseResult? = synchronized(lock) {
         val entry = entries[uri] ?: return null
@@ -50,7 +55,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
 
     /**
      * The entry for [uri] with the source it was compiled from, if it was compiled under [configFingerprint].
-     * For readers without the current text; the entry itself must be retired when that text changes.
+     * Raw positional/structural access only; callers must separately validate physical source admission.
      */
     fun getWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? = synchronized(lock) {
         entries[uri]?.takeIf { it.configFingerprint == configFingerprint }?.let { it.content to it.parseResult }
@@ -59,8 +64,19 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     /**
      * Stores a parse result with its content and configuration fingerprint.
      */
-    fun put(uri: URI, content: String, parseResult: ParseResult, configFingerprint: String) {
-        store(uri, CacheEntry(content, parseResult, configFingerprint))
+    fun put(
+        uri: URI,
+        content: String,
+        parseResult: ParseResult,
+        configFingerprint: String,
+        admissionFingerprint: String? = null,
+    ) {
+        store(uri, CachedCompilation(content, parseResult, configFingerprint, admissionFingerprint))
+    }
+
+    /** Atomic raw record; callers observe admission outside this monitor before certifying reuse. */
+    internal fun getRecord(uri: URI, configFingerprint: String): CachedCompilation? = synchronized(lock) {
+        entries[uri]?.takeIf { it.configFingerprint == configFingerprint }
     }
 
     fun invalidate(uri: URI) {
@@ -91,7 +107,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         )
     }
 
-    private fun store(uri: URI, entry: CacheEntry) {
+    private fun store(uri: URI, entry: CachedCompilation) {
         synchronized(lock) {
             entries[uri] = entry
             // Never evict what was just stored: callers read it back right away (e.g. go-to-definition
@@ -124,5 +140,5 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         private const val LOAD_FACTOR = 0.75f
     }
 
-    private fun newEntries() = LinkedHashMap<URI, CacheEntry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
+    private fun newEntries() = LinkedHashMap<URI, CachedCompilation>(INITIAL_CAPACITY, LOAD_FACTOR, true)
 }

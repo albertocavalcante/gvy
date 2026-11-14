@@ -4,12 +4,19 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
+import com.github.albertocavalcante.gvy.gls.utils.SourcePathAdmission
+import com.github.albertocavalcante.gvy.gls.utils.classifySourcePath
+import com.github.albertocavalcante.gvy.gls.utils.defaultWorkspaceSourceExclusion
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceAlias
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceFile
 import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.gls.utils.sourceExclusionForRoot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.net.URI
@@ -49,11 +56,29 @@ class WorkspaceManager internal constructor(
     private val normalisesNames: Boolean = PLATFORM_NORMALISES_NAMES,
     /** Resolves a path's real spelling (a disk read); a seam so a test can count the reads (#1440). */
     private val canonicalise: (Path) -> Path = { DocumentTargetSelector.canonical(it) },
+    private val sourceExclusion: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
 ) {
     constructor(
         fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
             ConfigurationFingerprint::compute,
     ) : this(fingerprintComputer, ::probeCaseInsensitive)
+
+    constructor(sourceExclusion: (Path) -> Boolean) : this(
+        ConfigurationFingerprint::compute,
+        ::probeCaseInsensitive,
+        sourceExclusion = sourceExclusion,
+    )
+
+    fun isExcludedSource(path: Path): Boolean {
+        val absolute = path.toAbsolutePath()
+        return absolute.any { it.toString() == ".." } || sourceExclusion(absolute.normalize())
+    }
+
+    fun isExcludedSource(uri: URI): Boolean = UriPathConverter.toPath(uri)?.let(::isExcludedSource) == true
+
+    internal fun isExcludedSourceFile(uri: URI): Boolean = UriPathConverter.toPath(uri)?.let {
+        classifySourcePath(it, ::isExcludedSource) != SourcePathAdmission.ORDINARY
+    } == true
 
     // Disk probes, once per existing root path: whether names under the root compare case-insensitively (#1424).
     private val caseInsensitiveRoots = ConcurrentHashMap<Path, Boolean>()
@@ -208,7 +233,9 @@ class WorkspaceManager internal constructor(
         // Disk work first, outside the update lock: spellings, case probes, stats and folder walks.
         val start = current()
         val spelling = Spelling(start.sourceRoots.map { it.toAbsolutePath().normalize() }, start.root)
-        val createdPaths = created.mapNotNull(spelling::inRoot).distinct().filter(spelling::isContained)
+        val createdPaths = created.mapNotNull(spelling::inRoot).distinct()
+            .filterNot { excludedSourceFile(it, ::isExcludedSource) }
+            .filter(spelling::isContained)
         val deletedPaths = deleted.mapNotNull(spelling::inRoot).distinct()
         if (createdPaths.isEmpty() && deletedPaths.isEmpty()) return SourceListChange.NONE
 
@@ -298,8 +325,10 @@ class WorkspaceManager internal constructor(
         /** Whether [next] spells paths as this did: the same root, source roots and listing, by value. */
         fun spells(next: WorkspaceModel): Boolean {
             if (next === agreed) return true
-            val same = next.root == workspace.root && next.sourceRoots == workspace.sourceRoots &&
-                next.sources == workspace.sources
+            val same =
+                next.root == workspace.root &&
+                    next.sourceRoots == workspace.sourceRoots &&
+                    next.sources == workspace.sources
             if (same) agreed = next
             return same
         }
@@ -365,8 +394,11 @@ class WorkspaceManager internal constructor(
     private fun isWithin(path: Path, ancestor: Path, foldsCase: () -> Boolean): Boolean {
         if (path.startsWith(ancestor)) return true
         val folds = foldsCase()
-        val comparable = (folds || normalisesNames) && ancestor.nameCount > 0 &&
-            path.nameCount >= ancestor.nameCount && path.root == ancestor.root
+        val comparable =
+            (folds || normalisesNames) &&
+                ancestor.nameCount > 0 &&
+                path.nameCount >= ancestor.nameCount &&
+                path.root == ancestor.root
         if (!comparable) return false
         val prefix = path.subpath(0, ancestor.nameCount).let { path.root?.resolve(it) ?: it }
         return nameKey(prefix.toString(), folds, normalisesNames) ==
@@ -418,6 +450,7 @@ class WorkspaceManager internal constructor(
             val start = scanStart(root, workspaceRoot) ?: return@forEach
             val absolute = root.toAbsolutePath().normalize()
             val canonical = DocumentTargetSelector.canonical(start)
+            if (isExcludedSource(absolute) || isExcludedSource(canonical)) return@forEach
             val key = nameKey(canonical.toString(), isCaseInsensitive(absolute, canonical), normalisesNames)
             val first = firstByKey.putIfAbsent(key, absolute)
             if (first == null) {
@@ -460,10 +493,34 @@ class WorkspaceManager internal constructor(
         private val aliasOf = scannedRoots(roots, workspaceRoot).aliasOf
 
         fun inRoot(path: Path): Path? {
-            val absolute = path.toAbsolutePath().normalize()
+            val raw = path.toAbsolutePath()
+            val absolute = normalizeEventPath(raw) ?: return null
             val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
             return translated?.let(::ontoScannedRoot)
                 ?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+        }
+
+        /** Only collapse a parent segment when its existing directory has no symlinked ancestor. */
+        private fun normalizeEventPath(raw: Path): Path? {
+            var prefix = raw.root ?: return null
+            for (part in raw) {
+                when (part.toString()) {
+                    "." -> Unit
+                    ".." -> prefix = collapseParent(prefix) ?: return null
+                    else -> prefix = prefix.resolve(part)
+                }
+            }
+            return prefix
+        }
+
+        private fun collapseParent(path: Path): Path? = path.takeIf { it.isUnaliasedDirectory() }?.parent
+
+        private fun Path.isUnaliasedDirectory(): Boolean = try {
+            Files.isDirectory(this) && toRealPath() == this
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
         }
 
         /** [path] respelled under the scanned root when the root holding it is an alias of one (#1431). */
@@ -487,9 +544,9 @@ class WorkspaceManager internal constructor(
         fun isContained(path: Path): Boolean {
             val index = roots.indices.filter { path.startsWith(roots[it]) }.maxByOrNull { roots[it].nameCount }
             val directory = if (Files.isDirectory(path)) path else path.parent
-            return index != null && directory != null &&
-                canonicalDirectories.getOrPut(directory) { canonicalise(directory) }
-                    .startsWith(canonicalRoots[index])
+            if (index == null || directory == null) return false
+            val canonicalDirectory = canonicalDirectories.getOrPut(directory) { canonicalise(directory) }
+            return !isExcludedSource(canonicalDirectory) && canonicalDirectory.startsWith(canonicalRoots[index])
         }
 
         /**
@@ -562,7 +619,10 @@ class WorkspaceManager internal constructor(
     private fun walkFolders(folders: List<Path>): List<Path> {
         val set = folders.toSet()
         return folders.filterNot { hasAncestorIn(it, set) }
-            .flatMap { folder -> collectGroovySources(folder).map { it.toAbsolutePath().normalize() } }
+            .flatMap { folder ->
+                collectGroovySources(folder, sourceExclusion = ::isExcludedSource)
+                    .map { source -> source.toAbsolutePath().normalize() }
+            }
     }
 
     /** Whether a proper ancestor of [path] is in [prefixes]: [path] lies strictly under one, by component. */
@@ -591,14 +651,17 @@ class WorkspaceManager internal constructor(
         classpath: List<Path>,
         sourceRoots: List<Path>,
         targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
-    ) = WorkspaceModel(
-        root,
-        classpath,
-        sourceRoots,
-        scanSources(sourceRoots.distinct(), root),
-        targets,
-        computeFingerprint = fingerprintComputer,
-    )
+    ): WorkspaceModel {
+        val allowedRoots = sourceRoots.filterNot { excludedSourceAlias(it, ::isExcludedSource) }
+        return WorkspaceModel(
+            root,
+            classpath,
+            allowedRoots,
+            scanSources(allowedRoots.distinct(), root),
+            targets,
+            computeFingerprint = fingerprintComputer,
+        )
+    }
 
     /** Structural comparison of target facts; provenance (generation) alone is not a change. */
     private fun sameTargetFacts(current: TargetDependencyEvidence, next: TargetDependencyEvidence): Boolean =
@@ -667,7 +730,7 @@ class WorkspaceManager internal constructor(
         // A refused root lists nothing, an accepted link root is walked at its checked target, and a directory
         // named by several roots is walked once, under the first ([scannedRoots]).
         val workspaceSources = scannedRoots(sourceRoots, workspaceRoot).scanned.flatMap { (sourceRoot, start) ->
-            collectGroovySources(sourceRoot, start = start).sorted()
+            collectGroovySources(sourceRoot, start = start, sourceExclusion = ::isExcludedSource).sorted()
         }
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
@@ -782,15 +845,23 @@ class WorkspaceManager internal constructor(
  * entered, the rule watched-file events follow too (#1424). [beforeVisit] runs before each file is classified
  * (a test seam).
  */
-internal fun collectGroovySources(root: Path, start: Path = root, beforeVisit: (Path) -> Unit = {}): List<Path> {
+internal fun collectGroovySources(
+    root: Path,
+    start: Path = root,
+    sourceExclusion: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
+    beforeVisit: (Path) -> Unit = {},
+): List<Path> {
     // A walk does not follow links: a root that is itself a link is walked at the [start] its caller trusts, and
     // what it finds is spelled through the root (#1424).
     val found = mutableListOf<Path>()
+    if (excludedSourceAlias(root, sourceExclusion) || excludedSourceAlias(start, sourceExclusion)) return found
+    val excluded = sourceExclusionForRoot(start, sourceExclusion)
+    if (excluded(start) || sourceExclusion(root)) return found
     Files.walkFileTree(
         start,
         object : SimpleFileVisitor<Path>() {
             override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
-                if (dir != start && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
+                if (excluded(dir) || dir != start && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
                     FileVisitResult.SKIP_SUBTREE
                 } else {
                     FileVisitResult.CONTINUE
@@ -800,7 +871,13 @@ internal fun collectGroovySources(root: Path, start: Path = root, beforeVisit: (
                 beforeVisit(file)
                 // The walk does not follow links: a symlinked source is a link whose target is a regular file.
                 val regular = attrs.isRegularFile || (attrs.isSymbolicLink && Files.isRegularFile(file))
-                if (regular && file.extension.equals("groovy", ignoreCase = true)) found.add(file)
+                if (
+                    regular &&
+                    file.extension.equals("groovy", ignoreCase = true) &&
+                    !excludedSourceFile(file, excluded)
+                ) {
+                    found.add(file)
+                }
                 return FileVisitResult.CONTINUE
             }
 

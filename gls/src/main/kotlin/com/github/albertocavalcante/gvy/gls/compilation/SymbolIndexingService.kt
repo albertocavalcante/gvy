@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceAlias
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -16,6 +17,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.nio.file.Files
@@ -44,6 +47,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * @param workspaceManager Workspace configuration and classpath provider
  * @param ownership Publication fence shared with the compilation cache of the same files
  */
+@Suppress("TooManyFunctions") // Lookup and publication lifecycle share one workspace ownership fence.
 class SymbolIndexingService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val workerSessionManager: WorkerSessionManager,
@@ -81,19 +85,25 @@ class SymbolIndexingService(
     internal val classNameKeys: Set<String> get() = classNames.keys()
 
     /** Gets the stored symbol index for a file, or null if none has been built. */
-    fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
+    fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index?.takeUnless { isExcluded(uri) }
 
     /** Builds the index of [astModel], compiled from [content], without storing it: see [install]. */
     internal fun prepare(content: String, astModel: GroovyAstModel): Prepared = build(contentHash(content), astModel)
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
-    internal fun install(uri: URI, prepared: Prepared) {
+    internal fun install(uri: URI, prepared: Prepared): Boolean {
+        if (isLexicallyExcluded(uri)) {
+            invalidate(uri)
+            return false
+        }
         unparseable.remove(uri)
         classNames.replace(uri, prepared.classes) { entries.put(uri, prepared)?.classes }
+        return true
     }
 
     /** Whether the stored index of [uri] was built from exactly [snapshot]'s text; older text is not current. */
-    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.contentHash == snapshot.contentHash
+    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean =
+        entries[uri]?.contentHash == snapshot.contentHash && !isExcluded(uri)
 
     /** Text known not to parse, so readiness checks skip it (#1344); removed with this file's index. */
     internal val unparseable = UnparseableTexts(ownership)
@@ -103,20 +113,31 @@ class SymbolIndexingService(
      * from different content (or is missing). Cheap on the compile-cache-hit path. Stores nothing, and returns
      * null, once [ticket] was retired.
      */
+    @Suppress("ReturnCount") // Excluded inputs retire stale facts before either publication boundary.
     internal fun ensureIndexed(
         ticket: ArtifactOwnership.Ticket,
         content: String,
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
+        if (isExcluded(ticket.uri)) {
+            ownership.commit(ticket) { invalidate(ticket.uri) }
+            return null
+        }
         val hash = contentHash(content)
         entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { stored ->
             // A matching index answers only a current ticket, so a non-null result always means "committed or
             // already current for this ticket" (#1399)
-            return stored.index.takeIf { ownership.isCurrent(ticket) }
+            return stored.index.takeIf { ownership.isCurrent(ticket) && !isExcluded(ticket.uri) }
         }
         val astModel = astModelProvider() ?: return null
         val prepared = build(hash, astModel)
-        return prepared.index.takeIf { ownership.commit(ticket) { install(ticket.uri, prepared) } }
+        if (isExcluded(ticket.uri)) {
+            ownership.commit(ticket) { invalidate(ticket.uri) }
+            return null
+        }
+        var installed = false
+        ownership.commit(ticket) { installed = install(ticket.uri, prepared) }
+        return prepared.index.takeIf { installed && !isExcluded(ticket.uri) }
     }
 
     /**
@@ -126,7 +147,7 @@ class SymbolIndexingService(
      */
     fun getAllSymbolIndices(): Map<URI, SymbolIndex> {
         val hidden = shadowed()
-        return entries.entries.filter { it.key !in hidden }.sortedBy { it.key }
+        return entries.entries.filter { it.key !in hidden && !isExcluded(it.key) }.sortedBy { it.key }
             .associateTo(LinkedHashMap()) { it.key to it.value.index }
     }
 
@@ -135,8 +156,11 @@ class SymbolIndexingService(
      * name instead of scanning every file's symbols (#861); each result is checked against the file's
      * current entry, so a racing replacement never surfaces a class the file no longer declares.
      */
-    fun findClasses(query: ClassNameQuery): List<Symbol.Class> =
-        classNames.files(query).sorted().flatMap { entries[it]?.classes.orEmpty() }.filter(query::matches)
+    fun findClasses(query: ClassNameQuery): List<Symbol.Class> = classNames.files(query)
+        .filterNot(::isExcluded)
+        .sorted()
+        .flatMap { uri -> entries[uri]?.classes.orEmpty() }
+        .filter(query::matches)
 
     /**
      * Indexes a single workspace file for symbol resolution.
@@ -150,9 +174,13 @@ class SymbolIndexingService(
     suspend fun indexFile(uri: URI): SymbolIndex? = indexFile(uri, ownership.begin(uri))
 
     private suspend fun indexFile(uri: URI, ticket: ArtifactOwnership.Ticket): SymbolIndex? {
+        if (isExcluded(uri)) {
+            discardExcludedDiskIndex(ticket)
+            return null
+        }
         // An open file is indexed from its buffer when it compiles; a save or watcher event must not
         // replace that with the disk copy the user is not looking at.
-        if (isOpen(uri)) return entries[uri]?.index
+        if (isOpen(uri)) return getSymbolIndex(uri)
         val path = UriPathConverter.toPath(uri) ?: return null
 
         if (!Files.isRegularFile(path)) {
@@ -163,6 +191,14 @@ class SymbolIndexingService(
 
         return performIndexing(uri, path, ticket)
     }
+
+    private fun isExcluded(uri: URI): Boolean = UriPathConverter.toPath(uri)?.let {
+        excludedSourceAlias(it, workspaceManager::isExcludedSource)
+    } == true
+
+    private fun isLexicallyExcluded(uri: URI): Boolean = UriPathConverter.toPath(uri)?.let {
+        workspaceManager.isExcludedSource(it)
+    } == true
 
     /**
      * Indexes all workspace source files in the background.
@@ -253,17 +289,27 @@ class SymbolIndexingService(
         return applied
     }
 
+    private fun discardExcludedDiskIndex(ticket: ArtifactOwnership.Ticket) {
+        commitFromDisk(ticket) { invalidate(ticket.uri) }
+    }
+
     /**
      * Performs the actual indexing of a file.
      * Catches all exceptions to prevent individual file failures from stopping batch indexing.
      */
     @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
     private suspend fun performIndexing(uri: URI, path: Path, ticket: ArtifactOwnership.Ticket): SymbolIndex? = try {
+        val context = currentCoroutineContext()
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        if (!admission.allows(path)) {
+            discardExcludedDiskIndex(ticket)
+            return null
+        }
         val content = Files.readString(path)
         val hash = contentHash(content)
         entries[uri]?.takeIf { it.contentHash == hash }?.let {
             logger.debug { "File already indexed: $uri" }
-            return it.index
+            return getSymbolIndex(uri).takeIf { ownership.isCurrent(ticket) }
         }
 
         // Parse the source code for indexing
@@ -275,7 +321,9 @@ class SymbolIndexingService(
                 uri = uri,
                 content = content,
                 classpath = workspace.classpath,
-                sourceRoots = workspace.sourceRoots,
+                sourceRoots = workspace.sourceRoots.filter(admission::allows),
+                sourcePathAdmission = admission.sourcePathAdmission(),
+                checkCancelled = admission.checkCancelled,
                 workspaceSources = emptyList(), // Don't recurse during indexing
                 locatorCandidates = buildLocatorCandidates(uri, path),
             ),
@@ -283,11 +331,16 @@ class SymbolIndexingService(
 
         // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
         val prepared = build(hash, parseResult.astModel)
-        if (commitFromDisk(ticket) { install(uri, prepared) }) {
+        if (isExcluded(uri)) {
+            discardExcludedDiskIndex(ticket)
+            return null
+        }
+        var installed = false
+        if (commitFromDisk(ticket) { installed = install(uri, prepared) } && installed) {
             logger.debug { "Indexed workspace file: $uri" }
             prepared.index
         } else {
-            entries[uri]?.index
+            getSymbolIndex(uri)
         }
     } catch (e: CancellationException) {
         throw e

@@ -44,6 +44,8 @@ data class CompilationResult(
         (ast as? ModuleNode)?.let(SourceAnnotationIndex::fromModule) ?: SourceAnnotationIndex.UNAVAILABLE,
     /** Captured with [sourceText], so requests do not reacquire symbols from a later or cleared cache entry. */
     val astModel: GroovyAstModel? = null,
+    /** Producer receipt, including uncached failures. Null never certifies admission-compatible reuse. */
+    internal val admissionFingerprint: String? = null,
 ) {
     companion object {
         /**

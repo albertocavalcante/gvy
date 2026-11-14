@@ -8,12 +8,17 @@ import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -91,6 +96,158 @@ class WorkspaceCompilerTest {
         compiler.compileWorkspace()
 
         assertNull(index.getDocument(file.toUri()), "in-flight results must not undo cache invalidation")
+    }
+
+    @Test
+    fun `refresh removes semantic facts when an unchanged source becomes a managed alias`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val content = "class Mode {}"
+        val file = src.resolve("Mode.groovy").apply { writeText(content) }
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText(content) }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        var open = false
+        val indexer = SemanticIndexer(index, isOpen = { open }, excluded = manager::isExcludedSourceFile)
+        var parses = 0
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            parses++
+            parser.parse(firstArg())
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+        compiler.compileWorkspace()
+        assertNotNull(index.getDocument(file.toUri()))
+        assertEquals(1, parses)
+
+        Files.delete(file)
+        Files.createSymbolicLink(file, managedFile)
+        open = true
+        compiler.refreshFromDisk(listOf(file.toUri()))
+        assertNotNull(index.getDocument(file.toUri()), "disk refresh must not remove an open buffer")
+
+        open = false
+        compiler.refreshFromDisk(listOf(file.toUri()))
+        assertNull(index.getDocument(file.toUri()))
+        compiler.compileWorkspace()
+        assertEquals(1, parses, "managed content must not be parsed as a workspace source")
+    }
+
+    @Test
+    fun `workspace compilation excludes managed secondary sources and guards implicit lookup`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val alias = Files.createDirectories(src.resolve("p")).resolve("Mode.groovy")
+        alias.writeText("package p\nclass Mode {}")
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText("package p\nclass Mode {}") }
+        val consumer = src.resolve("Consumer.groovy").apply { writeText("import p.Mode\nclass Consumer {}") }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        Files.delete(alias)
+        Files.createSymbolicLink(alias, managedFile)
+
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests.add(request)
+            parser.parse(request)
+        }
+        val indexer = SemanticIndexer(WorkspaceSymbolIndex(GroovySemanticDB()))
+
+        WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
+
+        assertEquals(listOf(consumer.toUri()), requests.map { it.uri })
+        val request = requests.single()
+        assertFalse(alias in request.workspaceSources)
+        assertFalse(requireNotNull(request.sourcePathAdmission)(alias))
+    }
+
+    @Test
+    fun `source retargeted during workspace compilation cannot publish semantic facts`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val file = src.resolve("Mode.groovy").apply { writeText("class Mode {}") }
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText("class Mode {}") }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            Files.delete(file)
+            Files.createSymbolicLink(file, managedFile)
+            result
+        }
+
+        val result = WorkspaceCompiler(worker, manager, SemanticIndexer(index)).compileWorkspace()
+
+        assertTrue(result.modules.isEmpty())
+        assertNull(index.getDocument(file.toUri()))
+    }
+
+    @Test
+    fun `workspace compilation retries a skipped source when admission recovers before batch completion`(): Unit =
+        runTest {
+            val src = Files.createDirectories(tempDir.resolve("src"))
+            val file = src.resolve("Recovered.groovy").apply { writeText("class Recovered {}") }
+            val rejectNextProbe = AtomicBoolean(false)
+            val manager = WorkspaceManager(sourceExclusion = { candidate ->
+                candidate == file && rejectNextProbe.compareAndSet(true, false)
+            })
+            manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+            val index = WorkspaceSymbolIndex(GroovySemanticDB())
+            val indexer = SemanticIndexer(index)
+            val parseCalls = AtomicInteger()
+            val worker = mockk<WorkerSessionManager>()
+            coEvery { worker.parse(any()) } coAnswers {
+                val result = parser.parse(firstArg())
+                if (parseCalls.incrementAndGet() == 1) rejectNextProbe.set(true)
+                result
+            }
+
+            val result = WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
+
+            assertTrue(result.success, result.errors.toString())
+            assertEquals(2, parseCalls.get(), "The skipped source must be retried with fresh admission")
+            assertNotNull(index.getDocument(file.toUri()))
+        }
+
+    @Test
+    fun `disk refresh retries a skipped source when admission recovers at the refresh boundary`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Refreshed.groovy").apply { writeText("class Refreshed {}") }
+        val rejectedProbes = AtomicInteger()
+        val rejectDuringNextParse = AtomicBoolean(false)
+        val manager = WorkspaceManager(sourceExclusion = { candidate ->
+            candidate == file && rejectedProbes.getAndUpdate { probes -> (probes - 1).coerceAtLeast(0) } > 0
+        })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val parseCalls = AtomicInteger()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parseCalls.incrementAndGet()
+            if (rejectDuringNextParse.compareAndSet(true, false)) rejectedProbes.set(2)
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+
+        assertTrue(compiler.compileWorkspace().success)
+        val updated = "class Refreshed { String value }"
+        file.writeText(updated)
+        rejectDuringNextParse.set(true)
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertEquals(3, parseCalls.get(), "The refresh must retry after its first admitted parse is discarded")
+        assertTrue(indexer.isCurrent(file.toUri(), updated))
     }
 
     @Test

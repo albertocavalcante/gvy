@@ -118,6 +118,7 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getSourceRoots() } returns emptyList()
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } answers { currentFingerprint }
+        every { workspaceManager.isExcludedSourceFile(any()) } returns false
         workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace(currentFingerprint, sourceRoots = emptyList(), sources = emptyList())

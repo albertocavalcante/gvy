@@ -42,7 +42,7 @@ class ParseResultAccessor(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Gets the cached ParseResult for a URI, compiled under the current workspace configuration.
+     * Raw structural lookup under the configuration fingerprint; it does not certify current source admission.
      * Returns null if not cached or compilation failed. The entry of a closed file is retired whenever its
      * buffer closes or the file changes on disk, so this never serves a closed buffer's parse.
      *
@@ -141,6 +141,7 @@ class ParseResultAccessor(
      * @return ParseResult if available, null if not cached or re-compilation failed
      */
     suspend fun getValidParseResult(uri: URI): ParseResult? {
+        if (workspaceManager.isExcludedSourceFile(uri)) return null
         // Owned before the cache and disk are read: an invalidation meanwhile discards the re-parse below.
         val ticket = cacheService.ownership.begin(uri)
         val workspace = workspaceManager.current()

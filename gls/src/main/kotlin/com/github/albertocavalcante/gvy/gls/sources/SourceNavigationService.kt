@@ -5,487 +5,544 @@ package com.github.albertocavalcante.gvy.gls.sources
 
 import com.github.albertocavalcante.gvy.build.MavenSourceArtifactResolver
 import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
-import com.github.albertocavalcante.gvy.gls.documentation.Documentation
-import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
-import io.github.oshai.kotlinlogging.KotlinLogging
+import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactRequest
+import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.extension
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
-/**
- * Service for navigating to source code from binary class references.
- *
- * Coordinates between:
- * - Source artifact resolution (downloading source JARs from Maven)
- * - Source JAR extraction (extracting .java files)
- * - Line number mapping (finding specific declarations)
- *
- * This enables "Go to Definition" to navigate directly to source code
- * rather than showing "binary class from JAR".
- *
- * Implements [SourceNavigator] interface for testability and dependency injection.
- */
+private const val MAX_DECLARATION_INDEXES = 128
+private const val MAX_INSPECTED_SOURCE_BYTES = 8L * 1024 * 1024
+private const val MAX_SOURCE_INPUTS = 64
+private const val MAX_BINARY_IDENTITY_BYTES = 512L * 1024 * 1024
+private const val SOURCE_MISS_TTL_NANOS = 3_000_000_000L
+
+/** Sources follow the request's actual binary origin; missing provenance never becomes guessed metadata. */
+// Injectable IO dependencies and navigation entry points are grouped around shared cache and lifecycle state.
+@Suppress("LongParameterList", "TooManyFunctions")
 class SourceNavigationService(
     private val sourceResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
-    private val sourceExtractor: SourceJarExtractor = SourceJarExtractor(),
+    sourceCacheRoot: Path = defaultSourceCacheRoot(),
     private val jdkSourceResolver: JdkSourceResolver = JdkSourceResolver(),
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
-) : SourceNavigator {
+    private val sourcePresentation: SourcePresentation = PortableSourcePresentation(
+        sourceCacheRoot.resolve("views-v2"),
+    ),
+    private val bundledSources: BundledSourceCatalog = BundledSourceCatalog(),
+    private val attachmentStore: SourceAttachmentStore = SourceAttachmentStore(
+        sourceCacheRoot.resolve("attachments-v2"),
+        bundledSources,
+    ),
+    private val contentStoreFactory: (Path) -> SourceContentStore = { SourceContentStore(it) },
+) : SourceNavigator,
+    AutoCloseable {
+    private val contentRoot = sourceCacheRoot.resolve("content-v2")
+    private val storeInitialization = Mutex()
+    private var store: SourceContentStore? = null
+    private val acquisitions = SourceRequestCoalescer<AcquisitionKey, InputResult>()
+    private val inspections = SourceRequestCoalescer<DefinitionKey, SourceDefinition?>()
+    private val closed = AtomicBoolean()
+    private val groovySourceInspector = GroovySourceDeclarationInspector()
+    private val monitor = Any()
+    private val definitions = linkedMapOf<DefinitionKey, CachedDefinition>()
+    private val inputs = linkedMapOf<InputKey, CachedInput>()
+    private val inspectionCount = AtomicLong()
+    private val retrySequence = AtomicLong()
 
-    private companion object {
-        private const val MIN_MAVEN_COORDINATE_PARTS = 3
-
-        // URI scheme and prefix constants
-        private const val SCHEME_JRT = "jrt"
-        private const val JAR_FILE_PREFIX = "jar:file:"
+    override suspend fun retrySource(symbol: ResolvedExternalSymbol, context: SourceLookupContext): SourceLookupResult {
+        synchronized(monitor) {
+            ensureOpen()
+            inputs.keys.removeIf { key ->
+                originReference(key.origin) == originReference(symbol.origin) && key.context == context.identity.id
+            }
+        }
+        return locateInternal(symbol, context, retrySequence.incrementAndGet())
     }
 
-    private val logger = KotlinLogging.logger {}
+    override suspend fun locate(symbol: ResolvedExternalSymbol, context: SourceLookupContext): SourceLookupResult =
+        locateInternal(symbol, context, 0)
 
-    /**
-     * Navigate to source code for a class found in the classpath.
-     *
-     * Handles:
-     * - jrt: URIs (JDK classes) -> extracts from $JAVA_HOME/lib/src.zip
-     * - jar: URIs (Maven dependencies) -> downloads source JAR from Maven
-     *
-     * @param classpathUri URI of the class (jrt: or jar:file:...)
-     * @param className Fully qualified class name
-     * @return SourceResult indicating where to navigate
-     */
-    @Suppress("ReturnCount") // Multiple resolution strategies require early returns
-    override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult {
-        logger.debug { "Navigating to source for: $className from $classpathUri" }
-
-        // Handle JDK classes (jrt: scheme)
-        if (classpathUri.scheme == SCHEME_JRT) {
-            return jdkSourceResolver.resolveJdkSource(classpathUri, className)
+    private suspend fun locateInternal(
+        symbol: ResolvedExternalSymbol,
+        context: SourceLookupContext,
+        attempt: Long,
+    ): SourceLookupResult {
+        currentCoroutineContext().ensureActive()
+        ensureOpen()
+        if (!context.isCurrent()) return SourceLookupResult.Stale
+        return try {
+            val selectedSymbol = withBinaryIdentity(symbol)
+            if (!context.isCurrent()) return SourceLookupResult.Stale
+            val attachmentRevision = attachmentStore.revision(selectedSymbol.origin, context.identity)
+            val input = selectInput(selectedSymbol, context, attachmentRevision, attempt)
+            val result = when (input) {
+                is InputResult.Available -> locateInArchive(selectedSymbol, context, input.input, input.prefix)
+                is InputResult.Unavailable -> SourceLookupResult.Unavailable(input.reason)
+                is InputResult.Failed -> SourceLookupResult.Failed(input.failure)
+            }
+            currentCoroutineContext().ensureActive()
+            ensureOpen()
+            val sameAttachment = attachmentStore.revision(selectedSymbol.origin, context.identity) == attachmentRevision
+            val current =
+                sameAttachment &&
+                    context.isCurrent() &&
+                    context.validateCurrent() &&
+                    context.isCurrent()
+            currentCoroutineContext().ensureActive()
+            ensureOpen()
+            if (current) {
+                result
+            } else {
+                SourceLookupResult.Stale
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: SourceStoreException) {
+            failed(context, failure.failure)
+        } catch (_: IOException) {
+            failed(context, SourceFailure.IO_FAILURE)
+        } catch (_: SecurityException) {
+            failed(context, SourceFailure.IO_FAILURE)
         }
+    }
 
-        // Step 1: Check if we already have extracted sources
-        val existingSource = sourceExtractor.findSourceForClass(className)
-        if (existingSource != null) {
-            logger.debug { "Found cached source for: $className" }
-            val inspection = inspectClassDefinition(existingSource, className)
-            return SourceNavigator.SourceResult.SourceLocation(
-                uri = existingSource.toUri(),
-                className = className,
-                lineNumber = inspection?.lineNumber,
-                documentation = inspection?.documentation,
+    @Suppress("ReturnCount") // Reject invalid attachments before mutating the store.
+    override suspend fun attachSource(
+        symbol: ResolvedExternalSymbol,
+        context: SourceLookupContext,
+        sourceJar: Path,
+        expectedSha256: String?,
+    ): SourceLookupResult {
+        currentCoroutineContext().ensureActive()
+        ensureOpen()
+        if (!context.isCurrent()) return SourceLookupResult.Stale
+        return try {
+            val selectedSymbol = withBinaryIdentity(symbol)
+            if (!context.isCurrent()) return SourceLookupResult.Stale
+            val input = expectedSha256?.let { digest -> SourceArchiveInput.Verified(sourceJar, digest) }
+                ?: SourceArchiveInput.Local(sourceJar)
+            val storage = contentStore()
+            val archive = storage.importArchive(input)
+            val prefix = (selectedSymbol.origin as? SourceOrigin.Jdk)?.module?.let { module -> "$module/" }.orEmpty()
+            if (storage.sourceFor(archive, selectedSymbol.binaryName, prefix) == null) {
+                ensureOpen()
+                return SourceLookupResult.Unavailable(MissingSourceReason.TYPE_NOT_PRESENT)
+            }
+            ensureOpen()
+            if (!attachmentStore.record(selectedSymbol, context, sourceJar, archive, expectedSha256)) {
+                ensureOpen()
+                return if (context.isCurrent()) {
+                    SourceLookupResult.Unavailable(MissingSourceReason.UNKNOWN_ORIGIN)
+                } else {
+                    SourceLookupResult.Stale
+                }
+            }
+            locate(selectedSymbol, context)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: SourceStoreException) {
+            failed(context, failure.failure)
+        } catch (_: IOException) {
+            failed(context, SourceFailure.IO_FAILURE)
+        } catch (_: SecurityException) {
+            failed(context, SourceFailure.IO_FAILURE)
+        }
+    }
+
+    private suspend fun failed(context: SourceLookupContext, failure: SourceFailure): SourceLookupResult {
+        ensureOpen()
+        val current = context.isCurrent() && context.validateCurrent() && context.isCurrent()
+        currentCoroutineContext().ensureActive()
+        ensureOpen()
+        return if (current) SourceLookupResult.Failed(failure) else SourceLookupResult.Stale
+    }
+
+    private fun ensureOpen() {
+        if (closed.get()) throw CancellationException("Source navigation is closed")
+    }
+
+    private suspend fun contentStore(): SourceContentStore {
+        synchronized(monitor) {
+            ensureOpen()
+            store?.let { return it }
+        }
+        return storeInitialization.withLock {
+            runInterruptible(Dispatchers.IO) {
+                synchronized(monitor) {
+                    ensureOpen()
+                    store?.let { return@runInterruptible it }
+                }
+                // Initialization may perform filesystem IO. Close never waits for it under the lifecycle monitor.
+                val candidate = contentStoreFactory(contentRoot)
+                var published = false
+                try {
+                    checkSourceInterruption()
+                    synchronized(monitor) {
+                        ensureOpen()
+                        store = candidate
+                        published = true
+                        candidate
+                    }
+                } finally {
+                    if (!published) candidate.close()
+                }
+            }
+        }
+    }
+
+    private suspend fun withBinaryIdentity(symbol: ResolvedExternalSymbol): ResolvedExternalSymbol {
+        val origin = symbol.origin as? SourceOrigin.Archive ?: return symbol
+        if (origin.binarySha256 != null) {
+            return symbol.copy(origin = origin.copy(binarySha256 = origin.binarySha256.lowercase()))
+        }
+        val digest = runInterruptible(Dispatchers.IO) {
+            if (!Files.isRegularFile(origin.binaryJar)) throw SourceStoreException(SourceFailure.IO_FAILURE)
+            Files.newInputStream(origin.binaryJar).use { copyAndDigest(it, MAX_BINARY_IDENTITY_BYTES) }
+        }
+        return symbol.copy(origin = origin.copy(binarySha256 = digest))
+    }
+
+    @Suppress("CyclomaticComplexMethod") // Cache and acquisition states have distinct cancellation and retry behavior.
+    private suspend fun selectInput(
+        symbol: ResolvedExternalSymbol,
+        context: SourceLookupContext,
+        revision: String,
+        attempt: Long,
+    ): InputResult {
+        val identity = context.identity
+        val policy = context.policy
+        val key = InputKey(symbol.origin, identity.id, policy, revision)
+        if (attempt == 0L) cachedInput(key)?.let { return it }
+        return acquisitions.acquire(AcquisitionKey(key, attempt)) {
+            if (attempt == 0L) cachedInput(key)?.let { return@acquire it }
+            // The producer owns no requesting document or validation closure. Every borrower revalidates separately.
+            val acquisitionContext = SourceLookupContext(identity, policy, isCurrent = { true })
+            selectInputUnshared(symbol, acquisitionContext).also { result ->
+                val lifetime = when (result) {
+                    is InputResult.Available -> {
+                        if (!result.cacheable || result.input is SourceArchiveInput.Local) null else Long.MAX_VALUE
+                    }
+                    is InputResult.Unavailable -> SOURCE_MISS_TTL_NANOS
+                    is InputResult.Failed -> null
+                }
+                if (lifetime != null) {
+                    synchronized(monitor) {
+                        ensureOpen()
+                        // An older missing-source request cannot erase a successful explicit retry.
+                        if (result is InputResult.Available || inputs[key]?.value !is InputResult.Available) {
+                            inputs[key] = CachedInput(result, System.nanoTime(), lifetime)
+                            if (result is InputResult.Available) {
+                                // Both policies can reuse existing verified bytes after an explicit download.
+                                inputs[key.copy(policy = SourceLookupPolicy.LOCAL_ONLY)] = inputs.getValue(key)
+                                inputs[key.copy(policy = SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS)] =
+                                    inputs.getValue(key)
+                            }
+                        }
+                        while (inputs.size > MAX_SOURCE_INPUTS) inputs.remove(inputs.keys.first())
+                    }
+                }
+            }
+        }
+    }
+
+    private fun cachedInput(key: InputKey): InputResult? = synchronized(monitor) {
+        inputs[key]?.takeIf { cached ->
+            cached.lifetime == Long.MAX_VALUE || System.nanoTime() - cached.createdAt < cached.lifetime
+        }?.value
+    }
+
+    private suspend fun selectInputUnshared(symbol: ResolvedExternalSymbol, context: SourceLookupContext): InputResult {
+        attachmentStore.find(symbol, context)?.let { attachment ->
+            val prefix = (symbol.origin as? SourceOrigin.Jdk)?.module?.let { module -> "$module/" }.orEmpty()
+            return InputResult.Available(attachment, prefix, cacheable = false)
+        }
+        return when (val origin = symbol.origin) {
+            is SourceOrigin.Bundled -> bundledSources.sourceInput(origin)?.let { input -> InputResult.Available(input) }
+                ?: InputResult.Unavailable(MissingSourceReason.NO_ATTACHMENT)
+            is SourceOrigin.Archive -> runInterruptible(Dispatchers.IO) {
+                bundledSources.sourceInputForArchive(origin, symbol.binaryName)
+            }?.let { input -> InputResult.Available(input) }
+                ?: selectArchiveInput(origin, context)
+            is SourceOrigin.Jdk -> {
+                val sources = origin.imageHome.resolve("lib/src.zip")
+                if (runInterruptible(Dispatchers.IO) { Files.isRegularFile(sources) }) {
+                    InputResult.Available(SourceArchiveInput.Local(sources), origin.module + "/")
+                } else {
+                    InputResult.Unavailable(MissingSourceReason.NO_ATTACHMENT)
+                }
+            }
+            is SourceOrigin.Unknown -> InputResult.Unavailable(MissingSourceReason.UNKNOWN_ORIGIN)
+        }
+    }
+
+    private suspend fun selectArchiveInput(origin: SourceOrigin.Archive, context: SourceLookupContext): InputResult {
+        val coordinates = origin.coordinates ?: return InputResult.Unavailable(MissingSourceReason.UNKNOWN_ORIGIN)
+        val verified = sourceResolver as? VerifiedSourceArtifactResolver
+            ?: return InputResult.Unavailable(MissingSourceReason.INTEGRITY_UNAVAILABLE)
+        val binaryDigest = checkNotNull(origin.binarySha256) {
+            "Source archive selection requires a captured binary identity"
+        }
+        val artifactRequest = VerifiedSourceArtifactRequest(
+            coordinates = coordinates,
+            selectedBinarySha256 = binaryDigest,
+            allowDownload = context.policy == SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            contextId = context.identity.id,
+        )
+        return when (val resolved = verified.resolveVerifiedSourceArtifact(artifactRequest)) {
+            is VerifiedSourceArtifactResult.Available -> InputResult.Available(
+                SourceArchiveInput.Verified(resolved.path, resolved.expectedSha256),
             )
+            VerifiedSourceArtifactResult.NotAvailable ->
+                InputResult.Unavailable(MissingSourceReason.SOURCE_NOT_PUBLISHED)
+            VerifiedSourceArtifactResult.IntegrityUnavailable ->
+                InputResult.Unavailable(MissingSourceReason.INTEGRITY_UNAVAILABLE)
+            VerifiedSourceArtifactResult.DownloadsDisabled ->
+                InputResult.Unavailable(MissingSourceReason.DOWNLOADS_DISABLED)
+            VerifiedSourceArtifactResult.UnsupportedArtifact ->
+                InputResult.Unavailable(MissingSourceReason.UNSUPPORTED_LAYOUT)
+            VerifiedSourceArtifactResult.BinaryMismatch ->
+                InputResult.Unavailable(MissingSourceReason.BINARY_ORIGIN_MISMATCH)
+            VerifiedSourceArtifactResult.LimitExceeded -> InputResult.Failed(SourceFailure.LIMIT_EXCEEDED)
+            VerifiedSourceArtifactResult.Failed -> InputResult.Failed(SourceFailure.IO_FAILURE)
         }
+    }
 
-        // Step 2: Derive Maven coordinates from JAR path
-        val jarPath = extractJarPath(classpathUri) ?: return SourceNavigator.SourceResult.BinaryOnly(
-            uri = classpathUri,
-            className = className,
-            reason = "Could not extract JAR path from URI",
+    private suspend fun locateInArchive(
+        symbol: ResolvedExternalSymbol,
+        context: SourceLookupContext,
+        input: SourceArchiveInput,
+        prefix: String,
+    ): SourceLookupResult {
+        val storage = contentStore()
+        val archive = storage.importArchive(input)
+        val source = storage.sourceFor(archive, symbol.binaryName, prefix)
+            ?: return SourceLookupResult.Unavailable(MissingSourceReason.TYPE_NOT_PRESENT)
+        val language = if (source.entryName.endsWith(".java")) "java" else "groovy"
+        val key = DefinitionKey(language, source.contentDigest, symbol.binaryName, symbol.memberName)
+        val definition = inspectShared(source, symbol, key)
+        if (!context.isCurrent()) return SourceLookupResult.Stale
+        val descriptor = SourceDocumentDescriptor(
+            sourceDigest = archive.sha256,
+            contentDigest = source.contentDigest,
+            entryName = source.entryName,
+            contentPath = source.contentPath,
+            origin = symbol.origin,
+            context = context.identity,
+            displayName = displayName(symbol.origin),
+            languageId = language,
         )
+        ensureOpen()
+        val uri = runInterruptible(Dispatchers.IO) { sourcePresentation.register(descriptor) }
+        return definition?.let { SourceLookupResult.Located(uri, symbol.binaryName, it) }
+            ?: SourceLookupResult.FileOnly(uri, symbol.binaryName, MissingSourceReason.DECLARATION_NOT_LOCATED)
+    }
 
-        // Step 3: Try to resolve source JAR (Maven or adjacent)
-        val sourceJarPath = resolveSourceJar(jarPath) ?: return SourceNavigator.SourceResult.BinaryOnly(
-            uri = classpathUri,
-            className = className,
-            reason = "Source JAR not available for ${jarPath.fileName}",
-        )
+    private suspend fun inspectShared(
+        source: MaterializedSource,
+        symbol: ResolvedExternalSymbol,
+        key: DefinitionKey,
+    ): SourceDefinition? {
+        synchronized(monitor) { definitions[key] }?.let { return it.value }
+        return inspections.acquire(key) {
+            synchronized(monitor) { definitions[key] }?.let { return@acquire it.value }
+            val content = runInterruptible(Dispatchers.IO) {
+                val bytes = ByteArrayOutputStream()
+                val digest = Files.newInputStream(source.contentPath).use { input ->
+                    copyAndDigest(input, MAX_INSPECTED_SOURCE_BYTES, bytes::write)
+                }
+                if (digest != source.contentDigest) throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
+                // The presentation registry serves strict UTF-8 too: never publish a location for
+                // replacement-decoded text that the managed source document cannot subsequently open.
+                StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes.toByteArray())).toString()
+            }
+            val producerContext = currentCoroutineContext()
+            val definition = runInterruptible(Dispatchers.Default) {
+                inspect(content, source, symbol, producerContext::ensureActive)
+            }
+            inspectionCount.incrementAndGet()
+            synchronized(monitor) {
+                ensureOpen()
+                definitions[key] = CachedDefinition(definition)
+                while (definitions.size > MAX_DECLARATION_INDEXES) definitions.remove(definitions.keys.first())
+            }
+            definition
+        }
+    }
 
-        // Step 4: Extract and index the source JAR
-        sourceExtractor.extractAndIndex(sourceJarPath)
-
-        // Step 5: Find the specific source file
-        val sourcePath = sourceExtractor.findSourceForClass(className)
-        return if (sourcePath != null) {
-            val inspection = inspectClassDefinition(sourcePath, className)
-            SourceNavigator.SourceResult.SourceLocation(
-                uri = sourcePath.toUri(),
-                className = className,
-                lineNumber = inspection?.lineNumber,
-                documentation = inspection?.documentation,
+    private fun inspect(
+        content: String,
+        source: MaterializedSource,
+        symbol: ResolvedExternalSymbol,
+        checkCancelled: () -> Unit,
+    ): SourceDefinition? = if (source.entryName.endsWith(".java")) {
+        if (symbol.memberName == null) {
+            javaSourceInspector.inspectDefinitionFromContent(
+                content,
+                symbol.binaryName,
+                source.entryName,
+                checkCancelled,
             )
         } else {
-            SourceNavigator.SourceResult.BinaryOnly(
-                uri = classpathUri,
-                className = className,
-                reason = "Class $className not found in extracted sources",
+            javaSourceInspector.inspectMemberDefinitionFromContent(
+                content,
+                symbol.binaryName,
+                symbol.memberName,
+                source.entryName,
+                checkCancelled,
             )
         }
+    } else if (symbol.memberName == null) {
+        groovySourceInspector.inspect(content, symbol.binaryName, source.contentPath.toUri(), checkCancelled)
+    } else {
+        groovySourceInspector.inspectMember(
+            content,
+            symbol.binaryName,
+            symbol.memberName,
+            source.contentPath.toUri(),
+            checkCancelled,
+        )
     }
 
-    /**
-     * Navigate to source code for a specific method within a class.
-     *
-     * This method first navigates to the class source using [navigateToSource],
-     * then uses [JavaSourceInspector.inspectMethod] to find the specific method
-     * declaration within the class.
-     *
-     * @param classpathUri URI of the class (jrt: or jar:file:...)
-     * @param className Fully qualified class name
-     * @param methodName Simple method name (e.g., "add")
-     * @return SourceResult indicating where to navigate. Returns BinaryOnly if the class source
-     *         cannot be found, or SourceLocation (either method-level with lineNumber, or
-     *         class-level fallback if method cannot be located within the source)
-     */
-    @Suppress("ReturnCount") // Multiple resolution strategies require early returns
+    private fun displayName(origin: SourceOrigin): String = when (origin) {
+        is SourceOrigin.Archive -> origin.coordinates?.let { coordinates ->
+            "${coordinates.group}:${coordinates.module}:${coordinates.version}"
+        } ?: origin.binaryJar.fileName.toString()
+        is SourceOrigin.Bundled -> origin.componentId
+        is SourceOrigin.Jdk -> "JDK sources (${origin.module})"
+        is SourceOrigin.Unknown -> "Dependency sources"
+    }
+
+    /** Legacy consumers are local-only; new definition requests must supply captured context to [locate]. */
+    override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult =
+        legacyLookup(classpathUri, className, null)
+
     override suspend fun navigateToMethodSource(
         classpathUri: URI,
         className: String,
         methodName: String,
+    ): SourceNavigator.SourceResult = legacyLookup(classpathUri, className, methodName)
+
+    private suspend fun legacyJdkLookup(
+        resource: URI,
+        binaryName: String,
+        memberName: String?,
+    ): SourceNavigator.SourceResult =
+        when (val classResult = jdkSourceResolver.resolveJdkSource(resource, binaryName)) {
+            is SourceNavigator.SourceResult.BinaryOnly -> classResult
+            is SourceNavigator.SourceResult.SourceLocation -> {
+                val methodInspection = memberName?.let { member ->
+                    runCatching { Path.of(classResult.uri) }.getOrNull()?.let { sourcePath ->
+                        javaSourceInspector.inspectMethod(sourcePath, binaryName, member)
+                    }
+                }
+                when {
+                    memberName == null -> classResult
+                    methodInspection == null -> classResult.copy(
+                        lineNumber = null,
+                        documentation = null,
+                        definition = null,
+                    )
+                    else -> classResult.copy(
+                        lineNumber = methodInspection.lineNumber,
+                        documentation = methodInspection.documentation,
+                        definition = methodInspection.definition,
+                    )
+                }
+            }
+        }
+
+    private suspend fun legacyLookup(
+        resource: URI,
+        binaryName: String,
+        memberName: String?,
     ): SourceNavigator.SourceResult {
-        logger.debug { "Navigating to method source for: $className.$methodName from $classpathUri" }
-
-        // First, navigate to the class source
-        val sourceLocation = when (val classResult = navigateToSource(classpathUri, className)) {
-            is SourceNavigator.SourceResult.BinaryOnly -> return classResult
-            is SourceNavigator.SourceResult.SourceLocation -> classResult
-        }
-
-        // Now find the specific method within the source file
-        val sourcePath = try {
-            Path.of(sourceLocation.uri)
-        } catch (e: Exception) {
-            logger.debug(e) { "Cannot convert URI to Path: ${sourceLocation.uri}" }
-            return sourceLocation // Fall back to class-level
-        }
-        val methodInspection = inspectMethodDefinition(sourcePath, className, methodName)
-
-        return if (methodInspection != null) {
-            SourceNavigator.SourceResult.SourceLocation(
-                uri = sourceLocation.uri,
-                className = className,
-                lineNumber = methodInspection.lineNumber,
-                documentation = methodInspection.documentation,
-            )
-        } else {
-            // Method not found - fall back to class-level navigation
-            logger.debug {
-                "Method $methodName not found in class $className, falling back to class-level navigation"
-            }
-            sourceLocation
-        }
-    }
-
-    /**
-     * Extract the JAR file path from a jar: URI.
-     *
-     * Input: jar:file:///path/to/library.jar!/com/example/Foo.class
-     * Output: /path/to/library.jar
-     */
-    private fun extractJarPath(classpathUri: URI): Path? {
-        val uriString = classpathUri.toString()
-
-        if (!uriString.startsWith(JAR_FILE_PREFIX)) {
-            return null
-        }
-
-        // Extract path between "jar:file:" and "!"
-        val jarPath = uriString
-            .removePrefix(JAR_FILE_PREFIX)
-            .substringBefore("!")
-
-        return try {
-            Path.of(jarPath)
-        } catch (e: Exception) {
-            logger.debug { "Failed to parse JAR path: $jarPath" }
-            null
-        }
-    }
-
-    /**
-     * Resolve source JAR for a binary JAR.
-     *
-     * Resolution order:
-     * 1. Try to derive Maven coordinates and download from Maven Central
-     * 2. Look for adjacent -sources.jar next to the binary JAR (for local JARs)
-     *
-     * @param binaryJarPath Path to the binary JAR file
-     * @return Path to source JAR if found, null otherwise
-     */
-    private suspend fun resolveSourceJar(binaryJarPath: Path): Path? {
-        // Step 1: Try Maven coordinates derivation and download
-        val coords = deriveCoordinates(binaryJarPath)
-        if (coords != null) {
-            try {
-                val sourceJar = sourceResolver.resolveSourceJar(coords.groupId, coords.artifactId, coords.version)
-                if (sourceJar != null) {
-                    logger.debug { "Resolved source JAR via Maven: $sourceJar" }
-                    return sourceJar
-                }
-            } catch (e: Exception) {
-                // A cancelled request must end cancelled, not fall back to an adjacent jar or "no source" (#1311)
-                rethrowIfCancellationOrError(e)
-                logger.debug { "Failed to resolve source JAR from Maven: ${e.message}" }
-            }
-        } else {
-            logger.debug { "Could not derive Maven coordinates from $binaryJarPath; skipping remote source lookup" }
-        }
-
-        // Step 2: Look for adjacent -sources.jar in the same directory
-        val adjacentSource = findAdjacentSourceJar(binaryJarPath)
-        if (adjacentSource != null) {
-            logger.debug { "Found adjacent source JAR: $adjacentSource" }
-            return adjacentSource
-        }
-
-        logger.debug { "No source JAR found for: $binaryJarPath" }
-        return null
-    }
-
-    private fun inspectClassDefinition(sourcePath: Path, className: String): JavaSourceInspector.InspectionResult? =
-        when {
-            sourcePath.extension.equals("java", ignoreCase = true) ->
-                javaSourceInspector.inspectClass(sourcePath, className)
-            sourcePath.extension.equals("groovy", ignoreCase = true) ->
-                inspectGroovyClassDefinition(sourcePath, className)
-            else -> {
-                logger.debug { "Skipping Java inspection for non-Java source: $sourcePath" }
-                null
-            }
-        }
-
-    private fun inspectMethodDefinition(
-        sourcePath: Path,
-        className: String,
-        methodName: String,
-    ): JavaSourceInspector.InspectionResult? = when {
-        sourcePath.extension.equals("java", ignoreCase = true) ->
-            javaSourceInspector.inspectMethod(sourcePath, className, methodName)
-        sourcePath.extension.equals("groovy", ignoreCase = true) ->
-            inspectGroovyMethodDefinition(sourcePath, className, methodName)
-        else -> {
-            logger.debug { "Skipping Java method inspection for non-Java source: $sourcePath" }
-            null
-        }
-    }
-
-    private fun inspectGroovyClassDefinition(
-        sourcePath: Path,
-        className: String,
-    ): JavaSourceInspector.InspectionResult? {
-        val lineNumber = findGroovyClassLineNumber(sourcePath, className) ?: run {
-            logger.debug { "Groovy class $className not found in $sourcePath" }
-            return null
-        }
-
-        logger.info { "Resolved Groovy class $className at $sourcePath:$lineNumber" }
-        return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
-    }
-
-    private fun inspectGroovyMethodDefinition(
-        sourcePath: Path,
-        className: String,
-        methodName: String,
-    ): JavaSourceInspector.InspectionResult? {
-        val lineNumber = findGroovyMethodLineNumber(sourcePath, methodName) ?: return null
-        logger.info { "Resolved Groovy method $className.$methodName at $sourcePath:$lineNumber" }
-        return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
-    }
-
-    // TODO(#867): Replace regex-based Groovy parsing with AST-based approach for accuracy
-    //   Current implementation uses regex which can have false positives in strings/comments.
-    //   Consider using GroovyParser AST for precise class/method location detection.
-    //   See: https://github.com/albertocavalcante/gvy/issues/867
-    private fun findGroovyClassLineNumber(sourcePath: Path, className: String): Int? {
-        val simpleName = className.substringAfterLast('.').substringAfterLast('$')
-        val escapedName = Regex.escape(simpleName)
-        val pattern = Regex("""\b(class|@?interface|trait|enum)\s+$escapedName\b""")
-        return findPatternInGroovySource(sourcePath, pattern)
-    }
-
-    // Note: This regex won't match Groovy's quoted method names (e.g., def "test method"()).
-    // This limitation is tracked in issue #867 along with the broader AST migration.
-    private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
-        val escapedMethodName = Regex.escape(methodName)
-        val pattern = Regex(
-            """\b(?:def|public|protected|private|static|final|synchronized|abstract|native|strictfp|void|\w+)\s+""" +
-                """$escapedMethodName\s*\(""",
+        if (resource.scheme == "jrt") return legacyJdkLookup(resource, binaryName, memberName)
+        val origin = bundledSources.selectedOrigin(resource, binaryName)
+            ?: parseJarClassResource(resource)?.let { SourceOrigin.Archive(it.archive) }
+            ?: SourceOrigin.Unknown(resource)
+        val context = SourceLookupContext(
+            identity = SourceContextIdentity(sourceDigest(resource.toString())),
+            isCurrent = { true },
         )
-        return findPatternInGroovySource(sourcePath, pattern)
-    }
-
-    /**
-     * Find the first occurrence of a pattern in Groovy source, skipping comments.
-     *
-     * Handles both line comments (//) and block comments (slash-star ... star-slash).
-     * This shared logic ensures consistent comment handling across class and method detection.
-     *
-     * @param sourcePath Path to the Groovy source file
-     * @param pattern Regex pattern to search for
-     * @return 1-based line number where pattern is found, or null if not found
-     */
-    private fun findPatternInGroovySource(sourcePath: Path, pattern: Regex): Int? {
-        val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
-        var inBlockComment = false
-
-        for ((index, line) in lines.withIndex()) {
-            var text = line
-
-            // Handle continuation of multi-line block comment
-            if (inBlockComment) {
-                val end = text.indexOf("*/")
-                if (end == -1) {
-                    continue
-                }
-                text = text.substring(end + 2)
-                inBlockComment = false
-            }
-
-            // Handle all block comments within the line (there may be multiple)
-            text = stripBlockComments(text) { inBlockComment = it }
-
-            // Skip line comments
-            if (text.trimStart().startsWith("//")) {
-                continue
-            }
-
-            // Check if pattern matches after removing comments
-            if (pattern.containsMatchIn(text)) {
-                return index + 1
-            }
-        }
-
-        return null
-    }
-
-    /**
-     * Strip all block comments from a line of text.
-     *
-     * Handles multiple block comments on the same line (e.g., `def x /* c1 */ = foo /* c2 */ bar`).
-     * If an unclosed block comment is found, sets the callback to true to indicate continuation.
-     *
-     * @param text The line of text to process
-     * @param setBlockCommentState Callback to set whether we're in an unclosed block comment
-     * @return The text with all block comments removed
-     */
-    private inline fun stripBlockComments(text: String, setBlockCommentState: (Boolean) -> Unit): String {
-        var result = text
-        while (true) {
-            val start = result.indexOf("/*")
-            if (start < 0) break
-
-            val end = result.indexOf("*/", start + 2)
-            result = if (end >= 0) {
-                // Complete block comment found - remove it and continue looking for more
-                result.removeRange(start, end + 2)
-            } else {
-                // Unclosed block comment - rest of line is comment
-                setBlockCommentState(true)
-                result.substring(0, start)
-            }
-        }
-        return result
-    }
-
-    /**
-     * Look for a -sources.jar next to a binary JAR file.
-     *
-     * For example: libs/testlib.jar -> libs/testlib-sources.jar
-     */
-    private fun findAdjacentSourceJar(binaryJarPath: Path): Path? {
-        val fileName = binaryJarPath.fileName.toString()
-        if (!fileName.endsWith(".jar")) return null
-
-        val baseName = fileName.removeSuffix(".jar")
-        val sourceJarName = "$baseName-sources.jar"
-        val sourceJarPath = binaryJarPath.parent?.resolve(sourceJarName)
-
-        return if (sourceJarPath != null && Files.exists(sourceJarPath)) {
-            sourceJarPath
-        } else {
-            null
+        return when (val result = locate(ResolvedExternalSymbol(binaryName, origin, memberName), context)) {
+            is SourceLookupResult.Located -> SourceNavigator.SourceResult.SourceLocation(
+                uri = result.uri,
+                className = binaryName,
+                lineNumber = result.definition.nameRange.startLine + 1,
+                documentation = result.definition.documentation,
+                definition = result.definition,
+            )
+            is SourceLookupResult.FileOnly -> SourceNavigator.SourceResult.SourceLocation(result.uri, binaryName)
+            is SourceLookupResult.Unavailable ->
+                SourceNavigator.SourceResult.BinaryOnly(resource, binaryName, result.reason.name)
+            is SourceLookupResult.Failed ->
+                SourceNavigator.SourceResult.BinaryOnly(resource, binaryName, result.failure.name)
+            SourceLookupResult.Ambiguous ->
+                SourceNavigator.SourceResult.BinaryOnly(resource, binaryName, "Ambiguous source origin")
+            SourceLookupResult.Stale ->
+                SourceNavigator.SourceResult.BinaryOnly(resource, binaryName, "Source context retired")
         }
     }
 
-    /**
-     * Derive Maven coordinates from a JAR file path.
-     *
-     * Uses common Maven repository layout patterns:
-     * - ~/.m2/repository/group/artifact/version/artifact-version.jar
-     * - ~/.gradle/caches/.../group/artifact/version/.../artifact-version.jar
-     */
-    private fun deriveCoordinates(jarPath: Path): MavenCoordinates? {
-        val pathStr = jarPath.toString()
-        val fileName = jarPath.fileName.toString()
-
-        // Try to extract from Maven repository path
-        if (pathStr.contains(".m2/repository") || pathStr.contains(".gradle/caches")) {
-            return extractFromMavenPath(jarPath, fileName)
-        }
-
-        // Try to extract from filename pattern: name-version.jar
-        return extractFromFilename(fileName)
+    fun getStatistics(): Map<String, Long> {
+        val counts = synchronized(monitor) { store }?.workCounts() ?: SourceStoreWorkCounts(0, 0)
+        return mapOf(
+            "archiveImports" to counts.archiveImports,
+            "archiveIndexes" to counts.archiveIndexes,
+            "sourceMaterializations" to counts.sourceMaterializations,
+            "declarationInspections" to inspectionCount.get(),
+        )
     }
 
-    /**
-     * Extract coordinates from Maven repository path structure.
-     */
-    private fun extractFromMavenPath(jarPath: Path, fileName: String): MavenCoordinates? {
-        val parts = jarPath.normalize().map { it.toString() }
-        val repoIndex = parts.indexOfLast { it == "repository" || it == "caches" }
-
-        if (repoIndex == -1 || repoIndex + MIN_MAVEN_COORDINATE_PARTS >= parts.size) {
-            return extractFromFilename(fileName)
+    override fun close() {
+        val storage = synchronized(monitor) {
+            if (!closed.compareAndSet(false, true)) return
+            val owned = store
+            store = null
+            definitions.clear()
+            inputs.clear()
+            owned
         }
-
-        val filenameCoords = extractFromFilename(fileName) ?: return null
-        val version = filenameCoords.version
-        val versionIndex = parts.indexOfLast { part -> part == version }
-        if (versionIndex == -1) {
-            return extractFromFilename(fileName)
-        }
-
-        val artifactIndex = versionIndex - 1
-        val artifactId = parts.getOrNull(artifactIndex) ?: filenameCoords.artifactId
-
-        var groupStartIndex = repoIndex + 1
-        if (parts.getOrNull(groupStartIndex) == "modules-2" &&
-            parts.getOrNull(groupStartIndex + 1)?.startsWith("files-") == true
-        ) {
-            groupStartIndex += 2
-        }
-
-        if (groupStartIndex >= artifactIndex) {
-            return filenameCoords
-        }
-
-        val groupParts = parts.subList(groupStartIndex, artifactIndex)
-        val groupId = groupParts.joinToString(".")
-
-        // Validate the extracted coordinates
-        return if (groupId.isNotBlank() && artifactId.isNotBlank() && version.isNotBlank()) {
-            MavenCoordinates(groupId, artifactId, version)
-        } else {
-            null
-        }
+        shutdownResources(acquisitions::close, inspections::close, { storage?.close() })
     }
 
-    /**
-     * Extract coordinates from filename pattern.
-     */
-    private fun extractFromFilename(fileName: String): MavenCoordinates? {
-        // Pattern: artifact-version.jar or artifact-version-classifier.jar
-        val baseName = fileName.removeSuffix(".jar")
-
-        // Find the last dash followed by a version-like string
-        val versionPattern = Regex("-([0-9]+\\..*?)(-[a-zA-Z]+)?$")
-        val match = versionPattern.find(baseName) ?: return null
-
-        val version = match.groupValues[1]
-        val artifactId = baseName.substringBefore("-$version")
-
-        // Without path info, we can't determine group - use artifactId as fallback
-        return MavenCoordinates(artifactId, artifactId, version)
-    }
-
-    /**
-     * Maven coordinates holder.
-     */
-    data class MavenCoordinates(val groupId: String, val artifactId: String, val version: String)
-
-    /**
-     * Get service statistics.
-     */
-    fun getStatistics(): Map<String, Any> = mapOf(
-        "extractorStats" to sourceExtractor.getStatistics(),
+    private data class DefinitionKey(
+        val language: String,
+        val content: String,
+        val binaryName: String,
+        val memberName: String?,
     )
+    private data class CachedDefinition(val value: SourceDefinition?)
+    private data class CachedInput(val value: InputResult, val createdAt: Long, val lifetime: Long)
+    private data class InputKey(
+        val origin: SourceOrigin,
+        val context: String,
+        val policy: SourceLookupPolicy,
+        val attachmentRevision: String,
+    )
+    private data class AcquisitionKey(val input: InputKey, val attempt: Long)
+    private sealed interface InputResult {
+        data class Available(val input: SourceArchiveInput, val prefix: String = "", val cacheable: Boolean = true) :
+            InputResult
+        data class Unavailable(val reason: MissingSourceReason) : InputResult
+        data class Failed(val failure: SourceFailure) : InputResult
+    }
 }

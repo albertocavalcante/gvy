@@ -19,9 +19,29 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-/** SHA-256 of [content], the key that says two compiles saw the same text. */
-internal fun contentHash(content: String): String =
-    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray()))
+/** SHA-256 of the exact UTF-16 code units in [content], including malformed surrogate pairs. */
+internal fun contentHash(content: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(CONTENT_HASH_DOMAIN)
+    val buffer = ByteArray(HASH_BUFFER_BYTES)
+    var offset = 0
+    while (offset < content.length) {
+        val count = minOf(buffer.size / CODE_UNIT_BYTES, content.length - offset)
+        for (index in 0 until count) {
+            val codeUnit = content[offset + index].code
+            buffer[index * CODE_UNIT_BYTES] = (codeUnit ushr BITS_PER_BYTE).toByte()
+            buffer[index * CODE_UNIT_BYTES + 1] = codeUnit.toByte()
+        }
+        digest.update(buffer, 0, count * CODE_UNIT_BYTES)
+        offset += count
+    }
+    return HexFormat.of().formatHex(digest.digest())
+}
+
+private const val CODE_UNIT_BYTES = 2
+private const val BITS_PER_BYTE = 8
+private const val HASH_BUFFER_BYTES = 2048
+private val CONTENT_HASH_DOMAIN = "gvy-content-utf16-v1\u0000".toByteArray(Charsets.US_ASCII)
 
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
@@ -41,6 +61,7 @@ internal fun contentHash(content: String): String =
 class SemanticIndexer(
     private val index: WorkspaceSymbolIndex,
     private val isOpen: (URI) -> Boolean = { false },
+    private val excluded: (URI) -> Boolean = { false },
     private val build: (ModuleNode, URI) -> SemanticDocument = { ast, uri ->
         SemanticDocumentBuilder(ast, uri).build()
     },
@@ -136,15 +157,43 @@ class SemanticIndexer(
         fromBuffer: Boolean = true,
     ) {
         val uri = publication.uri
+        if (excluded(uri)) {
+            removeExcluded(publication, fromBuffer)
+            return
+        }
         val hash = contentHash(content)
         if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
         val built = buildOrNull(ast, uri)
+        if (excluded(uri)) {
+            removeExcluded(publication, fromBuffer)
+            return
+        }
         // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
                 if (replaces(state, publication, hash, phase, fromBuffer)) {
                     state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
                     state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                }
+                state
+            }
+        }
+    }
+
+    /** An excluded replacement drops old facts only if this publication still owns the decision. */
+    private fun removeExcluded(publication: Publication, fromBuffer: Boolean) {
+        swap.read {
+            entries.computeIfPresent(publication.uri) { uri, state ->
+                val current =
+                    state === publication.identity &&
+                        publication.generation == generation &&
+                        !publication.isClosed &&
+                        (fromBuffer || !isOpen(uri)) &&
+                        publication.ticket > state.highestTicket
+                if (current) {
+                    store(uri, null, "")
+                    state.entry = null
+                    state.highestTicket = publication.ticket
                 }
                 state
             }
@@ -165,8 +214,11 @@ class SemanticIndexer(
         } else {
             publication.ticket > (state?.highestTicket ?: 0L)
         }
-        return state === publication.identity && publication.generation == generation && !publication.isClosed &&
-            (fromBuffer || !isOpen(publication.uri)) && supersedes
+        return state === publication.identity &&
+            publication.generation == generation &&
+            !publication.isClosed &&
+            (fromBuffer || !isOpen(publication.uri)) &&
+            supersedes
     }
 
     /**

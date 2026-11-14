@@ -9,9 +9,13 @@ import com.github.javaparser.ParseStart
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.Providers
 import com.github.javaparser.ast.CompilationUnit
+import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.EnumDeclaration
+import com.github.javaparser.ast.body.FieldDeclaration
 import com.github.javaparser.ast.body.MethodDeclaration
 import com.github.javaparser.ast.body.TypeDeclaration
 import com.github.javaparser.ast.comments.JavadocComment
+import com.github.javaparser.ast.expr.SimpleName
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import java.io.StringReader
@@ -27,6 +31,7 @@ import java.nio.file.Path
  * Extracts class definitions, line numbers, and Javadoc documentation from .java files.
  * Uses JavaParser for supported Java syntax, without executing or loading the inspected source.
  */
+@Suppress("TooManyFunctions") // The inspector exposes the related class, member, and documentation queries.
 class JavaSourceInspector internal constructor(private val parserFactory: () -> JavaParser) {
     constructor() : this(::newJavaSourceParser)
 
@@ -175,6 +180,58 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         end.line - 1,
         end.column,
     )
+
+    /** A name-only member request can select a field, enum constant or unambiguous method. */
+    @Suppress("ReturnCount", "TooGenericExceptionCaught")
+    fun inspectMemberDefinitionFromContent(
+        content: String,
+        className: String,
+        memberName: String,
+        sourceName: String = "<unknown>",
+        checkCancelled: () -> Unit = {},
+    ): SourceDefinition? {
+        checkCancelled()
+        if (content.length > MAX_PARSE_CHARACTERS) return null
+        return try {
+            val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
+            val owner = findJavaTypeDeclaration(unit, className, checkCancelled) ?: return null
+            val (declaration, name) = memberDeclarations(owner, memberName, checkCancelled).singleOrNull()
+                ?: return null
+            val declarationRange = declaration.range.orElse(null)?.toSourceSpan() ?: return null
+            val nameRange = name.range.orElse(null)?.toSourceSpan() ?: return null
+            val documentation = (declaration.comment.orElse(null) as? JavadocComment)?.let(::parseJavadoc)
+                ?: Documentation()
+            SourceDefinition(declarationRange, nameRange, documentation)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to inspect Java member $className.$memberName" }
+            null
+        }
+    }
+
+    private fun memberDeclarations(
+        owner: TypeDeclaration<*>,
+        memberName: String,
+        checkCancelled: () -> Unit,
+    ): List<Pair<Node, SimpleName>> = buildList {
+        for (member in owner.members) {
+            checkCancelled()
+            when (member) {
+                is MethodDeclaration -> if (member.nameAsString == memberName) add(member to member.name)
+                is FieldDeclaration -> member.variables.forEach { variable ->
+                    checkCancelled()
+                    if (variable.nameAsString == memberName) add(member to variable.name)
+                }
+            }
+        }
+        if (owner is EnumDeclaration) {
+            for (entry in owner.entries) {
+                checkCancelled()
+                if (entry.nameAsString == memberName) add(entry to entry.name)
+            }
+        }
+    }
 
     /**
      * Inspect Java source content to find a specific method within a class.

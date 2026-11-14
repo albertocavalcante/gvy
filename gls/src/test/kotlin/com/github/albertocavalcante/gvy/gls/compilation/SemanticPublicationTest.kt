@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
@@ -115,5 +116,50 @@ class SemanticPublicationTest {
             indexer.publish(afterClose, "class Example { def fresh() {} }", ast, Phases.CANONICALIZATION)
         }
         assertTrue(indexer.isCurrent(uri, "class Example { def fresh() {} }"), "later work still publishes")
+    }
+
+    @Test
+    fun `excluded disk publication removes old facts only while it owns the closed document`() {
+        var excluded = false
+        var open = false
+        val guarded = SemanticIndexer(index, isOpen = { open }, excluded = { excluded })
+        guarded.update(uri, content, ast, Phases.CANONICALIZATION)
+        val old = guarded.begin(uri)
+        guarded.retirePublications(uri)
+        excluded = true
+
+        guarded.publish(old, "changed", ast, Phases.CANONICALIZATION, fromBuffer = false)
+        assertNotNull(index.getDocument(uri), "a retired publication must not erase current facts")
+        old.close()
+
+        open = true
+        guarded.begin(uri).use { publication ->
+            guarded.publish(publication, "changed", ast, Phases.CANONICALIZATION, fromBuffer = false)
+        }
+        assertNotNull(index.getDocument(uri), "disk work must not erase an open buffer's facts")
+
+        open = false
+        guarded.begin(uri).use { publication ->
+            guarded.publish(publication, "changed", ast, Phases.CANONICALIZATION, fromBuffer = false)
+        }
+        assertNull(index.getDocument(uri))
+        assertFalse(uri in guarded)
+    }
+
+    @Test
+    fun `a source excluded while semantic facts are built drops the previous document`() {
+        var excluded = false
+        var excludeWhileBuilding = false
+        val guarded = SemanticIndexer(index, excluded = { excluded }, build = { module, source ->
+            if (excludeWhileBuilding) excluded = true
+            SemanticDocumentBuilder(module, source).build()
+        })
+        guarded.update(uri, content, ast, Phases.CANONICALIZATION)
+        assertNotNull(index.getDocument(uri))
+        excludeWhileBuilding = true
+
+        guarded.update(uri, "changed", ast, Phases.CANONICALIZATION)
+
+        assertNull(index.getDocument(uri))
     }
 }

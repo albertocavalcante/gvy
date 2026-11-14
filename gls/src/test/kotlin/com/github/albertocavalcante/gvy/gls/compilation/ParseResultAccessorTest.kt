@@ -322,7 +322,7 @@ class ParseResultAccessorTest {
 
         accessor.getValidParseResult(uri)
 
-        verify { cacheService.publish(any(), "cached source", freshResult, "fp-1", any(), any()) }
+        verify { cacheService.publish(any(), "cached source", freshResult, "fp-1", any(), null, any()) }
         verify { symbolIndexer.prepare("cached source", freshResult.astModel) }
     }
 

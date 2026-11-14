@@ -598,11 +598,15 @@ class GroovyParserFacade internal constructor(
             request.classpath.forEach { classLoader.addClasspath(it.toString()) }
             request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
             if (request.compilePhase >= Phases.SEMANTIC_ANALYSIS) classLoader.selectSdkFallback()
-            if (request.excludedSources.isNotEmpty()) {
+            val sourcePathAdmission = request.sourcePathAdmission
+            if (request.excludedSources.isNotEmpty() || sourcePathAdmission != null) {
                 val excluded = request.excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
                 val sources = classLoader.resourceLoader
                 classLoader.resourceLoader = groovy.lang.GroovyResourceLoader { name ->
-                    sources.loadGroovySource(name)?.takeUnless { url -> urlPath(url) in excluded }
+                    sources.loadGroovySource(name)?.takeIf { url ->
+                        val path = urlPath(url) ?: return@takeIf true
+                        path !in excluded && sourcePathAdmission?.invoke(path) != false
+                    }
                 }
             }
             classLoader

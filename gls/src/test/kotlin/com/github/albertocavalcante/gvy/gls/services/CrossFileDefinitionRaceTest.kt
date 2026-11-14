@@ -4,6 +4,12 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
+import io.mockk.coEvery
+import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -18,12 +24,18 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
+import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Tests for issue #749: Cross-file definition resolution race condition.
@@ -39,24 +51,47 @@ class CrossFileDefinitionRaceTest {
     private lateinit var compilationService: GroovyCompilationService
     private lateinit var service: GroovyTextDocumentService
     private lateinit var scope: CoroutineScope
+    private lateinit var parseGate: ParseGate
 
     @BeforeEach
     fun setUp() {
-        compilationService = GroovyCompilationService()
+        parseGate = ParseGate()
+        val documents = DocumentProvider()
+        val client = mockk<LanguageClient>(relaxed = true)
+        compilationService = spyk(
+            GroovyCompilationService(
+                documentProvider = documents,
+                workerSessionDecorator = { delegate ->
+                    object : WorkerSession {
+                        override fun parse(request: ParseRequest): ParseResult {
+                            parseGate.hold(request)
+                            return delegate.parse(request)
+                        }
+                    }
+                },
+            ),
+        )
+        coEvery { compilationService.ensureCompiled(any<URI>(), any<DocumentSnapshot>()) } coAnswers {
+            parseGate.definitionRequestedFor(firstArg())
+            callOriginal()
+        }
         scope = CoroutineScope(Dispatchers.Default)
         service = GroovyTextDocumentService(
             coroutineScope = scope,
             compilationService = compilationService,
             options = GroovyTextDocumentServiceOptions(
-                client = { null },
+                client = { client },
+                documentProvider = documents,
             ),
         )
     }
 
     @AfterEach
     fun tearDown() {
+        parseGate.release()
         scope.cancel()
         compilationService.clearCaches()
+        compilationService.shutdown()
     }
 
     @Test
@@ -83,6 +118,7 @@ class CrossFileDefinitionRaceTest {
 
         // Act: Open both files via didOpen (simulating LSP client behavior)
         // This triggers async compilation for both files
+        parseGate.hold(URI.create(calculatorUri))
         service.didOpen(
             DidOpenTextDocumentParams(
                 TextDocumentItem(calculatorUri, "groovy", 1, calculatorContent),
@@ -94,9 +130,8 @@ class CrossFileDefinitionRaceTest {
             ),
         )
 
-        // Simulate a small delay (like E2E test waiting for ONE diagnostics notification)
-        // This creates the race condition: definition request may happen before Calculator compiles
-        delay(50)
+        assertTrue(parseGate.awaitEntered(), "Calculator compilation did not reach the gate")
+        service.awaitCurrentDiagnostics(URI.create(mainUri), version = 1)
 
         // Act: Request definition for "Calculator" in Main.groovy
         val params = DefinitionParams(
@@ -105,7 +140,10 @@ class CrossFileDefinitionRaceTest {
         )
 
         val resultFuture = service.definition(params)
-        val result = resultFuture.get()
+        assertTrue(parseGate.awaitDefinitionRequest(), "definition did not reach the pending target compile")
+        assertTrue(parseGate.isHeld(), "target compilation left the gate before definition reached it")
+        parseGate.release()
+        val result = resultFuture.get(10, TimeUnit.SECONDS)
 
         // Assert: Should resolve to Calculator.groovy
         // WITHOUT the fix, this test may fail intermittently (race condition)
@@ -229,11 +267,12 @@ class CrossFileDefinitionRaceTest {
 
         // Open Main first (reverse order)
         service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(mainUri, "groovy", 1, mainContent)))
-        delay(50)
+        service.awaitCurrentDiagnostics(URI.create(mainUri), version = 1)
 
         // Open Calculator second
+        parseGate.hold(URI.create(calculatorUri))
         service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(calculatorUri, "groovy", 1, calculatorContent)))
-        delay(50)
+        assertTrue(parseGate.awaitEntered(), "Calculator compilation did not reach the gate")
 
         // Request definition in Main
         val params = DefinitionParams(
@@ -242,7 +281,10 @@ class CrossFileDefinitionRaceTest {
         )
 
         val resultFuture = service.definition(params)
-        val result = resultFuture.get()
+        assertTrue(parseGate.awaitDefinitionRequest(), "definition did not reach the pending target compile")
+        assertTrue(parseGate.isHeld(), "target compilation left the gate before definition reached it")
+        parseGate.release()
+        val result = resultFuture.get(10, TimeUnit.SECONDS)
 
         // Should resolve to Calculator.groovy despite reverse opening order
         assertTrue(result.isLeft, "Result should be Left (List<Location>)")
@@ -373,5 +415,43 @@ class CrossFileDefinitionRaceTest {
             locations[0].uri.contains("Calculator.groovy"),
             "Definition should point to Calculator.groovy",
         )
+    }
+
+    /** Holds one target parse so definition requests run while that document is still compiling. */
+    private class ParseGate {
+        private val target = AtomicReference<URI?>()
+        private val claimed = AtomicBoolean()
+        private val entered = CountDownLatch(1)
+        private val definitionRequested = CountDownLatch(1)
+        private val released = CountDownLatch(1)
+
+        fun hold(uri: URI) {
+            target.set(uri)
+        }
+
+        fun hold(request: ParseRequest) {
+            if (request.uri == target.get() && claimed.compareAndSet(false, true)) {
+                entered.countDown()
+                released.await()
+            }
+        }
+
+        fun definitionRequestedFor(uri: URI) {
+            if (uri == target.get()) definitionRequested.countDown()
+        }
+
+        fun awaitEntered(): Boolean = entered.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        fun awaitDefinitionRequest(): Boolean = definitionRequested.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        fun isHeld(): Boolean = entered.count == 0L && released.count == 1L
+
+        fun release() {
+            released.countDown()
+        }
+
+        private companion object {
+            const val GATE_TIMEOUT_SECONDS = 10L
+        }
     }
 }

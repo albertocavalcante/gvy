@@ -7,17 +7,22 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Path
+import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.extension
 import kotlin.io.path.readText
 
@@ -64,7 +69,7 @@ class WorkspaceCompiler(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Set once the eager workspace compile has run: from then on every workspace source has a document.
+    // Remembers the eager compile attempt so later refreshes can materialize missing source documents.
     @Volatile
     private var workspaceCompiled = false
 
@@ -100,6 +105,9 @@ class WorkspaceCompiler(
         // Compile all files together
         val result = compileFiles(workspaceSources, workspace)
         workspaceCompiled = true
+        if (!result.success) {
+            logger.warn { "Workspace compilation produced partial semantic results (${result.errors.size} errors)" }
+        }
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
@@ -121,36 +129,63 @@ class WorkspaceCompiler(
      * over the configured size limit) only files that already have a document are refreshed.
      */
     suspend fun refreshFromDisk(uris: Collection<URI>) = withContext(Dispatchers.IO) {
-        val stale = uris.filter(::needsRefresh)
+        val context = currentCoroutineContext()
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        val stale = uris.filter { needsRefresh(it, admission) }
         when {
             stale.isEmpty() -> Unit
             workspaceCompiled && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
             else -> {
                 val workspace = workspaceManager.current()
                 stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
-                    compileFileWithWorkspaceContext(
+                    val result = compileRefreshWithAdmissionRetry(
                         checkNotNull(UriPathConverter.toPath(uri)),
                         workspace.sources,
                         workspace.classpath,
                         workspace.sourceRoots,
                     )
+                    when (result) {
+                        is FileCompilationResult.Success -> Unit
+                        is FileCompilationResult.Failure -> logger.warn {
+                            "Could not refresh semantic source for $uri: ${result.errors.joinToString { it.message }}"
+                        }
+                        is FileCompilationResult.Skipped -> Unit // It is currently excluded or unavailable.
+                    }
                 }
             }
         }
     }
 
     /** Whether [uri]'s document must be rebuilt from disk; drops it when there is no source file to build from. */
-    private fun needsRefresh(uri: URI): Boolean {
+    private fun needsRefresh(uri: URI, admission: SourceInputAdmission): Boolean {
         // Owned before the open check: a reopen in between makes this removal stale (#1184).
         val ticket = ownership.begin(uri)
         if (semanticIndexer.followsBuffer(uri)) return false
         val path = UriPathConverter.toPath(uri)?.takeIf { it.extension.equals("groovy", ignoreCase = true) }
-        // Read once: the file may vanish between a check and the read (a checkout in progress).
-        val content = path?.let { runCatching { it.readText() }.getOrNull() }
-        if (content == null) {
-            ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
+        if (path == null || !admission.allows(path)) {
+            removeClosed(uri, ticket)
+            return false
         }
-        return content != null && !semanticIndexer.isCurrent(uri, content)
+        // Read once: the file may vanish between a check and the read (a checkout in progress).
+        val content =
+            try {
+                path.readText()
+            } catch (_: IOException) {
+                null
+            } catch (_: SecurityException) {
+                null
+            }
+        admission.checkCancelled()
+        return if (content == null || !admission.sourcePathAdmission()(path)) {
+            removeClosed(uri, ticket)
+            false
+        } else {
+            !semanticIndexer.isCurrent(uri, content)
+        }
+    }
+
+    private fun removeClosed(uri: URI, ticket: ArtifactOwnership.Ticket) {
+        ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
     }
 
     /**
@@ -162,6 +197,7 @@ class WorkspaceCompiler(
     private suspend fun compileFiles(sources: List<Path>, workspace: WorkspaceModel): WorkspaceCompilationResult {
         val modules = mutableMapOf<URI, ModuleNode>()
         val errors = mutableListOf<CompilationError>()
+        val context = currentCoroutineContext()
 
         // Get workspace configuration
         val classpath = workspace.classpath
@@ -174,7 +210,7 @@ class WorkspaceCompiler(
         val results = coroutineScope {
             val compilationJobs = sources.map { sourcePath ->
                 async(Dispatchers.Default) {
-                    compileFileWithWorkspaceContext(sourcePath, sources, classpath, sourceRoots)
+                    compileFileWithAdmissionRetry(sourcePath, sources, classpath, sourceRoots)
                 }
             }
 
@@ -182,21 +218,63 @@ class WorkspaceCompiler(
             compilationJobs.awaitAll()
         }
 
-        // Process results
-        results.forEach { result ->
-            when (result) {
-                is FileCompilationResult.Success -> {
-                    modules[result.uri] = result.module
-                    errors.addAll(result.errors)
-                }
-                is FileCompilationResult.Failure -> {
-                    errors.addAll(result.errors)
-                }
+        // Admission can recover after a per-file retry returns. Recheck remaining skips at the batch boundary
+        // and make one final bounded attempt before reporting a still-admitted source as incomplete.
+        val skippedPaths = results.filterIsInstance<FileCompilationResult.Skipped>()
+            .map(FileCompilationResult.Skipped::sourcePath)
+            .distinct()
+        val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        val retryPaths = skippedPaths.filter(retryAdmission::allows)
+        val retried = if (retryPaths.isEmpty()) {
+            emptyList()
+        } else {
+            coroutineScope {
+                retryPaths.map { sourcePath ->
+                    async(Dispatchers.Default) {
+                        compileFileWithAdmissionRetry(sourcePath, sources, classpath, sourceRoots)
+                    }
+                }.awaitAll()
             }
+        }
+
+        // Process both initial and retry results.
+        results.forEach { result ->
+            collect(result, modules, errors)
+        }
+        retried.forEach { result ->
+            collect(result, modules, errors)
+        }
+
+        val retryPathSet = retryPaths.toSet()
+        val retrySkippedPaths = retried.filterIsInstance<FileCompilationResult.Skipped>()
+            .map(FileCompilationResult.Skipped::sourcePath)
+        val unresolvedSkips = (skippedPaths.filterNot { it in retryPathSet } + retrySkippedPaths).distinct()
+        val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        unresolvedSkips.filter(completionAdmission::allows).forEach { sourcePath ->
+            errors += CompilationError(
+                sourcePath.toUri(),
+                "Source admission changed repeatedly while compiling",
+                "admission",
+            )
         }
 
         val success = errors.isEmpty()
         return WorkspaceCompilationResult(modules, errors, success)
+    }
+
+    private fun collect(
+        result: FileCompilationResult,
+        modules: MutableMap<URI, ModuleNode>,
+        errors: MutableList<CompilationError>,
+    ) {
+        when (result) {
+            is FileCompilationResult.Success -> {
+                modules[result.uri] = result.module
+                errors.addAll(result.errors)
+            }
+            is FileCompilationResult.Failure -> errors.addAll(result.errors)
+            is FileCompilationResult.Skipped -> Unit
+        }
     }
 
     /**
@@ -205,6 +283,7 @@ class WorkspaceCompiler(
      * The file is compiled with all workspace sources available to the compilation unit,
      * enabling cross-file resolution.
      */
+    @Suppress("ReturnCount") // Admission failures exit inside the try so publication cleanup always runs.
     private suspend fun compileFileWithWorkspaceContext(
         sourcePath: Path,
         allSources: List<Path>,
@@ -212,11 +291,28 @@ class WorkspaceCompiler(
         sourceRoots: List<Path>,
     ): FileCompilationResult {
         val uri = sourcePath.toUri()
-        val publication = semanticIndexer.begin(uri)
+        val context = currentCoroutineContext()
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        val sourcePathAdmission = admission.sourcePathAdmission()
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
+
+        fun freshlyAllowed(path: Path): Boolean {
+            context.ensureActive()
+            return sourcePathAdmission(path)
+        }
 
         return try {
-            // Read file content
-            val content = sourcePath.readText()
+            if (!admission.allows(sourcePath)) {
+                removeClosed(uri, ticket)
+                return FileCompilationResult.Skipped(sourcePath)
+            }
+            val content = readSourceContent(sourcePath, uri, ticket)
+            if (!freshlyAllowed(sourcePath)) {
+                removeClosed(uri, ticket)
+                return FileCompilationResult.Skipped(sourcePath)
+            }
+            val admittedRoots = sourceRoots.filter(admission::allows)
+            val admittedSources = allSources.filter(admission::allows)
 
             // Build locator candidates for this file
             val locatorCandidates = buildLocatorCandidates(uri, sourcePath)
@@ -226,45 +322,142 @@ class WorkspaceCompiler(
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = sourceRoots,
-                workspaceSources = allSources,
+                sourceRoots = admittedRoots,
+                workspaceSources = admittedSources,
                 locatorCandidates = locatorCandidates,
                 compilePhase = Phases.SEMANTIC_ANALYSIS,
+                checkCancelled = admission.checkCancelled,
+                sourcePathAdmission = sourcePathAdmission,
             )
 
             // Parse using worker session
             val parseResult = workerSessionManager.parse(parseRequest)
 
-            // Extract module
-            val module = parseResult.ast
-            if (module != null) {
-                logger.debug { "Successfully compiled: $uri" }
-                semanticIndexer.publish(
-                    publication,
-                    content,
-                    module,
-                    parseResult.outcome.achievedPhase,
-                    fromBuffer = false,
-                )
-                val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
-                    CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
+            if (
+                !freshlyAllowed(sourcePath) ||
+                sourceRoots.filter(::freshlyAllowed) != admittedRoots ||
+                allSources.filter(::freshlyAllowed) != admittedSources
+            ) {
+                removeClosed(uri, ticket)
+                try {
+                    parseResult.compilationUnit.classLoader.close()
+                } catch (failure: IOException) {
+                    logger.warn(failure) { "Failed to close a discarded workspace compilation for $uri" }
                 }
-                FileCompilationResult.Success(uri, module, errors)
-            } else {
-                val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
-                    parseResult.diagnostics.joinToString("; ") { it.message }
-                } else {
-                    "No AST produced"
-                }
-                logger.warn { "Failed to compile $uri: $errorMessage" }
-                semanticAnalysisFailure(uri, errorMessage)
+                return FileCompilationResult.Skipped(sourcePath)
             }
+
+            publishCompilationResult(uri, content, parseResult, publication)
         } catch (e: Exception) {
             rethrowIfCancellationOrError(e) // cancellation is not a compile error of this file
             logger.error(e) { "Exception compiling $uri" }
             semanticAnalysisFailure(uri, e.message ?: "Unknown error: ${e.javaClass.simpleName}")
         } finally {
+            admission.releaseObservedPaths()
             publication.close()
+        }
+    }
+
+    /** Retry one admission skip if the source is eligible again; report repeated churn instead of hiding it. */
+    private suspend fun compileFileWithAdmissionRetry(
+        sourcePath: Path,
+        allSources: List<Path>,
+        classpath: List<Path>,
+        sourceRoots: List<Path>,
+    ): FileCompilationResult {
+        val first = compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
+        return retryAfterAdmissionSkip(sourcePath, first) {
+            compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
+        }
+    }
+
+    /** A refresh has no batch boundary, so recheck once after a skip before leaving the document absent. */
+    private suspend fun compileRefreshWithAdmissionRetry(
+        sourcePath: Path,
+        allSources: List<Path>,
+        classpath: List<Path>,
+        sourceRoots: List<Path>,
+    ): FileCompilationResult {
+        val first = compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
+        return retryAfterAdmissionSkip(sourcePath, first) {
+            compileFileWithAdmissionRetry(sourcePath, allSources, classpath, sourceRoots)
+        }
+    }
+
+    private suspend fun retryAfterAdmissionSkip(
+        sourcePath: Path,
+        initialResult: FileCompilationResult,
+        retryAttempt: suspend () -> FileCompilationResult,
+    ): FileCompilationResult {
+        if (initialResult !is FileCompilationResult.Skipped) return initialResult
+
+        val context = currentCoroutineContext()
+        val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        if (!retryAdmission.allows(sourcePath)) return initialResult
+
+        return reportRepeatedAdmissionSkip(sourcePath, retryAttempt(), context)
+    }
+
+    private suspend fun reportRepeatedAdmissionSkip(
+        sourcePath: Path,
+        retryResult: FileCompilationResult,
+        context: CoroutineContext,
+    ): FileCompilationResult {
+        if (retryResult !is FileCompilationResult.Skipped) return retryResult
+
+        val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        return if (completionAdmission.allows(sourcePath)) admissionChangedFailure(sourcePath) else retryResult
+    }
+
+    private fun admissionChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
+        listOf(
+            CompilationError(
+                sourcePath.toUri(),
+                "Source admission changed repeatedly while compiling",
+                "admission",
+            ),
+        ),
+    )
+
+    private fun readSourceContent(sourcePath: Path, uri: URI, ticket: ArtifactOwnership.Ticket): String = try {
+        sourcePath.readText()
+    } catch (failure: IOException) {
+        removeClosed(uri, ticket)
+        throw failure
+    } catch (failure: SecurityException) {
+        removeClosed(uri, ticket)
+        throw failure
+    }
+
+    private fun publishCompilationResult(
+        uri: URI,
+        content: String,
+        parseResult: ParseResult,
+        publication: SemanticIndexer.Publication,
+    ): FileCompilationResult {
+        // Extract module
+        val module = parseResult.ast
+        return if (module != null) {
+            logger.debug { "Successfully compiled: $uri" }
+            semanticIndexer.publish(
+                publication,
+                content,
+                module,
+                parseResult.outcome.achievedPhase,
+                fromBuffer = false,
+            )
+            val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
+                CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
+            }
+            FileCompilationResult.Success(uri, module, errors)
+        } else {
+            val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
+                parseResult.diagnostics.joinToString("; ") { it.message }
+            } else {
+                "No AST produced"
+            }
+            logger.warn { "Failed to compile $uri: $errorMessage" }
+            semanticAnalysisFailure(uri, errorMessage)
         }
     }
 
@@ -292,6 +485,8 @@ class WorkspaceCompiler(
         data class Success(val uri: URI, val module: ModuleNode, val errors: List<CompilationError>) :
             FileCompilationResult()
         data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
+
+        data class Skipped(val sourcePath: Path) : FileCompilationResult()
     }
 
     private companion object {

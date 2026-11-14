@@ -68,7 +68,45 @@ steps:
             value: 'Dependencies loaded'
       timeoutMs: 180000
 
-  # Request definition on import at line 3 (Greeter class)
+  # A local flatDir JAR has no verified coordinates; an adjacent source JAR alone is not trusted.
+  - request:
+      method: 'textDocument/definition'
+      params:
+        textDocument:
+          uri: '{{workspace.uri}}src/main/groovy/DependencyTest.groovy'
+        position:
+          line: 2
+          character: 30
+      saveAs: 'unattachedDefinition'
+
+  - assert:
+      source: 'unattachedDefinition'
+      checks:
+        - jsonPath: '$.items'
+          expect:
+            type: 'EQUALS'
+            value: []
+
+  # Explicitly authorize the local source archive for this resolved dependency.
+  - request:
+      method: 'groovy/sourceAttach'
+      params:
+        documentUri: '{{workspace.uri}}src/main/groovy/DependencyTest.groovy'
+        position:
+          line: 2
+          character: 30
+        sourcesUri: '{{workspace.uri}}libs/testlib-sources.jar'
+        documentVersion: 1
+      saveAs: 'attachedSource'
+
+  - assert:
+      source: 'attachedSource'
+      checks:
+        - jsonPath: '$.status'
+          expect:
+            type: 'EQUALS'
+            value: 'LOCATED'
+
   - request:
       method: 'textDocument/definition'
       params:
@@ -79,19 +117,29 @@ steps:
           character: 30
       saveAs: 'definitionResult'
 
-  # Source JAR is available (testlib-sources.jar) so definition should return
-  # a file: URI to the extracted Greeter.java source
   - assert:
       source: 'definitionResult'
       checks:
         - jsonPath: '$.items[0].uri'
           expect:
             type: 'MATCHES_REGEX'
-            value: 'file:.*extracted-sources.*Greeter\.java'
+            value: 'file:.*Greeter\.java'
         - jsonPath: '$.items[0].range.start.line'
           expect:
             type: 'EQUALS'
             value: 6
+        - jsonPath: '$.items[0].range.start.character'
+          expect:
+            type: 'EQUALS'
+            value: 13
+        - jsonPath: '$.items[0].range.end.line'
+          expect:
+            type: 'EQUALS'
+            value: 6
+        - jsonPath: '$.items[0].range.end.character'
+          expect:
+            type: 'EQUALS'
+            value: 20
 
   - shutdown: {}
   - exit: {}

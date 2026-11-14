@@ -60,6 +60,7 @@ class CompilationCancellationTest {
         every { workspaceManager.getSourceRoots() } returns emptyList()
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } returns "fp"
+        every { workspaceManager.isExcludedSourceFile(any()) } returns false
         workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace("fp", sourceRoots = emptyList(), sources = emptyList())

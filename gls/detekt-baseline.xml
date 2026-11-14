@@ -71,7 +71,6 @@
     <ID>NestedBlockDepth:JenkinsSemanticTokenProvider.kt$JenkinsSemanticTokenProvider$fun getSemanticTokens( astModel: GroovyAstModel, uri: URI, isJenkinsFile: Boolean, varsNames: Set&lt;String> = emptySet(), ): List&lt;SemanticToken></ID>
     <ID>NestedBlockDepth:ReferenceProvider.kt$ReferenceProvider$private suspend fun ProducerScope&lt;Location>.findWorkspaceReferences( uri: String, position: Position, includeDeclaration: Boolean, index: WorkspaceSymbolIndex, emittedLocations: MutableSet&lt;String>, symbolName: String?, )</ID>
     <ID>NestedBlockDepth:SignatureHelpProvider.kt$SignatureHelpProvider$private fun resolveReceiverType( documentUri: URI, methodCall: MethodCallExpression, symbolTable: SymbolTable, astVisitor: GroovyAstModel, ): String</ID>
-    <ID>NestedBlockDepth:SourceJarExtractor.kt$SourceJarExtractor$@Suppress("ReturnCount") // Multiple validation checks require early returns fun extractAndIndex(sourceJarPath: Path): Map&lt;String, Path></ID>
     <ID>ReturnCount:ClasspathResolutionStrategy.kt$ClasspathResolutionStrategy$@Suppress("TooGenericExceptionCaught") override suspend fun resolve(context: ResolutionContext): ResolutionResult</ID>
     <ID>ReturnCount:DefinitionProvider.kt$DefinitionProvider$private fun computeMethodCallSelectionRange(node: MethodCallExpression): Range?</ID>
     <ID>ReturnCount:DefinitionProvider.kt$DefinitionProvider$private fun computePropertySelectionRange(node: PropertyExpression): Range?</ID>
@@ -79,7 +78,6 @@
     <ID>ReturnCount:GroovySourceResolver.kt$GroovySourceResolver$private fun extractSourceFromJar(jar: JarFile, className: String): Path?</ID>
     <ID>ReturnCount:MemberAccessCompletionStrategy.kt$MemberAccessCompletionStrategy$private fun CompletionsBuilder.addMapLiteralKeyCompletions( qualifierName: String, ctx: CompletionStrategyContext, ): Boolean</ID>
     <ID>ReturnCount:MethodCallMetadataResolver.kt$MethodCallMetadataResolver$fun resolveMethodCall(call: MethodCallExpression, moduleNode: ModuleNode?): MethodMetadata?</ID>
-    <ID>ReturnCount:SourceNavigationService.kt$SourceNavigationService$private fun extractFromMavenPath(jarPath: Path, fileName: String): MavenCoordinates?</ID>
     <ID>ReturnCount:SpockCompletionStrategy.kt$SpockCompletionStrategy$override suspend fun complete(context: CompletionStrategyContext): CompletionResult</ID>
     <ID>ReturnCount:TextImportParser.kt$TextImportParser$private fun processLine(line: String, state: ParserState, result: ParseResult): Boolean</ID>
     <ID>ReturnCount:TextImportParser.kt$TextImportParser$private fun stripBlockComment(trimmed: String, state: ParserState): String?</ID>
@@ -110,7 +108,6 @@
     <ID>TooGenericExceptionCaught:MethodCallMetadataResolver.kt$MethodCallMetadataResolver$e: Exception</ID>
     <ID>TooGenericExceptionCaught:MethodResolutionStrategy.kt$MethodResolutionStrategy$e: Exception</ID>
     <ID>TooGenericExceptionCaught:ReferenceProvider.kt$ReferenceProvider$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:SourceJarExtractor.kt$SourceJarExtractor$e: Exception</ID>
     <ID>TooGenericExceptionCaught:SourceNavigationService.kt$SourceNavigationService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:WorkspaceCompiler.kt$WorkspaceCompiler$e: Exception</ID>
     <ID>TooGenericExceptionThrown:CompletionStrategyTest.kt$CompletionStrategyTest$throw RuntimeException("Test exception")</ID>
