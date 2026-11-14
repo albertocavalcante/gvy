@@ -1,0 +1,12 @@
+<!--
+  SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+  SPDX-License-Identifier: Apache-2.0
+-->
+<idea-plugin>
+    <id>org.gvy.jetbrains</id>
+    <name>GVY</name>
+    <vendor>gvy contributors</vendor>
+    <description>Foundation for an opt-in GVY language client.</description>
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lsp</depends>
+</idea-plugin>
