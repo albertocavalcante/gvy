@@ -21,7 +21,11 @@ import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.ArtifactRequest
 import org.eclipse.aether.resolution.ArtifactResolutionException
+import org.eclipse.aether.resolution.VersionRequest
+import org.eclipse.aether.resolution.VersionResolutionException
+import org.eclipse.aether.resolution.VersionResult
 import org.eclipse.aether.transfer.ArtifactNotFoundException
+import org.eclipse.aether.transfer.MetadataNotFoundException
 import org.eclipse.aether.transfer.TransferCancelledException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -44,15 +48,57 @@ private data class ResolutionContext(
     val repositories: List<RemoteRepository>,
     val session: org.eclipse.aether.RepositorySystemSession,
     val budget: SourceTransferBudget,
+    val localRepository: Path,
 )
 
-private fun Path.toVerifiedSourceResult(expectedSha256: String): VerifiedSourceArtifactResult = when {
-    !Files.isRegularFile(this, LinkOption.NOFOLLOW_LINKS) -> VerifiedSourceArtifactResult.Failed
-    else -> when (val digest = sha256Bounded()) {
+private sealed interface ArtifactVersionFetch {
+    data class Resolved(val version: String) : ArtifactVersionFetch
+    data object Missing : ArtifactVersionFetch
+    data object Failed : ArtifactVersionFetch
+}
+
+private fun Path.toVerifiedSourceResult(
+    expectedSha256: String,
+    checksumSidecar: Path,
+    localRepository: Path,
+): VerifiedSourceArtifactResult {
+    if (!Files.isRegularFile(this, LinkOption.NOFOLLOW_LINKS)) return VerifiedSourceArtifactResult.Failed
+
+    return when (val digest = sha256Bounded()) {
         null -> VerifiedSourceArtifactResult.LimitExceeded
         expectedSha256 -> VerifiedSourceArtifactResult.Available(this, expectedSha256)
-        else -> VerifiedSourceArtifactResult.Failed
+        else -> {
+            removeCachedArtifactSafely(localRepository)
+            checksumSidecar.removeCachedArtifactSafely(localRepository)
+            VerifiedSourceArtifactResult.Failed
+        }
     }
+}
+
+/** The caller holds the managed cache root lock while removing one rejected Aether artifact. */
+private fun Path.removeCachedArtifactSafely(localRepository: Path) {
+    val repositoryRoot = localRepository.toAbsolutePath().normalize()
+    val artifact = toAbsolutePath().normalize()
+    if (
+        artifact == repositoryRoot ||
+        !artifact.startsWith(repositoryRoot) ||
+        Files.isSymbolicLink(repositoryRoot)
+    ) {
+        return
+    }
+
+    val realRepositoryRoot = repositoryRoot.toRealPath()
+    val realParent = parent?.toRealPath() ?: return
+    val candidate = realParent.resolve(fileName)
+    if (
+        !realParent.startsWith(realRepositoryRoot) ||
+        !candidate.startsWith(realRepositoryRoot) ||
+        !Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)
+    ) {
+        return
+    }
+
+    Files.deleteIfExists(candidate)
 }
 
 private fun Path.sha256Bounded(): String? {
@@ -83,6 +129,61 @@ private fun readChecksum(path: Path): String? = Files.newInputStream(path).use {
 private fun repositoryLocation(value: String): String {
     val uri = java.net.URI(value)
     return java.net.URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toString()
+}
+
+private fun resolveSnapshotArtifactVersion(context: ResolutionContext, classifier: String): ArtifactVersionFetch {
+    val baseVersion = context.coordinates.version
+    if (!baseVersion.endsWith("-SNAPSHOT")) return ArtifactVersionFetch.Resolved(baseVersion)
+
+    val coordinate = context.coordinates
+    val request = VersionRequest().apply {
+        artifact = DefaultArtifact(coordinate.group, coordinate.module, classifier, "jar", baseVersion)
+        repositories = context.repositories
+    }
+    return try {
+        val result = AetherSessionFactory.repositorySystem.resolveVersion(context.session, request)
+        context.budget.ensureWithinBudget()
+        artifactVersionResult(result, coordinate, classifier)
+    } catch (failure: VersionResolutionException) {
+        context.budget.ensureWithinBudget()
+        versionResolutionFailure(failure)
+    } catch (_: TransferCancelledException) {
+        context.budget.ensureWithinBudget()
+        ArtifactVersionFetch.Failed
+    }
+}
+
+private fun artifactVersionResult(
+    result: VersionResult,
+    coordinates: ResolvedArtifactCoordinates,
+    classifier: String,
+): ArtifactVersionFetch {
+    if (result.exceptions.any { it !is MetadataNotFoundException }) return ArtifactVersionFetch.Failed
+
+    val resolvedVersion = result.version
+    if (resolvedVersion == null || resolvedVersion == coordinates.version) return ArtifactVersionFetch.Missing
+
+    val resolvedArtifact = DefaultArtifact(
+        coordinates.group,
+        coordinates.module,
+        classifier,
+        "jar",
+        resolvedVersion,
+    )
+    return if (resolvedArtifact.isSnapshot && resolvedArtifact.baseVersion == coordinates.version) {
+        ArtifactVersionFetch.Resolved(resolvedVersion)
+    } else {
+        ArtifactVersionFetch.Failed
+    }
+}
+
+private fun versionResolutionFailure(failure: VersionResolutionException): ArtifactVersionFetch = if (
+    failure.result.exceptions.isNotEmpty() &&
+    failure.result.exceptions.all { it is MetadataNotFoundException }
+) {
+    ArtifactVersionFetch.Missing
+} else {
+    ArtifactVersionFetch.Failed
 }
 
 /**
@@ -218,33 +319,59 @@ class MavenSourceArtifactResolver(
             cancelTransfers = cancellation::cancel,
         )
         val session = verifiedSession(local, request.allowDownload, budget, cancellation)
-        val context = ResolutionContext(coordinate, listOf(repository), session, budget)
+        val context = ResolutionContext(coordinate, listOf(repository), session, budget, local)
         return when (val binary = verifySelectedBinary(context, request.selectedBinarySha256)) {
             BinaryCheck.TryNextRepository -> null
-            BinaryCheck.SelectedBinaryMatches -> resolveSourceArtifact(context)
+            is BinaryCheck.SelectedBinaryMatches -> resolveSourceArtifact(context, binary.version)
             is BinaryCheck.Decided -> binary.result
         }
     }
 
     private fun verifySelectedBinary(context: ResolutionContext, selectedBinarySha256: String): BinaryCheck =
-        when (val checksum = resolveChecksum(context, "", "jar.sha256")) {
-            is ChecksumFetch.Valid -> if (checksum.sha256 == selectedBinarySha256) {
-                BinaryCheck.SelectedBinaryMatches
-            } else {
-                BinaryCheck.Decided(VerifiedSourceArtifactResult.BinaryMismatch)
+        when (val artifactVersion = resolveSnapshotArtifactVersion(context, "")) {
+            is ArtifactVersionFetch.Resolved -> when (
+                val checksum = resolveChecksum(context, "", "jar.sha256", artifactVersion.version)
+            ) {
+                is ChecksumFetch.Valid -> if (checksum.sha256 == selectedBinarySha256) {
+                    BinaryCheck.SelectedBinaryMatches(artifactVersion.version)
+                } else {
+                    BinaryCheck.Decided(VerifiedSourceArtifactResult.BinaryMismatch)
+                }
+                ChecksumFetch.Missing -> BinaryCheck.TryNextRepository
+                ChecksumFetch.Invalid -> BinaryCheck.Decided(VerifiedSourceArtifactResult.IntegrityUnavailable)
+                ChecksumFetch.Failed -> BinaryCheck.Decided(VerifiedSourceArtifactResult.Failed)
             }
-            ChecksumFetch.Missing -> BinaryCheck.TryNextRepository
-            ChecksumFetch.Invalid -> BinaryCheck.Decided(VerifiedSourceArtifactResult.IntegrityUnavailable)
-            ChecksumFetch.Failed -> BinaryCheck.Decided(VerifiedSourceArtifactResult.Failed)
+            ArtifactVersionFetch.Missing -> BinaryCheck.TryNextRepository
+            ArtifactVersionFetch.Failed -> BinaryCheck.Decided(VerifiedSourceArtifactResult.Failed)
         }
 
-    private fun resolveSourceArtifact(context: ResolutionContext): VerifiedSourceArtifactResult = when (
-        val checksum = resolveChecksum(context, "sources", "jar.sha256")
+    private fun resolveSourceArtifact(
+        context: ResolutionContext,
+        selectedBinaryVersion: String,
+    ): VerifiedSourceArtifactResult = when (val artifactVersion = resolveSnapshotArtifactVersion(context, "sources")) {
+        is ArtifactVersionFetch.Resolved -> if (artifactVersion.version == selectedBinaryVersion) {
+            resolveSourceVersion(context, artifactVersion.version)
+        } else {
+            VerifiedSourceArtifactResult.IntegrityUnavailable
+        }
+        ArtifactVersionFetch.Missing -> VerifiedSourceArtifactResult.IntegrityUnavailable
+        ArtifactVersionFetch.Failed -> VerifiedSourceArtifactResult.Failed
+    }
+
+    private fun resolveSourceVersion(
+        context: ResolutionContext,
+        artifactVersion: String,
+    ): VerifiedSourceArtifactResult = when (
+        val checksum = resolveChecksum(context, "sources", "jar.sha256", artifactVersion)
     ) {
         is ChecksumFetch.Valid -> when (
-            val source = resolveArtifact(context, "sources", "jar")
+            val source = resolveArtifact(context, "sources", "jar", artifactVersion)
         ) {
-            is ArtifactFetch.Found -> source.path.toVerifiedSourceResult(checksum.sha256)
+            is ArtifactFetch.Found -> source.path.toVerifiedSourceResult(
+                checksum.sha256,
+                checksum.path,
+                context.localRepository,
+            )
             ArtifactFetch.Missing -> VerifiedSourceArtifactResult.NotAvailable
             ArtifactFetch.Failed -> VerifiedSourceArtifactResult.Failed
         }
@@ -252,14 +379,20 @@ class MavenSourceArtifactResolver(
         ChecksumFetch.Failed -> VerifiedSourceArtifactResult.Failed
     }
 
-    private fun resolveChecksum(context: ResolutionContext, classifier: String, extension: String): ChecksumFetch =
-        when (
-            val fetched = resolveArtifact(context, classifier, extension)
-        ) {
-            is ArtifactFetch.Found -> readChecksum(fetched.path)?.let(ChecksumFetch::Valid) ?: ChecksumFetch.Invalid
-            ArtifactFetch.Missing -> ChecksumFetch.Missing
-            ArtifactFetch.Failed -> ChecksumFetch.Failed
-        }
+    private fun resolveChecksum(
+        context: ResolutionContext,
+        classifier: String,
+        extension: String,
+        artifactVersion: String,
+    ): ChecksumFetch = when (
+        val fetched = resolveArtifact(context, classifier, extension, artifactVersion)
+    ) {
+        is ArtifactFetch.Found -> readChecksum(fetched.path)?.let { sha256 ->
+            ChecksumFetch.Valid(sha256, fetched.path)
+        } ?: ChecksumFetch.Invalid
+        ArtifactFetch.Missing -> ChecksumFetch.Missing
+        ArtifactFetch.Failed -> ChecksumFetch.Failed
+    }
 
     private fun repositoryCacheKey(request: VerifiedSourceArtifactRequest, repository: RemoteRepository): String {
         val coordinate = request.coordinates
@@ -300,14 +433,19 @@ class MavenSourceArtifactResolver(
             transferListener = budget
         }
 
-    private fun resolveArtifact(context: ResolutionContext, classifier: String, extension: String): ArtifactFetch {
+    private fun resolveArtifact(
+        context: ResolutionContext,
+        classifier: String,
+        extension: String,
+        artifactVersion: String,
+    ): ArtifactFetch {
         val request = ArtifactRequest().apply {
             artifact = DefaultArtifact(
                 context.coordinates.group,
                 context.coordinates.module,
                 classifier,
                 extension,
-                context.coordinates.version,
+                artifactVersion,
             )
             repositories = context.repositories
         }
@@ -336,7 +474,7 @@ class MavenSourceArtifactResolver(
     }
 
     private sealed interface ChecksumFetch {
-        data class Valid(val sha256: String) : ChecksumFetch
+        data class Valid(val sha256: String, val path: Path) : ChecksumFetch
         data object Missing : ChecksumFetch
         data object Invalid : ChecksumFetch
         data object Failed : ChecksumFetch
@@ -344,7 +482,7 @@ class MavenSourceArtifactResolver(
 
     private sealed interface BinaryCheck {
         data object TryNextRepository : BinaryCheck
-        data object SelectedBinaryMatches : BinaryCheck
+        data class SelectedBinaryMatches(val version: String) : BinaryCheck
         data class Decided(val result: VerifiedSourceArtifactResult) : BinaryCheck
     }
 
