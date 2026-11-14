@@ -50,39 +50,40 @@ class WorkspaceScanner(private val sourceExclusion: (Path) -> Boolean = defaultW
      */
     fun findGroovyFiles(roots: List<Path>): Sequence<Path> = sequence {
         for (root in roots) {
-            if (!Files.exists(root) || !Files.isDirectory(root)) {
-                continue
+            if (Files.exists(root) && Files.isDirectory(root)) {
+                val excluded = sourceExclusionForRoot(root, sourceExclusion)
+                if (!excluded(root)) yieldAll(scanRoot(root, excluded))
             }
-            val excluded = sourceExclusionForRoot(root, sourceExclusion)
-            if (excluded(root)) continue
+        }
+    }
 
-            try {
-                val pending = ArrayDeque<Path>()
-                pending.add(root)
-                while (pending.isNotEmpty()) {
-                    val directory = pending.removeLast()
-                    if (excluded(directory)) continue
-                    Files.newDirectoryStream(directory).use { children ->
-                        for (child in children) {
-                            when {
-                                excluded(child) -> Unit
-                                Files.isDirectory(child, java.nio.file.LinkOption.NOFOLLOW_LINKS) -> pending.add(child)
-                                child.isRegularFile() &&
-                                    isGroovyFile(child) &&
-                                    !excludedSourceFile(child, excluded) -> yield(child)
-                            }
+    private fun scanRoot(root: Path, excluded: (Path) -> Boolean): Sequence<Path> = sequence {
+        try {
+            val pending = ArrayDeque<Path>()
+            pending.add(root)
+            while (pending.isNotEmpty()) {
+                val directory = pending.removeLast()
+                if (excluded(directory)) continue
+                Files.newDirectoryStream(directory).use { children ->
+                    for (child in children) {
+                        when {
+                            excluded(child) -> Unit
+                            Files.isDirectory(child, java.nio.file.LinkOption.NOFOLLOW_LINKS) -> pending.add(child)
+                            child.isRegularFile() &&
+                                isGroovyFile(child) &&
+                                !excludedSourceFile(child, excluded) -> yield(child)
                         }
                     }
                 }
-            } catch (e: IOException) {
-                // Continue with next root if one fails
-                // Errors are expected for inaccessible directories
-                logger.debug(e) { "Failed to scan workspace root: $root" }
-            } catch (e: SecurityException) {
-                // Continue with next root if one fails
-                // Errors are expected for inaccessible directories
-                logger.debug(e) { "Failed to scan workspace root: $root" }
             }
+        } catch (e: IOException) {
+            // Continue with next root if one fails
+            // Errors are expected for inaccessible directories
+            logger.debug(e) { "Failed to scan workspace root: $root" }
+        } catch (e: SecurityException) {
+            // Continue with next root if one fails
+            // Errors are expected for inaccessible directories
+            logger.debug(e) { "Failed to scan workspace root: $root" }
         }
     }
 

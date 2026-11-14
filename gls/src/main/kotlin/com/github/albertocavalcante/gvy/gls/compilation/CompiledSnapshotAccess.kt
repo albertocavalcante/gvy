@@ -19,8 +19,9 @@ internal class CompiledSnapshotAccess(
         val fingerprint = workspace.fingerprintFor(uri)
         val buffer = documents?.getBuffer(uri)
         val cached = cache.getCachedRecord(uri, fingerprint) ?: return null
-        if (cached.admissionFingerprint == null) return null
-        if (buffer != null && buffer.snapshot.content != cached.content) return null
+        if (cached.admissionFingerprint == null || buffer != null && buffer.snapshot.content != cached.content) {
+            return null
+        }
         return CompiledDocumentSnapshot(
             sourceText = cached.content,
             parseResult = cached.parseResult,

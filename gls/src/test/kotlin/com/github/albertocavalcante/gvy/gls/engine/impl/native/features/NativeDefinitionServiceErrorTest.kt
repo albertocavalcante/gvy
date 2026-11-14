@@ -26,10 +26,8 @@ class NativeDefinitionServiceErrorTest {
 
     /** Overflows when a classpath strategy asks for a class's source: a recursion bug inside the strategies. */
     private val overflowing = object : SourceNavigator by SourceNavigationService() {
-        override suspend fun locate(
-            symbol: ResolvedExternalSymbol,
-            context: SourceLookupContext,
-        ): SourceLookupResult = throw StackOverflowError("simulated deep recursion")
+        override suspend fun locate(symbol: ResolvedExternalSymbol, context: SourceLookupContext): SourceLookupResult =
+            throw StackOverflowError("simulated deep recursion")
     }
 
     private val unit = object : ParseUnit {

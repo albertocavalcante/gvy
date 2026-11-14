@@ -18,6 +18,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
@@ -31,6 +32,58 @@ import kotlin.test.assertTrue
 class CompilationSourceAdmissionTest {
     @TempDir
     lateinit var root: Path
+
+    @Test
+    fun `managed source presentation URIs cannot enter workspace compilation`() = runBlocking {
+        val uri = URI.create("gvy-source://context/archive/Money.java")
+        val parses = AtomicInteger()
+        val compilation = GroovyCompilationService(
+            workerSessionDecorator = { delegate ->
+                object : WorkerSession {
+                    override fun parse(request: ParseRequest): ParseResult {
+                        parses.incrementAndGet()
+                        return delegate.parse(request)
+                    }
+                }
+            },
+        )
+
+        try {
+            assertFalse(compilation.compile(uri, "class Money {}").isSuccess)
+            assertEquals(0, parses.get())
+            assertNull(compilation.getCompiledSnapshot(uri))
+        } finally {
+            compilation.shutdown()
+        }
+    }
+
+    @Test
+    fun `implicit source root lookup rejects managed sources below an ordinary root`() = runBlocking {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managedPackage = Files.createDirectories(root.resolve("managed/p"))
+        val sourceRoot = Files.createDirectories(root.resolve("src"))
+        val managedFile = Files.writeString(managedPackage.resolve("Mode.groovy"), "package p\n@interface Mode {}")
+        Files.createSymbolicLink(sourceRoot.resolve("p"), managedPackage)
+        val content = "import p.Mode\n@Mode class Money {}"
+        val uri = Files.writeString(sourceRoot.resolve("Money.groovy"), content).toUri()
+        val registry = ExternalSourceRegistry(root.resolve("views"), managedRoots = listOf(root.resolve("managed")))
+        val manager = WorkspaceManager(sourceExclusion = { registry.isManaged(it.toUri()) })
+        manager.updateWorkspaceModel(root, emptyList(), listOf(sourceRoot))
+        val compilation = GroovyCompilationService(workspaceManager = manager)
+
+        try {
+            compilation.compile(uri, content)
+            val parsed = assertNotNull(compilation.getCompiledSnapshot(uri)).parseResult
+            assertEquals(listOf(sourceRoot), assertNotNull(parsed.classpathInputs).sourceRoots)
+            val sourceUri = parsed.sourceAnnotations.headAt(1, 1)?.sourceUri
+            assertFalse(
+                sourceUri?.let { Path.of(it).toRealPath() } == managedFile.toRealPath(),
+                "The source-root class loader must not bind the managed annotation declaration",
+            )
+        } finally {
+            compilation.shutdown()
+        }
+    }
 
     @Test
     fun `editing an admitted open secondary buffer invalidates the primary compilation cache`() = runBlocking {
@@ -126,12 +179,7 @@ class CompilationSourceAdmissionTest {
                 requests.size >= 4,
                 "Normal, transient, minimal and indexing paths must all reach the admitted worker",
             )
-            assertTrue(requests.all { alias !in it.sourceRoots && selected !in it.openSources })
-            assertTrue(requests.all { request -> request.workspaceSources.none { it.startsWith(alias) } })
-            assertTrue(
-                requests.filter { it.uri == uri }.all { unsaved in it.openSources },
-                "Ordinary unsaved files remain inputs",
-            )
+            assertRetargetedInputsExcluded(requests, alias, selected, uri, unsaved)
             assertTrue(located.isEmpty(), "An old indexed URI cannot reintroduce the retargeted managed class")
             assertNotNull(
                 compilation.captureSourceRequest(uri, "java.lang.String"),
@@ -573,5 +621,20 @@ class CompilationSourceAdmissionTest {
                 }
             }
         }
+    }
+
+    private fun assertRetargetedInputsExcluded(
+        requests: List<ParseRequest>,
+        alias: Path,
+        selected: URI,
+        uri: URI,
+        unsaved: URI,
+    ) {
+        assertTrue(requests.all { alias !in it.sourceRoots && selected !in it.openSources })
+        assertTrue(requests.all { request -> request.workspaceSources.none { it.startsWith(alias) } })
+        assertTrue(
+            requests.filter { it.uri == uri }.all { unsaved in it.openSources },
+            "Ordinary unsaved files remain inputs",
+        )
     }
 }

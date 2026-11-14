@@ -112,7 +112,8 @@ class CompiledAdmissionBoundaryTest {
             Fixture(manager).use { fixture ->
                 val service = fixture.service
                 assertTrue(service.compile(uri, source).isSuccess)
-                val snapshot = assertNotNull(service.getCompiledSnapshot(uri))
+                val snapshot = assertNotNull(service.getAdmittedCompiledSnapshot(uri) {})
+                assertTrue(service.isAdmittedCompiledSnapshotCurrent(uri, snapshot) {})
                 val request = assertNotNull(service.captureSourceRequest(uri, "java.lang.String"))
                 val view = SourceDocumentDescriptor(
                     "a".repeat(64),

@@ -4,7 +4,10 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.sources.ExternalSourceRegistry
+import com.github.albertocavalcante.gvy.gls.sources.SourceContextIdentity
 import com.github.albertocavalcante.gvy.gls.sources.SourceDefinitionParams
+import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
+import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
 import org.eclipse.lsp4j.Command
@@ -27,6 +30,7 @@ import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeHierarchyItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
+import org.eclipse.lsp4j.WillSaveTextDocumentParams
 import org.eclipse.lsp4j.WorkspaceEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.TextDocumentService
@@ -35,6 +39,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -44,6 +49,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ManagedSourceDocumentServiceTest {
@@ -95,9 +101,13 @@ class ManagedSourceDocumentServiceTest {
             getter.returnType.getConstructor().newInstance()
         }
         identifier.javaClass.getMethod("setUri", String::class.java).invoke(identifier, uri)
+        if (identifier is VersionedTextDocumentIdentifier) identifier.version = 1
         identifier.javaClass.methods.firstOrNull { it.name == "setText" }?.invoke(identifier, "")
         parameter.javaClass.getMethod(getter.name.replaceFirst("get", "set"), getter.returnType)
             .invoke(parameter, identifier)
+        if (parameter is DidChangeTextDocumentParams) {
+            parameter.contentChanges = listOf(TextDocumentContentChangeEvent("updated"))
+        }
         parameter.javaClass.methods.firstOrNull { it.name == "setPosition" }?.invoke(parameter, Position(0, 0))
         return parameter
     }
@@ -144,6 +154,49 @@ class ManagedSourceDocumentServiceTest {
         }
         assertEquals(methods.map { it.name }.sorted(), calls.sorted())
         assertEquals(0, browserCalls)
+    }
+
+    @Test
+    fun `saving an unchanged managed document preserves its browsing content`() {
+        val registry = registry()
+        val content = "class Mode {}"
+        val path = Files.writeString(temporary.resolve("Mode.groovy"), content)
+        val uri = registry.register(
+            SourceDocumentDescriptor(
+                sourceDigest = "a".repeat(64),
+                contentDigest = ExternalSourceRegistry.sha256(content.toByteArray()),
+                entryName = "Mode.groovy",
+                contentPath = path,
+                origin = SourceOrigin.Bundled("groovy", URI.create("file:///server.jar")),
+                context = SourceContextIdentity("context"),
+                displayName = "Mode.groovy",
+                languageId = "groovy",
+            ),
+        )
+        val calls = mutableListOf<String>()
+        val service = ManagedSourceDocumentService(delegate(calls), registry, {
+            CompletableFuture.completedFuture(emptyList())
+        })
+        val identifier = TextDocumentIdentifier(uri.toString())
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(uri.toString(), "groovy", 1, content)))
+        service.willSave(WillSaveTextDocumentParams().apply { textDocument = identifier })
+        service.didSave(DidSaveTextDocumentParams(identifier))
+        service.didSave(DidSaveTextDocumentParams(identifier).apply { text = content })
+        assertEquals(content, registry.content(uri))
+        assertTrue(calls.isEmpty())
+
+        service.didSave(DidSaveTextDocumentParams(identifier).apply { text = "class Changed {}" })
+        assertNull(registry.content(uri), "A save carrying changed content invalidates source positions")
+        service.didClose(DidCloseTextDocumentParams(identifier))
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(uri.toString(), "groovy", 1, content)))
+        assertEquals(content, registry.content(uri))
+        service.didChange(
+            DidChangeTextDocumentParams(
+                VersionedTextDocumentIdentifier(uri.toString(), 2),
+                listOf(TextDocumentContentChangeEvent("class Changed {}")),
+            ),
+        )
+        assertNull(registry.content(uri), "A changed managed buffer cannot use the original source positions")
     }
 
     @Test
@@ -277,6 +330,111 @@ class ManagedSourceDocumentServiceTest {
     }
 
     @Test
+    fun `formatting checks aliases before entry and again before its pending reply`() {
+        var guarded = false
+        val registry = ExternalSourceRegistry(temporary.resolve("registry"), sourceAdmission = { _, _ -> guarded })
+        val pending = CompletableFuture<List<TextEdit>>()
+        var calls = 0
+        val original = object : TextDocumentService by delegate(mutableListOf()) {
+            override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {
+                calls++
+                return pending
+            }
+        }
+        val service = ManagedSourceDocumentService(
+            original,
+            registry,
+            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
+        )
+        val params = DocumentFormattingParams().apply {
+            textDocument = TextDocumentIdentifier(temporary.resolve("alias.groovy").toUri().toString())
+        }
+        val response = service.formatting(params)
+        guarded = true
+        pending.complete(listOf(TextEdit(Range(Position(0, 0), Position(0, 0)), "edited")))
+        assertTrue(response.get().isEmpty(), "An edit produced before retarget must not escape after retarget")
+        assertTrue(service.formatting(params).get().isEmpty())
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `cancelling ordinary formatting preserves upstream request cancellation`() {
+        val pending = CompletableFuture<List<TextEdit>>()
+        val original = object : TextDocumentService by delegate(mutableListOf()) {
+            override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> = pending
+        }
+        val service = ManagedSourceDocumentService(
+            original,
+            registry(),
+            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
+        )
+        val response = service.formatting(
+            DocumentFormattingParams().apply {
+                textDocument = TextDocumentIdentifier(temporary.resolve("ordinary.groovy").toUri().toString())
+            },
+        )
+        response.cancel(true)
+        assertTrue(pending.isCancelled)
+    }
+
+    @Test
+    fun `rename and code actions reject managed targets and cache ancestor resource operations`() {
+        val ordinary = temporary.resolve("workspace/Original.groovy").toUri().toString()
+        val managed = temporary.resolve("content/A.groovy").toUri().toString()
+        val edit = TextEdit(Range(Position(0, 0), Position(0, 0)), "edited")
+        var produced = WorkspaceEdit(mapOf(managed to listOf(edit)))
+        val original = object : TextDocumentService by delegate(mutableListOf()) {
+            override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit?> =
+                CompletableFuture.completedFuture(produced)
+            override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> =
+                CompletableFuture.completedFuture(
+                    listOf(Either.forRight(CodeAction("Fix").apply { this.edit = produced })),
+                )
+        }
+        val service = ManagedSourceDocumentService(
+            original,
+            registry(),
+            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
+        )
+        val rename = RenameParams().apply { textDocument = TextDocumentIdentifier(ordinary) }
+        val action = CodeActionParams().apply { textDocument = TextDocumentIdentifier(ordinary) }
+        assertEquals(null, service.rename(rename).get())
+        assertTrue(service.codeAction(action).get().isEmpty())
+        produced = WorkspaceEdit().apply {
+            documentChanges = listOf(Either.forRight(DeleteFile(temporary.toUri().toString())))
+        }
+        assertEquals(null, service.rename(rename).get(), "Removing an ancestor would remove immutable stores too")
+        produced = WorkspaceEdit(mapOf(temporary.resolve("workspace/Copy.groovy").toUri().toString() to listOf(edit)))
+        assertEquals(produced, service.rename(rename).get(), "A user-owned copy remains editable")
+        produced = WorkspaceEdit(mapOf("untitled:New.groovy" to listOf(edit)))
+        assertEquals(
+            produced,
+            service.rename(rename).get(),
+            "Ordinary unsaved text documents are valid text edit targets",
+        )
+    }
+}
+
+/** Admission completion races must preserve the newest open-document incarnation. */
+class ManagedSourceDocumentLifecycleTest {
+    @TempDir
+    lateinit var temporary: Path
+
+    private fun registry(): ExternalSourceRegistry = ExternalSourceRegistry(
+        temporary.resolve("registry"),
+        virtualDocumentsEnabled = { true },
+        managedRoots = listOf(temporary.resolve("content")),
+    )
+
+    private fun delegate(calls: MutableList<String>): TextDocumentService = Proxy.newProxyInstance(
+        TextDocumentService::class.java.classLoader,
+        arrayOf(TextDocumentService::class.java),
+    ) { _, method, _ ->
+        calls.add(method.name)
+        if (method.returnType == CompletableFuture::class.java) CompletableFuture.completedFuture<Any?>(null) else null
+    } as TextDocumentService
+
+    @Test
     fun `a managed open completing after close cannot delegate a stale document`() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -299,6 +457,38 @@ class ManagedSourceDocumentServiceTest {
             }
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(uri)))
+            release.countDown()
+            pending.get(5, TimeUnit.SECONDS)
+            assertTrue(calls.isEmpty())
+        } finally {
+            release.countDown()
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `save notifications buffered during guarded admission do not reach the delegate`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val registry = ExternalSourceRegistry(temporary.resolve("registry"), sourceAdmission = { _, _ ->
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+            true
+        })
+        val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val service = ManagedSourceDocumentService(delegate(calls), registry, {
+            CompletableFuture.completedFuture(emptyList())
+        })
+        val uri = temporary.resolve("alias/Mode.groovy").toUri().toString()
+        val identifier = TextDocumentIdentifier(uri)
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val pending = worker.submit {
+                service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, "class Mode {}")))
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            service.willSave(WillSaveTextDocumentParams().apply { textDocument = identifier })
+            service.didSave(DidSaveTextDocumentParams(identifier).apply { text = "class Mode {}" })
             release.countDown()
             pending.get(5, TimeUnit.SECONDS)
             assertTrue(calls.isEmpty())
@@ -479,91 +669,6 @@ class ManagedSourceDocumentServiceTest {
             listOf("didOpen", "didClose"),
             calls,
             "The native document is retired exactly once; no managed text is compiled",
-        )
-    }
-
-    @Test
-    fun `formatting checks aliases before entry and again before its pending reply`() {
-        var guarded = false
-        val registry = ExternalSourceRegistry(temporary.resolve("registry"), sourceAdmission = { _, _ -> guarded })
-        val pending = CompletableFuture<List<TextEdit>>()
-        var calls = 0
-        val original = object : TextDocumentService by delegate(mutableListOf()) {
-            override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {
-                calls++
-                return pending
-            }
-        }
-        val service = ManagedSourceDocumentService(
-            original,
-            registry,
-            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
-        )
-        val params = DocumentFormattingParams().apply {
-            textDocument = TextDocumentIdentifier(temporary.resolve("alias.groovy").toUri().toString())
-        }
-        val response = service.formatting(params)
-        guarded = true
-        pending.complete(listOf(TextEdit(Range(Position(0, 0), Position(0, 0)), "edited")))
-        assertTrue(response.get().isEmpty(), "An edit produced before retarget must not escape after retarget")
-        assertTrue(service.formatting(params).get().isEmpty())
-        assertEquals(1, calls)
-    }
-
-    @Test
-    fun `cancelling ordinary formatting preserves upstream request cancellation`() {
-        val pending = CompletableFuture<List<TextEdit>>()
-        val original = object : TextDocumentService by delegate(mutableListOf()) {
-            override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> = pending
-        }
-        val service = ManagedSourceDocumentService(
-            original,
-            registry(),
-            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
-        )
-        val response = service.formatting(
-            DocumentFormattingParams().apply {
-                textDocument = TextDocumentIdentifier(temporary.resolve("ordinary.groovy").toUri().toString())
-            },
-        )
-        response.cancel(true)
-        assertTrue(pending.isCancelled)
-    }
-
-    @Test
-    fun `rename and code actions reject managed targets and cache ancestor resource operations`() {
-        val ordinary = temporary.resolve("workspace/Original.groovy").toUri().toString()
-        val managed = temporary.resolve("content/A.groovy").toUri().toString()
-        val edit = TextEdit(Range(Position(0, 0), Position(0, 0)), "edited")
-        var produced = WorkspaceEdit(mapOf(managed to listOf(edit)))
-        val original = object : TextDocumentService by delegate(mutableListOf()) {
-            override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit?> =
-                CompletableFuture.completedFuture(produced)
-            override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> =
-                CompletableFuture.completedFuture(
-                    listOf(Either.forRight(CodeAction("Fix").apply { this.edit = produced })),
-                )
-        }
-        val service = ManagedSourceDocumentService(
-            original,
-            registry(),
-            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
-        )
-        val rename = RenameParams().apply { textDocument = TextDocumentIdentifier(ordinary) }
-        val action = CodeActionParams().apply { textDocument = TextDocumentIdentifier(ordinary) }
-        assertEquals(null, service.rename(rename).get())
-        assertTrue(service.codeAction(action).get().isEmpty())
-        produced = WorkspaceEdit().apply {
-            documentChanges = listOf(Either.forRight(DeleteFile(temporary.toUri().toString())))
-        }
-        assertEquals(null, service.rename(rename).get(), "Removing an ancestor would remove immutable stores too")
-        produced = WorkspaceEdit(mapOf(temporary.resolve("workspace/Copy.groovy").toUri().toString() to listOf(edit)))
-        assertEquals(produced, service.rename(rename).get(), "A user-owned copy remains editable")
-        produced = WorkspaceEdit(mapOf("untitled:New.groovy" to listOf(edit)))
-        assertEquals(
-            produced,
-            service.rename(rename).get(),
-            "Ordinary unsaved text documents are valid text edit targets",
         )
     }
 

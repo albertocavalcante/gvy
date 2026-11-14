@@ -85,9 +85,7 @@ class IndexExportService(
                     }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (!attrs.isDirectory && !excludedSourceFile(file, excluded) &&
-                        (file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES)
-                    ) {
+                    if (!attrs.isDirectory && !excludedSourceFile(file, excluded) && isIndexableSource(file)) {
                         indexFile(root, file, indexer)
                     }
                     return FileVisitResult.CONTINUE
@@ -101,6 +99,9 @@ class IndexExportService(
             },
         )
     }
+
+    private fun isIndexableSource(file: Path): Boolean =
+        file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES
 
     private fun indexFile(root: Path, path: Path, indexer: UnifiedIndexer) {
         runCatching {

@@ -157,16 +157,43 @@ class SemanticIndexer(
         fromBuffer: Boolean = true,
     ) {
         val uri = publication.uri
-        if (excluded(uri)) return
+        if (excluded(uri)) {
+            removeExcluded(publication, fromBuffer)
+            return
+        }
         val hash = contentHash(content)
         if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
         val built = buildOrNull(ast, uri)
+        if (excluded(uri)) {
+            removeExcluded(publication, fromBuffer)
+            return
+        }
         // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
                 if (replaces(state, publication, hash, phase, fromBuffer)) {
                     state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
                     state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                }
+                state
+            }
+        }
+    }
+
+    /** An excluded replacement drops old facts only if this publication still owns the decision. */
+    private fun removeExcluded(publication: Publication, fromBuffer: Boolean) {
+        swap.read {
+            entries.computeIfPresent(publication.uri) { uri, state ->
+                val current =
+                    state === publication.identity &&
+                        publication.generation == generation &&
+                        !publication.isClosed &&
+                        (fromBuffer || !isOpen(uri)) &&
+                        publication.ticket > state.highestTicket
+                if (current) {
+                    store(uri, null, "")
+                    state.entry = null
+                    state.highestTicket = publication.ticket
                 }
                 state
             }

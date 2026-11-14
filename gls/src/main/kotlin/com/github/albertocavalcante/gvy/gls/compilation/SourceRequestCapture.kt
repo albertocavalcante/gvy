@@ -63,6 +63,8 @@ internal class SourceRequestCapture(
     private val captureInputs: (URI, WorkspaceModel, () -> Unit) -> AdmittedCompilationInputs?,
     private val bundledSources: BundledSourceCatalog = BundledSourceCatalog(),
 ) {
+    // This compatibility entry point keeps the optional snapshot fence beside cancellation and lookup policy.
+    @Suppress("LongParameterList")
     suspend fun capture(
         uri: URI,
         binaryName: String,
@@ -74,8 +76,10 @@ internal class SourceRequestCapture(
         val environment = environment(uri, checkCancelled = checkCancelled) ?: return null
         if (
             expectedSnapshot != null &&
-            (environment.snapshot.parseResult !== expectedSnapshot.parseResult ||
-                environment.snapshot.sourceText != expectedSnapshot.sourceText)
+            (
+                environment.snapshot.parseResult !== expectedSnapshot.parseResult ||
+                    environment.snapshot.sourceText != expectedSnapshot.sourceText
+                )
         ) {
             return null
         }
@@ -138,6 +142,9 @@ internal class SourceRequestCapture(
                 synchronized(origins) { origins.toList() }.all { origin -> originCurrent(origin, environment.bootJdk) }
         }
         if (!isCurrent()) return null
+        val validate: suspend () -> Boolean = {
+            validateSessionOrigins(origins, environment, isCurrent)
+        }
         val selectType: suspend (String) -> SourceRequestSelection = { binaryName ->
             if (!isCurrent()) {
                 SourceRequestSelection.ContextUnavailable
@@ -145,27 +152,14 @@ internal class SourceRequestCapture(
                 when (val selection = select(environment, binaryName, null)) {
                     is SourceRequestSelection.Selected -> {
                         val selectedOrigin = selection.request.symbol.origin
-                        val sameArchiveChanged = synchronized(origins) {
-                            val previous = origins.filterIsInstance<SourceOrigin.Archive>().firstOrNull { prior ->
-                                prior.binaryJar.toAbsolutePath().normalize() ==
-                                    (selectedOrigin as? SourceOrigin.Archive)?.binaryJar?.toAbsolutePath()?.normalize()
-                            }
-                            if (
-                                previous != null &&
-                                previous.binarySha256 != (selectedOrigin as? SourceOrigin.Archive)?.binarySha256
-                            ) {
-                                true
-                            } else {
-                                origins.add(selectedOrigin)
-                                false
-                            }
-                        }
+                        val sameArchiveChanged = rememberOrigin(origins, selectedOrigin)
                         if (!sameArchiveChanged && isCurrent()) {
                             SourceRequestSelection.Selected(
                                 ResolvedSourceRequest(
                                     selection.request.symbol,
                                     SourceLookupContext(
                                         environment.identity,
+                                        validateCurrent = validate,
                                         isCurrent = {
                                             isCurrent() && originCurrent(selectedOrigin, environment.bootJdk)
                                         },
@@ -183,19 +177,43 @@ internal class SourceRequestCapture(
         return SourceRequestSession(
             selectType = selectType,
             current = isCurrent,
-            validate = {
-                if (!environment.validateCurrent() || !isCurrent()) {
-                    false
-                } else {
-                    val selectedOrigins = synchronized(origins) { origins.toList() }
-                    validateOrigins(selectedOrigins, environment) &&
-                        environment.validateCurrent() &&
-                        isCurrent()
-                }
-            },
+            validate = validate,
         )
     }
 
+    private suspend fun validateSessionOrigins(
+        origins: Set<SourceOrigin>,
+        environment: CapturedEnvironment,
+        isCurrent: () -> Boolean,
+    ): Boolean = if (!environment.validateCurrent() || !isCurrent()) {
+        false
+    } else {
+        val selectedOrigins = synchronized(origins) { origins.toList() }
+        validateOrigins(selectedOrigins, environment) &&
+            synchronized(origins) { origins.toList() == selectedOrigins } &&
+            environment.validateCurrent() &&
+            isCurrent()
+    }
+
+    private fun rememberOrigin(origins: MutableSet<SourceOrigin>, selectedOrigin: SourceOrigin): Boolean =
+        synchronized(origins) {
+            val previous = origins.filterIsInstance<SourceOrigin.Archive>().firstOrNull { prior ->
+                prior.binaryJar.toAbsolutePath().normalize() ==
+                    (selectedOrigin as? SourceOrigin.Archive)?.binaryJar?.toAbsolutePath()?.normalize()
+            }
+            if (
+                previous != null &&
+                previous.binarySha256 != (selectedOrigin as? SourceOrigin.Archive)?.binarySha256
+            ) {
+                true
+            } else {
+                origins.add(selectedOrigin)
+                false
+            }
+        }
+
+    // Each fail-closed exit protects a distinct captured authority; preserve their validation order.
+    @Suppress("ReturnCount", "CyclomaticComplexMethod")
     private fun environment(
         uri: URI,
         expectedContext: SourceContextIdentity? = null,
@@ -250,6 +268,8 @@ internal class SourceRequestCapture(
             .takeIf { it.isCurrent() }
     }
 
+    // Keep lookup guards explicit, including rechecks after class-loader and archive I/O.
+    @Suppress("ReturnCount", "LongParameterList")
     private suspend fun select(
         environment: CapturedEnvironment,
         binaryName: String,
@@ -263,30 +283,13 @@ internal class SourceRequestCapture(
         if (!validBinaryName(binaryName) || !environment.isCurrent()) return SourceRequestSelection.ContextUnavailable
         val loader = environment.snapshot.parseResult.compilationUnit.classLoader
         val resources = try {
-            binaryCandidates(binaryName).mapNotNull { candidate ->
-                val resource = loader.getResource(candidate.replace('.', '/') + ".class")?.toURI()
-                    ?: return@mapNotNull null
-                candidate to resource
-            }
+            classResources(loader, binaryName)
         } catch (_: IOException) {
             return SourceRequestSelection.Failed(SourceFailure.IO_FAILURE)
         } catch (_: URISyntaxException) {
             return SourceRequestSelection.Failed(SourceFailure.IO_FAILURE)
         }
-        if (resources.isEmpty()) {
-            return if (environment.isCurrent()) {
-                SourceRequestSelection.BinaryAbsent
-            } else {
-                SourceRequestSelection.ContextUnavailable
-            }
-        }
-        if (resources.size > 1) {
-            return if (environment.isCurrent()) {
-                SourceRequestSelection.Ambiguous
-            } else {
-                SourceRequestSelection.ContextUnavailable
-            }
-        }
+        selectionWithoutUniqueResource(resources.size, environment.isCurrent)?.let { return it }
         val (selectedName, resource) = resources.single()
         val origin = try {
             origin(resource, selectedName, environment)
@@ -310,6 +313,8 @@ internal class SourceRequestCapture(
         return SourceRequestSelection.Selected(ResolvedSourceRequest(symbol, context))
     }
 
+    // A captured environment is one receipt and its distinct fast/full validators, never independently optional.
+    @Suppress("LongParameterList")
     private class CapturedEnvironment(
         val snapshot: CompiledDocumentSnapshot,
         val compileContext: DocumentCompileContext,
@@ -327,55 +332,59 @@ internal class SourceRequestCapture(
         includeDirectories: Boolean,
         checkCancelled: () -> Unit,
     ): Boolean {
-        val sdk = inputs.compilerSdk
-        if (sdk != null) {
-            if (sdk.container.scheme != "file" || sdk.containerStamp.files != null) return false
-            val container = try {
-                Path.of(sdk.container)
-            } catch (_: IllegalArgumentException) {
-                return false
-            }
-            val observed = NativeArtifactStamp.observe(container, maxPaths = 1, checkCancelled = checkCancelled)
-            if (observed != sdk.containerStamp) return false
-        }
-        if (includeDirectories) {
+        if (!compilerSdkCurrent(inputs, checkCancelled)) return false
+        return if (includeDirectories) {
             val observed = NativeClasspathInputs.capture(inputs.classpath, emptyList(), checkCancelled)
-            return observed.classpathStamps == inputs.classpathStamps && observed.bootJdk == inputs.bootJdk
-        }
-        if (NativeJdkIdentity.observe(checkCancelled) != inputs.bootJdk) return false
-        return inputs.classpath.indices.all { index ->
-            checkCancelled()
-            val expected = inputs.classpathStamps[index] ?: return@all false
-            expected.files != null || NativeArtifactStamp.observe(
-                inputs.classpath[index],
-                maxPaths = 1,
-                checkCancelled = checkCancelled,
-            ) == expected
+            observed.classpathStamps == inputs.classpathStamps && observed.bootJdk == inputs.bootJdk
+        } else {
+            NativeJdkIdentity.observe(checkCancelled) == inputs.bootJdk &&
+                inputs.classpath.indices.all { index ->
+                    checkCancelled()
+                    val expected = inputs.classpathStamps[index] ?: return@all false
+                    expected.files != null || NativeArtifactStamp.observe(
+                        inputs.classpath[index],
+                        maxPaths = 1,
+                        checkCancelled = checkCancelled,
+                    ) == expected
+                }
         }
     }
 
-    private suspend fun origin(
-        resource: URI,
-        binaryName: String,
-        environment: CapturedEnvironment,
-    ): SourceOrigin? {
+    private suspend fun origin(resource: URI, binaryName: String, environment: CapturedEnvironment): SourceOrigin? {
         bundledSources.selectedOrigin(resource, binaryName)?.let { return it }
-        parseJarClassResource(resource)?.let { selected ->
-            if (selected.entryName != binaryName.replace('.', '/') + ".class") return null
-            val artifacts = (environment.compileContext.selection as? TargetSelection.Selected)?.snapshot?.artifacts.orEmpty()
-                .filter { it.path.toAbsolutePath().normalize() == selected.archive }.distinct()
-            if (artifacts.size > 1) return null
-            val observed = ArtifactStamp.of(selected.archive) ?: return null
-            val reported = artifacts.singleOrNull()
-            if (reported?.stamp != null && reported.stamp != observed) return null
-            val binarySha256 = archiveDigest(environment, selected.archive)
-            return SourceOrigin.Archive(selected.archive, reported?.coordinates, observed, binarySha256)
+        val archive = parseJarClassResource(resource)
+        return when {
+            archive != null -> {
+                if (archive.entryName == binaryName.replace('.', '/') + ".class") {
+                    archiveOrigin(archive.archive, environment)
+                } else {
+                    null
+                }
+            }
+            resource.scheme == "jrt" ->
+                resource.path
+                    ?.trimStart('/')
+                    ?.substringBefore('/')
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { SourceOrigin.Jdk(environment.bootJdk.imageHome, it) }
+            else -> SourceOrigin.Unknown(resource)
         }
-        if (resource.scheme == "jrt") {
-            val module = resource.path?.trimStart('/')?.substringBefore('/')?.takeIf { it.isNotBlank() } ?: return null
-            return SourceOrigin.Jdk(environment.bootJdk.imageHome, module)
+    }
+
+    private suspend fun archiveOrigin(archive: Path, environment: CapturedEnvironment): SourceOrigin.Archive? {
+        val selectedSnapshot = (environment.compileContext.selection as? TargetSelection.Selected)?.snapshot
+        val artifacts = selectedSnapshot?.artifacts.orEmpty()
+            .filter { it.path.toAbsolutePath().normalize() == archive }
+            .distinct()
+        if (artifacts.size > 1) return null
+        val observed = ArtifactStamp.of(archive) ?: return null
+        val reported = artifacts.singleOrNull()
+        return if (reported?.stamp != null && reported.stamp != observed) {
+            null
+        } else {
+            val binarySha256 = archiveDigest(environment, archive)
+            SourceOrigin.Archive(archive, reported?.coordinates, observed, binarySha256)
         }
-        return SourceOrigin.Unknown(resource)
     }
 
     private suspend fun archiveDigest(
@@ -404,16 +413,14 @@ internal class SourceRequestCapture(
         }
     }
 
-    private suspend fun originStronglyCurrent(
-        origin: SourceOrigin,
-        environment: CapturedEnvironment,
-    ): Boolean = try {
+    private suspend fun originStronglyCurrent(origin: SourceOrigin, environment: CapturedEnvironment): Boolean = try {
         if (!originCurrent(origin, environment.bootJdk)) {
             false
         } else {
             when (origin) {
-                is SourceOrigin.Archive -> origin.binarySha256 != null &&
-                    archiveDigest(environment, origin.binaryJar).equals(origin.binarySha256, ignoreCase = true)
+                is SourceOrigin.Archive ->
+                    origin.binarySha256 != null &&
+                        archiveDigest(environment, origin.binaryJar).equals(origin.binarySha256, ignoreCase = true)
                 else -> true
             }
         }
@@ -425,17 +432,15 @@ internal class SourceRequestCapture(
         false
     }
 
-    private suspend fun originFreshlyCurrent(
-        origin: SourceOrigin,
-        environment: CapturedEnvironment,
-    ): Boolean = try {
+    private suspend fun originFreshlyCurrent(origin: SourceOrigin, environment: CapturedEnvironment): Boolean = try {
         if (!originCurrent(origin, environment.bootJdk)) {
             false
         } else {
             val current = when (origin) {
-                is SourceOrigin.Archive -> origin.binarySha256 != null &&
-                    archiveDigest(environment, origin.binaryJar, forceFresh = true)
-                        .equals(origin.binarySha256, ignoreCase = true)
+                is SourceOrigin.Archive ->
+                    origin.binarySha256 != null &&
+                        archiveDigest(environment, origin.binaryJar, forceFresh = true)
+                            .equals(origin.binarySha256, ignoreCase = true)
                 else -> true
             }
             current && originCurrent(origin, environment.bootJdk)
@@ -450,10 +455,9 @@ internal class SourceRequestCapture(
         false
     }
 
-    private suspend fun validateOrigins(
-        origins: List<SourceOrigin>,
-        environment: CapturedEnvironment,
-    ): Boolean {
+    // Stop at the first changed origin; later archive reads must not run after a failed budget or identity fence.
+    @Suppress("ReturnCount")
+    private suspend fun validateOrigins(origins: List<SourceOrigin>, environment: CapturedEnvironment): Boolean {
         return try {
             val archivesByPath = origins.filterIsInstance<SourceOrigin.Archive>()
                 .groupBy { it.binaryJar.toAbsolutePath().normalize() }
@@ -555,38 +559,64 @@ internal class SourceRequestCapture(
         val id = digest.digest().joinToString("") { "%02x".format(it) }
         return SourceContextIdentity("native:$id", uri, context.fingerprint)
     }
+}
 
-    private fun validBinaryName(name: String): Boolean = name.isNotBlank() &&
-        name.length <= MAX_BINARY_NAME &&
-        name.count { it == '.' } < MAX_NAME_SEGMENTS &&
-        name.split('.').all(::validIdentifier)
+private const val MAX_BINARY_NAME = 4096
+private const val MAX_NAME_SEGMENTS = 64
 
-    private fun binaryCandidates(name: String): List<String> = buildList {
-        add(name)
-        var candidate = name
-        var separator = candidate.lastIndexOf('.')
-        while (separator >= 0) {
-            candidate = candidate.substring(0, separator) + '$' + candidate.substring(separator + 1)
-            add(candidate)
-            separator = candidate.lastIndexOf('.')
+private fun validBinaryName(name: String): Boolean = name.isNotBlank() &&
+    name.length <= MAX_BINARY_NAME &&
+    name.count { it == '.' } < MAX_NAME_SEGMENTS &&
+    name.split('.').all(::validIdentifier)
+
+private fun binaryCandidates(name: String): List<String> = buildList {
+    add(name)
+    var candidate = name
+    var separator = candidate.lastIndexOf('.')
+    while (separator >= 0) {
+        candidate = candidate.substring(0, separator) + '$' + candidate.substring(separator + 1)
+        add(candidate)
+        separator = candidate.lastIndexOf('.')
+    }
+}
+
+private fun validIdentifier(segment: String): Boolean {
+    if (segment.isEmpty()) return false
+    val first = segment.codePointAt(0)
+    if (!Character.isJavaIdentifierStart(first)) return false
+    var offset = Character.charCount(first)
+    while (offset < segment.length) {
+        val codePoint = segment.codePointAt(offset)
+        if (!Character.isJavaIdentifierPart(codePoint)) return false
+        offset += Character.charCount(codePoint)
+    }
+    return true
+}
+
+private fun classResources(loader: ClassLoader, binaryName: String): List<Pair<String, URI>> =
+    binaryCandidates(binaryName).mapNotNull { candidate ->
+        val resource =
+            loader.getResource(candidate.replace('.', '/') + ".class")?.toURI()
+                ?: return@mapNotNull null
+        candidate to resource
+    }
+
+private fun compilerSdkCurrent(inputs: NativeClasspathInputs, checkCancelled: () -> Unit): Boolean {
+    val sdk = inputs.compilerSdk ?: return true
+    if (sdk.container.scheme != "file" || sdk.containerStamp.files != null) return false
+    val container =
+        try {
+            Path.of(sdk.container)
+        } catch (_: IllegalArgumentException) {
+            null
         }
-    }
+    return container != null &&
+        NativeArtifactStamp.observe(container, maxPaths = 1, checkCancelled = checkCancelled) == sdk.containerStamp
+}
 
-    private fun validIdentifier(segment: String): Boolean {
-        if (segment.isEmpty()) return false
-        val first = segment.codePointAt(0)
-        if (!Character.isJavaIdentifierStart(first)) return false
-        var offset = Character.charCount(first)
-        while (offset < segment.length) {
-            val codePoint = segment.codePointAt(offset)
-            if (!Character.isJavaIdentifierPart(codePoint)) return false
-            offset += Character.charCount(codePoint)
-        }
-        return true
-    }
-
-    private companion object {
-        const val MAX_BINARY_NAME = 4096
-        const val MAX_NAME_SEGMENTS = 64
-    }
+private fun selectionWithoutUniqueResource(count: Int, isCurrent: () -> Boolean): SourceRequestSelection? = when {
+    count == 1 -> null
+    !isCurrent() -> SourceRequestSelection.ContextUnavailable
+    count == 0 -> SourceRequestSelection.BinaryAbsent
+    else -> SourceRequestSelection.Ambiguous
 }

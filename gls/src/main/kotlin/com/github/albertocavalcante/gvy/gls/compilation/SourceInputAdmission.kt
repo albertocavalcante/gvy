@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.sources.ExternalSourceRegistry
 import com.github.albertocavalcante.gvy.gls.utils.SourcePathAdmission
 import com.github.albertocavalcante.gvy.gls.utils.classifySourcePath
 import java.net.URI
@@ -24,18 +25,25 @@ internal class SourceInputAdmission(private val excluded: (Path) -> Boolean, val
         }
     }
 
+    /** A path-only guard safe for the retained parser class loader; it carries no request cancellation state. */
+    fun sourcePathAdmission(): (Path) -> Boolean {
+        val pathIsExcluded = excluded
+        return { path -> classifySourcePath(path, pathIsExcluded) == SourcePathAdmission.ORDINARY }
+    }
+
     fun allows(uri: URI): Boolean {
+        if (uri.scheme.equals(ExternalSourceRegistry.SCHEME, ignoreCase = true)) return false
         if (!uri.scheme.equals("file", ignoreCase = true)) return true
         val path = try {
             Path.of(uri)
         } catch (_: IllegalArgumentException) {
-            return false
+            null
         } catch (_: FileSystemNotFoundException) {
-            return false
+            null
         } catch (_: SecurityException) {
-            return false
+            null
         }
-        return allows(path)
+        return path != null && allows(path)
     }
 
     /** Compiler callbacks may remain on the unit; do not retain the per-parse path table with its AST. */

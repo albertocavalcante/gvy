@@ -9,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val MAX_PRESENTED_SOURCES = 128
+private const val DEFAULT_MAX_VIEW_BYTES = 256L * 1024 * 1024
 private const val MAX_PRESENTED_SOURCE_BYTES = 8L * 1024 * 1024
 
 /**
@@ -17,7 +18,7 @@ private const val MAX_PRESENTED_SOURCE_BYTES = 8L * 1024 * 1024
  */
 class PortableSourcePresentation(
     private val root: Path = defaultSourceViews(),
-    private val maxViewBytes: Long = 256L * 1024 * 1024,
+    private val maxViewBytes: Long = DEFAULT_MAX_VIEW_BYTES,
 ) : SourcePresentation {
     init {
         require(maxViewBytes >= MAX_PRESENTED_SOURCE_BYTES)
@@ -45,18 +46,22 @@ class PortableSourcePresentation(
         val view = Files.createTempDirectory(parent, "view-")
         val temporary = Files.createTempFile(view, ".copying-", ".source")
         try {
-            Files.newInputStream(descriptor.contentPath).use { input ->
-                Files.newOutputStream(temporary).use { output ->
-                    val digest = copyAndDigest(input, MAX_PRESENTED_SOURCE_BYTES, output::write)
-                    if (digest != descriptor.contentDigest) throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
-                }
-            }
+            copyVerifiedContent(descriptor, temporary)
             val destination = view.resolve(descriptor.entryName.substringAfterLast('/'))
             publishNewFile(temporary, destination)
             synchronized(monitor) { putPresentation(key, destination) }
             return destination.toUri()
         } finally {
             Files.deleteIfExists(temporary)
+        }
+    }
+
+    private fun copyVerifiedContent(descriptor: SourceDocumentDescriptor, temporary: Path) {
+        Files.newInputStream(descriptor.contentPath).use { input ->
+            Files.newOutputStream(temporary).use { output ->
+                val digest = copyAndDigest(input, MAX_PRESENTED_SOURCE_BYTES, output::write)
+                if (digest != descriptor.contentDigest) throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
+            }
         }
     }
 

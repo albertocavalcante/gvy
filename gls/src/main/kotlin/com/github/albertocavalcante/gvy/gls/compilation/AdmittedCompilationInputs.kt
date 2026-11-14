@@ -26,6 +26,7 @@ internal class AdmittedCompilationInputs(
     val fingerprint: String = fingerprint(openSourceSnapshots)
 
     val allowsSource: (Path) -> Boolean = admission::allows
+    val sourcePathAdmission: (Path) -> Boolean = admission.sourcePathAdmission()
 
     fun releaseObservedPaths() = admission.releaseObservedPaths()
 

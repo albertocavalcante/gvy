@@ -31,6 +31,7 @@ import java.nio.file.Path
  * Extracts class definitions, line numbers, and Javadoc documentation from .java files.
  * Uses JavaParser for supported Java syntax, without executing or loading the inspected source.
  */
+@Suppress("TooManyFunctions") // The inspector exposes the related class, member, and documentation queries.
 class JavaSourceInspector internal constructor(private val parserFactory: () -> JavaParser) {
     constructor() : this(::newJavaSourceParser)
 

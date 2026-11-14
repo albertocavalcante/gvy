@@ -93,7 +93,8 @@ class SourceJarCancellationTest {
 
     private class TestResolver(
         private val resolve: suspend (VerifiedSourceArtifactRequest) -> VerifiedSourceArtifactResult,
-    ) : SourceArtifactResolver, VerifiedSourceArtifactResolver {
+    ) : SourceArtifactResolver,
+        VerifiedSourceArtifactResolver {
         override val cacheDir: Path = Path.of("unused-test-source-cache")
 
         override suspend fun resolveVerifiedSourceArtifact(

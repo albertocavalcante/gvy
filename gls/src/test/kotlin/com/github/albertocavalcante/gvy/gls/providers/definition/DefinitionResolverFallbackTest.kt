@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.sources.MissingSourceReason
 import com.github.albertocavalcante.gvy.gls.sources.ResolvedExternalSymbol
@@ -27,6 +28,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
@@ -70,16 +72,31 @@ class DefinitionResolverFallbackTest {
 
     @Test
     fun `import head goes through the same captured source lookup`() = runBlocking {
-        coEvery { navigator.locate(symbol, context) } returns
-            SourceLookupResult.Located(location, symbol.binaryName, definition)
-        val import = ImportNode(classNode(), null).apply {
+        val importedSymbol =
+            ResolvedExternalSymbol(
+                "java.lang.String",
+                SourceOrigin.Jdk(Path.of(System.getProperty("java.home")), "java.base"),
+            )
+        val importedRequest = ResolvedSourceRequest(importedSymbol, context)
+        coEvery {
+            compilation.captureSourceRequest(
+                document,
+                importedSymbol.binaryName,
+                null,
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            )
+        } returns importedRequest
+        coEvery { navigator.locate(importedSymbol, context) } returns
+            SourceLookupResult.Located(location, importedSymbol.binaryName, definition)
+        val import = ImportNode(ClassHelper.make(String::class.java), null).apply {
             lineNumber = 3
             columnNumber = 1
             lastLineNumber = 3
             lastColumnNumber = 30
         }
         assertIs<DefinitionResolver.DefinitionResult.Binary>(resolver(import).findDefinitionAt(document, position))
-        coVerify(exactly = 1) { navigator.locate(symbol, context) }
+        coVerify(exactly = 1) { navigator.locate(importedSymbol, context) }
     }
 
     @Test
@@ -125,7 +142,11 @@ class DefinitionResolverFallbackTest {
         val resolver = resolver()
         coEvery {
             compilation.captureSourceRequest(
-                document, symbol.binaryName, null, any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+                document,
+                symbol.binaryName,
+                null,
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
             )
         } returns null
         assertEquals(null, resolver.findDefinitionAt(document, position))
@@ -143,10 +164,11 @@ class DefinitionResolverFallbackTest {
         every { compilation.getAst(document) } returns null
         every {
             compilation.symbolIndexingService.findClasses(
-                ClassNameQuery.Exact(this@DefinitionResolverFallbackTest.symbol.binaryName),
+                ClassNameQuery.Exact("Library"),
             )
         } returns listOf(symbol)
         val module = mockk<org.codehaus.groovy.ast.ModuleNode>()
+        coEvery { compilation.ensureCompiled(workspaceUri) } returns CompilationResult.success(module)
         every { compilation.getAst(workspaceUri) } returns module
         every { module.classes } returns listOf(declaration)
         val result = assertIs<DefinitionResolver.DefinitionResult.Source>(
@@ -164,7 +186,11 @@ class DefinitionResolverFallbackTest {
         every { compilation.getAst(document) } returns null
         coEvery {
             compilation.captureSourceRequest(
-                document, symbol.binaryName, null, any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+                document,
+                symbol.binaryName,
+                null,
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
             )
         } returns request
         return DefinitionResolver(ast, SymbolTable(), compilation, navigator)

@@ -56,6 +56,26 @@ class ManagedRenameCandidatesTest {
         assertEquals(listOf(unsaved), candidates.files.values.toList())
     }
 
+    @Test
+    fun `known sources under a directory alias to managed content are excluded`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managed = root.resolve("managed")
+        source(managed.resolve("Mode.groovy"))
+        val workspace = Files.createDirectories(root.resolve("workspace"))
+        val alias = Files.createSymbolicLink(workspace.resolve("cache-link"), managed).resolve("Mode.groovy")
+        val ordinary = source(workspace.resolve("Ordinary.groovy"))
+        val registry = ExternalSourceRegistry(root.resolve("browser"), managedRoots = listOf(managed))
+        val keys = FileKeys(listOf(workspace))
+
+        val candidates = CandidateCollector(keys, 100) { registry.isManaged(it.toUri()) }.collect(
+            mapOf(keys.of(alias) to alias, keys.of(ordinary) to ordinary),
+            emptyList(),
+            Walked(emptyList(), overflow = false),
+        )
+
+        assertEquals(listOf(ordinary), candidates.files.values.toList())
+    }
+
     private fun source(path: Path) = path.also {
         Files.createDirectories(it.parent)
         Files.writeString(it, "new Mode()")
