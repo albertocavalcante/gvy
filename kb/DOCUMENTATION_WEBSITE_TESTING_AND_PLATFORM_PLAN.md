@@ -36,12 +36,12 @@ five queries. Neither exploratory error is a site defect.
 These are open acceptance blockers, owned by website maintainers. Keep their tests failing until the behavior is fixed;
 do not approve current screenshots as the desired baseline or suppress axe rules to obtain a pass.
 
-| ID  | Impact and observation                                                                                                 | Next action and completion gate                                                                                                                     |
-| --- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B01 | Homepage is 402 px wide at a 360 px viewport in both themes                                                            | Find the overflowing element; document width must fit the viewport at all three widths, with long code/tables scrolling inside their own containers |
-| B02 | Light-theme contrast fails in the homepage example and release notice, and the installation guide's linked inline code | Correct foreground/background tokens; repeat axe and inspect syntax, links, code and focus in both themes; normal text meets 4.5:1                  |
-| B03 | Some horizontally scrolling installation/settings tables are not keyboard-focusable                                    | Make overflowing regions keyboard-operable with meaningful names and visible focus; verify scrolling and reading order manually and with axe        |
-| B04 | Desktop search button has a visible-label/accessibility-name mismatch                                                  | Inspect its shortcut/name markup; ensure the accessible name includes the visible label and test activation, dialog focus and focus restoration     |
+| ID  | Impact and observation                                                                                                 | Next action and completion gate                                                                                                                                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B01 | Homepage is 402 px wide at a 360 px viewport in both themes                                                            | Find the overflowing element; document width must fit the viewport at all three widths, with long code/tables scrolling inside their own containers              |
+| B02 | Light-theme contrast fails in the homepage example and release notice, and the installation guide's linked inline code | Correct foreground/background tokens; repeat axe and inspect syntax, links, code and focus in both themes; normal text meets 4.5:1                               |
+| B03 | The installation guide’s scrolling code block and settings tables are not keyboard-focusable                           | Make overflowing regions keyboard-operable with meaningful names and visible focus; verify both code and table scrolling and reading order manually and with axe |
+| B04 | Desktop search button has a visible-label/accessibility-name mismatch                                                  | Inspect its shortcut/name markup; ensure the accessible name includes the visible label and test activation, dialog focus and focus restoration                  |
 
 The audit used WCAG 2 A/AA and 2.1 A/AA axe tags. It does not establish compliance, full keyboard coverage,
 screen-reader behavior, Firefox or WebKit support. Browser tests also do not verify Groovy feature claims or
@@ -73,9 +73,9 @@ release notices. Avoid copying generated page HTML into fixtures or tying tests 
 | Routes and assets      | Visit every generated route once; verify title, one main heading, canonical/edit destinations, old fragments, no unexpected page errors or failed local assets, and `/gvy/` links                        |
 | First project          | Follow home → installation → quickstart → Java/troubleshooting; assert useful headings and the stable limitation; test mobile navigation and skip link by keyboard                                       |
 | Search                 | Run the five recorded queries against the built Pagefind index; open a result, dismiss with Escape, verify initial dialog focus and return focus                                                         |
-| Layout and theme       | Home, installation and settings at 360/768/1440 in light/dark; no document overflow; verify theme switching and persistence, readable code, table scrolling and visible focus                            |
+| Layout and theme       | Home, installation and settings at 360/768/1440 in light/dark; no document overflow; verify theme switching and persistence, readable code, keyboard scrolling of code/tables and visible focus          |
 | Accessibility          | Run axe on representative pages and open navigation/search states; record every violation, block serious/critical findings, and resolve the known contrast/name findings even if assigned a lower impact |
-| Copy and no JavaScript | Copy the exact install command using an isolated browser clipboard; with JavaScript disabled verify essential prose, links, code and notices remain readable                                             |
+| Copy and no JavaScript | In ephemeral CI, copy the exact install command; with JavaScript disabled verify essential prose, links, code and notices remain readable                                                                |
 | 404                    | Static test host returns the built 404 page with HTTP 404 for an unknown `/gvy/` URL; assert useful navigation, not a success response from a catch-all                                                  |
 | Visual regression      | Review homepage and one reading/reference page baseline in both themes at the three widths; include expanded mobile navigation and search screenshots                                                    |
 
@@ -88,6 +88,10 @@ would discard the project base path. Test static production output because devel
 search index. Configure an owned foreground preview/static server with an explicit port, readiness URL and shutdown;
 keep `reuseExistingServer: false` to avoid testing stale or another agent's output. See
 [web server configuration](https://playwright.dev/docs/test-webserver).
+
+Browser contexts do not guarantee a private operating-system clipboard. Run the real clipboard assertion only in an
+ephemeral CI environment. A local test may stub `navigator.clipboard.writeText` and verify its argument without reading
+or replacing the owner’s clipboard; label that as a simulated copy check.
 
 Use role/label locators, web-first assertions and state-based waits. Do not add fixed sleeps. Capture traces on the
 first retry and screenshots on failure, and retain the HTML report even when tests fail. Record input SHA, OS, Node,

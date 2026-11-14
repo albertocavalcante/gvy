@@ -95,7 +95,7 @@ installation and settings at 360/768/1440 px in light/dark returned 200 and matc
 
 This was a finding-producing audit, not a pass. At 360 px the homepage's document width was 402 px in both themes. Axe
 reported light-theme contrast failures in the homepage code/notice and installation guide, keyboard-focus failures for
-scrolling tables, and a desktop search button label/name mismatch. The
+the installation guide’s scrolling code block and settings tables, and a desktop search button label/name mismatch. The
 [testing and platform plan](DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) records B01–B04 with owners and
 completion gates. No browser defect was fixed by the planning follow-up.
 
@@ -120,6 +120,13 @@ the inert filter; with JavaScript enabled, hydration revealed the input and filt
 This verifies a minimal composition, not a production dependency change, performance benchmark or renderer migration.
 The temporary project, cache, server and browser were removed; concise results and illustrative sources were retained
 privately with the task evidence.
+
+Private, ignored evidence is at `.agent/out/docs-website-pr2004/playwright-spike/` (reports, six screenshots and the
+disposable probe source/lockfile) and `.agent/out/docs-website-pr2004/component-spike/` (result JSON and tiny
+illustrative sources) in the retained `/Users/adsc/wt/gvy/w6` worktree. It is unpublished and is not part of a
+reproducible CI suite. Keep it until the findings have durable reproductions and the component experiment is reconciled
+into maintained contracts; then remove spent probe material. The private `handoff.json` in the parent directory tracks
+cleanup and remaining acceptance gates.
 
 ## Automated website checks
 
