@@ -44,29 +44,38 @@ test("the registered GDSL grammar tokenizes descriptor comments and strings", as
   });
   const grammar = await registry.loadGrammar(binding.scopeName);
   assert.ok(grammar, "registered GDSL grammar must load");
-  const lines = read("client/src/test/fixtures/jenkins-descriptor.gdsl").split(
-    /\r?\n/,
-  );
+  const fixture = read("client/src/test/fixtures/jenkins-descriptor.gdsl");
   let state = textmate.INITIAL;
-  const scopesAt = (lineNumber, text) => {
-    const line = lines[lineNumber];
-    const index = line.indexOf(text);
-    assert.notEqual(index, -1);
+  const tokensByLine = fixture.split(/\r?\n/).map((line) => {
     const result = grammar.tokenizeLine(line, state);
     state = result.ruleStack;
-    return result.tokens.find(
+    return { line, tokens: result.tokens };
+  });
+  const scopesAt = (lineText, text) => {
+    const matching = tokensByLine.filter(({ line }) => line.includes(lineText));
+    assert.equal(
+      matching.length,
+      1,
+      `Expected one fixture line containing ${lineText}`,
+    );
+    const { line, tokens } = matching[0];
+    const index = line.indexOf(text);
+    assert.notEqual(index, -1);
+    return tokens.find(
       (token) => token.startIndex <= index && token.endIndex > index,
     ).scopes;
   };
   assert.ok(
-    scopesAt(0, "Jenkins").some((scope) => scope.startsWith("comment.")),
+    scopesAt("Jenkins descriptor", "Jenkins").some((scope) =>
+      scope.startsWith("comment."),
+    ),
   );
-  const call = scopesAt(1, "contributor");
+  const call = scopesAt("contributor(", "contributor");
   assert.ok(!call.some((scope) => /^(comment|string)\./.test(scope)));
-  const string = scopesAt(2, "deploy");
+  const string = scopesAt("method(name:", "deploy");
   assert.ok(string.some((scope) => scope.startsWith("string.")));
-  const key = scopesAt(3, "name");
+  const key = scopesAt("property(name:", "name");
   assert.ok(!key.some((scope) => /^(comment|string)\./.test(scope)));
-  const property = scopesAt(3, "property");
+  const property = scopesAt("property(name:", "property");
   assert.ok(!property.some((scope) => /^(comment|string)\./.test(scope)));
 });
