@@ -1,9 +1,5 @@
 name: repro-diagnostics-codenarc-unknown-ruleset
-description: A .codenarc with one unknown ruleset still yields the valid rules diagnostics
-xfail:
-  issue: 1542
-  reason: one unknown bundled ruleset in .codenarc silently disables every CodeNarc diagnostic
-  match: 'CodeNarc.*Actual: \[\]'
+description: An invalid workspace ruleset reports its rejection and runs the default rules.
 workspace:
   fixture: empty-workspace
   files:
@@ -12,16 +8,18 @@ workspace:
           ruleset('rulesets/imports.xml') {
               include 'UnusedImport'
           }
-          ruleset('rulesets/empty.xml') {
-              include 'EmptyCatchBlock'
-          }
+          ruleset('rulesets/empty.xml')
       }
     src/main/groovy/demo/Unused.groovy: |
       package demo
 
       import java.util.concurrent.TimeUnit
 
-      class |^u|Unused {}
+      class |^u|Unused {
+          void run() {
+              try { println 1 } catch (Exception e) {}
+          }
+      }
 steps:
   - initialize:
       initializationOptions:
@@ -45,13 +43,15 @@ steps:
       checks:
         - jsonPath: $.uri
           expect: { type: EQUALS, value: "{{cursor.u.uri}}" }
-        - jsonPath: $.diagnostics[?(@.message =~ /.*[Uu]nused import.*/)]
+        - jsonPath: $.diagnostics[?(@.source == 'CodeNarc' && @.code == 'EmptyCatchBlock')]
+          expect: { type: NOT_EMPTY }
+        - jsonPath: $.diagnostics[?(@.code == 'gvy.providerFailure' && @.message =~ /.*\.codenarc.*rulesets\/empty.xml.*/)]
           expect: { type: NOT_EMPTY }
       timeoutMs: 20000
   - assert:
       source: diags
       checks:
-        - jsonPath: "$.diagnostics[?(@.source == 'CodeNarc')]"
-          expect: { type: NOT_EMPTY }
+        - jsonPath: "$.diagnostics[?(@.code == 'gvy.providerFailure')].relatedInformation[0].location.uri"
+          expect: { type: EQUALS, value: ["{{workspace.uri}}.codenarc"] }
   - shutdown: {}
   - exit: {}
