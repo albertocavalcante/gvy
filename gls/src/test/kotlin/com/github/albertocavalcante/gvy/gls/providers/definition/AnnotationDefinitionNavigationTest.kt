@@ -295,6 +295,66 @@ class AnnotationDefinitionNavigationTest {
     }
 
     @Test
+    fun `unique source static imports navigate to their member declarations`(): Unit = runBlocking {
+        val source = """
+            package p
+            import static p.Outer.ANSWER
+            import static p.Outer.make
+            class Outer {
+                static int ANSWER = 42
+                static int make() { 42 }
+            }
+            class Money { int value = ANSWER + make() }
+        """.trimIndent()
+        val service = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
+        val provider = DefinitionProvider(service)
+        try {
+            assertTrue(service.compile(uri, source).isSuccess)
+            val lines = source.lines()
+            val field = provider.provideDefinitionLinks(
+                uri.toString(),
+                Position(1, lines[1].indexOf("ANSWER") + 1),
+            ).toList().single()
+            val method = provider.provideDefinitionLinks(
+                uri.toString(),
+                Position(2, lines[2].indexOf("make") + 1),
+            ).toList().single()
+
+            assertEquals(uri.toString(), field.targetUri)
+            assertEquals(4, field.targetRange.start.line)
+            assertEquals(uri.toString(), method.targetUri)
+            assertEquals(5, method.targetRange.start.line)
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
+    fun `a static field and method sharing an import name remain ambiguous`(): Unit = runBlocking {
+        val source = """
+            package p
+            import static p.Outer.value
+            class Outer {
+                static int value = 1
+                static int value() { 2 }
+            }
+            class Money {}
+        """.trimIndent()
+        val service = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
+        val provider = DefinitionProvider(service)
+        try {
+            assertTrue(service.compile(uri, source).isSuccess)
+            assertTrue(
+                provider.provideDefinitions(uri.toString(), Position(1, source.lines()[1].indexOf("value") + 1))
+                    .toList()
+                    .isEmpty(),
+            )
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
     fun `custom collector use reaches its source annotation declaration name`(): Unit = runBlocking {
         val service = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
         val provider = DefinitionProvider(service)

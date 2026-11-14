@@ -505,8 +505,7 @@ class GroovyCompilationService internal constructor(
     internal suspend fun captureSourceLookupSession(
         descriptor: SourceDocumentDescriptor,
         checkCancelled: () -> Unit = {},
-    ) =
-        sourceRequests.openSession(descriptor, checkCancelled)
+    ) = sourceRequests.openSession(descriptor, checkCancelled)
 
     /** Capture source and parse from the cache, as held by existing language features. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =

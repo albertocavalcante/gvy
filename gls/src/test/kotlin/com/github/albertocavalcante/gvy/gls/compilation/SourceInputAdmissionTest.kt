@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
@@ -18,6 +19,15 @@ import kotlin.test.assertTrue
 class SourceInputAdmissionTest {
     @TempDir
     lateinit var root: Path
+
+    @Test
+    fun `managed source URIs are not workspace inputs while other virtual documents remain supported`() {
+        val admission = SourceInputAdmission({ false }) {}
+
+        assertFalse(admission.allows(URI.create("gvy-source://context/archive/Type.java")))
+        assertFalse(admission.allows(URI.create("GVY-SOURCE://context/archive/Type.java")))
+        assertTrue(admission.allows(URI.create("untitled:Example.groovy")))
+    }
 
     @Test
     fun `one request deduplicates path and URI admission while a later request observes current policy`() {

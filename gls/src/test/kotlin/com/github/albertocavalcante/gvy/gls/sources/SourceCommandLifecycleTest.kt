@@ -70,31 +70,7 @@ class SourceCommandLifecycleTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val calls = mutableListOf<String>()
-        val navigator = object : SourceNavigator {
-            override suspend fun locate(
-                symbol: ResolvedExternalSymbol,
-                context: SourceLookupContext,
-            ): SourceLookupResult {
-                calls.add(symbol.binaryName)
-                return SourceLookupResult.Unavailable(MissingSourceReason.NO_ATTACHMENT)
-            }
-
-            override suspend fun attachSource(
-                symbol: ResolvedExternalSymbol,
-                context: SourceLookupContext,
-                sourceJar: Path,
-                expectedSha256: String?,
-            ): SourceLookupResult = locate(symbol, context)
-
-            override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult =
-                error("Unexpected legacy navigation")
-
-            override suspend fun navigateToMethodSource(
-                classpathUri: URI,
-                className: String,
-                methodName: String,
-            ): SourceNavigator.SourceResult = error("Unexpected legacy navigation")
-        }
+        val navigator = recordingNavigator(calls)
         try {
             assertTrue(compilation.compile(uri, content).isSuccess)
             val request = assertNotNull(compilation.captureSourceRequest(uri, "java.lang.String"))
@@ -141,5 +117,28 @@ class SourceCommandLifecycleTest {
             release.complete(Unit)
             compilation.shutdown()
         }
+    }
+
+    private fun recordingNavigator(calls: MutableList<String>): SourceNavigator = object : SourceNavigator {
+        override suspend fun locate(symbol: ResolvedExternalSymbol, context: SourceLookupContext): SourceLookupResult {
+            calls.add(symbol.binaryName)
+            return SourceLookupResult.Unavailable(MissingSourceReason.NO_ATTACHMENT)
+        }
+
+        override suspend fun attachSource(
+            symbol: ResolvedExternalSymbol,
+            context: SourceLookupContext,
+            sourceJar: Path,
+            expectedSha256: String?,
+        ): SourceLookupResult = locate(symbol, context)
+
+        override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult =
+            error("Unexpected legacy navigation")
+
+        override suspend fun navigateToMethodSource(
+            classpathUri: URI,
+            className: String,
+            methodName: String,
+        ): SourceNavigator.SourceResult = error("Unexpected legacy navigation")
     }
 }

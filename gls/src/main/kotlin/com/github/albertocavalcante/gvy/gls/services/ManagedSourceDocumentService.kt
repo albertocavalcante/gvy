@@ -118,7 +118,9 @@ class ManagedSourceDocumentService(
     override fun didChange(params: DidChangeTextDocumentParams) {
         val uri = parseUri(params.textDocument.uri) ?: return
         withDocument(uri) { lifecycle ->
-            bufferNotification(uri, lifecycle, { bufferChange(it, params) }) { delegate.didChange(params) }
+            bufferNotification(uri, lifecycle, { bufferChange(it, params) }, guarded = { registry.changed(uri) }) {
+                delegate.didChange(params)
+            }
         }
     }
 
@@ -142,7 +144,9 @@ class ManagedSourceDocumentService(
     override fun didSave(params: DidSaveTextDocumentParams) {
         val uri = parseUri(params.textDocument.uri) ?: return
         withDocument(uri) { lifecycle ->
-            bufferNotification(uri, lifecycle, { it.copy(save = params) }) { delegate.didSave(params) }
+            bufferNotification(uri, lifecycle, { it.copy(save = params) }, guarded = {
+                params.text?.let { registry.opened(uri, it) }
+            }) { delegate.didSave(params) }
         }
     }
 
@@ -157,6 +161,7 @@ class ManagedSourceDocumentService(
         uri: URI,
         lifecycle: ManagedDocumentLifecycle,
         update: (ManagedDocumentAdmission) -> ManagedDocumentAdmission,
+        guarded: () -> Unit = {},
         untracked: () -> Unit,
     ) {
         val hasNoOpenDocument = synchronized(lifecycle.monitor) {
@@ -164,7 +169,7 @@ class ManagedSourceDocumentService(
             when {
                 admission == null -> true
                 admission.resolved && admission.guarded -> {
-                    registry.changed(uri)
+                    guarded()
                     false
                 }
                 else -> {
@@ -256,6 +261,7 @@ class ManagedSourceDocumentService(
             lifecycle.admission.set(if (guarded) resolved.withoutNotifications() else resolved)
             if (guarded) {
                 if (admission.change != null || admission.rejectedChange != null) registry.changed(uri)
+                admission.save?.text?.let { registry.opened(uri, it) }
             } else {
                 // Publish before calling the delegate: synchronous callbacks can close or reopen this URI.
                 delegate.didOpen(params)

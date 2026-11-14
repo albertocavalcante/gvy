@@ -50,16 +50,15 @@ class HoverProviderTest {
         HoverContentGenerator(semanticResolver)
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
-    private fun locatedSource(uri: URI, className: String, documentation: Documentation) =
-        SourceLookupResult.Located(
-            uri,
-            className,
-            SourceDefinition(
-                declarationRange = SourceSpan(0, 0, 0, className.length),
-                nameRange = SourceSpan(0, 0, 0, className.length),
-                documentation = documentation,
-            ),
-        )
+    private fun locatedSource(uri: URI, className: String, documentation: Documentation) = SourceLookupResult.Located(
+        uri,
+        className,
+        SourceDefinition(
+            declarationRange = SourceSpan(0, 0, 0, className.length),
+            nameRange = SourceSpan(0, 0, 0, className.length),
+            documentation = documentation,
+        ),
+    )
 
     @Test
     fun `provideHover returns hover for method declaration`(): Unit = runTest {

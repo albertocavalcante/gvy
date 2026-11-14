@@ -10,10 +10,13 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -91,6 +94,98 @@ class WorkspaceCompilerTest {
         compiler.compileWorkspace()
 
         assertNull(index.getDocument(file.toUri()), "in-flight results must not undo cache invalidation")
+    }
+
+    @Test
+    fun `refresh removes semantic facts when an unchanged source becomes a managed alias`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val content = "class Mode {}"
+        val file = src.resolve("Mode.groovy").apply { writeText(content) }
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText(content) }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        var open = false
+        val indexer = SemanticIndexer(index, isOpen = { open }, excluded = manager::isExcludedSourceFile)
+        var parses = 0
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            parses++
+            parser.parse(firstArg())
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+        compiler.compileWorkspace()
+        assertNotNull(index.getDocument(file.toUri()))
+        assertEquals(1, parses)
+
+        Files.delete(file)
+        Files.createSymbolicLink(file, managedFile)
+        open = true
+        compiler.refreshFromDisk(listOf(file.toUri()))
+        assertNotNull(index.getDocument(file.toUri()), "disk refresh must not remove an open buffer")
+
+        open = false
+        compiler.refreshFromDisk(listOf(file.toUri()))
+        assertNull(index.getDocument(file.toUri()))
+        compiler.compileWorkspace()
+        assertEquals(1, parses, "managed content must not be parsed as a workspace source")
+    }
+
+    @Test
+    fun `workspace compilation excludes managed secondary sources and guards implicit lookup`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val alias = Files.createDirectories(src.resolve("p")).resolve("Mode.groovy")
+        alias.writeText("package p\nclass Mode {}")
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText("package p\nclass Mode {}") }
+        val consumer = src.resolve("Consumer.groovy").apply { writeText("import p.Mode\nclass Consumer {}") }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        Files.delete(alias)
+        Files.createSymbolicLink(alias, managedFile)
+
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests.add(request)
+            parser.parse(request)
+        }
+        val indexer = SemanticIndexer(WorkspaceSymbolIndex(GroovySemanticDB()))
+
+        WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
+
+        assertEquals(listOf(consumer.toUri()), requests.map { it.uri })
+        val request = requests.single()
+        assertFalse(alias in request.workspaceSources)
+        assertFalse(requireNotNull(request.sourcePathAdmission)(alias))
+    }
+
+    @Test
+    fun `source retargeted during workspace compilation cannot publish semantic facts`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val file = src.resolve("Mode.groovy").apply { writeText("class Mode {}") }
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText("class Mode {}") }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            Files.delete(file)
+            Files.createSymbolicLink(file, managedFile)
+            result
+        }
+
+        val result = WorkspaceCompiler(worker, manager, SemanticIndexer(index)).compileWorkspace()
+
+        assertTrue(result.modules.isEmpty())
+        assertNull(index.getDocument(file.toUri()))
     }
 
     @Test

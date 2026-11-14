@@ -46,6 +46,8 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import java.net.URI
 
+// Optional collaborators preserve the public resolver API and its standalone test configurations.
+@Suppress("LongParameterList")
 class DefinitionResolver(
     private val astVisitor: GroovyAstModel,
     private val symbolTable: SymbolTable,
@@ -135,11 +137,9 @@ class DefinitionResolver(
      * Find the definition of the symbol at the given position.
      * Throws specific exceptions for different failure scenarios.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
-    suspend fun findDefinitionAt(
-        uri: URI,
-        position: Position,
-    ): DefinitionResult? {
+    // Preserve protocol/domain exceptions and map only unexpected failures at this request boundary.
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    suspend fun findDefinitionAt(uri: URI, position: Position): DefinitionResult? {
         logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
 
         return try {

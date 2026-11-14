@@ -145,6 +145,8 @@ private fun hasFile(dir: Path, name: String) = Files.exists(dir.resolve(name))
  * is skipped (`com/acme/build/` is a package). Outside source roots, `build`, `out` and `target` are skipped
  * only directly under a workspace root or a module root, and only when they hold no source files directly.
  */
+// Walking limits and cancellation remain explicit at this shared traversal boundary.
+@Suppress("LongParameterList")
 internal fun walkWorkspace(
     roots: List<Path>,
     sourceRoots: List<Path>,
@@ -292,11 +294,12 @@ internal class CandidateCollector(
     private val files = LinkedHashMap<Path, Path>()
 
     fun collect(sources: Map<Path, Path>, documents: Collection<URI>, walked: Walked): CandidateFiles {
-        sources.filterNot { (key, path) -> excluded(key) || excludedSourceFile(path, excluded) }
+        sources.filterNot { (key, path) -> excluded(key) || excludedSourceAlias(path, excluded) }
             .forEach { (key, path) -> files.putIfAbsent(key, path) }
         for (uri in documents) {
-            val path = UriPathConverter.toPath(uri)?.takeIf(::isSourceFile) ?: continue
-            if (excludedSourceAlias(path, excluded)) continue
+            val path =
+                UriPathConverter.toPath(uri)?.takeIf(::isSourceFile) ?.takeUnless { excludedSourceAlias(it, excluded) }
+                    ?: continue
             keys.of(path).takeIf { keys.inScope(it) && !excluded(it) }?.let { files.putIfAbsent(it, path) }
         }
         walked.files.filterNot { excludedSourceFile(it, excluded) }.forEach { files.putIfAbsent(it, it) }

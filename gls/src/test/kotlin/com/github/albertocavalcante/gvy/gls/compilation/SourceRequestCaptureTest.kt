@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.net.URL
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -119,6 +120,34 @@ class SourceRequestCaptureTest {
                     descriptor.copy(context = descriptor.context.copy(id = "another-context")),
                 ),
             )
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
+    fun `a session selected request revalidates classpath directory contents`(): Unit = runBlocking {
+        val classpath = Files.createDirectory(root.resolve("classes"))
+        val sourceUri = root.resolve("Money.groovy").toUri()
+        val workspace = WorkspaceManager().apply { updateWorkspaceModel(root, listOf(classpath), emptyList()) }
+        val documents = DocumentProvider()
+        val service = GroovyCompilationService(workspaceManager = workspace, documentProvider = documents)
+        try {
+            documents.put(sourceUri, original, 1)
+            assertTrue(service.compile(sourceUri, original).isSuccess)
+            val originalRequest = assertNotNull(service.captureSourceRequest(sourceUri, "java.lang.String"))
+            val session = assertNotNull(
+                service.captureSourceLookupSession(
+                    descriptor(originalRequest.symbol.origin, originalRequest.context.identity),
+                ),
+            )
+            val selected = assertIs<SourceRequestSelection.Selected>(session.select("java.lang.String")).request
+            assertTrue(selected.context.validateCurrent())
+
+            Files.writeString(classpath.resolve("Changed.class"), "changed")
+
+            assertTrue(selected.context.isCurrent(), "The cheap check intentionally skips directory traversal")
+            assertFalse(selected.context.validateCurrent(), "Publication must detect changed directory contents")
         } finally {
             service.shutdown()
         }

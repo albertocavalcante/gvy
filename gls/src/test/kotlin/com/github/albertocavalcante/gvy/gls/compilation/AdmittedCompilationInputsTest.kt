@@ -49,8 +49,8 @@ class AdmittedCompilationInputsTest {
         assertEquals(listOf(Path.of("root")), captured.sourceRoots)
         assertEquals(key, captured.fingerprint)
         assertEquals(mapOf(uri to "before"), captured.openSources)
-        assertEquals(key, inputs(open = mapOf(uri to "before")).fingerprint)
-        assertNotEquals(key, inputs(open = mapOf(uri to "after")).fingerprint)
+        assertEquals(key, inputs(roots = listOf(Path.of("root")), open = mapOf(uri to "before")).fingerprint)
+        assertNotEquals(key, inputs(roots = listOf(Path.of("root")), open = mapOf(uri to "after")).fingerprint)
     }
 
     @Test

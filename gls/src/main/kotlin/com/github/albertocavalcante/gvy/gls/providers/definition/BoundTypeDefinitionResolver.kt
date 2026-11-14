@@ -39,8 +39,9 @@ internal class BoundTypeDefinitionResolver(
         if (sourceName != null) {
             val module = modules.orEmpty().filter { candidate -> candidate.context?.name == sourceName }
                 .singleOrNull() ?: return null
-            val declaration = declarations(module).singleOrNull { candidate -> candidate.name == name } ?: return null
-            return sourceDefinition(declaration, module, reference.sourceUri)
+            return declarations(module).singleOrNull { candidate ->
+                candidate.name == name
+            }?.let { sourceDefinition(it, module, reference.sourceUri) }
         }
         return binary(ClassHelper.makeWithoutCaching(name), uri, position)
     }
@@ -51,19 +52,37 @@ internal class BoundTypeDefinitionResolver(
         if (isStubSourceName(module?.context?.name)) return null
         if (node.isStatic && node.fieldName != null) {
             annotations.annotationImportedBy(node)?.let { return annotation(it, uri, position) }
-            if (selected.isPrimaryClassNode) return null
         }
-        if (selected.isPrimaryClassNode && module != null) {
-            if (modules != null && modules.none { it === module }) return null
-            if (declarations(module).none { it === selected }) return null
-            return sourceDefinition(selected, module)
+        return when {
+            selected.isPrimaryClassNode && module != null -> importedSourceDefinition(node, selected, module)
+            selected.isPrimaryClassNode || !selected.isResolved -> null
+            else -> binary(node, uri, position)
         }
-        if (!selected.isResolved) return null
-        return binary(node, uri, position)
+    }
+
+    private fun importedSourceDefinition(
+        node: ImportNode,
+        selected: ClassNode,
+        module: ModuleNode,
+    ): DefinitionResolver.DefinitionResult? {
+        if (modules != null && modules.none { it === module }) return null
+        if (declarations(module).none { it === selected }) return null
+        val target =
+            if (node.isStatic && node.fieldName != null) {
+                val name = node.fieldName
+                val fields = selected.fields.filter { it.isStatic && it.name == name && it.lineNumber > 0 }
+                val methods = selected.methods.filter { it.isStatic && it.name == name && it.lineNumber > 0 }
+                (fields + methods).singleOrNull()
+            } else {
+                selected
+            }
+        return target?.let {
+            sourceDefinition(it, module)
+        }
     }
 
     private fun sourceDefinition(
-        node: ClassNode,
+        node: ASTNode,
         module: ModuleNode,
         selectedUri: URI? = null,
     ): DefinitionResolver.DefinitionResult.Source? {

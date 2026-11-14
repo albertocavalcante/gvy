@@ -70,6 +70,33 @@ class SourceMembershipLoaderTest {
     }
 
     @Test
+    fun `source loader rechecks dynamic path admission`() {
+        val sourceRoot = Files.createDirectories(root.resolve("src"))
+        val dependency = Files.writeString(root.resolve("Dependency.groovy"), "class Dependency {}")
+        val admittedPaths = mutableListOf<Path>()
+        val result = GroovyParserFacade().parse(
+            ParseRequest(
+                uri = sourceRoot.resolve("Uses.groovy").toUri(),
+                content = "class Uses { Dependency value }",
+                sourceRoots = listOf(root),
+                sourcePathAdmission = { path ->
+                    admittedPaths.add(path)
+                    false
+                },
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+            emptySet(),
+        )
+
+        assertTrue(
+            admittedPaths.contains(dependency.toAbsolutePath().normalize()),
+            "the loader checks the discovered path",
+        )
+        assertNull(result.outcome.fallback, "a denied source remains unresolved without retrying")
+        assertTrue(result.compilationUnit.ast.classes.none { it.name == "Dependency" })
+    }
+
+    @Test
     fun `source loader excludes real path when source root uses symlink`() {
         val actualRoot = Files.createDirectories(root.resolve("actual"))
         val disk = Files.writeString(actualRoot.resolve("Broken.groovy"), "class Broken { void bad( }")

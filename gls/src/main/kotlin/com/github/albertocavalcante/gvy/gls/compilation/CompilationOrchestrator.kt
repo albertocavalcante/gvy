@@ -60,6 +60,8 @@ data class CompilationOrchestratorDependencies(
     val shadowed: () -> Set<URI> = { emptySet() },
 )
 
+// The orchestrator keeps compilation, cancellation and publication ownership in one facade.
+@Suppress("TooManyFunctions")
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
     private val cacheService = dependencies.cacheService
     private val workerSessionManager = dependencies.workerSessionManager
@@ -221,6 +223,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         }
     }
 
+    // Keep the captured inputs and publication context explicit across the compilation boundary.
+    @Suppress("LongParameterList")
     private suspend fun performCompilation(
         input: CompilationInput,
         workspace: WorkspaceModel,
@@ -254,6 +258,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = sourceInputs.openSources,
+                sourcePathAdmission = sourceInputs.sourcePathAdmission,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
@@ -344,6 +349,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = sourceInputs.openSources,
+                sourcePathAdmission = sourceInputs.sourcePathAdmission,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 checkCancelled = checkCancelled,

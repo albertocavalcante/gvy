@@ -276,6 +276,35 @@ class SourceBrowserServiceTest {
     }
 
     @Test
+    fun `source change during final validation rejects the pending link`() = runBlocking {
+        val registry = ExternalSourceRegistry(temporary.resolve("registry"), virtualDocumentsEnabled = { true })
+        val uri = document(registry)
+        val validating = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val service = SourceBrowserService(parserScope, registry, {
+            SourceBrowserLookupSession(
+                locateType = { name -> located(name) },
+                isCurrent = { true },
+                validateCurrent = {
+                    validating.complete(Unit)
+                    release.await()
+                    true
+                },
+            )
+        })
+        withTimeout(10_000) {
+            supervisorScope {
+                val pending = async { service.definition(uri, Position(0, content.indexOf("TypeCheckingMode"))) }
+                validating.await()
+                registry.changed(uri)
+                release.complete(Unit)
+                val failure = assertFailsWith<ResponseErrorException> { pending.await() }
+                assertEquals(ResponseErrorCode.ContentModified.value, failure.responseError.code)
+            }
+        }
+    }
+
+    @Test
     fun `a qualified type package prefix cannot navigate to a competing same package type`() = runBlocking {
         val registry = ExternalSourceRegistry(temporary.resolve("registry"), virtualDocumentsEnabled = { true })
         val text = "package sample; class C { other.lib.Foo value; }"

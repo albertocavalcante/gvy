@@ -27,12 +27,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 private const val MAX_DECLARATION_INDEXES = 128
+private const val MAX_INSPECTED_SOURCE_BYTES = 8L * 1024 * 1024
 private const val MAX_SOURCE_INPUTS = 64
 private const val MAX_BINARY_IDENTITY_BYTES = 512L * 1024 * 1024
 private const val SOURCE_MISS_TTL_NANOS = 3_000_000_000L
 
 /** Sources follow the request's actual binary origin; missing provenance never becomes guessed metadata. */
-@Suppress("LongParameterList") // Explicit IO dependencies and independent private cache roots are injectable in tests.
+// Injectable IO dependencies and navigation entry points are grouped around shared cache and lifecycle state.
+@Suppress("LongParameterList", "TooManyFunctions")
 class SourceNavigationService(
     private val sourceResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
     sourceCacheRoot: Path = defaultSourceCacheRoot(),
@@ -119,6 +121,7 @@ class SourceNavigationService(
         }
     }
 
+    @Suppress("ReturnCount") // Reject invalid attachments before mutating the store.
     override suspend fun attachSource(
         symbol: ResolvedExternalSymbol,
         context: SourceLookupContext,
@@ -214,6 +217,7 @@ class SourceNavigationService(
         return symbol.copy(origin = origin.copy(binarySha256 = digest))
     }
 
+    @Suppress("CyclomaticComplexMethod") // Cache and acquisition states have distinct cancellation and retry behavior.
     private suspend fun selectInput(
         symbol: ResolvedExternalSymbol,
         context: SourceLookupContext,
@@ -359,7 +363,7 @@ class SourceNavigationService(
             val content = runInterruptible(Dispatchers.IO) {
                 val bytes = ByteArrayOutputStream()
                 val digest = Files.newInputStream(source.contentPath).use { input ->
-                    copyAndDigest(input, 8L * 1024 * 1024, bytes::write)
+                    copyAndDigest(input, MAX_INSPECTED_SOURCE_BYTES, bytes::write)
                 }
                 if (digest != source.contentDigest) throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
                 // The presentation registry serves strict UTF-8 too: never publish a location for

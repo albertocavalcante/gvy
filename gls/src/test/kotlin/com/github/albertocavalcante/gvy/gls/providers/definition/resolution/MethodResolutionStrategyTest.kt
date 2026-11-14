@@ -15,9 +15,9 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceDefinition
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupContext
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
+import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
 import com.github.albertocavalcante.gvy.gls.sources.SourceSpan
-import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -79,14 +79,22 @@ class MethodResolutionStrategyTest {
             listOf(createReflectedMethod("length", emptyList(), "java.lang.String"))
         coEvery {
             compilationService.captureSourceRequest(
-                document, "java.lang.String", "length", any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+                document,
+                "java.lang.String",
+                "length",
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
             )
         } returns null
 
         assertTrue(strategy.resolve(context).isLeft())
         coVerify(exactly = 1) {
             compilationService.captureSourceRequest(
-                document, "java.lang.String", "length", any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+                document,
+                "java.lang.String",
+                "length",
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
             )
         }
     }
@@ -604,12 +612,17 @@ class MethodResolutionStrategyTest {
 
     private fun stubSource(className: String, methodName: String, line: Int = 1, available: Boolean = true) {
         val document = URI("file:///test.groovy")
-        val symbol = ResolvedExternalSymbol(className, SourceOrigin.Unknown(URI("file:///dependency.class")), methodName)
+        val symbol =
+            ResolvedExternalSymbol(className, SourceOrigin.Unknown(URI("file:///dependency.class")), methodName)
         val context = SourceLookupContext(SourceContextIdentity("test")) { true }
         val request = ResolvedSourceRequest(symbol, context)
         coEvery {
             compilationService.captureSourceRequest(
-                document, className, methodName, any(), SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+                document,
+                className,
+                methodName,
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
             )
         } returns request
         val span = SourceSpan(line - 1, 0, line - 1, 1)

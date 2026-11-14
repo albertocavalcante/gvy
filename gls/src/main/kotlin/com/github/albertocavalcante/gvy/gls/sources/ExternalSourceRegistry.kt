@@ -38,7 +38,11 @@ class ExternalSourceRegistry(
         sourceStoreRoot(root).also(managedPaths::add).resolve("descriptors")
             .also(::ensureManagedDirectory)
     }
-    private val descriptors = LinkedHashMap<URI, SourceDocumentDescriptor>(16, 0.75f, true)
+    private val descriptors = LinkedHashMap<URI, SourceDocumentDescriptor>(
+        INITIAL_DESCRIPTOR_CAPACITY,
+        DESCRIPTOR_LOAD_FACTOR,
+        true,
+    )
     private val changed = ConcurrentHashMap.newKeySet<URI>()
 
     override fun register(descriptor: SourceDocumentDescriptor): URI {
@@ -75,6 +79,7 @@ class ExternalSourceRegistry(
     /** File and directory operations may not replace a managed namespace or any containing ancestor. */
     fun shouldGuardResourceOperation(uri: URI): Boolean = isManaged(uri) || managedPaths.resourceOperationIsManaged(uri)
 
+    @Suppress("ReturnCount") // Invalid or absent metadata cannot yield a descriptor.
     fun descriptor(uri: URI): SourceDocumentDescriptor? {
         synchronized(descriptors) { descriptors[uri] }?.let { return it }
         if (!isManaged(uri)) return null
@@ -145,6 +150,7 @@ class ExternalSourceRegistry(
         }
     }
 
+    @Suppress("ReturnCount") // Reject malformed or oversized metadata before decoding it.
     private fun load(uri: URI): SourceDocumentDescriptor? {
         return try {
             val path = metadataPath(uri)
@@ -180,6 +186,8 @@ class ExternalSourceRegistry(
         private const val MAX_METADATA_BYTES = 64L * 1024
         private const val DEFAULT_METADATA_BYTES = 16L * 1024 * 1024
         private const val MAX_CACHED_DESCRIPTORS = 1024
+        private const val INITIAL_DESCRIPTOR_CAPACITY = 16
+        private const val DESCRIPTOR_LOAD_FACTOR = 0.75f
 
         fun defaultRoot(): Path = Path.of(System.getProperty("user.home"), ".gls", "cache", "source-browser-v1")
 

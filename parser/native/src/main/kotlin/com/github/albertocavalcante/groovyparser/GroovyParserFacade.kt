@@ -631,7 +631,12 @@ class GroovyParserFacade internal constructor(
             request.classpath.forEach { classLoader.addClasspath(it.toString()) }
             request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
             if (request.compilePhase >= Phases.SEMANTIC_ANALYSIS) classLoader.selectSdkFallback()
-            if (request.excludedSources.isNotEmpty() || sourceFilter != null || locatorBuffers.isNotEmpty()) {
+            val sourcePathAdmission = request.sourcePathAdmission
+            if (request.excludedSources.isNotEmpty() ||
+                sourceFilter != null ||
+                locatorBuffers.isNotEmpty() ||
+                sourcePathAdmission != null
+            ) {
                 val excluded = request.excludedSources.mapTo(HashSet(), ::sourceIdentity)
                 val bufferPaths = locatorBuffers.keys.mapNotNullTo(HashSet()) { uri ->
                     runCatching { Path.of(uri).toRealPath() }.getOrNull()
@@ -646,7 +651,8 @@ class GroovyParserFacade internal constructor(
                         val canonical = path?.let { runCatching { it.toRealPath() }.getOrDefault(it) }
                         val accepted = canonical == null || sourceFilter == null ||
                             roots.none(canonical::startsWith) || sourceFilter(canonical)
-                        canonical !in excluded && canonical !in bufferPaths && accepted
+                        canonical !in excluded && canonical !in bufferPaths && accepted &&
+                            (path == null || sourcePathAdmission?.invoke(path) != false)
                     }
                 }
             }

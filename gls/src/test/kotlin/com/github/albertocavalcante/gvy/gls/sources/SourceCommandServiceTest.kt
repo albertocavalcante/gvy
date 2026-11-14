@@ -7,6 +7,10 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import groovy.transform.CompileStatic
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -270,6 +274,59 @@ class SourceCommandServiceTest {
                 fixture.navigator.calls.isEmpty(),
                 "Neither selected source Mark nor its source owner is an external binary",
             )
+        }
+    }
+
+    @Test
+    fun `source action resolves a binary constructor after non BMP text`(): Unit = runBlocking {
+        withCommands { fixture ->
+            val line = "class Money { /*😀😀😀😀😀😀😀😀😀😀*/ def n = new BigDecimal('1'); def later = 3 }"
+            val source = "import java.math.BigDecimal\n$line"
+            assertNotNull(fixture.documents.update(uri, source, 2))
+            fixture.compilation.clearCaches()
+            assertTrue(fixture.compilation.compile(uri, source).isSuccess)
+
+            val result = fixture.commands.resolve(
+                resolve().copy(position = Position(1, line.indexOf("BigDecimal") + 1), documentVersion = 2),
+            )
+
+            assertEquals(SourceResolveStatus.UNAVAILABLE, result.status)
+            assertEquals("java.math.BigDecimal", fixture.navigator.calls.single().symbol.binaryName)
+        }
+    }
+
+    @Test
+    fun `source actions do not replace a workspace constructor with a same FQN binary`(): Unit = runBlocking {
+        withCommands { fixture ->
+            val selected = URI.create("file:///workspace/groovy/transform/CompileStatic.groovy")
+            fixture.documents.put(selected, "package groovy.transform\nclass CompileStatic {}", 1)
+            val line = "class Money { def value = new CompileStatic() }"
+            val source = "import groovy.transform.CompileStatic\n$line"
+            assertNotNull(fixture.documents.update(uri, source, 2))
+            fixture.compilation.clearCaches()
+            assertTrue(fixture.compilation.compile(uri, source).isSuccess)
+            val held = assertNotNull(fixture.compilation.getCompiledSnapshot(uri)).parseResult
+            val cursor = Position(1, line.indexOf("CompileStatic") + 1)
+            val node = held.astModel.getNodeAt(
+                uri,
+                com.github.albertocavalcante.groovyparser.ast.types.Position(cursor.line, cursor.character),
+            )
+            val type = when (node) {
+                is ClassNode -> node
+                is ClassExpression -> node.type
+                is ConstructorCallExpression -> node.type
+                is VariableExpression -> node.type
+                else -> error("Expected the selected constructor type, got $node")
+            }
+            assertEquals("groovy.transform.CompileStatic", type.redirect().name)
+            assertTrue(type.redirect().isPrimaryClassNode, "The fixture must select the workspace declaration")
+
+            val results = listOf(
+                fixture.commands.resolve(resolve().copy(position = cursor, documentVersion = 2, allowDownload = true)),
+                fixture.commands.attach(attach().copy(position = cursor, documentVersion = 2)),
+            )
+            assertTrue(results.all { it.status == SourceResolveStatus.UNAVAILABLE })
+            assertTrue(fixture.navigator.calls.isEmpty())
         }
     }
 

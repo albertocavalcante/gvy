@@ -154,6 +154,8 @@ class SourceLookupSessionTest {
             val session = assertNotNull(
                 compilation.captureSourceLookupSession(descriptor(origin, request.context.identity)),
             )
+            val selected = assertIs<SourceRequestSelection.Selected>(session.select("sample.Original")).request
+            assertTrue(selected.context.validateCurrent())
             val originalStamp = assertNotNull(origin.observedStamp)
             val originalTime = Files.getLastModifiedTime(archive)
 
@@ -161,6 +163,8 @@ class SourceLookupSessionTest {
             Files.setLastModifiedTime(archive, originalTime)
 
             assertEquals(originalStamp, ArtifactStamp.of(archive))
+            assertTrue(selected.context.isCurrent(), "The cheap guard cannot detect a same-stamp rewrite")
+            assertFalse(selected.context.validateCurrent(), "The selected request must rehash its archive")
             assertFalse(session.validateCurrent())
         } finally {
             compilation.shutdown()

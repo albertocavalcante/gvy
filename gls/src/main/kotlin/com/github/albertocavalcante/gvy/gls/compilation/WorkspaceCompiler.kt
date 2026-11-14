@@ -7,15 +7,19 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Path
 import kotlin.io.path.extension
@@ -121,7 +125,9 @@ class WorkspaceCompiler(
      * over the configured size limit) only files that already have a document are refreshed.
      */
     suspend fun refreshFromDisk(uris: Collection<URI>) = withContext(Dispatchers.IO) {
-        val stale = uris.filter(::needsRefresh)
+        val context = currentCoroutineContext()
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        val stale = uris.filter { needsRefresh(it, admission) }
         when {
             stale.isEmpty() -> Unit
             workspaceCompiled && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
@@ -140,17 +146,35 @@ class WorkspaceCompiler(
     }
 
     /** Whether [uri]'s document must be rebuilt from disk; drops it when there is no source file to build from. */
-    private fun needsRefresh(uri: URI): Boolean {
+    private fun needsRefresh(uri: URI, admission: SourceInputAdmission): Boolean {
         // Owned before the open check: a reopen in between makes this removal stale (#1184).
         val ticket = ownership.begin(uri)
         if (semanticIndexer.followsBuffer(uri)) return false
         val path = UriPathConverter.toPath(uri)?.takeIf { it.extension.equals("groovy", ignoreCase = true) }
-        // Read once: the file may vanish between a check and the read (a checkout in progress).
-        val content = path?.let { runCatching { it.readText() }.getOrNull() }
-        if (content == null) {
-            ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
+        if (path == null || !admission.allows(path)) {
+            removeClosed(uri, ticket)
+            return false
         }
-        return content != null && !semanticIndexer.isCurrent(uri, content)
+        // Read once: the file may vanish between a check and the read (a checkout in progress).
+        val content =
+            try {
+                path.readText()
+            } catch (_: IOException) {
+                null
+            } catch (_: SecurityException) {
+                null
+            }
+        admission.checkCancelled()
+        return if (content == null || !admission.sourcePathAdmission()(path)) {
+            removeClosed(uri, ticket)
+            false
+        } else {
+            !semanticIndexer.isCurrent(uri, content)
+        }
+    }
+
+    private fun removeClosed(uri: URI, ticket: ArtifactOwnership.Ticket) {
+        ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
     }
 
     /**
@@ -192,6 +216,7 @@ class WorkspaceCompiler(
                 is FileCompilationResult.Failure -> {
                     errors.addAll(result.errors)
                 }
+                FileCompilationResult.Skipped -> Unit
             }
         }
 
@@ -205,6 +230,7 @@ class WorkspaceCompiler(
      * The file is compiled with all workspace sources available to the compilation unit,
      * enabling cross-file resolution.
      */
+    @Suppress("ReturnCount") // Admission failures exit inside the try so publication cleanup always runs.
     private suspend fun compileFileWithWorkspaceContext(
         sourcePath: Path,
         allSources: List<Path>,
@@ -212,11 +238,28 @@ class WorkspaceCompiler(
         sourceRoots: List<Path>,
     ): FileCompilationResult {
         val uri = sourcePath.toUri()
-        val publication = semanticIndexer.begin(uri)
+        val context = currentCoroutineContext()
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        val sourcePathAdmission = admission.sourcePathAdmission()
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
+
+        fun freshlyAllowed(path: Path): Boolean {
+            context.ensureActive()
+            return sourcePathAdmission(path)
+        }
 
         return try {
-            // Read file content
-            val content = sourcePath.readText()
+            if (!admission.allows(sourcePath)) {
+                removeClosed(uri, ticket)
+                return FileCompilationResult.Skipped
+            }
+            val content = readSourceContent(sourcePath, uri, ticket)
+            if (!freshlyAllowed(sourcePath)) {
+                removeClosed(uri, ticket)
+                return FileCompilationResult.Skipped
+            }
+            val admittedRoots = sourceRoots.filter(admission::allows)
+            val admittedSources = allSources.filter(admission::allows)
 
             // Build locator candidates for this file
             val locatorCandidates = buildLocatorCandidates(uri, sourcePath)
@@ -226,45 +269,81 @@ class WorkspaceCompiler(
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = sourceRoots,
-                workspaceSources = allSources,
+                sourceRoots = admittedRoots,
+                workspaceSources = admittedSources,
                 locatorCandidates = locatorCandidates,
                 compilePhase = Phases.SEMANTIC_ANALYSIS,
+                checkCancelled = admission.checkCancelled,
+                sourcePathAdmission = sourcePathAdmission,
             )
 
             // Parse using worker session
             val parseResult = workerSessionManager.parse(parseRequest)
 
-            // Extract module
-            val module = parseResult.ast
-            if (module != null) {
-                logger.debug { "Successfully compiled: $uri" }
-                semanticIndexer.publish(
-                    publication,
-                    content,
-                    module,
-                    parseResult.outcome.achievedPhase,
-                    fromBuffer = false,
-                )
-                val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
-                    CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
+            if (
+                !freshlyAllowed(sourcePath) ||
+                sourceRoots.filter(::freshlyAllowed) != admittedRoots ||
+                allSources.filter(::freshlyAllowed) != admittedSources
+            ) {
+                removeClosed(uri, ticket)
+                try {
+                    parseResult.compilationUnit.classLoader.close()
+                } catch (failure: IOException) {
+                    logger.warn(failure) { "Failed to close a discarded workspace compilation for $uri" }
                 }
-                FileCompilationResult.Success(uri, module, errors)
-            } else {
-                val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
-                    parseResult.diagnostics.joinToString("; ") { it.message }
-                } else {
-                    "No AST produced"
-                }
-                logger.warn { "Failed to compile $uri: $errorMessage" }
-                semanticAnalysisFailure(uri, errorMessage)
+                return FileCompilationResult.Skipped
             }
+
+            publishCompilationResult(uri, content, parseResult, publication)
         } catch (e: Exception) {
             rethrowIfCancellationOrError(e) // cancellation is not a compile error of this file
             logger.error(e) { "Exception compiling $uri" }
             semanticAnalysisFailure(uri, e.message ?: "Unknown error: ${e.javaClass.simpleName}")
         } finally {
+            admission.releaseObservedPaths()
             publication.close()
+        }
+    }
+
+    private fun readSourceContent(sourcePath: Path, uri: URI, ticket: ArtifactOwnership.Ticket): String = try {
+        sourcePath.readText()
+    } catch (failure: IOException) {
+        removeClosed(uri, ticket)
+        throw failure
+    } catch (failure: SecurityException) {
+        removeClosed(uri, ticket)
+        throw failure
+    }
+
+    private fun publishCompilationResult(
+        uri: URI,
+        content: String,
+        parseResult: ParseResult,
+        publication: SemanticIndexer.Publication,
+    ): FileCompilationResult {
+        // Extract module
+        val module = parseResult.ast
+        return if (module != null) {
+            logger.debug { "Successfully compiled: $uri" }
+            semanticIndexer.publish(
+                publication,
+                content,
+                module,
+                parseResult.outcome.achievedPhase,
+                fromBuffer = false,
+            )
+            val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
+                CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
+            }
+            FileCompilationResult.Success(uri, module, errors)
+        } else {
+            val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
+                parseResult.diagnostics.joinToString("; ") { it.message }
+            } else {
+                "No AST produced"
+            }
+            logger.warn { "Failed to compile $uri: $errorMessage" }
+            semanticAnalysisFailure(uri, errorMessage)
         }
     }
 
@@ -292,6 +371,8 @@ class WorkspaceCompiler(
         data class Success(val uri: URI, val module: ModuleNode, val errors: List<CompilationError>) :
             FileCompilationResult()
         data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
+
+        data object Skipped : FileCompilationResult()
     }
 
     private companion object {

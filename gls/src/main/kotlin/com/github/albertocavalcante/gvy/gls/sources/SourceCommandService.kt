@@ -3,18 +3,28 @@
 
 package com.github.albertocavalcante.gvy.gls.sources
 
+import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SourceRequestSelection
-import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.getClassName
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.OpenBuffer
 import com.github.albertocavalcante.gvy.gls.utils.SourcePathAdmission
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.classifySourcePath
 import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
@@ -28,6 +38,7 @@ internal class SourceCommandService(
     private val navigator: SourceNavigator,
     private val registry: ExternalSourceRegistry,
 ) {
+    @Suppress("CyclomaticComplexMethod", "ReturnCount") // Refuse stale inputs at each session boundary.
     suspend fun openLookupSession(descriptor: SourceDocumentDescriptor): SourceBrowserLookupSession? {
         val uri = descriptor.context.documentUri ?: return null
         if (registry.isManaged(uri)) return null
@@ -100,6 +111,7 @@ internal class SourceCommandService(
         }
     }
 
+    @Suppress("CyclomaticComplexMethod", "ReturnCount") // Validate each snapshot boundary before publishing a result.
     private suspend fun act(
         rawUri: String,
         position: Position,
@@ -174,6 +186,7 @@ internal class SourceCommandService(
         return classifySourcePath(path) { registry.isManaged(it.toUri()) } == SourcePathAdmission.ORDINARY
     }
 
+    @Suppress("ReturnCount") // Unsupported or unresolved nodes do not identify a dependency symbol.
     private fun symbolAt(uri: URI, position: Position, snapshot: CompiledDocumentSnapshot): String? {
         if (position.line < 0 || position.character < 0) return null
         val annotations = snapshot.parseResult.sourceAnnotations
@@ -189,12 +202,14 @@ internal class SourceCommandService(
             )
         }
         if (import != null) return dependencyImportName(import, annotations)
+        val codePointPosition = TextIndex(snapshot.sourceText).codePointPosition(position) ?: return null
         val parserPosition = com.github.albertocavalcante.groovyparser.ast.types.Position(
-            position.line,
-            position.character,
+            codePointPosition.line,
+            codePointPosition.character,
         )
         val node = snapshot.parseResult.astModel.getNodeAt(uri, parserPosition) ?: return null
-        return if (node is ImportNode) dependencyImportName(node, annotations) else getClassName(node)
+        if (node is ImportNode) return dependencyImportName(node, annotations)
+        return dependencyType(selectedType(node))?.name
     }
 
     private fun dependencyImportName(import: ImportNode, annotations: SourceAnnotationIndex): String? {
@@ -202,9 +217,37 @@ internal class SourceCommandService(
             val annotation = annotations.annotationImportedBy(import) ?: return null
             return if (annotation.sourceUnitName == null) annotation.binaryName else null
         }
-        val selected = import.type?.redirect() ?: return null
-        if (selected.isPrimaryClassNode || !selected.isResolved) return null
-        return getClassName(import)
+        return dependencyType(import.type)?.name
+    }
+
+    /** Only the compiler-selected binary can be used as a source-action target. */
+    private fun dependencyType(type: ClassNode?): ClassNode? {
+        val selected = type?.redirect() ?: return null
+        if (selected.isPrimaryClassNode || !selected.isResolved || isStubSourceName(selected.module?.context?.name)) {
+            return null
+        }
+        return selected
+    }
+
+    private fun selectedType(node: ASTNode): ClassNode? = when (node) {
+        is AnnotationNode -> node.classNode
+        is ClassNode -> node
+        is ConstructorCallExpression -> node.type
+        is ClassExpression -> node.type
+        is StaticMethodCallExpression -> node.ownerType
+        is MethodCallExpression -> classReceiver(node.objectExpression)
+        is PropertyExpression -> classReceiver(node.objectExpression)
+        is VariableExpression -> classReceiver(node)
+        else -> null
+    }
+
+    private fun classReceiver(node: ASTNode): ClassNode? = when (node) {
+        is ClassExpression -> node.type
+        is VariableExpression -> {
+            val candidates = listOfNotNull(node.type, node.type?.genericsTypes?.firstOrNull()?.type)
+            candidates.firstOrNull { type -> node.name == type.name || node.name == type.nameWithoutPackage }
+        }
+        else -> null
     }
 
     private fun response(result: SourceLookupResult): SourceResolveResult = when (result) {

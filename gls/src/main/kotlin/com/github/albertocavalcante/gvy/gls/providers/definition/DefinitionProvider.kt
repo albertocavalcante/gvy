@@ -44,6 +44,8 @@ import java.util.concurrent.CancellationException
  * Main provider for go-to-definition functionality.
  * Uses Flow pattern inspired by kotlin-lsp for clean async handling.
  */
+// The provider implements both LSP definition forms and shares their request validation.
+@Suppress("TooManyFunctions")
 class DefinitionProvider(
     private val compilationService: GroovyCompilationService,
     private val sourceNavigator: SourceNavigator? = null,

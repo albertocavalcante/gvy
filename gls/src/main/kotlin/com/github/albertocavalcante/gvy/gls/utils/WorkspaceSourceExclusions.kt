@@ -34,14 +34,17 @@ internal fun sourceExclusionForRoot(root: Path, excluded: (Path) -> Boolean): (P
     val physical = try {
         absolute.toRealPath()
     } catch (_: IOException) {
-        return excluded
+        null
     } catch (_: SecurityException) {
-        return excluded
-    }
-    if (absolute == physical) return excluded
-    return { path ->
-        val normalized = path.toAbsolutePath().normalize()
-        excluded(normalized) ||
-            normalized.startsWith(absolute) && excluded(physical.resolve(absolute.relativize(normalized)))
+        null
+    } ?: return excluded
+    return if (absolute == physical) {
+        excluded
+    } else {
+        { path ->
+            val normalized = path.toAbsolutePath().normalize()
+            excluded(normalized) ||
+                normalized.startsWith(absolute) && excluded(physical.resolve(absolute.relativize(normalized)))
+        }
     }
 }

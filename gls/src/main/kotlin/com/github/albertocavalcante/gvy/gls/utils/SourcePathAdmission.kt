@@ -18,24 +18,45 @@ internal fun classifySourcePath(path: Path, excluded: (Path) -> Boolean): Source
     val absolute = raw.normalize()
     if (excluded(absolute)) return SourcePathAdmission.MANAGED
     return try {
-        var existing = absolute
-        val missing = ArrayDeque<Path>()
-        var resolved: Path? = null
-        while (resolved == null) {
-            try {
-                resolved = existing.toRealPath()
-            } catch (_: NoSuchFileException) {
-                if (Files.isSymbolicLink(existing)) return SourcePathAdmission.UNAVAILABLE
-                missing.addFirst(existing.fileName ?: return SourcePathAdmission.UNAVAILABLE)
-                existing = existing.parent ?: return SourcePathAdmission.UNAVAILABLE
-            }
+        val physical = resolveSourcePath(absolute)
+        when {
+            physical == null -> SourcePathAdmission.UNAVAILABLE
+            excluded(physical) -> SourcePathAdmission.MANAGED
+            else -> SourcePathAdmission.ORDINARY
         }
-        var full = checkNotNull(resolved)
-        missing.forEach { full = full.resolve(it) }
-        if (excluded(full)) SourcePathAdmission.MANAGED else SourcePathAdmission.ORDINARY
     } catch (_: IOException) {
         SourcePathAdmission.UNAVAILABLE
     } catch (_: SecurityException) {
         SourcePathAdmission.UNAVAILABLE
     }
+}
+
+/** Resolve missing descendants without interpreting a dangling link as an ordinary new path. */
+private fun resolveSourcePath(absolute: Path): Path? {
+    return try {
+        var existing = absolute
+        val missing = ArrayDeque<Path>()
+        var resolved = realPathOrMissing(existing)
+        while (resolved == null) {
+            val name = existing.fileName
+            val parent = existing.parent
+            if (Files.isSymbolicLink(existing) || name == null || parent == null) return null
+            missing.addFirst(name)
+            existing = parent
+            resolved = realPathOrMissing(existing)
+        }
+        var full = checkNotNull(resolved)
+        missing.forEach { full = full.resolve(it) }
+        full
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+}
+
+private fun realPathOrMissing(path: Path): Path? = try {
+    path.toRealPath()
+} catch (_: NoSuchFileException) {
+    null
 }

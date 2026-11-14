@@ -208,7 +208,7 @@ class ExternalSourceRegistryTest {
     @Test
     fun `escaped metadata is bounded before any descriptor file is written`() {
         val root = temporary.resolve("registry")
-        val original = descriptor().copy(context = SourceContextIdentity("\u0000".repeat(20_000)))
+        val original = descriptor().copy(context = SourceContextIdentity("\\".repeat(40_000)))
         val registry = ExternalSourceRegistry(
             root,
             virtualDocumentsEnabled = { true },

@@ -33,6 +33,7 @@ internal class SourceBrowserService(
         indexes.close()
     }
 
+    @Suppress("ReturnCount") // Missing or ambiguous definitions terminate browsing immediately.
     suspend fun definition(uri: URI, position: Position): List<LocationLink> {
         val descriptor = registry.descriptor(uri) ?: return emptyList()
         val content = registry.content(uri) ?: return emptyList()
@@ -54,6 +55,7 @@ internal class SourceBrowserService(
                     result.value.uri,
                     result.value.definition,
                     reference.range,
+                    isCurrent = session.isCurrent,
                     validateCurrent = session.validateCurrent,
                 )
             }
@@ -61,6 +63,7 @@ internal class SourceBrowserService(
         return emptyList()
     }
 
+    @Suppress("CyclomaticComplexMethod", "ThrowsCount") // Preserve cancellation and stale checks around each lookup.
     private suspend fun locateTier(candidates: List<String>, session: SourceBrowserLookupSession): TierResult {
         if (candidates.size > MAX_CANDIDATES) return TierResult.Unknown
         val located = mutableListOf<SourceLookupResult.Located>()
@@ -104,6 +107,7 @@ internal class SourceBrowserService(
         data class Located(val value: SourceLookupResult.Located) : TierResult
     }
 
+    @Suppress("LongParameterList", "ThrowsCount") // Publication must recheck content and session in order.
     private suspend fun currentLink(
         source: URI,
         target: URI,
@@ -112,14 +116,20 @@ internal class SourceBrowserService(
         isCurrent: () -> Boolean = { true },
         validateCurrent: suspend () -> Boolean = { true },
     ): List<LocationLink> {
-        if (registry.content(source) == null) {
+        requireContent(source)
+        if (!isCurrent()) throw staleContext()
+        if (!validateCurrent()) throw staleContext()
+        if (!isCurrent()) throw staleContext()
+        requireContent(source)
+        return listOf(link(target, definition, origin))
+    }
+
+    private fun requireContent(uri: URI) {
+        if (registry.content(uri) == null) {
             throw ResponseErrorException(
                 ResponseError(ResponseErrorCode.ContentModified, "Dependency source content changed", null),
             )
         }
-        if (!isCurrent()) throw staleContext()
-        if (!validateCurrent()) throw staleContext()
-        return listOf(link(target, definition, origin))
     }
 
     private fun staleContext(): ResponseErrorException = ResponseErrorException(

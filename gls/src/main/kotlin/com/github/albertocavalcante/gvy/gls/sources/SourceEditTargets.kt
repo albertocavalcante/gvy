@@ -23,6 +23,7 @@ internal fun sourceEditTargets(edit: WorkspaceEdit): List<SourceEditTarget>? {
     return if (collector.append(edit)) collector.snapshot() else null
 }
 
+@Suppress("ReturnCount") // Invalid actions must be refused at their point of discovery.
 internal fun sourceEditTargets(actions: List<Either<Command, CodeAction>>): List<SourceEditTarget>? {
     if (actions.size > MAX_SOURCE_EDIT_TARGETS) return null
     val collector = SourceEditTargetCollector()
@@ -42,6 +43,7 @@ internal fun sourceEditTargets(actions: List<Either<Command, CodeAction>>): List
 private class SourceEditTargetCollector {
     private val targets = mutableListOf<SourceEditTarget>()
 
+    @Suppress("ReturnCount") // Fail closed on malformed or oversized edit operations.
     fun append(edit: WorkspaceEdit): Boolean {
         val changes = edit.changes
         if (changes != null) {
@@ -82,6 +84,7 @@ private class SourceEditTargetCollector {
         else -> false
     }
 
+    @Suppress("ReturnCount") // URI validation rejects each unsafe form before recording a target.
     private fun add(raw: String?, kind: SourceEditTargetKind): Boolean {
         if (targets.size >= MAX_SOURCE_EDIT_TARGETS || raw.isNullOrBlank()) return false
         val uri = try {
@@ -92,12 +95,9 @@ private class SourceEditTargetCollector {
         if (!uri.isAbsolute || uri.rawSchemeSpecificPart.isNullOrBlank()) return false
         val isFileUri = uri.scheme.equals("file", ignoreCase = true)
         if (isFileUri) {
-            if (
-                uri.isOpaque ||
-                uri.path?.startsWith('/') != true ||
-                uri.query != null ||
-                uri.fragment != null
-            ) {
+            val invalidPath = uri.isOpaque || uri.path?.startsWith('/') != true
+            val hasSuffix = uri.query != null || uri.fragment != null
+            if (invalidPath || hasSuffix) {
                 return false
             }
         }
