@@ -17,8 +17,8 @@ contract.
 
 The first milestone is **one coherent editor state, one shared default semantic result, and measured edit costs**. Its
 gate is a real protocol replay proving that text, versions, diagnostics, hover and navigation agree after edits;
-unchanged default hover must not invoke a second parser. Ranged sync can land independently of hover consolidation.
-Neither milestone may be described as incremental AST reparsing.
+unchanged default hover must not invoke a second parser. Ranged sync can land independently; hover is already
+consolidated on Native (81fc6d52). Neither milestone may be described as incremental AST reparsing.
 
 The [PR queue and next-PR packet](#pr-queue-and-next-pr-packet) below expand these phases into independently reviewable
 changes. Their planning baseline is newer than the original source audit; open prerequisites are not counted as landed.
@@ -53,14 +53,14 @@ not measure editor reparsing.
 
 ## Core versus Native
 
-| Question          | Core today                                                                                                | Native today                                                                            | Plan                                                                                           |
-| ----------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Parsing           | Fresh compiler parse through CONVERSION, followed by conversion.                                          | Fresh compiler parse with project context and requested phase; fallback/recovery paths. | Neither is incrementally reusable today.                                                       |
-| Representation    | Kotlin nodes with mutable parents/ranges; information is lost during conversion.                          | Groovy compiler objects with mutable relationships, scopes and metadata.                | Use Native for semantics; require a separate safe syntax representation for subtree reuse.     |
-| Project knowledge | Default Core engine parses without the Native request's project classpath and uses its reflection solver. | Supplies classpath, source roots and unsaved companion buffers.                         | Preserve project context in every semantic result.                                             |
-| Feature coverage  | Default hover uses Core; visualization and parser API consumers also use it.                              | Most LSP features already use Native; held-snapshot hover can avoid reparsing.          | Coordinate default-hover consolidation; inventory explicit Core consumers before removal.      |
-| Recovery          | Missing compiler module can yield an empty unit.                                                          | Can exclude broken companion sources, retry a lower phase and report degradation.       | Compare malformed buffers and report achieved phase; do not assume Core has superior recovery. |
-| Reusable value    | Groovydoc/comment support, type solvers, resolver and parser API consumers.                               | Compiler fidelity, workspace resolution, existing LSP integration.                      | Keep useful Core code without keeping two default semantic answers.                            |
+| Question          | Core (parser/core)                                                                                                                    | Native today                                                                            | Plan                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Parsing           | Fresh compiler parse through CONVERSION, followed by conversion.                                                                      | Fresh compiler parse with project context and requested phase; fallback/recovery paths. | Neither is incrementally reusable today.                                                       |
+| Representation    | Kotlin nodes with mutable parents/ranges; information is lost during conversion.                                                      | Groovy compiler objects with mutable relationships, scopes and metadata.                | Use Native for semantics; require a separate safe syntax representation for subtree reuse.     |
+| Project knowledge | Former default Core hover engine parsed without the Native request's project classpath and used its reflection solver.                | Supplies classpath, source roots and unsaved companion buffers.                         | Preserve project context in every semantic result.                                             |
+| Feature coverage  | Hover formerly used Core (retired); type solvers, Groovydoc extraction, visualization and parser API consumers still use parser/core. | Most LSP features already use Native; held-snapshot hover can avoid reparsing.          | Hover consolidated on Native (81fc6d52); keep parser/core consumers that remain in use.        |
+| Recovery          | Missing compiler module can yield an empty unit.                                                                                      | Can exclude broken companion sources, retry a lower phase and report degradation.       | Compare malformed buffers and report achieved phase; do not assume Core has superior recovery. |
+| Reusable value    | Groovydoc/comment support, type solvers, resolver and parser API consumers.                                                           | Compiler fidelity, workspace resolution, existing LSP integration.                      | Keep useful Core code without keeping two default semantic answers.                            |
 
 Concrete Core losses: `GroovyAstConverter.kt:320` converts unknown expressions to `ConstantExpr(text)`;
 `StatementConverter.kt:75` substitutes empty blocks for unsupported statements; `DeclarationConverter.kt:67` retains
@@ -72,11 +72,10 @@ CANONICALIZATION, and workspace compilation requests SEMANTIC_ANALYSIS. The comp
 [#1547](https://github.com/albertocavalcante/gvy/issues/1547) remains relevant; do not equate these phases with complete
 compiler-derived expression types or manufacture a second type system in a new syntax frontend.
 
-[#1276](https://github.com/albertocavalcante/gvy/issues/1276) proposes retiring Core hover. Active
-[PR #1775](https://github.com/albertocavalcante/gvy/pull/1775) already changes the default and improves Native cards,
-while preserving explicit Core configuration. Its observed head was `e1546e6158b75afe01642ed683f9b23f91231322`; its
-description records a CI metaspace readiness blocker. Coordinate with that work, recheck its actual state, and review
-the combined behavior after landing. This plan neither duplicates its changes nor declares it ready.
+[#1276](https://github.com/albertocavalcante/gvy/issues/1276) proposed retiring Core hover, and commit `81fc6d52`
+retired it: hover always uses Native, and `core` is accepted as a legacy alias that selects Native. Earlier,
+[PR #1775](https://github.com/albertocavalcante/gvy/pull/1775) changed the default and improved Native cards; its
+observed head was `e1546e6158b75afe01642ed683f9b23f91231322`.
 
 ## Architecture and invariants
 
@@ -129,7 +128,7 @@ described below. No implementation gate in this table is claimed passed by publi
 | P1-A: pure edit application     | Put a reusable edit applier beside the neutral source utilities; GLS decodes protocol changes into it.                                                            | P0-A.                                          | Sequential mixed replacements/ranges produce exact text; bounds, UTF-16, CRLF, bare CR, EOF and supplementary characters follow the LSP contract.                    |
 | P1-B: sync integration          | Update DocumentProvider/didChange and negotiate Incremental only after edit application works. Preserve full replacements and lifecycle fences.                   | P1-A.                                          | Public initialize/didChange tests prove capability and behavior; out-of-date or invalid batches cannot partially mutate a buffer.                                    |
 | P1-C: analysis handoff          | Carry base/result identity and bounded edit history through debounce; retire analysis without losing accepted text.                                               | P1-B; P0-B.                                    | Burst edits, undo, full reset and close/reopen produce the same latest state and answers as a fresh-open control.                                                    |
-| P2-A: one default semantic path | Reuse the Native held-snapshot hover path through existing #1775/#1276 work; retain explicit Core compatibility and utilities as required.                        | Existing PR integration; may run beside P1.    | Parser invocation counts show no second unchanged default-hover parse; hover/current-buffer/race/Unicode and project-type tests pass.                                |
+| P2-A: one default semantic path | Done: #1775 (merged) made Native the default hover and 81fc6d52 retired Core hover (#1276); and `parser/core` utilities and consumers are retained.               | Done (#1775, 81fc6d52).                        | Parser invocation counts show no second unchanged default-hover parse; hover/current-buffer/race/Unicode and project-type tests pass.                                |
 | P2-B: dependency facts          | Prepare dependency records from current compiler facts, including signatures, annotations, generics, arrays and resolved body references; commit with the parse.  | P0-A; #776/#663.                               | A→B→C and cycles update reverse edges; renamed/deleted/failed sources remove or conservatively invalidate old evidence; no stale compile can overwrite the graph.    |
 | P2-C: selective analysis        | Include phase/context/dependency generation compatibility in result and pending-work reuse; schedule changed files and conservative transitive dependents.        | P2-B; P0-B.                                    | Changing an unsaved companion or a public return type invalidates consumers; unrelated work is reused only with proof; fresh and selective workspace results agree.  |
 | P2-D: bound retained state      | Separate detached facts from heavyweight compiler graphs where consumers allow; bound weights/history/concurrency and remove eager N-by-N work under #1569/#1571. | Consumer audit; P2-C for selective scheduling. | Named 50/200/500-file workloads complete within an explicit heap; retained bytes and compiler calls are measured; eviction/reopen/cancellation preserve correctness. |
@@ -278,7 +277,7 @@ capabilities requires a server/client restart and a full didOpen state, not an u
 | Responsible scope / existing record | Impact and reason still open                                                                         | Next action and acceptance                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | GLS editing, #614                   | No ranged sync or subtree contract.                                                                  | Deliver P0/P1; maintain separate claims for transport, selective compilation and tree reuse.                                  |
-| Hover, #1276 / #1775                | Default Core parses independently; existing integration has a reported CI resource blocker.          | Finish the existing reviewed PR and validate invocation counts/coherence; do not duplicate or waive its blocker.              |
+| Hover, #1276 / #1775                | Resolved by 81fc6d52: Core hover is retired, so the former independent default parse is gone.        | Validate invocation counts and coherence on the Native hover path; #1775's historical CI blocker is not a waiver.             |
 | Compilation, #776 / #663            | Graph unpopulated and incomplete; unsound selection could omit required sources.                     | P2-B then P2-C with conservative fallbacks, transitive/cycle and unsaved-buffer tests.                                        |
 | Compilation, #660                   | Historical IncrementalCompiler.kt referenced by the issue is absent at the audit revision.           | Reconcile the issue around current WorkspaceCompiler/Orchestrator before implementation; selective/fresh agreement closes it. |
 | Coordinates, #1190                  | Shared UTF-16 utility exists, but provider coordinate normalization remains broader unfinished work. | Reuse neutral utilities and prove edit-boundary semantics; do not claim the entire issue closed by ranged sync.               |
@@ -296,9 +295,9 @@ whole-project rope migration, formatter rewrite or unrelated CI migration into t
 for P1 or conservative P2. Any necessary upstream contribution is prepared locally for human review under the
 [dependency policy](../docs/dependency-bugs.md); this plan does not authorize upstream submissions.
 
-Start with P0 characterization and P1-A/B, coordinate #1775, and make the P0-C/P3 decision before promising subtree
-reuse. These packages can deliver real responsiveness improvements even if the syntax experiment ultimately retains
-whole-file parsing.
+Start with P0 characterization and P1-A/B, build on the merged #1775 Native hover, and make the P0-C/P3 decision before
+promising subtree reuse. These packages can deliver real responsiveness improvements even if the syntax experiment
+ultimately retains whole-file parsing.
 
 ## PR queue and next-PR packet
 
@@ -316,7 +315,7 @@ passed gates.
 
 | Existing work                                                                                                                                            | Observed head / dependency                          | Use in this program                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [#1775](https://github.com/albertocavalcante/gvy/pull/1775), Native default hover                                                                        | `e1546e615`; base main                              | Finish with its owner; add any missing parser-count/coherence proof rather than repeat the engine/default change.                         |
+| [#1775](https://github.com/albertocavalcante/gvy/pull/1775), Native default hover                                                                        | `e1546e615`; base main                              | Merged 2026-11-12; add any missing parser-count/coherence proof rather than repeat the engine/default change.                             |
 | [#1803](https://github.com/albertocavalcante/gvy/pull/1803), simultaneous editor edits                                                                   | Merged `628407fe2`; reviewed head `258ee8da8`       | Outbound client TextEdit[] semantics for #1654, not the sequential incoming-change algorithm in Q01.                                      |
 | [#1806](https://github.com/albertocavalcante/gvy/pull/1806), multi-buffer edit plans                                                                     | Draft `8cea9ebbf`; rebased onto main                | Reuse when stateful workspace-edit tests are needed; it does not yet own a live editor transaction.                                       |
 | [#1813](https://github.com/albertocavalcante/gvy/pull/1813), refuse unapplied edits                                                                      | `8d9acd814`; base main                              | Keep the client honest until real application exists; do not treat this as applied-edit support.                                          |
@@ -467,10 +466,10 @@ Full and fresh didOpen, not mid-session capability mutation.
 
 **Q05 — capability and real-client integration.** Update the initialize contract and feature documentation to
 Incremental only after a packaged client/server run covers UTF-16, multiple events, full reset, undo and rapid edits.
-Assert the editor's actual latest text and versions and matching diagnostic/hover/navigation snapshots. Coordinate #1775
-for default-hover parser-count proof; the sync contract need not wait for its semantic presentation changes. Gate: the
-default capability agrees with the tested runtime path; no stale edit is offered during recovery. Rollback: restart
-under the previous Full capability with a fresh open state. This closes the transport milestone only.
+Assert the editor's actual latest text and versions and matching diagnostic/hover/navigation snapshots. Build on the
+merged #1775 for default-hover parser-count proof; the sync contract need not wait for its semantic presentation
+changes. Gate: the default capability agrees with the tested runtime path; no stale edit is offered during recovery.
+Rollback: restart under the previous Full capability with a fresh open state. This closes the transport milestone only.
 
 **Q06 — phase-sensitive reuse.** Include requested phase and parse mode/context in cache and pending-work compatibility.
 Initially require exact phase/mode compatibility; do not assume a later transformed AST is suitable for a caller needing
