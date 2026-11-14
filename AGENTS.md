@@ -83,6 +83,9 @@ external users, human development procedures in contributor guides, and agent ex
 `.agent/`. `docs/README.md` separates user and contributor entry points; `kb/` holds design records, RFCs, audits, and
 plans. Link to canonical procedures instead of duplicating them.
 
+For issues, PRs and Markdown, follow the [visual writing guide](docs/visual-writing.md). Readable visual explanations
+are a standing preference; choose a useful format rather than requiring a diagram for every small change.
+
 ## Commits
 
 ```
