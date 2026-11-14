@@ -147,3 +147,38 @@ test("copy button writes the install command to the clipboard", async ({
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toContain("brew install albertocavalcante/tap/gvy");
 });
+
+for (const [platform, shortcut, modifier] of [
+  ["MacIntel", "⌘ K", "Meta"],
+  ["Linux x86_64", "Ctrl K", "Control"],
+] as const) {
+  test(`desktop search name matches ${platform} shortcut`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.addInitScript((value) => {
+      Object.defineProperty(navigator, "platform", {
+        configurable: true,
+        get: () => value,
+      });
+    }, platform);
+    await page.goto("");
+    const button = page.locator("button[data-open-modal]");
+    const keys = button.locator("kbd kbd");
+    await expect(keys.nth(0)).toHaveText(shortcut.split(" ")[0]);
+    await expect(keys.nth(1)).toHaveText("K");
+    await expect(button).toHaveAttribute(
+      "aria-label",
+      `Search gvy docs ${shortcut}`,
+    );
+    await expect(button).toHaveAttribute("aria-keyshortcuts", `${modifier}+K`);
+    const { default: AxeBuilder } = await import("@axe-core/playwright");
+    const result = await new AxeBuilder({ page })
+      .withRules(["label-content-name-mismatch"])
+      .analyze();
+    expect(result.violations).toEqual([]);
+    await button.focus();
+    await page.keyboard.press(`${modifier}+k`);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(button).toBeFocused();
+  });
+}

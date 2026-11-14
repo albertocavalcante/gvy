@@ -177,10 +177,10 @@ one skipped clipboard test. Routes/legacy fragments, five search queries/focus, 
 passed. A subsequent real Tab/ArrowRight check also passed in this Chrome version while axe still flagged the scrolling
 regions; that distinction is retained rather than claiming every keyboard operation failed.
 
-With the fixes, the full local suite passed 22 tests and skipped only the explicit clipboard opt-in. This run used Node
-26.13.1, Bun 1.3.14 and isolated system Chrome 157.0.8103.79. All six viewport/theme projects passed overflow and axe
-gates. Full website validation passed 16 script tests, zero Astro diagnostics, 20 pages and link/asset/fragment checks;
-headers, formatting and workflow lint also passed. CI's bundled Chromium and real clipboard are separate
+With the initial fixes, the full local suite passed 22 tests and skipped only the explicit clipboard opt-in. This run
+used Node 26.13.1, Bun 1.3.14 and isolated system Chrome 157.0.8103.79. All six viewport/theme projects passed overflow
+and axe gates. Full website validation passed 16 script tests, zero Astro diagnostics, 20 pages and link/asset/fragment
+checks; headers, formatting and workflow lint also passed. CI's bundled Chromium and real clipboard are separate
 publication-head checks, recorded in the follow-up PR.
 
 The fixes use shrinkable grid tracks, readable light-theme colors and a plain semantic illustration, static focus
@@ -195,3 +195,17 @@ access requires `GVY_E2E_CLIPBOARD=1`, set only in ephemeral Ubuntu CI. No test 
 follow-up reports are in the active task's ignored `.agent/out/docs-browser-followup/` directory until publication and
 evidence retention are reconciled. Reviewed Linux baselines, Firefox/WebKit, full manual keyboard/zoom/screen-reader
 coverage remain in #2020; release/workflow verification remains in #2021 and component/renderer work in #2022.
+
+### Hosted platform correction
+
+The first clean hosted Chromium run (43608870787, head `42c3f0dc014652b2b11bc064d982e5aaca15f02f`) passed 17 browser
+tests, including real clipboard access, but failed six desktop axe cases. The search adapter concatenated nested key
+text into `CtrlK` while Linux displayed `Ctrl K`. A subsequent correction adds a real DOM space between key elements and
+uses the same spaced text in the accessible name. Focused Mac/Linux cases verify names, shortcut attributes, axe and
+keyboard open/Escape behavior. Final-head hosted results remain recorded in the PR.
+
+A disk-full event interrupted local focused validation. Only task-owned dependencies were moved to a private relief
+volume after full file/symlink hash verification; no shared cache or another session’s work was deleted. Type and format
+checks pass, but local Astro production builds encountered a compile-metadata error with the relocated dependency
+symlink. The final browser gate therefore uses a clean hosted frozen install; no post-relocation local browser pass is
+claimed. The private handoff names temporary resources and their cleanup conditions.

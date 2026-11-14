@@ -20,9 +20,10 @@ and B01–B04 fixes. Production Svelte integration and renderer migration remain
 [#2020](https://github.com/albertocavalcante/gvy/issues/2020) now has a production-artifact Playwright harness with
 pinned Playwright 1.65.1 and axe integration 4.14.0. It checks mapped routes/legacy anchors, 404, search and focus,
 no-JavaScript content, actual keyboard scrolling, runtime/assets, overflow and axe findings across six Chromium
-width/theme projects. Tests reproduced the deployed defects; the fixed local build passes 22 tests with the explicit
-CI-only clipboard assertion skipped. CI is configured to use bundled Chromium and upload reports and six homepage
-screenshots.
+width/theme projects. Tests reproduced the deployed defects; an initial fixed local run passed 22 tests with the
+explicit CI-only clipboard assertion skipped. Two focused Mac/Linux shortcut cases were added after hosted platform
+feedback; the publication-head CI result is recorded in the follow-up PR. CI is configured to use bundled Chromium and
+upload reports and six homepage screenshots.
 
 The harness and supported theme adapters address B01–B04. This does not complete reviewed Linux visual baselines,
 Firefox/WebKit, full keyboard/zoom/screen-reader review or the separate workflow matrix. Keep those remaining gates in
