@@ -85,6 +85,46 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
+    fun `same release can recover when a mismatching cached source archive is corrected`() = runBlocking {
+        val incorrectArchive = sourceArchive("incorrect")
+        val staleChecksumArchive = sourceArchive("stale-checksum")
+        val correctedArchive = sourceArchive("corrected")
+        val expectedSha256 = sha256(correctedArchive)
+        val cacheRoot = defaultVerifiedSourceCacheRoot(directory)
+        Files.createDirectories(cacheRoot)
+        val unrelatedCacheFile = Files.writeString(cacheRoot.resolve("unrelated-cache-entry"), "preserve")
+        repository(incorrectArchive, sha256(staleChecksumArchive)).use { repository ->
+            val resolver = MavenSourceArtifactResolver(directory, repository)
+
+            assertEquals(VerifiedSourceArtifactResult.Failed, resolver.resolveVerifiedSourceArtifact(request()))
+            assertTrue(repository.requests.any { it.endsWith("-sources.jar") })
+            assertTrue(
+                managedFiles(cacheRoot).none { it.fileName.toString().endsWith("-sources.jar") },
+                "A checksum-mismatching archive must be evicted",
+            )
+            assertTrue(
+                managedFiles(cacheRoot).none { it.fileName.toString().endsWith("-sources.jar.sha256") },
+                "The potentially stale checksum sidecar must be evicted with its archive",
+            )
+            assertEquals("preserve", Files.readString(unrelatedCacheFile))
+
+            repository.replaceFixture(
+                archive = TestBody.fromBytes(correctedArchive),
+                checksum = expectedSha256,
+                metadata = null,
+            )
+
+            val recovered = assertIs<VerifiedSourceArtifactResult.Available>(
+                resolver.resolveVerifiedSourceArtifact(request()),
+            )
+            assertEquals(expectedSha256, recovered.expectedSha256)
+            assertEquals(correctedArchive.toList(), Files.readAllBytes(recovered.path).toList())
+            assertEquals(2, repository.requests.count { it.endsWith("-sources.jar") })
+            assertEquals("preserve", Files.readString(unrelatedCacheFile))
+        }
+    }
+
+    @Test
     fun `authentication and server failures never become published-source absence`() = runBlocking {
         for (status in listOf(401, 503)) {
             repository(sourceArchive(), null, RepositoryOptions(errorStatus = status)).use { repository ->
@@ -213,6 +253,96 @@ class VerifiedSourceArtifactResolverTest {
         repository.use {
             assertSnapshotBudgetRejection(cache, repository)
             assertSnapshotRetry(retryCache, repository, smallArchive)
+        }
+    }
+
+    @Test
+    fun `snapshot sidecars use timestamped paths with ordinary artifact metadata`() = runBlocking {
+        val archive = sourceArchive("timestamped")
+        repository(
+            archive,
+            sha256(archive),
+            RepositoryOptions(metadata = snapshotMetadata(0)),
+        ).use { repository ->
+            val result = assertIs<VerifiedSourceArtifactResult.Available>(
+                MavenSourceArtifactResolver(directory, repository).resolveVerifiedSourceArtifact(snapshotRequest()),
+                "Requests: ${repository.requests}",
+            )
+
+            val binaryVersion = "/sample/library/1.0-SNAPSHOT/library-1.0-20260101.000000-1"
+            val sourceVersion = "/sample/library/1.0-SNAPSHOT/library-1.0-20260101.000000-1-sources"
+            val binaryChecksumRequest = repository.requests.indexOf("$binaryVersion.jar.sha256")
+            val sourceChecksumRequest = repository.requests.indexOf("$sourceVersion.jar.sha256")
+            val sourceArchiveRequest = repository.requests.indexOf("$sourceVersion.jar")
+
+            assertEquals(sha256(archive), result.expectedSha256)
+            assertTrue(
+                binaryChecksumRequest >= 0,
+                "Timestamped binary sidecar was not requested: ${repository.requests}",
+            )
+            assertTrue(
+                sourceChecksumRequest > binaryChecksumRequest,
+                "Timestamped source sidecar must follow the binary proof: ${repository.requests}",
+            )
+            assertTrue(
+                sourceArchiveRequest > sourceChecksumRequest,
+                "Timestamped source JAR must follow its sidecar: ${repository.requests}",
+            )
+        }
+    }
+
+    @Test
+    fun `snapshot binary digest mismatch stops before requesting source metadata or bytes`() = runBlocking {
+        val archive = sourceArchive("timestamped-mismatch")
+        repository(
+            archive,
+            sha256(archive),
+            RepositoryOptions(
+                binaryChecksum = "b".repeat(64),
+                metadata = snapshotMetadata(0),
+            ),
+        ).use { repository ->
+            assertEquals(
+                VerifiedSourceArtifactResult.BinaryMismatch,
+                MavenSourceArtifactResolver(directory, repository).resolveVerifiedSourceArtifact(snapshotRequest()),
+            )
+            assertTrue(
+                repository.requests.contains(
+                    "/sample/library/1.0-SNAPSHOT/library-1.0-20260101.000000-1.jar.sha256",
+                ),
+            )
+            assertTrue(repository.requests.none { it.contains("sources") })
+        }
+    }
+
+    @Test
+    fun `snapshot source from another timestamped build is rejected`() = runBlocking {
+        val archive = sourceArchive("timestamped-mismatch")
+        repository(
+            archive,
+            sha256(archive),
+            RepositoryOptions(
+                metadata = snapshotMetadata(
+                    0,
+                    sourcesTimestamp = "20260102.000000",
+                    sourcesBuildNumber = 2,
+                ),
+            ),
+        ).use { repository ->
+            assertEquals(
+                VerifiedSourceArtifactResult.IntegrityUnavailable,
+                MavenSourceArtifactResolver(directory, repository).resolveVerifiedSourceArtifact(snapshotRequest()),
+            )
+            assertTrue(
+                repository.requests.contains(
+                    "/sample/library/1.0-SNAPSHOT/library-1.0-20260101.000000-1.jar.sha256",
+                ),
+            )
+            assertTrue(
+                repository.requests.none {
+                    it.endsWith("-sources.jar.sha256") || it.endsWith("-sources.jar")
+                },
+            )
         }
     }
 
@@ -433,20 +563,18 @@ class VerifiedSourceArtifactResolverTest {
         commentBytes: Int,
         timestamp: String = "20260101.000000",
         buildNumber: Int = 1,
+        sourcesTimestamp: String = timestamp,
+        sourcesBuildNumber: Int = buildNumber,
     ): ByteArray = (
         """<?xml version="1.0" encoding="UTF-8"?>
             |<metadata><groupId>sample</groupId><artifactId>library</artifactId><version>1.0-SNAPSHOT</version>
             |<versioning><snapshot><timestamp>$timestamp</timestamp><buildNumber>$buildNumber</buildNumber></snapshot>
             |<lastUpdated>${timestamp.replace(".", "").take(14)}</lastUpdated><snapshotVersions>
-            |<snapshotVersion><extension>jar.sha256</extension><value>1.0-$timestamp-$buildNumber</value><updated>${timestamp.replace(
+            |<snapshotVersion><extension>jar</extension><value>1.0-$timestamp-$buildNumber</value><updated>${timestamp.replace(
             ".",
             "",
         ).take(14)}</updated></snapshotVersion>
-            |<snapshotVersion><extension>jar.sha256</extension><classifier>sources</classifier><value>1.0-$timestamp-$buildNumber</value><updated>${timestamp.replace(
-            ".",
-            "",
-        ).take(14)}</updated></snapshotVersion>
-            |<snapshotVersion><extension>jar</extension><classifier>sources</classifier><value>1.0-$timestamp-$buildNumber</value><updated>${timestamp.replace(
+            |<snapshotVersion><extension>jar</extension><classifier>sources</classifier><value>1.0-$sourcesTimestamp-$sourcesBuildNumber</value><updated>${sourcesTimestamp.replace(
             ".",
             "",
         ).take(14)}</updated></snapshotVersion>
