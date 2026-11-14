@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Native Parse Benchmark
+on:
+  pull_request:
+    paths:
+      - 'tools/perf/bench/**'
+      - '.github/workflows/bench-native-parse.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/perf/bench/**'
+      - '.github/workflows/bench-native-parse.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-parse-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install exact Rust toolchain
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal --component clippy --component rustfmt
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/native-parse-target" >> "$GITHUB_ENV"
+      - name: Check, test and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tools/perf/bench/native-contract/primary/Cargo.toml
+          cargo +1.96.1 fmt --manifest-path "$manifest" --check
+          cargo +1.96.1 clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+          cargo +1.96.1 test --locked --manifest-path "$manifest"
+          cargo +1.96.1 build --release --locked --manifest-path "$manifest" --bin native-parse
+      - name: Run both fixed inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$CARGO_TARGET_DIR/release/native-parse"
+          "$binary" --input tools/perf/bench/parse/sample.groovy --input-id sample --warmup 0 --iterations 1 --iteration-ns 1000000 > "$RUNNER_TEMP/sample.json"
+          "$binary" --input tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy --input-id cli-builder-exception --warmup 0 --iterations 1 --iteration-ns 1000000 > "$RUNNER_TEMP/corpus.json"
+          node -e 'const fs=require("fs"); for (const f of process.argv.slice(1)) { const x=JSON.parse(fs.readFileSync(f)); if (x.samples.length!==1 || x.samples[0].elapsedNs<1000000 || x.samples[0].operations<1 || x.samples[0].operations!==x.samples[0].completedOperations) throw Error("invalid receipt"); }' "$RUNNER_TEMP/sample.json" "$RUNNER_TEMP/corpus.json"

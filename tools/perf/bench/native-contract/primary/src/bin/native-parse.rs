@@ -21,6 +21,7 @@ fn parser() -> Parser {
 fn checked_tree(parser: &mut Parser, bytes: &[u8]) -> Tree {
     let tree = parser.parse(bytes, None).expect("parse completed");
     assert_eq!(tree.root_node().end_byte(), bytes.len(), "incomplete parse");
+    assert!(!tree.root_node().has_error(), "parse contains errors");
     tree
 }
 
@@ -47,10 +48,30 @@ fn contains_kind(node: Node<'_>, kind: &str) -> bool {
     found
 }
 
-fn controls(parser: &mut Parser, bytes: &[u8], input_id: &str) {
-    let first = checked_tree(parser, bytes);
+fn check_structure(first: &Tree, bytes: &[u8], input_id: &str) {
     check_nodes(first.root_node());
     assert!(contains_kind(first.root_node(), "class_declaration"));
+    let required_kinds: &[&str] = match input_id {
+        "sample" => &["method_declaration", "return_statement"],
+        "cli-builder-exception" => &["package_declaration", "superclass", "field_declaration"],
+        _ => panic!("unknown input id"),
+    };
+    for kind in required_kinds {
+        assert!(contains_kind(first.root_node(), kind), "missing {kind}");
+    }
+    let anchors: &[&str] = match input_id {
+        "sample" => &["alpha", "17"],
+        "cli-builder-exception" => &["groovy.cli", "RuntimeException", "serialVersionUID"],
+        _ => unreachable!(),
+    };
+    for anchor in anchors {
+        assert!(
+            bytes
+                .windows(anchor.len())
+                .any(|window| window == anchor.as_bytes()),
+            "missing {anchor}"
+        );
+    }
     let name = match input_id {
         "sample" => "Sample",
         "cli-builder-exception" => "CliBuilderException",
@@ -68,28 +89,33 @@ fn controls(parser: &mut Parser, bytes: &[u8], input_id: &str) {
         (identifier.start_byte(), identifier.end_byte()),
         (start, start + name.len())
     );
-    // A/B/A uses valid, equal-length identifiers and proves the parser does not
-    // reuse an earlier tree when the source contents change.
+}
+
+fn assert_control(tree: &Tree, expected: &str, forbidden: &str) {
+    check_nodes(tree.root_node());
+    assert!(contains_kind(tree.root_node(), expected));
+    assert!(!contains_kind(tree.root_node(), forbidden));
+}
+
+fn controls(parser: &mut Parser, bytes: &[u8], input_id: &str) {
+    let first = checked_tree(parser, bytes);
+    check_structure(&first, bytes, input_id);
+    // Structurally different equal-length sources detect stale tree reuse.
     let a = b"class Alpha {}";
-    let b = b"class Bravo {}";
-    let tree_a = checked_tree(parser, a);
-    check_nodes(tree_a.root_node());
-    let node_a = tree_a
-        .root_node()
-        .descendant_for_byte_range(6, 11)
-        .expect("identifier");
-    assert_eq!(node_a.utf8_text(a).expect("UTF-8"), "Alpha");
-    let first_a = tree_a.root_node().to_sexp();
+    let b = b"enum  Bravo {}";
+    assert_eq!(a.len(), b.len());
+    let first_a = checked_tree(parser, a);
     let tree_b = checked_tree(parser, b);
-    check_nodes(tree_b.root_node());
-    let second_a = checked_tree(parser, a).root_node().to_sexp();
-    assert_eq!(first_a, second_a);
-    let node_b = tree_b
-        .root_node()
-        .descendant_for_byte_range(6, 11)
-        .expect("identifier");
-    assert_eq!(node_b.utf8_text(b).expect("UTF-8"), "Bravo");
-    let invalid = checked_tree(parser, b"class {");
+    let second_a = checked_tree(parser, a);
+    assert_control(&first_a, "class_declaration", "enum_declaration");
+    assert_control(&tree_b, "enum_declaration", "class_declaration");
+    assert_control(&second_a, "class_declaration", "enum_declaration");
+    assert_ne!(first_a.root_node().id(), tree_b.root_node().id());
+    assert_ne!(tree_b.root_node().id(), second_a.root_node().id());
+    assert_ne!(first_a.root_node().id(), second_a.root_node().id());
+    let invalid = parser
+        .parse(b"class {", None)
+        .expect("malformed parse completed");
     assert!(
         invalid.root_node().has_error(),
         "malformed control unexpectedly accepted"
@@ -151,6 +177,37 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn no_parse_and_wrong_tree_are_rejected() {
+        let mut unset = Parser::new();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| checked_tree(
+                &mut unset,
+                b"class Sample {}"
+            )))
+            .is_err()
+        );
+        let mut p = parser();
+        let stale = checked_tree(&mut p, b"class Alpha {}");
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| assert_control(
+                &stale,
+                "enum_declaration",
+                "class_declaration"
+            )))
+            .is_err()
+        );
+        let wrong = p.parse(b"class {", None).expect("malformed tree");
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check_structure(
+                &wrong,
+                b"class Sample {}",
+                "sample"
+            )))
+            .is_err()
+        );
+    }
+
     #[test]
     fn controls_accept_valid_and_reject_invalid_source() {
         let mut p = parser();
