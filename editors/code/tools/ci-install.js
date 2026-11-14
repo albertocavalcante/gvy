@@ -22,6 +22,59 @@ const LIMIT = 512 * 1024 * 1024;
 function hash(b) {
   return crypto.createHash("sha256").update(b).digest("hex");
 }
+/** Open once without following symlinks; validate and read that descriptor only.
+ * @param {string} file @param {number} limit @param {boolean} [executable] */
+function readRegularFile(file, limit, executable = false) {
+  const fd = fs.openSync(
+    file,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+  );
+  try {
+    const before = fs.fstatSync(fd);
+    if (!before.isFile()) throw new Error(`Not a regular file: ${file}`);
+    if (before.size > limit)
+      throw new Error(`File exceeds size limit: ${file}`);
+    if (executable && !(before.mode & 0o111))
+      throw new Error(`Wrapper is not executable: ${file}`);
+    const bytes = Buffer.alloc(before.size + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = fs.readSync(fd, bytes, offset, bytes.length - offset, null);
+      if (read === 0) break;
+      offset += read;
+    }
+    const after = fs.fstatSync(fd);
+    if (
+      offset !== before.size ||
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs ||
+      before.ctimeMs !== after.ctimeMs
+    )
+      throw new Error(`File changed while reading: ${file}`);
+    return bytes.subarray(0, offset);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+/** Publish a private candidate only if the destination is absent; validate any existing file through its descriptor.
+ * @param {string} candidate @param {string} destination @param {Buffer} expected @param {number} limit @param {boolean} [executable] */
+function publishFile(
+  candidate,
+  destination,
+  expected,
+  limit,
+  executable = false,
+) {
+  try {
+    fs.linkSync(candidate, destination);
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== "EEXIST")
+      throw error;
+  }
+  const actual = readRegularFile(destination, limit, executable);
+  if (hash(actual) !== hash(expected))
+    throw new Error(`Existing runtime differs: ${destination}`);
+}
 /** @param {string} file @param {object} data */
 function writeJson(file, data) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
@@ -334,11 +387,9 @@ function cachedInstallMatches(receipt, runtime, state, options, java) {
     const jar = path.join(runtime, "gls.jar"),
       vsix = path.join(runtime, "gvy.vsix"),
       wrapper = path.join(runtime, "gvy");
-    for (const file of [jar, vsix, wrapper])
-      if (!fs.lstatSync(file).isFile()) return false;
-    fs.accessSync(wrapper, fs.constants.X_OK);
-    const jarBytes = fs.readFileSync(jar),
-      vsixBytes = fs.readFileSync(vsix);
+    const jarBytes = readRegularFile(jar, LIMIT),
+      vsixBytes = readRegularFile(vsix, LIMIT),
+      wrapperBytes = readRegularFile(wrapper, 65536, true);
     if (
       hash(jarBytes) !== receipt.hashes.jar ||
       hash(vsixBytes) !== receipt.hashes.vsix ||
@@ -352,7 +403,7 @@ function cachedInstallMatches(receipt, runtime, state, options, java) {
           16 * 1024 * 1024,
         ),
       ) !== receipt.hashes.client ||
-      fs.readFileSync(wrapper, "utf8") !== wrapperText(java, jar) ||
+      wrapperBytes.toString("utf8") !== wrapperText(java, jar) ||
       !installedMatches(os.homedir(), receipt.hashes.jar, receipt.hashes.client)
     )
       return false;
@@ -425,7 +476,7 @@ async function installFromCi(options) {
         ? path.resolve(process.env.JAVA_HOME, "bin/java")
         : null;
     if (!java) throw new Error("Set --java-home or JAVA_HOME to a JDK 21+");
-    const versionProbe = spawnSync(java, ["-version"], {
+    const versionProbe = spawnSync(java, ["-Xmx64m", "-version"], {
       encoding: "utf8",
       timeout: 10000,
       killSignal: "SIGKILL",
@@ -613,9 +664,9 @@ async function installFromCi(options) {
       if (reusable && priorReceipt?.hashes) {
         const cachedJar = path.join(runtime, "gls.jar"),
           cachedVsix = path.join(runtime, "gvy.vsix");
-        if (fs.existsSync(cachedJar) && fs.existsSync(cachedVsix)) {
-          const jar = fs.readFileSync(cachedJar),
-            vsix = fs.readFileSync(cachedVsix);
+        try {
+          const jar = readRegularFile(cachedJar, LIMIT),
+            vsix = readRegularFile(cachedVsix, LIMIT);
           if (
             hash(jar) !== priorReceipt.hashes.jar ||
             hash(vsix) !== priorReceipt.hashes.vsix
@@ -624,6 +675,9 @@ async function installFromCi(options) {
               "Cached runtime hash mismatch; inspect before retrying",
             );
           contents.push(jar, vsix);
+        } catch (error) {
+          if (/** @type {NodeJS.ErrnoException} */ (error).code !== "ENOENT")
+            throw error;
         }
       }
       for (const a of contents.length ? [] : artifacts) {
@@ -700,19 +754,8 @@ async function installFromCi(options) {
       );
       // A commit directory may already be serving a previous verified install.
       // Never replace it with different bytes, even for a rerun of the same SHA.
-      for (const [candidate, destination] of [
-        [path.join(temp, "gls.jar"), jarPath],
-        [path.join(temp, "gvy.vsix"), vsixPath],
-      ]) {
-        if (fs.existsSync(destination)) {
-          if (
-            !fs.lstatSync(destination).isFile() ||
-            hash(fs.readFileSync(destination)) !==
-              hash(fs.readFileSync(candidate))
-          )
-            throw new Error(`Existing runtime differs: ${destination}`);
-        } else fs.renameSync(candidate, destination);
-      }
+      publishFile(path.join(temp, "gls.jar"), jarPath, jar, LIMIT);
+      publishFile(path.join(temp, "gvy.vsix"), vsixPath, vsix, LIMIT);
       receipt.runtimeVersion = provenance.version;
       receipt.hashes = {
         jar: hash(jar),
@@ -732,24 +775,13 @@ async function installFromCi(options) {
         receipt.wrapper = wrapper;
         receipt.command = link;
         const wrapperContents = wrapperText(java, jarPath);
-        if (fs.existsSync(wrapper)) {
-          if (
-            !fs.lstatSync(wrapper).isFile() ||
-            fs.readFileSync(wrapper, "utf8") !== wrapperContents
-          )
-            throw new Error(`Existing wrapper differs: ${wrapper}`);
-        } else
-          fs.writeFileSync(wrapper, wrapperContents, {
-            mode: 0o700,
-            flag: "wx",
-          });
-        try {
-          fs.accessSync(wrapper, fs.constants.X_OK);
-        } catch (error) {
-          throw new Error(`Wrapper is not executable: ${wrapper}`, {
-            cause: error,
-          });
-        }
+        const wrapperCandidate = path.join(temp, "gvy");
+        const wrapperBytes = Buffer.from(wrapperContents);
+        fs.writeFileSync(wrapperCandidate, wrapperBytes, {
+          mode: 0o700,
+          flag: "wx",
+        });
+        publishFile(wrapperCandidate, wrapper, wrapperBytes, 65536, true);
         const noop =
           installedMatches(
             os.homedir(),
@@ -816,6 +848,8 @@ module.exports = {
   compatible,
   installedMatches,
   wrapperText,
+  readRegularFile,
+  publishFile,
   download,
   run,
 };
