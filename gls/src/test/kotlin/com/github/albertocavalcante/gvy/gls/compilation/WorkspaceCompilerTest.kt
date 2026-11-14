@@ -218,13 +218,13 @@ class WorkspaceCompilerTest {
         }
 
     @Test
-    fun `disk refresh retries a skipped source when admission recovers during parsing`(): Unit = runTest {
+    fun `disk refresh retries a skipped source when admission recovers at the refresh boundary`(): Unit = runTest {
         val src = Files.createDirectories(tempDir.resolve("src"))
         val file = src.resolve("Refreshed.groovy").apply { writeText("class Refreshed {}") }
-        val rejectNextProbe = AtomicBoolean(false)
+        val rejectedProbes = AtomicInteger()
         val rejectDuringNextParse = AtomicBoolean(false)
         val manager = WorkspaceManager(sourceExclusion = { candidate ->
-            candidate == file && rejectNextProbe.compareAndSet(true, false)
+            candidate == file && rejectedProbes.getAndUpdate { probes -> (probes - 1).coerceAtLeast(0) } > 0
         })
         manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
         val index = WorkspaceSymbolIndex(GroovySemanticDB())
@@ -234,7 +234,7 @@ class WorkspaceCompilerTest {
         coEvery { worker.parse(any()) } coAnswers {
             val result = parser.parse(firstArg())
             parseCalls.incrementAndGet()
-            if (rejectDuringNextParse.compareAndSet(true, false)) rejectNextProbe.set(true)
+            if (rejectDuringNextParse.compareAndSet(true, false)) rejectedProbes.set(2)
             result
         }
         val compiler = WorkspaceCompiler(worker, manager, indexer)
