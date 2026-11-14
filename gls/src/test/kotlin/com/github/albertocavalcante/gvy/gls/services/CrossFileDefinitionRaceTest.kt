@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
+import io.mockk.mockk
 import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
+import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -54,8 +56,11 @@ class CrossFileDefinitionRaceTest {
     @BeforeEach
     fun setUp() {
         parseGate = ParseGate()
+        val documents = DocumentProvider()
+        val client = mockk<LanguageClient>(relaxed = true)
         compilationService = spyk(
             GroovyCompilationService(
+                documentProvider = documents,
                 workerSessionDecorator = { delegate ->
                     object : WorkerSession {
                         override fun parse(request: ParseRequest): ParseResult {
@@ -75,7 +80,8 @@ class CrossFileDefinitionRaceTest {
             coroutineScope = scope,
             compilationService = compilationService,
             options = GroovyTextDocumentServiceOptions(
-                client = { null },
+                client = { client },
+                documentProvider = documents,
             ),
         )
     }
@@ -85,6 +91,7 @@ class CrossFileDefinitionRaceTest {
         parseGate.release()
         scope.cancel()
         compilationService.clearCaches()
+        compilationService.shutdown()
     }
 
     @Test

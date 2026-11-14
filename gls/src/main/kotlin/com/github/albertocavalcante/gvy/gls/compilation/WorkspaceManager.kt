@@ -494,11 +494,32 @@ class WorkspaceManager internal constructor(
 
         fun inRoot(path: Path): Path? {
             val raw = path.toAbsolutePath()
-            if (raw.any { it.toString() == ".." }) return null
-            val absolute = raw.normalize()
+            val absolute = normalizeEventPath(raw) ?: return null
             val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
             return translated?.let(::ontoScannedRoot)
                 ?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+        }
+
+        /** Only collapse a parent segment when its existing directory has no symlinked ancestor. */
+        private fun normalizeEventPath(raw: Path): Path? {
+            var prefix = raw.root ?: return null
+            for (part in raw) {
+                when (part.toString()) {
+                    "." -> Unit
+                    ".." -> {
+                        try {
+                            if (!Files.isDirectory(prefix) || prefix.toRealPath() != prefix) return null
+                        } catch (_: IOException) {
+                            return null
+                        } catch (_: SecurityException) {
+                            return null
+                        }
+                        prefix = prefix.parent ?: return null
+                    }
+                    else -> prefix = prefix.resolve(part)
+                }
+            }
+            return prefix
         }
 
         /** [path] respelled under the scanned root when the root holding it is an alias of one (#1431). */

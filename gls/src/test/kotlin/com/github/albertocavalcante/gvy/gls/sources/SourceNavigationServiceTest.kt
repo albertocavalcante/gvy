@@ -82,6 +82,36 @@ class SourceNavigationServiceTest {
     }
 
     @Test
+    fun `verified Groovy source locates a unique method and leaves overloads file-only`() = runBlocking {
+        val content = """
+            package sample
+            class Anno {
+                String convert(String value) { value }
+                String select() { "select()" }
+                String select(String value) { value }
+            }
+        """.trimIndent()
+        val source = sourceJar(
+            directory.resolve("repo/library-sources.jar"),
+            content,
+            "sample/Anno.groovy",
+        )
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        val owner = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            val located = assertIs<SourceLookupResult.Located>(
+                navigation.locate(owner.copy(memberName = "convert"), context()),
+            )
+            val name = located.definition.nameRange
+            val lines = Files.readString(Path.of(located.uri)).lines()
+            assertEquals("convert", lines[name.startLine].substring(name.startCharacter, name.endCharacter))
+            assertTrue(located.definition.declarationRange.contains(name))
+
+            assertIs<SourceLookupResult.FileOnly>(navigation.locate(owner.copy(memberName = "select"), context()))
+        }
+    }
+
+    @Test
     fun `a sibling sources jar without verified provenance is not trusted`() = runBlocking {
         val sibling = sourceJar(directory.resolve("selected/library-sources.jar"), JAVA_SOURCE)
         val resolver = RecordingResolver()

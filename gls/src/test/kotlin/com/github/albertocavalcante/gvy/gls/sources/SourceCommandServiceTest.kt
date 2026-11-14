@@ -241,7 +241,7 @@ class SourceCommandServiceTest {
             val ownerUri = URI.create("file:///workspace/sample/Outer.groovy")
             fixture.documents.put(
                 ownerUri,
-                "package sample\nclass Outer { @interface Mark {} }",
+                "package sample\nclass Outer { static @interface Mark {} }",
                 1,
             )
             assertNotNull(fixture.documents.update(uri, nested, 2))
