@@ -68,7 +68,7 @@ class WorkspaceCompiler(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Set once the eager workspace compile has run: from then on every workspace source has a document.
+    // Remembers the eager compile attempt so later refreshes can materialize missing source documents.
     @Volatile
     private var workspaceCompiled = false
 
@@ -104,6 +104,9 @@ class WorkspaceCompiler(
         // Compile all files together
         val result = compileFiles(workspaceSources, workspace)
         workspaceCompiled = true
+        if (!result.success) {
+            logger.warn { "Workspace compilation produced partial semantic results (${result.errors.size} errors)" }
+        }
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
@@ -134,12 +137,19 @@ class WorkspaceCompiler(
             else -> {
                 val workspace = workspaceManager.current()
                 stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
-                    compileFileWithWorkspaceContext(
+                    val result = compileFileWithAdmissionRetry(
                         checkNotNull(UriPathConverter.toPath(uri)),
                         workspace.sources,
                         workspace.classpath,
                         workspace.sourceRoots,
                     )
+                    when (result) {
+                        is FileCompilationResult.Success -> Unit
+                        is FileCompilationResult.Failure -> logger.warn {
+                            "Could not refresh semantic source for $uri: ${result.errors.joinToString { it.message }}"
+                        }
+                        is FileCompilationResult.Skipped -> Unit // It is currently excluded or unavailable.
+                    }
                 }
             }
         }
@@ -199,7 +209,7 @@ class WorkspaceCompiler(
         val results = coroutineScope {
             val compilationJobs = sources.map { sourcePath ->
                 async(Dispatchers.Default) {
-                    compileFileWithWorkspaceContext(sourcePath, sources, classpath, sourceRoots)
+                    compileFileWithAdmissionRetry(sourcePath, sources, classpath, sourceRoots)
                 }
             }
 
@@ -207,9 +217,8 @@ class WorkspaceCompiler(
             compilationJobs.awaitAll()
         }
 
-        // A path that became inadmissible during its parse is skipped and its old semantic facts are removed.
-        // If it is ordinary again after the batch, retry it once with fresh admission so a transient retarget
-        // cannot leave an otherwise current source missing until another watcher event.
+        // Admission can recover after a per-file retry returns. Recheck remaining skips at the batch boundary
+        // and make one final bounded attempt before reporting a still-admitted source as incomplete.
         val skippedPaths = results.filterIsInstance<FileCompilationResult.Skipped>()
             .map(FileCompilationResult.Skipped::sourcePath)
             .distinct()
@@ -221,7 +230,7 @@ class WorkspaceCompiler(
             coroutineScope {
                 retryPaths.map { sourcePath ->
                     async(Dispatchers.Default) {
-                        compileFileWithWorkspaceContext(sourcePath, sources, classpath, sourceRoots)
+                        compileFileWithAdmissionRetry(sourcePath, sources, classpath, sourceRoots)
                     }
                 }.awaitAll()
             }
@@ -243,7 +252,7 @@ class WorkspaceCompiler(
         unresolvedSkips.filter(completionAdmission::allows).forEach { sourcePath ->
             errors += CompilationError(
                 sourcePath.toUri(),
-                "Source admission changed repeatedly during workspace compilation",
+                "Source admission changed repeatedly while compiling",
                 "admission",
             )
         }
@@ -345,6 +354,39 @@ class WorkspaceCompiler(
         } finally {
             admission.releaseObservedPaths()
             publication.close()
+        }
+    }
+
+    /** Retry one admission skip if the source is eligible again; report repeated churn instead of hiding it. */
+    private suspend fun compileFileWithAdmissionRetry(
+        sourcePath: Path,
+        allSources: List<Path>,
+        classpath: List<Path>,
+        sourceRoots: List<Path>,
+    ): FileCompilationResult {
+        val first = compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
+        if (first !is FileCompilationResult.Skipped) return first
+
+        val context = currentCoroutineContext()
+        val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        if (!retryAdmission.allows(sourcePath)) return first
+
+        val retry = compileFileWithWorkspaceContext(sourcePath, allSources, classpath, sourceRoots)
+        if (retry !is FileCompilationResult.Skipped) return retry
+
+        val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        return if (completionAdmission.allows(sourcePath)) {
+            FileCompilationResult.Failure(
+                listOf(
+                    CompilationError(
+                        sourcePath.toUri(),
+                        "Source admission changed repeatedly while compiling",
+                        "admission",
+                    ),
+                ),
+            )
+        } else {
+            retry
         }
     }
 
