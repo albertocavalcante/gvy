@@ -410,10 +410,12 @@ node editors/code/tools/install-extension.js --from-ci --ref main --wait 600 --j
 This mode needs Node 24+, authenticated `gh`, Java 21+, and a compatible VS Code `code` command. It supports macOS and
 Linux. Unlike a local source build, it does not need Gradle, pnpm dependencies, or a separate build checkout.
 
-The installer resolves the ref to a full SHA once. It selects both artifacts from the same successful Extension CI run
-for that SHA, verifies GitHub's artifact digests, verifies the bundled server and its clean source identity, checks
-editor compatibility, and smoke-checks the server before installation. It then verifies the actual installed server and
-client hashes. A matching package version alone does not make an installation current.
+`--ref` accepts `main` or a lowercase, full 40-character commit SHA. The installer resolves `main` once. It selects both
+artifacts from the same successful main-push Extension CI run for that SHA, verifies GitHub's artifact digests, verifies
+the bundled server and its clean source identity, checks editor compatibility, and smoke-checks the server before
+installation. It then verifies the actual installed server and client hashes and extension manifest. A cached no-op
+rechecks the installed files and current editor compatibility. A matching package version alone does not make an
+installation current.
 
 The fixed wait limit bounds polling. If the selected run is pending, missing, canceled, or failed, the JSON result
 records that state and the receipt needed to resume. Resume that receipt to keep the selected SHA; rerunning a fresh
@@ -429,12 +431,20 @@ following a newer `main` commit.
 Use `--java-home` to select an installed JDK, `--installer code` to select VS Code, `--state-root` for artifact and
 receipt storage, and `--bin-dir` for the standalone `gvy` command. The command preserves unrelated files and reports a
 conflicting or shadowed command. `--package-only` downloads, verifies, and smoke-checks the pair without changing the
-editor or standalone command. Capture stderr in a local log when using `--json`; normal stdout contains the result.
+editor or standalone command. To install a previously verified package-only selection, resume its receipt without
+`--package-only`. Capture stderr in a local log when using `--json`; normal stdout contains the result.
 
 The installer keeps the verified runtime, paired VSIX, and receipt for resuming or recovery. The standalone command's
-symlink changes atomically; the editor CLI's installation is a separate operation. A partial failure is recorded as such
-and must be resumed or recovered before reporting success. After an update, run **Developer: Reload Window** in an
-existing VS Code window.
+symlink changes atomically; the editor CLI's installation is a separate operation. Selecting another valid JDK for the
+same commit creates a separate launcher before changing the active link. A partial failure must be resumed or recovered
+before reporting success. A failure during final receipt or cleanup work does not imply rollback. After an update, run
+**Developer: Reload Window** in an existing VS Code window; file verification does not establish which server that
+window has loaded.
+
+JSON failures report the primary error and, when available, stage and receipt path. `installed: true` means activation
+was verified before a later failure; it does not turn `success: false` into success. `receiptError` and `cleanupError`,
+when present, identify additional finalization failures. Preserve that evidence and inspect any retained lock before
+retrying.
 
 The macOS state root defaults to `~/Library/Application Support/gvy/source-installs`; Linux uses
 `${XDG_STATE_HOME:-~/.local/state}/gvy/source-installs`. CI receipts and commit directories live in its `ci-v1`

@@ -166,9 +166,42 @@ test("installed extension check compares actual files", () => {
         },
       ]),
     );
-    assert.equal(installedMatches(home, hash("jar"), hash("client")), true);
+    const manifest = {
+      publisher: "albertocavalcante",
+      name: "gvy",
+      main: "./client/out/extension.js",
+    };
+    const manifestPath = path.join(root, "package.json");
+    assert.equal(
+      installedMatches(home, hash("jar"), hash("client"), manifest),
+      false,
+    );
+    fs.writeFileSync(manifestPath, "{");
+    assert.equal(
+      installedMatches(home, hash("jar"), hash("client"), manifest),
+      false,
+    );
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({ ...manifest, __metadata: { installedTimestamp: 1 } }),
+    );
+    assert.equal(
+      installedMatches(home, hash("jar"), hash("client"), manifest),
+      true,
+    );
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({ ...manifest, main: "./other.js" }),
+    );
+    assert.equal(
+      installedMatches(home, hash("jar"), hash("client"), manifest),
+      false,
+    );
     fs.writeFileSync(path.join(root, "client/out/extension.js"), "changed");
-    assert.equal(installedMatches(home, hash("jar"), hash("client")), false);
+    assert.equal(
+      installedMatches(home, hash("jar"), hash("client"), manifest),
+      false,
+    );
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -370,7 +403,7 @@ test(
       const calls = path.join(root, "editor-calls");
       executable(
         path.join(bin, "code"),
-        `if(process.argv.includes('--version')) console.log('1.146.0'); else { require('node:fs').appendFileSync(${JSON.stringify(calls)},'install\\n'); if(process.env.FAIL_INSTALL) process.exit(1); }`,
+        `if(process.argv.includes('--version')) console.log(process.env.EDITOR_VERSION || '1.146.0'); else { const fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(calls)},'install\\n'); if(process.env.FAIL_INSTALL) process.exit(1); fs.writeFileSync(${JSON.stringify(path.join(root, "installed/package.json"))}, ${JSON.stringify(JSON.stringify({ publisher: "albertocavalcante", name: "gvy", engines: { vscode: "^1.144.0" } }))}); }`,
       );
       executable(
         path.join(javaHome, "bin/java"),
@@ -474,14 +507,156 @@ test(
       });
       assert.equal(second.status, 0, second.stderr);
       assert.equal(JSON.parse(second.stdout).noop, true);
+      const receiptPath = path.join(root, "state/ci-v1", `${sha}.json`);
+      const legacyReceipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+      const legacyWrapper = path.join(root, "state/ci-v1", sha, "gvy");
+      fs.renameSync(legacyReceipt.wrapper, legacyWrapper);
+      fs.unlinkSync(path.join(root, "state/ci-v1/gvy"));
+      fs.symlinkSync(legacyWrapper, path.join(root, "state/ci-v1/gvy"));
+      legacyReceipt.wrapper = legacyWrapper;
+      fs.writeFileSync(receiptPath, JSON.stringify(legacyReceipt));
+      const legacy = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env,
+        timeout: 30000,
+      });
+      assert.equal(legacy.status, 0, legacy.stderr);
+      assert.equal(JSON.parse(legacy.stdout).noop, true);
+      const incompatible = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: { ...env, EDITOR_VERSION: "1.143.0" },
+        timeout: 30000,
+      });
+      assert.equal(incompatible.status, 1);
+      assert.match(
+        JSON.parse(incompatible.stdout).error,
+        /Editor does not satisfy/,
+      );
+      const javaHome2 = path.join(root, "jdk2");
+      fs.mkdirSync(path.join(javaHome2, "bin"), { recursive: true });
+      fs.copyFileSync(
+        path.join(javaHome, "bin/java"),
+        path.join(javaHome2, "bin/java"),
+      );
+      const alternate = spawnSync(
+        process.execPath,
+        args.map((x) => (x === javaHome ? javaHome2 : x)),
+        { encoding: "utf8", env, timeout: 30000 },
+      );
+      assert.equal(alternate.status, 0, alternate.stderr || alternate.stdout);
       assert.equal(fs.readFileSync(calls, "utf8"), "install\ninstall\n");
-      // Two prior failures and the first success each downloaded two archives;
-      // the verified no-op must not download another byte.
+      assert.equal(JSON.parse(fs.readFileSync(receiptPath)).error, undefined);
+      // The failed compatibility check required a fresh artifact verification.
       const downloads = fs
         .readFileSync(path.join(root, "downloads"), "utf8")
         .trim()
         .split("\n").length;
-      assert.equal(downloads, 5);
+      assert.equal(downloads, 7);
+      const packageRoot = path.join(root, "package-state");
+      const packageBin = path.join(root, "package-commands");
+      const packageArgs = args.map((x) =>
+        x === path.join(root, "state")
+          ? packageRoot
+          : x === path.join(root, "commands")
+            ? packageBin
+            : x,
+      );
+      const packageEnv = {
+        ...env,
+        PATH: packageBin + path.delimiter + env.PATH,
+      };
+      const packaged = spawnSync(
+        process.execPath,
+        [...packageArgs, "--package-only"],
+        { encoding: "utf8", env: packageEnv, timeout: 30000 },
+      );
+      assert.equal(packaged.status, 0, packaged.stderr);
+      assert.equal(JSON.parse(packaged.stdout).stage, "packaged");
+      const activated = spawnSync(process.execPath, packageArgs, {
+        encoding: "utf8",
+        env: packageEnv,
+        timeout: 30000,
+      });
+      assert.equal(activated.status, 0, activated.stderr);
+      assert.equal(JSON.parse(activated.stdout).stage, "installed");
+      const preload = path.join(root, "inject.js");
+      fs.writeFileSync(
+        preload,
+        `const fs=require('node:fs'); if(process.argv[1]?.endsWith('install-extension.js')) { const rename=fs.renameSync, rm=fs.rmSync; fs.renameSync=function(a,b) { if(process.env.INJECT_RECEIPT && String(b).endsWith('.json') && String(a).endsWith('.tmp')) { const r=JSON.parse(fs.readFileSync(a,'utf8')); if((process.env.INJECT_RECEIPT==='success' && r.success) || (process.env.INJECT_RECEIPT==='failure' && r.error)) throw Object.assign(new Error('receipt EIO'),{code:'EIO'}); } return rename.apply(this,arguments); }; fs.rmSync=function(p) { if(process.env.INJECT_RECEIPT_TEMP && String(p).endsWith('.tmp') && fs.existsSync(p) && JSON.parse(fs.readFileSync(p,'utf8')).error) throw Object.assign(new Error('receipt temp EIO'),{code:'EIO'}); if(process.env.INJECT_TEMP && String(p).includes('/.download-')) throw Object.assign(new Error('temp EIO'),{code:'EIO'}); if(process.env.INJECT_LOCK && String(p).endsWith('/.lock')) throw Object.assign(new Error('lock EIO'),{code:'EIO'}); return rm.apply(this,arguments); }; }`,
+      );
+      const injectedEnv = { ...env, NODE_OPTIONS: `--require=${preload}` };
+      const successReceipt = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: { ...injectedEnv, INJECT_RECEIPT: "success" },
+        timeout: 30000,
+      });
+      const successError = JSON.parse(successReceipt.stdout);
+      assert.equal(successReceipt.status, 1);
+      assert.equal(successError.stage, "installed");
+      assert.equal(successError.installed, true);
+      assert.match(successError.error, /receipt EIO/);
+      assert.ok(successError.receipt);
+      const persistedFailure = JSON.parse(
+        fs.readFileSync(successError.receipt),
+      );
+      assert.equal(persistedFailure.success, false);
+      assert.equal(persistedFailure.installed, true);
+      const cleanupSuccess = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: { ...injectedEnv, INJECT_LOCK: "1" },
+        timeout: 30000,
+      });
+      const cleanupResult = JSON.parse(cleanupSuccess.stdout);
+      assert.equal(cleanupSuccess.status, 1);
+      assert.equal(cleanupResult.stage, "installed");
+      assert.equal(cleanupResult.installed, true);
+      assert.match(cleanupResult.cleanupError, /lock EIO/);
+      const cleanupReceipt = JSON.parse(fs.readFileSync(cleanupResult.receipt));
+      assert.equal(cleanupReceipt.success, false);
+      assert.equal(cleanupReceipt.installed, true);
+      fs.rmSync(path.join(root, "state/ci-v1/.lock"), { recursive: true });
+      const compound = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: {
+          ...injectedEnv,
+          INJECT_LOCK: "1",
+          INJECT_RECEIPT: "failure",
+          INJECT_RECEIPT_TEMP: "1",
+        },
+        timeout: 30000,
+      });
+      const compoundResult = JSON.parse(compound.stdout);
+      assert.equal(compound.status, 1);
+      assert.equal(compoundResult.stage, "installed");
+      assert.equal(compoundResult.installed, true);
+      assert.match(compoundResult.error, /lock EIO/);
+      assert.match(compoundResult.receiptError, /receipt EIO/);
+      assert.match(compoundResult.cleanupError, /lock EIO/);
+      assert.match(compoundResult.cleanupError, /receipt temp EIO/);
+      assert.match(compoundResult.cleanupError, /\.json\..*\.tmp/);
+      fs.rmSync(path.join(root, "state/ci-v1/.lock"), { recursive: true });
+      fs.writeFileSync(path.join(extension, "package.json"), "{}");
+      const failure = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: {
+          ...injectedEnv,
+          FAIL_INSTALL: "1",
+          INJECT_LOCK: "1",
+          INJECT_TEMP: "1",
+          INJECT_RECEIPT: "failure",
+        },
+        timeout: 30000,
+      });
+      const failureResult = JSON.parse(failure.stdout);
+      assert.equal(failure.status, 1);
+      assert.equal(failureResult.stage, "editor-install");
+      assert.equal(failureResult.installed, false);
+      assert.match(failureResult.error, /code/);
+      assert.match(failureResult.receiptError, /receipt EIO/);
+      assert.match(failureResult.cleanupError, /lock EIO/);
+      assert.match(failureResult.cleanupError, /temp EIO/);
+      assert.ok(failureResult.receipt);
+      fs.rmSync(path.join(root, "state/ci-v1/.lock"), { recursive: true });
       fs.writeFileSync(
         path.join(root, "state/ci-v1", sha, "gls.jar"),
         "tampered",
@@ -496,9 +671,12 @@ test(
       assert.equal(
         fs.readFileSync(path.join(root, "downloads"), "utf8").trim().split("\n")
           .length,
-        downloads,
+        downloads + 2,
       );
-      assert.equal(fs.readFileSync(calls, "utf8"), "install\ninstall\n");
+      assert.equal(
+        fs.readFileSync(calls, "utf8"),
+        "install\ninstall\ninstall\n",
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
