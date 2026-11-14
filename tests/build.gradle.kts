@@ -35,6 +35,13 @@ tasks.matching { it.name == "koverVerify" }.configureEach {
 
 dependencies {
     "detektPlugins"(libs.detekt.formatting)
+    testImplementation(libs.groovy.core)
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 testing {
