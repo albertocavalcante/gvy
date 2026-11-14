@@ -30,6 +30,7 @@ import kotlin.io.path.readText
 
 class IndexExportService(
     private val sourceExclusion: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
+    private val isManagedDestination: (Path) -> Boolean = { false },
     private val buildToolManagerProvider: () -> BuildToolManager?,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -37,7 +38,16 @@ class IndexExportService(
     fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
         logger.info { "Exporting index format=${params.format} to=${params.outputPath}" }
 
-        FileOutputStream(params.outputPath).use { fileOutputStream ->
+        val requestedOutput = Path.of(params.outputPath)
+        if (requestedOutput.any { it.toString() == ".." }) {
+            throw IOException("Cannot export index through a parent-directory path: ${params.outputPath}")
+        }
+        val output = requestedOutput.toAbsolutePath().normalize()
+        if (isManagedDestination(output)) {
+            throw IOException("Cannot export index to a managed source path: $output")
+        }
+
+        FileOutputStream(output.toFile()).use { fileOutputStream ->
             val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
 
             val buildToolManager = buildToolManagerProvider()

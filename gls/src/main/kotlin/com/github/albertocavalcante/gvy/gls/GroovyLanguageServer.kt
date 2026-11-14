@@ -242,7 +242,9 @@ class GroovyLanguageServer(
         )
     private val indexExportService = IndexExportService(
         sourceExclusion = { compilationService.workspaceManager.isExcludedSource(it) },
-    ) { startupManager.buildToolManager }
+        isManagedDestination = { externalSources.isManagedDestination(it.toUri()) },
+        buildToolManagerProvider = { startupManager.buildToolManager },
+    )
     private val astRequestHandler = AstRequestHandler(
         compilationService,
         CoreAstConverter(),

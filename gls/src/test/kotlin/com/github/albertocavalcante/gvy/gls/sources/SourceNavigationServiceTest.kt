@@ -112,6 +112,28 @@ class SourceNavigationServiceTest {
     }
 
     @Test
+    fun `ambiguous Groovy static field and method remain file-only`() = runBlocking {
+        val content = """
+            package sample
+            class Anno {
+                static int select = 1
+                static int select() { 2 }
+            }
+        """.trimIndent()
+        val source = sourceJar(
+            directory.resolve("repo/library-sources.jar"),
+            content,
+            "sample/Anno.groovy",
+        )
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        val owner = binary("selected/library.jar")
+
+        service(resolver).use { navigation ->
+            assertIs<SourceLookupResult.FileOnly>(navigation.locate(owner.copy(memberName = "select"), context()))
+        }
+    }
+
+    @Test
     fun `a sibling sources jar without verified provenance is not trusted`() = runBlocking {
         val sibling = sourceJar(directory.resolve("selected/library-sources.jar"), JAVA_SOURCE)
         val resolver = RecordingResolver()

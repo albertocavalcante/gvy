@@ -132,6 +132,10 @@ steps:
           expect:
             type: 'EQUALS'
             value: 13
+        - jsonPath: '$.items[0].range.end.line'
+          expect:
+            type: 'EQUALS'
+            value: 6
         - jsonPath: '$.items[0].range.end.character'
           expect:
             type: 'EQUALS'

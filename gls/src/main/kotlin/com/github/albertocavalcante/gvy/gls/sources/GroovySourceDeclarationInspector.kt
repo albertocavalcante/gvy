@@ -70,6 +70,7 @@ internal class GroovySourceDeclarationInspector {
                 checkCancelled()
                 method.name == memberName && method.declaringClass.name == binaryName && !method.isSynthetic
             }
+            if (hasSameNameStaticFieldOrProperty(owner, binaryName, memberName, checkCancelled)) return null
             val method = methods.singleOrNull() ?: return null
             val ranges = CompilerSourceRanges(content)
             val declarationRange = ranges.range(method) ?: return null
@@ -93,6 +94,23 @@ internal class GroovySourceDeclarationInspector {
             sourceTypeDeclarationName(node, content, ranges, range)?.let { name ->
                 SourceDefinition(range.toSourceSpan(), name.toSourceSpan())
             }
+        }
+    }
+
+    private fun hasSameNameStaticFieldOrProperty(
+        owner: org.codehaus.groovy.ast.ClassNode,
+        binaryName: String,
+        memberName: String,
+        checkCancelled: () -> Unit,
+    ): Boolean {
+        val hasField = owner.fields.any { field ->
+            checkCancelled()
+            field.name == memberName && field.isStatic && field.declaringClass.name == binaryName && !field.isSynthetic
+        }
+        if (hasField) return true
+        return owner.properties.any { property ->
+            checkCancelled()
+            property.name == memberName && property.field.isStatic && property.declaringClass.name == binaryName
         }
     }
 
