@@ -144,8 +144,8 @@ jobs:
 
   bazel:
     name: Bazel validation
-    needs: check-paths
-    if: needs.check-paths.outputs.run_bazel_ci == 'true'
+    needs: [check-paths, license]
+    if: needs.license.result == 'success' && needs.check-paths.outputs.run_bazel_ci == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/ci-bazel.yml
@@ -156,8 +156,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true'
+    needs: [check-paths, license]
+    if: needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true'
     outputs:
       provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
     steps:
@@ -257,10 +257,10 @@ jobs:
 
   lint:
     name: Lint
-    needs: [check-paths, check-runner]
+    needs: [check-paths, check-runner, license]
     # Run if paths require CI and no provisioning triggered
     if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+      !cancelled() && needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' &&
       needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
@@ -303,10 +303,10 @@ jobs:
 
   build:
     name: Build and Test
-    needs: [check-paths, check-runner]
+    needs: [check-paths, check-runner, license]
     # Applicable code must run on an available runner for this revision.
     if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+      !cancelled() && needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' &&
       needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
     timeout-minutes: 45
     # For self-hosted runners, we need label arrays; for cloud runners, use the matrix value directly
@@ -642,9 +642,9 @@ jobs:
     name: E2E Tests (shard ${{ matrix.shard }})
     # Runs alongside the build, not after it: this job builds what it needs itself (Gradle
     # cache), and waiting on the build only added its duration to the critical path.
-    needs: [check-paths, check-runner]
+    needs: [check-paths, check-runner, license]
     if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+      !cancelled() && needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' &&
       needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
     strategy:
       fail-fast: false
@@ -789,16 +789,16 @@ jobs:
 
   launcher:
     name: Native launcher
-    needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
+    needs: [check-paths, license]
+    if: needs.license.result == 'success' && (needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
     uses: ./.github/workflows/ci-launcher.yml
 
   zed:
     name: Zed adapter
-    needs: check-paths
-    if: needs.check-paths.outputs.run_zed_ci == 'true' || github.event_name == 'workflow_dispatch'
+    needs: [check-paths, license]
+    if: needs.license.result == 'success' && (needs.check-paths.outputs.run_zed_ci == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -878,11 +878,12 @@ jobs:
           retention-days: 14
   dependency-check:
     name: Check Dependencies
+    needs: [license]
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
-    if: github.ref == 'refs/heads/main'
+    if: needs.license.result == 'success' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
