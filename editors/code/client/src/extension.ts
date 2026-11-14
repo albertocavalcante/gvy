@@ -6,6 +6,7 @@
  */
 
 import * as fs from "fs";
+import { AnalysisUi } from "./analysis/ui";
 import * as vscode from "vscode";
 import {
   initializeClient,
@@ -13,6 +14,7 @@ import {
   stopClient,
   getClient,
   onClientStarted,
+  setAnalysisUi,
 } from "./server/client";
 import { startServerForActivation } from "./server/activation";
 import { registerStatusBarItem, getStatusBarManager } from "./ui/statusBar";
@@ -55,6 +57,9 @@ export async function activate(context: vscode.ExtensionContext) {
     (context.extension.packageJSON.version as string) || "unknown";
 
   initializeClient(context);
+  const analysisUi = new AnalysisUi();
+  context.subscriptions.push(analysisUi);
+  setAnalysisUi(analysisUi);
 
   context.subscriptions.push(
     registerStatusBarItem(undefined, extensionVersion),
