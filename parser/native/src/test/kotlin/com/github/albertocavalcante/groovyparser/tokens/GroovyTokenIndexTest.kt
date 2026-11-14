@@ -215,7 +215,7 @@ class GroovyTokenIndexTest {
 
         assertContextSpan(source, index, "'kept 😀'", TokenContext.StringLiteral)
         assertContextSpan(source, index, "// kept 😀", TokenContext.LineComment)
-        // This control makes no completeness claim about text after the lexer failure.
+        assertTrue(!index.complete, "Malformed continuation must not claim complete lexical coverage")
     }
 
     @Test
