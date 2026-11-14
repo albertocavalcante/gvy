@@ -19,6 +19,9 @@ work. Coding agents must also read [AGENTS.md](AGENTS.md) and the applicable ins
 - Install **JDK 21** for compilation. gvy targets a Java 17 runtime.
 - Make **JDK 17** available for the default test runtime.
 - Use the checked-in Gradle wrapper (`./gradlew`); a separate Kotlin or Gradle installation is not required.
+- On macOS, Homebrew's `openjdk@17` works as the JDK 17 runtime. It is keg-only, so `/usr/libexec/java_home` does not
+  list it and `java` reports "Unable to locate a Java Runtime". `.envrc` selects it when SDKMAN provides no matching
+  JDK. Without direnv, set `export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"`.
 
 Gradle can provision compilation and test toolchains through the configured Foojay resolver. If provisioning is
 unavailable, install the required JDKs locally. The [version catalog](gradle/libs.versions.toml) and
