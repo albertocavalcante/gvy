@@ -28,16 +28,18 @@ dependencies {
             intellijIdea("2025.3.1")
         } else {
             val supplied = file(localIde)
-            val app = if (supplied.name == "Contents" && supplied.parentFile.name.endsWith(".app")) {
-                supplied.parentFile
-            } else {
-                supplied
-            }
-            val infoFile = if (app.name.endsWith(".app")) {
-                app.resolve("Contents/Resources/product-info.json")
-            } else {
-                app.resolve("product-info.json")
-            }
+            val app =
+                if (supplied.name == "Contents" && supplied.parentFile.name.endsWith(".app")) {
+                    supplied.parentFile
+                } else {
+                    supplied
+                }
+            val infoFile =
+                if (app.name.endsWith(".app")) {
+                    app.resolve("Contents/Resources/product-info.json")
+                } else {
+                    app.resolve("product-info.json")
+                }
             val info = JsonSlurper().parse(infoFile) as? Map<*, *>
             val productCode = info?.get("productCode")
             val buildNumber = info?.get("buildNumber")
