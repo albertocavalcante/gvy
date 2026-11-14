@@ -59,7 +59,7 @@ jobs:
             node tools/ci/run-gradle.mjs \
               --report-root "$RUNNER_TEMP/license-ordering/project-$attempt" \
               --producer "license-order-project-$attempt" \
-              :gls:lint --dry-run --console=plain --no-daemon --max-workers=1 \
+              :gls:lint --dry-run --no-daemon --max-workers=1 \
               --project-cache-dir "$RUNNER_TEMP/license-ordering-project-cache" \
               --configuration-cache --configuration-cache-problems=fail \
               '-Dorg.gradle.jvmargs=-Xms64m -Xmx1536m -XX:MaxMetaspaceSize=768m' \
