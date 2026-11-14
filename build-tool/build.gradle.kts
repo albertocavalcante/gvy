@@ -37,6 +37,9 @@ dependencies {
     implementation(libs.maven.resolver.supplier)
 
     // Testing
+    testImplementation(libs.groovy.core)
+    testImplementation(libs.groovy.ant)
+    testImplementation("org.apache.groovy:groovy-xml:${libs.versions.groovy.get()}")
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.junit.jupiter)

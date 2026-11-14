@@ -15,6 +15,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
 import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
+import com.github.albertocavalcante.gvy.gls.execution.discoverEntryPoints
 import com.github.albertocavalcante.gvy.gls.providers.SignatureHelpProvider
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.gvy.gls.providers.codeaction.CodeActionProvider
@@ -49,6 +50,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
+import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -85,6 +87,7 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior
 import org.eclipse.lsp4j.PrepareRenameParams
 import org.eclipse.lsp4j.PrepareRenameResult
@@ -674,7 +677,21 @@ class GroovyTextDocumentService(
         // Ensure file is compiled before providing CodeLenses
         compilationService.ensureCompiled(uri)
 
-        testCodeLensProvider.provideCodeLenses(uri)
+        val testLenses = testCodeLensProvider.provideCodeLenses(uri)
+        val module = compilationService.getAst(uri) as? ModuleNode
+        val executionLenses = module?.let { discoverEntryPoints(it) }.orEmpty().map { entry ->
+            val position = Position(entry.line, 0)
+            CodeLens(
+                Range(position, position),
+                Command(
+                    "$(play) Run File",
+                    "groovy.runFile",
+                    listOf(mapOf("uri" to uri.toString(), "entryPoint" to entry.id)),
+                ),
+                null,
+            )
+        }
+        testLenses + executionLenses
     }
 
     override fun selectionRange(params: SelectionRangeParams): CompletableFuture<List<SelectionRange>?> =

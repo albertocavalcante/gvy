@@ -21,6 +21,7 @@ describe("extension activation", () => {
       registerGradleFeatures: sinon.stub(),
       registerTestingFeatures: sinon.stub(),
       registerDependencyFeatures: sinon.stub(),
+      registerFileExecution: sinon.stub(),
       initializeUpdateService: sinon.stub().returns({
         activate: sinon.stub().resolves(),
         dispose: sinon.stub(),
@@ -82,6 +83,9 @@ describe("extension activation", () => {
         getConfiguration: () => ({ serverPath: undefined }),
       },
       "./features/repl": { replService: { initialize: () => {} } },
+      "./features/fileExecution": {
+        registerFileExecution: stubs.registerFileExecution,
+      },
       "./features/gradle": {
         registerGradleFeatures: stubs.registerGradleFeatures,
       },
@@ -125,6 +129,10 @@ describe("extension activation", () => {
     await ext.activate(context());
 
     assert.ok(stubs.registerGradleFeatures.calledOnce, "gradle commands");
+    assert.ok(
+      stubs.registerFileExecution.calledOnce,
+      "file execution commands",
+    );
     assert.ok(stubs.registerTestingFeatures.calledOnce, "test commands");
     assert.ok(
       stubs.registerDependencyFeatures.calledOnce,

@@ -25,7 +25,8 @@
     "workspaceContains:**/Jenkinsfile",
     "workspaceContains:**/Jenkinsfile.*",
     "workspaceContains:**/*.groovy",
-    "onTaskType:groovy-gradle"
+    "onTaskType:groovy-gradle",
+    "onTaskType:groovy-file"
   ],
   "main": "./client/out/extension.js",
   "contributes": {
@@ -43,6 +44,61 @@
           "project": {
             "type": "string",
             "description": "Gradle path of the subproject that owns the task, starting with a colon, for example :app. Omit for the root project."
+          }
+        }
+      },
+      {
+        "type": "groovy-file",
+        "required": [
+          "file",
+          "action"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "File path relative to the workspace folder or absolute."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "run",
+              "compile"
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Execution context ID, or standalone."
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "jvmArguments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workingDirectory": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "classpath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preparationTask": {
+            "type": "string",
+            "description": "Name of a task to run before preparing this file."
           }
         }
       }
@@ -172,6 +228,31 @@
       {
         "command": "groovy.dependencies.copyCoordinate",
         "title": "Copy Dependency Coordinate"
+      },
+      {
+        "command": "groovy.runFile",
+        "title": "Groovy: Run File",
+        "icon": "$(play)"
+      },
+      {
+        "command": "groovy.compileFile",
+        "title": "Groovy: Compile File"
+      },
+      {
+        "command": "groovy.runFileWithProject",
+        "title": "Groovy: Run File with Project\u2026"
+      },
+      {
+        "command": "groovy.runFileAgain",
+        "title": "Groovy: Run File Again"
+      },
+      {
+        "command": "groovy.configureFileExecution",
+        "title": "Groovy: Configure File Execution"
+      },
+      {
+        "command": "groovy.revealFileOutput",
+        "title": "Groovy: Reveal File Compile Output"
       }
     ],
     "views": {
@@ -219,6 +300,32 @@
         {
           "command": "groovy.dependencies.copyCoordinate",
           "when": "view == groovyDependencies && viewItem == dependency"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "groovy.runFile",
+          "when": "editorLangId == groovy",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "groovy.runFile",
+          "when": "editorLangId == groovy",
+          "group": "1_run"
+        },
+        {
+          "command": "groovy.compileFile",
+          "when": "editorLangId == groovy",
+          "group": "2_compile"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "groovy.runFile",
+          "when": "editorLangId == groovy",
+          "group": "navigation"
         }
       ]
     },
@@ -889,6 +996,63 @@
             "Show CodeLens from both sources"
           ],
           "description": "Source for test Run/Debug/Coverage CodeLens"
+        },
+        "groovy.fileExecution.javaExecutable": {
+          "type": "string",
+          "scope": "machine",
+          "description": "Java executable used for file execution."
+        },
+        "groovy.fileExecution.runtime": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "scope": "machine",
+          "description": "Ordered Groovy runtime JAR paths used for file execution."
+        },
+        "groovy.fileExecution.arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Arguments passed to the Groovy program."
+        },
+        "groovy.fileExecution.jvmArguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "JVM arguments for file execution."
+        },
+        "groovy.fileExecution.workingDirectory": {
+          "type": "string",
+          "description": "Working directory for file execution."
+        },
+        "groovy.fileExecution.environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Environment variables for file execution."
+        },
+        "groovy.fileExecution.classpath": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional file execution classpath entries."
+        },
+        "groovy.fileExecution.localRuntime": {
+          "scope": "machine",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ordered local Groovy runtime JAR paths used when no explicit or project runtime is available."
         }
       }
     },
@@ -982,7 +1146,7 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run prepare-server && node tools/validate-server.js && pnpm run package-build",
+    "vscode:prepublish": "pnpm run prepare-server && pnpm run prepare-runtime && node tools/validate-server.js && pnpm run package-build",
     "prepare-server": "node tools/prepare-server.js",
     "prepare-server:local": "PREFER_LOCAL=true node tools/prepare-server.js",
     "prepare-server:download": "FORCE_DOWNLOAD=true node tools/prepare-server.js",
@@ -1005,7 +1169,8 @@
     "compile:tests": "tsc -b --force client/tsconfig.json",
     "test:integration": "pnpm run compile:tests && vscode-test",
     "test:all": "pnpm run test && pnpm run test:integration",
-    "check-tools": "tsc --project tools/tsconfig.json && eslint --config tools/eslint.config.mjs tools"
+    "check-tools": "tsc --project tools/tsconfig.json && eslint --config tools/eslint.config.mjs tools",
+    "prepare-runtime": "node tools/prepare-runtime.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

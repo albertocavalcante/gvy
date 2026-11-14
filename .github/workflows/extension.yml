@@ -25,6 +25,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GVY_RUNTIME_SOURCE: ${{ github.workspace }}/gls/build/editor-server/runtime
+
 defaults:
   run:
     working-directory: editors/code
@@ -61,14 +64,14 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Build candidate server
-        run: ./gradlew :gls:stageEditorServer --build-cache --console=plain --max-workers=2
+        run: ./gradlew :gls:stageEditorServer stageFileExecutionRuntime --build-cache --console=plain --max-workers=2
         working-directory: .
 
       - name: Upload candidate server
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: current-editor-server
-          path: gls/build/editor-server/gls.jar
+          path: gls/build/editor-server/
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -132,11 +135,21 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
+      - name: Prepare dedicated execution runtime
+        run: pnpm run prepare-runtime
+
       - name: Check types
         run: pnpm run check-types
 
       - name: Build
         run: pnpm run compile
+
+      - name: Qualify native runtime and long classpaths
+        env:
+          GVY_JAVA_ARGUMENTS_MODULE: ${{ runner.temp }}/gvy-java-arguments.cjs
+        run: |
+          node -e 'require("esbuild").buildSync({entryPoints:["client/src/features/fileExecution/javaArguments.ts"],platform:"node",format:"cjs",outfile:process.env.GVY_JAVA_ARGUMENTS_MODULE})'
+          node --test tools/qualification/file-runtime.test.js tools/qualification/java-arguments.test.js
 
       - name: Run tests
         env:
@@ -236,6 +249,20 @@ jobs:
       - name: Build
         run: pnpm run compile
         working-directory: editors/code
+
+      - name: Prepare dedicated execution runtime
+        run: pnpm run prepare-runtime
+
+      - name: Qualify native Java argument handling
+        env:
+          GVY_JAVA_ARGUMENTS_MODULE: ${{ runner.temp }}/gvy-java-arguments.cjs
+        run: |
+          node -e 'require("esbuild").buildSync({entryPoints:["client/src/features/fileExecution/javaArguments.ts"],platform:"node",format:"cjs",outfile:process.env.GVY_JAVA_ARGUMENTS_MODULE})'
+          node --test tools/qualification/java-arguments.test.js
+
+      - name: Qualify native Groovy runtime
+        if: runner.os != 'Windows'
+        run: node --test tools/qualification/file-runtime.test.js
 
       - name: Run tests
         env:
@@ -343,7 +370,13 @@ jobs:
           pwsh -NoProfile -Command "Expand-Archive -LiteralPath (Join-Path \$env:RUNNER_TEMP 'gvy-package.zip') -DestinationPath (Join-Path \$env:RUNNER_TEMP 'gvy-packaged-extension')"
           node -e 'const fs = require("fs"); const crypto = require("crypto"); const path = require("path"); const hash = p => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex"); if (hash(process.env.GLS_LOCAL_JAR) !== hash(path.join(process.env.RUNNER_TEMP, "gvy-packaged-extension/extension/server/gls.jar"))) throw new Error("Packaged server checksum mismatch");'
 
-      - name: Test packaged GDSL and implementation navigation
+      - name: Qualify packaged runtime
+        if: runner.os != 'Windows'
+        env:
+          GVY_TEST_EXTENSION_ROOT: ${{ runner.temp }}/gvy-packaged-extension/extension
+        run: node --test tools/qualification/file-runtime.test.js
+
+      - name: Test packaged GDSL, navigation and file execution
         env:
           # Exercise the workspace fallback even when an override is present but empty.
           GVY_TEST_SERVER_JAR: ''
@@ -357,7 +390,7 @@ jobs:
             export DISPLAY=:99
           fi
           node --test tools/tests/gdsl-contract.test.js
-          pnpm exec vscode-test --label integrationTests --grep "Implementation navigation|GDSL authoring" --fail-zero --forbid-pending
+          pnpm exec vscode-test --label integrationTests --grep "Implementation navigation|GDSL authoring|Groovy file execution" --fail-zero --forbid-pending
           pnpm exec vscode-test --label gdslLifecycle --fail-zero --forbid-pending
 
       - name: Upload failed editor logs

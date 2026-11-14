@@ -74,6 +74,15 @@ describe("configuration/settings", () => {
     assert.ok(settings.canBeAppliedDynamically(event));
   });
 
+  it("applies file execution settings on the next run without restarting the server", () => {
+    const event = changeOf(
+      "groovy.fileExecution.runtime",
+      "groovy.fileExecution.arguments",
+    );
+    assert.ok(!settings.requiresServerRestart(event));
+    assert.ok(!settings.canBeAppliedDynamically(event));
+  });
+
   it("does not bother the server with client-only settings", () => {
     const event = changeOf("groovy.statusBar.show");
     assert.ok(!settings.requiresServerRestart(event));

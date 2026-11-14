@@ -108,7 +108,53 @@ class GradleScopedDependencyProducer(
         Result.failure(failure)
     }
 
-    private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? {
+    /** Fetches a new execution observation; callers must gate this operation on workspace trust. */
+    suspend fun resolveExecutionContexts(
+        projectDirectory: Path,
+        timeout: Duration? = null,
+        javaHome: Path? = null,
+    ): List<GradleExecutionContext>? = withContext(Dispatchers.IO) {
+        val directory = initScriptDirectory ?: return@withContext null
+        try {
+            val script = GradleScopedInitScript.install(directory)
+            suspend fun read(): List<GradleExecutionContext>? {
+                val model = fetchModel(projectDirectory, script, GradleExecutionModel::class.java, javaHome)
+                    ?: return null
+                return GradleExecutionProjection.project(model)
+            }
+            if (timeout == null) read() else withTimeoutOrNull(timeout) { read() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: GradleConnectionException) {
+            unavailableExecution(failure)
+        } catch (failure: IOException) {
+            unavailableExecution(failure)
+        } catch (failure: IllegalArgumentException) {
+            unavailableExecution(failure)
+        } catch (failure: IllegalStateException) {
+            unavailableExecution(failure)
+        } catch (failure: ClassCastException) {
+            unavailableExecution(failure)
+        } catch (failure: UnsupportedOperationException) {
+            unavailableExecution(failure)
+        }
+    }
+
+    private suspend fun unavailableExecution(failure: Exception): List<GradleExecutionContext>? {
+        coroutineContext.ensureActive()
+        logger.warn(failure) { "Gradle execution observation unavailable" }
+        return null
+    }
+
+    private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? =
+        fetchModel(projectDirectory, script, GradleScopedDependencyModel::class.java, javaHome)
+
+    private suspend fun <T> fetchModel(
+        projectDirectory: Path,
+        script: Path,
+        type: Class<T>,
+        modelJavaHome: Path?,
+    ): T? {
         val cancellation = GradleConnector.newCancellationTokenSource()
         val lease = connectionFactory.acquire(projectDirectory, null)
         var configured = false
@@ -116,7 +162,7 @@ class GradleScopedDependencyProducer(
             // The idle timeout is what bounds the daemon this may start; it is not part of daemon compatibility, so
             // reuse of the user's own daemon is unchanged.
             val model = lease.connection
-                .model(GradleScopedDependencyModel::class.java)
+                .model(type)
                 .withArguments(
                     "--no-configure-on-demand",
                     "--init-script",
@@ -124,7 +170,7 @@ class GradleScopedDependencyProducer(
                     GradleOperationArguments.idleTimeoutArgument(daemonSettings),
                 )
                 .withCancellationToken(cancellation.token())
-            javaHome?.let { model.setJavaHome(it.toFile()) }
+            modelJavaHome?.let { model.setJavaHome(it.toFile()) }
             configured = true
             model
         } finally {
@@ -141,8 +187,8 @@ class GradleScopedDependencyProducer(
             var launched = false
             try {
                 builder.get(
-                    object : ResultHandler<GradleScopedDependencyModel> {
-                        override fun onComplete(result: GradleScopedDependencyModel?) {
+                    object : ResultHandler<T> {
+                        override fun onComplete(result: T?) {
                             if (completed.compareAndSet(false, true)) {
                                 try {
                                     lease.close()
