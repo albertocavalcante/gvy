@@ -555,83 +555,97 @@ test("editor timeout kills a process that ignores SIGTERM", posixOnly, () => {
   }
 });
 
-test("descriptor reads reject symlinks, FIFOs and oversized files and always close", () => {
-  const { readRegularFile } = require("../ci-install.js");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-ci-test-"));
-  const open = fs.openSync;
-  let opened;
-  try {
-    const file = path.join(root, "regular");
-    fs.writeFileSync(file, "contents");
-    fs.symlinkSync(file, path.join(root, "link"));
-    assert.throws(() => readRegularFile(path.join(root, "link"), 128));
-    const pipe = path.join(root, "pipe");
-    const result = spawnSync("mkfifo", [pipe]);
-    assert.equal(result.status, 0);
-    assert.throws(() => readRegularFile(pipe, 128), /regular file/);
-    const large = path.join(root, "large");
-    fs.writeFileSync(large, "oversized");
-    fs.openSync = (...args) => {
-      const fd = open(...args);
-      if (args[0] === large) opened = fd;
-      return fd;
-    };
-    assert.throws(() => readRegularFile(large, 2), /size limit/);
-    assert.throws(() => fs.fstatSync(opened), /EBADF/);
-  } finally {
-    fs.openSync = open;
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+test(
+  "descriptor reads reject symlinks, FIFOs and oversized files and always close",
+  posixOnly,
+  () => {
+    const { readRegularFile } = require("../ci-install.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-ci-test-"));
+    const open = fs.openSync;
+    let opened;
+    try {
+      const file = path.join(root, "regular");
+      fs.writeFileSync(file, "contents");
+      fs.symlinkSync(file, path.join(root, "link"));
+      assert.throws(() => readRegularFile(path.join(root, "link"), 128));
+      const pipe = path.join(root, "pipe");
+      const result = spawnSync("mkfifo", [pipe]);
+      assert.equal(result.status, 0);
+      assert.throws(() => readRegularFile(pipe, 128), /regular file/);
+      const large = path.join(root, "large");
+      fs.writeFileSync(large, "oversized");
+      fs.openSync = (...args) => {
+        const fd = open(...args);
+        if (args[0] === large) opened = fd;
+        return fd;
+      };
+      assert.throws(() => readRegularFile(large, 2), /size limit/);
+      assert.throws(() => fs.fstatSync(opened), /EBADF/);
+    } finally {
+      fs.openSync = open;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
-test("descriptor reads remain tied to the opened inode if its path is swapped", () => {
-  const { readRegularFile } = require("../ci-install.js");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-ci-test-"));
-  const open = fs.openSync;
-  try {
-    const file = path.join(root, "candidate");
-    fs.writeFileSync(file, "original");
-    let swapped = false;
-    fs.openSync = (...args) => {
-      const fd = open(...args);
-      if (args[0] === file && !swapped) {
-        swapped = true;
-        fs.renameSync(file, path.join(root, "original"));
-        fs.writeFileSync(file, "replacement");
-      }
-      return fd;
-    };
-    assert.equal(readRegularFile(file, 128).toString(), "original");
-    assert.equal(fs.readFileSync(file, "utf8"), "replacement");
-  } finally {
-    fs.openSync = open;
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+test(
+  "descriptor reads remain tied to the opened inode if its path is swapped",
+  posixOnly,
+  () => {
+    const { readRegularFile } = require("../ci-install.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-ci-test-"));
+    const open = fs.openSync;
+    try {
+      const file = path.join(root, "candidate");
+      fs.writeFileSync(file, "original");
+      let swapped = false;
+      fs.openSync = (...args) => {
+        const fd = open(...args);
+        if (args[0] === file && !swapped) {
+          swapped = true;
+          fs.renameSync(file, path.join(root, "original"));
+          fs.writeFileSync(file, "replacement");
+        }
+        return fd;
+      };
+      assert.equal(readRegularFile(file, 128).toString(), "original");
+      assert.equal(fs.readFileSync(file, "utf8"), "replacement");
+    } finally {
+      fs.openSync = open;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
-test("exclusive publication never replaces an existing file or symlink", () => {
-  const { publishFile } = require("../ci-install.js");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-ci-test-"));
-  try {
-    const candidate = path.join(root, "candidate"),
-      dest = path.join(root, "dest"),
-      target = path.join(root, "target");
-    fs.writeFileSync(candidate, "new");
-    fs.writeFileSync(target, "keep");
-    fs.symlinkSync(target, dest);
-    assert.throws(() => publishFile(candidate, dest, Buffer.from("new"), 128));
-    assert.equal(fs.readFileSync(target, "utf8"), "keep");
-    fs.unlinkSync(dest);
-    fs.writeFileSync(dest, "existing");
-    assert.throws(
-      () => publishFile(candidate, dest, Buffer.from("new"), 128),
-      /differs/,
-    );
-    assert.equal(fs.readFileSync(dest, "utf8"), "existing");
-    fs.unlinkSync(dest);
-    publishFile(candidate, dest, Buffer.from("new"), 128);
-    assert.equal(fs.readFileSync(dest, "utf8"), "new");
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+test(
+  "exclusive publication never replaces an existing file or symlink",
+  posixOnly,
+  () => {
+    const { publishFile } = require("../ci-install.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gvy-ci-test-"));
+    try {
+      const candidate = path.join(root, "candidate"),
+        dest = path.join(root, "dest"),
+        target = path.join(root, "target");
+      fs.writeFileSync(candidate, "new");
+      fs.writeFileSync(target, "keep");
+      fs.symlinkSync(target, dest);
+      assert.throws(() =>
+        publishFile(candidate, dest, Buffer.from("new"), 128),
+      );
+      assert.equal(fs.readFileSync(target, "utf8"), "keep");
+      fs.unlinkSync(dest);
+      fs.writeFileSync(dest, "existing");
+      assert.throws(
+        () => publishFile(candidate, dest, Buffer.from("new"), 128),
+        /differs/,
+      );
+      assert.equal(fs.readFileSync(dest, "utf8"), "existing");
+      fs.unlinkSync(dest);
+      publishFile(candidate, dest, Buffer.from("new"), 128);
+      assert.equal(fs.readFileSync(dest, "utf8"), "new");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
