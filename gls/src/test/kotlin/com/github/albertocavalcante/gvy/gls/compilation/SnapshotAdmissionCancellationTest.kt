@@ -38,16 +38,15 @@ class SnapshotAdmissionCancellationTest {
 
     @Test
     fun `definition cancellation stops snapshot admission before remaining roots`(): Unit = runBlocking {
-        assertAdmissionStops(Operation.DEFINITION)
+        assertAdmissionStops(definition = true)
     }
 
-    @Test
     @Test
     fun `source command cancellation stops snapshot admission before remaining roots`(): Unit = runBlocking {
-        assertAdmissionStops(Operation.SOURCE_COMMAND)
+        assertAdmissionStops(definition = false)
     }
 
-    private suspend fun assertAdmissionStops(operation: Operation) {
+    private suspend fun assertAdmissionStops(definition: Boolean) {
         Fixture(root).use { fixture ->
             val compiled = fixture.compilation.compile(fixture.uri, fixture.source)
             assertTrue(compiled.isSuccess)
@@ -62,10 +61,11 @@ class SnapshotAdmissionCancellationTest {
                         probes.add(path)
                         if (path == fixture.primary) job.cancel()
                     }
-                    when (operation) {
-                        Operation.DEFINITION -> DefinitionProvider(service)
+                    if (definition) {
+                        DefinitionProvider(service)
                             .provideDefinitions(fixture.uri.toString(), Position(0, 14)).toList()
-                        Operation.SOURCE_COMMAND -> SourceCommandService(
+                    } else {
+                        SourceCommandService(
                             service,
                             fixture.documents,
                             mockk<SourceNavigator>(relaxed = true),
@@ -87,8 +87,6 @@ class SnapshotAdmissionCancellationTest {
             }
         }
     }
-
-    private enum class Operation { DEFINITION, SOURCE_COMMAND }
 
     private class Fixture(root: Path) : AutoCloseable {
         private val sources = Files.createDirectory(root.resolve("src"))

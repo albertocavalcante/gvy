@@ -243,14 +243,15 @@ class AnnotationDefinitionNavigationTest {
     fun `a nested source annotation import targets the annotation instead of its owner`(): Unit = runBlocking {
         val source = """
             package p
-            import static p.Outer.Mark
+            import p.Outer.Mark
             class Outer { @interface Mark {} }
             @Mark class Money {}
         """.trimIndent()
         val service = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
         val provider = DefinitionProvider(service)
         try {
-            assertTrue(service.compile(uri, source).isSuccess)
+            val compilation = service.compile(uri, source)
+            assertTrue(compilation.isSuccess, compilation.diagnostics.joinToString { it.message })
             val head = provider.provideDefinitionLinks(uri.toString(), Position(3, 1)).toList().single()
             val imported = provider
                 .provideDefinitionLinks(uri.toString(), Position(1, source.lines()[1].indexOf("Mark") + 1))

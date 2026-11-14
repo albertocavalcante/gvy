@@ -7,38 +7,6 @@ import com.github.albertocavalcante.gvy.build.defaultVerifiedSourceCacheRoot
 import java.net.URI
 import java.nio.file.Path
 
-/** Metadata retained by a source-view descriptor. It owns no parser, classloader or coroutine resources. */
-data class SourceContextIdentity(
-    val id: String,
-    val documentUri: URI? = null,
-    val compileFingerprint: String? = null,
-) {
-    init {
-        require(id.isNotBlank()) { "Source context identity must be nonempty" }
-    }
-}
-
-enum class SourceLookupPolicy { LOCAL_ONLY, ALLOW_VERIFIED_DOWNLOADS }
-
-/** Request-scoped validation; presentation registries retain [identity] only. */
-class SourceLookupContext(
-    val identity: SourceContextIdentity,
-    val policy: SourceLookupPolicy = SourceLookupPolicy.LOCAL_ONLY,
-    validateCurrent: (suspend () -> Boolean)? = null,
-    private val isCurrent: () -> Boolean,
-) {
-    private val validator = validateCurrent
-
-    fun isCurrent(): Boolean = isCurrent.invoke()
-
-    /** Fresh validation for the final publication boundary of a source lookup. */
-    suspend fun validateCurrent(): Boolean = validator?.invoke() ?: isCurrent()
-}
-
-data class ResolvedExternalSymbol(val binaryName: String, val origin: SourceOrigin, val memberName: String? = null)
-
-data class ResolvedSourceRequest(val symbol: ResolvedExternalSymbol, val context: SourceLookupContext)
-
 sealed interface SourceLookupResult {
     data class Located(val uri: URI, val binaryName: String, val definition: SourceDefinition) : SourceLookupResult
     data class FileOnly(val uri: URI, val binaryName: String, val reason: MissingSourceReason) : SourceLookupResult
