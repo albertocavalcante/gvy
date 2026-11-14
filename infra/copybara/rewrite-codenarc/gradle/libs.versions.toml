@@ -3,7 +3,7 @@
 
 [versions]
 kotlin = "2.3.0"
-rewriteGroovy = "8.70.4"
+rewriteGroovy = "8.84.1"
 junit = "6.0.2"
 junitPlatform = "6.0.2"
 assertj = "3.27.7"

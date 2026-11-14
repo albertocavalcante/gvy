@@ -174,8 +174,8 @@ maven.install(
         # Code Quality & Analysis
         # Note: CodeNarc exclusions are defined separately via maven.artifact()
         # Note: rewrite-groovy exclusions are defined separately via maven.artifact()
-        "org.openrewrite:rewrite-core:8.79.0",
-        "org.openrewrite:rewrite-java:8.79.0",
+        "org.openrewrite:rewrite-core:8.84.1",
+        "org.openrewrite:rewrite-java:8.84.1",
 
         # Gradle Tooling API - from repo.gradle.org (configured in repositories)
         "org.gradle:gradle-tooling-api:9.2.1",
@@ -373,7 +373,7 @@ maven.artifact(
         "org.codehaus.groovy:groovy",
     ],
     group = "org.openrewrite",
-    version = "8.79.0",
+    version = "8.84.1",
 )
 
 # Note: unpinned_maven is only available when lock_file is enabled
