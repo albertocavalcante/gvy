@@ -48,12 +48,12 @@ text is a bare name, preserving G02. Current publication-head packaged tests rem
 <details>
 <summary>Owned verification limits and temporary editor-diagnostic exception</summary>
 
-The controlled macOS ARM64 editor runs on 2026-11-14 passed their assertions with three uncovered diagnostic events.
-This temporary exception retains those specific baseline receipts while their attribution is completed.
+The controlled macOS ARM64 editor runs on 2026-11-14 passed their assertions with three uncovered diagnostic cases. This
+temporary exception retains those specific baseline receipts while their attribution is completed.
 
 | Field           | Recorded limit                                                                                                                                                                     |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scope           | The captured Code 1.146.0 baseline and trace run set, with the candidate hash above. Two `DEP0169` events and the repeated receipt-error fingerprint below.                        |
+| Scope           | The captured Code 1.146.0 baseline and trace run set, with the candidate hash above. `DEP0169` in two process categories and the repeated receipt-error fingerprint below.         |
 | Owner / issue   | Editor-test harness coordinator; [#1603](https://github.com/albertocavalcante/gvy/issues/1603).                                                                                    |
 | Expiry          | **2026-11-21**. Renew only with fresh evidence and independent review.                                                                                                             |
 | Impact / reason | Assertions passed; the deprecation call sites and effect of receipt loading on this test environment remain unestablished. This is an attribution limit.                           |
