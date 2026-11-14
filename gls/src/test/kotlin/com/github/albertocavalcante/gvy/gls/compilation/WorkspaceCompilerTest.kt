@@ -17,6 +17,8 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -187,6 +189,33 @@ class WorkspaceCompilerTest {
         assertTrue(result.modules.isEmpty())
         assertNull(index.getDocument(file.toUri()))
     }
+
+    @Test
+    fun `workspace compilation retries a skipped source when admission recovers before batch completion`(): Unit =
+        runTest {
+            val src = Files.createDirectories(tempDir.resolve("src"))
+            val file = src.resolve("Recovered.groovy").apply { writeText("class Recovered {}") }
+            val rejectNextProbe = AtomicBoolean(false)
+            val manager = WorkspaceManager(sourceExclusion = { candidate ->
+                candidate == file && rejectNextProbe.compareAndSet(true, false)
+            })
+            manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+            val index = WorkspaceSymbolIndex(GroovySemanticDB())
+            val indexer = SemanticIndexer(index)
+            val parseCalls = AtomicInteger()
+            val worker = mockk<WorkerSessionManager>()
+            coEvery { worker.parse(any()) } coAnswers {
+                val result = parser.parse(firstArg())
+                if (parseCalls.incrementAndGet() == 1) rejectNextProbe.set(true)
+                result
+            }
+
+            val result = WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
+
+            assertTrue(result.success, result.errors.toString())
+            assertEquals(2, parseCalls.get(), "The skipped source must be retried with fresh admission")
+            assertNotNull(index.getDocument(file.toUri()))
+        }
 
     @Test
     fun `compileWorkspace compiles multiple files together`(): Unit = runTest {

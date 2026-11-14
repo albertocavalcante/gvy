@@ -186,6 +186,7 @@ class WorkspaceCompiler(
     private suspend fun compileFiles(sources: List<Path>, workspace: WorkspaceModel): WorkspaceCompilationResult {
         val modules = mutableMapOf<URI, ModuleNode>()
         val errors = mutableListOf<CompilationError>()
+        val context = currentCoroutineContext()
 
         // Get workspace configuration
         val classpath = workspace.classpath
@@ -206,22 +207,64 @@ class WorkspaceCompiler(
             compilationJobs.awaitAll()
         }
 
-        // Process results
-        results.forEach { result ->
-            when (result) {
-                is FileCompilationResult.Success -> {
-                    modules[result.uri] = result.module
-                    errors.addAll(result.errors)
-                }
-                is FileCompilationResult.Failure -> {
-                    errors.addAll(result.errors)
-                }
-                FileCompilationResult.Skipped -> Unit
+        // A path that became inadmissible during its parse is skipped and its old semantic facts are removed.
+        // If it is ordinary again after the batch, retry it once with fresh admission so a transient retarget
+        // cannot leave an otherwise current source missing until another watcher event.
+        val skippedPaths = results.filterIsInstance<FileCompilationResult.Skipped>()
+            .map(FileCompilationResult.Skipped::sourcePath)
+            .distinct()
+        val retryAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        val retryPaths = skippedPaths.filter(retryAdmission::allows)
+        val retried = if (retryPaths.isEmpty()) {
+            emptyList()
+        } else {
+            coroutineScope {
+                retryPaths.map { sourcePath ->
+                    async(Dispatchers.Default) {
+                        compileFileWithWorkspaceContext(sourcePath, sources, classpath, sourceRoots)
+                    }
+                }.awaitAll()
             }
+        }
+
+        // Process both initial and retry results.
+        results.forEach { result ->
+            collect(result, modules, errors)
+        }
+        retried.forEach { result ->
+            collect(result, modules, errors)
+        }
+
+        val retryPathSet = retryPaths.toSet()
+        val retrySkippedPaths = retried.filterIsInstance<FileCompilationResult.Skipped>()
+            .map(FileCompilationResult.Skipped::sourcePath)
+        val unresolvedSkips = (skippedPaths.filterNot { it in retryPathSet } + retrySkippedPaths).distinct()
+        val completionAdmission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+        unresolvedSkips.filter(completionAdmission::allows).forEach { sourcePath ->
+            errors += CompilationError(
+                sourcePath.toUri(),
+                "Source admission changed repeatedly during workspace compilation",
+                "admission",
+            )
         }
 
         val success = errors.isEmpty()
         return WorkspaceCompilationResult(modules, errors, success)
+    }
+
+    private fun collect(
+        result: FileCompilationResult,
+        modules: MutableMap<URI, ModuleNode>,
+        errors: MutableList<CompilationError>,
+    ) {
+        when (result) {
+            is FileCompilationResult.Success -> {
+                modules[result.uri] = result.module
+                errors.addAll(result.errors)
+            }
+            is FileCompilationResult.Failure -> errors.addAll(result.errors)
+            is FileCompilationResult.Skipped -> Unit
+        }
     }
 
     /**
@@ -251,12 +294,12 @@ class WorkspaceCompiler(
         return try {
             if (!admission.allows(sourcePath)) {
                 removeClosed(uri, ticket)
-                return FileCompilationResult.Skipped
+                return FileCompilationResult.Skipped(sourcePath)
             }
             val content = readSourceContent(sourcePath, uri, ticket)
             if (!freshlyAllowed(sourcePath)) {
                 removeClosed(uri, ticket)
-                return FileCompilationResult.Skipped
+                return FileCompilationResult.Skipped(sourcePath)
             }
             val admittedRoots = sourceRoots.filter(admission::allows)
             val admittedSources = allSources.filter(admission::allows)
@@ -291,7 +334,7 @@ class WorkspaceCompiler(
                 } catch (failure: IOException) {
                     logger.warn(failure) { "Failed to close a discarded workspace compilation for $uri" }
                 }
-                return FileCompilationResult.Skipped
+                return FileCompilationResult.Skipped(sourcePath)
             }
 
             publishCompilationResult(uri, content, parseResult, publication)
@@ -372,7 +415,7 @@ class WorkspaceCompiler(
             FileCompilationResult()
         data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
 
-        data object Skipped : FileCompilationResult()
+        data class Skipped(val sourcePath: Path) : FileCompilationResult()
     }
 
     private companion object {
