@@ -1,55 +1,148 @@
 ---
-title: Groovy Devtools
-description: Developer tooling for Apache Groovy
+title: Groovy language tools for your editor.
+description: Completion, diagnostics, navigation, and formatting for Groovy, Jenkins, and Spock.
 template: splash
 hero:
-  tagline: A monorepo of Apache Groovy tooling. The Language Server is the primary component, with support for Jenkins pipelines and Spock tests.
-  actions:
-    - text: Get Started
-      link: /gvy/overview/
-      icon: right-arrow
-    - text: GitHub
-      link: https://github.com/albertocavalcante/gvy
-      icon: external
-      variant: minimal
+  tagline: Stay in the flow with language-aware tools for Groovy code, Jenkins pipelines, and Spock tests.
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Code } from "@astrojs/starlight/components";
 
-## Status
+{/* SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors */}
+{/* SPDX-License-Identifier: Apache-2.0 */}
 
-The Groovy Language Server is **work in progress** but already provides core editor features.
+<div class="home-actions">
+  <a
+    class="primary-action"
+    href={`${import.meta.env.BASE_URL}/getting-started/installation/`.replace(
+      "//",
+      "/",
+    )}
+  >
+    Install gvy →
+  </a>
+  <a href={`${import.meta.env.BASE_URL}/guides/quickstart/`.replace("//", "/")}>
+    Read the quickstart →
+  </a>
+</div>
 
-<CardGrid>
-  <Card title="Core LSP" icon="laptop">
-    Completion, hover, navigation, formatting, diagnostics, code actions,
-    rename, folding, semantic tokens.
-  </Card>
-  <Card title="Jenkins" icon="rocket">
-    Metadata-driven completion and diagnostics for Jenkins pipelines.
-  </Card>
-  <Card title="Spock" icon="puzzle">
-    Spec detection and block awareness for Spock tests.
-  </Card>
-  <Card title="Editors" icon="document">
-    VS Code/Cursor/VSCodium extension available.
-  </Card>
-</CardGrid>
+<div class="home-intro">
+  <span class="eyebrow">A language server for your everyday work</span>
+  <p>Go from reading code to changing it with context at hand.</p>
+</div>
 
-## Requirements
+<div class="home-workflows">
+  <section>
+    <span class="workflow-number">01 / GROOVY</span>
+    <h2>Understand the code in front of you.</h2>
+    <p>
+      Explore definitions and references, inspect hover documentation, and use
+      completion as you write. Diagnostics and formatting help you keep moving.
+    </p>
+    <a href={`${import.meta.env.BASE_URL}/guides/groovy/`.replace("//", "/")}>
+      Explore the Groovy workflow →
+    </a>
+  </section>
+  <div class="example-panel" aria-label="Illustrative Groovy example">
+    <div class="example-label">
+      <span>ILLUSTRATIVE EXAMPLE</span>
+      <span>hello.groovy</span>
+    </div>
+    <Code
+      lang="groovy"
+      code={`// Navigate from a call to its definition\ndef greet(String name) {\n  "Hello, \${name}!"\n}\n\nprintln greet('Groovy')`}
+    />
+    <div class="example-note">
+      Illustration based on source at f101e5b · capabilities vary by version
+    </div>
+  </div>
+</div>
 
-- Java 17 or higher
-- Groovy 4.0+
+<div class="home-split">
+  <section>
+    <span class="workflow-number">02 / JENKINS</span>
+    <h2>Bring context to pipelines.</h2>
+    <p>
+      The development source at f101e5b includes pipeline step completion and
+      diagnostics for Jenkinsfiles. See the guide for setup and current
+      limitations.
+    </p>
+    <a href={`${import.meta.env.BASE_URL}/guides/jenkins/`.replace("//", "/")}>
+      Work with Jenkins →
+    </a>
+  </section>
+  <section>
+    <span class="workflow-number">03 / SPOCK</span>
+    <h2>Keep tests close.</h2>
+    <p>
+      The development source at f101e5b includes Spock spec detection, block
+      awareness, and test run and debug code lenses. Support varies by editor
+      and version.
+    </p>
+    <a href={`${import.meta.env.BASE_URL}/guides/spock/`.replace("//", "/")}>
+      Work with Spock →
+    </a>
+  </section>
+</div>
 
-## Quick Start
+<div class="home-start">
+  <div>
+    <span class="eyebrow">READY WHEN YOU ARE</span>
+    <h2 id="quick-start">Quick Start</h2>
+    <p>On macOS or Linux, install with Homebrew, then open a Groovy file or Jenkinsfile in your editor.</p>
+    <p class="release-notice"><strong>Stable release note:</strong> The v0.5.4 extension bundles the v0.4.8 server, which has a known limitation. See the <a href={`${import.meta.env.BASE_URL}/getting-started/installation/#stable-release-limitation`.replace("//", "/")}>installation guide</a> for details and newer builds.</p>
+    <a href={`${import.meta.env.BASE_URL}/getting-started/installation/`.replace("//", "/")}>See all installation options →</a>
+  </div>
+  <div>
 
 ```bash
-# Build
-./gradlew build
-
-# Run (stdio mode)
-java -jar build/libs/groovy-lsp-<version>.jar
-
-# Run (socket mode)
-java -jar build/libs/groovy-lsp-<version>.jar socket 8080
+brew install albertocavalcante/tap/gvy
+gvy-install-extension
 ```
+
+  </div>
+</div>
+
+<div class="home-details">
+  <section>
+    <h2 id="requirements">Requirements</h2>
+    <p>
+      Java 17 or newer and a compatible editor. Homebrew installs Java along
+      with gvy. For other installation methods, see the{" "}
+      <a
+        href={`${import.meta.env.BASE_URL}/getting-started/installation/`.replace(
+          "//",
+          "/",
+        )}
+      >
+        installation guide
+      </a>
+      .
+    </p>
+  </section>
+  <section>
+    <h2 id="status">Status</h2>
+    <p>
+      gvy is in early development. Coverage and correctness vary by project, and
+      Jenkins and Spock support is evolving. See the{" "}
+      <a
+        href={`${import.meta.env.BASE_URL}/lsp/feature-support/`.replace(
+          "//",
+          "/",
+        )}
+      >
+        feature matrix
+      </a>{" "}
+      and{" "}
+      <a
+        href={`${import.meta.env.BASE_URL}/overview/roadmap/`.replace(
+          "//",
+          "/",
+        )}
+      >
+        quality bar
+      </a>{" "}
+      for current limits and priorities.
+    </p>
+  </section>
+</div>

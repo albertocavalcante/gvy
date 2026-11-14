@@ -527,3 +527,28 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Canonical user documentation, site declarations and the verified stable manifest.
+[[annotations]]
+path = [
+  "docs/user/contributing.md",
+  "docs/user/diagnostics-formatting.md",
+  "docs/user/gradle.md",
+  "docs/user/groovy.md",
+  "docs/user/java.md",
+  "docs/user/jenkins.md",
+  "docs/user/private-environments.md",
+  "docs/user/quickstart.md",
+  "docs/user/semanticdb.md",
+  "docs/user/spock.md",
+  "docs/user/troubleshooting.md",
+  "docs/website/README.md",
+  "docs/website/dprint.json",
+  "docs/website/route-inventory.json",
+  "docs/website/stable-v0.5.4-package.json",
+  "kb/DOCUMENTATION_WEBSITE_REVAMP.md",
+  "kb/DOCUMENTATION_WEBSITE_VALIDATION.md",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"

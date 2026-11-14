@@ -3,40 +3,48 @@
 
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import starlightLinksValidator from "starlight-links-validator";
 
 export default defineConfig({
   site: "https://albertocavalcante.github.io",
   base: "/gvy",
   integrations: [
     starlight({
-      title: "Groovy Devtools",
-      description:
-        "Developer tooling for Apache Groovy: Language Server, Diagnostics, Formatting, and more.",
-      social: [
-        {
-          icon: "github",
-          label: "GitHub",
-          href: "https://github.com/albertocavalcante/gvy",
-        },
-      ],
-      editLink: {
-        baseUrl: "https://github.com/albertocavalcante/gvy/edit/main/docs/website/",
-      },
+      plugins: [starlightLinksValidator()],
+      disable404Route: true,
+      title: "gvy",
+      description: "Groovy language tools for your editor.",
+      social: [{ icon: "github", label: "GitHub", href: "https://github.com/albertocavalcante/gvy" }],
+      editLink: { baseUrl: "https://github.com/albertocavalcante/gvy/edit/main/docs/website/" },
       lastUpdated: true,
       customCss: ["./src/styles/custom.css"],
       sidebar: [
-        {
-          label: "Overview",
-          items: [{ autogenerate: { directory: "overview" } }],
-        },
-        {
-          label: "Language Server",
-          items: [{ autogenerate: { directory: "lsp" } }],
-        },
-        {
-          label: "Architecture",
-          items: [{ autogenerate: { directory: "architecture" } }],
-        },
+        { label: "Get started", items: [
+          { label: "Installation", slug: "getting-started/installation" },
+          { label: "Quickstart", slug: "guides/quickstart" },
+        ] },
+        { label: "Workflows", items: [
+          { label: "Groovy", slug: "guides/groovy" },
+          { label: "Gradle", slug: "guides/gradle" },
+          { label: "Jenkins", slug: "guides/jenkins" },
+          { label: "Spock", slug: "guides/spock" },
+        ] },
+        { label: "Configure", items: [
+          { label: "Java", slug: "guides/java" },
+          { label: "Diagnostics and formatting", slug: "guides/diagnostics-formatting" },
+          { label: "Private environments", slug: "guides/private-environments" },
+          { label: "Other LSP clients", slug: "lsp/usage" },
+        ] },
+        { label: "Reference", items: [
+          { label: "Settings", slug: "reference/settings" },
+          { label: "Commands", slug: "reference/commands" },
+          { label: "Feature support", slug: "lsp/feature-support" },
+          { label: "Module overview", slug: "overview" },
+          { label: "Quality bar", slug: "overview/roadmap" },
+          { label: "SemanticDB", slug: "architecture/semanticdb" },
+        ] },
+        { label: "Troubleshoot", items: [{ label: "Troubleshooting", slug: "guides/troubleshooting" }] },
+        { label: "Contribute", items: [{ label: "Contributing", slug: "guides/contributing" }] },
       ],
     }),
   ],

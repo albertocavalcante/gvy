@@ -1,0 +1,38 @@
+{
+  "/": [
+    "status",
+    "requirements",
+    "quick-start"
+  ],
+  "/overview/": [
+    "components",
+    "technology"
+  ],
+  "/overview/roadmap/": [],
+  "/lsp/usage/": [
+    "requirements",
+    "build",
+    "run",
+    "stdio-mode-default",
+    "socket-mode",
+    "editors"
+  ],
+  "/lsp/feature-support/": [
+    "lifecycle",
+    "text-document-sync",
+    "language-features",
+    "diagnostics",
+    "workspace",
+    "window"
+  ],
+  "/architecture/semanticdb/": [
+    "architecture",
+    "what-is-semanticdb",
+    "specification",
+    "core-concepts",
+    "why-semanticdb",
+    "module-structure",
+    "lsp-integration",
+    "references"
+  ]
+}
