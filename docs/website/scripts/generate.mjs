@@ -7,7 +7,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pages } from '../content-map.mjs';
 import { project } from './projection.mjs';
-import { marker, preflight, removeStaleOwned } from './owned.mjs';
+import { marker, preflight, removeStaleOwned, writeOwned } from './owned.mjs';
 
 const root = path.resolve('../..');
 await preflight('src/content/docs', pages);
@@ -51,7 +51,7 @@ for (const [source, slug, title] of pages) {
   const output = await project(markdown, { source, editSource: source.startsWith('docs/user/reference-') ? 'editors/code/package.json' : source, title, description: `gvy ${title} documentation`, routes });
   const target = path.join('src/content/docs', `${slug}.md`);
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, output + `\n${marker}\n`);
+  await writeOwned(target, output + `\n${marker}\n`);
 }
 
 await mkdir('.astro', { recursive: true });

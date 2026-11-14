@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.5",
-    "astro": "7.3.6",
+    "astro": "7.4.12",
     "cheerio": "^1.2.0",
     "github-slugger": "^2.0.0",
     "mdast-util-to-string": "^4.0.0",

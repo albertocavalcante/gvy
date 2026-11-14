@@ -59,3 +59,38 @@ test('preflight rejects duplicate sources, equivalent routes and unsafe paths', 
   await expect(preflight('absent', [['a.md', '../escape', 'A']])).rejects.toThrow('unsafe');
   await expect(preflight('absent', [['a.md', 'index', 'A']])).rejects.toThrow('reserved');
 });
+
+test('ownership inspection closes its handle when reading fails', async () => {
+  const { inspectOwned } = await import('./owned.mjs');
+  let closed = false;
+  const openFile = async () => ({
+    stat: async () => ({ isFile: () => true }),
+    readFile: async () => { throw new Error('read failure'); },
+    close: async () => { closed = true; },
+  });
+  await expect(inspectOwned('unused', openFile)).rejects.toThrow('read failure');
+  expect(closed).toBe(true);
+});
+
+test('writes only owned regular files and refuses a swapped symlink', async () => {
+  const { mkdtemp, writeFile, readFile, symlink, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { writeOwned, marker } = await import('./owned.mjs');
+  const dir = await mkdtemp(path.join(tmpdir(), 'gvy-write-'));
+  try {
+    const target = path.join(dir, 'target.md');
+    const victim = path.join(dir, 'victim.md');
+    await writeFile(victim, 'victim');
+    await symlink(victim, target);
+    await expect(writeOwned(target, `new\n${marker}\n`)).rejects.toThrow();
+    expect(await readFile(victim, 'utf8')).toBe('victim');
+    await rm(target);
+    await writeOwned(target, `new\n${marker}\n`);
+    await writeOwned(target, `updated\n${marker}\n`);
+    expect(await readFile(target, 'utf8')).toBe(`updated\n${marker}\n`);
+    await writeFile(target, 'manual');
+    await expect(writeOwned(target, `new\n${marker}\n`)).rejects.toThrow('unmarked');
+    expect(await readFile(target, 'utf8')).toBe('manual');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

@@ -42,8 +42,20 @@ export async function removeStaleOwned(root, previous, current) {
   }
 }
 
+export async function inspectOwned(target, openFile = undefined) {
+  const { constants } = await import('node:fs');
+  const { open } = await import('node:fs/promises');
+  const handle = await (openFile ?? open)(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const stat = await handle.stat();
+    return stat.isFile() && (await handle.readFile('utf8')).endsWith(`${marker}\n`);
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function preflight(root, pages) {
-  const { lstat, readFile } = await import('node:fs/promises');
+  const { lstat } = await import('node:fs/promises');
   const path = await import('node:path');
   const sources = new Set();
   const routes = new Set();
@@ -66,15 +78,53 @@ export async function preflight(root, pages) {
     let target = root;
     for (const [index, segment] of segments.entries()) {
       target = path.join(target, segment);
-      let stat;
-      try { stat = await lstat(target); }
-      catch (error) { if (error.code === 'ENOENT') break; throw error; }
-      if (stat.isSymbolicLink()) throw new Error(`Refusing symlink: ${target}`);
-      if (index < segments.length - 1) {
-        if (!stat.isDirectory()) throw new Error(`Not a directory: ${target}`);
+      if (index === segments.length - 1) {
+        let owned;
+        try { owned = await inspectOwned(target); }
+        catch (error) {
+          if (error.code === 'ENOENT') break;
+          if (error.code === 'ELOOP') throw new Error(`Refusing symlink: ${target}`);
+          throw error;
+        }
+        if (!owned) throw new Error(`Refusing unmarked file: ${target}`);
       } else {
-        if (!stat.isFile() || !(await readFile(target, 'utf8')).endsWith(`${marker}\n`)) throw new Error(`Refusing unmarked file: ${target}`);
+        let stat;
+        try { stat = await lstat(target); }
+        catch (error) { if (error.code === 'ENOENT') break; throw error; }
+        if (stat.isSymbolicLink()) throw new Error(`Refusing symlink: ${target}`);
+        if (!stat.isDirectory()) throw new Error(`Not a directory: ${target}`);
       }
     }
+  }
+}
+
+// Generation assumes one writer; the handle keeps the checked leaf bound during replacement.
+export async function writeOwned(target, content) {
+  const { constants } = await import('node:fs');
+  const { open } = await import('node:fs/promises');
+  const flags = constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+  let handle;
+  let created = false;
+  try {
+    try { handle = await open(target, flags); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      handle = await open(target, flags | constants.O_CREAT | constants.O_EXCL, 0o666);
+      created = true;
+    }
+    const stat = await handle.stat();
+    if (!stat.isFile() || (!created && !(await handle.readFile('utf8')).endsWith(`${marker}\n`))) {
+      throw new Error(`Refusing unmarked file: ${target}`);
+    }
+    await handle.truncate(0);
+    const bytes = Buffer.from(content);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset, offset);
+      if (!bytesWritten) throw new Error(`Failed to write ${target}`);
+      offset += bytesWritten;
+    }
+  } finally {
+    if (handle) await handle.close();
   }
 }
