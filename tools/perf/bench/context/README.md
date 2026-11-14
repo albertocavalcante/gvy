@@ -29,6 +29,16 @@ output-quality results, completed-attempt accounting, limits/retention and the c
 separate B03 work. The module exposes no `comparable`, `correctnessPassed` or other producer-supplied certification
 switch.
 
+Use `implementation: "gvy-compiler"` for direct Groovy compiler parsing. This identity requires a JVM runtime, a JAR
+artifact, no tree-sitter grammar and lane P/`parse`. It accepts `conversion` or `canonicalization`; declare each phase
+in a separate context and bind its own raw artifact. Direct compiler work has a different context digest from
+`gvy-facade` and `gvy-semantic`, so their raw bindings cannot be reused across implementations. Existing implementation
+identities retain their lane support. F means `parse-highlight`; facade parsing alone belongs to P.
+
+These are structural declarations. The compiler identity does not establish a completed phase, useful AST output,
+transform policy, runtime provenance, equivalent work or actual execution. Those properties require separate source and
+execution evidence. No packaged compiler JMH smoke or comparative measurement is supplied by this extension.
+
 ## Pure JMH raw reader
 
 `readJmhRaw(contextBytes, bindingBytes, rawBytes, planBytes)` accepts four Buffers. It first verifies the B03a raw-byte

@@ -53,6 +53,42 @@ test('native and JVM declarations retain exact typed runtime identity', () => {
   for (const value of [context(), jvmContext()]) assert.deepEqual(JSON.parse(canonicalizeContext(bytes(value))), value);
 });
 
+test('direct compiler parsing has a distinct identity at each supported phase', () => {
+  for (const phase of ['conversion', 'canonicalization']) {
+    const compiler = jvmContext(); compiler.implementation = 'gvy-compiler'; compiler.measurement.compilePhase = phase;
+    const canonical = canonicalizeContext(bytes(compiler));
+    assert.deepEqual(JSON.parse(canonical), compiler);
+    for (const implementation of ['gvy-facade', 'gvy-semantic']) {
+      const other = structuredClone(compiler); other.implementation = implementation;
+      assert.notEqual(hash(canonical), hash(canonicalizeContext(bytes(other))));
+    }
+  }
+});
+
+test('direct compiler identity requires JVM parsing without changing existing lane support', () => {
+  for (const [lane, boundary] of [['H', 'highlight-existing'], ['F', 'parse-highlight'], ['E', 'edit-highlight'], ['C', 'startup']]) {
+    const value = jvmContext(); value.measurement = { ...value.measurement, lane, boundary };
+    assert.doesNotThrow(() => canonicalizeContext(bytes(value)));
+    value.implementation = 'gvy-compiler';
+    assert.throws(() => canonicalizeContext(bytes(value)), /^Error: INVALID_BENCHMARK_CONTEXT$/);
+  }
+  const native = context(); native.implementation = 'gvy-compiler';
+  const artifact = jvmContext(); artifact.implementation = 'gvy-compiler'; artifact.artifact.kind = 'native';
+  const grammar = jvmContext(); grammar.implementation = 'gvy-compiler'; grammar.grammar = context().grammar;
+  for (const value of [native, artifact, grammar]) {
+    assert.throws(() => canonicalizeContext(bytes(value)), /^Error: INVALID_BENCHMARK_CONTEXT$/);
+  }
+});
+
+test('compiler and facade declarations cannot reuse each other raw bindings', () => {
+  const compiler = jvmContext(); compiler.implementation = 'gvy-compiler';
+  const raw = Buffer.from('synthetic format control only\n');
+  for (const [first, second] of [[compiler, jvmContext()], [jvmContext(), compiler]]) {
+    const binding = bindRawArtifact(bytes(first), 'jmh-json', raw);
+    assert.throws(() => verifyRawArtifact(bytes(second), binding, raw), /^Error: INVALID_BENCHMARK_BINDING$/);
+  }
+});
+
 test('context identity is independent of JSON property insertion order', () => {
   const value = context();
   const reversed = Object.fromEntries(Object.entries(value).reverse());
