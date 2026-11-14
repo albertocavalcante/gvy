@@ -52,15 +52,16 @@ interface SourceNavigator {
     }
 
     /**
-     * Navigate to source code for a class found in the classpath.
+     * Legacy direct-URI lookup for a class found in the classpath.
      *
-     * Handles various source locations:
-     * - jrt: URIs (JDK classes) -> extracts from $JAVA_HOME/lib/src.zip
-     * - jar: URIs (Maven dependencies) -> downloads source JAR from Maven
+     * Handles JDK sources and source origins recognized as bundled. A raw archive URI does not carry the selected
+     * artifact coordinates and digest, so it cannot authorize fetching a Maven source JAR. Use [locate] with the
+     * compiler-selected [ResolvedExternalSymbol] and request context for verified dependency-source lookup.
      *
      * @param classpathUri URI of the class (jrt: or jar:file:...)
      * @param className Fully qualified class name (e.g., "java.util.ArrayList")
-     * @return SourceResult indicating the source location or why it wasn't found
+     * @return SourceResult indicating the source location or why it wasn't found; ordinary archive URIs without
+     *     verified provenance return [SourceResult.BinaryOnly]
      */
     suspend fun navigateToSource(classpathUri: URI, className: String): SourceResult
 
@@ -89,10 +90,11 @@ interface SourceNavigator {
     ): SourceLookupResult = SourceLookupResult.Unavailable(MissingSourceReason.UNKNOWN_ORIGIN)
 
     /**
-     * Navigate to source code for a specific method within a class.
+     * Legacy direct-URI lookup for a specific method within a class.
      *
-     * This method first navigates to the class source, then uses JavaSourceInspector
-     * to find the specific method declaration within the class.
+     * This method first resolves a JDK or bundled source, then inspects it for the method declaration. As with
+     * [navigateToSource], a raw archive URI cannot authorize Maven source acquisition; use [locate] with the
+     * compiler-selected symbol and request context for verified dependency sources.
      *
      * A name alone cannot select an overload; implementations must leave ambiguous members unresolved.
      *
