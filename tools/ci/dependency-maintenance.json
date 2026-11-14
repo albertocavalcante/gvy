@@ -49,6 +49,16 @@
       "id": "codenarc-final-newline-position",
       "path": "diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/CodeNarcDiagnosticProvider.kt",
       "anchor": "val finalCodeNarcLine = sourceLines.lastIndex"
+    },
+    {
+      "id": "codenarc-analysis-failures",
+      "path": "diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/SingleFileSourceAnalyzer.kt",
+      "anchor": "internal class SingleFileSourceAnalyzer"
+    },
+    {
+      "id": "codenarc-analysis-wiring",
+      "path": "diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/CodeAnalyzer.kt",
+      "anchor": "sourceAnalyzer = SingleFileSourceAnalyzer"
     }
   ],
   "records": [
@@ -558,6 +568,35 @@
         {
           "id": "manual:codenarc-final-newline-position",
           "sha256": "94cd74ed089fb27dd8f55593b26c49c500763d8c41541e2fab51f377572db497"
+        }
+      ]
+    },
+    {
+      "id": "codenarc-analysis-failure-propagation",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1740",
+      "responsibleScope": "gvy diagnostics and CodeNarc adapter maintainers",
+      "lastVerified": "2026-11-12",
+      "reviewDue": "2026-11-19",
+      "reason": "The batch FilesSourceAnalyzer catches Throwable and omits a failed file, so one-document analysis can look successfully empty. Its failOnError mode creates AnalyzerException without the original cause, losing cancellation/fatal identity.",
+      "upstreamStatus": "Reproduced with pinned CodeNarc 3.7.0-groovy-4.0 and Groovy 4.0.33. Official GitHub release v4.0.0 exists; its FilesSourceAnalyzer source is byte-identical to v3.7.0 at the relevant boundary. This is source inspection, not an executed 4.0.0 artifact or compatibility test. No released replacement preserving the required behavior has been verified. No upstream report submitted.",
+      "upstreamTrigger": "Evaluate a supported released CodeNarc source-analysis API that propagates original ordinary/cancellation/fatal faults and preserves file paths, source metadata, filtering, exclusions and result shape. Verify artifact/runtime compatibility before adopting a candidate.",
+      "verification": "2026-11-12: actual valid carriage-return inputs reproduce formatting-rule faults becoming zero-file successful results before the fix; canonical RED executes two failing assertions. The public AbstractSourceAnalyzer adapter reuses collectViolations and SourceFile/FileResults/DirectoryResults semantics. Full Gradle module runs 266 cases without failures; controlled real CodeNarcRunner rules preserve IOException, CancellationException and LinkageError identity; empty/invalid source trees match the SDK, matching/excluded filenames and comment suppression remain correct. Module lintFix/lint pass. Optional typed scans retain 11 main and one test finding in unchanged files, with none in changed code. Exact publication-head review and CI remain required.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/issues/1740",
+        "https://github.com/CodeNarc/CodeNarc/blob/v3.7.0/src/main/groovy/org/codenarc/analyzer/FilesSourceAnalyzer.groovy",
+        "https://github.com/CodeNarc/CodeNarc/blob/v4.0.0/src/main/groovy/org/codenarc/analyzer/FilesSourceAnalyzer.groovy",
+        "https://github.com/CodeNarc/CodeNarc/releases/tag/v4.0.0"
+      ],
+      "nextAction": "Validate future released candidates against the same failure-identity and healthy/excluded-file controls, including provider/terminal/CLI publication coverage; investigate the separate CR AST/physical-row disagreement and prepare any upstream material locally for human review.",
+      "removalCriteria": "Remove the adapter and its wiring records only after a supported SDK path passes ordinary/cancellation/fatal identity controls, healthy empty/invalid/excluded-file and filename/tree/plugin tests, full module tests and publication-head integration without the adapter. A formatting-rule body fix alone does not establish safe fault propagation.",
+      "sources": [
+        {
+          "id": "manual:codenarc-analysis-failures",
+          "sha256": "072f857ce72928942f55834586ee7bc17906b02d8f4a2778fe0d842de5c84761"
+        },
+        {
+          "id": "manual:codenarc-analysis-wiring",
+          "sha256": "68ef9db0b534168fb8d109bc39320002e5fefd7ed506cda2bb3559a939449bbb"
         }
       ]
     }
