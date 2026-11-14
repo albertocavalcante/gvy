@@ -146,20 +146,32 @@ internal class MissingClassStubs {
             val first = compile(request, null)
             if (request.compilePhase <= Phases.CONVERSION) return first
 
-            val stubs = MissingClassStubs()
-            var result = first
-            repeat(MAX_ROUNDS) {
-                if (stubs.learnFrom(result.compilationUnit, request.sourceUnitName)) result = compile(request, stubs)
+            return ParseResultOwner(first).use { owner ->
+                // The first unit is retired before recompiling, so copy its required diagnostics now.
+                val ownErrors = setOf(request.sourceUnitName)
+                val unresolved = ParserDiagnosticConverter.convert(first.compilationUnit.errorCollector, ownErrors)
+                    .filter { UNRESOLVED.containsMatchIn(it.message) }
+                val stubs = MissingClassStubs()
+                var rounds = 0
+                while (
+                    rounds < MAX_ROUNDS &&
+                    stubs.learnFrom(owner.result.compilationUnit, request.sourceUnitName)
+                ) {
+                    owner.replaceWith { compile(request, stubs) }
+                    rounds++
+                }
+                val compiled = owner.result
+                owner.publish(
+                    if (stubs.names.isEmpty()) {
+                        compiled
+                    } else {
+                        compiled.copy(
+                            diagnostics = (unresolved + compiled.diagnostics).distinct(),
+                            outcome = compiled.outcome.copy(stubbedClasses = stubs.names),
+                        )
+                    },
+                )
             }
-            if (stubs.names.isEmpty()) return first
-
-            val ownErrors = setOf(request.sourceUnitName)
-            val unresolved = ParserDiagnosticConverter.convert(first.compilationUnit.errorCollector, ownErrors)
-                .filter { UNRESOLVED.containsMatchIn(it.message) }
-            return result.copy(
-                diagnostics = (unresolved + result.diagnostics).distinct(),
-                outcome = result.outcome.copy(stubbedClasses = stubs.names),
-            )
         }
 
         private const val MAX_ROUNDS = 3

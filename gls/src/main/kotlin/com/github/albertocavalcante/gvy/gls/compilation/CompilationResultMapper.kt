@@ -22,10 +22,24 @@ class CompilationResultMapper {
 
         return if (ast != null) {
             val isSuccess = parseResult.isSuccessful
-            CompilationResult(isSuccess, ast, diagnostics, content, parseCompleted = true)
+            CompilationResult(
+                isSuccess,
+                ast,
+                diagnostics,
+                content,
+                parseCompleted = true,
+                sourceAnnotations = parseResult.sourceAnnotations,
+            )
         } else {
             logger.debug { "Parse result has no AST, returning failure result" }
-            CompilationResult(false, null, diagnostics, content, parseCompleted = true)
+            CompilationResult(
+                false,
+                null,
+                diagnostics,
+                content,
+                parseCompleted = true,
+                sourceAnnotations = parseResult.sourceAnnotations,
+            )
         }
     }
 
@@ -35,7 +49,14 @@ class CompilationResultMapper {
     fun mapFromCache(parseResult: ParseResult, content: String): CompilationResult? {
         val ast = parseResult.ast ?: return null
         val diagnostics = diagnosticsOf(parseResult)
-        return CompilationResult(parseResult.isSuccessful, ast, diagnostics, content, parseCompleted = true)
+        return CompilationResult(
+            parseResult.isSuccessful,
+            ast,
+            diagnostics,
+            content,
+            parseCompleted = true,
+            sourceAnnotations = parseResult.sourceAnnotations,
+        )
     }
 
     /** The parser's diagnostics, plus the notice that types are unresolved when the parse degraded. */

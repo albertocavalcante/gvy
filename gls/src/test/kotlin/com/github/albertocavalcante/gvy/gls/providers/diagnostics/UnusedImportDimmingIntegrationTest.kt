@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.GroovySemanticTokenProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.JenkinsSemanticTokenProvider
+import groovy.transform.CompileStatic
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ModuleNode
@@ -40,13 +41,49 @@ class UnusedImportDimmingIntegrationTest {
 
     @BeforeEach
     fun setup() {
-        compilationService = GroovyCompilationService()
+        compilationService = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
         diagnosticProvider = UnusedImportDiagnosticProvider(compilationService)
     }
 
     private fun compile(code: String) = runBlocking {
         compilationService.compile(uri, code)
     }
+
+    @Test
+    fun `source collector imports and generated component imports agree across hints and dimming`(): Unit =
+        runBlocking {
+            val source = """
+            import groovy.transform.Immutable
+            import groovy.transform.CompileStatic
+            import groovy.transform.ToString
+            @Immutable
+            @CompileStatic
+            class Money { BigDecimal amount }
+            """.trimIndent()
+            val held = compilationService.compile(uri, source)
+            val diagnostics = diagnosticProvider.provideDiagnostics(uri, source, held).toList()
+            assertEquals(1, diagnostics.size)
+            assertTrue(diagnostics.single().message.contains("groovy.transform.ToString"))
+
+            val parsed = assertNotNull(compilationService.getParseResult(uri))
+            val ast = assertNotNull(parsed.ast)
+            val unused = UnusedImportDetector.detectUnusedImports(ast, parsed.sourceAnnotations).toSet()
+            val tokens = GroovySemanticTokenProvider.getSemanticTokens(
+                parsed.astModel,
+                uri,
+                unusedImports = unused,
+                moduleNode = ast,
+            )
+            for (line in 0..2) {
+                val token = assertNotNull(
+                    tokens.find {
+                        it.line == line && it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS
+                    },
+                )
+                val unnecessary = token.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY != 0
+                assertEquals(line == 2, unnecessary, "Only the source-unused ToString import should dim")
+            }
+        }
 
     @Test
     fun `full flow - unused import gets both diagnostic and semantic token marker`(): Unit = runBlocking {
