@@ -1032,7 +1032,9 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.2",
     "vscode-languageclient": "^11.0.0",
-    "vscode-languageserver-protocol": "^3.18.5"
+    "vscode-languageserver-protocol": "^3.18.5",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
   },
   "repository": {
     "type": "git",

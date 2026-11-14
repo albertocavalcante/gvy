@@ -1,20 +1,13 @@
 {
   "GDSL contributor": {
     "prefix": "gdsl-contributor",
-    "body": [
-      "contributor(context(scope: ${1|scriptScope,closureScope,classScope,annotatedScope|}())) {",
-      "\t$0",
-      "}"
-    ],
-    "description": "Declare a GDSL contributor with a scope and add method or property contributions."
+    "body": ["contributor(context(scope: scriptScope())) {", "\t$0", "}"],
+    "description": "Declare a GDSL contributor for global script scope and add method or property contributions."
   },
   "GDSL context": {
     "prefix": "gdsl-context",
-    "body": [
-      "def ${1:ctx} = context(scope: ${2|scriptScope,closureScope,classScope,annotatedScope|}())",
-      "$0"
-    ],
-    "description": "Declare a reusable GDSL context for contributor(ctx)."
+    "body": ["def ${1:ctx} = context(scope: scriptScope())", "$0"],
+    "description": "Declare a reusable global script context for contributor(ctx)."
   },
   "GDSL method": {
     "prefix": "gdsl-method",

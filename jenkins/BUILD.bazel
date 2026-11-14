@@ -38,7 +38,9 @@ kt_test(
     associates = [":jenkins"],
     # Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache (expanded by the launcher).
     jvm_flags = ["-Dgroovy.lsp.jenkins.stubsCacheRoot=${TEST_TMPDIR}/jenkins-stubs-cache"],
-    resources = glob(["src/test/resources/**/*"]),
+    resources = glob(["src/test/resources/**/*"]) + [
+        "//editors/code/client/src/test/fixtures:gdsl-snippet-defaults.gdsl",
+    ],
     test_packages = ["com.github.albertocavalcante.gvy.jenkins"],
     deps = [
         "//dsl/gdsl",

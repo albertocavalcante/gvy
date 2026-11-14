@@ -1,0 +1,18 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+def ctx = context(scope: scriptScope())
+contributor(context(scope: scriptScope())) {
+    method(name: 'myMethod', type: 'void', params: [arg: 'java.lang.String'], doc: 'Description')
+    property(name: 'myProperty', type: 'java.lang.Object', doc: 'Description')
+}
+// --- named method ---
+def ctx = context(scope: scriptScope())
+contributor(ctx) {
+    method(name: 'myMethod', type: 'void', namedParams: [
+        parameter(name: 'myParam', type: 'java.lang.String', doc: 'Parameter description')
+    ], doc: 'Description')
+    method(name: 'parameterExample', namedParams: [
+        parameter(name: 'myParam', type: 'java.lang.String', doc: 'Description')
+    ])
+}
