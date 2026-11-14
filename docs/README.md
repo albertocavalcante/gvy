@@ -16,6 +16,8 @@ Start with the guide for your task. For a short introduction and installation st
 
 - [Contributor guide](../CONTRIBUTING.md): build, test, and prepare a pull request.
 - [Kotlin style and readability](kotlin-style.md): write and review clear, idiomatic Kotlin.
+- [Visual writing](visual-writing.md): write readable issues, PRs and Markdown with diagrams, evidence and accessible
+  rich formats.
 - [License metadata and source headers](licensing.md)
 - [Editor contributor guide](../editors/code/CONTRIBUTING.md): develop and test the VS Code extension.
 - [Repository overview](overview.md): find the module responsible for a change.

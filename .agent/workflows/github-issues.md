@@ -21,6 +21,14 @@ gh issue create -R OWNER/REPO \
   --label "enhancement" --label "lsp/completion" --label "P1-must" --label "size/M"
 ```
 
+## Readability and visuals
+
+Follow the [visual writing guide](../../docs/visual-writing.md). Lead with the concrete problem, user impact and
+proposed outcome. Use a compact diagram, example or comparison when it clarifies the issue. Keep acceptance criteria and
+blockers visible; put long technical detail and source catalogues in expandable sections. Cite evidence near claims and
+distinguish inspected code from executed tests. Check the actual target surface before claiming that an SVG, Mermaid
+diagram or other rich format renders correctly. Small issues can stay brief.
+
 ## Label Formula: Type + Area + Priority + Size
 
 ### Type Labels

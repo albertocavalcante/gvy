@@ -152,6 +152,10 @@ Keep each procedure in one place and link to it from other entry points. Treat t
 the single roadmap; track progress in its linked issues. Label goals and planned work so readers can distinguish them
 from shipped behavior.
 
+Prefer readable, visual explanations in issues, PRs, design notes and Markdown. Lead with the problem and intended
+outcome, then use examples, diagrams or comparison tables where they clarify the work. Follow the
+[visual writing guide](docs/visual-writing.md) for format choices, citations, accessibility and rendering checks.
+
 ## Open a pull request
 
 - Add a regression test for a bug fix and appropriate tests for new behavior.
