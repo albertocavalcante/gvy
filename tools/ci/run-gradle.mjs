@@ -143,6 +143,10 @@ async function main(args) {
   try {
     conditional = loadNativeDiagnosticPolicy();
     exceptions = [...JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8')), ...conditional];
+    // This separate build has its own root project; its fingerprints must not be accepted for main Gradle producers.
+    if (options.producer === 'jetbrains') {
+      exceptions.push(...JSON.parse(readFileSync(new URL('./gradle-jetbrains-diagnostics.json', import.meta.url), 'utf8')));
+    }
     context = createContext(invocationId);
     writeFileSync(join(dir, 'context.json'), `${JSON.stringify(context, null, 2)}\n`, { flag: 'wx' });
     worktreeDirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));

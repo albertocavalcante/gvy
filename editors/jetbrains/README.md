@@ -10,3 +10,6 @@ From the repository root, run `./gradlew -p editors/jetbrains spotlessCheck test
 with JDK 21. This uses the repository's wrapper without including the plugin in the root Gradle build. Verification
 downloads IDE distributions; run it on a machine with sufficient storage. Native acceptance on IDEA 2025.3.1 and
 2026.2.5 remains required.
+
+To use an existing local IDEA 2025.3.1 installation for development, pass `-PgvyLocalIde="/path/to/IntelliJ IDEA.app"`.
+The build checks its product and exact build number before using it; CI uses the pinned distribution by default.

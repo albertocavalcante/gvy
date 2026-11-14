@@ -170,6 +170,11 @@ node tools/ci/bazel-diagnostics.mjs --baseline tools/ci/bazel-diagnostics.json \
 
 ## Gradle tool diagnostics
 
+The standalone JetBrains producer applies its own exact, expiring Kotlin 2.3.0 visibility exceptions from
+`tools/ci/gradle-jetbrains-diagnostics.json`. Its root project shares the label `:` with the main build; the wrapper
+loads these exceptions only for the `jetbrains` producer, so the same warning remains unexpected in other producers. The
+producer still requires successful commands, both IDE fixture reports, the plugin ZIP and verifier reports.
+
 Required lint, unit, E2E and packaging invocations use `tools/ci/run-gradle.mjs`. It captures both streams, forces plain
 console output and all warnings, and retains deprecation origin traces. A successful process with a new diagnostic fails
 the step. Missing, empty, truncated or contradictory completion evidence and capture failures also fail. Each invocation

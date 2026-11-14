@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 
+import groovy.json.JsonSlurper
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -22,7 +23,29 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdea("2025.3.1")
+        val localIde = providers.gradleProperty("gvyLocalIde").orNull
+        if (localIde == null) {
+            intellijIdea("2025.3.1")
+        } else {
+            val supplied = file(localIde)
+            val app = if (supplied.name == "Contents" && supplied.parentFile.name.endsWith(".app")) {
+                supplied.parentFile
+            } else {
+                supplied
+            }
+            val infoFile = if (app.name.endsWith(".app")) {
+                app.resolve("Contents/Resources/product-info.json")
+            } else {
+                app.resolve("product-info.json")
+            }
+            val info = JsonSlurper().parse(infoFile) as? Map<*, *>
+            val productCode = info?.get("productCode")
+            val buildNumber = info?.get("buildNumber")
+            require(productCode == "IU" && buildNumber == "253.29346.138") {
+                "gvyLocalIde must identify IntelliJ IDEA 2025.3.1 build 253.29346.138"
+            }
+            local(app)
+        }
         testFramework(TestFrameworkType.Platform)
         pluginVerifier()
     }
@@ -66,7 +89,7 @@ spotless {
     }
 }
 
-val testIde20262 by intellijPlatformTesting.testIde.registering {
+intellijPlatformTesting.testIde.register("testIde20262") {
     type = IntelliJPlatformType.IntellijIdea
     version = "2026.2.5"
     testFramework(TestFrameworkType.Platform)

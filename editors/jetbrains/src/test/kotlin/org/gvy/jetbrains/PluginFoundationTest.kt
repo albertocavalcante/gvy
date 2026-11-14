@@ -8,8 +8,10 @@ import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import org.junit.Test
 
 class PluginFoundationTest : BasePlatformTestCase() {
+    @Test
     fun `test plugin loads without registering a server provider`() {
         val plugin = PluginManagerCore.getPlugin(PluginId.getId("org.gvy.jetbrains"))
         assertNotNull("GVY plugin must load in the fixture", plugin)

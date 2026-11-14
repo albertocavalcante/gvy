@@ -1,0 +1,110 @@
+[
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.DefaultKotlinBasePlugin.apply(KotlinPluginWrapper.kt:94)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.KotlinBasePluginWrapper.apply(KotlinPluginWrapper.kt:251)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.abi.UtilsKt.prepareAbiClasspath(Utils.kt:66)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.KotlinTargetSoftwareComponentImplKt$KotlinTargetSoftwareComponent$1$1$configuration$1.invoke(KotlinTargetSoftwareComponentImpl.kt:37)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:130)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:138)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:146)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:151)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:201)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin$Companion$configureForSourceSet$discoveryConfiguration$1.invoke(ScriptingGradleSubplugin.kt:51)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "The standalone JetBrains build pins Kotlin Gradle Plugin 2.3.0, which calls obsolete configuration visibility APIs on Gradle 9.8.2. The property has no resolution effect and will be removed in Gradle 11.",
+    "nextAction": "Build maintainers must validate a Kotlin plugin update against both supported IDE lines and the standalone plugin before retiring these exact producer-scoped exceptions.",
+    "acceptance": "The standalone plugin compiles, passes fixtures and verifier checks without these exact visibility warnings; remove the exceptions.",
+    "expires": "2026-12-11"
+  }
+]
