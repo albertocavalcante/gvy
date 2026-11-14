@@ -8,6 +8,8 @@ import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
+import com.github.albertocavalcante.groovyparser.internal.CompilerMessageSource
+import com.github.albertocavalcante.groovyparser.internal.DiagnosticDocument
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.groovyparser.internal.SourceSnapshot
 import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
@@ -213,8 +215,11 @@ class GroovyParserFacade internal constructor(
         excluded: List<ExcludedSource>,
         inputs: NativeClasspathInputs,
     ): ParseResult {
+        var compileFailure: CompileFailure? = null
         return ParseResultOwner(
-            MissingClassStubs.compile(request) { retryRequest, stubs -> parseInternal(retryRequest, inputs, stubs) },
+            MissingClassStubs.compile(request) { retryRequest, stubs ->
+                parseInternal(retryRequest, inputs, stubs) { compileFailure = it }
+            },
         ).use { owner ->
             val result = owner.result
 
@@ -258,7 +263,7 @@ class GroovyParserFacade internal constructor(
                 }
             }
 
-            val finalResult = retryAtEarlierPhaseIfNeeded(request, owner, inputs)
+            val finalResult = retryAtEarlierPhaseIfNeeded(request, owner, inputs, compileFailure)
             val unlocated = LocatingClassNodeResolver.unlocatedBy(finalResult.compilationUnit)
             owner.publish(
                 finalResult.copy(
@@ -270,7 +275,7 @@ class GroovyParserFacade internal constructor(
 
     /**
      * Other sources of the compilation unit whose errors failed it, and whether some error could not be
-     * attributed to any source (non-syntax errors, which Groovy does not attribute to a file).
+     * attributed to any source.
      */
     private data class FailingSources(
         val open: Set<URI>,
@@ -297,21 +302,23 @@ class GroovyParserFacade internal constructor(
         val reasons = linkedMapOf<String, String>()
         var unattributed = false
         for (message in errors) {
-            val cause = (message as? SyntaxErrorMessage)?.cause
-            val locator = cause?.sourceLocator
+            val locator = CompilerMessageSource.locator(message)
             when (locator) {
                 null -> unattributed = true
-                request.sourceUnitName -> Unit // this file's own error
                 else -> {
                     val key = locatorPath(locator)
+                    if (key == fileKey(request.uri) || locator == request.sourceUnitName) continue
                     // A buffer and its disk copy are one source: both leave the unit, under one reason.
                     val buffer = openByKey[key]?.also { open += it }
                     // A file the class locator added (#1425) fails the unit like a workspace source does; a file
                     // Groovy found by its name, or a stub, is not the locator's and is left to the other rules.
-                    val located = (key as? Path)?.takeIf { buffer == null && key in locatedPaths }
-                    val disk = (workspaceByKey[key] ?: located)?.also { workspace.add(it) }
+                    val located = (key as? Path)?.takeIf { key in locatedPaths }
+                    val bufferPath = (key as? Path)?.takeIf { buffer != null }
+                    val disk = (workspaceByKey[key] ?: located ?: bufferPath)?.also { workspace.add(it) }
                     val source = buffer?.toString() ?: disk?.toString()
-                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause.originalMessage ?: ""))
+                    val reason = (message as? SyntaxErrorMessage)?.cause?.originalMessage
+                        ?: ParserDiagnosticConverter.textOf(message)
+                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(reason))
                 }
             }
         }
@@ -322,11 +329,12 @@ class GroovyParserFacade internal constructor(
         request: ParseRequest,
         owner: ParseResultOwner,
         inputs: NativeClasspathInputs,
+        compileFailure: CompileFailure?,
     ): ParseResult {
         val result = owner.result
         val fallback = when {
             shouldRetryAtConversion(request, result) -> Fallback.SCRIPT_FALLBACK
-            shouldRetryOnCompilationFailure(request, result) -> Fallback.COMPILATION_FAILED
+            shouldRetryOnCompilationFailure(request, result, compileFailure) -> Fallback.COMPILATION_FAILED
             else -> return result
         }
         logger.debug {
@@ -334,10 +342,16 @@ class GroovyParserFacade internal constructor(
         }
 
         val reason = firstErrorMessage(result) ?: SCRIPT_FALLBACK_REASON
+        val ownExceptions = result.compilationUnit.errorCollector.errors.orEmpty()
+            .filterIsInstance<ExceptionMessage>()
+            .filter { CompilerMessageSource.locator(it) == request.sourceUnitName }
+            .map(ParserDiagnosticConverter::textOf).toSet()
+        val retainedDiagnostics = result.diagnostics.filter { it.message in ownExceptions }
         val retried = owner.replaceWith {
             parseInternal(request.copy(compilePhase = Phases.CONVERSION), inputs = inputs)
         }
         return retried.copy(
+            diagnostics = (retainedDiagnostics + retried.diagnostics).distinct(),
             outcome = retried.outcome.copy(
                 requestedPhase = request.compilePhase,
                 achievedPhase = Phases.CONVERSION,
@@ -422,7 +436,11 @@ class GroovyParserFacade internal constructor(
         return shouldRetry
     }
 
-    private fun shouldRetryOnCompilationFailure(request: ParseRequest, result: ParseResult): Boolean {
+    private fun shouldRetryOnCompilationFailure(
+        request: ParseRequest,
+        result: ParseResult,
+        failure: CompileFailure?,
+    ): Boolean {
         if (request.compilePhase <= Phases.CONVERSION) {
             logger.debug {
                 "shouldRetryOnCompilationFailure: false - already at CONVERSION or earlier " +
@@ -431,17 +449,13 @@ class GroovyParserFacade internal constructor(
             return false
         }
 
-        val hasFallbackError = result.diagnostics.any { diagnostic ->
-            diagnostic.severity == ParserSeverity.ERROR &&
-                diagnostic.source == "GroovyParser" &&
-                diagnostic.message.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX)
+        if (failure == null) return false
+        val unexpected = result.compilationUnit.errorCollector.errors.orEmpty().any { it is ExceptionMessage }
+        val hasError = result.diagnostics.any { it.severity == ParserSeverity.ERROR }
+        val explained = result.diagnostics.any { it.code == ParserDiagnosticConverter.PROJECT_TRANSFORM_NOT_RUN }
+        return unexpected || (!hasError && !explained) || result.diagnostics.any {
+            it.source == "GroovyParser" && it.message.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX)
         }
-
-        if (!hasFallbackError) {
-            logger.debug { "shouldRetryOnCompilationFailure: false - no fallback compilation error detected" }
-        }
-
-        return hasFallbackError
     }
 
     private fun createCompilationContext(
@@ -482,12 +496,13 @@ class GroovyParserFacade internal constructor(
         request: ParseRequest,
         inputs: NativeClasspathInputs,
         stubs: MissingClassStubs? = null,
+        onCompileFailure: (CompileFailure?) -> Unit = {},
     ): ParseResult {
         // Before any work: building the configuration below opens every classpath jar.
         request.checkCancelled()
         val annotationCapture = SourceAnnotationCapture(request)
         try {
-            return parseInternalWithCapture(request, inputs, stubs, annotationCapture)
+            return parseInternalWithCapture(request, inputs, stubs, annotationCapture, onCompileFailure)
         } finally {
             annotationCapture.discard()
         }
@@ -498,6 +513,7 @@ class GroovyParserFacade internal constructor(
         inputs: NativeClasspathInputs,
         stubs: MissingClassStubs?,
         annotationCapture: SourceAnnotationCapture,
+        onCompileFailure: (CompileFailure?) -> Unit,
     ): ParseResult {
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
@@ -509,6 +525,7 @@ class GroovyParserFacade internal constructor(
             val (compilationUnit, sourceUnit) = createCompilationContext(request, config, classLoader, stubs)
 
             val failure = compileCatching(compilationUnit, request)
+            onCompileFailure(failure)
             val compilationFailed = failure != null
             val failureMessage = failure?.message
 
@@ -520,6 +537,7 @@ class GroovyParserFacade internal constructor(
                     compilationUnit.errorCollector,
                     request.locatorCandidates,
                     SyntaxSourceContext(SourceSnapshot(request.content), tokenIndex, setOf(request.sourceUnitName)),
+                    document = DiagnosticDocument(request.content, request.sourceUnitName),
                 ) { name ->
                     classLoader.hasClass(name)
                 }.toMutableList()
@@ -528,8 +546,8 @@ class GroovyParserFacade internal constructor(
             val explained = diagnostics.any { it.code == ParserDiagnosticConverter.PROJECT_TRANSFORM_NOT_RUN }
             if (compilationFailed && !explained && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
                 // ErrorCollector.getLastError throws when nothing was collected, so read the list instead.
-                val lastCollected = compilationUnit.errorCollector.errors.orEmpty().lastOrNull()?.toString()
-                val errorMessage = failureMessage ?: lastCollected ?: "Unknown error"
+                val collectedCause = firstCompilerCause(compilationUnit.errorCollector.errors.orEmpty())
+                val errorMessage = collectedCause ?: failureMessage ?: "Unknown error"
                 diagnostics.add(
                     com.github.albertocavalcante.nativeapi.ParserDiagnostic(
                         range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),
