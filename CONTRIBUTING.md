@@ -28,6 +28,16 @@ Run the commands below from the repository root. If you use direnv, review `.env
 worktree. On shared machines with `build-slot` installed, wrap Gradle invocations with `build-slot --` to queue
 memory-intensive work. Run one Gradle build at a time per machine.
 
+The repository's `gradle.properties` configures the Gradle daemon JVM. `.envrc` selects tools and extends PATH; it does
+not choose a per-machine heap or garbage collector. Put a persistent local `org.gradle.jvmargs` override in your
+existing Gradle user home's `gradle.properties`, or pass `-Dorg.gradle.jvmargs="-Xmx1536m"` for one invocation. The
+command-line value takes precedence over the user and repository properties. These settings control the daemon; test
+forks and spawned language servers have their own resource settings. Run a real bounded build to verify the selected
+daemon arguments before relying on a profile.
+
+See the [Gradle build-environment guide](https://docs.gradle.org/current/userguide/build_environment.html) for property
+precedence and the distinction between client and daemon JVM options.
+
 ## Build and run the server
 
 Build the standalone server JAR:
