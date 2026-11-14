@@ -38,15 +38,15 @@ flowchart TB
 The labels provide the selection rule; color carries no additional meaning. Use the smallest visual that answers a
 reader's question. Do not repeat the same paragraph as boxes and arrows.
 
-| Reader needs                     | Choose                                 | GitHub reference                                                                                                                                                                                                                                                                                                         |
-| -------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Flow, phases or dependencies     | Mermaid                                | [Diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)                                                                                                                                                                                                  |
-| Precise vector layout            | Static SVG                             | [Viewer](https://docs.github.com/en/repositories/working-with-files/using-files/working-with-non-code-files), [attachments](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files)                                                                                   |
-| Observed interface               | PNG, JPEG or GIF                       | [Attachments](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files)                                                                                                                                                                                                 |
-| Facts, alternatives or evidence  | Markdown table                         | [Tables](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-tables)                                                                                                                                                                                   |
-| Supporting detail or limitations | Collapsed sections and callouts        | [Details](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-collapsed-sections), [alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) |
-| Equation                         | GitHub math syntax                     | [Math](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/writing-mathematical-expressions)                                                                                                                                                                                       |
-| Domain data                      | GeoJSON/TopoJSON, ASCII STL or CSV/TSV | [Diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams), [file viewers](https://docs.github.com/en/repositories/working-with-files/using-files/working-with-non-code-files)                                                                              |
+| Reader needs                     | Choose                                 | GitHub reference                                                |
+| -------------------------------- | -------------------------------------- | --------------------------------------------------------------- |
+| Flow, phases or dependencies     | Mermaid                                | [Diagrams][github-diagrams]                                     |
+| Precise vector layout            | Static SVG                             | [Viewer][github-file-viewer], [attachments][github-attachments] |
+| Observed interface               | PNG, JPEG or GIF                       | [Attachments][github-attachments]                               |
+| Facts, alternatives or evidence  | Markdown table                         | [Tables][github-tables]                                         |
+| Supporting detail or limitations | Collapsed sections and callouts        | [Details][github-details], [alerts][github-alerts]              |
+| Equation                         | GitHub math syntax                     | [Math][github-math]                                             |
+| Domain data                      | GeoJSON/TopoJSON, ASCII STL or CSV/TSV | [Diagrams][github-diagrams], [file viewers][github-file-viewer] |
 
 Check GitHub's current Mermaid version before using newer syntax. Keep table cells short; split a wide comparison.
 Choose specialized viewers for actual domain data, not decoration, and check their surface and size limits. Verify other
@@ -61,13 +61,11 @@ competing diagram sources.
 
 For repository assets, use relative image links in Markdown. For an issue or evidence reference that must survive branch
 changes, use a stable commit reference. An accepted SVG upload is not proof of inline rendering or interactive behavior
-in every surface.
-[Image links and alt text](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#images).
+in every surface. [Image links and alt text][github-images].
 
 Provide descriptive alt text and an adjacent explanation of the important relationships. Label states and arrows; do not
 rely on color alone. Check light/dark contrast and small-screen legibility. GitHub documents `<picture>` for
-theme-specific image variants when needed.
-[Theme-aware images](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/quickstart-for-writing-on-github).
+theme-specific image variants when needed. [Theme-aware images][github-theme-images].
 
 Do not treat GitHub Markdown as a general HTML/JavaScript app. Use static text alternatives when richer rendering is
 unavailable. An animated or interactive demonstration needs a separately supported destination and clear limits.
@@ -88,12 +86,37 @@ traceable. For work tracking, link implementation issues or native sub-issues; a
 
 ## Check the delivered format
 
+From the repository root, check the Markdown files you changed with the existing formatter:
+
+```sh
+dprint check docs/visual-writing.md
+# Apply formatting to the same file when needed:
+dprint fmt docs/visual-writing.md
+```
+
+These commands use the repository's Markdown configuration. `make format` also runs JVM formatting; use the scoped
+`dprint` commands for prose-only edits. Formatting checks do not validate claims, links or diagram layout.
+[dprint CLI reference](https://dprint.dev/cli/).
+
 - Check Markdown structure, table columns, links, image paths and code fences.
+- After formatting, check that each GitHub alert marker such as `> [!NOTE]` remains on its own blockquote line.
+  [Alert syntax][github-alerts].
 - Validate diagram/SVG syntax with the repository's existing tools. Inspect the actual rendered target when available,
   including labels, clipping, contrast and mobile width.
 - Review source and rendered views. A successful Markdown API response or recognized Mermaid container does not prove
   that the diagram parsed or that its layout is readable.
+- Record the renderer and version used for a preview. Local rendering and GitHub rendering are separate checks.
 - Record missing checks plainly. For example: “GitHub Markdown recognized the diagram container; live SVG/layout
   inspection was unavailable.” Do not substitute that result for a visual pass.
 - Keep visuals subordinate to the explanation: one useful diagram beats repeated decorative diagrams, badges or
   screenshots of prose.
+
+[github-diagrams]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams
+[github-file-viewer]: https://docs.github.com/en/repositories/working-with-files/using-files/working-with-non-code-files
+[github-attachments]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files
+[github-tables]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-tables
+[github-details]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-collapsed-sections
+[github-alerts]: https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts
+[github-math]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/writing-mathematical-expressions
+[github-images]: https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#images
+[github-theme-images]: https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/quickstart-for-writing-on-github
