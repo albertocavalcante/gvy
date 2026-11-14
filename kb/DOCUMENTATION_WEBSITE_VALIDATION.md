@@ -75,16 +75,51 @@ that status alone as evidence of readiness. The isolated Code process and its re
 stopped by their verified PIDs, and the temporary profile, workspace, extension and download were removed after the
 check.
 
-## Website browser and accessibility limits
+## Initial native browser limits
 
-The homepage was inspected in a native browser at widths 360, 768, and 1440 pixels in dark appearance. DarkReader was
-active, so those observations do not validate the site's native light theme. Full responsive coverage, search, keyboard
-operation, and accessibility remain pre-merge review gates.
+The homepage was initially inspected in a native browser at widths 360, 768, and 1440 pixels in dark appearance.
+DarkReader was active, so those observations do not validate the site's native light theme. Full responsive coverage,
+search, keyboard operation, and accessibility remain pre-merge review gates.
 
-An automated accessibility audit was **not run**: the native browser automation session timed out and reset, and the
-browser host was unavailable. A temporary loopback server for npm `axe-core` 4.14.0 was prepared but not used; its
-process and private installation were removed. No automated accessibility pass is claimed. Deployment remains blocked
-until the applicable pre-merge gates are complete.
+An automated accessibility audit was **not run in that attempt**: the native browser automation session timed out and
+reset, and the browser host was unavailable. A temporary loopback server for npm `axe-core` 4.14.0 was prepared but not
+used; its process and private installation were removed. No automated accessibility pass is claimed. Deployment remains
+blocked until the applicable pre-merge gates are complete.
+
+## Headless Playwright feasibility (2026-11-14)
+
+After the owner explicitly requested Playwright testing, a disposable probe tested the production build from
+`5962d30aabff50e188df0eff5e5a699c31eb01cd`. It used Playwright 1.65.1, `@axe-core/playwright` 4.14.0 and isolated,
+extension-free system Chrome 157.0.8103.79, serving static files beneath `/gvy/`. All 18 visits across home,
+installation and settings at 360/768/1440 px in light/dark returned 200 and matched the selected theme.
+
+This was a finding-producing audit, not a pass. At 360 px the homepage's document width was 402 px in both themes. Axe
+reported light-theme contrast failures in the homepage code/notice and installation guide, keyboard-focus failures for
+scrolling tables, and a desktop search button label/name mismatch. The
+[testing and platform plan](DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) records B01–B04 with owners and
+completion gates. No browser defect was fixed by the planning follow-up.
+
+A separate corrected search run found the expected guide for installation, Java, Jenkins, Spock and troubleshooting.
+Escape closed the dialog and returned focus to the search button. With JavaScript disabled, the homepage retained its
+headline, installation link, Homebrew command and stable bundled-server warning. Six homepage screenshots were retained;
+360/light and 1440/dark were inspected. Full visual and keyboard review remains open.
+
+An initial temporary-server routing error caused a false homepage 404; the corrected matrix supersedes it. The first
+search attempt used the wrong `searchbox` role; the successful run used Pagefind's text input. The private evidence
+retains both the completed matrix report and the corrected search report. This does not constitute a committed test
+suite, pinned-browser CI coverage, Firefox/WebKit testing, assistive-technology review or accessibility certification.
+Owned probe packages, cache, server and browser are removed after preserving evidence.
+
+## Disposable MDX/Svelte composition (2026-11-14)
+
+An isolated project built Astro 7.4.12, MDX 8.0.2, `@astrojs/svelte` 9.1.6, Svelte 5.57.3 and TypeScript 5.9.3 on Node
+26.13.1 with base `/gvy/`. MDX imported a static Astro notice and a Svelte `client:visible` settings filter. The build
+included the notice and both example rows. In headless Chrome, JavaScript-disabled output retained both rows and omitted
+the inert filter; with JavaScript enabled, hydration revealed the input and filtering for beta removed alpha.
+
+This verifies a minimal composition, not a production dependency change, performance benchmark or renderer migration.
+The temporary project, cache, server and browser were removed; concise results and illustrative sources were retained
+privately with the task evidence.
 
 ## Automated website checks
 

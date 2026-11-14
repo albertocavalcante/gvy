@@ -14,6 +14,12 @@ and built links, assets, fragments, and compatibility URLs. Production search is
 To test search locally, run `bun run preview` after building; stop the owned background preview with
 `bunx astro preview stop` (or press Ctrl-C for a foreground server).
 
+The [browser testing and platform plan](../../kb/DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) defines the next
+Playwright suite, MDX/Svelte component contracts and alternatives to Starlight. A disposable headless probe found mobile
+overflow and accessibility defects; it does not replace a committed test suite. Track those open gates in the
+[validation record](../../kb/DOCUMENTATION_WEBSITE_VALIDATION.md). Keep canonical Markdown and route contracts
+independent of the current theme while candidate renderers are evaluated.
+
 ## Source of truth
 
 [The source-to-page map](content-map.mjs) explicitly assigns repository Markdown to routes. Edit those source files, not
@@ -64,7 +70,7 @@ PR job validates without deploying; the main branch job publishes through the ex
 ## Build diagnostics
 
 The missing translation collection is fixed with Starlight's `i18nLoader` and English messages. A custom Astro 404 page
-uses the supported Starlight page layout with the default 404 route disabled. Astro 7.3.6 fixes its generated MDX
-`use astro:head-inject` bundling directive warning. Keep head assets, styles, and scripts verified when upgrading these
-dependencies; do not suppress warning categories. The original investigation is
+uses the supported Starlight page layout with the default 404 route disabled. The Astro upgrade, now pinned to 7.4.12,
+fixes its generated MDX `use astro:head-inject` bundling directive warning. Keep head assets, styles, and scripts
+verified when upgrading these dependencies; do not suppress warning categories. The original investigation is
 [#1888](https://github.com/albertocavalcante/gvy/issues/1888).

@@ -102,9 +102,9 @@ preserved.
 
 | Work package                                | Owner                           | Completion gate                                                                       | State                            |
 | ------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
-| Content projection and reference generation | Documentation maintainers       | Deterministic output, unsupported-input tests, frozen install and link checks         | In progress                      |
-| User journey and workflows                  | Documentation maintainers       | Source-verified examples and explicit release limits                                  | In progress                      |
-| Homepage and navigation                     | Website maintainers             | Responsive, accessible rendered review in both themes                                 | In progress                      |
+| Content projection and reference generation | Documentation maintainers       | Deterministic output, unsupported-input tests, frozen install and link checks         | Implemented and checked          |
+| User journey and workflows                  | Documentation maintainers       | Source-verified examples and explicit release limits                                  | Implemented; runtime gates open  |
+| Homepage and navigation                     | Website maintainers             | Responsive, accessible rendered review in both themes                                 | Implemented; browser fixes open  |
 | Release upkeep and validation               | Release and website maintainers | Drift checks, independent complete-diff review, CI and public deployment verification | Implemented; publication pending |
 
 Validation evidence and unresolved acceptance gates are recorded below before publication. A source inspection does not
@@ -112,16 +112,19 @@ establish a successful editor workflow.
 
 ## Current handoff
 
-The implementation and automated checks are complete locally. Runtime and clean stable VSIX evidence is in
+The revamp implementation and source/build checks are complete locally. Runtime and clean stable VSIX evidence is in
 [the validation record](DOCUMENTATION_WEBSITE_VALIDATION.md). The PR remains a draft until the approved acceptance gates
-below pass. No runtime-feature implementation or distribution publishing is included.
+below pass. A subsequent Playwright probe found real browser defects; it is not a passing browser gate. The
+[testing and platform plan](DOCUMENTATION_WEBSITE_TESTING_AND_PLATFORM_PLAN.md) records reproduction, ownership,
+MDX/Svelte evidence and a path beyond Starlight. The owner requested that follow-up on 2026-11-14; a permanent browser
+suite and renderer migration remain planned. No runtime-feature implementation or distribution publishing is included.
 
 | Remaining item                                          | Impact and reason                                                                                                                                                            | Owner and next action                                                                                            | Completion gate                                                                                                                                             |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Responsive, keyboard, search and accessibility review   | Browser host unavailable; native CUA became unreliable, then timed out; Guest tabs crashed. Dark Reader affected partial native screenshots.                                 | Website maintainers: repeat the complete review when a supported browser surface is available.                   | Home and representative guides at 360/768/1440 in both themes; no page overflow or serious accessibility violations; keyboard and five search queries pass. |
+| Responsive, keyboard, search and accessibility review   | Headless Playwright now works. Its probe found mobile overflow, light-theme contrast failures, table keyboard-focus gaps and a desktop search label mismatch (B01–B04).      | Website maintainers: implement reproductions and fixes in the testing plan, then complete browser/manual review. | Home and representative guides at 360/768/1440 in both themes; no page overflow or serious accessibility violations; keyboard and five search queries pass. |
 | Gradle and restricted-environment workflow verification | Source-inspected guidance is not a successful authenticated import or clean network/offline test.                                                                            | Build and documentation maintainers: exercise the guide in a controlled fixture with approved repository access. | Imports resolve documented dependency; credentials remain private; network/offline limits match observations.                                               |
 | Minimum Java and full editor workflow coverage          | Probes used Java 21 and a development JAR; stable clean installation tested Groovy hover only. Jenkins used cached core; Spock used degraded analysis without running tests. | Documentation maintainers: repeat advertised release-specific workflows and minimum Java 17 checks.              | Record exact editor, extension, server, Java, dependencies and outputs for each supported claim.                                                            |
-| Hosted checks and publication                           | No merge/deployment before required validation is complete.                                                                                                                  | Coordinator: inspect final-head CI and independent review, then squash merge and verify Pages.                   | Required CI passes, exact head reviewed, public home/guides/search/legacy URLs/404 verified; owned branch and worktree cleaned.                             |
+| Hosted checks and publication                           | Hosted checks passed on implementation head `5962d30aabff50e188df0eff5e5a699c31eb01cd`; browser/workflow gates still block merge/deployment.                                 | Coordinator: inspect final-head CI and independent review, then squash merge and verify Pages.                   | Required CI passes, exact head reviewed, public home/guides/search/legacy URLs/404 verified; owned branch and worktree cleaned.                             |
 
 The stable packaging limitation remains owned by release maintainers in #1751; the provisional quality scorecard remains
 owned by #1550. Documentation records these limits and does not resolve them.
