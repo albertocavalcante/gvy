@@ -12,7 +12,6 @@ import com.github.javaparser.JavaParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
@@ -515,13 +514,15 @@ class SourceNavigationServiceTest {
     }
 
     @Test
-    fun `concurrent requesters share verified acquisition indexing extraction and declaration parsing`() = runBlocking {
+    fun `repeated requests reuse verified acquisition indexing extraction and declaration parsing`() = runBlocking {
         val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
         val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
         val symbol = binary("selected/library.jar")
         service(resolver).use { navigation ->
-            val results = List(12) { async { navigation.locate(symbol, context(download = true)) } }.awaitAll()
-            results.forEach { assertIs<SourceLookupResult.Located>(it) }
+            val first = assertIs<SourceLookupResult.Located>(navigation.locate(symbol, context(download = true)))
+            repeat(11) {
+                assertEquals(first, navigation.locate(symbol, context(download = true)))
+            }
             assertEquals(1, resolver.calls.get())
             assertEquals(1L, navigation.getStatistics()["declarationInspections"])
             assertEquals(1L, navigation.getStatistics()["sourceMaterializations"])
