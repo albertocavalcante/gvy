@@ -506,20 +506,21 @@ class WorkspaceManager internal constructor(
             for (part in raw) {
                 when (part.toString()) {
                     "." -> Unit
-                    ".." -> {
-                        try {
-                            if (!Files.isDirectory(prefix) || prefix.toRealPath() != prefix) return null
-                        } catch (_: IOException) {
-                            return null
-                        } catch (_: SecurityException) {
-                            return null
-                        }
-                        prefix = prefix.parent ?: return null
-                    }
+                    ".." -> prefix = collapseParent(prefix) ?: return null
                     else -> prefix = prefix.resolve(part)
                 }
             }
             return prefix
+        }
+
+        private fun collapseParent(path: Path): Path? = path.takeIf { it.isUnaliasedDirectory() }?.parent
+
+        private fun Path.isUnaliasedDirectory(): Boolean = try {
+            Files.isDirectory(this) && toRealPath() == this
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
         }
 
         /** [path] respelled under the scanned root when the root holding it is an alias of one (#1431). */
