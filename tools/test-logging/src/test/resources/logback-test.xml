@@ -1,0 +1,15 @@
+<!-- SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+<configuration>
+    <property scope="context" name="gvy.test.logging.policy" value="quiet-v1" />
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="WARN">
+        <appender-ref ref="STDERR" />
+    </root>
+</configuration>

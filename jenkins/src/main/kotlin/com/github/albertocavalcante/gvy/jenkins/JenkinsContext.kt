@@ -55,20 +55,49 @@ internal class StubHooks(
     val fileOps: StubSetFileOps = StubSetFileOps(),
 )
 
+/** Inputs used to load and scan metadata, with an optional repository lookup for deterministic tests. */
+internal class MetadataSources(
+    val bundledMetadataLoader: () -> MergedJenkinsMetadata,
+    val classpathScanner: (List<Path>) -> BundledJenkinsMetadata,
+    val mavenRepositoryLookupOverride: (() -> Path?)? = null,
+)
+
 /**
  * Manages the Jenkins pipeline context, including classpath and GDSL metadata.
  * Keeps Jenkins-specific compilation separate from general Groovy sources.
  *
  * Generated stubs are never written inside [workspaceRoot].
  */
-class JenkinsContext internal constructor(
+class JenkinsContext private constructor(
     private val configuration: JenkinsConfiguration,
     private val workspaceRoot: Path,
     private val pluginManager: JenkinsPluginManager,
-    bundledMetadataLoader: () -> MergedJenkinsMetadata,
-    private val classpathScanner: (List<Path>) -> BundledJenkinsMetadata,
-    private val stubHooks: StubHooks = StubHooks(),
+    private val stubHooks: StubHooks,
+    private val metadataSources: MetadataSources,
 ) {
+    internal constructor(
+        configuration: JenkinsConfiguration,
+        workspaceRoot: Path,
+        pluginManager: JenkinsPluginManager,
+        bundledMetadataLoader: () -> MergedJenkinsMetadata,
+        classpathScanner: (List<Path>) -> BundledJenkinsMetadata,
+        stubHooks: StubHooks = StubHooks(),
+    ) : this(
+        configuration,
+        workspaceRoot,
+        pluginManager,
+        stubHooks,
+        MetadataSources(bundledMetadataLoader, classpathScanner),
+    )
+
+    internal constructor(
+        configuration: JenkinsConfiguration,
+        workspaceRoot: Path,
+        pluginManager: JenkinsPluginManager,
+        metadataSources: MetadataSources,
+        stubHooks: StubHooks = StubHooks(),
+    ) : this(configuration, workspaceRoot, pluginManager, stubHooks, metadataSources)
+
     /**
      * @param stubsCacheRoot root for generated stubs; defaults to [JenkinsStubsLocation.defaultCacheRoot].
      */
@@ -118,7 +147,7 @@ class JenkinsContext internal constructor(
         classpath.addProjectDependencies(logger, projectDependencies)
         classpath.ensureJenkinsCorePresent(logger) { findLocalJenkinsCore() }
 
-        val librariesToInclude = resolveLibrariesToInclude(configuration, libraryResolver, logger, libraryReferences)
+        val librariesToInclude = resolveLibrariesToInclude(configuration, libraryResolver, libraryReferences)
         classpath.addLibrariesToClasspath(logger, librariesToInclude)
         classpath.addSharedLibrarySrcDir(logger, workspaceRoot)
         classpath.addRegisteredPluginJars(logger, pluginManager)
@@ -198,9 +227,14 @@ class JenkinsContext internal constructor(
      */
     private fun findLocalJenkinsCore(): Path? {
         try {
-            val mavenRepo = resolveMavenRepository()
+            // A supplied lookup returning null represents an absent repository, without machine-specific fallback.
+            val mavenRepo = if (metadataSources.mavenRepositoryLookupOverride != null) {
+                metadataSources.mavenRepositoryLookupOverride.invoke()
+            } else {
+                resolveMavenRepository()
+            }
             if (mavenRepo == null) {
-                logger.warn { "Could not determine Maven repository location" }
+                logger.debug { "Could not determine Maven repository location" }
                 return null
             }
 
@@ -373,7 +407,7 @@ class JenkinsContext internal constructor(
     fun isJenkinsFile(uri: java.net.URI): Boolean = fileDetector.isJenkinsFile(uri)
 
     /** Bundled base for this context, loaded on first use and never rebuilt. */
-    private val bundledMetadata: MergedJenkinsMetadata by lazy(bundledMetadataLoader)
+    private val bundledMetadata: MergedJenkinsMetadata by lazy(metadataSources.bundledMetadataLoader)
 
     /**
      * Result of one classpath scan; [generation] is the request's place in line, taken before it scanned.
@@ -526,7 +560,7 @@ class JenkinsContext internal constructor(
         val snapshot = classpath.toList()
         val metadata = try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
-            classpathScanner(snapshot)
+            metadataSources.classpathScanner(snapshot)
         } catch (e: Exception) {
             logger.error(e) { "Failed to scan classpath" }
             return null
@@ -585,16 +619,11 @@ private fun MutableList<Path>.ensureJenkinsCorePresent(logger: KLogger, findLoca
 private fun resolveLibrariesToInclude(
     configuration: JenkinsConfiguration,
     libraryResolver: SharedLibraryResolver,
-    logger: KLogger,
     libraryReferences: List<LibraryReference>,
 ): List<SharedLibrary> = if (libraryReferences.isEmpty()) {
     configuration.sharedLibraries
 } else {
-    val result = libraryResolver.resolveAllWithWarnings(libraryReferences)
-    result.missing.forEach { ref ->
-        logger.warn { "Jenkins library '${ref.name}' referenced but not configured" }
-    }
-    result.resolved
+    libraryResolver.resolveAllWithWarnings(libraryReferences).resolved
 }
 
 private fun MutableList<Path>.addLibrariesToClasspath(logger: KLogger, librariesToInclude: List<SharedLibrary>) {
