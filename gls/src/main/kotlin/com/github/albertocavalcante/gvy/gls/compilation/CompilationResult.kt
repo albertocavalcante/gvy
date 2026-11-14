@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -41,6 +42,8 @@ data class CompilationResult(
     /** Captured with [ast] and [sourceText]; never reacquired from a newer URI cache entry. */
     val sourceAnnotations: SourceAnnotationIndex =
         (ast as? ModuleNode)?.let(SourceAnnotationIndex::fromModule) ?: SourceAnnotationIndex.UNAVAILABLE,
+    /** Captured with [sourceText], so requests do not reacquire symbols from a later or cleared cache entry. */
+    val astModel: GroovyAstModel? = null,
 ) {
     companion object {
         /**

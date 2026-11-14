@@ -31,6 +31,9 @@ suite("GDSL cold startup", () => {
       previousUpdates,
       vscode.ConfigurationTarget.Global,
     );
+    await vscode.commands.executeCommand(
+      "workbench.action.revertAndCloseActiveEditor",
+    );
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   });
 
