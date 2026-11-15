@@ -17,6 +17,26 @@ The authoring baseline landed in [#2028](https://github.com/albertocavalcante/gv
 matched their applicability conditions. The owned publication branch and checkout were removed after verifying the merge
 on `main`; original dirty audit drafts and private evidence remain retained. The full 24-slice program is open.
 
+### Scripted and local-file extension
+
+The approved scripted extension shares this program's snapshot, call-resolution and metadata contracts. Scripted
+Pipeline is executable Groovy even outside `node {}`; Declarative structure and its executable escape bodies must remain
+distinguishable. A name such as `stage`, `timeout` or `parallel` has one resolution per captured document, including
+local shadowing, which every editor feature consumes.
+
+| Slice | Deliverable                                                       | Dependencies and observable completion gate                                                                                                                    | State                                              |
+| ----- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| S01   | Offline scripted/Declarative examples and local-input walkthrough | Saved GDSL, plugin manifest, library layout and provenance; example opens without controller access.                                                           | In progress                                        |
+| S02   | Shared source-bound structure/execution/uncertainty context       | Extend 07/08; top-level scripts, helpers, wrapper closures, loops, dynamic parallel maps and `script {}` agree across features.                                | Tests being prepared                               |
+| S03   | Scripted feature parity                                           | Reuse 03/04/09; completion edits, hover/signature resolution, highlighting and precise CPS/Declarative diagnostics, including #1477.                           | Open                                               |
+| S04   | Explicit mapped local libraries                                   | Integrate #1954/#1955/#1958; vars overloads/members/docs and src navigation remain selected-document and actual-content bound, including unsaved edits.        | Open; context contract owned by library workstream |
+| S05   | Packaged and offline walkthrough verification                     | Framed LSP and actual VS Code suggestion acceptance with the candidate server; formatting preserves the program and is idempotent; reconcile docs and cleanup. | Open                                               |
+
+No new controller discovery, automatic Git acquisition or Pipeline execution is authorized by this extension. Saved
+inputs remain useful with incomplete metadata, with limitations stated explicitly. Existing authoring fixes, including
+[#2046](https://github.com/albertocavalcante/gvy/pull/2046), retain their own review and CI gates. This table records
+implementation work; it does not certify the open slices.
+
 | Evidence layer              | Executed result                                              | Scope / remaining gate                                                                                          |
 | --------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | Server JSON-RPC             | 3 tests passed, no failures/errors/skips                     | Actual framed client/server requests and responses correlate; complete lists contain 5, 5 and 11 items.         |
