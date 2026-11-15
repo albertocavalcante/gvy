@@ -94,8 +94,9 @@ data class ParseRequest(
      */
     val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
 ) {
-    /** Fresh path check for source files discovered implicitly below [sourceRoots]. */
     private var sourcePathAdmissionValue: ((Path) -> Boolean)? = null
+
+    /** Fresh path check for implicitly discovered sources; this runtime policy is not part of data-class identity. */
     val sourcePathAdmission: ((Path) -> Boolean)? get() = sourcePathAdmissionValue
 
     /** Adds parse-time source-path admission without changing the original primary-constructor ABI. */
@@ -130,7 +131,7 @@ data class ParseRequest(
         this.sourcePathAdmissionValue = sourcePathAdmission
     }
 
-    /** Internal copies preserve the admission policy stored outside the data-class constructor. */
+    /** Parser retries use this copy helper to preserve the runtime admission policy. */
     internal fun copyWithSourcePathAdmission(copy: (ParseRequest) -> ParseRequest): ParseRequest =
         copy(this).also { it.sourcePathAdmissionValue = sourcePathAdmissionValue }
 
