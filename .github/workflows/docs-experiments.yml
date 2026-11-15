@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
-name: Documentation renderer experiments
+name: Astro authoring experiment
 on:
   pull_request:
     paths:
@@ -15,7 +15,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  compare:
+  astro:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -33,25 +33,15 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.4
-      - id: install
-        run: bun install --frozen-lockfile
-      - id: browser
-        run: bunx playwright install --with-deps chromium
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
       - name: Build and test Astro
         run: |
           start=$(date +%s)
           bun run build:astro
           end=$(date +%s)
           node metrics.mjs astro/dist astro-metrics.json "$(( (end - start) * 1000 ))"
-          CANDIDATE=astro bun run test
-      - name: Build and test SvelteKit
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.browser.outcome == 'success' }}
-        run: |
-          start=$(date +%s)
-          bun run build:svelte
-          end=$(date +%s)
-          node metrics.mjs svelte/build svelte-metrics.json "$(( (end - start) * 1000 ))"
-          CANDIDATE=svelte bun run test
+          bun run test
       - name: Retain evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

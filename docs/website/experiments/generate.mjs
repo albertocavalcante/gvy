@@ -37,11 +37,8 @@ for (const [input, route, source, edit] of pages) {
   await Promise.all(localSources.map(file => access(file)));
   const body = processor.stringify(tree);
   const astro = route === 'not-found' ? 'astro/src/pages/404.md' : route ? `astro/src/pages/${route}/index.md` : 'astro/src/pages/index.mdx';
-  const svelte = `svelte/src/routes/${route ? `${route}/` : ''}+page.svx`;
-  for (const file of [astro, svelte]) await mkdir(dirname(file), { recursive: true });
+  await mkdir(dirname(astro), { recursive: true });
   const astroImport = route === '' ? "\nimport Notice from '../components/Notice.astro';\n" : '';
   const astroNotice = route === '' ? "\n<Notice />\n" : '';
-  const svelteNotice = route === '' ? '\n<aside aria-label="Experiment notice"><h2 id="about-this-experiment">About this experiment</h2><p>This is a four-page renderer experiment, not the published documentation.</p></aside>\n\n' : '';
   await writeFile(astro, `---\nlayout: ${route && route !== 'not-found' ? '../../../layouts/Docs.astro' : '../layouts/Docs.astro'}\nedit: ${edit || 'null'}\n---\n${astroImport}\n${body}${astroNotice}`);
-  await writeFile(svelte, `---\nedit: ${edit || 'null'}\n---\n${body}${svelteNotice}`);
 }

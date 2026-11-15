@@ -1,4 +1,0 @@
-// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
-// SPDX-License-Identifier: Apache-2.0
-export const prerender = true;
-export const trailingSlash = 'always';

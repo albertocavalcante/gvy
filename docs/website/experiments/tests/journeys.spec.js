@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 test('selected routes, fragments, edit links and actual 404', async ({ page }) => {
   await page.goto('./');
@@ -84,4 +85,38 @@ test('all selected local links and fragments resolve', async ({ page, request })
   await expect(page.getByRole('link', { name: 'stable manifest' })).toHaveAttribute('href', 'https://github.com/albertocavalcante/gvy/blob/main/docs/website/stable-v0.5.4-package.json');
   await expect(page.getByRole('link', { name: 'current manifest' })).toHaveAttribute('href', 'https://github.com/albertocavalcante/gvy/blob/main/editors/code/package.json');
   expect(failures).toEqual([]);
+});
+
+test('overflowing code and tables scroll by keyboard without JavaScript', async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 240, height: 600 } });
+  const page = await context.newPage();
+  for (const [route, selector] of [['guides/quickstart/', 'pre'], ['reference/settings/', 'table']]) {
+    await page.goto(`http://127.0.0.1:4321/gvy/${route}`);
+    const region = page.locator(selector).first();
+    await expect(region).toHaveAttribute('tabindex', '0');
+    expect(await region.evaluate(el => el.scrollWidth > el.clientWidth)).toBeTruthy();
+    let focused = false;
+    for (let i = 0; i < 100; i++) {
+      await page.keyboard.press('Tab');
+      if (await region.evaluate(el => document.activeElement === el)) { focused = true; break; }
+    }
+    expect(focused).toBeTruthy();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+  }
+  await context.close();
+});
+
+test('representative pages have no serious or critical axe findings', async ({ page }, testInfo) => {
+  const blocking = [];
+  for (const route of ['./', 'guides/quickstart/', 'reference/settings/']) {
+    await page.goto(route);
+    const results = await new AxeBuilder({ page }).analyze();
+    await testInfo.attach(`axe-${route.replaceAll('/', '-') || 'home'}`, {
+      body: JSON.stringify({ violations: results.violations, incomplete: results.incomplete }, null, 2),
+      contentType: 'application/json',
+    });
+    blocking.push(...results.violations.filter(item => ['serious', 'critical'].includes(item.impact)).map(item => ({ route, id: item.id, impact: item.impact })));
+  }
+  expect(blocking).toEqual([]);
 });

@@ -4,9 +4,6 @@
 node_modules/
 astro/dist/
 astro/.astro/
-svelte/build/
-svelte/.svelte-kit/
-svelte/src/routes/**/+page.svx
 astro/src/pages/**/*.md
 astro/src/pages/*.md
 astro/src/pages/*.mdx
