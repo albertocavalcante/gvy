@@ -17,11 +17,18 @@ test('selected routes, fragments, edit links and actual 404', async ({ page }) =
 });
 
 test('search finds the selected corpus', async ({ page }) => {
-  await page.goto('./');
-  for (const [query, route] of [['Greeter', 'guides/quickstart'], ['incrementalThreshold', 'reference/settings']]) {
+  for (const [query, route, heading] of [
+    ['Greeter', 'guides/quickstart/', 'Quickstart'],
+    ['incrementalThreshold', 'reference/settings/', 'VS Code settings'],
+  ]) {
+    await page.goto('./');
     await page.getByLabel('Search').fill(query);
     await page.getByRole('button', { name: 'Search' }).click();
-    await expect(page.locator('#results a').first()).toHaveAttribute('href', new RegExp(route));
+    const result = page.locator('#results a').first();
+    await expect(result).toHaveAttribute('href', new RegExp(route));
+    await result.click();
+    await expect(page).toHaveURL(new RegExp(`/gvy/${route}$`));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
   }
 });
 
@@ -44,7 +51,8 @@ test('navigation works by keyboard and follows system theme', async ({ page }) =
     await page.goto('./');
     await page.keyboard.press('Tab');
     await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
-    await expect(page.locator('html')).toHaveCSS('color-scheme', 'light dark');
+    await expect(page.locator('html')).toHaveCSS('color', scheme === 'light' ? 'rgb(23, 32, 42)' : 'rgb(241, 243, 245)');
+    await expect(page.locator('html')).toHaveCSS('background-color', scheme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(22, 27, 34)');
     await page.keyboard.press('Tab');
     await expect(page.getByRole('navigation').getByRole('link', { name: 'Home' })).toBeFocused();
   }
