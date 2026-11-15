@@ -54,15 +54,18 @@ class JenkinsSourceContext(val source: String) {
     private fun classify(stack: List<String?>): RegionState {
         var state = RegionState(JenkinsRegion.EXECUTABLE_GROOVY, allowsGroovy = true)
         var parent: String? = null
-        stack.forEachIndexed { index, block ->
+        var onlyUntrackedAncestors = true
+        stack.forEach { block ->
             state = when {
-                index == 0 && block == "pipeline" -> RegionState(JenkinsRegion.DECLARATIVE_STRUCTURE, false)
+                block == "pipeline" && onlyUntrackedAncestors ->
+                    RegionState(JenkinsRegion.DECLARATIVE_STRUCTURE, false)
                 state.region == JenkinsRegion.DECLARATIVE_STRUCTURE -> classifyDeclarative(block, parent, state)
                 state.region == JenkinsRegion.EXECUTABLE_GROOVY && !state.allowsGroovy && block == "script" ->
                     state.copy(allowsGroovy = true)
                 else -> state
             }
             parent = block
+            if (block != null) onlyUntrackedAncestors = false
         }
         return state
     }

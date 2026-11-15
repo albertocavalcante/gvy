@@ -105,7 +105,7 @@ class HoverSnapshotTest {
             val cache = fixture.compilation.compilationCacheService
             mockkObject(cache)
             try {
-                every { cache.getCachedWithContent(fixture.uri, any()) } answers {
+                every { cache.getSourceView(fixture.uri, any()) } answers {
                     callOriginal().also {
                         cache.publish(cache.ownership.begin(fixture.uri), ORIGINAL_SOURCE, original, secondArg())
                     }

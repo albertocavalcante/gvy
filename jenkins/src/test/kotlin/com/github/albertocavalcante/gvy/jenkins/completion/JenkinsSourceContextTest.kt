@@ -43,6 +43,14 @@ class JenkinsSourceContextTest {
     }
 
     @Test
+    fun `declarative pipeline in a shared-library call method has structural context`() {
+        assertRegion(
+            JenkinsRegion.DECLARATIVE_STRUCTURE,
+            "def call() { pipeline { options { |timeout(time: 1) } } }",
+        )
+    }
+
+    @Test
     fun `unknown braces in structure are uncertain and cannot regain structural status`() {
         assertRegion(JenkinsRegion.UNCERTAIN, "pipeline { options { custom { | } } }")
         assertRegion(JenkinsRegion.UNCERTAIN, "pipeline { options { custom { stage('x') { | } } } }")

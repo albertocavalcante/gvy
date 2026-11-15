@@ -14,6 +14,7 @@ import com.github.albertocavalcante.gvy.jenkins.completion.JenkinsSourceContext
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedDeclarativeOption
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import io.mockk.every
 import io.mockk.mockk
@@ -181,6 +182,8 @@ class JenkinsCallResolverTest {
             "obj.pipeline { options { timeout() } }",
             "def pipeline(body) {}\npipeline { options { timeout() } }",
             "def pipeline = { Closure body -> body() }\npipeline { options { timeout() } }",
+            "node { obj.pipeline { options { timeout() } } }",
+            "def pipeline(body) {}\nnode { pipeline { options { timeout() } } }",
         )
         sources.forEach { source ->
             val parsed = UntrustedAstParser.parse(source, "Jenkinsfile") as UntrustedParseResult.Parsed
@@ -228,6 +231,61 @@ class JenkinsCallResolverTest {
             varsNames,
         )
         assertEquals(expected, result.kind, source)
+    }
+
+    @Test
+    fun `declarative entries resolve by grammar despite same-name script methods`() {
+        assertRealKind(
+            JenkinsCallKind.OPTION,
+            "def timeout(Map args) {}\npipeline { options { timeout(time: 2) } }",
+            "timeout",
+        )
+        assertRealKind(
+            JenkinsCallKind.OPTION,
+            "def timeout(Map args) {}\npipeline { options { this.timeout(time: 2) } }",
+            "timeout",
+        )
+        assertRealKind(
+            JenkinsCallKind.DIRECTIVE_ENTRY,
+            "def string(Map args) {}\npipeline { parameters { string(name: 'BRANCH') } }",
+            "string",
+        )
+        assertRealKind(
+            JenkinsCallKind.SECTION,
+            "def stages(Closure body) {}\npipeline { stages { } }",
+            "stages",
+        )
+    }
+
+    @Test
+    fun `declarative option inside a shared-library call method resolves as an option`() {
+        assertRealKind(
+            JenkinsCallKind.OPTION,
+            "def call() { pipeline { options { timeout(time: 1) } } }",
+            "timeout",
+        )
+    }
+
+    @Test
+    fun `script methods retain precedence in executable Groovy`() {
+        val definition = "def timeout(Map args) {}\n"
+        listOf(
+            "timeout(time: 2)",
+            "node { timeout(time: 2) }",
+            "pipeline { stages { stage('x') { steps { script { timeout(time: 2) } } } } }",
+            "client.timeout(time: 2)",
+        ).forEach { body -> assertRealKind(JenkinsCallKind.LOCAL, definition + body, "timeout") }
+    }
+
+    private fun assertRealKind(expected: JenkinsCallKind, source: String, name: String) {
+        val parsed = UntrustedAstParser.parse(source, "Jenkinsfile") as UntrustedParseResult.Parsed
+        val uri = URI("file:///Jenkinsfile")
+        val model = RecursiveAstVisitor(NodeRelationshipTracker())
+        model.visitModule(parsed.module, uri)
+        val call = model.getNodes(uri).filterIsInstance<MethodCallExpression>().single { it.methodAsString == name }
+        val context = JenkinsCallContext(model, uri, JenkinsSourceContext(source))
+        val resolution = JenkinsCallResolver.resolve(call, context, VersionedMetadataLoader().loadMerged())
+        assertEquals(expected, resolution.kind, source)
     }
 
     @Test

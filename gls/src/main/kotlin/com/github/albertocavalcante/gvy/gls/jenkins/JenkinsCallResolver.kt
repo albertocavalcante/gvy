@@ -81,11 +81,17 @@ object JenkinsCallResolver {
             // Source text alone cannot establish bindings or distinguish local declarations.
             model == null || model.getUri(call) != source.documentUri -> JenkinsCallResolution(JenkinsCallKind.UNKNOWN)
             !model.hasScriptInstance(call) -> JenkinsCallResolution(JenkinsCallKind.LOCAL)
-            receiver == Receiver.SCRIPT && !hasScriptDispatch(call, model, source.documentUri, source.sourceIndex) ->
-                JenkinsCallResolution(JenkinsCallKind.LOCAL)
             position == null -> JenkinsCallResolution(JenkinsCallKind.UNKNOWN)
             else -> resolveInContext(
-                ResolvedCall(call, model, name, receiver, positionContext(call, source, position)),
+                ResolvedCall(
+                    call,
+                    model,
+                    name,
+                    receiver,
+                    positionContext(call, source, position),
+                    receiver == Receiver.SCRIPT &&
+                        !hasScriptDispatch(call, model, source.documentUri, source.sourceIndex),
+                ),
                 metadata,
                 varsNames,
             )
@@ -98,6 +104,7 @@ object JenkinsCallResolver {
         val name: String,
         val receiver: Receiver,
         val context: JenkinsPositionContext,
+        val hasLocalBinding: Boolean,
     )
 
     private fun resolveInContext(
@@ -112,10 +119,14 @@ object JenkinsCallResolver {
         val context = site.context
         val parent = context.enclosingBlocks.lastOrNull()
         val direct = parent == null || isDirectStatement(call, parent, model)
+        val declarative = receiver == Receiver.SCRIPT && context.isDeclarativeCall(name) && direct
         return when {
+            // Jenkins parses confirmed Declarative entries as syntax, independently of script methods.
+            // The root pipeline call and executable bodies still use ordinary Groovy dispatch.
+            declarative && name != "pipeline" -> resolveDeclarative(name, parent, metadata)
+            site.hasLocalBinding -> JenkinsCallResolution(JenkinsCallKind.LOCAL)
             context.region == JenkinsRegion.UNCERTAIN -> JenkinsCallResolution(JenkinsCallKind.UNKNOWN)
-            receiver == Receiver.SCRIPT && context.isDeclarativeCall(name) && direct ->
-                resolveDeclarative(name, parent, metadata)
+            declarative -> resolveDeclarative(name, parent, metadata)
             receiver == Receiver.SCRIPT && name in varsNames -> JenkinsCallResolution(JenkinsCallKind.LIBRARY_GLOBAL)
             else -> metadata.steps[name]?.let { JenkinsCallResolution(JenkinsCallKind.STEP, step = it) }
                 ?: JenkinsCallResolution(JenkinsCallKind.UNKNOWN)
@@ -167,6 +178,8 @@ object JenkinsCallResolver {
         return when {
             owner == null || model == null ->
                 context.copy(region = JenkinsRegion.UNCERTAIN, allowsGroovyStatements = false)
+            model.getUri(owner) != source.documentUri ->
+                context.copy(region = JenkinsRegion.UNCERTAIN, allowsGroovyStatements = false)
             owner.isOrdinaryPipelineOwner(model, source.documentUri, source.sourceIndex) ->
                 context.copy(region = JenkinsRegion.EXECUTABLE_GROOVY, allowsGroovyStatements = true)
             context.region == JenkinsRegion.UNCERTAIN && node != null && insideValueClosure(node, model) ->
@@ -196,6 +209,7 @@ object JenkinsCallResolver {
         sourceIndex: TextIndex,
     ): Boolean {
         val receiver = objectExpression as? VariableExpression
+        if (!model.hasScriptInstance(this)) return true
         if (methodAsString == "call" && receiver?.name == "pipeline") return true
         val scriptReceiver = isImplicitThis || receiver?.isThisExpression == true
         return !scriptReceiver || isShadowed("pipeline", this, model, uri, sourceIndex)
