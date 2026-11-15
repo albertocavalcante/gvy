@@ -1,0 +1,177 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Qualification mechanism
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/qualification/**'
+      - 'tools/logging/lsp-protocol.mjs'
+      - '.github/workflows/qualification-mechanism.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/qualification/**'
+      - 'tools/logging/lsp-protocol.mjs'
+      - '.github/workflows/qualification-mechanism.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mechanism:
+    name: Non-root Linux mechanism (not product qualification)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      QUALIFICATION_NAME: gvy-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Admit preinstalled native tools and resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          QUALIFICATION_OUTPUT="$RUNNER_TEMP/$QUALIFICATION_NAME"
+          export QUALIFICATION_OUTPUT
+          printf 'QUALIFICATION_OUTPUT=%s\n' "$QUALIFICATION_OUTPUT" >> "$GITHUB_ENV"
+          mkdir -m 700 "$QUALIFICATION_OUTPUT"
+          mkdir -m 700 "$QUALIFICATION_OUTPUT/evidence"
+          admit() {
+            for tool in node cc unshare ip strace; do
+              command -v "$tool" || { echo "Missing preinstalled tool: $tool; no privileged installation is permitted" >&2; return 1; }
+            done
+            node --input-type=module <<'NODE' || return 1
+          import assert from 'node:assert/strict';
+          import {readFileSync,statfsSync} from 'node:fs';
+          import {release} from 'node:os';
+          assert.equal(process.platform,'linux');
+          assert.ok(process.getuid()>0 && process.getuid()===process.geteuid(),'Unchanged non-root uid required');
+          assert.ok(!/microsoft|wsl/i.test(release()),'Native Linux runner required');
+          assert.ok(Number(process.versions.node.split('.')[0])>=20,'Preinstalled Node20+ required');
+          assert.ok(readFileSync(process.execPath).subarray(0,4).equals(Buffer.from([127,69,76,70])),'Linux ELF Node required');
+          const disk=statfsSync(process.env.QUALIFICATION_OUTPUT);
+          const availableBytes=Number(readFileSync('/proc/meminfo','utf8').match(/^MemAvailable:\s+(\d+)/m)?.[1])*1024;
+          assert.ok(availableBytes>=4*1024**3,'At least4GiB available memory required');
+          assert.ok(disk.bavail*disk.bsize>=10*1024**3,'At least10GiB available disk required');
+          console.log(JSON.stringify({uid:process.getuid(),node:process.version,nodePath:process.execPath,kernel:release(),availableBytes,diskAvailableBytes:disk.bavail*disk.bsize}));
+          NODE
+            cc --version || return 1
+            unshare --version || return 1
+            ip -Version || return 1
+            strace --version || return 1
+          }
+          admit > "$QUALIFICATION_OUTPUT/evidence/admission.log" 2>&1 || { cat "$QUALIFICATION_OUTPUT/evidence/admission.log"; exit 1; }
+          cat "$QUALIFICATION_OUTPUT/evidence/admission.log"
+
+      - name: Test source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          node --test tools/qualification/*.test.mjs 2>&1 | tee "$QUALIFICATION_OUTPUT/evidence/unit-tests.log"
+
+      - name: Compile exact helper with strict warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Wconversion \
+            tools/qualification/seccomp-launcher.c -o "$QUALIFICATION_OUTPUT/seccomp-launcher" \
+            > "$QUALIFICATION_OUTPUT/evidence/compiler.log" 2>&1 || { cat "$QUALIFICATION_OUTPUT/evidence/compiler.log"; exit 1; }
+          cc --version > "$QUALIFICATION_OUTPUT/evidence/compiler-version.txt"
+          sha256sum "$(command -v cc)" > "$QUALIFICATION_OUTPUT/evidence/compiler.sha256"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {arch,endianness} from 'node:os';
+          import {ioUringFilter} from './tools/qualification/seccomp.mjs';
+          const root=process.env.QUALIFICATION_OUTPUT,helper=readFileSync(root+'/seccomp-launcher');
+          assert.ok(helper.subarray(0,4).equals(Buffer.from([127,69,76,70])));
+          assert.equal(helper[4],2);assert.equal(helper[5],1);assert.equal(helper.readUInt16LE(18),62);
+          const hash=value=>createHash('sha256').update(value).digest('hex'),profile=ioUringFilter(arch(),endianness());
+          writeFileSync(root+'/profile.bpf',profile,{mode:0o600,flag:'wx'});
+          const receipt={commit:process.env.GITHUB_SHA,command:['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-Wconversion','tools/qualification/seccomp-launcher.c','-o',root+'/seccomp-launcher'],compiler:readFileSync(root+'/evidence/compiler-version.txt','utf8'),compilerHash:readFileSync(root+'/evidence/compiler.sha256','utf8'),sourceSha256:hash(readFileSync('tools/qualification/seccomp-launcher.c')),helperSha256:hash(helper),helperBytes:helper.length,profileSha256:hash(profile),candidateQualified:false};
+          writeFileSync(root+'/evidence/build-receipt.json',JSON.stringify(receipt,null,2),{mode:0o600,flag:'wx'});
+          NODE
+
+      - name: Verify inherited descriptor closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          timeout 5 "$QUALIFICATION_OUTPUT/seccomp-launcher" --canary "$QUALIFICATION_OUTPUT/evidence/fd-baseline.json" 3</dev/null
+          timeout 5 "$QUALIFICATION_OUTPUT/seccomp-launcher" --profile "$QUALIFICATION_OUTPUT/profile.bpf" -- \
+            "$QUALIFICATION_OUTPUT/seccomp-launcher" --canary "$QUALIFICATION_OUTPUT/evidence/fd-filtered.json" 3</dev/null
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+          import {verifyCanary} from './tools/qualification/seccomp.mjs';
+          const root=process.env.QUALIFICATION_OUTPUT,read=name=>JSON.parse(readFileSync(root+'/evidence/'+name));
+          assert.ok(read('fd-baseline.json').inheritedExtraDescriptors>=1);
+          assert.ok(verifyCanary(read('fd-filtered.json'),process.getuid()));
+          NODE
+
+      - name: Run bounded namespace and observer mechanism controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          helper_sha=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.env.QUALIFICATION_OUTPUT+"/evidence/build-receipt.json")).helperSha256')
+          if timeout 5 node tools/qualification/run.mjs --probe \
+            --output "$QUALIFICATION_OUTPUT/evidence/wrong-helper-hash" \
+            --seccomp-helper "$QUALIFICATION_OUTPUT/seccomp-launcher" \
+            --seccomp-helper-sha256 0000000000000000000000000000000000000000000000000000000000000000 \
+            > "$QUALIFICATION_OUTPUT/evidence/wrong-helper-hash.log" 2>&1; then
+            echo 'Incorrect helper hash was accepted' >&2
+            exit 1
+          else
+            wrong_hash_status=$?
+          fi
+          [[ "$wrong_hash_status" == 1 ]]
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';import {readFileSync,existsSync} from 'node:fs';
+          const root=process.env.QUALIFICATION_OUTPUT+'/evidence/wrong-helper-hash';
+          assert.match(JSON.parse(readFileSync(root+'/failure.json')).error,/Seccomp helper hash mismatch/);
+          assert.equal(existsSync(root+'/probe-normal'),false);
+          NODE
+          timeout 90 node tools/qualification/run.mjs --probe \
+            --output "$QUALIFICATION_OUTPUT/evidence/mechanism" \
+            --seccomp-helper "$QUALIFICATION_OUTPUT/seccomp-launcher" \
+            --seccomp-helper-sha256 "$helper_sha" \
+            > "$QUALIFICATION_OUTPUT/evidence/mechanism.log" 2>&1 || { cat "$QUALIFICATION_OUTPUT/evidence/mechanism.log"; exit 1; }
+
+      - name: Preserve mechanism evidence, including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qualification-mechanism-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.QUALIFICATION_OUTPUT }}/evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove owned temporary helper and receipts after upload
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';import {rmSync} from 'node:fs';import {resolve,dirname,basename} from 'node:path';
+          if(!process.env.QUALIFICATION_OUTPUT) process.exit(0);
+          const output=resolve(process.env.QUALIFICATION_OUTPUT);
+          assert.equal(dirname(output),resolve(process.env.RUNNER_TEMP));
+          assert.match(basename(output),/^gvy-qualification-\d+-\d+$/);
+          rmSync(output,{recursive:true,force:true});
+          NODE
