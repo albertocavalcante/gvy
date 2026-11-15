@@ -362,6 +362,9 @@ class AstRequestHandlerTest {
             val parsed = if (completion == LoaderCompletion.UNAVAILABLE_AST) compiled.copy(ast = null) else compiled
             documents.put(uri, source, 1)
             coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
+                // TODO(#2063): Investigate pinned jqwik/Platform discovery of coroutine enum dispatch.
+                //   Recheck anonymous enum helpers when qualifying the supported dependency stack.
+                //   See: https://github.com/albertocavalcante/gvy/issues/2063
                 if (completion == LoaderCompletion.POST_PARSE_CANCELLATION) requestOwner.cancel()
                 if (completion == LoaderCompletion.STALE_SOURCE) documents.update(uri, "class Edited {}", 2)
                 parsed
