@@ -1,8 +1,9 @@
 # Contextual Groovy file execution
 
-Status: implementation under validation. [Feature issue #2023](https://github.com/albertocavalcante/gvy/issues/2023)
-owns delivery and remaining qualification. This record describes the design; a capability is shipped only after its
-validation and landing gates pass.
+Status: experimental implementation for VS Code.
+[Implementation PR #2044](https://github.com/albertocavalcante/gvy/pull/2044) records review, exact-head CI and landing
+evidence. [Feature issue #2023](https://github.com/albertocavalcante/gvy/issues/2023) tracks further adapter and
+platform qualification. The matrix below distinguishes executed checks from unsupported paths.
 
 ## Intended behavior
 
@@ -71,6 +72,10 @@ The execution bundle contains Groovy core **4.0.33** and Ivy **2.5.3**, with pin
 additional Groovy modules can be supplied through the configured classpath. The language-server fat JAR never enters a
 program's classpath.
 
+Runtime inspection rejects duplicate cores and recognizable Groovy modules with conflicting versions. Selected runtime
+metadata reads are bounded: at most 1,024 JARs, 128 MiB per JAR, 256 MiB total and 64 KiB per manifest or release-info
+entry. Empty optional runtime settings mean no override, so the normal project/local/bundled selection still applies.
+
 [`prepare-runtime.js`](../editors/code/tools/prepare-runtime.js) stages only existing local artifacts, verifies all
 bytes, and extracts their upstream LICENSE/NOTICE files. Set `GVY_RUNTIME_SOURCE` to a directory containing the pinned
 JARs or reuse the effective `GRADLE_USER_HOME` cache. The helper does not download artifacts. CI stages the dedicated
@@ -93,17 +98,25 @@ Long non-ASCII Windows classpaths remain unqualified; Java argument files also r
 
 ## Validation and capability matrix
 
-| Capability                                                                                  | Evidence gate                                          | Current status                                                                                                              |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| AST discovery, protocol, stale preparation/launch                                           | Kotlin behavior/endpoint tests                         | Authored; native candidate check pending                                                                                    |
-| Exact Gradle membership, runtime-only dependencies, resources, exclusions, multiple modules | Offline real Tooling API integration                   | Authored; candidate check pending                                                                                           |
-| Save/trust/cancellation/task profiles and long classpaths                                   | Editor unit/mocked host tests                          | 36 passing on macOS; final-head rerun pending                                                                               |
-| Runtime packaging, corruption rejection, notices                                            | Node packaging tests                                   | 4 passing; VSIX gate pending                                                                                                |
-| Groovy 4.0.33 and 2.4.21 subprocess execution                                               | Explicit native qualification harness                  | macOS: 4 cases passed; Linux Java 11 manual runtime/argument-file checks passed; final package checks pending               |
-| Installed VSIX and actual task terminals                                                    | Native VS Code host                                    | Pending                                                                                                                     |
-| Native Windows project preparation                                                          | Tested wrapper invocation with literal argument safety | Unavailable until qualified; direct Java is separate                                                                        |
-| Native Linux and Windows execution                                                          | Execute the qualification harness on each OS           | Linux runtime subset passed; Windows Java 21 ASCII long-classpath/Unicode-refusal guard passed; broader support unqualified |
-| Offline/private repositories                                                                | Local artifacts and original build configuration       | Offline adapter fixture authored; real private-repository environment pending                                               |
+| Capability                                                                                  | Executed evidence                                                                                                                                   | Qualification                                                                                                                        |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| AST discovery, protocol, stale preparation/launch, runtime metadata                         | 49 Kotlin GLS behavior tests; 65 SDK protocol/JSON controls                                                                                         | macOS Java 17; no failures or skips                                                                                                  |
+| Exact Gradle compiler membership and targeted preparation                                   | 53 adapter/projection tests, including a real offline multi-module fixture                                                                          | One optional older-Gradle test skipped locally; dedicated CI compatibility job covers older/latest Gradle                            |
+| Runtime-only dependencies, resources and dependency edits                                   | Fixture builds `:app:classes`, launches with resources/runtime-only code, edits a library, observes the next result, and rejects failed preparation | Existing local artifacts and configured local Maven repository; real private-repository authentication remains unqualified           |
+| Save, trust, cancellation, profiles, output publication, runtime defaults and JDK selection | 968 editor unit tests; deterministic storage failure/concurrency regressions                                                                        | macOS Java 17; zero pending tests                                                                                                    |
+| Runtime staging, checksums, notices and packaging helpers                                   | 156 Node tool tests, including the cache fixture under the CI runtime-source environment                                                            | Dedicated runtime and server present in the built and installed VSIX; installed bytes verified                                       |
+| Actual task terminals and file commands                                                     | Five file-execution scenarios passed across native macOS VS Code runs                                                                               | Run, Compile, stdin/profile/Run Again, `System.exit`, and task termination followed by a responsive server and successful run        |
+| Groovy 4.0.33 and 2.4.21 subprocess behavior                                                | Five packaged-runtime/long-classpath checks passed with Java 17                                                                                     | Both versions cover literal arguments, Unicode paths, stdin, compile-only, main classes, nonzero exit and infinite-child termination |
+| Native Windows and Linux runtime behavior                                                   | Linux Java 11 runtime subset passed; Windows Java 21 ASCII long-classpath and Unicode-refusal guard passed                                          | Linux server/editor qualification is recorded in CI; broader Windows Unicode support remains unqualified                             |
+| Native Windows project preparation                                                          | No qualified wrapper invocation                                                                                                                     | Unavailable until literal argument and path handling are verified natively                                                           |
+
+The exact-head CI matrix and independent review are linked from PR #2044. General editor UI checks also retain their
+original strict assertions; passing mocked feature tests alone does not establish a native terminal or UI result.
+
+The local VS Code 1.146 Smart Select UI assertion failed even though its provider-range assertions passed.
+[Issue #2056](https://github.com/albertocavalcante/gvy/issues/2056) tracks baseline/candidate attribution and further
+qualification. The original test assertions remain required in CI; the complete local general-editor suite is not
+reported as passing.
 
 Run portable runtime qualification after preparing the bundle:
 
@@ -116,10 +129,15 @@ Set `GVY_TEST_GROOVY_24` to an existing Groovy 2.4.21 JAR for the additional run
 to an unpacked VSIX extension directory to test packaged bytes. No runtime is downloaded by this harness. Native
 execution proves the selected runtime path; mocked editor tests do not prove terminal behavior.
 
-## Remaining acceptance work
+## Qualification boundaries
 
-The feature owner retains responsibility under #2023 for native JVM/editor/package checks, any actionable review or lint
-findings, platform limits, exact-head CI, independent final-diff review, squash landing and owned-resource cleanup. The
-milestone is not complete while those gates remain open. Arbitrary external Gradle inputs, included builds and
-unidentified local-file runtimes need explicit qualification or visible unavailability; they must not cause scratch
-fallback for a file whose source membership is known.
+| Scope                                      | Current behavior                                                                                   | Owner and next qualification gate                                                                                         |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Included/independent nested builds         | Open the build as its own workspace or use an explicit profile; incomplete ownership fails visibly | Execution adapter: establish compiler membership, coherent runtime and targeted preparation for each participating build  |
+| Maven and custom-build discovery           | Explicit standalone profiles can provide classpath and a preparation task                          | Build-tool adapters: implement and test the same authoritative execution-context contract before automatic routing        |
+| Unidentified local-file Groovy runtimes    | A project cannot silently substitute the bundled runtime                                           | Gradle adapter: identify and qualify the runtime before allowing automatic project execution                              |
+| Windows wrapper and non-ASCII launch paths | Windows project execution is unavailable; unsafe native encoding is rejected                       | Editor process adapter: qualify wrapper arguments, Unicode paths and long classpaths with native execution                |
+| Private repositories                       | Existing repositories, credentials, user home and offline behavior are preserved                   | Build-tool integration: validate an authorized real private-repository environment without public fallback                |
+| Arbitrary external Gradle inputs           | Fingerprints cover observed source/resource/configuration/runtime inputs                           | Build-tool model: extend observable inputs where possible; a changed observed input must invalidate preparation or launch |
+
+These limits remain visible in #2023. They do not authorize scratch fallback for a file with known project ownership.

@@ -96,7 +96,8 @@ test("finds artifacts under the existing Gradle user home and rejects unsafe nam
   );
   prepareRuntime({
     ...options,
-    source: undefined,
+    // Bypass a caller-provided GVY_RUNTIME_SOURCE when testing cache discovery.
+    source: "",
     gradleHome: options.source,
     readEntry: () => Buffer.from("notice"),
   });

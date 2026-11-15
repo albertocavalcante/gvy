@@ -27,12 +27,18 @@ describe("file execution editor integration", () => {
     overlapPublication = false,
     secondProcessFails = false,
     publicationFailure?: "before" | "after",
+    javaExecutable?: string,
   ) {
     const handlers = new Map<
       string,
       (...args: unknown[]) => Promise<unknown>
     >();
     const calls: string[] = [];
+    const executionSettings = new Map<string, unknown>([
+      ["runtime", []],
+      ["localRuntime", []],
+      ["workingDirectory", ""],
+    ]);
     const invokedCommands: Array<{ id: string; args: unknown[] }> = [];
     const outputPrefixes: string[] = [];
     const removedPaths: string[] = [];
@@ -49,6 +55,9 @@ describe("file execution editor integration", () => {
         classpath?: string[];
         projectJavaHome?: string;
         javaExecutable?: string;
+        explicitRuntime?: string[];
+        localRuntime?: string[];
+        workingDirectory?: string;
       };
     }> = [];
     const state = new Map<string, unknown>();
@@ -132,6 +141,7 @@ describe("file execution editor integration", () => {
       environment: {},
     };
     let pickerCount = 0;
+    let planningUnavailable: string | undefined;
     const client = {
       sendRequest: async (
         _method: string,
@@ -144,6 +154,8 @@ describe("file execution editor integration", () => {
       ) => {
         requests.push(request);
         calls.push("prepare");
+        if (planningUnavailable)
+          return { kind: "unavailable", reason: planningUnavailable };
         if (unavailableCommand)
           return {
             kind: "unavailable",
@@ -213,7 +225,12 @@ describe("file execution editor integration", () => {
           get: (key: string, fallback: unknown) =>
             section === "groovy" && key === "project.javaHome"
               ? projectJavaHome
-              : fallback,
+              : section === "groovy.fileExecution" && key === "javaExecutable"
+                ? javaExecutable
+                : section === "groovy.fileExecution" &&
+                    executionSettings.has(key)
+                  ? executionSettings.get(key)
+                  : fallback,
         }),
       },
       window: {
@@ -447,6 +464,10 @@ describe("file execution editor integration", () => {
       handlers,
       calls,
       requests,
+      executionSettings,
+      rejectPlanning: (reason: string) => {
+        planningUnavailable = reason;
+      },
       state,
       outputPrefixes,
       removedPaths,
@@ -481,8 +502,38 @@ describe("file execution editor integration", () => {
       "cleanup",
     ]);
   });
+  it("omits implicit empty VS Code runtime and working directory defaults", async () => {
+    const h = setup(true, true);
+    assert.strictEqual(await h.handlers.get("groovy.runFile")!(), true);
+    assert.ok(h.requests.length > 0);
+    for (const request of h.requests) {
+      assert.strictEqual(request.options.explicitRuntime, undefined);
+      assert.strictEqual(request.options.localRuntime, undefined);
+      assert.strictEqual(request.options.workingDirectory, undefined);
+    }
+  });
+  it("preserves configured nonempty runtimes and working directory", async () => {
+    const h = setup(true, true);
+    h.executionSettings.set("runtime", ["/custom/groovy.jar"]);
+    h.executionSettings.set("localRuntime", ["/local/groovy.jar"]);
+    h.executionSettings.set("workingDirectory", "/custom/work");
+    assert.strictEqual(await h.handlers.get("groovy.runFile")!(), true);
+    for (const request of h.requests) {
+      assert.deepStrictEqual(request.options.explicitRuntime, [
+        "/custom/groovy.jar",
+      ]);
+      assert.deepStrictEqual(request.options.localRuntime, [
+        "/local/groovy.jar",
+      ]);
+      assert.strictEqual(request.options.workingDirectory, "/custom/work");
+    }
+  });
   it("runs a groovy-file profile and honors an explicit preparation task", async () => {
-    const { calls, requests, getProvider } = setup(true, true);
+    const { calls, requests, getProvider, executionSettings } = setup(
+      true,
+      true,
+    );
+    executionSettings.set("workingDirectory", "/configured/work");
     const task = getProvider()!.resolveTask({
       definition: {
         type: "groovy-file",
@@ -490,6 +541,7 @@ describe("file execution editor integration", () => {
         action: "run",
         preparationTask: "prepare",
         arguments: ["profile arg"],
+        workingDirectory: "/profile/work",
       },
       name: "profile",
       scope: { uri: { fsPath: "/work" } },
@@ -502,6 +554,11 @@ describe("file execution editor integration", () => {
     terminal.open();
     assert.strictEqual(await closed, 0);
     assert.deepStrictEqual(requests[0].options.arguments, ["profile arg"]);
+    assert.ok(
+      requests.every(
+        (request) => request.options.workingDirectory === "/profile/work",
+      ),
+    );
     assert.deepStrictEqual(calls, [
       "save",
       "execute",
@@ -549,6 +606,32 @@ describe("file execution editor integration", () => {
       state.get("fileExecution.output.file:///work/a.groovy"),
       "/managed/file-execution/result-old",
     );
+  });
+  for (const reason of [
+    "Saved source has a syntax error",
+    "Planning unavailable",
+  ]) {
+    it(`invalidates previous compile output before planning rejects: ${reason}`, async () => {
+      const h = setup(true, true);
+      const outputKey = "fileExecution.output.file:///work/a.groovy";
+      const validKey = "fileExecution.outputValid.file:///work/a.groovy";
+      h.state.set(outputKey, "/external/previous-output");
+      h.state.set(validKey, true);
+      h.rejectPlanning(reason);
+      assert.strictEqual(await h.handlers.get("groovy.compileFile")!(), false);
+      assert.strictEqual(h.state.get(validKey), false);
+      assert.strictEqual(h.state.get(outputKey), "/external/previous-output");
+      assert.ok(!h.calls.includes("execute"));
+      assert.ok(!h.removedPaths.includes("/external/previous-output"));
+    });
+  }
+  it("preserves previous compile validity when saving is cancelled", async () => {
+    const h = setup(true, false);
+    const validKey = "fileExecution.outputValid.file:///work/a.groovy";
+    h.state.set(validKey, true);
+    assert.strictEqual(await h.handlers.get("groovy.compileFile")!(), false);
+    assert.strictEqual(h.state.get(validKey), true);
+    assert.strictEqual(h.requests.length, 0);
   });
   it("rejects unsupported compound preparation before executing it", async () => {
     const { calls, getProvider } = setup(true, true, 0, 0, true);
@@ -660,6 +743,64 @@ describe("file execution editor integration", () => {
       ),
     );
   });
+  for (const override of [undefined, "/explicit/java"]) {
+    it(`uses the resolved inherited project JDK with explicit override ${override ?? "unset"}`, async () => {
+      const previousHome = process.env.JAVA_HOME;
+      const previousPath = process.env.PATH;
+      process.env.JAVA_HOME = "/inherited-test-jdk";
+      process.env.PATH = "/different-java17/bin";
+      try {
+        const h = setup(
+          true,
+          true,
+          0,
+          0,
+          false,
+          false,
+          true,
+          false,
+          false,
+          undefined,
+          false,
+          false,
+          false,
+          true,
+          false,
+          undefined,
+          false,
+          false,
+          false,
+          undefined,
+          override,
+        );
+        assert.strictEqual(await h.handlers.get("groovy.runFile")!(), true);
+        const scoped = h.requests.filter(
+          (request) => request.savedScopeDirectory,
+        );
+        assert.ok(scoped.length > 0);
+        for (const request of scoped) {
+          assert.strictEqual(
+            request.options.projectJavaHome,
+            "/inherited-test-jdk",
+          );
+          assert.strictEqual(
+            request.options.javaExecutable,
+            override ??
+              path.join(
+                "/inherited-test-jdk",
+                "bin",
+                process.platform === "win32" ? "java.exe" : "java",
+              ),
+          );
+        }
+      } finally {
+        if (previousHome === undefined) delete process.env.JAVA_HOME;
+        else process.env.JAVA_HOME = previousHome;
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+      }
+    });
+  }
   it("aborts project Java discovery before model evaluation on cancellation", async () => {
     const { handlers, calls } = setup(
       true,
@@ -923,7 +1064,7 @@ describe("file execution editor integration", () => {
     const first = h.handlers.get("groovy.compileFile")!();
     await h.firstPublicationStarted;
     const second = h.handlers.get("groovy.compileFile")!();
-    await h.secondProcessFinished;
+    await new Promise<void>((resolve) => setImmediate(resolve));
     assert.strictEqual(
       h.state.get(key),
       path.join("/managed", "file-execution", "result-old"),
@@ -967,7 +1108,7 @@ describe("file execution editor integration", () => {
     const first = h.handlers.get("groovy.compileFile")!();
     await h.firstPublicationStarted;
     const second = h.handlers.get("groovy.compileFile")!();
-    await h.secondProcessFinished;
+    await new Promise<void>((resolve) => setImmediate(resolve));
     h.releaseFirstPublication();
     assert.deepStrictEqual(await Promise.all([first, second]), [true, false]);
     assert.strictEqual(

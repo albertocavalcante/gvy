@@ -191,8 +191,10 @@ class FileExecutionPlanner {
         context: FileExecutionContext?,
     ): ExecutionStep<SelectedRuntime> {
         projectRuntimeProblem(context)?.let { return stop(it) }
-        val runtime = options.explicitRuntime ?: context?.runtime
-            ?: if (context == null) options.localRuntime ?: options.bundledRuntime else null
+        val explicitRuntime = options.explicitRuntime?.takeIf { it.isNotEmpty() }
+        val localRuntime = options.localRuntime?.takeIf { it.isNotEmpty() }
+        val runtime = explicitRuntime ?: context?.runtime
+            ?: if (context == null) localRuntime ?: options.bundledRuntime else null
         return FileRuntimeInspector.inspect(runtime)
     }
 
@@ -274,15 +276,16 @@ class FileExecutionPlanner {
         val projectRuntimeClasspath = input.context?.runtimeClasspath.orEmpty().filterNot { it in projectRuntime }
         val compileClasspath = input.runtime.jars + projectCompileClasspath + options.classpath
         val runtimeClasspath = input.runtime.jars + projectRuntimeClasspath + options.classpath
-        val workingDirectory = options.workingDirectory ?: input.context?.directory?.toString()
+        val configuredDirectory = options.workingDirectory?.takeIf { it.isNotBlank() }
+        val workingDirectory = configuredDirectory ?: input.context?.directory?.toString()
             ?: input.workspaceRoot?.toString() ?: input.source.path.parent.toString()
         val compile = compileProcess(input, compileClasspath, workingDirectory)
         val launch = launchProcess(input, runtimeClasspath, workingDirectory)
         val runtimeLabel = when {
             input.runtime.version != null -> "Groovy ${input.runtime.version}"
-            options.explicitRuntime != null -> "Configured Groovy"
+            !options.explicitRuntime.isNullOrEmpty() -> "Configured Groovy"
             input.context != null -> input.context.runtimeLabel
-            options.localRuntime != null -> "Local Groovy"
+            !options.localRuntime.isNullOrEmpty() -> "Local Groovy"
             else -> "Groovy 4.0.33"
         }
         return FileExecutionResponse(

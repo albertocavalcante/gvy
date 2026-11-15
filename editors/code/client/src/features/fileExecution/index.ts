@@ -143,7 +143,7 @@ export function registerFileExecution(
           let resolvedProjectHome: string | undefined;
           let projectHomeKey: string | undefined;
           const requestCancellation = new vscode.CancellationTokenSource();
-          let compilationStarted = false;
+          let compilationAttempted = false;
           let operationFailed = false;
           let operationError: unknown;
           let currentTask: vscode.TaskExecution | undefined;
@@ -179,6 +179,16 @@ export function registerFileExecution(
                   document.uri.scheme !== "file"
                 )
                   return false;
+                if (action === "compile") {
+                  const key = document.uri.toString();
+                  compilationAttempted = true;
+                  await artifactQueue.run(key, async () => {
+                    await context.workspaceState.update(
+                      `fileExecution.outputValid.${key}`,
+                      false,
+                    );
+                  });
+                }
                 const root =
                   workspaceRoot &&
                   vscode.workspace.getWorkspaceFolder(document.uri)
@@ -421,15 +431,23 @@ export function registerFileExecution(
                     };
                   }
                 }
+                const launchJavaHome = savedScopeDirectory
+                  ? resolvedProjectHome
+                  : projectJavaHome;
                 const javaExecutable =
                   config.get<string>("javaExecutable") ||
-                  (projectJavaHome
+                  (launchJavaHome
                     ? path.join(
-                        projectJavaHome,
+                        launchJavaHome,
                         "bin",
                         process.platform === "win32" ? "java.exe" : "java",
                       )
                     : undefined);
+                const explicitRuntime = config.get<string[]>("runtime");
+                const localRuntime = config.get<string[]>("localRuntime");
+                const workingDirectory =
+                  profile?.workingDirectory ??
+                  config.get<string>("workingDirectory");
                 const plan = await client.sendRequest<Plan>(
                   "groovy/prepareFileExecution",
                   {
@@ -450,17 +468,19 @@ export function registerFileExecution(
                       projectJavaHome: savedScopeDirectory
                         ? resolvedProjectHome
                         : projectJavaHome,
-                      explicitRuntime: config.get<string[]>("runtime"),
-                      localRuntime: config.get<string[]>("localRuntime"),
+                      explicitRuntime: explicitRuntime?.length
+                        ? explicitRuntime
+                        : undefined,
+                      localRuntime: localRuntime?.length
+                        ? localRuntime
+                        : undefined,
                       arguments:
                         profile?.arguments ??
                         config.get<string[]>("arguments", []),
                       jvmArguments:
                         profile?.jvmArguments ??
                         config.get<string[]>("jvmArguments", []),
-                      workingDirectory:
-                        profile?.workingDirectory ??
-                        config.get<string>("workingDirectory"),
+                      workingDirectory: workingDirectory || undefined,
                       environment:
                         profile?.environment ??
                         config.get<Record<string, string>>("environment", {}),
@@ -554,14 +574,6 @@ export function registerFileExecution(
                       vscode.workspace.textDocuments,
                     ));
                 if (inputsChanged()) return false;
-                if (action === "compile" && label.startsWith("Compile ·")) {
-                  const key = document!.uri.toString();
-                  compilationStarted = true;
-                  await context.workspaceState.update(
-                    `fileExecution.outputValid.${key}`,
-                    false,
-                  );
-                }
                 const definition = {
                   type: "groovy-file-internal",
                   id: `${Date.now()}-${Math.random()}`,
@@ -755,7 +767,7 @@ export function registerFileExecution(
             operationError = error;
           } finally {
             try {
-              if (compilationStarted && !success) {
+              if (compilationAttempted && !success) {
                 const key = document!.uri.toString();
                 await artifactQueue.run(key, async () => {
                   await context.workspaceState.update(

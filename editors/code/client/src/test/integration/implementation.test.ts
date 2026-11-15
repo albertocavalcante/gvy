@@ -300,6 +300,7 @@ suite("Implementation navigation with the current server", () => {
     assert.strictEqual(folding.version, version);
   });
 
+  // TODO(#2056): Qualify the native VS Code 1.146 Smart Select UI failure.
   test("Smart selection preserves ordered nested source ranges without edits", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);

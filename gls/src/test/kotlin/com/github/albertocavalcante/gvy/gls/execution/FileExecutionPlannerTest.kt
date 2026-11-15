@@ -113,6 +113,130 @@ class FileExecutionPlannerTest {
     }
 
     @Test
+    fun `empty configured runtimes use bundled runtime and its label`() {
+        val source = Files.writeString(directory.resolve("script.groovy"), "println 1")
+        val runtime = runtimeJar("bundled.jar", listOf(GROOVY_CORE), version = null)
+        val options = ExecutionOptions(
+            explicitRuntime = emptyList(),
+            localRuntime = emptyList(),
+            bundledRuntime = listOf(runtime.toString()),
+            outputDirectory = directory.resolve("out").toString(),
+        )
+        val response = FileExecutionPlanner().prepare(
+            request(source).copy(options = options),
+            Files.readString(source),
+            emptyList(),
+        )
+        assertEquals("ready", response.kind)
+        assertEquals("Groovy 4.0.33", response.runtimeLabel)
+        assertEquals(runtime.toString(), requireNotNull(response.launch).arguments[1])
+    }
+
+    @Test
+    fun `nonempty configured runtimes retain precedence and labels`() {
+        val source = Files.writeString(directory.resolve("script.groovy"), "println 1")
+        val selected = runtimeJar("selected.jar", listOf(GROOVY_CORE), version = null)
+        val explicitRuntime = runtimeJar("explicit.jar", listOf(GROOVY_CORE), version = null)
+        val bundled = runtimeJar("bundled.jar", listOf(GROOVY_CORE))
+        for (explicit in listOf(emptyList(), listOf(explicitRuntime.toString()))) {
+            val options = ExecutionOptions(
+                explicitRuntime = explicit,
+                localRuntime = listOf(selected.toString()),
+                bundledRuntime = listOf(bundled.toString()),
+                outputDirectory = directory.resolve("out").toString(),
+            )
+            val response = FileExecutionPlanner().prepare(
+                request(source).copy(options = options),
+                Files.readString(source),
+                emptyList(),
+            )
+            assertEquals("ready", response.kind)
+            assertEquals(if (explicit.isEmpty()) "Local Groovy" else "Configured Groovy", response.runtimeLabel)
+            val expectedRuntime = explicit.singleOrNull() ?: selected.toString()
+            assertEquals(expectedRuntime, requireNotNull(response.launch).arguments[1])
+        }
+    }
+
+    @Test
+    fun `empty explicit runtime preserves established project runtime and directory`() {
+        val source = Files.writeString(directory.resolve("script.groovy"), "println 1")
+        val runtime = runtimeJar("project.jar", listOf(GROOVY_CORE), version = null)
+        val local = runtimeJar("local.jar", listOf(GROOVY_CORE))
+        val context = FileExecutionContext(
+            "project", "Project", directory, setOf(source), emptyList(), emptyList(),
+            listOf(runtime.toString()), "Project Groovy", "generation",
+            ExecutionProcess("gradle", listOf(":classes"), directory.toString(), emptyMap()),
+        )
+        val params = request(source).copy(
+            options = ExecutionOptions(
+                explicitRuntime = emptyList(),
+                localRuntime = listOf(local.toString()),
+                workingDirectory = "",
+                outputDirectory = directory.resolve("out").toString(),
+            ),
+        )
+        val planner = FileExecutionPlanner()
+        val first = planner.prepare(params, Files.readString(source), listOf(context))
+        assertEquals("preparation", first.kind)
+        val response = planner.prepare(
+            params.copy(preparationToken = first.token),
+            Files.readString(source),
+            listOf(context),
+            directory.resolve("other-workspace"),
+        )
+        assertEquals("ready", response.kind)
+        assertEquals("Project Groovy", response.runtimeLabel)
+        val launch = requireNotNull(response.launch)
+        assertEquals(runtime.toString(), launch.arguments[1])
+        assertEquals(directory.toString(), launch.workingDirectory)
+    }
+
+    @Test
+    fun `blank working directory uses workspace then source directory`() {
+        val sourceDirectory = Files.createDirectory(directory.resolve("sources"))
+        val source = Files.writeString(sourceDirectory.resolve("script.groovy"), "println 1")
+        val runtime = runtimeJar("groovy.jar", listOf(GROOVY_CORE))
+        for (workingDirectory in listOf("", "  ", "missing configured directory")) {
+            val params = request(source).copy(
+                action = "compile",
+                options = ExecutionOptions(
+                    bundledRuntime = listOf(runtime.toString()),
+                    workingDirectory = workingDirectory,
+                    outputDirectory = directory.resolve("out").toString(),
+                ),
+            )
+            for (workspace in listOf(directory, null)) {
+                val response = FileExecutionPlanner().prepare(params, Files.readString(source), emptyList(), workspace)
+                assertEquals("ready", response.kind)
+                val expected = if (workingDirectory.isBlank()) {
+                    (workspace ?: sourceDirectory.toRealPath()).toString()
+                } else {
+                    workingDirectory
+                }
+                assertEquals(expected, requireNotNull(response.compile).workingDirectory)
+            }
+        }
+    }
+
+    @Test
+    fun `empty runtime options without fallback remain unavailable`() {
+        val source = Files.writeString(directory.resolve("script.groovy"), "println 1")
+        val options = ExecutionOptions(
+            explicitRuntime = emptyList(),
+            localRuntime = emptyList(),
+            bundledRuntime = emptyList(),
+            outputDirectory = directory.resolve("out").toString(),
+        )
+        val response = FileExecutionPlanner().prepare(
+            request(source).copy(options = options),
+            Files.readString(source),
+            emptyList(),
+        )
+        assertEquals("unavailable", response.kind)
+        assertEquals(null, response.launch)
+    }
+
+    @Test
     fun `language server fat jar is never accepted as execution runtime`() {
         val source = Files.writeString(directory.resolve("script.groovy"), "println 1")
         val runtime = runtimeJar("server.jar", listOf(GROOVY_CORE, SERVER_CLASS))
@@ -289,6 +413,8 @@ class FileExecutionPlannerTest {
         )
         val params = request(source).copy(
             options = ExecutionOptions(
+                explicitRuntime = emptyList(),
+                localRuntime = emptyList(),
                 bundledRuntime = listOf(runtime.toString()),
                 outputDirectory = directory.resolve("out").toString(),
             ),
@@ -308,11 +434,11 @@ class FileExecutionPlannerTest {
         )
     }
 
-    private fun runtimeJar(name: String, entries: List<String>, version: String = "4.0.33"): Path {
+    private fun runtimeJar(name: String, entries: List<String>, version: String? = "4.0.33"): Path {
         val path = directory.resolve(name)
         val manifest = Manifest().apply {
             mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
-            mainAttributes[Attributes.Name.IMPLEMENTATION_VERSION] = version
+            if (version != null) mainAttributes[Attributes.Name.IMPLEMENTATION_VERSION] = version
         }
         JarOutputStream(Files.newOutputStream(path), manifest).use { jar ->
             for (entry in entries) {

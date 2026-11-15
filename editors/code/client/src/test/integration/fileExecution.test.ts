@@ -17,8 +17,8 @@ suite("Groovy file execution", () => {
     const extension = vscode.extensions.getExtension("albertocavalcante.gvy");
     assert.ok(extension, "Groovy extension must be installed");
     await extension.activate();
-    directory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "gvy-editor-execution-"),
+    directory = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "gvy-editor-execution-")),
     );
   });
 
@@ -113,6 +113,121 @@ suite("Groovy file execution", () => {
     }
   });
 
+  test("terminating an owned running task preserves server and later execution", async function () {
+    this.timeout(180000);
+    const folder = await fs.mkdtemp(path.join(directory, "termination-"));
+    const source = path.join(folder, "TerminationProbe.groovy");
+    const started = path.join(folder, "started.txt");
+    const laterSource = path.join(folder, "AfterTermination.groovy");
+    const marker = path.join(folder, "later.txt");
+    const active = new Set<vscode.TaskExecution>();
+    const listener = vscode.tasks.onDidStartTask((event) => {
+      if (
+        event.execution.task.name.startsWith("Run · Standalone") &&
+        event.execution.task.name.includes(folder)
+      )
+        active.add(event.execution);
+    });
+    const endListener = vscode.tasks.onDidEndTask((event) => {
+      active.delete(event.execution);
+    });
+    async function bounded<T>(work: Thenable<T>, message: string): Promise<T> {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.resolve(work),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(message)), 60000);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    async function waitUntil(
+      check: () => Promise<boolean>,
+      message: string,
+    ): Promise<void> {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        if (await check()) return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw new Error(message);
+    }
+    let running: Thenable<unknown> | undefined;
+    try {
+      await fs.writeFile(
+        source,
+        `new File(${JSON.stringify(started)}).text = 'started'\nwhile (true) { Thread.sleep(100) }\n`,
+      );
+      await fs.writeFile(
+        laterSource,
+        `new File(${JSON.stringify(marker)}).text = 'alive'\n`,
+      );
+      const document = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(source),
+      );
+      await vscode.window.showTextDocument(document);
+      running = Promise.resolve(
+        vscode.commands.executeCommand("groovy.runFile", document.uri),
+      );
+      void running.then(undefined, () => {});
+      await waitUntil(async () => {
+        try {
+          return (
+            active.size === 1 &&
+            (await fs.readFile(started, "utf8")) === "started"
+          );
+        } catch {
+          return false;
+        }
+      }, "The owned task did not start its infinite loop");
+      const execution = [...active][0];
+      execution.terminate();
+      assert.strictEqual(
+        await bounded(running, "The terminated Run command did not finish"),
+        false,
+      );
+      await waitUntil(async () => {
+        const lenses = await bounded(
+          vscode.commands.executeCommand<vscode.CodeLens[]>(
+            "vscode.executeCodeLensProvider",
+            document.uri,
+          ),
+          "The CodeLens request after task termination timed out",
+        );
+        return !!lenses?.some(
+          (lens) => lens.command?.command === "groovy.runFile",
+        );
+      }, "The server did not answer CodeLens after task termination");
+      const later = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(laterSource),
+      );
+      await vscode.window.showTextDocument(later);
+      running = vscode.commands.executeCommand("groovy.runFile", later.uri);
+      assert.strictEqual(
+        await bounded(running, "The run after termination did not finish"),
+        true,
+      );
+      assert.strictEqual(await fs.readFile(marker, "utf8"), "alive");
+    } finally {
+      for (const execution of active) execution.terminate();
+      try {
+        if (running)
+          await bounded(running, "The owned Run command did not clean up");
+        await waitUntil(
+          async () => active.size === 0,
+          "The owned tasks did not end",
+        );
+      } finally {
+        listener.dispose();
+        endListener.dispose();
+        await fs.rm(folder, { recursive: true, force: true });
+      }
+    }
+  });
+
   test("configured task and Run Again preserve profile and stdin", async function () {
     this.timeout(180000);
     const folder = path.join(directory, "profile-workspace");
@@ -120,7 +235,29 @@ suite("Groovy file execution", () => {
     const source = path.join(folder, "ProfileProbe.groovy");
     const started = path.join(folder, "started.txt");
     const result = path.join(folder, "result.txt");
-    await fs.mkdir(path.join(folder, ".vscode"), { recursive: true });
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(
+      workspaceFolder,
+      "The configured task test needs a fixture workspace",
+    );
+    const configurationDirectory = path.join(
+      workspaceFolder.uri.fsPath,
+      ".vscode",
+    );
+    const tasksFile = path.join(configurationDirectory, "tasks.json");
+    let originalTasks: Buffer | undefined;
+    try {
+      originalTasks = await fs.readFile(tasksFile);
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ))
+        throw error;
+    }
+    let createdConfigurationDirectory = false;
+    let wroteTasks = false;
     await fs.mkdir(resources, { recursive: true });
     await fs.writeFile(
       path.join(resources, "profile-resource.txt"),
@@ -132,37 +269,26 @@ suite("Groovy file execution", () => {
         `new File(${JSON.stringify(started)}).text = 'started'`,
         "def input = System.in.newReader().readLine()",
         "def resource = this.class.classLoader.getResourceAsStream('profile-resource.txt').text",
-        `new File(${JSON.stringify(result)}).text = [args[0], args[1], input, System.getenv('GVY_PROFILE_TEST'), System.getProperty('gvy.profile.test'), resource].join('\\n')`,
+        `new File(${JSON.stringify(result)}).text = [args[0], args[1], input, System.getenv('GVY_PROFILE_TEST'), System.getProperty('gvy.profile.test'), resource, new File('.').canonicalPath].join('\\n')`,
       ].join("\n") + "\n",
     );
-    await fs.writeFile(
-      path.join(folder, ".vscode", "tasks.json"),
-      JSON.stringify({
-        version: "2.0.0",
-        tasks: [
-          {
-            label: "GVY native profile",
-            type: "groovy-file",
-            file: "ProfileProbe.groovy",
-            action: "run",
-            context: "standalone",
-            arguments: ["spaced argument", "$&;"],
-            jvmArguments: ["-Xmx128m", "-Dgvy.profile.test=property-value"],
-            workingDirectory: folder,
-            environment: { GVY_PROFILE_TEST: "env-value" },
-            classpath: [resources],
-          },
-        ],
-      }),
-    );
-    const folderUri = vscode.Uri.file(folder);
-    const originalCount = vscode.workspace.workspaceFolders?.length ?? 0;
-    assert.ok(
-      vscode.workspace.updateWorkspaceFolders(originalCount, 0, {
-        uri: folderUri,
-        name: "GVY native profile",
-      }),
-    );
+    const taskConfiguration = JSON.stringify({
+      version: "2.0.0",
+      tasks: [
+        {
+          label: "GVY native profile",
+          type: "groovy-file",
+          file: source,
+          action: "run",
+          context: "standalone",
+          arguments: ["spaced argument", "$&;"],
+          jvmArguments: ["-Xmx128m", "-Dgvy.profile.test=property-value"],
+          workingDirectory: folder,
+          environment: { GVY_PROFILE_TEST: "env-value" },
+          classpath: [resources],
+        },
+      ],
+    });
     const processes = new Set<vscode.TaskExecution>();
     let outer: vscode.TaskExecution | undefined;
     const endEvents = new Set<vscode.TaskExecution>();
@@ -223,6 +349,7 @@ suite("Groovy file execution", () => {
         "env-value",
         "property-value",
         "resource-value",
+        folder,
       ].join("\n");
       await waitUntil(async () => {
         try {
@@ -232,14 +359,13 @@ suite("Groovy file execution", () => {
         }
       }, "The Groovy program did not write the expected result");
     }
+    const failures: unknown[] = [];
     try {
-      await waitUntil(
-        async () =>
-          !!vscode.workspace.workspaceFolders?.some(
-            (item) => item.uri.toString() === folderUri.toString(),
-          ),
-        "The temporary workspace folder did not open",
-      );
+      createdConfigurationDirectory =
+        (await fs.mkdir(configurationDirectory, { recursive: true })) !==
+        undefined;
+      wroteTasks = true;
+      await fs.writeFile(tasksFile, taskConfiguration);
       let configured: vscode.Task | undefined;
       await waitUntil(async () => {
         configured = (
@@ -248,7 +374,7 @@ suite("Groovy file execution", () => {
           (task) =>
             task.name === "GVY native profile" &&
             typeof task.scope === "object" &&
-            task.scope.uri.toString() === folderUri.toString(),
+            task.scope.uri.toString() === workspaceFolder.uri.toString(),
         );
         return !!configured;
       }, "The configured groovy-file task was not resolved");
@@ -265,33 +391,44 @@ suite("Groovy file execution", () => {
       );
       await supplyInput("second input");
       assert.strictEqual(await again, true);
+    } catch (error) {
+      failures.push(error);
     } finally {
-      if (outer && !endEvents.has(outer)) outer.terminate();
-      for (const execution of processes) execution.terminate();
       try {
+        if (outer && !endEvents.has(outer)) outer.terminate();
+        for (const execution of processes) execution.terminate();
         await waitUntil(
           async () => (!outer || endEvents.has(outer)) && processes.size === 0,
           "Owned tasks did not terminate",
         );
+      } catch (error) {
+        failures.push(error);
       } finally {
         startListener.dispose();
         endListener.dispose();
-        const index =
-          vscode.workspace.workspaceFolders?.findIndex(
-            (item) => item.uri.toString() === folderUri.toString(),
-          ) ?? -1;
-        if (index >= 0) {
-          assert.ok(vscode.workspace.updateWorkspaceFolders(index, 1));
-          await waitUntil(
-            async () =>
-              !vscode.workspace.workspaceFolders?.some(
-                (item) => item.uri.toString() === folderUri.toString(),
-              ),
-            "The temporary workspace folder did not close",
-          );
+      }
+      try {
+        if (wroteTasks) {
+          if (originalTasks !== undefined)
+            await fs.writeFile(tasksFile, originalTasks);
+          else await fs.rm(tasksFile, { force: true });
         }
+        if (
+          createdConfigurationDirectory &&
+          (await fs.readdir(configurationDirectory)).length === 0
+        )
+          await fs.rmdir(configurationDirectory);
+      } catch (error) {
+        failures.push(error);
       }
     }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(
+        failures,
+        "Profile execution and cleanup failed",
+        { cause: failures[0] },
+      );
   });
 
   test("compiles a saved file to managed bytecode", async function () {
