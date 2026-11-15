@@ -43,15 +43,15 @@ steps:
       checks:
         - jsonPath: $.uri
           expect: { type: EQUALS, value: "{{cursor.u.uri}}" }
-        - jsonPath: $.diagnostics[?(@.source == 'CodeNarc' && @.code == 'EmptyCatchBlock')]
+        - jsonPath: $.diagnostics[?(@.source == 'CodeNarc' && @.code.left == 'EmptyCatchBlock')]
           expect: { type: NOT_EMPTY }
-        - jsonPath: $.diagnostics[?(@.code == 'gvy.providerFailure' && @.message =~ /.*\.codenarc.*rulesets\/empty.xml.*/)]
+        - jsonPath: $.diagnostics[?(@.code.left == 'gvy.providerFailure' && @.message =~ /.*\.codenarc.*rulesets\/empty.xml.*/)]
           expect: { type: NOT_EMPTY }
       timeoutMs: 20000
   - assert:
       source: diags
       checks:
-        - jsonPath: "$.diagnostics[?(@.code == 'gvy.providerFailure')].relatedInformation[0].location.uri"
+        - jsonPath: "$.diagnostics[?(@.code.left == 'gvy.providerFailure')].relatedInformation[0].location.uri"
           expect: { type: EQUALS, value: ["{{workspace.uri}}.codenarc"] }
   - shutdown: {}
   - exit: {}
