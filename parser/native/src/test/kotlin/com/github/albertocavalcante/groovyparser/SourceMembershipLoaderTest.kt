@@ -156,19 +156,17 @@ class SourceMembershipLoaderTest {
         val sourceRoot = Files.createDirectories(root.resolve("src"))
         val dependency = Files.writeString(root.resolve("Dependency.groovy"), "class Dependency {}")
         val admittedPaths = mutableListOf<Path>()
-        val result = GroovyParserFacade().parse(
-            ParseRequest(
-                uri = sourceRoot.resolve("Uses.groovy").toUri(),
-                content = "class Uses { Dependency value }",
-                sourceRoots = listOf(root),
-                sourcePathAdmission = { path ->
-                    admittedPaths.add(path)
-                    false
-                },
-                compilePhase = Phases.CANONICALIZATION,
-            ),
-            setOf(dependency),
+        val request = ParseRequest(
+            uri = sourceRoot.resolve("Uses.groovy").toUri(),
+            content = "class Uses { Dependency value }",
+            sourceRoots = listOf(root),
+            sourcePathAdmission = { path ->
+                admittedPaths.add(path)
+                false
+            },
+            compilePhase = Phases.CANONICALIZATION,
         )
+        val result = GroovyParserFacade().parse(request.copy(), setOf(dependency))
 
         assertTrue(
             admittedPaths.contains(dependency.toAbsolutePath().normalize()),

@@ -33,7 +33,7 @@ data class NativeArtifactStamp(
     /** Bounded content digest used only when the filesystem has no change-time attribute. */
     val contentIdentity: String? = null,
 ) {
-    /** Preserves the original four-field JVM constructor for existing Java and binary consumers. */
+    /** Legacy four-field constructor for Java callers. */
     constructor(size: Long, lastModifiedMillis: Long, files: Long?, observedPaths: Int) : this(
         size,
         lastModifiedMillis,
@@ -60,7 +60,23 @@ data class NativeArtifactStamp(
             path: Path,
             maxPaths: Int = MAX_DIRECTORY_PATHS,
             checkCancelled: () -> Unit = {},
-            maxContentBytes: Long = MAX_CONTENT_IDENTITY_BYTES,
+        ): NativeArtifactStamp? = observe(
+            path,
+            maxPaths,
+            checkCancelled,
+            MAX_CONTENT_IDENTITY_BYTES,
+            true,
+        )
+
+        /**
+         * Observes with explicit content-identity limits. The three-argument overload above retains the original
+         * JVM entry point; callers that need custom digest policy must use this overload.
+         */
+        fun observe(
+            path: Path,
+            maxPaths: Int = MAX_DIRECTORY_PATHS,
+            checkCancelled: () -> Unit = {},
+            maxContentBytes: Long,
             includeContentIdentity: Boolean = true,
         ): NativeArtifactStamp? {
             require(maxPaths > 0)

@@ -93,47 +93,8 @@ data class ParseRequest(
      * exact name is added, read when the compile reaches it. Null: no lookup beyond file names.
      */
     val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
+    /** Fresh path check for implicitly discovered sources; copied with the rest of the parse request. */
+    val sourcePathAdmission: ((Path) -> Boolean)? = null,
 ) {
-    private var sourcePathAdmissionValue: ((Path) -> Boolean)? = null
-
-    /** Fresh path check for implicitly discovered sources; this runtime policy is not part of data-class identity. */
-    val sourcePathAdmission: ((Path) -> Boolean)? get() = sourcePathAdmissionValue
-
-    /** Adds parse-time source-path admission without changing the original primary-constructor ABI. */
-    constructor(
-        uri: URI,
-        content: String,
-        classpath: List<Path> = emptyList(),
-        sourceRoots: List<Path> = emptyList(),
-        workspaceSources: List<Path> = emptyList(),
-        openSources: Map<URI, String> = emptyMap(),
-        excludedSources: Set<Path> = emptySet(),
-        locatorCandidates: Set<String> = emptySet(),
-        compilePhase: Int = Phases.CONVERSION,
-        parseMode: ParseMode = ParseMode.WORKSPACE,
-        checkCancelled: () -> Unit = {},
-        workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
-        sourcePathAdmission: ((Path) -> Boolean)?,
-    ) : this(
-        uri,
-        content,
-        classpath,
-        sourceRoots,
-        workspaceSources,
-        openSources,
-        excludedSources,
-        locatorCandidates,
-        compilePhase,
-        parseMode,
-        checkCancelled,
-        workspaceClassLocator,
-    ) {
-        this.sourcePathAdmissionValue = sourcePathAdmission
-    }
-
-    /** Parser retries use this copy helper to preserve the runtime admission policy. */
-    internal fun copyWithSourcePathAdmission(copy: (ParseRequest) -> ParseRequest): ParseRequest =
-        copy(this).also { it.sourcePathAdmissionValue = sourcePathAdmissionValue }
-
     val sourceUnitName: String = uri.path ?: uri.toString()
 }
