@@ -19,4 +19,34 @@ import DefaultSearch from '@astrojs/starlight/components/Search.astro';
     const keys = keyElements.map((key) => key.textContent.trim()).join(' ');
     searchButton.setAttribute('aria-label', `${searchButton.getAttribute('aria-label')} ${keys}`);
   }
+
+  // TODO(#2020): Remove when the upstream search handles delayed input focus.
+  // See: https://github.com/albertocavalcante/gvy/issues/2020
+  const searchDialog = document.querySelector('site-search dialog');
+  if (searchDialog) {
+    let wasOpen = false;
+    let pendingInitialFocus = false;
+    const cancelPendingFocus = () => {
+      if (searchDialog.open) pendingInitialFocus = false;
+    };
+    document.addEventListener('keydown', cancelPendingFocus, true);
+    document.addEventListener('pointerdown', cancelPendingFocus, true);
+    const observer = new MutationObserver(() => {
+      if (!searchDialog.open) {
+        wasOpen = false;
+        pendingInitialFocus = false;
+        return;
+      }
+      if (!wasOpen) {
+        wasOpen = true;
+        pendingInitialFocus = true;
+      }
+      const input = searchDialog.querySelector('input');
+      if (pendingInitialFocus && input) {
+        pendingInitialFocus = false;
+        if (document.hasFocus() && document.activeElement !== input) input.focus();
+      }
+    });
+    observer.observe(searchDialog, { attributes: true, attributeFilter: ['open'], childList: true, subtree: true });
+  }
 </script>
