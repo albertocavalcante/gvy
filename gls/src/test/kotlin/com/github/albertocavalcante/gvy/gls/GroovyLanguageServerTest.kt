@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GroovyLanguageServerTest {
@@ -177,7 +178,7 @@ class GroovyLanguageServerTest {
     fun `test shutdown and exit`() {
         runBlocking {
             val result = server.shutdown().get()
-            assertNotNull(result)
+            assertNull(result)
             // Note: We don't actually call exit() in tests as it would terminate the test JVM
         }
     }
