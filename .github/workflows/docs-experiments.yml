@@ -36,6 +36,8 @@ jobs:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
+      - name: Test static server
+        run: bun run test:server
       - name: Build and test Astro
         run: |
           start=$(date +%s)

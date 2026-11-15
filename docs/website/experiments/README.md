@@ -14,6 +14,7 @@ Use Node 22.23.4 and Bun 1.4.4. From this directory:
 ```sh
 bun install --frozen-lockfile
 bunx playwright install --with-deps chromium
+bun run test:server
 bun run build:astro
 bun run test
 ```
@@ -22,7 +23,8 @@ bun run test
 canonical sources, and the neutral home or 404 under `shared/`. Its AST link adapter follows the production projection
 policy: selected routes remain local and other relative links point to source files on GitHub. The reference edit link
 points to the extension manifest. Satteri supplies Markdown rendering and a static focusable-region adapter; Shiki's
-transformer marks highlighted code blocks as focusable. The static server returns the built 404 with HTTP 404.
+transformer marks highlighted code blocks as focusable. The loopback static server returns the built 404 with HTTP 404.
+It assumes trusted artifact directories and refuses leaf symlinks.
 
 The hosted workflow retains browser reports, axe violations and incomplete results, and uncompressed artifact and
 JavaScript byte counts. Its elapsed value measures build and indexing together at one-second resolution; it is not

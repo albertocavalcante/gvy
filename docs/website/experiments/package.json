@@ -5,7 +5,8 @@
   "scripts": {
     "generate": "node generate.mjs",
     "build:astro": "node generate.mjs && astro build --root astro && pagefind --site astro/dist",
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:server": "node --test serve.test.mjs"
   },
   "devDependencies": {
     "@astrojs/mdx": "8.0.2",
