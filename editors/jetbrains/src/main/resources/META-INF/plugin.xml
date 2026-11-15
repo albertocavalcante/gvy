@@ -6,7 +6,16 @@
     <id>org.gvy.jetbrains</id>
     <name>GVY</name>
     <vendor>gvy contributors</vendor>
-    <description>Foundation for an opt-in GVY language client.</description>
+    <description>Opt-in local GVY language client for Groovy projects.</description>
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lsp</depends>
+    <applicationListeners>
+        <listener class="org.gvy.jetbrains.GvyTrustedProjectListener"
+                  topic="com.intellij.ide.trustedProjects.TrustedProjectsListener"/>
+    </applicationListeners>
+    <extensions defaultExtensionNs="com.intellij">
+        <platform.lsp.serverSupportProvider implementation="org.gvy.jetbrains.GvyServerSupportProvider"/>
+        <projectConfigurable id="org.gvy.jetbrains.settings" parentId="language" displayName="GVY"
+                             instance="org.gvy.jetbrains.GvyConfigurable"/>
+    </extensions>
 </idea-plugin>

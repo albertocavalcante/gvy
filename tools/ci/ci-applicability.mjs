@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const narrative = /^(?:(?:README|AGENTS|CONTRIBUTING|REVIEW|CHANGELOG)\.md|LICENSE(?:\.md|\.txt)?|(?:kb|\.agent)\/.*\.md|docs\/(?!website\/).*\.md)$/;
 const bazelOnly = /^(?:\.bazel(?:rc|version|ignore)|bazel\/.*\.bazelrc|(?:.*\/)?BUILD(?:\.bazel)?|.*\.bzl|MODULE\.bazel(?:\.lock)?|third_party\/patches\/.*)$/;
 const executableTree = /(?:^|\/)(?:src|resources|fixtures|snapshots|workspaces|testdata)(?:\/|$)/;
-const knownNarrative = new Set(['tests/e2e/README.md', 'editors/zed/README.md',
+const knownNarrative = new Set(['tests/e2e/README.md', 'editors/jetbrains/README.md', 'editors/zed/README.md',
   'editors/zed/LICENSE', 'editors/zed/LICENSE.md', 'editors/zed/LICENSE.txt']);
 const sharedZedInputs = new Set(['Makefile', '.github/workflows/ci.yml']);
 
@@ -26,12 +26,14 @@ export function classifyPaths(paths) {
       : narrative.test(path) ? 'narrative documentation' : bazelOnly.test(path) ? 'Bazel configuration' : 'build or executable input';
     return { path, reason };
   });
+  const runMain = !classified.length || classified.some(({ reason }) => reason === 'build or executable input');
   return {
     schemaVersion: 1,
-    runMain: !classified.length || classified.some(({ reason }) => reason === 'build or executable input'),
+    runMain,
     runBazel: !classified.length || classified.some(({ reason }) => reason === 'build or executable input' || reason === 'Bazel configuration'),
     runZed: !classified.length || classified.some(({ path, reason }) => reason === 'Zed extension input' || sharedZedInputs.has(path)),
-    runJetbrains: !classified.length || classified.some(({ path, reason }) => reason === 'JetBrains extension input' || path === '.github/workflows/ci.yml' || path.startsWith('gradle/wrapper/') || path.startsWith('tools/ci/') || path === 'gradlew'),
+    // Real IDE integration stages the server; every main-build input can change that pairing.
+    runJetbrains: runMain || classified.some(({ reason }) => reason === 'JetBrains extension input'),
     paths: classified,
   };
 }
