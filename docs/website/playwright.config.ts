@@ -40,14 +40,14 @@ export default defineConfig({
   projects: [
     {
       name: "contracts",
-      testMatch: /(contracts|journeys)\.spec\.ts/,
+      testMatch: /(contracts|journeys|search-delay)\.spec\.ts/,
       use: { channel: chrome ? "chrome" : undefined },
     },
     ...(chrome
       ? []
       : (["firefox", "webkit"] as const).map((browserName) => ({
           name: `${browserName}-journeys`,
-          testMatch: /journeys\.spec\.ts/,
+          testMatch: /(journeys|search-delay)\.spec\.ts/,
           use: { browserName },
         }))),
     ...[360, 768, 1440].flatMap((width) =>
