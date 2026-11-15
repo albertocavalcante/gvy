@@ -330,17 +330,17 @@ class GroovyLanguageServer(
         )
     }
 
-    override fun shutdown(): CompletableFuture<Any> {
+    override fun shutdown(): CompletableFuture<Any?> {
         shutdownRequested = true
         return shutdownFuture
     }
 
     // Created at most once, so repeated shutdown requests (client plus watchdog) share one run.
-    private val shutdownFuture: CompletableFuture<Any> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private val shutdownFuture: CompletableFuture<Any?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         CompletableFuture.supplyAsync({ doShutdown() }, shutdownExecutor)
     }
 
-    private fun doShutdown(): Any {
+    private fun doShutdown(): Any? {
         logger.info { "Shutting down Groovy Language Server..." }
         try {
             startupManager.shutdown()
@@ -363,7 +363,7 @@ class GroovyLanguageServer(
         } catch (e: Exception) {
             logger.warn(e) { "Error during shutdown" }
         }
-        return Any()
+        return null
     }
 
     /** LSP: the server process exits with 0 if `shutdown` was requested first, otherwise 1. */
