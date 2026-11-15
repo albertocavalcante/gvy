@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Durable source-view metadata; active documents never retain compiler or classloader resources. */
 class ExternalSourceRegistry(
     private val root: Path = defaultRoot(),
-    private val portablePresentation: SourcePresentation = PortableSourcePresentation(root.resolve("views")),
+    private val portablePresentation: SourcePresentation? = null,
     private val virtualDocumentsEnabled: () -> Boolean = { false },
     managedRoots: List<Path> = defaultManagedSourceRoots(),
     private val sourceAdmission: (Path, (Path) -> Boolean) -> Boolean = { path, excluded ->
@@ -44,6 +44,16 @@ class ExternalSourceRegistry(
         true,
     )
     private val changed = ConcurrentHashMap.newKeySet<URI>()
+    private val presentation: SourcePresentation by lazy {
+        portablePresentation ?: PortableSourcePresentation(
+            root.resolve("views"),
+            isPersistedView = { uri, descriptor ->
+                load(uri)?.let { existing ->
+                    SourceDescriptorCodec.identity(existing) == SourceDescriptorCodec.identity(descriptor)
+                } == true
+            },
+        )
+    }
 
     override fun register(descriptor: SourceDocumentDescriptor): URI {
         checkNotNull(readVerified(descriptor.contentPath, descriptor.contentDigest)) {
@@ -53,7 +63,7 @@ class ExternalSourceRegistry(
         val uri = if (virtualDocumentsEnabled()) {
             URI(SCHEME, key, "/" + descriptor.sourceDigest + "/" + descriptor.entryName, null)
         } else {
-            portablePresentation.register(descriptor)
+            presentation.register(descriptor)
         }
         require(uri.scheme == SCHEME || uri.scheme == "file") { "Unsupported source presentation" }
         filePath(uri)?.let { view ->
@@ -100,14 +110,24 @@ class ExternalSourceRegistry(
 
     fun opened(uri: URI, text: String) {
         val descriptor = descriptor(uri) ?: return
-        if (sha256(text.toByteArray(StandardCharsets.UTF_8)) != descriptor.contentDigest) changed.add(uri)
+        val contentMatches = sha256(text.toByteArray(StandardCharsets.UTF_8)) == descriptor.contentDigest
+        if (contentMatches) {
+            changed.remove(uri)
+        } else {
+            changed.add(uri)
+        }
+        (presentation as? PortableSourcePresentation)?.opened(uri, descriptor.contentDigest, text)
     }
 
     fun changed(uri: URI) {
-        if (descriptor(uri) != null) changed.add(uri)
+        if (descriptor(uri) != null) {
+            changed.add(uri)
+            (presentation as? PortableSourcePresentation)?.changed(uri)
+        }
     }
 
     fun closed(uri: URI) {
+        (presentation as? PortableSourcePresentation)?.closed(uri)
         synchronized(descriptors) { descriptors.remove(uri) }
         changed.remove(uri)
     }

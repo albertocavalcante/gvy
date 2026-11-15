@@ -92,6 +92,74 @@ class ExternalSourceRegistryTest {
     }
 
     @Test
+    fun `portable views with equal basenames retain their distinct archive entries`() {
+        val original = descriptor()
+        val registry = ExternalSourceRegistry(temporary.resolve("registry"))
+        val firstDescriptor = original.copy(entryName = "a/CompileStatic.java")
+        val secondDescriptor = original.copy(entryName = "b/CompileStatic.java")
+
+        val first = registry.register(firstDescriptor)
+        val second = registry.register(secondDescriptor)
+
+        assertNotEquals(first, second)
+        assertEquals(firstDescriptor, registry.descriptor(first))
+        assertEquals(secondDescriptor, registry.descriptor(second))
+    }
+
+    @Test
+    fun `portable views retain distinct source origins`() {
+        val original = descriptor()
+        val registry = ExternalSourceRegistry(temporary.resolve("registry"))
+        val first = registry.register(original)
+        val secondDescriptor = original.copy(origin = SourceOrigin.Unknown(URI.create("jar:file:///other.jar!/CompileStatic.class")))
+        val second = registry.register(secondDescriptor)
+
+        assertNotEquals(first, second)
+        assertEquals(original, registry.descriptor(first))
+        assertEquals(secondDescriptor, registry.descriptor(second))
+    }
+
+    @Test
+    fun `legacy portable view is reused only for its persisted source identity`() {
+        val root = temporary.resolve("registry")
+        val original = descriptor()
+        val viewRoot = root.resolve("views")
+        val parent = viewRoot.resolve(sourceDigest(original.context.id)).resolve(original.sourceDigest)
+        val legacy = parent.resolve("view-abcdefgh").resolve(original.entryName.substringAfterLast('/'))
+        Files.createDirectories(legacy.parent)
+        Files.write(legacy, Files.readAllBytes(original.contentPath))
+        val oldRegistry = ExternalSourceRegistry(
+            root,
+            portablePresentation = SourcePresentation { legacy.toUri() },
+        )
+        val legacyUri = oldRegistry.register(original)
+
+        val restarted = ExternalSourceRegistry(root)
+        assertEquals(legacyUri, restarted.register(original))
+        val otherEntry = original.copy(entryName = "another/CompileStatic.java")
+        val otherUri = restarted.register(otherEntry)
+        assertNotEquals(legacyUri, otherUri)
+        assertEquals(original, restarted.descriptor(legacyUri))
+        assertEquals(otherEntry, restarted.descriptor(otherUri))
+    }
+
+    @Test
+    fun `unsaved open portable buffer receives a new view after registry restart`() {
+        val root = temporary.resolve("registry")
+        val original = descriptor()
+        val uri = ExternalSourceRegistry(root).register(original)
+        val reopened = ExternalSourceRegistry(root)
+        reopened.opened(uri, "unsaved editor buffer")
+
+        val next = reopened.register(original)
+
+        assertNotEquals(uri, next)
+        assertNull(reopened.content(uri))
+        assertEquals("package groovy.transform; public @interface CompileStatic {}", Files.readString(Path.of(next)))
+        assertEquals("package groovy.transform; public @interface CompileStatic {}", Files.readString(Path.of(uri)))
+    }
+
+    @Test
     fun `unsaved portable source edits invalidate navigation until close`() {
         val registry = ExternalSourceRegistry(temporary.resolve("registry"), virtualDocumentsEnabled = { true })
         val uri = registry.register(descriptor())

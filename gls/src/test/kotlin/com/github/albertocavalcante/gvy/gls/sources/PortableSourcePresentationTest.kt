@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.sources
 
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
@@ -38,6 +39,52 @@ class PortableSourcePresentationTest {
         assertEquals(first, presentation.register(descriptor))
         val second = presentation.register(descriptor.copy(context = SourceContextIdentity("second")))
         assertNotEquals(first, second)
+    }
+
+    @Test
+    fun `equal basenames from different archive entries never share a view`() {
+        val descriptor = descriptor("first")
+        val presentation = PortableSourcePresentation(temporary.resolve("views"))
+        val firstDescriptor = descriptor.copy(entryName = "a/Foo.java")
+        val secondDescriptor = descriptor.copy(entryName = "b/Foo.java")
+
+        val first = presentation.register(firstDescriptor)
+        val second = presentation.register(secondDescriptor)
+        assertNotEquals(first, second)
+        assertEquals(first, PortableSourcePresentation(temporary.resolve("views")).register(firstDescriptor))
+        assertEquals(second, PortableSourcePresentation(temporary.resolve("views")).register(secondDescriptor))
+    }
+
+    @Test
+    fun `unchanged view is reused after restart even when the disk budget is full`() {
+        val root = temporary.resolve("views")
+        val descriptor = descriptor("first")
+        val first = PortableSourcePresentation(root, maxViewBytes = 8L * 1024 * 1024).register(descriptor)
+        Files.write(root.resolve("full-budget.bin"), ByteArray(8 * 1024 * 1024))
+
+        val restarted = PortableSourcePresentation(root, maxViewBytes = 8L * 1024 * 1024)
+        assertEquals(first, restarted.register(descriptor))
+    }
+
+    @Test
+    fun `cached views fail closed when their parent is replaced by a symlink`() {
+        assumeTrue(
+            !System.getProperty("os.name").startsWith("Windows"),
+            "Symlink privileges are not assumed on Windows",
+        )
+        val descriptor = descriptor("first")
+        val root = temporary.resolve("views")
+        val presentation = PortableSourcePresentation(root)
+        val viewFile = Path.of(presentation.register(descriptor))
+        val viewDirectory = viewFile.parent
+        val external = temporary.resolve("external").also { Files.createDirectories(it) }
+        Files.writeString(external.resolve(viewFile.fileName), Files.readString(viewFile))
+        Files.delete(viewFile)
+        Files.delete(viewDirectory)
+        Files.createSymbolicLink(viewDirectory, external)
+
+        val failure = assertFailsWith<SourceStoreException> { presentation.register(descriptor) }
+        assertEquals(SourceFailure.UNSAFE_ARCHIVE, failure.failure)
     }
 
     @Test

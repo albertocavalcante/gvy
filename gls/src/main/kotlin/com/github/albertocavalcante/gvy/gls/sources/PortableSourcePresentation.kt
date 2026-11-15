@@ -6,9 +6,11 @@ package com.github.albertocavalcante.gvy.gls.sources
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 private const val MAX_PRESENTED_SOURCES = 128
+private const val MAX_VIEW_VARIANTS = 16_384
 private const val DEFAULT_MAX_VIEW_BYTES = 256L * 1024 * 1024
 private const val MAX_PRESENTED_SOURCE_BYTES = 8L * 1024 * 1024
 
@@ -19,7 +21,10 @@ private const val MAX_PRESENTED_SOURCE_BYTES = 8L * 1024 * 1024
 class PortableSourcePresentation(
     private val root: Path = defaultSourceViews(),
     private val maxViewBytes: Long = DEFAULT_MAX_VIEW_BYTES,
+    private val isPersistedView: (URI, SourceDocumentDescriptor) -> Boolean = { _, _ -> false },
 ) : SourcePresentation {
+    private data class OpenView(val contentDigest: String, val changed: Boolean)
+
     init {
         require(maxViewBytes >= MAX_PRESENTED_SOURCE_BYTES)
     }
@@ -27,33 +32,179 @@ class PortableSourcePresentation(
     private val directory by lazy { sourceStoreRoot(root) }
     private val monitor = Any()
     private val presentations = linkedMapOf<PresentationKey, Path>()
+    private val openViews = mutableMapOf<URI, OpenView>()
 
     override fun register(descriptor: SourceDocumentDescriptor): URI {
         verifyFileDigest(descriptor.contentPath, descriptor.contentDigest, MAX_PRESENTED_SOURCE_BYTES)
-        val key = PresentationKey(descriptor.context.id, descriptor.sourceDigest, descriptor.entryName)
+        val key = PresentationKey(
+            identity = sourceDigest(SourceDescriptorCodec.identity(descriptor)),
+            context = descriptor.context.id,
+            source = descriptor.sourceDigest,
+        )
         val previous = synchronized(monitor) { presentations[key] }
-        if (previous != null && isUnmodified(previous, descriptor.contentDigest)) return previous.toUri()
+        if (previous != null && canReuse(previous, descriptor.contentDigest)) return previous.toUri()
 
-        return withSourceDiskAdmission(directory, maxViewBytes, MAX_PRESENTED_SOURCE_BYTES) {
+        return withSourceDiskAdmissionOrReuse(
+            directory,
+            maxViewBytes,
+            MAX_PRESENTED_SOURCE_BYTES,
+            reuse = {
+                findReusableView(descriptor, key)?.also { path ->
+                    synchronized(monitor) { putPresentation(key, path) }
+                }?.toUri()
+            },
+        ) {
             createView(descriptor, key)
         }
     }
 
-    private fun createView(descriptor: SourceDocumentDescriptor, key: PresentationKey): URI {
-        val parent = directory.resolve(sourceDigest(descriptor.context.id)).resolve(descriptor.sourceDigest)
+    internal fun opened(uri: URI, contentDigest: String, content: String) {
+        val view = managedViewUri(uri) ?: return
+        synchronized(monitor) {
+            openViews[view] = OpenView(contentDigest, sourceDigest(content) != contentDigest)
+        }
+    }
+
+    internal fun changed(uri: URI) {
+        val view = managedViewUri(uri) ?: return
+        synchronized(monitor) {
+            openViews[view]?.let { current -> openViews[view] = current.copy(changed = true) }
+        }
+    }
+
+    internal fun closed(uri: URI) {
+        val view = managedViewUri(uri) ?: return
+        synchronized(monitor) { openViews.remove(view) }
+    }
+
+    private fun findReusableView(descriptor: SourceDocumentDescriptor, key: PresentationKey): Path? {
+        val parent = viewParent(descriptor, key)
+        if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) return null
         ensureManagedDirectory(parent)
-        // Reserve a unique directory atomically; publication never replaces any existing viewing file.
-        val view = Files.createTempDirectory(parent, "view-")
+
+        val stablePrefix = "view-${viewStem(key, descriptor.contentDigest)}-"
+        val stableViews = mutableListOf<Pair<Int, Path>>()
+        val legacyViews = mutableListOf<Path>()
+        Files.list(parent).use { entries ->
+            val iterator = entries.iterator()
+            while (iterator.hasNext()) {
+                val view = iterator.next()
+                val name = view.fileName.toString()
+                if (name.startsWith(stablePrefix)) {
+                    val variant = name.removePrefix(stablePrefix).toIntOrNull() ?: continue
+                    stableViews.add(variant to view)
+                } else if (name.startsWith("view-") && !STABLE_VIEW_DIRECTORY.matches(name)) {
+                    legacyViews.add(view)
+                }
+            }
+        }
+
+        val fileName = descriptor.entryName.substringAfterLast('/')
+        for (view in stableViews.sortedBy { it.first }.map { it.second }) {
+            requireViewDirectory(view)
+            val candidate = view.resolve(fileName)
+            if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS) && canReuse(candidate, descriptor.contentDigest)) {
+                return candidate
+            }
+        }
+        for (view in legacyViews) {
+            requireViewDirectory(view)
+            val candidate = view.resolve(fileName)
+            if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS) &&
+                isPersistedView(candidate.toUri(), descriptor) &&
+                canReuse(candidate, descriptor.contentDigest)
+            ) {
+                return candidate
+            }
+        }
+        return null
+    }
+
+    private fun createView(descriptor: SourceDocumentDescriptor, key: PresentationKey): URI {
+        val parent = viewParent(descriptor, key)
+        ensureManagedDirectory(parent)
+        val stem = viewStem(key, descriptor.contentDigest)
+        val fileName = descriptor.entryName.substringAfterLast('/')
+
+        for (variant in 0 until MAX_VIEW_VARIANTS) {
+            val view = parent.resolve("view-$stem-$variant")
+            if (Files.exists(view, LinkOption.NOFOLLOW_LINKS)) {
+                requireViewDirectory(view)
+                continue
+            }
+            return writeView(descriptor, key, view, fileName)
+        }
+        throw SourceStoreException(SourceFailure.LIMIT_EXCEEDED)
+    }
+
+    private fun writeView(
+        descriptor: SourceDocumentDescriptor,
+        key: PresentationKey,
+        view: Path,
+        fileName: String,
+    ): URI {
+        Files.createDirectory(view)
         val temporary = Files.createTempFile(view, ".copying-", ".source")
+        var published = false
         try {
             copyVerifiedContent(descriptor, temporary)
-            val destination = view.resolve(descriptor.entryName.substringAfterLast('/'))
+            val destination = view.resolve(fileName)
             publishNewFile(temporary, destination)
+            published = true
             synchronized(monitor) { putPresentation(key, destination) }
             return destination.toUri()
         } finally {
             Files.deleteIfExists(temporary)
+            if (!published) runCatching { Files.delete(view) }
         }
+    }
+
+    private fun viewParent(descriptor: SourceDocumentDescriptor, key: PresentationKey): Path =
+        directory.resolve(sourceDigest(key.context)).resolve(descriptor.sourceDigest)
+
+    private fun viewStem(key: PresentationKey, contentDigest: String): String =
+        sourceDigest("${key.identity}\u0000$contentDigest")
+
+    private fun managedViewUri(uri: URI): URI? {
+        if (!uri.scheme.equals("file", ignoreCase = true)) return null
+        val path = try {
+            Path.of(uri).toAbsolutePath().normalize()
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        return path.toUri().takeIf { path.startsWith(directory) }
+    }
+
+    private fun requireViewDirectory(path: Path) {
+        if (Files.isSymbolicLink(path) || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
+        }
+        ensureManagedDirectory(path)
+    }
+
+    private fun canReuse(path: Path, digest: String): Boolean {
+        if (!hasSafeManagedAncestors(path)) return false
+        val uri = path.toUri()
+        val openAndChanged = synchronized(monitor) {
+            openViews[uri]?.let { it.contentDigest != digest || it.changed } == true
+        }
+        return !openAndChanged && isUnmodified(path, digest)
+    }
+
+    /** Reuse paths only while every directory from the filesystem root through the view is still real. */
+    private fun hasSafeManagedAncestors(path: Path): Boolean {
+        val absolute = path.toAbsolutePath().normalize()
+        if (!absolute.startsWith(directory)) throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
+        val parent = absolute.parent ?: return false
+        var current = absolute.root ?: return false
+        for (part in parent) {
+            current = current.resolve(part)
+            if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) return false
+            if (Files.isSymbolicLink(current) || !Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
+            }
+        }
+        return Files.exists(absolute, LinkOption.NOFOLLOW_LINKS)
     }
 
     private fun copyVerifiedContent(descriptor: SourceDocumentDescriptor, temporary: Path) {
@@ -68,6 +219,9 @@ class PortableSourcePresentation(
     private fun isUnmodified(path: Path, digest: String): Boolean = try {
         verifyFileDigest(path, digest, MAX_PRESENTED_SOURCE_BYTES)
         true
+    } catch (failure: SourceStoreException) {
+        if (failure.failure == SourceFailure.UNSAFE_ARCHIVE) throw failure
+        false
     } catch (_: IOException) {
         false
     }
@@ -78,7 +232,11 @@ class PortableSourcePresentation(
         while (presentations.size > MAX_PRESENTED_SOURCES) presentations.remove(presentations.keys.first())
     }
 
-    private data class PresentationKey(val context: String, val source: String, val entry: String)
+    private data class PresentationKey(val identity: String, val context: String, val source: String)
+
+    private companion object {
+        val STABLE_VIEW_DIRECTORY = Regex("view-[0-9a-f]{64}-\\d+")
+    }
 }
 
 internal fun defaultSourceViews(): Path = Path.of(System.getProperty("user.home"), ".gls", "cache", "source-views-v1")
