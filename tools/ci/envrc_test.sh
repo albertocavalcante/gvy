@@ -16,11 +16,20 @@ for profile in "${repo_root}/.envrc" "${test_dir}/no-sdk-profile"; do
         GVY_ENVRC_TEST_HOME="${test_dir}/missing-home" GVY_ENVRC_TEST_BREW_PREFIX="${test_dir}/missing-brew" \
             "${BASH}" -u -s -- "${profile}" <<'PROFILE'
 unset SDKMAN_DIR
+unset ORG_GRADLE_PROJECT_org_gradle_jvmargs
+export GRADLE_OPTS='-Dorg.gradle.jvmargs="-Xmx768m -XX:MaxMetaspaceSize=384m"'
+export JAVA_OPTS='-Xmx128m'
+export JDK_JAVA_OPTIONS='-Xmx256m'
+export GRADLE_USER_HOME='/explicit/existing/gradle-home'
 PATH_add() { :; }
 brew() { printf '%s\n' "${GVY_ENVRC_TEST_BREW_PREFIX}"; }
 source "$1"
-[[ "${ORG_GRADLE_PROJECT_org_gradle_jvmargs}" == *"-Xmx3g"* ]]
+[[ -z "${ORG_GRADLE_PROJECT_org_gradle_jvmargs+x}" ]]
+[[ "$GRADLE_OPTS" == '-Dorg.gradle.jvmargs="-Xmx768m -XX:MaxMetaspaceSize=384m"' ]]
+[[ "$JAVA_OPTS" == '-Xmx128m' ]]
+[[ "$JDK_JAVA_OPTIONS" == '-Xmx256m' ]]
+[[ "$GRADLE_USER_HOME" == '/explicit/existing/gradle-home' ]]
 PROFILE
     ) >/dev/null
 done
-printf '%s\n' 'The direnv profile handles an unset SDKMAN_DIR under nounset.'
+printf '%s\n' 'The direnv profile handles nounset and preserves explicit Gradle/JVM settings.'
