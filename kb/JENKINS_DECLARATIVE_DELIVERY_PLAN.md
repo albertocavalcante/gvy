@@ -12,20 +12,22 @@ distinguishes drafts from verified delivery.
 
 ## Current checkpoint
 
-The authoring baseline is committed and its native gates pass. Publication-head review and applicable CI remain required
-before merge; the full 24-slice program is open.
+The authoring baseline landed in [#2028](https://github.com/albertocavalcante/gvy/pull/2028), squash commit
+`cd59df608e4d3c8722b9a5c374bee0e989643f6f`, after independent review and 35 passing checks. The three skipped jobs
+matched their applicability conditions. The owned publication branch and checkout were removed after verifying the merge
+on `main`; original dirty audit drafts and private evidence remain retained. The full 24-slice program is open.
 
-| Evidence layer              | Executed result                                                  | Scope / remaining gate                                                                                          |
-| --------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Server JSON-RPC             | 3 tests passed, no failures/errors/skips                         | Actual framed client/server requests and responses correlate; complete lists contain 5, 5 and 11 items.         |
-| Native checks               | Root `lintFix`, server staging and diagnostic gate passed        | Effective test worker: `-Xms256m -Xmx1g`, one fork; all normal commit hooks passed.                             |
-| VS Code integration         | 6 tests passed on 1.146.0                                        | 3 provider captures plus 3 real suggest-widget acceptances; original baseline candidate hash checked.           |
-| Desktop widget              | Settled blank lists and partial entry inspected                  | Both language modes showed five parameter names in the controlled host; original noisy list was not reproduced. |
-| Generic collection fix (03) | Fail-first plus 17 pure tests passed; source review clear        | Provider test, final lint and publication remain pending.                                                       |
-| Snippet capabilities (04)   | Omitted support reproduced as a failure; implementation reviewed | Full capability/edit matrix and lint await execution.                                                           |
-| Document mode (05)          | Source reviewed after lifecycle and configuration race fixes     | Public-protocol, editor lifecycle and grammar tests remain unexecuted.                                          |
-| Typed metadata (06)         | Exploratory draft and architecture review                        | Canonical-list projection and legacy override adaptation remain unfinished; tests unexecuted.                   |
-| Compatibility oracle (02)   | Official roots and advertised checksums inspected                | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.              |
+| Evidence layer              | Executed result                                              | Scope / remaining gate                                                                                          |
+| --------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Server JSON-RPC             | 3 tests passed, no failures/errors/skips                     | Actual framed client/server requests and responses correlate; complete lists contain 5, 5 and 11 items.         |
+| Native checks               | Root `lintFix`, server staging and diagnostic gate passed    | Effective test worker: `-Xms256m -Xmx1g`, one fork; all normal commit hooks passed.                             |
+| VS Code integration         | 6 tests passed on 1.146.0                                    | 3 provider captures plus 3 real suggest-widget acceptances; original baseline candidate hash checked.           |
+| Desktop widget              | Settled blank lists and partial entry inspected              | Both language modes showed five parameter names in the controlled host; original noisy list was not reproduced. |
+| Generic collection fix (03) | Actual-base fail-first; 27 targeted tests pass, no skips     | Root `lintFix` and normal hooks pass; final publication-head review and CI remain.                              |
+| Snippet capabilities (04)   | Omitted support reproduced; combined source reviewed         | Earlier draft: 114 cases, 5 existing skips; combined publication source still needs its own matrix and lint.    |
+| Document mode (05)          | Source reviewed after lifecycle and configuration race fixes | Public-protocol, editor lifecycle and grammar tests remain unexecuted.                                          |
+| Typed metadata (06)         | Complete draft passed independent source review              | Identity, projection and GDSL fixes reviewed; compilation, lint and runtime tests remain unexecuted.            |
+| Compatibility oracle (02)   | Official roots and advertised checksums inspected            | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.              |
 
 The verified behavior source is commit `e75a3983ae8c2cc19edd7b2530f7296543dccfdd`, based on
 `71f7318e9397cc133b4172c097636be80db36c67`. Its complete diff matches the independently reviewed patch. The native run
@@ -79,6 +81,14 @@ and harness failures remain in private evidence, including the earlier reconstru
 Raw source, request and screenshot evidence stays outside Git. This exception and table record unresolved work.
 
 </details>
+
+The baseline CI receipts and run-specific diagnostic dispositions are recorded in
+[#2028](https://github.com/albertocavalcante/gvy/pull/2028). They bind Main run `43611091127` and Extension run
+`43611091004`, attempt 1, to reviewed head `73f9db3f` and tested merge `6a13ef7d`. CI/editor/action and passing-test
+stdout debt remains owned under #1603 and **expires 2026-11-19**; renewal requires fresh evidence and independent
+review. Exact process/launch contexts and unknown attribution are preserved in the PR; green tool summaries do not
+certify all runtime warnings. That disposition covers only those runs and is separate from the local Code 1.146.0
+exception above. Future publication heads retain their normal gates.
 
 ## 1. Outcome and fixed decisions
 
@@ -324,32 +334,32 @@ resolves to the nearly full T9 volume. No implementation gate is closed by writi
 The coordinator owns integration, publication-head validation, independent review, merge verification and cleanup. Each
 row's next action is to implement its change and satisfy the completion gate in section 3 after its dependencies.
 
-| Slice | Responsible scope                | State       | Evidence / next action                                                                                         |
-| ----- | -------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------- |
-| 01    | Server/editor tests; coordinator | In progress | Add common authoring fixtures, capture protocol and widget separately; reproduce defects against the baseline. |
-| 02    | Extractor/oracle                 | Pending     | Lock both complete graphs; boot and validate controls.                                                         |
-| 03    | Completion insertion             | Draft       | Generic collection fail-first work; independent review and publication follow 01.                              |
-| 04    | LSP capability negotiation       | Draft       | Omitted/false/true support across insertion fields and edits; follows 01.                                      |
-| 05    | Document lifecycle/editor        | Draft       | Preserve language ID and test actual editor isolation.                                                         |
-| 06    | Jenkins metadata                 | WIP         | Preserve typed namespaces and unknown provenance.                                                              |
-| 07    | Declarative syntax view          | Pending     | Snapshot identity, UTF-16 ranges and recovery confidence.                                                      |
-| 08    | Shared resolution/hover          | Pending     | Context-qualified calls with shadowing.                                                                        |
-| 09    | Insertion/signature help         | Pending     | Required arguments and accepted-call signatures.                                                               |
-| 10    | Completion sites                 | Pending     | Exact candidate sets, siblings and cardinality.                                                                |
-| 11    | Declaration index                | Pending     | Unsaved scoped params/env members and navigation.                                                              |
-| 12    | Descriptor extraction            | Pending     | Deterministic graphs and custom fixture plugin.                                                                |
-| 13    | Offline profile loading          | Pending     | Atomic reload, precedence and exact last-good identity.                                                        |
-| 14    | Agents                           | Pending     | All legal forms, including node child options.                                                                 |
-| 15    | Options                          | Pending     | Pipeline/stage/matrix scopes and eligible wrappers.                                                            |
-| 16    | Conditions                       | Pending     | Typed arguments, outer flags and child cardinality.                                                            |
-| 17    | Libraries                        | Pending     | lib entries and preserved shared-library navigation.                                                           |
-| 18    | Input/entries                    | Pending     | Scoped input parameters, triggers and tools.                                                                   |
-| 19    | Parallel/matrix                  | Pending     | Containing-stage failFast and axis/exclusion structure.                                                        |
-| 20    | Structure diagnostics            | Pending     | Independent positive/negative cases and stable codes/ranges.                                                   |
-| 21    | Values/binding                   | Pending     | Literal edits and conservative known-model validation.                                                         |
-| 22    | Target language                  | Pending     | Both exact compilers/converters; no execution claims.                                                          |
-| 23    | Recovery/performance             | Pending     | Generations, cancellation, eviction and measured workloads.                                                    |
-| 24    | Regeneration/package closure     | Pending     | Deterministic regeneration, actual packaged flow and audit closure.                                            |
+| Slice | Responsible scope                | State           | Evidence / next action                                                                                                              |
+| ----- | -------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 01    | Server/editor tests; coordinator | Merged          | #2028 / `cd59df608`; reviewed head, CI, merge and owned publication cleanup verified.                                               |
+| 02    | Extractor/oracle                 | Pending         | Lock both complete graphs; boot and validate controls.                                                                              |
+| 03    | Completion insertion             | Validated draft | Base `cd59df608`: generic-list RED, 27 targeted GREEN with no skips, root `lintFix` and hooks; final review/CI/publication pending. |
+| 04    | LSP capability negotiation       | Reviewed draft  | Combined 03/04 source reviewed; reconcile actual 03 squash, then validate and review publication head.                              |
+| 05    | Document lifecycle/editor        | Draft           | Preserve language ID and test actual editor isolation.                                                                              |
+| 06    | Jenkins metadata                 | Reviewed draft  | Canonical candidates, provenance, legacy adaptation and guarded binding draft reviewed; compile/test/lint gates pending.            |
+| 07    | Declarative syntax view          | Pending         | Snapshot identity, UTF-16 ranges and recovery confidence.                                                                           |
+| 08    | Shared resolution/hover          | Pending         | Context-qualified calls with shadowing.                                                                                             |
+| 09    | Insertion/signature help         | Pending         | Required arguments and accepted-call signatures.                                                                                    |
+| 10    | Completion sites                 | Pending         | Exact candidate sets, siblings and cardinality.                                                                                     |
+| 11    | Declaration index                | Pending         | Unsaved scoped params/env members and navigation.                                                                                   |
+| 12    | Descriptor extraction            | Pending         | Deterministic graphs and custom fixture plugin.                                                                                     |
+| 13    | Offline profile loading          | Pending         | Atomic reload, precedence and exact last-good identity.                                                                             |
+| 14    | Agents                           | Pending         | All legal forms, including node child options.                                                                                      |
+| 15    | Options                          | Pending         | Pipeline/stage/matrix scopes and eligible wrappers.                                                                                 |
+| 16    | Conditions                       | Pending         | Typed arguments, outer flags and child cardinality.                                                                                 |
+| 17    | Libraries                        | Pending         | lib entries and preserved shared-library navigation.                                                                                |
+| 18    | Input/entries                    | Pending         | Scoped input parameters, triggers and tools.                                                                                        |
+| 19    | Parallel/matrix                  | Pending         | Containing-stage failFast and axis/exclusion structure.                                                                             |
+| 20    | Structure diagnostics            | Pending         | Independent positive/negative cases and stable codes/ranges.                                                                        |
+| 21    | Values/binding                   | Pending         | Literal edits and conservative known-model validation.                                                                              |
+| 22    | Target language                  | Pending         | Both exact compilers/converters; no execution claims.                                                                               |
+| 23    | Recovery/performance             | Pending         | Generations, cancellation, eviction and measured workloads.                                                                         |
+| 24    | Regeneration/package closure     | Pending         | Deterministic regeneration, actual packaged flow and audit closure.                                                                 |
 
 ## Audit closure ledger
 
@@ -357,36 +367,36 @@ The audit recorded source findings separately from executable reproductions. All
 or a measured counterexample is linked here. The named slices own the next action and acceptance criteria in section 3;
 private source snapshots establish provenance, not passing behavior.
 
-| Record     | Impact                          | Owning slices | Current evidence / next action                                                                                     |
-| ---------- | ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------ |
-| G01        | Editor snippet pollution        | 01, 05, 24    | Controlled-host widget/acceptance captured; original noisy list not reproduced. Preserve that limit through 05/24. |
-| G02        | Bare descriptor-entry insertion | 01, 09        | Source finding; reproduce blank and partial entry insertion.                                                       |
-| G03        | Quoted generic collections      | 01, 03        | Fail-first `List<String>`: quoted string instead of collection; draft fix requires final checks/review.            |
-| G04        | Context-insensitive hover       | 01, 08        | Reproduce parameter-definition versus credentials-binding string.                                                  |
-| G05        | Missing Jenkins signature path  | 01, 09        | Measure actual signature results before asserting absence.                                                         |
-| G06        | Key/value candidate leakage     | 01, 07, 10    | Assert entire lists at keys, expressions and nested calls.                                                         |
-| G07        | Existing literal editing        | 01, 21        | Reproduce edits inside existing quoted values.                                                                     |
-| G08        | Declaration-aware params/env    | 01, 11        | Measure unsaved declarations, edits and scope.                                                                     |
-| G09        | Static schema/version selection | 02, 12, 13    | Existing provenance is unverified; never use as oracle input.                                                      |
-| G10        | Placement not enforced          | 07, 10, 20    | Test ancestor roles and illegal placement.                                                                         |
-| G11        | Singleton/exclusive siblings    | 07, 10, 20    | Test suppression while preserving existing-node editing.                                                           |
-| G12        | Option scope                    | 12, 15        | Compare exact eligible sets against both locked targets.                                                           |
-| G13        | Agent forms/node children       | 14            | Positive child candidates and oracle-accepted inserted forms.                                                      |
-| G14        | When flags/combinators          | 16            | Outer flags and verified child counts.                                                                             |
-| G15        | Typed condition arguments       | 12, 16        | Descriptor schemas, aliases and literal values.                                                                    |
-| G16        | Declarative failFast            | 19            | Containing-stage parallel and matrix controls.                                                                     |
-| G17        | Libraries body                  | 17            | Proper lib entry set and accepted insertion.                                                                       |
-| G18        | Declarative dynamic discovery   | 12            | Fixture plugin adds parameter, condition and agent.                                                                |
-| G19        | Partial plugin filtering        | 13            | All catalogues, disabled/absent/unknown states.                                                                    |
-| G20        | Static scanner guesses          | 06, 12        | Differing descriptor function/class/Symbol control.                                                                |
-| G21        | Flattened rich metadata         | 06            | Round-trip shape/provenance and consumer tests.                                                                    |
-| G22        | Limited semantic diagnostics    | 20, 21        | Independent accepted/rejected rules; script escape controls.                                                       |
-| G23        | Separate recovery model         | 07, 23        | Snapshot-bound malformed/Unicode/line-ending cases.                                                                |
-| G24        | Target-language compatibility   | 02, 22        | Exact target rejection before local diagnostics.                                                                   |
-| G25        | End-to-end proof gaps           | 01, 24        | Protocol, actual widget and accepted text captured for initial sites; oracle/full packaged matrix remain open.     |
-| Additional | Snippet capabilities            | 04            | Omitted and false support must have plain insertion and edits.                                                     |
-| Additional | Metadata-only loading           | 13            | No plugins-file/download dependency.                                                                               |
-| Additional | Unverifiable schema provenance  | 01, 02, 12    | Curated schema is not verified extraction; replace only with locked evidence.                                      |
+| Record     | Impact                          | Owning slices | Current evidence / next action                                                                                                       |
+| ---------- | ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| G01        | Editor snippet pollution        | 01, 05, 24    | Controlled-host widget/acceptance captured; original noisy list not reproduced. Preserve that limit through 05/24.                   |
+| G02        | Bare descriptor-entry insertion | 01, 09        | Real provider/widget acceptance captures bare names for blank and partial sites; 09 owns useful call insertion.                      |
+| G03        | Quoted generic collections      | 01, 03        | Base `cd59df608` reproduces quoted `List<String>`; fixed draft passes 17 builder and 10 provider cases. Publication remains pending. |
+| G04        | Context-insensitive hover       | 01, 08        | Reproduce parameter-definition versus credentials-binding string.                                                                    |
+| G05        | Missing Jenkins signature path  | 01, 09        | Measure actual signature results before asserting absence.                                                                           |
+| G06        | Key/value candidate leakage     | 01, 07, 10    | Assert entire lists at keys, expressions and nested calls.                                                                           |
+| G07        | Existing literal editing        | 01, 21        | Reproduce edits inside existing quoted values.                                                                                       |
+| G08        | Declaration-aware params/env    | 01, 11        | Measure unsaved declarations, edits and scope.                                                                                       |
+| G09        | Static schema/version selection | 02, 12, 13    | Existing provenance is unverified; never use as oracle input.                                                                        |
+| G10        | Placement not enforced          | 07, 10, 20    | Test ancestor roles and illegal placement.                                                                                           |
+| G11        | Singleton/exclusive siblings    | 07, 10, 20    | Test suppression while preserving existing-node editing.                                                                             |
+| G12        | Option scope                    | 12, 15        | Compare exact eligible sets against both locked targets.                                                                             |
+| G13        | Agent forms/node children       | 14            | Positive child candidates and oracle-accepted inserted forms.                                                                        |
+| G14        | When flags/combinators          | 16            | Outer flags and verified child counts.                                                                                               |
+| G15        | Typed condition arguments       | 12, 16        | Descriptor schemas, aliases and literal values.                                                                                      |
+| G16        | Declarative failFast            | 19            | Containing-stage parallel and matrix controls.                                                                                       |
+| G17        | Libraries body                  | 17            | Proper lib entry set and accepted insertion.                                                                                         |
+| G18        | Declarative dynamic discovery   | 12            | Fixture plugin adds parameter, condition and agent.                                                                                  |
+| G19        | Partial plugin filtering        | 13            | All catalogues, disabled/absent/unknown states.                                                                                      |
+| G20        | Static scanner guesses          | 06, 12        | Differing descriptor function/class/Symbol control.                                                                                  |
+| G21        | Flattened rich metadata         | 06            | Round-trip shape/provenance and consumer tests.                                                                                      |
+| G22        | Limited semantic diagnostics    | 20, 21        | Independent accepted/rejected rules; script escape controls.                                                                         |
+| G23        | Separate recovery model         | 07, 23        | Snapshot-bound malformed/Unicode/line-ending cases.                                                                                  |
+| G24        | Target-language compatibility   | 02, 22        | Exact target rejection before local diagnostics.                                                                                     |
+| G25        | End-to-end proof gaps           | 01, 24        | Protocol, actual widget and accepted text captured for initial sites; oracle/full packaged matrix remain open.                       |
+| Additional | Snippet capabilities            | 04            | Omitted and false support must have plain insertion and edits.                                                                       |
+| Additional | Metadata-only loading           | 13            | No plugins-file/download dependency.                                                                                                 |
+| Additional | Unverifiable schema provenance  | 01, 02, 12    | Curated schema is not verified extraction; replace only with locked evidence.                                                        |
 
 ## Provenance correction
 

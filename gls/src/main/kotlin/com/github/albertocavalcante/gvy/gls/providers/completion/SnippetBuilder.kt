@@ -67,14 +67,13 @@ object SnippetBuilder {
      * and common variations.
      */
     private fun normalizeType(type: String): String {
-        val simplified = type
-            .substringAfterLast(".") // Remove package prefix
-            .lowercase()
-
-        // Handle array types as list
-        if (simplified.endsWith("[]")) {
+        val trimmed = type.trim()
+        if (trimmed.endsWith("[]")) {
             return "list"
         }
+
+        // Generic arguments can contain qualified names; remove them before the package prefix.
+        val simplified = trimmed.substringBefore("<").trim().substringAfterLast(".").lowercase()
 
         return when (simplified) {
             "boolean" -> "boolean"
