@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14]
+        os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -33,24 +33,79 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install exact Rust toolchain
+      - name: Check runner architecture
+        shell: bash
         run: |
-          rustup toolchain install 1.96.1 --profile minimal --component clippy --component rustfmt
+          set -euo pipefail
+          uname -a
+          case "$RUNNER_OS:$(uname -m)" in
+            Linux:x86_64|macOS:arm64) ;;
+            *) echo 'Unexpected runner architecture' >&2; exit 1 ;;
+          esac
+      - name: Install and check Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/native-parse-install.log"
+          set +e
+          rustup toolchain install 1.96.1 --profile minimal --component clippy --component rustfmt 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          diagnostic_exit=0
+          node tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+          printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+          if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+          if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+          if (( diagnostic_exit != 0 )); then exit "$diagnostic_exit"; fi
           echo "CARGO_TARGET_DIR=$RUNNER_TEMP/native-parse-target" >> "$GITHUB_ENV"
+          echo "$HOME/.rustup/toolchains/1.96.1-$(rustc +1.96.1 -vV | sed -n 's/^host: //p')/bin" >> "$GITHUB_PATH"
       - name: Check, test and build
         shell: bash
         run: |
           set -euo pipefail
           manifest=tools/perf/bench/native-contract/primary/Cargo.toml
-          cargo +1.96.1 fmt --manifest-path "$manifest" --check
-          cargo +1.96.1 clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
-          cargo +1.96.1 test --locked --manifest-path "$manifest"
-          cargo +1.96.1 build --release --locked --manifest-path "$manifest" --bin native-parse
+          log="$RUNNER_TEMP/native-parse-rust.log"
+          set +e
+          (
+            set -euo pipefail
+            test "$(cargo --version | cut -d ' ' -f 2)" = 1.96.1
+            test "$(rustc --version | cut -d ' ' -f 2)" = 1.96.1
+            cargo fmt --manifest-path "$manifest" --check
+            cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+            cargo test --locked --manifest-path "$manifest"
+            cargo build --release --locked --manifest-path "$manifest" --bin native-parse
+          ) 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          diagnostic_exit=0
+          node tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+          printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+          if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+          if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+          if (( diagnostic_exit != 0 )); then exit "$diagnostic_exit"; fi
+      - name: Verify source pins and build receipt
+        run: node tools/perf/bench/native-contract/build-parse.mjs "$RUNNER_TEMP/native-parse-receipt-target" > "$RUNNER_TEMP/native-parse-build.json"
       - name: Run both fixed inputs
         shell: bash
         run: |
           set -euo pipefail
-          binary="$CARGO_TARGET_DIR/release/native-parse"
+          binary="$RUNNER_TEMP/native-parse-receipt-target/release/native-parse"
+          verify_binary() {
+            node -e 'const fs=require("fs"), crypto=require("crypto"); const [receipt,binary]=process.argv.slice(1); const r=JSON.parse(fs.readFileSync(receipt)); if(r.kind!=="native-parse-build" || r.binary!==binary || crypto.createHash("sha256").update(fs.readFileSync(binary)).digest("hex")!==r.binarySha256) throw Error("binary receipt mismatch");' "$RUNNER_TEMP/native-parse-build.json" "$binary"
+          }
+          verify_binary
           "$binary" --input tools/perf/bench/parse/sample.groovy --input-id sample --warmup 0 --iterations 1 --iteration-ns 1000000 > "$RUNNER_TEMP/sample.json"
           "$binary" --input tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy --input-id cli-builder-exception --warmup 0 --iterations 1 --iteration-ns 1000000 > "$RUNNER_TEMP/corpus.json"
+          verify_binary
           node -e 'const fs=require("fs"); for (const f of process.argv.slice(1)) { const x=JSON.parse(fs.readFileSync(f)); if (x.samples.length!==1 || x.samples[0].elapsedNs<1000000 || x.samples[0].operations<1 || x.samples[0].operations!==x.samples[0].completedOperations) throw Error("invalid receipt"); }' "$RUNNER_TEMP/sample.json" "$RUNNER_TEMP/corpus.json"
+      - name: Retain diagnostics and build receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-parse-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/native-parse-*.log
+            ${{ runner.temp }}/native-parse-*.status
+            ${{ runner.temp }}/native-parse-build.json
+          if-no-files-found: error
+          retention-days: 7

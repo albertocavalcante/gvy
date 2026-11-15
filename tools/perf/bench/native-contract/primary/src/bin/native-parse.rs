@@ -3,12 +3,44 @@
 
 use serde_json::json;
 use std::{
-    env, fs,
+    env,
+    fs::File,
     hint::black_box,
+    io::Read,
     process,
     time::{Duration, Instant},
 };
 use tree_sitter::{Node, Parser, Tree};
+
+fn expected_input(input_id: &str) -> &'static [u8] {
+    match input_id {
+        "sample" => include_bytes!("../../../../parse/sample.groovy"),
+        "cli-builder-exception" => include_bytes!(
+            "../../../../corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy"
+        ),
+        _ => panic!("unknown input id"),
+    }
+}
+
+fn verify_input(bytes: &[u8], input_id: &str) {
+    assert_eq!(
+        bytes,
+        expected_input(input_id),
+        "input differs from compiled fixture"
+    );
+}
+
+fn read_input(path: &str, input_id: &str) -> Vec<u8> {
+    let expected = expected_input(input_id);
+    let mut bytes = Vec::with_capacity(expected.len() + 1);
+    File::open(path)
+        .expect("input file")
+        .take((expected.len() + 1) as u64)
+        .read_to_end(&mut bytes)
+        .expect("input bytes");
+    verify_input(&bytes, input_id);
+    bytes
+}
 
 fn parser() -> Parser {
     let mut parser = Parser::new();
@@ -42,10 +74,12 @@ fn contains_kind(node: Node<'_>, kind: &str) -> bool {
         return true;
     }
     let mut cursor = node.walk();
-    let found = node
-        .children(&mut cursor)
-        .any(|child| contains_kind(child, kind));
-    found
+    for child in node.children(&mut cursor) {
+        if contains_kind(child, kind) {
+            return true;
+        }
+    }
+    false
 }
 
 fn check_structure(first: &Tree, bytes: &[u8], input_id: &str) {
@@ -156,8 +190,7 @@ fn main() {
     let nanos: u64 = args[9].parse().expect("iteration nanoseconds");
     assert!(warmup <= 30 && (1..=10).contains(&iterations) && (1..=1_000_000_000).contains(&nanos));
     assert!(!args[3].is_empty() && args[3].len() <= 128);
-    let bytes = fs::read(&args[1]).expect("input bytes");
-    assert!(!bytes.is_empty() && bytes.len() <= 1024 * 1024);
+    let bytes = read_input(&args[1], &args[3]);
     let mut parser = parser();
     controls(&mut parser, &bytes, &args[3]);
     let duration = Duration::from_nanos(nanos);
@@ -177,6 +210,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn exact_fixture_identity_rejects_same_length_changes() {
+        for id in ["sample", "cli-builder-exception"] {
+            let mut bytes = expected_input(id).to_vec();
+            verify_input(&bytes, id);
+            bytes[0] ^= 1;
+            assert!(std::panic::catch_unwind(|| verify_input(&bytes, id)).is_err());
+        }
+    }
+
     #[test]
     fn no_parse_and_wrong_tree_are_rejected() {
         let mut unset = Parser::new();
