@@ -1,13 +1,110 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureTrace } from "./trace.mjs";
+
+test("observer setup closes its first descriptor when the second exclusive open fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "gvy-trace-open-"));
+  const tracePath = join(directory, "trace.log");
+  const original = fs.openSync;
+  let descriptor;
+  mock.method(fs, "openSync", (...args) => {
+    const fd = original(...args);
+    if (args[0] === tracePath) descriptor = fd;
+    return fd;
+  });
+  syncBuiltinESMExports();
+  try {
+    await writeFile(`${tracePath}.stdout`, "preexisting");
+    await assert.rejects(
+      captureTrace([process.execPath, "-e", ""], {
+        tracePath,
+        resultPath: join(directory, "result.json"),
+        deadlineMs: 1000,
+      }),
+      /EEXIST/,
+    );
+    assert.throws(() => fs.fstatSync(descriptor), /EBADF/);
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        fs.closeSync(descriptor);
+      } catch (error) {
+        if (error.code !== "EBADF") throw error;
+      }
+    }
+    mock.restoreAll();
+    syncBuiltinESMExports();
+    await rm(directory, { recursive: true });
+  }
+});
+
+test("short descriptor writes preserve the complete observed trace", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "gvy-trace-short-"));
+  const tracePath = join(directory, "trace.log");
+  const resultPath = join(directory, "result.json");
+  const original = fs.writeSync;
+  mock.method(
+    fs,
+    "writeSync",
+    (
+      fd,
+      buffer,
+      offset = 0,
+      length = buffer.length - offset,
+      position = null,
+    ) => original(fd, buffer, offset, Math.min(3, length), position),
+  );
+  syncBuiltinESMExports();
+  try {
+    const captured = await captureTrace(
+      [
+        process.execPath,
+        "-e",
+        'process.stderr.write("complete trace\\n");require("fs").writeFileSync(process.argv[1],"{}");',
+        resultPath,
+      ],
+      { tracePath, resultPath, deadlineMs: 2000 },
+    );
+    assert.equal(await readFile(tracePath, "utf8"), "complete trace\n");
+    assert.equal(captured.rawTrace, "complete trace\n");
+  } finally {
+    mock.restoreAll();
+    syncBuiltinESMExports();
+    await rm(directory, { recursive: true });
+  }
+});
+
+test("early observer diagnostics cannot be replaced through the trace pathname", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "gvy-trace-replace-"));
+  const tracePath = join(directory, "trace.log");
+  try {
+    const script = `const fs=require('node:fs'); process.stderr.write('original observer failure\\n',()=>{
+      fs.renameSync(process.argv[1],process.argv[1]+'.old');
+      fs.writeFileSync(process.argv[1],'substituted diagnostics'); process.exit(2);
+    });`;
+    await assert.rejects(
+      captureTrace([process.execPath, "-e", script, tracePath], {
+        tracePath,
+        resultPath: join(directory, "absent.json"),
+        deadlineMs: 2000,
+      }),
+      (error) =>
+        /original observer failure/.test(error.message) &&
+        !/substituted/.test(error.message),
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
 
 test("result marker does not detach observation before a late connection and natural exit", async () => {
   const directory = await mkdtemp(join(tmpdir(), "gvy-trace-late-test-"));
@@ -111,7 +208,7 @@ test("capture reads existing stderr descriptor, preserves raw bytes and keeps ca
     );
     const script =
       'const fs=require("node:fs"); fs.writeFileSync(process.argv[1],"candidate diagnostics"); process.stderr.write(Buffer.from(process.argv[3],"base64")); fs.writeFileSync(process.argv[2],JSON.stringify({passed:true}));';
-    const result = await captureTrace(
+    const { result, rawTrace } = await captureTrace(
       [
         process.execPath,
         "-e",
@@ -123,6 +220,7 @@ test("capture reads existing stderr descriptor, preserves raw bytes and keeps ca
       { tracePath, resultPath, deadlineMs: 2000 },
     );
     assert.deepEqual(await readFile(tracePath), trace);
+    assert.equal(rawTrace, trace.toString());
     assert.equal(
       await readFile(candidatePath, "utf8"),
       "candidate diagnostics",

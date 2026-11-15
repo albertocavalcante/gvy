@@ -4,6 +4,28 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 
+/** Persist only the exact locally validated control outcomes, never HTTP response objects. */
+export function fixtureControlReceipt(
+  unauthenticated,
+  authenticated,
+  redirect,
+  requests,
+) {
+  if (
+    unauthenticated !== 401 ||
+    authenticated !== 200 ||
+    redirect !== 302 ||
+    requests.some((item) => item.origin === "denied")
+  )
+    throw new Error("Loopback auth/redirect fixture control failed");
+  return {
+    unauthenticated: 401,
+    authenticated: 200,
+    redirect: 302,
+    deniedRequests: 0,
+  };
+}
+
 /** Three origins make allowed/denied redirect destinations independently observable. */
 export async function startFixtures() {
   const authorization = `Basic ${Buffer.from(`fixture:${randomBytes(24).toString("hex")}`).toString("base64")}`;

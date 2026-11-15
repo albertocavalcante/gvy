@@ -2,7 +2,32 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { startFixtures } from "./fixtures.mjs";
+import { startFixtures, fixtureControlReceipt } from "./fixtures.mjs";
+
+test("fixture receipts project only validated fixed status codes and reject unexpected network outcomes", () => {
+  assert.deepEqual(fixtureControlReceipt(401, 200, 302, []), {
+    unauthenticated: 401,
+    authenticated: 200,
+    redirect: 302,
+    deniedRequests: 0,
+  });
+  for (const statuses of [
+    [200, 200, 302],
+    [401, 401, 302],
+    [401, 200, 301],
+    ["401", 200, 302],
+    [{ status: 401, body: "untrusted" }, 200, 302],
+  ]) {
+    assert.throws(
+      () => fixtureControlReceipt(...statuses, []),
+      /control failed/,
+    );
+  }
+  assert.throws(
+    () => fixtureControlReceipt(401, 200, 302, [{ origin: "denied" }]),
+    /control failed/,
+  );
+});
 
 test("loopback fixture authenticates, records denied-hop requests and never records secrets", async () => {
   const fixtures = await startFixtures();

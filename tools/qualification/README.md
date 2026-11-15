@@ -50,6 +50,17 @@ flowchart LR
 The output directory must not already exist. Its parent must exist. Receipts and logs are private (directory mode 0700,
 files 0600).
 
+JSON inputs are limited to 1 MiB and read through one nonblocking, no-follow regular-file descriptor, including the
+metadata and growth checks. Receipt writes have the same byte limit and publish only after a complete exclusive
+temporary-file write. Artifact hashes use descriptor-bound reads with a 1 GiB limit; configuration fingerprints use 1
+MiB. Symlinked artifact selections are resolved before opening, while JSON inputs must be regular files themselves.
+These checks do not provide an atomic snapshot against hostile in-place writes or protect ancestor directories from
+same-user replacement: frozen trusted artifacts and a private receipt directory remain prerequisites.
+
+Trace classification and failure diagnostics consume the bounded bytes captured from the observer stream, never a
+reopened trace pathname. The same bytes are written to the private raw trace; both stderr and stdout together remain
+limited to 16 MiB. Fixed HTTP control results are validated before projection into the receipt.
+
 ```sh
 /absolute/linux/node tools/qualification/run.mjs \
   --probe --output /private/receipts/mechanism-001 \

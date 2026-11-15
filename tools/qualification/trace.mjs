@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawn } from "node:child_process";
 import { openSync, writeSync, closeSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { delay, MAX_LOG_BYTES, readJson } from "./io.mjs";
 
 /** strace's existing stderr is the raw trace stream. Never reopen Node's socketpair via /proc/fd. */
@@ -11,14 +10,23 @@ export async function captureTrace(
   { tracePath, resultPath, deadlineMs, maxBytes = MAX_LOG_BYTES, afterResult },
 ) {
   const trace = openSync(tracePath, "wx", 0o600);
-  const diagnostics = openSync(`${tracePath}.stdout`, "wx", 0o600);
-  const child = spawn(argv[0], argv.slice(1), {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  let diagnostics;
+  let child;
+  try {
+    diagnostics = openSync(`${tracePath}.stdout`, "wx", 0o600);
+    child = spawn(argv[0], argv.slice(1), {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    closeSync(trace);
+    if (diagnostics !== undefined) closeSync(diagnostics);
+    throw error;
+  }
   let exited = false;
   let closed = false;
   let failure;
   let bytes = 0;
+  const traceChunks = [];
   const termination = new Promise((resolve) =>
     child.once("close", (code, signal) => {
       closed = true;
@@ -65,7 +73,14 @@ export async function captureTrace(
         child.kill("SIGKILL");
       } else {
         try {
-          writeSync(fd, chunk);
+          let offset = 0;
+          while (offset < chunk.length) {
+            const written = writeSync(fd, chunk, offset, chunk.length - offset);
+            if (written === 0)
+              throw new Error("Trace descriptor write made no progress");
+            offset += written;
+          }
+          if (fd === trace) traceChunks.push(chunk);
         } catch (error) {
           failure ??= error;
           child.kill("SIGKILL");
@@ -83,10 +98,8 @@ export async function captureTrace(
       }
       if (!result && exited) {
         await drain();
-        const raw = await readFile(tracePath, "utf8");
-        throw new Error(
-          `Traced command ended without its result: ${raw.slice(0, 2048)}`,
-        );
+        const raw = Buffer.concat(traceChunks).subarray(0, 2048).toString();
+        throw new Error(`Traced command ended without its result: ${raw}`);
       }
       if (!result) await delay(25);
     }
@@ -119,5 +132,5 @@ export async function captureTrace(
     closeSync(diagnostics);
   }
   if (failure) throw failure;
-  return result;
+  return { result, rawTrace: Buffer.concat(traceChunks).toString("utf8") };
 }

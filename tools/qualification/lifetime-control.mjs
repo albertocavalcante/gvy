@@ -131,7 +131,7 @@ if (role === "descendant") {
     await writeJson(join(directory, "ready.json"), namespace);
     await waitJson(join(directory, "host-admit.json"));
     let teardown;
-    const result = await captureTrace(
+    const { result, rawTrace } = await captureTrace(
       [
         tools.strace,
         "-f",
@@ -155,9 +155,7 @@ if (role === "descendant") {
         },
       },
     );
-    const trace = classifyTrace(
-      await readFile(join(directory, "lifetime.strace"), "utf8"),
-    );
+    const trace = classifyTrace(rawTrace);
     const late = await readJson(join(directory, "late-network.json"));
     assert.equal(late.afterMarkerObserved, true);
     assert.ok(["ENETUNREACH", "EHOSTUNREACH"].includes(late.tcp));

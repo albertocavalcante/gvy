@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { command, readJson, writeJson, delay } from "./io.mjs";
 import { classifyTrace } from "./core.mjs";
-import { startFixtures } from "./fixtures.mjs";
+import { startFixtures, fixtureControlReceipt } from "./fixtures.mjs";
 import { captureTrace } from "./trace.mjs";
 import { retireNamespaceTracees } from "./processes.mjs";
 import { filteredArgv, verifyCanary } from "./seccomp.mjs";
@@ -49,7 +49,7 @@ async function runTrace(name, argv, resultPath, filtered = true) {
   let processTeardown;
   // Node's pipe is a socketpair on Linux and cannot be reopened via /proc/self/fd/N.
   // strace writes directly to its existing stderr; workers capture candidate stderr themselves.
-  const result = await captureTrace(
+  const { result, rawTrace } = await captureTrace(
     [
       input.tools.strace,
       "-f",
@@ -84,7 +84,7 @@ async function runTrace(name, argv, resultPath, filtered = true) {
   );
   return {
     result,
-    trace: classifyTrace(await readFile(path, "utf8")),
+    trace: classifyTrace(rawTrace),
     processTeardown,
     observer: { naturalExit: true, exitCode: 0, drained: true },
   };
@@ -241,21 +241,12 @@ try {
         `${fixtures.origins.allowed}/redirect/denied`,
         { redirect: "manual" },
       );
-      fixtureControl = {
-        unauthenticated: unauthenticated.status,
-        authenticated: authenticated.status,
-        redirect: redirect.status,
-        deniedRequests: fixtures.requests.filter(
-          (item) => item.origin === "denied",
-        ).length,
-      };
-      if (
-        fixtureControl.unauthenticated !== 401 ||
-        fixtureControl.authenticated !== 200 ||
-        fixtureControl.redirect !== 302 ||
-        fixtureControl.deniedRequests !== 0
-      )
-        throw new Error("Loopback auth/redirect fixture control failed");
+      fixtureControl = fixtureControlReceipt(
+        unauthenticated.status,
+        authenticated.status,
+        redirect.status,
+        fixtures.requests,
+      );
     } finally {
       await fixtures.close();
     }

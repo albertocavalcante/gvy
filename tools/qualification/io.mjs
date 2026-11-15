@@ -1,52 +1,91 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import {
   access,
+  open,
   readFile,
-  writeFile,
   rename,
-  stat,
   readdir,
   readlink,
   realpath,
+  unlink,
 } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, delimiter } from "node:path";
 import { spawn } from "node:child_process";
 
 export const MAX_LOG_BYTES = 16 * 1024 * 1024;
+const MAX_JSON_BYTES = 1024 * 1024;
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Check and consume one descriptor. Nonblocking open rejects FIFOs without waiting for a writer. */
+async function* regularFileChunks(path, maxBytes) {
+  const file = await open(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    const metadata = await file.stat();
+    if (!metadata.isFile() || metadata.size > maxBytes)
+      throw new Error(`Invalid/oversized regular file: ${path}`);
+    let bytes = 0;
+    while (true) {
+      const buffer = Buffer.alloc(Math.min(64 * 1024, maxBytes - bytes + 1));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      bytes += bytesRead;
+      if (bytes > maxBytes)
+        throw new Error(`File grew beyond byte limit: ${path}`);
+      yield buffer.subarray(0, bytesRead);
+    }
+    const after = await file.stat();
+    if (
+      bytes !== metadata.size ||
+      after.size !== metadata.size ||
+      after.mtimeMs !== metadata.mtimeMs
+    )
+      throw new Error(`File changed while reading: ${path}`);
+  } finally {
+    await file.close();
+  }
+}
+
 export async function readJson(path) {
-  const metadata = await stat(path);
-  if (!metadata.isFile() || metadata.size > 1024 * 1024)
-    throw new Error(`Invalid/oversized JSON input: ${path}`);
-  return JSON.parse(await readFile(path, "utf8"));
+  const chunks = [];
+  for await (const chunk of regularFileChunks(path, MAX_JSON_BYTES))
+    chunks.push(chunk);
+  return JSON.parse(
+    new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)),
+  );
 }
 export async function writeJson(path, value) {
-  await writeFile(`${path}.pending`, `${JSON.stringify(value, null, 2)}\n`, {
-    mode: 0o600,
-    flag: "wx",
-  });
-  await rename(`${path}.pending`, path);
+  const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+  if (bytes.length > MAX_JSON_BYTES)
+    throw new Error(`JSON output exceeds byte limit: ${path}`);
+  const pending = `${path}.pending`;
+  const file = await open(pending, "wx", 0o600);
+  try {
+    await file.writeFile(bytes);
+    await file.close();
+    await rename(pending, path);
+  } catch (error) {
+    await file.close();
+    await unlink(pending);
+    throw error;
+  }
 }
-export async function fileIdentity(path) {
+export async function fileIdentity(path, maxBytes = 1024 ** 3) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > 1024 ** 3)
+    throw new Error("Invalid artifact byte limit");
   const canonical = await realpath(path);
-  const metadata = await stat(canonical);
-  if (!metadata.isFile() || metadata.size > 1024 ** 3)
-    throw new Error(`Invalid/oversized artifact: ${path}`);
   const hash = createHash("sha256");
   let bytes = 0;
-  for await (const chunk of createReadStream(canonical)) {
+  for await (const chunk of regularFileChunks(canonical, maxBytes)) {
     bytes += chunk.length;
-    if (bytes > 1024 ** 3)
-      throw new Error(`Artifact grew beyond byte limit: ${path}`);
     hash.update(chunk);
   }
-  if (bytes !== metadata.size)
-    throw new Error(`Artifact size changed while hashing: ${path}`);
-  return { path: canonical, bytes: metadata.size, sha256: hash.digest("hex") };
+  return { path: canonical, bytes, sha256: hash.digest("hex") };
 }
 
 /** Fingerprints only: never copy user repository credentials or init-script contents into receipts. */
@@ -71,9 +110,7 @@ export async function configurationSnapshot(gradleHome, mavenHome) {
   const result = [];
   for (const path of files.sort()) {
     try {
-      if ((await stat(path)).size > 1024 * 1024)
-        throw new Error(`Configuration metadata limit exceeded: ${path}`);
-      result.push(await fileIdentity(path));
+      result.push(await fileIdentity(path, MAX_JSON_BYTES));
     } catch (error) {
       if (error.code === "ENOENT") result.push({ path, absent: true });
       else throw error;
