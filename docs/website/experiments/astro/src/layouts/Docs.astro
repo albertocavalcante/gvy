@@ -1,0 +1,12 @@
+---
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+import Notice from '../components/Notice.astro';
+import '../../../shared/style.css';
+const { frontmatter } = Astro.props;
+---
+<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width" /><title>gvy documentation experiment</title></head><body>
+<a href="#main">Skip to content</a><header><nav aria-label="Main navigation"><a href="/gvy/">Home</a> <a href="/gvy/guides/quickstart/">Quickstart</a> <a href="/gvy/reference/settings/">Settings</a></nav></header>
+<Notice /><form id="search" hidden><label>Search <input name="query" required /></label> <button>Search</button></form><ul id="results" aria-live="polite"></ul><script>import "../../../shared/search.js";</script><main id="main" data-pagefind-body><slot /></main>
+{frontmatter.edit && <footer><a href={`https://github.com/albertocavalcante/gvy/edit/main/${frontmatter.edit}`}>Edit this page</a></footer>}
+</body></html>

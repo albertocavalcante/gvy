@@ -1,0 +1,10 @@
+/* SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+ * SPDX-License-Identifier: Apache-2.0 */
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.6; }
+body { max-width: 75rem; margin: auto; padding: 1rem; }
+nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+main { max-width: 70rem; }
+aside { border-inline-start: .3rem solid currentColor; padding: .5rem 1rem; margin-block: 1rem; }
+pre, table { display: block; overflow-x: auto; max-width: 100%; }
+pre { padding: 1rem; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid; outline-offset: 3px; }
