@@ -234,6 +234,13 @@ a new application focus trap or an unconditional body-focus exception. Exact-hea
 PR; these earlier failing attempts are retained separately from a future passing run. Manual zoom/reflow and
 assistive-technology review remain open in #2020.
 
+A subsequent run, 43677579475, passed the focus and visual checks but failed two fixture assertions on Firefox's exact
+`NS_BINDING_ABORTED` cancellation code. The traces showed an aborted hover-prefetch followed by a successful document
+load and an aborted old-page script fetched successfully on the next page. The fixture now recognizes this exact code
+alongside its existing Chromium cancellation handling and retains every recognized cancellation in a report attachment.
+Other asset failures still fail. Mouse-click journeys remain intact, without a network-idle wait; a focused unit test
+rejects reset, timeout, generic failure and unknown error codes.
+
 ## Browser journey follow-up (#2020)
 
 The next increment clicks five Pagefind results and verifies their destination URL and heading, follows installation to
