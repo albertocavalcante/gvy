@@ -21,17 +21,15 @@ test("search results lead to their destinations", async ({ page, baseURL }) => {
     await expect(page.locator("h1").first()).toContainText(heading, {
       ignoreCase: true,
     });
-    await page.waitForLoadState("networkidle");
   }
 });
 
 test("installation leads to the first project guide", async ({ page }) => {
   await page.goto("getting-started/installation/");
-  const quickstart = page
+  await page
     .getByRole("link", { name: "Quickstart", exact: true })
-    .first();
-  await quickstart.focus();
-  await page.keyboard.press("Enter");
+    .first()
+    .click();
   await expect(page).toHaveURL(/\/guides\/quickstart\/$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "quickstart",

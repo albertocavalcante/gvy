@@ -7,6 +7,7 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { isNavigationCancellation } from "./cancellation.mjs";
 
 export const test = base.extend({
   page: async ({ page, baseURL, browser }, use, testInfo) => {
@@ -15,6 +16,11 @@ export const test = base.extend({
       description: browser.version(),
     });
     const errors: string[] = [];
+    const cancellations: {
+      url: string;
+      resourceType: string;
+      errorText: string;
+    }[] = [];
     const origin = new URL(baseURL!).origin;
     page.on("pageerror", (error) =>
       errors.push(`page error: ${error.message}`),
@@ -29,17 +35,25 @@ export const test = base.extend({
       }
     });
     page.on("requestfailed", (request) => {
-      if (
+      const errorText = request.failure()?.errorText;
+      if (isNavigationCancellation(errorText)) {
+        cancellations.push({
+          url: request.url(),
+          resourceType: request.resourceType(),
+          errorText: errorText!,
+        });
+      } else if (
         new URL(request.url()).origin === origin &&
-        request.resourceType() !== "document" &&
-        !request.failure()?.errorText.includes("ERR_ABORTED")
+        request.resourceType() !== "document"
       ) {
-        errors.push(
-          `request failed: ${request.url()} ${request.failure()?.errorText}`,
-        );
+        errors.push(`request failed: ${request.url()} ${errorText}`);
       }
     });
     await use(page);
+    await testInfo.attach("canceled-requests", {
+      body: JSON.stringify(cancellations, null, 2),
+      contentType: "application/json",
+    });
     expect(errors, "browser runtime and same-origin asset failures").toEqual(
       [],
     );
