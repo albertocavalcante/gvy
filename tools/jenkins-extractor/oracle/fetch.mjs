@@ -3,13 +3,14 @@
 import { mkdir, open, rename, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { directory, diskGuard, captureInput, parseLock, verifyArtifact, withHome } from './oracle.mjs';
+import { directory, diskGuard, artifactIdentity, captureInput, parseLock, verifyArtifact, withHome } from './oracle.mjs';
 
 export async function fetchArtifact(artifact, cache, download = fetch) {
-  const destination = join(cache, artifact.file);
+  const { file, url, sha256 } = artifactIdentity(artifact);
+  const destination = join(cache, file);
   try {
     await stat(destination);
-    await verifyArtifact(destination, artifact.sha256);
+    await verifyArtifact(destination, sha256);
     return;
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
@@ -17,10 +18,10 @@ export async function fetchArtifact(artifact, cache, download = fetch) {
   await diskGuard(cache);
   await withHome(cache, async (temporary, signal) => {
     const partial = join(temporary, 'artifact');
-    const response = await download(artifact.url, {
+    const response = await download(url, {
       signal: AbortSignal.any([signal, AbortSignal.timeout(180000)]),
     });
-    if (!response.ok || !response.body) throw Error('download unavailable: ' + artifact.url);
+    if (!response.ok || !response.body) throw Error('download unavailable: ' + url);
     const output = await open(partial, 'wx', 0o600);
     try {
       let size = 0;
@@ -32,7 +33,7 @@ export async function fetchArtifact(artifact, cache, download = fetch) {
         await output.writeFile(chunk);
       }
     } finally { await output.close(); }
-    await verifyArtifact(partial, artifact.sha256);
+    await verifyArtifact(partial, sha256);
     signal.throwIfAborted();
     await rename(partial, destination);
   });

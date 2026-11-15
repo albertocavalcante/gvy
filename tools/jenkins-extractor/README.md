@@ -47,6 +47,13 @@ build-slot -- node tools/jenkins-extractor/oracle/oracle.mjs run legacy "$CACHE"
 An explicit run fails if a locked input is missing, differs from its hash or manifest, cannot boot, leaves a plugin
 inactive, violates a dependency minimum, or produces an unexpected control result. There is no skipped-oracle success.
 
+The download helper validates and snapshots the artifact identity before cache access or a network request. Initial URLs
+must exactly match the official HTTPS core/plugin paths derived from the validated version and plugin ID; filenames and
+SHA-256 digests are checked at the same boundary. A cache hit cannot bypass validation, and later caller mutation cannot
+change the download identity. Requests contain no file body or private headers. Jenkins' normal mirror redirects remain
+supported; the initial-origin check is not a redirect-domain allowlist or a general network sandbox. Downloaded bytes
+still require the exact locked digest before publication.
+
 Each run uses a unique private home, a non-root Java process with a 1 GiB heap, disabled HTTP/HTTPS/HTTP2/control ports,
 zero executors, disabled agent listeners, and an empty job/node inventory. The prewritten Jenkins security configuration
 uses the no-login realm with a separate authorization strategy denying anonymous access. Before and after conversion,

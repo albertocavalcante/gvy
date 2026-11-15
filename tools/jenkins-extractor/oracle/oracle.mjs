@@ -204,21 +204,40 @@ export async function diskGuard(...paths) {
   }
 }
 
+export function artifactIdentity(artifact) {
+  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) throw Error('invalid artifact metadata');
+  const { id, version, file, url, sha256 } = artifact;
+  let expectedFile;
+  let expectedUrl;
+  if (id !== undefined) {
+    if (typeof id !== 'string' || typeof version !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id) || !/^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$/.test(version)) throw Error('invalid plugin identity');
+    expectedFile = id + '-' + version + '.hpi';
+    expectedUrl = 'https://updates.jenkins.io/download/plugins/' + id + '/' + version + '/' + id + '.hpi';
+  } else {
+    if (typeof version !== 'string' || !/^\d+(\.\d+)+$/.test(version)) throw Error('invalid core identity');
+    expectedFile = 'jenkins-' + version + '.war';
+    expectedUrl = 'https://get.jenkins.io/war-stable/' + version + '/jenkins.war';
+  }
+  if (file !== expectedFile) throw Error('invalid artifact filename');
+  if (url !== expectedUrl) throw Error('invalid artifact URL');
+  if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) throw Error('invalid artifact digest');
+  return Object.freeze({ file: expectedFile, url: expectedUrl, sha256 });
+}
+
 export function validateLock(lock) {
   if (lock.schemaVersion !== 1 || !['current', 'legacy'].includes(lock.profile) || !Array.isArray(lock.plugins) || !lock.plugins.length) throw Error('unsupported oracle lock');
   const identity = /^[a-z0-9][a-z0-9-]*$/;
   const version = /^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$/;
   for (const plugin of lock.plugins) {
     if (!identity.test(plugin.id) || !version.test(plugin.version) || !/^\d+(\.\d+)+$/.test(plugin.requiredCore)) throw Error('invalid plugin identity');
-    if (plugin.file !== plugin.id + '-' + plugin.version + '.hpi') throw Error('invalid artifact filename');
-    if (plugin.url !== 'https://updates.jenkins.io/download/plugins/' + plugin.id + '/' + plugin.version + '/' + plugin.id + '.hpi') throw Error('invalid artifact URL');
+    artifactIdentity(plugin);
     if (!Array.isArray(plugin.dependencies)) throw Error('invalid dependencies');
     for (const edge of plugin.dependencies) {
       if (!identity.test(edge.id) || !version.test(edge.minimumVersion) || typeof edge.optional !== 'boolean') throw Error('invalid dependency');
     }
   }
   if (!/^\d+(\.\d+)+$/.test(lock.core?.version) || lock.core.file !== 'jenkins-' + lock.core.version + '.war') throw Error('invalid core');
-  if (lock.core.url !== 'https://get.jenkins.io/war-stable/' + lock.core.version + '/jenkins.war') throw Error('invalid core URL');
+  artifactIdentity(lock.core);
   verifyGraph(lock.plugins);
 }
 

@@ -3,9 +3,10 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { inspectSockets } from './inspect-sockets.mjs';
+import { fetchArtifact } from './fetch.mjs';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { mkdtemp, realpath, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { manifest, verifyArtifact, withHome, runProcess, verifyGraph, validateLock, parseLock, captureInput, stageInput, digest } from './oracle.mjs';
@@ -140,10 +141,10 @@ test('resource failure terminates the process and cleans its home', async () => 
 });
 
 test('lock validation rejects paths and insecure download identities', () => {
-  const plugin = { id: 'sample', version: '1.0', requiredCore: '2.479.3',
+  const plugin = { id: 'sample', version: '1.0', requiredCore: '2.479.3', sha256: 'a'.repeat(64),
     file: 'sample-1.0.hpi', url: 'https://updates.jenkins.io/download/plugins/sample/1.0/sample.hpi', dependencies: [] };
   const lock = { schemaVersion: 1, profile: 'legacy', core: { version: '2.479.3',
-    file: 'jenkins-2.479.3.war', url: 'https://get.jenkins.io/war-stable/2.479.3/jenkins.war' }, plugins: [plugin] };
+    file: 'jenkins-2.479.3.war', url: 'https://get.jenkins.io/war-stable/2.479.3/jenkins.war', sha256: 'b'.repeat(64) }, plugins: [plugin] };
   validateLock(lock);
   assert.throws(() => validateLock({ ...lock, plugins: [{ ...plugin, id: '../escape' }] }), /identity/);
   assert.throws(() => validateLock({ ...lock, plugins: [{ ...plugin, file: '../escape' }] }), /filename/);
@@ -266,8 +267,8 @@ for (const exitMode of ['term', 'success']) {
 
 test('a swapped compatibility profile is rejected before artifact work', () => {
   const lock = { schemaVersion: 1, profile: 'legacy', core: { version: '2.479.3',
-    file: 'jenkins-2.479.3.war', url: 'https://get.jenkins.io/war-stable/2.479.3/jenkins.war' },
-    plugins: [{ id: 'sample', version: '1.0', requiredCore: '2.479.3', file: 'sample-1.0.hpi',
+    file: 'jenkins-2.479.3.war', url: 'https://get.jenkins.io/war-stable/2.479.3/jenkins.war', sha256: 'b'.repeat(64) },
+    plugins: [{ id: 'sample', version: '1.0', requiredCore: '2.479.3', sha256: 'a'.repeat(64), file: 'sample-1.0.hpi',
       url: 'https://updates.jenkins.io/download/plugins/sample/1.0/sample.hpi', dependencies: [] }] };
   assert.throws(() => parseLock(Buffer.from(JSON.stringify(lock)), 'current'), /requested profile/);
   assert.equal(parseLock(Buffer.from(JSON.stringify(lock)), 'legacy').profile, 'legacy');
@@ -310,4 +311,91 @@ test('OS socket inspection rejects a real listener and succeeds after closure', 
   }
   assert.equal(inspectSockets(process.pid).internetSockets, 0);
   assert.throws(() => inspectSockets(-1), /invalid/);
+});
+
+// The public download helper enforces the same identity boundary even outside the CLI.
+test('download entry rejects invalid artifact metadata before cache or network', async t => {
+  const bytes = Buffer.from('public locked artifact');
+  const valid = { id: 'sample', version: '1.0', file: 'sample-1.0.hpi',
+    url: 'https://updates.jenkins.io/download/plugins/sample/1.0/sample.hpi', sha256: digest(bytes) };
+  const invalid = [
+    ['host', { url: 'https://example.invalid/sample.hpi' }],
+    ['scheme', { url: valid.url.replace('https:', 'http:') }],
+    ['userinfo', { url: valid.url.replace('https://', 'https://secret@') }],
+    ['query', { url: valid.url + '?private=secret' }],
+    ['fragment', { url: valid.url + '#private' }],
+    ['id type', { id: ['sample'] }],
+    ['version type', { version: ['1.0'] }],
+    ['identity traversal', { id: '../sample' }],
+    ['version traversal', { version: '../1.0' }],
+    ['filename traversal', { file: '../escaped.hpi' }],
+    ['digest', { sha256: 'not-a-sha256' }],
+  ];
+  for (const [name, change] of invalid) await t.test(name, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gvy-oracle-fetch-test-'));
+    const cache = join(root, 'cache');
+    let calls = 0;
+    try {
+      await mkdir(cache);
+      await assert.rejects(fetchArtifact({ ...valid, ...change }, cache, async () => {
+        calls++;
+        return new Response(bytes);
+      }), /invalid (artifact|plugin|core)/);
+      assert.equal(calls, 0, 'invalid identity must not reach the injected network client');
+      assert.deepEqual(await readdir(cache), []);
+      assert.deepEqual(await readdir(root), ['cache']);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+test('download entry snapshots valid public identity and sends no file body or headers', async () => {
+  const cache = await mkdtemp(join(tmpdir(), 'gvy-oracle-fetch-test-'));
+  const bytes = Buffer.from('public locked artifact');
+  const artifact = { id: 'sample', version: '1.0', file: 'sample-1.0.hpi',
+    url: 'https://updates.jenkins.io/download/plugins/sample/1.0/sample.hpi', sha256: digest(bytes) };
+  const expectedUrl = artifact.url;
+  let calls = 0;
+  try {
+    await fetchArtifact(artifact, cache, async (url, options) => {
+      calls++;
+      assert.equal(url, expectedUrl);
+      assert.deepEqual(Object.keys(options), ['signal']);
+      assert.ok(options.signal instanceof AbortSignal);
+      artifact.file = '../escaped.hpi';
+      artifact.sha256 = digest(Buffer.from('changed after validation'));
+      artifact.url = 'http://127.0.0.1/private';
+      return new Response(bytes);
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(await readFile(join(cache, 'sample-1.0.hpi')), bytes);
+    assert.deepEqual(await readdir(cache), ['sample-1.0.hpi']);
+  } finally { await rm(cache, { recursive: true, force: true }); }
+});
+
+test('download entry rejects corrupted bytes without publishing a destination', async () => {
+  const cache = await mkdtemp(join(tmpdir(), 'gvy-oracle-fetch-test-'));
+  const artifact = { version: '2.479.3', file: 'jenkins-2.479.3.war',
+    url: 'https://get.jenkins.io/war-stable/2.479.3/jenkins.war',
+    sha256: digest(Buffer.from('locked WAR')) };
+  try {
+    await assert.rejects(fetchArtifact(artifact, cache, async () => new Response('corrupted WAR')), /SHA-256 mismatch/);
+    assert.deepEqual(await readdir(cache), []);
+  } finally { await rm(cache, { recursive: true, force: true }); }
+});
+
+test('invalid download metadata cannot bypass validation through a valid cache hit', async () => {
+  const cache = await mkdtemp(join(tmpdir(), 'gvy-oracle-fetch-test-'));
+  const bytes = Buffer.from('public locked artifact');
+  const artifact = { id: 'sample', version: '1.0', file: 'sample-1.0.hpi',
+    url: 'https://updates.jenkins.io/download/plugins/sample/1.0/sample.hpi', sha256: digest(bytes) };
+  let calls = 0;
+  const download = async () => { calls++; throw Error('cache must not download'); };
+  try {
+    await writeFile(join(cache, artifact.file), bytes);
+    await fetchArtifact(artifact, cache, download);
+    await assert.rejects(fetchArtifact({ ...artifact, url: 'https://example.invalid/private' }, cache, download), /invalid artifact URL/);
+    assert.equal(calls, 0);
+    assert.deepEqual(await readFile(join(cache, artifact.file)), bytes);
+    assert.deepEqual(await readdir(cache), [artifact.file]);
+  } finally { await rm(cache, { recursive: true, force: true }); }
 });
