@@ -215,14 +215,14 @@ claimed. The private handoff names temporary resources and their cleanup conditi
 Draft #2050 adds the critical journeys in matching Playwright Firefox and WebKit while retaining the full Chromium
 route/viewport suite and one worker. The six bundled-Linux Chromium homepage baselines were individually inspected by
 the author and independent reviewer, copied byte for byte from hosted captures and supplied with SPDX sidecars. Their
-provenance is run43675231390, attempt1, job132693792052, publication head `9310d037233ab8de7ebdb8ffead809e08e5f8f85`,
-tested virtual merge `decda3ef2885e24007ad8e10ce26dbe00a45f770`, Chromium159.0.8154.6, Ubuntu24.04 runner
-image20261111.370. Screenshot-only CSS hides the generated footer time in a fixed-width box after checking that the date
+provenance is run 43675231390, attempt 1, job 132693792052, publication head `9310d037233ab8de7ebdb8ffead809e08e5f8f85`,
+tested virtual merge `decda3ef2885e24007ad8e10ce26dbe00a45f770`, Chromium 159.0.8154.6, Ubuntu 24.04 runner image
+20261111.370. Screenshot-only CSS hides the generated footer time in a fixed-width box after checking that the date
 exists; the date's appearance is excluded and mobile footer wrapping changes in the normalized image. System Chrome and
 non-Linux runs skip these comparisons.
 
-Runs43676122511 and43676833708 passed all six normal baseline comparisons without pixel mismatches. Each passed 47
-browser tests and failed two Firefox dialog-focus assertions. Per-key observations at 360 and1440px showed actual
+Runs 43676122511 and 43676833708 passed all six normal baseline comparisons without pixel mismatches. Each passed 47
+browser tests and failed two Firefox dialog-focus assertions. Per-key observations at 360 and 1440 px showed actual
 document/window blur, body as the active element and no focus on a background control; the next key returned to the
 dialog. Firefox reported `document.hasFocus()` as true during those body states, unlike the other tested engines.
 
