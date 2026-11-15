@@ -14,7 +14,7 @@ The internal `jenkins.library` types establish a disconnected, data-only foundat
 completion or compiler inputs. Legacy activation and the source-key guard from
 [#2034](https://github.com/albertocavalcante/gvy/pull/2034) retain their existing behavior.
 
-## Two identities serve different purposes
+## Identity layers
 
 | Identity                    | Includes                                                                                                                                                     | Does not establish                                                 |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
