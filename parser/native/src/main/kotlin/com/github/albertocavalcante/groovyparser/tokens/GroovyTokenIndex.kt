@@ -58,6 +58,18 @@ class GroovyTokenIndex private constructor(
      */
     data class TokenSpan(val start: Int, val end: Int, val context: TokenContext)
 
+    /** True only when the lexer reached EOF without reporting an error. */
+    val hasCompleteLexicalCoverage: Boolean get() = complete
+
+    /** Whether a UTF-16 offset is covered by a code token in a complete lexer pass. */
+    fun isCodeAt(offset: Int): Boolean {
+        if (!complete || offset < 0) return false
+        val index = diagnosticTokens.binarySearchBy(offset) { it.start }
+        val candidate = if (index >= 0) index else -index - 2
+        val token = diagnosticTokens.getOrNull(candidate) ?: return false
+        return offset < token.end && token.channel == Token.DEFAULT_CHANNEL && token.context == TokenContext.Code
+    }
+
     /** Query token context at offset. */
     fun contextAt(offset: Int): Option<TokenContext> {
         if (spans.isEmpty()) return none()
