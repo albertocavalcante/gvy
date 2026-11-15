@@ -32,14 +32,25 @@ class NativeHoverProvider(
     compilationService: GroovyCompilationService,
     documentProvider: DocumentProvider,
     sourceNavigator: SourceNavigator? = null,
+    documentUri: java.net.URI? = null,
+    sourcePolicy: com.github.albertocavalcante.gvy.gls.compilation.SourcePolicySnapshot? = null,
 ) : HoverProvider {
 
     private val logger = KotlinLogging.logger {}
 
+    // Bind the entire hover to the workspace view observed at session construction.
+    // Standalone sessions without captured workspace evidence retain legacy visibility; pairing their old
+    // parse with the current workspace would assert an identity that was never observed.
+    private val lookup = if (documentUri != null && sourcePolicy != null) {
+        compilationService.captureWorkspaceLookup(documentUri, sourcePolicy)
+    } else {
+        null
+    }
+
     // Initialize semantic bridge and generator
     private val semanticResolver = SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
-        compilationService.getWorkspaceSymbolIndex(),
+        lookup?.index ?: compilationService.getWorkspaceSymbolIndex(),
     )
     private val methodCallMetadataResolver =
         MethodCallMetadataResolver(
@@ -71,7 +82,7 @@ class NativeHoverProvider(
         } else {
             delegate.provideHover(params.textDocument.uri, params.position, snapshot)
         }
-        result ?: emptyHover()
+        if (lookup?.isCurrent() == false) emptyHover() else result ?: emptyHover()
     }
         .onFailure { throwable ->
             when (throwable) {

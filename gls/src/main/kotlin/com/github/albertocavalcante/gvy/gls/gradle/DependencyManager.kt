@@ -56,12 +56,14 @@ class DependencyManager(
         val onProgress: ((Int, String) -> Unit)?,
         val onComplete: (WorkspaceResolution) -> Unit,
         val onError: ((Exception) -> Unit)?,
+        val onMembershipComplete: ((WorkspaceResolution) -> Unit)? = null,
     )
 
     private data class Attempt(
         val generation: Long,
         val request: Request,
         val enableFileWatching: Boolean,
+        val membershipRefresh: Boolean = false,
         val cancellation: ResolutionCancellation = ResolutionCancellation(),
     )
 
@@ -75,6 +77,7 @@ class DependencyManager(
     @Volatile
     private var currentAttempt: Attempt? = null
     private var resolutionJob: Job? = null
+    private var pendingSourceRefresh: Attempt? = null
     private var buildFileWatcher: BuildToolFileWatcher? = null
 
     @Volatile
@@ -96,9 +99,34 @@ class DependencyManager(
         onComplete: (WorkspaceResolution) -> Unit,
         onError: ((Exception) -> Unit)? = null,
         enableFileWatching: Boolean = true,
+    ) = startAsyncResolution(
+        workspaceRoot,
+        onProgress,
+        onComplete,
+        onError,
+        ResolutionOptions(enableFileWatching),
+    )
+
+    internal data class ResolutionOptions(
+        val enableFileWatching: Boolean = true,
+        val onMembershipComplete: ((WorkspaceResolution) -> Unit)? = null,
+        val membershipRefresh: Boolean = false,
+    )
+
+    internal fun startAsyncResolution(
+        workspaceRoot: Path,
+        onProgress: ((Int, String) -> Unit)?,
+        onComplete: (WorkspaceResolution) -> Unit,
+        onError: ((Exception) -> Unit)?,
+        options: ResolutionOptions,
     ) {
-        val request = Request(workspaceRoot, onProgress, onComplete, onError)
-        start(request, enableFileWatching, expectedWatcher = null)
+        val request = Request(workspaceRoot, onProgress, onComplete, onError, options.onMembershipComplete)
+        start(
+            request,
+            options.enableFileWatching,
+            expectedWatcher = null,
+            membershipRefresh = options.membershipRefresh,
+        )
     }
 
     private data class StartEffects(
@@ -114,10 +142,19 @@ class DependencyManager(
         data class Ready(val effects: StartEffects) : StartDecision
     }
 
-    private fun start(request: Request?, enableFileWatching: Boolean, expectedWatcher: Any?) {
+    private fun start(
+        request: Request?,
+        enableFileWatching: Boolean,
+        expectedWatcher: Any?,
+        membershipRefresh: Boolean = false,
+        expectedRefresh: Attempt? = null,
+    ) {
         check(!Thread.holdsLock(lock)) { "Lifecycle calls cannot run from a dependency callback" }
         while (true) {
-            when (val decision = prepareStart(request, enableFileWatching, expectedWatcher)) {
+            when (
+                val decision =
+                    prepareStart(request, enableFileWatching, expectedWatcher, membershipRefresh, expectedRefresh)
+            ) {
                 StartDecision.Stop -> return
                 StartDecision.Retry -> Unit
                 is StartDecision.Ready -> {
@@ -128,39 +165,69 @@ class DependencyManager(
         }
     }
 
-    private fun prepareStart(request: Request?, enableFileWatching: Boolean, expectedWatcher: Any?): StartDecision {
+    private fun prepareStart(
+        request: Request?,
+        enableFileWatching: Boolean,
+        expectedWatcher: Any?,
+        membershipRefresh: Boolean,
+        expectedRefresh: Attempt?,
+    ): StartDecision {
         val expected = currentAttempt
+        if (expectedRefresh != null && (expected !== expectedRefresh || expectedRefresh.cancellation.isCancelled)) {
+            return StartDecision.Stop
+        }
+        return prepareRequestedStart(expected, request, enableFileWatching, expectedWatcher, membershipRefresh)
+    }
+
+    private fun prepareRequestedStart(
+        expected: Attempt?,
+        request: Request?,
+        enableFileWatching: Boolean,
+        expectedWatcher: Any?,
+        membershipRefresh: Boolean,
+    ): StartDecision {
         val activeRequest = when {
             expectedWatcher == null -> requireNotNull(request)
             watcherToken !== expectedWatcher -> null
             else -> expected?.request
         } ?: return StartDecision.Stop
-        val possibleDuplicate = expectedWatcher == null &&
-            expected?.request?.workspaceRoot == activeRequest.workspaceRoot &&
-            state.get() in setOf(State.IN_PROGRESS, State.COMPLETED) &&
-            !expected.cancellation.isCancelled
-        if (possibleDuplicate) {
+        if (isPossibleDuplicate(expected, activeRequest, expectedWatcher, membershipRefresh)) {
+            val duplicateAttempt = checkNotNull(expected)
             val duplicate = synchronized(lock) {
-                currentAttempt === expected &&
+                currentAttempt === duplicateAttempt &&
                     currentWorkspaceRoot == activeRequest.workspaceRoot &&
                     state.get() in setOf(State.IN_PROGRESS, State.COMPLETED) &&
-                    !expected.cancellation.isCancelled
+                    !duplicateAttempt.cancellation.isCancelled
             }
             return if (duplicate) StartDecision.Stop else StartDecision.Retry
         }
         // Signal the captured attempt before waiting for an admitted publication to leave the lock.
-        expected?.cancellation?.cancel()
-        return installAttempt(expected, activeRequest, enableFileWatching, expectedWatcher)
+        if (!membershipRefresh) expected?.cancellation?.cancel()
+        return installAttempt(expected, activeRequest, enableFileWatching, expectedWatcher, membershipRefresh)
     }
+
+    private fun isPossibleDuplicate(
+        expected: Attempt?,
+        request: Request,
+        expectedWatcher: Any?,
+        membershipRefresh: Boolean,
+    ): Boolean = !membershipRefresh && expectedWatcher == null &&
+        expected?.request?.workspaceRoot == request.workspaceRoot &&
+        state.get() in setOf(State.IN_PROGRESS, State.COMPLETED) &&
+        !expected.cancellation.isCancelled
 
     private fun installAttempt(
         expected: Attempt?,
         request: Request,
         enableFileWatching: Boolean,
         expectedWatcher: Any?,
+        membershipRefresh: Boolean,
     ): StartDecision = synchronized(lock) {
         if (currentAttempt !== expected) return@synchronized StartDecision.Retry
         if (expectedWatcher != null && watcherToken !== expectedWatcher) return@synchronized StartDecision.Stop
+        if (membershipRefresh && !isCurrentMembershipAttempt(expected)) {
+            return@synchronized StartDecision.Stop
+        }
         // Invalidate the old watcher before publishing the new attempt, so a stale event cannot pair
         // its token with an attempt from another workspace.
         val watcher = if (currentWorkspaceRoot != request.workspaceRoot) detachWatcher() else null
@@ -170,15 +237,19 @@ class DependencyManager(
             currentBuildToolName = null
         }
         generation++
+        pendingSourceRefresh = null
         val previousJob = resolutionJob
         currentWorkspaceRoot = request.workspaceRoot
         state.set(State.IN_PROGRESS)
-        val attempt = Attempt(generation, request, enableFileWatching)
+        val attempt = Attempt(generation, request, enableFileWatching, membershipRefresh)
         currentAttempt = attempt
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { resolve(attempt) }
         resolutionJob = job
         StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher))
     }
+
+    private fun isCurrentMembershipAttempt(expected: Attempt?): Boolean =
+        expected != null && generation == expected.generation && !expected.cancellation.isCancelled
 
     @OptIn(InternalCoroutinesApi::class)
     private fun launchAttempt(effects: StartEffects) {
@@ -189,15 +260,31 @@ class DependencyManager(
             if (cause != null) effects.attempt.cancellation.cancel()
         }
         effects.job.invokeOnCompletion {
-            synchronized(lock) {
+            val refresh = synchronized(lock) {
                 if (currentAttempt === effects.attempt) {
                     if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
-                    if (resolutionJob === effects.job) resolutionJob = null
+                    if (resolutionJob === effects.job) {
+                        resolutionJob = null
+                        val pending = pendingSourceRefresh === effects.attempt &&
+                            state.get() == State.COMPLETED &&
+                            currentBuildToolName == "Gradle" &&
+                            !effects.attempt.cancellation.isCancelled &&
+                            currentWorkspaceRoot == effects.attempt.request.workspaceRoot
+                        pendingSourceRefresh = null
+                        if (pending) effects.attempt else null
+                    } else {
+                        null
+                    }
+                } else {
+                    null
                 }
             }
+            if (refresh != null) startMembershipRefresh(refresh)
         }
-        notifyCurrent(effects.attempt) {
-            effects.attempt.request.onProgress?.invoke(0, "Starting dependency resolution...")
+        if (!effects.attempt.membershipRefresh) {
+            notifyCurrent(effects.attempt) {
+                effects.attempt.request.onProgress?.invoke(0, "Starting dependency resolution...")
+            }
         }
         effects.job.start()
     }
@@ -210,35 +297,7 @@ class DependencyManager(
             checkCurrent(attempt)
             tool = buildToolManager.detectBuildTool(request.workspaceRoot)
             checkCurrent(attempt)
-            notifyCurrent(attempt) { currentBuildToolName = tool?.name }
-            // Install before resolving: an initially broken build must still be able to recover on an edit.
-            if (tool != null && attempt.enableFileWatching) startWatching(attempt, tool)
-            notifyCurrent(attempt) {
-                request.onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${tool?.name ?: "workspace"}...")
-            }
-            checkCurrent(attempt)
-            val legacy = tool?.resolve(
-                request.workspaceRoot,
-                { message -> notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_CONNECTING, message) } },
-                attempt.cancellation,
-            ) ?: WorkspaceResolution(emptyList(), listOf(request.workspaceRoot))
-            checkCurrent(attempt)
-            val resolution = legacy.withObservedTargets(targetObserver, tool, request.workspaceRoot, attempt.generation)
-            checkCurrent(attempt)
-            notifyCurrent(attempt) {
-                if (resolution.isUsable) {
-                    dependencies.set(resolution.dependencies)
-                    sourceDirs.set(resolution.sourceDirectories)
-                }
-                state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED)
-            }
-            notifyCurrent(attempt) {
-                request.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
-            }
-            notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished") }
-            withContext(Dispatchers.Default) {
-                notifyCurrent(attempt) { request.onComplete(resolution) }
-            }
+            resolveDetected(attempt, tool)
         } catch (e: CancellationException) {
             notifyCurrent(attempt) {
                 if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
@@ -247,8 +306,9 @@ class DependencyManager(
         } catch (e: Exception) {
             notifyCurrent(attempt) {
                 logger.error(e) { "Dependency resolution failed for ${request.workspaceRoot}" }
-                state.set(State.FAILED)
+                state.set(if (attempt.membershipRefresh) State.COMPLETED else State.FAILED)
             }
+            if (attempt.membershipRefresh) return
             withContext(Dispatchers.Default) {
                 notifyCurrent(attempt) {
                     if (tool != null) {
@@ -259,8 +319,55 @@ class DependencyManager(
                     }
                 }
             }
-        } finally {
-            notifyCurrent(attempt) { resolutionJob = null }
+        }
+    }
+
+    private suspend fun resolveDetected(attempt: Attempt, tool: BuildTool?) {
+        val request = attempt.request
+        notifyCurrent(attempt) { currentBuildToolName = tool?.name }
+        // Install before resolving: an initially broken build must still be able to recover on an edit.
+        if (tool != null && attempt.enableFileWatching) startWatching(attempt, tool)
+        if (!attempt.membershipRefresh) {
+            notifyCurrent(attempt) {
+                request.onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${tool?.name ?: "workspace"}...")
+            }
+        }
+        checkCurrent(attempt)
+        val legacy = if (attempt.membershipRefresh) {
+            WorkspaceResolution(dependencies.get(), sourceDirs.get())
+        } else {
+            tool?.resolve(
+                request.workspaceRoot,
+                { message -> notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_CONNECTING, message) } },
+                attempt.cancellation,
+            ) ?: WorkspaceResolution(emptyList(), listOf(request.workspaceRoot))
+        }
+        checkCurrent(attempt)
+        val resolution = legacy.withObservedTargets(targetObserver, tool, request.workspaceRoot, attempt.generation)
+        checkCurrent(attempt)
+        notifyCurrent(attempt) {
+            if (resolution.isUsable) {
+                dependencies.set(resolution.dependencies)
+                sourceDirs.set(resolution.sourceDirectories)
+            }
+            state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED)
+        }
+        if (!attempt.membershipRefresh) {
+            notifyCurrent(attempt) {
+                request.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
+            }
+            notifyCurrent(attempt) {
+                request.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished")
+            }
+        }
+        withContext(Dispatchers.Default) {
+            notifyCurrent(attempt) {
+                if (attempt.membershipRefresh) {
+                    request.onMembershipComplete?.invoke(resolution)
+                } else {
+                    request.onComplete(resolution)
+                }
+            }
         }
     }
 
@@ -325,6 +432,35 @@ class DependencyManager(
         watcher?.stopWatching()
     }
 
+    /** Re-observe Gradle membership after a source tree change. */
+    fun refreshSourceMembership() {
+        val refresh = synchronized(lock) {
+            val attempt = currentAttempt ?: return
+            if (attempt.cancellation.isCancelled) return
+            val job = resolutionJob
+            if (shouldQueueMembership(job)) {
+                pendingSourceRefresh = attempt
+                null
+            } else if (currentBuildToolName == "Gradle" && state.get() == State.COMPLETED) {
+                attempt
+            } else {
+                null
+            }
+        }
+        if (refresh != null) startMembershipRefresh(refresh)
+    }
+
+    private fun shouldQueueMembership(job: Job?): Boolean =
+        job != null && !job.isCompleted && (currentBuildToolName == null || currentBuildToolName == "Gradle")
+
+    private fun startMembershipRefresh(attempt: Attempt) = start(
+        attempt.request,
+        enableFileWatching = false,
+        expectedWatcher = null,
+        membershipRefresh = true,
+        expectedRefresh = attempt,
+    )
+
     private fun refreshFromWatcher(token: Any) {
         start(request = null, enableFileWatching = false, expectedWatcher = token)
     }
@@ -378,6 +514,7 @@ class DependencyManager(
             val effects = synchronized(lock) {
                 if (currentAttempt !== expected) return@synchronized null
                 generation++
+                pendingSourceRefresh = null
                 val oldJob = resolutionJob
                 resolutionJob = null
                 val watcher = detachWatcher()

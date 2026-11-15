@@ -113,6 +113,7 @@ class InlayHintsProvider(
      */
     fun provideInlayHints(params: InlayHintParams): List<InlayHint> {
         val uri = URI.create(params.textDocument.uri)
+        val lookup = compilationService.captureWorkspaceLookup(uri)
         val astModel = compilationService.getAstModel(uri)
 
         if (astModel == null) {
@@ -120,10 +121,12 @@ class InlayHintsProvider(
             return emptyList()
         }
         val symbolTable = compilationService.getSymbolTable(uri)
+        val requestIndex = lookup.index
         val workspaceSymbols = if (config.parameterHints) {
             compilationService.getAllSymbolStorages()
                 .values
                 .flatMap { index -> index.symbols.values.flatten() }
+                .filter { requestIndex.isVisibleUri(it.uri) }
         } else {
             emptyList()
         }
@@ -136,9 +139,10 @@ class InlayHintsProvider(
             symbolTable = symbolTable,
             workspaceSymbols = workspaceSymbols,
             compilationService = compilationService,
-            semanticResolver = semanticResolver,
+            semanticResolver = semanticResolver.withWorkspaceMemberLookup(requestIndex),
             config = config,
             logger = logger,
+            workspaceIndex = requestIndex,
         )
 
         // Traverse all nodes and collect hints within the requested range
@@ -147,7 +151,7 @@ class InlayHintsProvider(
         }
 
         logger.debug { "Returning ${hints.size} inlay hints for ${params.textDocument.uri}" }
-        return hints
+        return if (lookup.isCurrent()) hints else emptyList()
     }
 
     private fun processNode(node: ASTNode, range: Range, context: HintContext, hints: MutableList<InlayHint>) {
@@ -432,6 +436,7 @@ internal object InlayHintsCandidates {
         val simpleName = normalizedType.substringAfterLast('.')
         // The exact class wins over same-named classes in other packages (#1374).
         val sameName = context.compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+            .filter { context.workspaceIndex?.isVisibleUri(it.uri) != false }
         val exact = if (context.namesExactly(normalizedType)) {
             sameName.filter { it.fullyQualifiedName == normalizedType }
         } else {

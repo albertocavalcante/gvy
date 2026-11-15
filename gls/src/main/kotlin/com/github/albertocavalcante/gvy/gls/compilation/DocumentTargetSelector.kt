@@ -35,9 +35,8 @@ sealed interface TargetSelection {
 }
 
 /**
- * Attributes a document to a build target from reported source roots. Roots are not exclusive
- * membership proof (#1213): a document is attributed only when no other target's roots also contain
- * it; everything else stays explicit so callers fall back to the legacy workspace classpath.
+ * Attributes a document to a build target from authoritative file membership when available, or
+ * from source roots as a recovery inference. Multiple owning targets remain ambiguous.
  *
  * Documents and roots are compared in one canonical form: the real path when it exists (resolving
  * symbolic links and, on case-insensitive file systems, spelling), else the absolute normalised path.
@@ -60,10 +59,19 @@ internal class DocumentTargetSelector(
             }
         }
 
+    private val sourceFiles = owners.associate { (snapshot, _) ->
+        snapshot to snapshot.sourceFiles?.mapTo(HashSet()) { file ->
+            canonicalise(if (file.isAbsolute) file else snapshot.target.projectDirectory.resolve(file))
+        }
+    }
+
     fun select(path: Path?): TargetSelection {
         if (scoped == null) return TargetSelection.LegacyOnly
         val document = path?.let(::canonicalDocument) ?: return TargetSelection.Unowned
-        val matches = owners.filter { (_, roots) -> roots.any(document::startsWith) }.map { it.first }
+        val matches = owners.filter { (snapshot, roots) ->
+            val files = sourceFiles[snapshot]
+            if (files == null) roots.any(document::startsWith) else document in files
+        }.map { it.first }
         return when {
             matches.isEmpty() -> TargetSelection.Unowned
             matches.size > 1 -> TargetSelection.Ambiguous(matches)
@@ -123,4 +131,13 @@ internal class DocumentTargetSelector(
  * [WorkspaceModel] snapshot, so a compile can never pair one configuration's classpath with another's
  * fingerprint or target facts.
  */
-data class DocumentCompileContext(val classpath: List<Path>, val fingerprint: String, val selection: TargetSelection)
+data class DocumentCompileContext(
+    val classpath: List<Path>,
+    val fingerprint: String,
+    val selection: TargetSelection,
+    /** Null when a build source model does not apply; true for an authoritative boundary. */
+    val sourceMembershipKnown: Boolean? = null,
+    /** Null when inapplicable; false when source dependencies could not be attributed to targets. */
+    val sourceVisibilityKnown: Boolean? = null,
+    val sourcePolicy: SourcePolicySnapshot? = null,
+)

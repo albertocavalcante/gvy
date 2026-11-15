@@ -27,6 +27,9 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
      */
     fun createImportActions(uriString: String, diagnostics: List<Diagnostic>, content: String): List<CodeAction> {
         val actions = mutableListOf<CodeAction>()
+        val lookup = runCatching { java.net.URI.create(uriString) }.getOrNull()
+            ?.let { compilationService.captureWorkspaceLookup(it) }
+        val index = lookup?.index
 
         // Find diagnostics that indicate missing symbols
         val missingSymbolDiagnostics = diagnostics.filter { isMissingSymbolDiagnostic(it) }
@@ -36,7 +39,7 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
             logger.debug { "Looking for import candidates for symbol: $symbolName" }
 
             // Find all possible imports for this symbol
-            val candidates = findImportCandidates(symbolName)
+            val candidates = findImportCandidates(symbolName, index)
 
             // Only offer action if exactly one candidate exists (unambiguous)
             if (candidates.size == 1) {
@@ -51,16 +54,20 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
             }
         }
 
-        return actions
+        return if (lookup == null || lookup.isCurrent()) actions else emptyList()
     }
 
     /**
      * Finds all possible fully-qualified names for a symbol from workspace and dependencies.
      */
-    private fun findImportCandidates(symbolName: String): List<String> {
+    private fun findImportCandidates(
+        symbolName: String,
+        index: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex?,
+    ): List<String> {
         // Workspace classes by name, in file order, from the indexed lookup rather than a full scan (#1312).
         val candidates = compilationService.symbolIndexingService
             .findClasses(ClassNameQuery.Exact(symbolName))
+            .filter { index?.isVisibleUri(it.uri) != false }
             .map { it.fullyQualifiedName }
             .filter { it.isNotEmpty() && it.contains('.') }
             .toSet()

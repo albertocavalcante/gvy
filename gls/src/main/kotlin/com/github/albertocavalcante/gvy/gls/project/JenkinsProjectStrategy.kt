@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.JenkinsMetadataService
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
 import com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager
 import com.github.albertocavalcante.gvy.jenkins.JenkinsWorkspaceManager
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Project strategy for Jenkins Pipeline workspaces.
@@ -44,6 +46,15 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
     JenkinsCapabilities {
 
     private val logger = KotlinLogging.logger {}
+    private val policyRevision = AtomicLong()
+    override val sourcePolicyRevision: Long get() = policyRevision.get()
+
+    @Synchronized
+    override fun withCurrentSourcePolicyRevision(revision: Long, action: () -> Unit): Boolean {
+        if (revision % 2L != 0L || sourcePolicyRevision != revision) return false
+        action()
+        return true
+    }
 
     override val id: String = "jenkins"
     override val displayName: String = "Jenkins Pipeline"
@@ -53,6 +64,7 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
     override val priority: Int = 100
 
     private var workspaceManager: JenkinsWorkspaceManager? = null
+    private var effectiveConfig: JenkinsConfiguration? = null
     private var pluginManager: JenkinsPluginManager? = null
     private var initJob: Job? = null
 
@@ -89,7 +101,12 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
 
         // Create workspace manager (owns JenkinsContext)
         val wm = JenkinsWorkspaceManager(config.jenkinsConfig, workspaceRoot, pm)
-        workspaceManager = wm
+        synchronized(this) {
+            policyRevision.incrementAndGet()
+            workspaceManager = wm
+            effectiveConfig = config.jenkinsConfig
+            policyRevision.incrementAndGet()
+        }
 
         // Load GDSL metadata synchronously (fast operation)
         runCatching { wm.loadGdslMetadata() }
@@ -146,19 +163,30 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
 
     override fun overridesClasspath(uri: URI): Boolean = workspaceManager?.isJenkinsFile(uri) == true
 
+    @Synchronized
     override fun updateConfiguration(config: ServerConfiguration) {
         val currentWm = workspaceManager
-        if (currentWm != null) {
-            workspaceManager = currentWm.updateConfiguration(config.jenkinsConfig)
+        if (currentWm != null && effectiveConfig != config.jenkinsConfig) {
+            policyRevision.incrementAndGet()
+            try {
+                workspaceManager = currentWm.updateConfiguration(config.jenkinsConfig)
+                effectiveConfig = config.jenkinsConfig
+            } finally {
+                policyRevision.incrementAndGet()
+            }
             logger.info { "Updated Jenkins configuration" }
         }
     }
 
+    @Synchronized
     override fun shutdown() {
         logger.info { "Shutting down Jenkins strategy" }
+        policyRevision.incrementAndGet()
         initJob?.cancel()
         initJob = null
         workspaceManager = null
+        effectiveConfig = null
         pluginManager = null
+        policyRevision.incrementAndGet()
     }
 }

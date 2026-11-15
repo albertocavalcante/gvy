@@ -120,17 +120,21 @@ class LanguageEngineManager(
         }
     }
 
-    fun invalidateClassLoader() {
-        synchronized(classLoaderLock) {
-            currentClassLoader?.let {
+    internal fun detachClassLoader(): () -> Unit {
+        val detached = synchronized(classLoaderLock) {
+            currentClassLoader.also { currentClassLoader = null }
+        }
+        return {
+            detached?.let {
                 logger.info { "Invalidating ClassLoader" }
                 runCatching { it.close() }
                     .onFailure { throwable ->
                         rethrowIfCancellationOrError(throwable)
                         logger.warn(throwable) { "Failed to close ClassLoader" }
                     }
-                currentClassLoader = null
             }
         }
     }
+
+    fun invalidateClassLoader() = detachClassLoader().invoke()
 }

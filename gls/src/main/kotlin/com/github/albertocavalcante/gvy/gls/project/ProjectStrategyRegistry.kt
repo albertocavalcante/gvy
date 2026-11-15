@@ -56,6 +56,7 @@ class ProjectStrategyRegistry(strategies: List<ProjectStrategy> = emptyList()) {
      * @param config Server configuration
      * @return List of active strategies for this workspace
      */
+    @Synchronized
     fun selectStrategies(workspaceRoot: Path, config: ServerConfiguration): List<ProjectStrategy> {
         activeStrategies = strategies.filter { strategy ->
             val canHandle = strategy.canHandle(workspaceRoot, config)
@@ -102,6 +103,7 @@ class ProjectStrategyRegistry(strategies: List<ProjectStrategy> = emptyList()) {
      * Shuts down all active strategies.
      * Calls [ProjectStrategy.shutdown] on each active strategy.
      */
+    @Synchronized
     fun shutdown() {
         logger.info { "Shutting down ${activeStrategies.size} project strategies" }
         activeStrategies.forEach { strategy ->

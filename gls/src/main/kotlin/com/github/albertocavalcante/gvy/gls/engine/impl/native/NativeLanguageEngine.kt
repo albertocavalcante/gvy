@@ -60,7 +60,12 @@ class NativeLanguageEngine(
     }
 
     /** Uses the held compiled facts only for a request that explicitly acquired a hover snapshot. */
-    internal fun createHoverSession(parseResult: ParseResult, uri: String, content: String): LanguageSession {
+    internal fun createHoverSession(
+        parseResult: ParseResult,
+        uri: String,
+        content: String,
+        sourcePolicy: com.github.albertocavalcante.gvy.gls.compilation.SourcePolicySnapshot? = null,
+    ): LanguageSession {
         val session = createSession(parseResult, uri, content)
         return object : LanguageSession {
             override val result: ParseResultMetadata = session.result
@@ -71,6 +76,8 @@ class NativeLanguageEngine(
                         compilationService,
                         documentProvider,
                         sourceNavigator,
+                        runCatching { URI.create(uri) }.getOrNull(),
+                        sourcePolicy,
                     ).forSource(content)
                 }
             }
@@ -100,7 +107,13 @@ class NativeLanguageSession(
     override val features: FeatureSet by lazy {
         object : FeatureSet {
             override val hoverProvider: HoverProvider =
-                NativeHoverProvider(parseResult, compilationService, documentProvider, sourceNavigator)
+                NativeHoverProvider(
+                    parseResult,
+                    compilationService,
+                    documentProvider,
+                    sourceNavigator,
+                    runCatching { URI.create(parseUnit.uri) }.getOrNull(),
+                )
             override val documentSymbolProvider: DocumentSymbolProvider =
                 UnifiedDocumentSymbolProvider(parseUnit)
             override val definitionProvider: DefinitionProvider =
@@ -115,7 +128,9 @@ class NativeLanguageSession(
                         compilationService,
                         SemanticTypeResolver(
                             compilationService.classpathService.getTypeSolver(),
-                            compilationService.getWorkspaceSymbolIndex(),
+                            runCatching { URI.create(parseUnit.uri) }.getOrNull()
+                                ?.let(compilationService::getWorkspaceSymbolIndex)
+                                ?: compilationService.getWorkspaceSymbolIndex(),
                         ),
                     ),
                     content,

@@ -7,6 +7,8 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 
 - Architecture: `ARCHITECTURE.md`
 - Analysis SDK and infrastructure extraction delivery: [dependency-ordered plan](SDK_EXTRACTION_DELIVERY_PLAN.md)
+- Source analysis membership:
+  [compiler membership, lookup boundaries and remaining limits](SOURCE_ANALYSIS_VISIBILITY.md)
 - CodeNarc integration notes: `CODENARC.md`
 - Jenkins IntelliSense design: `JENKINS_INTELLISENSE_ARCHITECTURE.md`
 - Spock design notes: `SPOCK_SUPPORT.md`, `SPOCK_AST_SUPPORT.md`

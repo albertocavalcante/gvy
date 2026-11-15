@@ -115,3 +115,71 @@ internal class SourceRootWatcherRegistrar(
             ?.exceptionally { error -> null.also { failed(error) } }
     }
 }
+
+/** Watches discovered external task inputs exactly, without recursively watching their parents. */
+internal class SourceMemberWatcherRegistrar {
+    private val logger = KotlinLogging.logger {}
+    private val lock = Any()
+    private var client: LanguageClient? = null
+    private var files: Set<Path> = emptySet()
+    private var registered: Set<Path> = emptySet()
+    private var registrationId: String? = null
+    private var generation = 0
+
+    fun attach(client: LanguageClient?, capabilities: ClientCapabilities?) = synchronized(lock) {
+        val watched = capabilities?.workspace?.didChangeWatchedFiles
+        if (client == null || watched?.dynamicRegistration != true || watched.relativePatternSupport != true) {
+            return@synchronized
+        }
+        this.client = client
+        reconcile(client)
+    }
+
+    fun sync(paths: List<Path>) = synchronized(lock) {
+        files = paths.mapTo(LinkedHashSet()) { it.toAbsolutePath().normalize() }
+        client?.let(::reconcile)
+    }
+
+    private fun reconcile(client: LanguageClient) {
+        if (files == registered) return
+        registrationId?.let { id ->
+            runCatching {
+                client.unregisterCapability(UnregistrationParams(listOf(Unregistration(id, WATCHED_FILES_METHOD))))
+                    .exceptionally { null }
+            }
+        }
+        registered = files
+        registrationId = null
+        if (files.isEmpty()) return
+        val id = "groovy-lsp-source-member-watchers-${++generation}"
+        val watchers = files.mapNotNull { file ->
+            val parent = file.parent ?: return@mapNotNull null
+            if (file.fileName.toString().any { it in "*?[]{}" }) {
+                logger.warn { "Cannot watch external source with glob metacharacters: $file" }
+                return@mapNotNull null
+            }
+            FileSystemWatcher(
+                Either.forRight(RelativePattern(Either.forRight(parent.toUri().toString()), file.fileName.toString())),
+                WatchKind.Create + WatchKind.Change + WatchKind.Delete,
+            )
+        }
+        if (watchers.isEmpty()) return
+        registrationId = id
+        try {
+            val options = DidChangeWatchedFilesRegistrationOptions(watchers)
+            val registration = Registration(id, WATCHED_FILES_METHOD, options)
+            client.registerCapability(RegistrationParams(listOf(registration))).exceptionally {
+                synchronized(lock) {
+                    if (registrationId == id) {
+                        registrationId = null
+                        registered = emptySet()
+                    }
+                }
+                null
+            }
+        } catch (_: RuntimeException) {
+            registrationId = null
+            registered = emptySet()
+        }
+    }
+}

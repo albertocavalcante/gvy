@@ -195,7 +195,7 @@ class GroovyCompilationService internal constructor(
     internal fun getHoverSession(uri: URI, snapshot: CompiledDocumentSnapshot): LanguageSession {
         val engine = engineManager.activeEngine
         return if (engine is NativeLanguageEngine) {
-            engine.createHoverSession(snapshot.parseResult, uri.toString(), snapshot.sourceText)
+            engine.createHoverSession(snapshot.parseResult, uri.toString(), snapshot.sourceText, snapshot.sourcePolicy)
         } else {
             engine.createSession(uri, snapshot.sourceText)
         }
@@ -238,6 +238,29 @@ class GroovyCompilationService internal constructor(
      */
     fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
 
+    /** Capture the model once. Its guarded view stops serving results as soon as that model retires. */
+    fun getWorkspaceSymbolIndex(uri: URI): WorkspaceSymbolIndex = captureWorkspaceLookup(uri).index
+
+    internal fun captureWorkspaceLookup(
+        uri: URI,
+        policy: SourcePolicySnapshot = workspaceManager.captureSourcePolicy(uri, workspaceManager.current()),
+    ): WorkspaceLookupContext {
+        require(policy.uri == uri) { "Source policy must belong to the requested document" }
+        val scope = policy.scope
+        val current = policy::isCurrent
+        val index = workspaceSymbolIndex.scopedWhere { candidate ->
+            if (!current()) {
+                false
+            } else if (candidate.scheme != "file") {
+                scope.mode != SourceMode.INDEPENDENT || candidate == uri
+            } else {
+                val candidatePath = runCatching { Path.of(candidate) }.getOrNull()
+                candidatePath != null && scope.classify(candidatePath) != SourceCandidate.EXCLUDED
+            }
+        }
+        return WorkspaceLookupContext(index, current)
+    }
+
     /**
      * The buffer for [uri] closed: the listed spelling it shadowed, when the client named the file otherwise
      * (#1446). Null when [uri] is listed as it is, or names no file.
@@ -276,7 +299,9 @@ class GroovyCompilationService internal constructor(
      * pending jobs' waiters are woken and the jobs cancelled once no lock is held (#1429); one that is still
      * running when this returns is only wasted work, because its ticket belongs to the retired epoch.
      */
-    fun clearCaches() = retireAll {
+    fun clearCaches() = prepareCacheRetirement().invoke()
+
+    internal fun prepareCacheRetirement(): () -> Unit = prepareRetireAll {
         symbolIndexer.clear()
         semanticIndexer.clear()
     }
@@ -291,25 +316,32 @@ class GroovyCompilationService internal constructor(
      * and its semantic publication was retired with them. A kept fact describes its file's text, which did not
      * change; a deleted source's facts are dropped by the caller through [invalidateCache].
      */
-    fun clearCompileCaches() = retireAll {
+    fun clearCompileCaches() = prepareRetireAll {
         symbolIndexer.unparseable.clear() // stale anyway: each entry carries a ticket retired here
         semanticIndexer.retireAllPublications()
-    }
+    }.invoke()
 
     /** Retires every ticket and the compiled results, running [alsoUnderFence] before another ticket is taken. */
-    private fun retireAll(alsoUnderFence: () -> Unit) {
+    private fun prepareRetireAll(alsoUnderFence: () -> Unit): () -> Unit {
         var retired: Map<URI, PendingCompilation> = emptyMap()
+        var closeLoader: () -> Unit = {}
         semanticSnapshotGuard.invalidate {
             // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
             ownership.retireAll {
                 retired = cacheService.detach()
                 alsoUnderFence()
             }
-            invalidateClassLoader()
+            closeLoader = engineManager.detachClassLoader()
         }
         // Woken and cancelled once no lock is held and the class loader is gone: a waiter may resume inline and
         // re-resolve at once (#1429). A retired job still running is only wasted work: its ticket cannot commit.
-        cacheService.cancelDetached(retired)
+        return {
+            try {
+                closeLoader()
+            } finally {
+                cacheService.cancelDetached(retired)
+            }
+        }
     }
 
     /**
@@ -415,12 +447,15 @@ class GroovyCompilationService internal constructor(
         sourceDirectories: List<Path>,
         targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
     ) {
-        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets)
+        var cleanup: () -> Unit = {}
+        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets) {
+            cleanup = prepareCacheRetirement()
+        }
+        cleanup() // Cancel waiters and close the retired loader after all publication locks are released.
         if (changed) {
             // The published model's classpath: the same snapshot every compile now reads
             classpathService.updateClasspath(workspaceManager.current().classpath)
             gdkProvider.initialize()
-            clearCaches()
             shadows.refresh() // off the request path: open buffers are spelled against the new roots now
         }
     }
@@ -461,9 +496,14 @@ class GroovyCompilationService internal constructor(
         cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))?.first
 
     /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
-    internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
-        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
-            ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+    internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? {
+        val workspace = workspaceManager.current()
+        val policy = workspaceManager.captureSourcePolicy(uri, workspace)
+        val cached = cacheService.getCachedWithContent(uri, policy.fingerprint()) ?: return null
+        if (!policy.isCurrent()) return null
+        val (source, parsed) = cached
+        return CompiledDocumentSnapshot(source, parsed, workspace, policy)
+    }
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)
@@ -482,4 +522,9 @@ class GroovyCompilationService internal constructor(
     val compilationCacheService: CompilationCacheService get() = cacheService
     val symbolIndexingService: SymbolIndexingService get() = symbolIndexer
     val parseResultAccessor: ParseResultAccessor get() = parseAccessor
+}
+
+/** An immutable source-visibility view paired with its workspace identity fence. */
+internal class WorkspaceLookupContext(val index: WorkspaceSymbolIndex, private val current: () -> Boolean) {
+    fun isCurrent(): Boolean = current()
 }

@@ -39,6 +39,7 @@ class SymbolIndexingClassLookupTest {
         // Disk indexing reads one workspace model (#1278)
         every { workspace.current() } returns
             WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "fp" }
+        workspace.delegateCompileContextToLegacyStubs()
         service = SymbolIndexingService(Dispatchers.Unconfined, workers, workspace, ownership)
     }
 

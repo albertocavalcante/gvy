@@ -48,12 +48,37 @@ class SymbolIndexingServiceTest {
         // Disk indexing reads one workspace model (#1278)
         every { workspaceManager.current() } returns
             WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "fp" }
+        workspaceManager.delegateCompileContextToLegacyStubs()
 
         indexingService = SymbolIndexingService(
             ioDispatcher = testDispatcher,
             workerSessionManager = workerSessionManager,
             workspaceManager = workspaceManager,
             ownership = ownership,
+        )
+    }
+
+    @Test
+    fun `retired source policy cannot install or reuse cached symbols`() {
+        val uri = tempDir.resolve("retired.groovy").toUri()
+        var current = true
+        val result = indexingService.ensureIndexed(ownership.begin(uri), "class A {}", { current }) {
+            current = false
+            mockk(relaxed = true)
+        }
+        assertNull(result)
+        assertNull(indexingService.getSymbolIndex(uri))
+        current = true
+        assertNotNull(
+            indexingService.ensureIndexed(ownership.begin(uri), "class A {}", {
+                current
+            }) { mockk(relaxed = true) },
+        )
+        current = false
+        assertNull(
+            indexingService.ensureIndexed(ownership.begin(uri), "class A {}", {
+                current
+            }) { error("must not rebuild") },
         )
     }
 

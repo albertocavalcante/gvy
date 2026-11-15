@@ -39,6 +39,59 @@ class WorkspaceSymbolIndexTest {
         index = WorkspaceSymbolIndex(semanticDb)
     }
 
+    @Test
+    fun `scoped definitions and frozen members exclude other target files`() {
+        val owner = "example/Shared#"
+        fun doc(uri: URI, member: String) = SemanticDocument(
+            uri,
+            listOf(
+                SymbolInfo(owner, SymbolKind.CLASS, Range(0, 0, 0, 6), "Shared", null),
+                SymbolInfo("$owner$member().", SymbolKind.METHOD, Range(1, 0, 1, 6), member, owner),
+            ),
+            emptyList(),
+        )
+        index.updateDocument(testUri1, doc(testUri1, "included"))
+        index.updateDocument(testUri2, doc(testUri2, "excluded"))
+        val scoped = index.scopedTo(setOf(testUri1))
+        assertEquals(testUri1.toString(), scoped.findDefinition(owner)?.uri)
+        assertEquals(listOf("included"), scoped.getAllMembers("example/Shared", false).map { it.name })
+        val captured = scoped.captureMembers(emptySet())
+        assertEquals(listOf("included"), captured.getAllMembers("example/Shared", false).map { it.name })
+        assertEquals(
+            listOf("excluded"),
+            index.scopedTo(setOf(testUri2)).getAllMembers("example/Shared", false).map {
+                it.name
+            },
+        )
+    }
+
+    @Test
+    fun `unknown dependency sources remain visible while proven exclusions are hidden`() {
+        fun classDocument(uri: URI, name: String): SemanticDocument {
+            val symbol = SymbolInfo("app/$name#", SymbolKind.CLASS, Range(0, 0, 0, 1), name, null)
+            return SemanticDocument(uri, listOf(symbol), emptyList())
+        }
+        index.updateDocument(testUri1, classDocument(testUri1, "Own"))
+        index.updateDocument(testUri2, classDocument(testUri2, "Dependency"))
+        index.updateDocument(testUri3, classDocument(testUri3, "Excluded"))
+        // The test dependency's target relationship is unknown: it stays available for recovery.
+        val scoped = index.scopedWhere { it != testUri3 }
+        assertEquals(testUri1.toString(), scoped.findDefinition("app/Own#")?.uri)
+        assertEquals(testUri2.toString(), scoped.findDefinition("app/Dependency#")?.uri)
+        assertNull(scoped.findDefinition("app/Excluded#"))
+    }
+
+    @Test
+    fun `scoped snapshots keep their boundary after other documents change`() {
+        val owner = "example/Shared#"
+        val included = SymbolInfo(owner, SymbolKind.CLASS, Range(0, 0, 0, 6), "Shared", null)
+        index.updateDocument(testUri1, SemanticDocument(testUri1, listOf(included), emptyList()))
+        val snapshot = index.scopedTo(setOf(testUri1)).captureMembers(emptySet())
+        val excluded = SymbolInfo("${owner}leaked().", SymbolKind.METHOD, Range(1, 0, 1, 6), "leaked", owner)
+        index.updateDocument(testUri2, SemanticDocument(testUri2, listOf(included, excluded), emptyList()))
+        assertTrue(snapshot.getAllMembers("example/Shared", false).isEmpty())
+    }
+
     @Nested
     @DisplayName("Symbol Lookup")
     inner class SymbolLookupTests {

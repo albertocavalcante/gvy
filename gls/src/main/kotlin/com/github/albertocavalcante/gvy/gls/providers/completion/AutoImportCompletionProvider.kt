@@ -45,6 +45,30 @@ object AutoImportCompletionProvider {
         compilationService: GroovyCompilationService,
         classpathService: ClasspathService,
     ): List<CompletionItem> {
+        val lookup = compilationService.captureWorkspaceLookup(uri)
+        val result =
+            getTypeCompletions(
+                prefix,
+                uri,
+                content,
+                compilationService,
+                TypeCompletionServices(classpathService, lookup.index),
+            )
+        return if (lookup.isCurrent()) result else emptyList()
+    }
+
+    internal data class TypeCompletionServices(
+        val classpath: ClasspathService,
+        val workspaceIndex: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex?,
+    )
+
+    internal fun getTypeCompletions(
+        prefix: String,
+        uri: URI,
+        content: String,
+        compilationService: GroovyCompilationService,
+        services: TypeCompletionServices,
+    ): List<CompletionItem> {
         if (prefix.isBlank()) return emptyList()
 
         // Extract import info: AST-based (deterministic) when available, heuristic fallback otherwise
@@ -54,10 +78,16 @@ object AutoImportCompletionProvider {
         val candidates = mutableListOf<TypeCandidate>()
 
         // Search workspace symbol index
-        collectWorkspaceCandidates(compilationService, prefix, existingImports, candidates)
+        collectWorkspaceCandidates(
+            compilationService,
+            prefix,
+            existingImports,
+            candidates,
+            services.workspaceIndex ?: compilationService.getWorkspaceSymbolIndex(uri),
+        )
 
         // Search classpath
-        collectClasspathCandidates(classpathService, prefix, existingImports, candidates)
+        collectClasspathCandidates(services.classpath, prefix, existingImports, candidates)
 
         // Deduplicate by FQN (workspace takes precedence)
         val deduplicated = candidates
@@ -77,19 +107,21 @@ object AutoImportCompletionProvider {
         prefix: String,
         existingImports: Set<String>,
         candidates: MutableList<TypeCandidate>,
+        index: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex,
     ) {
-        compilationService.symbolIndexingService.findClasses(ClassNameQuery.Prefix(prefix)).forEach { symbol ->
-            val fqn = symbol.fullyQualifiedName
-            if (fqn !in existingImports) {
-                candidates.add(
-                    TypeCandidate(
-                        simpleName = symbol.name,
-                        fqn = fqn,
-                        source = TypeSource.WORKSPACE,
-                    ),
-                )
+        compilationService.symbolIndexingService.findClasses(ClassNameQuery.Prefix(prefix))
+            .filter { index.isVisibleUri(it.uri) }.forEach { symbol ->
+                val fqn = symbol.fullyQualifiedName
+                if (fqn !in existingImports) {
+                    candidates.add(
+                        TypeCandidate(
+                            simpleName = symbol.name,
+                            fqn = fqn,
+                            source = TypeSource.WORKSPACE,
+                        ),
+                    )
+                }
             }
-        }
     }
 
     /**

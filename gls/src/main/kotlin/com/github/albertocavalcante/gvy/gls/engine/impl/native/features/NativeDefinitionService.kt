@@ -31,6 +31,7 @@ class NativeDefinitionService(
     ): List<UnifiedDefinition> {
         // Only a malformed URI is "no definition": resolution errors, an Error above all, propagate (#1311)
         val uri = parseUri(context.uri) ?: return emptyList()
+        val lookup = compilationService.captureWorkspaceLookup(uri)
         val visitor = compilationService.getAstModel(uri)
         val symbolTable = compilationService.getSymbolTable(uri)
         if (visitor == null || symbolTable == null) return emptyList()
@@ -39,9 +40,10 @@ class NativeDefinitionService(
             symbolTable,
             compilationService,
             sourceNavigator,
-            compilationService.getWorkspaceSymbolIndex(),
+            lookup.index,
         )
-        return resolver.findDefinitionAt(uri, position.toGroovyPosition())?.toUnifiedDefinition(visitor) ?: emptyList()
+        val result = resolver.findDefinitionAt(uri, position.toGroovyPosition())
+        return if (lookup.isCurrent()) result?.toUnifiedDefinition(visitor).orEmpty() else emptyList()
     }
 
     private fun parseUri(uriStr: String): URI? = try {

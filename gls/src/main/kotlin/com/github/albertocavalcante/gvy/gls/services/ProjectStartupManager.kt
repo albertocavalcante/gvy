@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
@@ -105,8 +106,10 @@ class ProjectStartupManager(
         private set
 
     private var strategyInitJobs: List<Job> = emptyList()
+    private var membershipIndexing: Job? = null
 
     private val sourceRootWatchers = SourceRootWatcherRegistrar()
+    private val sourceMemberWatchers = SourceMemberWatcherRegistrar()
     private val classpathDirectoryWatchers = SourceRootWatcherRegistrar(
         idPrefix = CLASSPATH_DIRECTORY_WATCHERS,
         watchKinds = WatchKind.Create + WatchKind.Change + WatchKind.Delete,
@@ -118,6 +121,7 @@ class ProjectStartupManager(
      */
     fun registerFileWatchers(client: LanguageClient?, capabilities: ClientCapabilities?) {
         sourceRootWatchers.attach(client, capabilities)
+        sourceMemberWatchers.attach(client, capabilities)
         if (classpathRestamper != null) classpathDirectoryWatchers.attach(client, capabilities)
         val supportsDynamicRegistration = capabilities
             ?.workspace
@@ -189,13 +193,7 @@ class ProjectStartupManager(
     ) {
         val config = ServerConfiguration.fromMap(initOptionsMap)
 
-        // Apply log level from client settings
-        LogLevelConfigurator.apply(config.logLevel)
-        reportEngineSetting(initOptionsMap?.get("groovy.languageServer.engine") as? String)
-
-        // Apply engine configuration
-        compilationService.updateEngineConfiguration(EngineConfiguration(type = config.parserEngine))
-        compilationService.updateCompilationCacheLimit(config.compilationCacheMaxEntries)
+        applyInitialCompilationConfiguration(compilationService, config, initOptionsMap, reportEngineSetting)
 
         if (initParams == null) {
             logger.warn { "No saved initialization parameters - skipping dependency resolution" }
@@ -243,6 +241,7 @@ class ProjectStartupManager(
 
         val dependencyManager = setupDependencyManager(config)
 
+        val membership = createMembershipCompletionCallback(workspaceRoot, config, textDocumentServiceRefresh)
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
             onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
@@ -257,17 +256,45 @@ class ProjectStartupManager(
                 ),
             ),
             onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
+            options = DependencyManager.ResolutionOptions(onMembershipComplete = membership),
         )
 
         progressReporter.startDependencyResolution()
     }
 
+    internal fun createMembershipCompletionCallback(
+        workspaceRoot: Path,
+        config: ServerConfiguration,
+        textDocumentServiceRefresh: () -> Unit,
+    ): (WorkspaceResolution) -> Unit = { resolution ->
+        if (resolution.isUsable) {
+            membershipIndexing?.cancel()
+            compilationService.updateWorkspaceModel(
+                workspaceRoot,
+                resolution.dependencies,
+                resolution.sourceDirectories + resolution.reportedSourceRoots(),
+                resolution.targetDependencies,
+            )
+            sourceRootWatchers.sync(
+                compilationService.workspaceManager.getSourceRoots(),
+                workspaceRoot,
+            )
+            sourceMemberWatchers.sync(resolution.externalMembers(workspaceRoot))
+            val sources = compilationService.workspaceManager.getWorkspaceSourceUris()
+            membershipIndexing = coroutineScope.launch(indexingDispatcher) {
+                // A changed model retires both indices, including every unchanged closed file.
+                compilationService.indexAllWorkspaceSources(sources)
+                if (!config.isWorkspaceTooLarge(sources.size)) {
+                    compilationService.getWorkspaceCompiler().compileWorkspace()
+                }
+            }
+            textDocumentServiceRefresh()
+        }
+    }
+
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
         compilationService.initializeWorkspace(workspaceRoot)
         sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), workspaceRoot)
-
-        // Set strategy registry on workspace manager
-        compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
 
         // Select project strategies
         val activeStrategies = strategyRegistry.selectStrategies(workspaceRoot, config)
@@ -289,6 +316,13 @@ class ProjectStartupManager(
                 }.getOrNull()
             }
         }
+        var cleanup: () -> Unit = {}
+        compilationService.workspaceManager.setStrategyRegistry(strategyRegistry) {
+            cleanup = compilationService.prepareCacheRetirement()
+        }
+        cleanup()
+        val sources = compilationService.workspaceManager.current().sources.map { it.toUri() }
+        coroutineScope.launch { compilationService.indexAllWorkspaceSources(sources) }
     }
 
     private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {
@@ -316,15 +350,11 @@ class ProjectStartupManager(
             gradleBuildStrategy = config.gradleBuildStrategy,
         )
         buildToolManager = newBuildToolManager
-        // Opt-in (#1235): one more Gradle operation per attempt, before the single model publication
-        val targetObserver = if (config.gradleTargetClasspathsEnabled) {
-            logger.info { "Gradle target classpaths enabled" }
-            GradleTargetObserver(
-                GradleScopedDependencyProducer(javaHome = javaHomePath, daemonSettings = gradleDaemonSettings),
-            )
-        } else {
-            null
-        }
+        // Membership is observed by default; target-specific classpaths remain opt-in (#1235).
+        val targetObserver = GradleTargetObserver(
+            GradleScopedDependencyProducer(javaHome = javaHomePath, daemonSettings = gradleDaemonSettings),
+            useTargetClasspaths = config.gradleTargetClasspathsEnabled,
+        )
         val newDependencyManager = DependencyManager(newBuildToolManager, coroutineScope, targetObserver)
         dependencyManager = newDependencyManager
         return newDependencyManager
@@ -357,6 +387,16 @@ class ProjectStartupManager(
         val onStatusUpdate: StatusUpdateCallback,
     )
 
+    private fun WorkspaceResolution.reportedSourceRoots(): List<Path> =
+        (targetDependencies as? TargetDependencyEvidence.Scoped)?.snapshots.orEmpty().flatMap { it.sourceRoots }
+
+    private fun WorkspaceResolution.externalMembers(workspaceRoot: Path): List<Path> =
+        (targetDependencies as? TargetDependencyEvidence.Scoped)?.snapshots.orEmpty().flatMap { snapshot ->
+            snapshot.sourceFiles.orEmpty().filter { file ->
+                !file.startsWith(workspaceRoot) && snapshot.sourceRoots.none { file.startsWith(it) }
+            }
+        }.distinct()
+
     private fun createCompletionCallback(context: CompletionCallbackContext): (WorkspaceResolution) -> Unit =
         { resolution ->
             // Check if resolution failed
@@ -376,10 +416,14 @@ class ProjectStartupManager(
                     compilationService.updateWorkspaceModel(
                         workspaceRoot = context.workspaceRoot,
                         dependencies = resolution.dependencies,
-                        sourceDirectories = resolution.sourceDirectories,
+                        sourceDirectories = resolution.sourceDirectories + resolution.reportedSourceRoots(),
                         targets = resolution.targetDependencies,
                     )
-                    sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), context.workspaceRoot)
+                    sourceRootWatchers.sync(
+                        compilationService.workspaceManager.getSourceRoots(),
+                        context.workspaceRoot,
+                    )
+                    sourceMemberWatchers.sync(resolution.externalMembers(context.workspaceRoot))
                     classpathRestamper?.let { restamper ->
                         classpathDirectoryWatchers.sync(restamper.watchedDirectories(context.workspaceRoot))
                     }
@@ -602,4 +646,17 @@ class ProjectStartupManager(
         dependencyManager?.cancel()
         strategyRegistry.shutdown()
     }
+}
+
+/** Apply initial logging and engine/cache settings in the same order before resolving a workspace. */
+private fun applyInitialCompilationConfiguration(
+    compilationService: GroovyCompilationService,
+    config: ServerConfiguration,
+    options: Map<String, Any>?,
+    reportEngineSetting: (String?) -> Unit,
+) {
+    LogLevelConfigurator.apply(config.logLevel)
+    reportEngineSetting(options?.get("groovy.languageServer.engine") as? String)
+    compilationService.updateEngineConfiguration(EngineConfiguration(type = config.parserEngine))
+    compilationService.updateCompilationCacheLimit(config.compilationCacheMaxEntries)
 }

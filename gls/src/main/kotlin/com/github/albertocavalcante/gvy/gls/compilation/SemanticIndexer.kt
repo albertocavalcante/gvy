@@ -23,6 +23,14 @@ import kotlin.concurrent.write
 internal fun contentHash(content: String): String =
     HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray()))
 
+/** The source and compiler evidence that must be published together. */
+internal data class SemanticContent(
+    val text: String,
+    val ast: ModuleNode,
+    val phase: Int,
+    val fromBuffer: Boolean = true,
+)
+
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
  * reports it here, and cache invalidation and deletes remove entries here.
@@ -134,19 +142,28 @@ class SemanticIndexer(
         ast: ModuleNode,
         phase: Int,
         fromBuffer: Boolean = true,
-    ) {
+    ) = publishIfCurrent(publication, SemanticContent(content, ast, phase, fromBuffer)) { it() }
+
+    /** Build outside the source-policy fence, then fence only the short index commit. */
+    internal fun publishIfCurrent(publication: Publication, source: SemanticContent, publish: (() -> Unit) -> Unit) {
+        val content = source.text
+        val ast = source.ast
+        val phase = source.phase
+        val fromBuffer = source.fromBuffer
         val uri = publication.uri
         val hash = contentHash(content)
         if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
         val built = buildOrNull(ast, uri)
         // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
-        swap.read {
-            entries.computeIfPresent(uri) { _, state ->
-                if (replaces(state, publication, hash, phase, fromBuffer)) {
-                    state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
-                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+        publish {
+            swap.read {
+                entries.computeIfPresent(uri) { _, state ->
+                    if (replaces(state, publication, hash, phase, fromBuffer)) {
+                        state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
+                        state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                    }
+                    state
                 }
-                state
             }
         }
     }

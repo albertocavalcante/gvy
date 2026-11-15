@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -75,6 +77,31 @@ class ClearCachesCancellationTest {
         service.clearCaches()
 
         assertEquals("outside", outcome.get(), "the pending compile's cancellation ran while the fence was held")
+    }
+
+    @OptIn(InternalCoroutinesApi::class)
+    @Test
+    fun `strategy retirement cancels after policy fence is released`() {
+        documents.put(uri, "class Pending {}", 1)
+        val job = service.compileAsync(scope, uri, "class Pending {}")
+        assertTrue(parsing.await(WAIT_SECONDS, TimeUnit.SECONDS))
+        val outcome = AtomicReference<String>()
+        job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) {
+            val completed = CountDownLatch(1)
+            thread(name = "reenter-policy") {
+                service.workspaceManager.captureSourcePolicy(uri, service.workspaceManager.current()).isCurrent()
+                service.compilationCacheService.ownership.begin(uri)
+                completed.countDown()
+            }
+            outcome.set(if (completed.await(HANDLER_WAIT_SECONDS, TimeUnit.SECONDS)) "outside" else "under the fence")
+        }
+        var cleanup: () -> Unit = {}
+        service.workspaceManager.setStrategyRegistry(ProjectStrategyRegistry(emptyList())) {
+            cleanup = service.prepareCacheRetirement()
+        }
+        assertFalse(job.isCancelled, "state detaches before cancellation callbacks run")
+        cleanup()
+        assertEquals("outside", outcome.get())
     }
 
     private companion object {

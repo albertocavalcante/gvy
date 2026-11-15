@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
@@ -131,8 +132,7 @@ class WorkspaceCompiler(
                     compileFileWithWorkspaceContext(
                         checkNotNull(UriPathConverter.toPath(uri)),
                         workspace.sources,
-                        workspace.classpath,
-                        workspace.sourceRoots,
+                        workspace,
                     )
                 }
             }
@@ -164,8 +164,6 @@ class WorkspaceCompiler(
         val errors = mutableListOf<CompilationError>()
 
         // Get workspace configuration
-        val classpath = workspace.classpath
-        val sourceRoots = workspace.sourceRoots
 
         // We need to compile each file separately but with all workspace sources available
         // to the compilation unit. This allows the compiler to resolve cross-file references.
@@ -174,7 +172,11 @@ class WorkspaceCompiler(
         val results = coroutineScope {
             val compilationJobs = sources.map { sourcePath ->
                 async(Dispatchers.Default) {
-                    compileFileWithWorkspaceContext(sourcePath, sources, classpath, sourceRoots)
+                    compileFileWithWorkspaceContext(
+                        sourcePath,
+                        sources,
+                        workspace,
+                    )
                 }
             }
 
@@ -207,9 +209,8 @@ class WorkspaceCompiler(
      */
     private suspend fun compileFileWithWorkspaceContext(
         sourcePath: Path,
-        allSources: List<Path>,
-        classpath: List<Path>,
-        sourceRoots: List<Path>,
+        candidates: List<Path>,
+        workspace: WorkspaceModel,
     ): FileCompilationResult {
         val uri = sourcePath.toUri()
         val publication = semanticIndexer.begin(uri)
@@ -217,6 +218,15 @@ class WorkspaceCompiler(
         return try {
             // Read file content
             val content = sourcePath.readText()
+            val context = workspaceManager.compileContextFor(uri, content, workspace)
+            val policy = context.sourcePolicy
+            val allSources = policy?.sourcesFor(candidates) ?: workspaceManager.sourcesFor(uri, workspace, candidates)
+            val sourceRoots = policy?.sourceRoots() ?: workspaceManager.sourceRootsFor(uri, workspace)
+            val sourceFilter = if (policy == null) {
+                workspaceManager.sourceFilterFor(uri, workspace)
+            } else {
+                policy.sourceFilter()
+            }
 
             // Build locator candidates for this file
             val locatorCandidates = buildLocatorCandidates(uri, sourcePath)
@@ -225,7 +235,7 @@ class WorkspaceCompiler(
             val parseRequest = ParseRequest(
                 uri = uri,
                 content = content,
-                classpath = classpath,
+                classpath = context.classpath,
                 sourceRoots = sourceRoots,
                 workspaceSources = allSources,
                 locatorCandidates = locatorCandidates,
@@ -233,38 +243,59 @@ class WorkspaceCompiler(
             )
 
             // Parse using worker session
-            val parseResult = workerSessionManager.parse(parseRequest)
-
-            // Extract module
-            val module = parseResult.ast
-            if (module != null) {
-                logger.debug { "Successfully compiled: $uri" }
-                semanticIndexer.publish(
-                    publication,
-                    content,
-                    module,
-                    parseResult.outcome.achievedPhase,
-                    fromBuffer = false,
-                )
-                val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
-                    CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
-                }
-                FileCompilationResult.Success(uri, module, errors)
+            val parseResult = if (sourceFilter == null) {
+                workerSessionManager.parse(parseRequest)
             } else {
-                val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
-                    parseResult.diagnostics.joinToString("; ") { it.message }
-                } else {
-                    "No AST produced"
-                }
-                logger.warn { "Failed to compile $uri: $errorMessage" }
-                semanticAnalysisFailure(uri, errorMessage)
+                workerSessionManager.parseWithSourceFilter(parseRequest, sourceFilter)
             }
+
+            finishCompilation(publication, content, parseResult, policy)
         } catch (e: Exception) {
             rethrowIfCancellationOrError(e) // cancellation is not a compile error of this file
             logger.error(e) { "Exception compiling $uri" }
             semanticAnalysisFailure(uri, e.message ?: "Unknown error: ${e.javaClass.simpleName}")
         } finally {
             publication.close()
+        }
+    }
+
+    private fun finishCompilation(
+        publication: SemanticIndexer.Publication,
+        content: String,
+        parseResult: ParseResult,
+        policy: SourcePolicySnapshot?,
+    ): FileCompilationResult {
+        val uri = publication.uri
+        if (policy?.isCurrent() == false) {
+            return semanticAnalysisFailure(uri, "Source policy changed during compilation")
+        }
+
+        // Extract module
+        val module = parseResult.ast
+        return if (module != null) {
+            logger.debug { "Successfully compiled: $uri" }
+            semanticIndexer.publishIfCurrent(
+                publication,
+                SemanticContent(content, module, parseResult.outcome.achievedPhase, fromBuffer = false),
+            ) { commit ->
+                if (policy == null) commit() else policy.publishIfCurrent(commit)
+            }
+            if (policy?.isCurrent() == false) {
+                semanticAnalysisFailure(uri, "Source policy changed during compilation")
+            } else {
+                val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
+                    CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
+                }
+                FileCompilationResult.Success(uri, module, errors)
+            }
+        } else {
+            val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
+                parseResult.diagnostics.joinToString("; ") { it.message }
+            } else {
+                "No AST produced"
+            }
+            logger.warn { "Failed to compile $uri: $errorMessage" }
+            semanticAnalysisFailure(uri, errorMessage)
         }
     }
 

@@ -23,6 +23,13 @@ internal fun WorkspaceManager.delegateCompileContextToLegacyStubs() {
     every { manager.compileContextFor(any(), any()) } answers {
         manager.compileContextFor(firstArg(), secondArg(), manager.current())
     }
+    every { manager.sourceFilterFor(any(), any()) } returns null
+    every { manager.sourceRootsFor(any(), any()) } answers { secondArg<WorkspaceModel>().sourceRoots }
+    every { manager.sourcesFor(any(), any(), any()) } answers { thirdArg<List<java.nio.file.Path>>() }
+    every { manager.sourceScopeFor(any(), any()) } answers {
+        val uri = firstArg<java.net.URI>()
+        secondArg<WorkspaceModel>().legacySourceScopeFor(runCatching { java.nio.file.Path.of(uri) }.getOrNull())
+    }
     every { manager.fingerprintFor(any(), any()) } answers { secondArg<WorkspaceModel>().fingerprint }
     every { manager.fingerprintFor(any()) } answers { manager.getConfigurationFingerprint() }
 }

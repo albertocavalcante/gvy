@@ -8,7 +8,9 @@ import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -16,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -27,7 +30,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -69,6 +74,178 @@ class DependencyTargetObservationTest {
         assertSame(evidence, resolution.targetDependencies)
         assertEquals(legacy.dependencies, resolution.dependencies, "legacy lists are unchanged")
         assertEquals(legacy.sourceDirectories, resolution.sourceDirectories)
+    }
+
+    @Test
+    fun `membership refresh is quiet avoids flat resolution and coalesces in flight events`() {
+        val initial = CountDownLatch(1)
+        val enteredRefresh = CountDownLatch(1)
+        val refreshed = CountDownLatch(2)
+        val release = CompletableDeferred<Unit>()
+        val observations = AtomicInteger()
+        val manager = DependencyManager(tools, scope) { _, _, _ ->
+            if (observations.incrementAndGet() == 2) {
+                enteredRefresh.countDown()
+                release.await()
+            }
+            TargetDependencyEvidence.Scoped(emptyList())
+        }
+        manager.startAsyncResolution(
+            root,
+            onComplete = { initial.countDown() },
+            onProgress = null,
+            onError = null,
+            options = DependencyManager.ResolutionOptions(false, onMembershipComplete = { refreshed.countDown() }),
+        )
+        assertTrue(initial.await(5, TimeUnit.SECONDS))
+        manager.refreshSourceMembership()
+        assertTrue(enteredRefresh.await(5, TimeUnit.SECONDS))
+        repeat(3) { manager.refreshSourceMembership() }
+        release.complete(Unit)
+        assertTrue(refreshed.await(5, TimeUnit.SECONDS))
+        assertEquals(3, observations.get())
+        coVerify(exactly = 1) { tool.resolve(any(), any(), any()) }
+    }
+
+    @Test
+    fun `membership refresh starts after a completed attempt without lifecycle reentry`() {
+        val initial = CountDownLatch(1)
+        val refreshed = CountDownLatch(1)
+        val manager = DependencyManager(tools, scope) { _, _, _ -> TargetDependencyEvidence.Scoped(emptyList()) }
+        manager.startAsyncResolution(
+            root,
+            onComplete = { initial.countDown() },
+            onProgress = null,
+            onError = null,
+            options = DependencyManager.ResolutionOptions(false, onMembershipComplete = { refreshed.countDown() }),
+        )
+        assertTrue(initial.await(5, TimeUnit.SECONDS))
+
+        manager.refreshSourceMembership()
+
+        assertTrue(refreshed.await(5, TimeUnit.SECONDS), "membership refresh did not complete")
+    }
+
+    @Test
+    fun `membership refresh waits until initial publication finishes`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val returned = CountDownLatch(1)
+        val refreshed = CountDownLatch(1)
+        val published = AtomicBoolean(false)
+        val manager = DependencyManager(tools, scope) { _, _, _ -> TargetDependencyEvidence.Scoped(emptyList()) }
+        manager.startAsyncResolution(
+            root,
+            onComplete = {
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+                published.set(true)
+            },
+            onProgress = null,
+            onError = null,
+            options = DependencyManager.ResolutionOptions(false, onMembershipComplete = {
+                assertTrue(published.get(), "initial publication must finish before membership refresh")
+                refreshed.countDown()
+            }),
+        )
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        val caller = thread {
+            try {
+                manager.refreshSourceMembership()
+            } finally {
+                returned.countDown()
+            }
+        }
+        try {
+            assertFalse(refreshed.await(100, TimeUnit.MILLISECONDS))
+            release.countDown()
+            assertTrue(returned.await(5, TimeUnit.SECONDS))
+            assertTrue(refreshed.await(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            caller.join(5_000)
+        }
+    }
+
+    @Test
+    fun `reset discards a queued refresh before a new workspace starts`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val exited = CompletableDeferred<Unit>()
+        val refreshed = CountDownLatch(1)
+        val nextPublished = CountDownLatch(1)
+        val observations = AtomicInteger()
+        val manager = DependencyManager(tools, scope) { _, _, _ ->
+            if (observations.incrementAndGet() == 1) {
+                entered.complete(Unit)
+                try {
+                    release.await()
+                } finally {
+                    exited.complete(Unit)
+                }
+            }
+            TargetDependencyEvidence.Scoped(emptyList())
+        }
+        manager.startAsyncResolution(
+            root,
+            onComplete = {},
+            onProgress = null,
+            onError = null,
+            options = DependencyManager.ResolutionOptions(false, onMembershipComplete = { refreshed.countDown() }),
+        )
+        withTimeout(5_000) { entered.await() }
+        manager.refreshSourceMembership()
+        manager.reset()
+        release.complete(Unit)
+        withTimeout(5_000) { exited.await() }
+        start(manager, root.resolve("other"), nextPublished)
+
+        assertTrue(nextPublished.await(5, TimeUnit.SECONDS))
+        assertFalse(refreshed.await(100, TimeUnit.MILLISECONDS), "a reset must discard the old refresh")
+        assertEquals(2, observations.get())
+    }
+
+    @Test
+    fun `membership refresh retries after a transient tool detection failure`() = runBlocking {
+        val detected = AtomicInteger()
+        val failed = CountDownLatch(1)
+        coEvery { tools.detectBuildTool(any()) } coAnswers {
+            if (detected.incrementAndGet() == 2) {
+                failed.countDown()
+                error("temporary detection failure")
+            }
+            tool
+        }
+        val initial = CountDownLatch(1)
+        val recovered = CountDownLatch(1)
+        val manager = DependencyManager(tools, scope) { _, _, _ -> TargetDependencyEvidence.Scoped(emptyList()) }
+        manager.startAsyncResolution(
+            root,
+            onComplete = { initial.countDown() },
+            onProgress = null,
+            onError = null,
+            options = DependencyManager.ResolutionOptions(false, onMembershipComplete = { recovered.countDown() }),
+        )
+        assertTrue(initial.await(5, TimeUnit.SECONDS))
+        manager.refreshSourceMembership()
+        assertTrue(failed.await(5, TimeUnit.SECONDS))
+        withTimeout(5_000) {
+            while (manager.getState() != DependencyManager.State.COMPLETED) delay(10)
+        }
+        manager.refreshSourceMembership()
+        assertTrue(recovered.await(5, TimeUnit.SECONDS))
+        assertEquals(3, detected.get())
+    }
+
+    @Test
+    fun `a failed Gradle observation remains an applicable incomplete model`() = runBlocking {
+        val gradle = mockk<GradleBuildTool>()
+        val observer = TargetEvidenceObserver { _, _, _ -> error("observation unavailable") }
+        val result = legacy.withObservedTargets(observer, gradle, root, 1)
+        val evidence = kotlin.test.assertIs<TargetDependencyEvidence.Scoped>(result.targetDependencies)
+        assertTrue(evidence.snapshots.isEmpty())
+        assertFalse(evidence.enumerationComplete)
+        assertEquals(legacy.dependencies, result.dependencies)
     }
 
     @Test

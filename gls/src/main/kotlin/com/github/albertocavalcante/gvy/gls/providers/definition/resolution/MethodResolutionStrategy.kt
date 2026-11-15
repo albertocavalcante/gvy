@@ -30,12 +30,14 @@ import kotlin.coroutines.cancellation.CancellationException
 class MethodResolutionStrategy(
     private val compilationService: GroovyCompilationService,
     private val sourceNavigator: SourceNavigator?,
+    private val workspaceIndex: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex? =
+        compilationService.getWorkspaceSymbolIndex(),
 ) : SymbolResolutionStrategy {
 
     private val logger = LoggerFactory.getLogger(MethodResolutionStrategy::class.java)
     private val semanticResolver = com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
-        compilationService.getWorkspaceSymbolIndex(),
+        workspaceIndex,
     )
 
     @Suppress("TooGenericExceptionCaught", "ReturnCount")

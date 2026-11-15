@@ -87,15 +87,16 @@ object CompletionProvider {
         semanticResolver: SemanticTypeResolver,
         content: String,
     ): List<CompletionItem> {
+        val uriObj = URI.create(uri)
+        val lookup = compilationService.captureWorkspaceLookup(uriObj)
+        val requestIndex = lookup.index
         return try {
-            val uriObj = URI.create(uri)
-
-            // Determine if we are inserting into an existing identifier
-            val isClean = CompletionContextDetector.isCleanInsertion(content, line, character)
+            val requestResolver = semanticResolver.withWorkspaceMemberLookup(requestIndex)
 
             // Strategy 1: Simple insertion (e.g. "myList.BrazilWorldCup2026")
             val content1 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = false)
             val parsed = compilationService.compileTransient(uriObj, content1)
+            if (!lookup.isCurrent()) return emptyList()
             val context = currentCoroutineContext()
             val constructorCopy = if (parsed.ast == null) {
                 CompletionContextDetector.constructorCompletionCopy(TextIndex(content), Position(line, character)) {
@@ -108,79 +109,83 @@ object CompletionProvider {
             context.ensureActive()
             val result1 = constructorCopy?.let { compilationService.compileTransient(uriObj, it) }
                 ?.takeIf { it.ast != null } ?: parsed
-            val ast1 = result1.ast
-            val astModel1 = result1.astModel
+            if (!lookup.isCurrent()) return emptyList()
 
-            // If simple insertion failed and it was a clean insertion, try adding 'def'.
-            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
-            // but "class Foo { BrazilWorldCup2026 }" is not.
-            // Retry only when an error touches the inserted dummy (a bare name in a class body or static
-            // scope). An error elsewhere, such as an unresolved type, fails both copies alike.
-            if (isClean && !result1.isSuccessful && dummyCausedError(result1.diagnostics, line, character)) {
-                context.ensureActive()
-                val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
-                val result2 = compilationService.compileTransient(uriObj, content2)
-                val ast2 = result2.ast
-                val astModel2 = result2.astModel
-                val defStrategyBetter = result2.isSuccessful || result2.diagnostics.size < result1.diagnostics.size
-
-                // Use 'def' strategy if it produced a better result and has a valid AST
-                if (defStrategyBetter && ast2 != null) {
-                    return buildCompletionsList(
-                        CompletionContext(
-                            uri = uriObj,
-                            line = line,
-                            character = character,
-                            ast = ast2,
-                            astModel = astModel2,
-                            tokenIndex = result2.tokenIndex,
-                            compilationService = compilationService,
-                            content = content,
-                            semanticResolver = semanticResolver,
-                            moduleNode = ast2,
-                            workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
-                        ),
-                    )
-                }
-            }
+            val selected =
+                selectCompletionParse(uriObj, content, Position(line, character), compilationService, result1)
+            val selectedAst = selected.ast
 
             // Fallback to result1 (simple insertion)
-            if (ast1 == null) {
-                return buildFallbackCompletions(
+            if (!lookup.isCurrent()) {
+                emptyList()
+            } else if (selectedAst == null) {
+                val completions = buildFallbackCompletions(
                     content = content,
-                    line = line,
-                    character = character,
-                    tokenIndex = result1.tokenIndex,
+                    position = Position(line, character),
+                    tokenIndex = selected.tokenIndex,
                     compilationService = compilationService,
+                    workspaceSymbolIndex = requestIndex,
                 )
+                if (lookup.isCurrent()) completions else emptyList()
             } else {
-                buildCompletionsList(
+                val completions = buildCompletionsList(
                     CompletionContext(
                         uri = uriObj,
                         line = line,
                         character = character,
-                        ast = ast1,
-                        astModel = astModel1,
-                        tokenIndex = result1.tokenIndex,
+                        ast = selectedAst,
+                        astModel = selected.astModel,
+                        tokenIndex = selected.tokenIndex,
                         compilationService = compilationService,
                         content = content,
-                        semanticResolver = semanticResolver,
-                        moduleNode = ast1,
-                        workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
+                        semanticResolver = requestResolver,
+                        moduleNode = selectedAst,
+                        workspaceSymbolIndex = requestIndex,
                     ),
                 )
+                if (lookup.isCurrent()) completions else emptyList()
             }
         } catch (e: CompilationFailedException) {
             // If AST analysis fails, log and return empty list
             logger.debug { "AST analysis failed for completion at $line:$character: ${e.message}" }
-            buildFallbackCompletions(
-                content = content,
-                line = line,
-                character = character,
-                tokenIndex = null,
-                compilationService = compilationService,
-            )
+            if (!lookup.isCurrent()) {
+                emptyList()
+            } else {
+                val completions = buildFallbackCompletions(
+                    content = content,
+                    position = Position(line, character),
+                    tokenIndex = null,
+                    compilationService = compilationService,
+                    workspaceSymbolIndex = requestIndex,
+                )
+                if (lookup.isCurrent()) completions else emptyList()
+            }
         }
+    }
+
+    private suspend fun selectCompletionParse(
+        uri: URI,
+        content: String,
+        position: Position,
+        compilationService: GroovyCompilationService,
+        original: com.github.albertocavalcante.nativeapi.ParseResult,
+    ): com.github.albertocavalcante.nativeapi.ParseResult {
+        val isClean = CompletionContextDetector.isCleanInsertion(content, position.line, position.character)
+        if (!isClean || original.isSuccessful ||
+            !dummyCausedError(original.diagnostics, position.line, position.character)
+        ) {
+            return original
+        }
+        currentCoroutineContext().ensureActive()
+        val copy = CompletionContextDetector.insertDummyIdentifier(
+            content,
+            position.line,
+            position.character,
+            withDef = true,
+        )
+        val retried = compilationService.compileTransient(uri, copy)
+        val better = retried.isSuccessful || retried.diagnostics.size < original.diagnostics.size
+        return if (better && retried.ast != null) retried else original
     }
 
     /** Whether an error diagnostic overlaps the dummy inserted at [line]:[character] (0-based). */
@@ -202,19 +207,19 @@ object CompletionProvider {
      */
     private fun buildFallbackCompletions(
         content: String,
-        line: Int,
-        character: Int,
+        position: Position,
         tokenIndex: GroovyTokenIndex?,
         compilationService: GroovyCompilationService,
+        workspaceSymbolIndex: WorkspaceSymbolIndex?,
     ): List<CompletionItem> {
         val importContext = CompletionContextDetector.detectImportCompletionContext(
             content = content,
-            line = line,
-            character = character,
+            line = position.line,
+            character = position.character,
             tokenIndex = tokenIndex,
         )
         if (importContext != null) {
-            return completions { addImportCompletions(importContext, compilationService) }
+            return completions { addImportCompletions(importContext, compilationService, workspaceSymbolIndex) }
         }
         return completions {
             addKeywords()
@@ -250,7 +255,7 @@ object CompletionProvider {
             tokenIndex = ctx.tokenIndex,
         )
         if (importContext != null) {
-            return completions { addImportCompletions(importContext, ctx.compilationService) }
+            return completions { addImportCompletions(importContext, ctx.compilationService, ctx.workspaceSymbolIndex) }
         }
 
         // Detect completion context
@@ -377,7 +382,13 @@ object CompletionProvider {
             logger.debug { "Adding type parameter classes for prefix '${completionContext.prefix}'" }
             addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
             // Also add auto-import completions for unimported types
-            addAutoImportCompletions(completionContext.prefix, ctx.uri, ctx.content, ctx.compilationService)
+            addAutoImportCompletions(
+                completionContext.prefix,
+                ctx.uri,
+                ctx.content,
+                ctx.compilationService,
+                ctx.workspaceSymbolIndex,
+            )
             false
         }
 
@@ -546,8 +557,9 @@ object CompletionProvider {
     private fun CompletionsBuilder.addImportCompletions(
         ctx: ImportCompletionContext,
         compilationService: GroovyCompilationService,
+        workspaceSymbolIndex: WorkspaceSymbolIndex?,
     ) {
-        val strategy = ImportCompletionStrategy(compilationService)
+        val strategy = ImportCompletionStrategy(compilationService, workspaceSymbolIndex)
         strategy.addImportCompletions(
             ImportCompletionStrategy.ImportContext(
                 prefix = ctx.prefix,
@@ -592,13 +604,17 @@ object CompletionProvider {
         uri: URI,
         content: String,
         compilationService: GroovyCompilationService,
+        workspaceIndex: WorkspaceSymbolIndex?,
     ) {
         val completions = AutoImportCompletionProvider.getTypeCompletions(
             prefix = prefix,
             uri = uri,
             content = content,
             compilationService = compilationService,
-            classpathService = compilationService.classpathService,
+            services = AutoImportCompletionProvider.TypeCompletionServices(
+                compilationService.classpathService,
+                workspaceIndex,
+            ),
         )
 
         // Add pre-built completion items directly (they already have additionalTextEdits)

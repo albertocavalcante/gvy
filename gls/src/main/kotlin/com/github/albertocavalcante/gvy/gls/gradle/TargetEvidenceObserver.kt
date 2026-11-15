@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.gradle
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import java.nio.file.Path
@@ -54,5 +55,12 @@ internal suspend fun WorkspaceResolution.withObservedTargets(
     generation: Long,
 ): WorkspaceResolution {
     if (observer == null || tool == null || !isUsable) return this
-    return copy(targetDependencies = observer.observeOrLegacy(tool, workspaceRoot, generation))
+    val observed = observer.observeOrLegacy(tool, workspaceRoot, generation)
+    val evidence = if (tool is GradleBuildTool && observed == TargetDependencyEvidence.Legacy) {
+        // The build is Gradle, so a failed or unavailable observation is an applicable limitation.
+        TargetDependencyEvidence.Scoped(emptyList(), useTargetClasspaths = false, enumerationComplete = false)
+    } else {
+        observed
+    }
+    return copy(targetDependencies = evidence)
 }

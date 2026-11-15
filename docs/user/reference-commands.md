@@ -46,7 +46,7 @@ Packaged manifest from the official v0.5.4 VSIX at tag commit `c441b8451ceed18a8
 
 ## Current checkout
 
-Manifest SHA-256 `86664bd8756e26c2169292fd5446de812bf9e6606036e00ca74079302870ab7e`.
+Manifest SHA-256 `d4ca7ebbfe151d3b77341e42cb70ebd539c79be0621f8242030f4c2bb05c7791`.
 
 | Command                              | Title                                     |
 | ------------------------------------ | ----------------------------------------- |

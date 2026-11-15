@@ -4,9 +4,11 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
+import com.github.albertocavalcante.gvy.gls.compilation.DocumentTargetSelector
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
@@ -25,8 +27,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.onClosed
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
@@ -61,9 +65,11 @@ class GroovyWorkspaceService(
     /** Shared with startup so a saved legacy setting produces one migration notice per server. */
     private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
     private val onBuildFilesChanged: (List<Path>) -> Unit = {},
+    private val refreshSourceMembership: () -> Unit = {},
 ) : WorkspaceService {
 
     private val logger = KotlinLogging.logger {}
+    private var membershipRefresh: Job? = null
 
     /**
      * Source and folder events, applied one notification at a time in arrival order, off the LSP notification
@@ -122,21 +128,38 @@ class GroovyWorkspaceService(
     override fun didChangeConfiguration(params: DidChangeConfigurationParams) {
         logger.info { "Configuration changed, updating Jenkins context if applicable" }
 
-        val settingsMap = configurationPayload(params.settings)
+        val settingsMap = configurationPayload(params.settings) ?: return
 
-        if (settingsMap != null) {
-            val newConfig = ServerConfiguration.fromMap(settingsMap)
-            reportEngineSetting(settingsMap["groovy.languageServer.engine"] as? String)
-            textDocumentService?.updateConfiguration(newConfig)
-
-            // Update configuration on all active strategies
-            compilationService.workspaceManager.getStrategyRegistry()?.activeStrategies?.forEach { strategy ->
-                strategy.updateConfiguration(newConfig)
+        val newConfig = ServerConfiguration.fromMap(settingsMap)
+        reportEngineSetting(settingsMap["groovy.languageServer.engine"] as? String)
+        var cleanup: () -> Unit = {}
+        var retired = false
+        var updated = false
+        try {
+            compilationService.workspaceManager.updateStrategies(newConfig) {
+                cleanup = compilationService.prepareCacheRetirement()
+                retired = true
             }
-            compilationService.updateCompilationCacheLimit(newConfig.compilationCacheMaxEntries)
-            updateGroovyVersion(newConfig)
-            logger.info { "Configuration updated for active strategies" }
+            updated = true
+        } finally {
+            try {
+                cleanup()
+            } finally {
+                if (retired) {
+                    recoverRetiredSources(
+                        newConfig,
+                        updated,
+                        compilationService,
+                        coroutineScope,
+                        textDocumentService,
+                    )
+                }
+            }
         }
+        textDocumentService?.updateConfiguration(newConfig)
+        compilationService.updateCompilationCacheLimit(newConfig.compilationCacheMaxEntries)
+        updateGroovyVersion(newConfig)
+        logger.info { "Configuration updated for active strategies" }
     }
 
     override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
@@ -195,8 +218,47 @@ class GroovyWorkspaceService(
             event.type != FileChangeType.Changed || retired
         } + changes[FileType.OTHER].orEmpty().filter { it.type != FileChangeType.Changed }
         if (queued.isNotEmpty()) enqueue(queued)
+        refreshMembershipForEvents(roots, sourceEvents, changes[FileType.OTHER].orEmpty())
 
         // Build file notifications were forwarded to DependencyManager before source filtering.
+    }
+
+    private fun refreshMembershipForEvents(
+        roots: List<Path>,
+        sourceEvents: List<FileEvent>,
+        otherEvents: List<FileEvent>,
+    ) {
+        val targetRoots = (compilationService.workspaceManager.current().targets as? TargetDependencyEvidence.Scoped)
+            ?.snapshots.orEmpty().flatMap { snapshot ->
+                snapshot.sourceRoots + snapshot.sourceFiles.orEmpty().filter { file ->
+                    snapshot.sourceRoots.none { file.startsWith(it) }
+                }.mapNotNull { it.parent }
+            }
+        val membershipRoots = (roots + targetRoots).map(DocumentTargetSelector::canonical)
+        val membershipEvents = sourceEvents + otherEvents.filter {
+            it.type != FileChangeType.Changed
+        }
+        val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()?.let(
+            DocumentTargetSelector::canonical,
+        )
+        val affectsMembership = membershipEvents.any { event ->
+            filePath(event.uri)?.let { path ->
+                val canonical = DocumentTargetSelector.canonical(path)
+                val inWorkspace = workspaceRoot != null && canonical.startsWith(workspaceRoot)
+                inWorkspace || membershipRoots.any { root ->
+                    val containsEvent = canonical.startsWith(root)
+                    val containsRoot = event.type != FileChangeType.Changed && root.startsWith(canonical)
+                    containsEvent || containsRoot
+                }
+            } == true
+        }
+        if (affectsMembership) {
+            membershipRefresh?.cancel()
+            membershipRefresh = coroutineScope.launch {
+                delay(MEMBERSHIP_REFRESH_DEBOUNCE_MS)
+                refreshSourceMembership()
+            }
+        }
     }
 
     /**
@@ -386,4 +448,23 @@ class GroovyWorkspaceService(
 
         return CompletableFuture.completedFuture(Either.forLeft(results))
     }
+}
+
+private const val MEMBERSHIP_REFRESH_DEBOUNCE_MS = 500L
+
+private fun recoverRetiredSources(
+    config: ServerConfiguration,
+    updated: Boolean,
+    compilationService: GroovyCompilationService,
+    coroutineScope: CoroutineScope,
+    textDocumentService: GroovyTextDocumentService?,
+) {
+    val sources = compilationService.workspaceManager.current().sources.map { it.toUri() }
+    coroutineScope.launch {
+        compilationService.indexAllWorkspaceSources(sources)
+        if (!config.isWorkspaceTooLarge(sources.size)) {
+            compilationService.getWorkspaceCompiler().compileWorkspace()
+        }
+    }
+    if (!updated) textDocumentService?.rerunDiagnosticsOnOpenFiles()
 }

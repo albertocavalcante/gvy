@@ -269,7 +269,7 @@ internal class MemberAccessCompletionStrategy(
             .forEach { candidates.add(it) }
         importInfo.starImports.forEach { candidates.add("$it.$simpleName") }
 
-        findWorkspaceClassFqnsBySimpleName(simpleName, compilationService)
+        findWorkspaceClassFqnsBySimpleName(simpleName, compilationService, workspaceSymbolIndex)
             .forEach { candidates.add(it) }
 
         return candidates.toList()
@@ -279,7 +279,9 @@ internal class MemberAccessCompletionStrategy(
     private fun findWorkspaceClassFqnsBySimpleName(
         simpleName: String,
         compilationService: GroovyCompilationService,
+        index: WorkspaceSymbolIndex?,
     ): List<String> = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        .filter { index?.isVisibleUri(it.uri) != false }
         .mapTo(linkedSetOf()) { it.fullyQualifiedName }
         .toList()
 
