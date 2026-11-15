@@ -116,6 +116,8 @@ import java.util.concurrent.CompletableFuture
 data class GroovyTextDocumentServiceOptions(
     val serverConfiguration: ServerConfiguration = ServerConfiguration(),
     val client: () -> LanguageClient? = { null },
+    val documentAnalysisSupported: () -> Boolean = { false },
+    val documentAnalysisSession: (URI) -> String? = { null },
     val documentProvider: DocumentProvider = DocumentProvider(),
     val formatter: Formatter = OpenRewriteFormatterAdapter(),
     val sourceNavigator: SourceNavigator = SourceNavigationService(),
@@ -138,6 +140,8 @@ class GroovyTextDocumentService(
         compilationService.updateServerConfiguration(options.serverConfiguration)
     }
     private val client: () -> LanguageClient? = options.client
+    private val documentAnalysisSupported: () -> Boolean = options.documentAnalysisSupported
+    private val documentAnalysisSession: (URI) -> String? = options.documentAnalysisSession
     private val documentProvider: DocumentProvider = options.documentProvider
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
@@ -196,6 +200,7 @@ class GroovyTextDocumentService(
             documentProvider = documentProvider,
             serverConfiguration = configuration,
             client = client,
+            documentAnalysisSupported = documentAnalysisSupported,
         )
     }
     private val diagnosticsOrchestrator by diagnosticsOrchestratorDelegate
@@ -272,7 +277,7 @@ class GroovyTextDocumentService(
     }
 
     private val codeActionProvider by lazy {
-        CodeActionProvider(compilationService, documentProvider, formatter)
+        CodeActionProvider(compilationService, documentProvider, formatter, documentAnalysisSupported)
     }
 
     // Source navigation service for go-to-definition on JARs
@@ -378,7 +383,8 @@ class GroovyTextDocumentService(
         val content = params.textDocument.text
         // Fence work of the previous lifecycle before the buffer becomes visible to it.
         compilationService.onDocumentOpened(uri)
-        documentProvider.put(uri, content, params.textDocument.version)
+        documentProvider.put(uri, content, params.textDocument.version, documentAnalysisSession(uri))
+        diagnosticsOrchestrator.documentChanged(uri)
 
         diagnosticsOrchestrator.trigger(uri, content)
     }
@@ -394,6 +400,7 @@ class GroovyTextDocumentService(
         val version = params.textDocument.version ?: return
         val uri = URI.create(params.textDocument.uri)
         val snapshot = documentProvider.update(uri, params.contentChanges.lastOrNull()?.text, version) ?: return
+        diagnosticsOrchestrator.documentChanged(uri)
 
         if (params.contentChanges.isNotEmpty()) {
             // Invalidate documentation cache for this document
@@ -727,6 +734,7 @@ class GroovyTextDocumentService(
         logger.info { "CodeNarc ruleset reload requested" }
         // Clears the cached project detection and default rulesets; workspace ruleset files are read per analysis.
         codeNarcRulesetResolver?.reloadRulesets()
+        diagnosticsOrchestrator.invalidateWorkspaceConfiguration()
     }
 
     /**

@@ -68,6 +68,9 @@ class DiagnosticsOrchestratorSnapshotTest {
             val result = mockk<CompilationResult>()
             every { result.diagnostics } returns listOf(diagnostic("parser"))
             every { result.parseCompleted } returns true
+            every { result.outcome } returns null
+            every { result.sourceMembershipKnown } returns null
+            every { result.sourceVisibilityKnown } returns null
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(result)
             coEvery { diagnostics.collectDiagnostics(uri, any(), any()) } returns
                 DiagnosticsCollectionResult(listOf(diagnostic("provider")), emptyList(), emptyList())
