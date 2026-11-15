@@ -9,22 +9,36 @@ async function withDelayedSearch(
 ) {
   const modulePattern = "**/_astro/ui-core.*.js";
   let releaseModule!: () => void;
-  let markRequested!: () => void;
+  let requestSeen = false;
+  let routeDone: Promise<void> | undefined;
+  let failed = false;
+  let primaryError: unknown;
   const gate = new Promise<void>((resolve) => {
     releaseModule = resolve;
   });
-  const requested = new Promise<void>((resolve) => {
-    markRequested = resolve;
-  });
-  const delayModule = async (route: Route) => {
-    markRequested();
-    await gate;
-    await route.continue();
+  const delayModule = (route: Route) => {
+    requestSeen = true;
+    routeDone = gate.then(() => route.continue());
+    return routeDone;
   };
+  // The test controls when the idle work starts and separately holds its network response.
+  await page.addInitScript(() => {
+    window.requestIdleCallback = (callback) =>
+      window.setTimeout(
+        () => callback({ didTimeout: false, timeRemaining: () => 50 }),
+        0,
+      );
+    window.cancelIdleCallback = (id) => window.clearTimeout(id);
+  });
   await page.route(modulePattern, delayModule);
   try {
     await page.goto("", { waitUntil: "domcontentloaded" });
-    await requested;
+    await expect
+      .poll(() => requestSeen, {
+        message: "Pagefind UI module request must reach the route",
+        timeout: 10000,
+      })
+      .toBe(true);
     const trigger = page.locator("button[data-open-modal]");
     await expect(trigger).toBeEnabled();
     await trigger.focus();
@@ -33,9 +47,29 @@ async function withDelayedSearch(
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("textbox")).toHaveCount(0);
     await run(releaseModule);
+  } catch (error) {
+    failed = true;
+    primaryError = error;
+    throw error;
   } finally {
     releaseModule();
-    await page.unroute(modulePattern, delayModule);
+    const cleanupErrors: unknown[] = [];
+    try {
+      if (routeDone) await routeDone;
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      if (!page.isClosed()) await page.unroute(modulePattern, delayModule);
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (cleanupErrors.length) {
+      throw new AggregateError(
+        failed ? [primaryError, ...cleanupErrors] : cleanupErrors,
+        "Delayed search route cleanup failed",
+      );
+    }
   }
 }
 
