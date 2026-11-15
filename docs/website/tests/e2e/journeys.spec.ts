@@ -21,6 +21,7 @@ test("search results lead to their destinations", async ({ page, baseURL }) => {
     await expect(page.locator("h1").first()).toContainText(heading, {
       ignoreCase: true,
     });
+    await expect(page.locator("#starlight__search input")).toHaveCount(1);
   }
 });
 
