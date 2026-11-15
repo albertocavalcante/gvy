@@ -10,12 +10,14 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
+import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.future
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
@@ -57,7 +59,7 @@ class AstRequestHandler(
         val parsed = compilationService.compileTransient(uri, snapshot.content, Phases.CANONICALIZATION)
         currentCoroutineContext().ensureActive()
         requireCurrent(uri, snapshot)
-        val nativeAst = parsed.ast ?: fail(ResponseErrorCode.RequestFailed, "AST is unavailable: ${params.uri}")
+        val nativeAst = requireCanonicalAst(parsed, uri)
         val astDto: AstNodeDto = when (parser) {
             "core" -> coreConverter.convert(GroovyParser.convertFromNative(nativeAst), snapshot.content)
             else -> nativeConverter.convert(nativeAst, snapshot.content)
@@ -73,6 +75,25 @@ class AstRequestHandler(
         // returned identity; completing a future under the document lock could run arbitrary callbacks there.
         requireCurrent(uri, snapshot)
         result
+    }
+
+    private fun requireCanonicalAst(parsed: ParseResult, uri: URI): ModuleNode {
+        val ast = parsed.ast ?: fail(ResponseErrorCode.RequestFailed, "AST is unavailable: $uri")
+        val source = parsed.sourceUnit
+        // Phase labels survive caught failures; qualify the requested source's actual completion instead.
+        // A recovered canonical AST can retain diagnostics from an earlier attempt.
+        val completedCanonicalization =
+            source.phase > Phases.CANONICALIZATION ||
+                (source.phase == Phases.CANONICALIZATION && source.isPhaseComplete)
+        val canonicalAstUnavailable =
+            !completedCanonicalization ||
+                source.name != uri.path ||
+                ast !== source.ast ||
+                ast.context !== source
+        if (canonicalAstUnavailable) {
+            fail(ResponseErrorCode.RequestFailed, "Canonical AST is unavailable: $uri")
+        }
+        return ast
     }
 
     private fun parseUri(value: String?): URI {

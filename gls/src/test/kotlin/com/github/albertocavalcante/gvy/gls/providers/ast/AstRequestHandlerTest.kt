@@ -4,8 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
@@ -28,10 +26,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
-import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.Phases
-import org.codehaus.groovy.control.SourceUnit
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
@@ -53,56 +48,54 @@ class AstRequestHandlerTest {
         val uri = "file:///test.groovy"
         val params = AstParams(uri, "core")
 
-        // Mock components for ParseResult
-        val nativeAst = mockk<ModuleNode>(relaxed = true)
-        val compilationUnit = mockk<CompilationUnit>()
-        val sourceUnit = mockk<SourceUnit>()
-        val symbolTable = mockk<SymbolTable>()
-        val astModel = mockk<GroovyAstModel>()
-
-        val parseResult = ParseResult(
-            ast = nativeAst,
-            compilationUnit = compilationUnit,
-            sourceUnit = sourceUnit,
-            diagnostics = emptyList(),
-            symbolTable = symbolTable,
-            astModel = astModel,
+        val source = "class Example {}"
+        val parseResult = GroovyParserFacade().parse(
+            ParseRequest(URI.create(uri), source, compilePhase = Phases.CANONICALIZATION),
         )
+        try {
+            assertEquals(Phases.CANONICALIZATION, parseResult.sourceUnit.phase)
+            assertTrue(parseResult.sourceUnit.isPhaseComplete)
+            assertNotNull(parseResult.ast)
 
-        documents.put(URI.create(uri), "", 1)
-        coEvery { compilationService.compileTransient(URI.create(uri), "", Phases.CANONICALIZATION) } returns
-            parseResult
-        val handler = AstRequestHandler(
-            compilationService,
-            coreConverter,
-            nativeConverter,
-            documents,
-            supervisedScope(),
-        )
+            documents.put(URI.create(uri), source, 1)
+            coEvery { compilationService.compileTransient(URI.create(uri), source, Phases.CANONICALIZATION) } returns
+                parseResult
+            val handler = AstRequestHandler(
+                compilationService,
+                coreConverter,
+                nativeConverter,
+                documents,
+                supervisedScope(),
+            )
 
-        // Mock converter
-        val astDto = CoreAstNodeDto("node-1", "CompilationUnit", null, emptyList(), emptyMap())
-        // We are testing that the handler calls the converter.
-        // Note: GroovyParser.convertFromNative is a static call that runs on the real implementation.
-        // We mock the injected converter to return our expected DTO.
-        coEvery { coreConverter.convert(any(), "") } returns astDto
+            // Mock converter
+            val astDto = CoreAstNodeDto("node-1", "CompilationUnit", null, emptyList(), emptyMap())
+            // We are testing that the handler calls the converter.
+            // Note: GroovyParser.convertFromNative is a static call that runs on the real implementation.
+            // We mock the injected converter to return our expected DTO.
+            coEvery { coreConverter.convert(any(), source) } returns astDto
 
-        val result = handler.getAst(params).await()
+            val result = handler.getAst(params).await()
 
-        assertNotNull(result)
-        assertEquals("core", result.parser)
-        val expectedJson = "{\"dtoKind\":\"core\", \"id\":\"node-1\", \"type\":\"CompilationUnit\", " +
-            "\"range\":null, \"children\":[], \"properties\":{}}"
-        val expectedElement = Json.parseToJsonElement(expectedJson)
-        val actualElement = Json.parseToJsonElement(result.ast)
-        assertEquals(expectedElement, actualElement)
+            assertNotNull(result)
+            assertEquals("core", result.parser)
+            val expectedJson = "{\"dtoKind\":\"core\", \"id\":\"node-1\", \"type\":\"CompilationUnit\", " +
+                "\"range\":null, \"children\":[], \"properties\":{}}"
+            val expectedElement = Json.parseToJsonElement(expectedJson)
+            val actualElement = Json.parseToJsonElement(result.ast)
+            assertEquals(expectedElement, actualElement)
+        } finally {
+            parseResult.compilationUnit.classLoader.close()
+        }
     }
 
     @Test
     fun `AST export omits ranges ambiguous after a supplementary character`(): Unit = runTest {
         val uri = URI("file:///test.groovy")
         val source = "class Example { String before; String emoji = '😀'; String after }"
-        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source))
+        val parsed = GroovyParserFacade().parse(
+            ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
+        )
         assertNotNull(parsed.ast)
         documents.put(uri, source, 1)
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
@@ -130,7 +123,9 @@ class AstRequestHandlerTest {
     fun `AST uses synchronized Unicode CRLF text and reports its identity`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
         val source = "class Fresh { String face = '😀' }\r\n"
-        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source))
+        val parsed = GroovyParserFacade().parse(
+            ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
+        )
         documents.put(uri, source, 7)
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
         val handler = AstRequestHandler(
@@ -155,7 +150,9 @@ class AstRequestHandlerTest {
     fun `AST rejects a reopened document even when text and version repeat`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
         val source = "class Fresh {}"
-        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source))
+        val parsed = GroovyParserFacade().parse(
+            ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
+        )
         documents.put(uri, source, 1)
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
             documents.remove(uri)
@@ -239,7 +236,9 @@ class AstRequestHandlerTest {
     fun `AST rejects an edit during compilation`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
         val source = "class Fresh {}"
-        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source))
+        val parsed = GroovyParserFacade().parse(
+            ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
+        )
         documents.put(uri, source, 1)
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
             documents.update(uri, "class Newer {}", 2)
@@ -262,7 +261,9 @@ class AstRequestHandlerTest {
     fun `AST rejects a change made while the tree is converted`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
         val source = "class Fresh {}"
-        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source))
+        val parsed = GroovyParserFacade().parse(
+            ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
+        )
         documents.put(uri, source, 1)
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
         val dto = CoreAstNodeDto("node", "Module", null, emptyList(), emptyMap())
@@ -284,12 +285,15 @@ class AstRequestHandlerTest {
     }
 
     @Test
-    fun `AST reports unavailable parse tree as request failure`(): Unit = runTest {
+    fun `AST rejects an unavailable or mismatched requested source tree`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
         val source = "class Fresh {}"
-        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source)).copy(ast = null)
+        val parser = GroovyParserFacade()
+        val parsed = parser.parse(ParseRequest(uri, source, compilePhase = Phases.CANONICALIZATION))
+        val other = parser.parse(
+            ParseRequest(URI("file:///Other.groovy"), "class Other {}", compilePhase = Phases.CANONICALIZATION),
+        )
         documents.put(uri, source, 1)
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
         val handler = AstRequestHandler(
             compilationService,
             coreConverter,
@@ -297,10 +301,27 @@ class AstRequestHandlerTest {
             documents,
             supervisedScope(),
         )
-        val error = assertFailsWith<ResponseErrorException> {
-            handler.getAst(AstParams(uri.toString(), "native")).await()
+        try {
+            val unavailable = listOf(
+                parsed.copy(ast = null),
+                parsed.copy(ast = other.ast),
+                parsed.copy(sourceUnit = other.sourceUnit),
+                other,
+            )
+            for (result in unavailable) {
+                coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns result
+                for (projection in listOf("native", "core")) {
+                    val error = assertFailsWith<ResponseErrorException> {
+                        handler.getAst(AstParams(uri.toString(), projection)).await()
+                    }
+                    assertEquals(ResponseErrorCode.RequestFailed.value, error.responseError.code, projection)
+                }
+            }
+        } finally {
+            parsed.compilationUnit.classLoader.close()
+            other.compilationUnit.classLoader.close()
         }
-        assertEquals(ResponseErrorCode.RequestFailed.value, error.responseError.code)
     }
+
     private fun TestScope.supervisedScope(): CoroutineScope = CoroutineScope(coroutineContext + SupervisorJob())
 }
