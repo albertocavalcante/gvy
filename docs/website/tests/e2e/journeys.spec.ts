@@ -107,13 +107,20 @@ for (const width of [360, 1440])
       "Shift+Tab",
       "Shift+Tab",
     ]) {
+      const eventOffset = await page.evaluate(
+        () => Reflect.get(window, "focusEvents").length,
+      );
       await page.keyboard.press(key);
-      const state = await dialog.evaluate((el) => ({
-        active: document.activeElement?.outerHTML.slice(0, 500),
-        hasFocus: document.hasFocus(),
-        inDialog: el.contains(document.activeElement),
-        bodyActive: document.activeElement === document.body,
-      }));
+      const state = await dialog.evaluate(
+        (el, offset) => ({
+          events: Reflect.get(window, "focusEvents").slice(offset),
+          active: document.activeElement?.outerHTML.slice(0, 500),
+          hasFocus: document.hasFocus(),
+          inDialog: el.contains(document.activeElement),
+          bodyActive: document.activeElement === document.body,
+        }),
+        eventOffset,
+      );
       states.push({ key, ...state });
     }
     const events = await page.evaluate(() =>
