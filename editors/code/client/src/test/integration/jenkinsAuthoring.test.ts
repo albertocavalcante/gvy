@@ -101,7 +101,13 @@ suite("Jenkins parameter authoring evidence", () => {
           "workbench.action.revertAndCloseActiveEditor",
         );
       }
-      await rm(directory, { recursive: true, force: true });
+      // Windows may still hold fixture files after the editor closes.
+      await rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 8,
+        retryDelay: 100,
+      });
     }
   }
 
