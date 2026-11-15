@@ -25,7 +25,6 @@ internal interface GradleSourceSetModel {
     val sourceFiles: List<String?>? get() = null
     val artifacts: List<GradleClasspathEntryModel?>?
     val executionState: String? get() = null
-    val sourceFiles: List<String?>? get() = null
     val inputFiles: List<String?>? get() = null
     val runtimeClasspath: List<String?>? get() = null
     val runtimeArtifacts: List<GradleClasspathEntryModel?>? get() = null
