@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 
@@ -22,5 +23,7 @@ const focusableRegions = {
 };
 export default defineConfig({
   base: '/gvy', site: 'https://albertocavalcante.github.io', integrations: [focusableRegions, mdx()],
+  // Avoid Vite's per-file discovery reaching the uninstalled parent website.
+  vite: { tsconfig: fileURLToPath(new URL('../tsconfig.json', import.meta.url)) },
   markdown: { shikiConfig: { transformers: [{ name: 'focusable-code', pre(node) { node.properties.tabIndex = 0; } }] } },
 });
