@@ -116,7 +116,7 @@ test('representative pages have no serious or critical axe findings', async ({ p
       body: JSON.stringify({ violations: results.violations, incomplete: results.incomplete }, null, 2),
       contentType: 'application/json',
     });
-    blocking.push(...results.violations.filter(item => ['serious', 'critical'].includes(item.impact)).map(item => ({ route, id: item.id, impact: item.impact })));
+    blocking.push(...results.violations.filter(item => ['serious', 'critical'].includes(item.impact) || item.id === 'region').map(item => ({ route, id: item.id, impact: item.impact })));
   }
   expect(blocking).toEqual([]);
 });
