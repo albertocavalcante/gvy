@@ -93,23 +93,26 @@ data class ParseRequest(
      * exact name is added, read when the compile reaches it. Null: no lookup beyond file names.
      */
     val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
-    /** Fresh path check for source files discovered implicitly below [sourceRoots]. */
-    val sourcePathAdmission: ((Path) -> Boolean)? = null,
 ) {
-    /** Keeps source and JVM constructor compatibility for callers passing the old locator positionally. */
+    /** Fresh path check for source files discovered implicitly below [sourceRoots]. */
+    private var sourcePathAdmissionValue: ((Path) -> Boolean)? = null
+    val sourcePathAdmission: ((Path) -> Boolean)? get() = sourcePathAdmissionValue
+
+    /** Adds parse-time source-path admission without changing the original primary-constructor ABI. */
     constructor(
         uri: URI,
         content: String,
-        classpath: List<Path>,
-        sourceRoots: List<Path>,
-        workspaceSources: List<Path>,
-        openSources: Map<URI, String>,
-        excludedSources: Set<Path>,
-        locatorCandidates: Set<String>,
-        compilePhase: Int,
-        parseMode: ParseMode,
-        checkCancelled: () -> Unit,
-        workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)?,
+        classpath: List<Path> = emptyList(),
+        sourceRoots: List<Path> = emptyList(),
+        workspaceSources: List<Path> = emptyList(),
+        openSources: Map<URI, String> = emptyMap(),
+        excludedSources: Set<Path> = emptySet(),
+        locatorCandidates: Set<String> = emptySet(),
+        compilePhase: Int = Phases.CONVERSION,
+        parseMode: ParseMode = ParseMode.WORKSPACE,
+        checkCancelled: () -> Unit = {},
+        workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
+        sourcePathAdmission: ((Path) -> Boolean)?,
     ) : this(
         uri,
         content,
@@ -122,9 +125,14 @@ data class ParseRequest(
         compilePhase,
         parseMode,
         checkCancelled,
-        workspaceClassLocator = workspaceClassLocator,
-        sourcePathAdmission = null,
-    )
+        workspaceClassLocator,
+    ) {
+        this.sourcePathAdmissionValue = sourcePathAdmission
+    }
+
+    /** Internal copies preserve the admission policy stored outside the data-class constructor. */
+    internal fun copyWithSourcePathAdmission(copy: (ParseRequest) -> ParseRequest): ParseRequest =
+        copy(this).also { it.sourcePathAdmissionValue = sourcePathAdmissionValue }
 
     val sourceUnitName: String = uri.path ?: uri.toString()
 }

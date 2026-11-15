@@ -244,7 +244,9 @@ class GroovyParserFacade internal constructor(
             NativeClasspathInputs.capture(request.classpath, request.sourceRoots, request.checkCancelled)
         }
         return parse(
-            request.copy(classpath = inputs.classpath, sourceRoots = inputs.sourceRoots),
+            request.copyWithSourcePathAdmission {
+                it.copy(classpath = inputs.classpath, sourceRoots = inputs.sourceRoots)
+            },
             excluded = emptyList(),
             inputs = inputs,
             sourceFilter = sourceFilter,
@@ -289,11 +291,13 @@ class GroovyParserFacade internal constructor(
                     logger.debug { "Sources with errors excluded from compiling ${request.uri}: $failing" }
                     val recovered = owner.replaceWith {
                         parse(
-                            request.copy(
-                                openSources = request.openSources.filterKeys { it !in failing.open },
-                                workspaceSources = request.workspaceSources.filterNot { it in newlyFailing },
-                                excludedSources = request.excludedSources + newlyFailing,
-                            ),
+                            request.copyWithSourcePathAdmission { current ->
+                                current.copy(
+                                    openSources = current.openSources.filterKeys { it !in failing.open },
+                                    workspaceSources = current.workspaceSources.filterNot { it in newlyFailing },
+                                    excludedSources = current.excludedSources + newlyFailing,
+                                )
+                            },
                             excluded + failing.excludedSources(),
                             inputs,
                             sourceFilter,
@@ -402,7 +406,11 @@ class GroovyParserFacade internal constructor(
             .map(ParserDiagnosticConverter::textOf).toSet()
         val retainedDiagnostics = result.diagnostics.filter { it.message in ownExceptions }
         val retried = owner.replaceWith {
-            parseInternal(request.copy(compilePhase = Phases.CONVERSION), inputs, lookup = lookup)
+            parseInternal(
+                request.copyWithSourcePathAdmission { it.copy(compilePhase = Phases.CONVERSION) },
+                inputs,
+                lookup = lookup,
+            )
         }
         return retried.copy(
             diagnostics = (retainedDiagnostics + retried.diagnostics).distinct(),
@@ -916,11 +924,13 @@ private fun dropUnattributedBuffers(
     val dropped = uris.map { ExcludedSource(it.toString(), UNATTRIBUTED_ERROR_REASON) }
     val paths = uris.mapNotNull { uri -> runCatching { Path.of(uri) }.getOrNull() }
     val identities = paths.mapTo(HashSet(), ::sourceIdentity)
-    return request.copy(
-        openSources = emptyMap(),
-        workspaceSources = request.workspaceSources.filterNot { sourceIdentity(it) in identities },
-        excludedSources = request.excludedSources + paths,
-    ) to dropped
+    return request.copyWithSourcePathAdmission { current ->
+        current.copy(
+            openSources = emptyMap(),
+            workspaceSources = current.workspaceSources.filterNot { sourceIdentity(it) in identities },
+            excludedSources = current.excludedSources + paths,
+        )
+    } to dropped
 }
 
 /** A `file:` URI as a normalized path (decoded, platform case rules); other URIs unchanged. */

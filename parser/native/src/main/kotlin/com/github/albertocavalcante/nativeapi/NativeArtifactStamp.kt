@@ -35,10 +35,16 @@ data class NativeArtifactStamp(
 ) {
     /** Preserves the original four-field JVM constructor for existing Java and binary consumers. */
     constructor(size: Long, lastModifiedMillis: Long, files: Long?, observedPaths: Int) : this(
-        size = size,
-        lastModifiedMillis = lastModifiedMillis,
-        files = files,
-        observedPaths = observedPaths,
+        size,
+        lastModifiedMillis,
+        files,
+        observedPaths,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
     )
 
     companion object {
