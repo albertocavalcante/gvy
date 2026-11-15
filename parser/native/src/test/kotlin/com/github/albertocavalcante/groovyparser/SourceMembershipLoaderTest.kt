@@ -222,6 +222,36 @@ class SourceMembershipLoaderTest {
     }
 
     @Test
+    fun `source admission checks the local jar containing a Groovy source`() {
+        val sourceRoot = Files.createDirectories(root.resolve("src"))
+        val managedRoot = Files.createDirectories(root.resolve("managed"))
+        val jar = managedRoot.resolve("sources.jar")
+        ZipOutputStream(jar.toFile().outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("Dependency.groovy"))
+            zip.write("class Dependency {}".toByteArray())
+            zip.closeEntry()
+        }
+        val admittedPaths = mutableListOf<Path>()
+        val result = GroovyParserFacade().parse(
+            ParseRequest(
+                uri = sourceRoot.resolve("Uses.groovy").toUri(),
+                content = "class Uses { Dependency value }",
+                classpath = listOf(jar),
+                sourceRoots = listOf(sourceRoot),
+                sourcePathAdmission = { path ->
+                    admittedPaths.add(path)
+                    !path.startsWith(managedRoot)
+                },
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+            emptySet(),
+        )
+
+        assertTrue(admittedPaths.contains(jar.toAbsolutePath().normalize()), "admission checks the JAR path")
+        assertTrue(result.compilationUnit.ast.classes.none { it.name == "Dependency" })
+    }
+
+    @Test
     fun `source loader preserves legacy behavior for included Java sibling`() {
         val java = root.resolve("Sibling.java").also { it.toFile().writeText("public class Sibling {}") }
         val uri = root.resolve("Uses.groovy").toUri()

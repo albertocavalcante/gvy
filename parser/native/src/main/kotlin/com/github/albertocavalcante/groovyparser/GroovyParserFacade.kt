@@ -40,6 +40,7 @@ import org.codehaus.groovy.control.messages.LocatedMessage
 import org.codehaus.groovy.control.messages.Message
 import org.codehaus.groovy.control.messages.SimpleMessage
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
+import java.net.JarURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.file.Files
@@ -140,6 +141,16 @@ private fun locatorPath(locator: String): Any = if (locator.startsWith("file:"))
 
 private fun urlPath(url: URL): Path? = if (url.protocol == "file") {
     runCatching { Path.of(url.toURI()).toAbsolutePath().normalize() }.getOrNull()
+} else {
+    null
+}
+
+/** A file source uses its own path; a JAR source uses its local container for managed-path admission. */
+private fun urlArchivePath(url: URL): Path? = if (url.protocol == "jar") {
+    runCatching {
+        val archive = (url.openConnection() as? JarURLConnection)?.jarFileURL
+        if (archive?.protocol == "file") Path.of(archive.toURI()).toAbsolutePath().normalize() else null
+    }.getOrNull()
 } else {
     null
 }
@@ -649,10 +660,11 @@ class GroovyParserFacade internal constructor(
                     sources.loadGroovySource(name)?.takeIf { url ->
                         val path = urlPath(url)
                         val canonical = path?.let { runCatching { it.toRealPath() }.getOrDefault(it) }
+                        val admissionPath = path ?: urlArchivePath(url)
                         val accepted = canonical == null || sourceFilter == null ||
                             roots.none(canonical::startsWith) || sourceFilter(canonical)
                         canonical !in excluded && canonical !in bufferPaths && accepted &&
-                            (path == null || sourcePathAdmission?.invoke(path) != false)
+                            (admissionPath == null || sourcePathAdmission?.invoke(admissionPath) != false)
                     }
                 }
             }
