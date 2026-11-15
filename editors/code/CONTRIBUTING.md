@@ -513,3 +513,66 @@ node editors/code/tools/install-extension.js --vsix /path/to/gvy-source.vsix --i
 This uses VS Code's normal extension replacement operation. Keep a previous VSIX if you need to roll back; build and
 verification failures do not invoke the editor installer. The source command retains its build/cache for fast repeat
 runs.
+
+## Verify the stable release in an isolated editor
+
+The release probe checks the published v0.5.4 VSIX in VS Code 1.146.0 on macOS or Linux with Java 17. It verifies the
+installed client/server bytes and the running Java process, then requests the quickstart hover through the editor API.
+It does not replace the exact-main installer or test Gradle, restricted repositories, Jenkins, Spock, or visual UI
+behavior. The stable bundle still reports `0.4.8-SNAPSHOT`; keep
+[#1751](https://github.com/albertocavalcante/gvy/issues/1751) visible.
+
+Run from `editors/code`, with `JAVA_HOME` explicitly selecting Java 17 and a compatible `code` command on `PATH`:
+
+```bash
+export GVY_VERIFY_ROOT="$(mktemp -d /tmp/gvy-j17.XXXXXX)"
+export GVY_VERIFY_JAVA_HOME="$JAVA_HOME"
+export GVY_VERIFY_VSIX="$GVY_VERIFY_ROOT/gvy-0.5.4.vsix"
+export GVY_VERIFY_RECEIPT="$GVY_VERIFY_ROOT/receipt.json"
+export GVY_VERIFY_TOOL="$PWD/tools/verify-release-editor.js"
+gh release download v0.5.4 --repo albertocavalcante/gvy \
+  --pattern gvy-0.5.4.vsix --dir "$GVY_VERIFY_ROOT"
+node <<'JS'
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.env.GVY_VERIFY_ROOT;
+for (const dir of ['profile/User', 'extensions', 'driver', 'project', 'tmp']) {
+  fs.mkdirSync(path.join(root, dir), { recursive: true });
+}
+fs.writeFileSync(path.join(root, 'driver/package.json'), JSON.stringify({
+  name: 'gvy-release-proof', publisher: 'local', version: '0.0.0',
+  engines: { vscode: '^1.146.0' }
+}));
+fs.writeFileSync(path.join(root, 'project/Hello.groovy'), require(process.env.GVY_VERIFY_TOOL).fixture);
+fs.writeFileSync(path.join(root, 'profile/User/settings.json'), JSON.stringify({
+  'groovy.languageServer.javaHome': process.env.GVY_VERIFY_JAVA_HOME,
+  'groovy.server.vmargs': ['-Xmx512m'], 'groovy.update.checkOnStartup': false,
+  'update.mode': 'none', 'extensions.autoUpdate': false, 'extensions.autoCheckUpdates': false,
+  'telemetry.telemetryLevel': 'off', 'security.workspace.trust.enabled': false,
+  'workbench.startupEditor': 'none'
+}));
+JS
+TMPDIR="$GVY_VERIFY_ROOT/tmp/" code --user-data-dir "$GVY_VERIFY_ROOT/profile" --extensions-dir "$GVY_VERIFY_ROOT/extensions" \
+  --install-extension "$GVY_VERIFY_VSIX" --force
+TMPDIR="$GVY_VERIFY_ROOT/tmp/" code --new-window --wait --disable-gpu --skip-welcome --skip-release-notes --disable-workspace-trust \
+  --user-data-dir "$GVY_VERIFY_ROOT/profile" --extensions-dir "$GVY_VERIFY_ROOT/extensions" \
+  --extensionDevelopmentPath="$GVY_VERIFY_ROOT/driver" \
+  --extensionTestsPath="$GVY_VERIFY_TOOL" "$GVY_VERIFY_ROOT/project"
+```
+
+Run this procedure interactively. The internal editor operations have deadlines, but `code --wait` has no outer
+startup/shutdown deadline. If the run has not completed after two minutes, stop it and close only its isolated window
+and server. Do not treat a timeout or missing receipt as success.
+
+Require both a zero editor exit and `success: true` in the receipt. Keep logs and the receipt privately: they contain
+local paths and process details. This synthetic project disables workspace trust only inside its disposable profile.
+Record `code --version`, the probe source revision, and complete diagnostics beside the receipt. The VSIX tag does not
+establish the bundled server's source revision; report that limit rather than assigning the tag's commit to its JAR.
+
+The released extension can leave its JVM running after the editor exits. After the test, verify that processes
+referencing `GVY_VERIFY_ROOT` have stopped. Close any remaining owned test window and server before removing the
+profile. Preserve the receipt and relevant logs outside the temporary directory, then remove only that owned directory.
+Do not change the normal editor profile, standalone command, or extension directory.
+
+When refreshing these pins, verify the release assets, editor compatibility, actual server version and quickstart
+fixture together. Never turn the historical mismatch into an expected result for a newer release.

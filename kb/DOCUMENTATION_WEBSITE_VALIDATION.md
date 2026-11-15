@@ -222,3 +222,46 @@ the deliberately opt-in clipboard test skipped. The final strengthened journey a
 production build, 16 script tests and Astro check passed. These are local Chromium results; exact-head hosted results
 and independent review are recorded in the PR. Reviewed visual baselines, Firefox/WebKit and manual assistive-technology
 coverage remain open in #2020. Release/runtime proof and renderer experiments remain #2021 and #2022.
+
+## Stable VSIX with Java 17 (2026-11-14)
+
+The repeatable [release editor probe](../editors/code/tools/verify-release-editor.js) passed in a fresh VS Code profile
+with a separate extensions directory and the canonical quickstart `Hello.groovy`. Its
+[execution procedure](../editors/code/CONTRIBUTING.md#verify-the-stable-release-in-an-isolated-editor) retains the
+required pins and isolation settings. This closes the Java 17 startup/hover slice of #2021; it does not close that
+entire issue.
+
+| Input or observation     | Verified value                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Editor                   | VS Code 1.146.0, arm64, commit `69047191fc427f2f92828279aae1d90d8eeda7ab`                                           |
+| Java                     | Homebrew OpenJDK 17.0.21.0.3+0; actual server process selected that Java with `-Xmx512m`                            |
+| Stable VSIX              | v0.5.4; SHA-256 `128a9f76b8595611196890b4305702b8005335f64b75f1f83e24f6172196a93b`                                  |
+| Installed server         | `gls version 0.4.8-SNAPSHOT`; SHA-256 `552558bc588968c3127aa25114a86bb9137fa740572b39e7af44ff732a2802f2`            |
+| Installed client         | SHA-256 `f562ba83c56b9303eaddf1ac80682a55825494b586b213129525c652205e0a56`                                          |
+| Fixture                  | SHA-256 `99cc2ccf14b1d36054b1a3353b0bba4437c2c18462efbd4a76e62e83a24ee42a`; no build files or external dependencies |
+| Hover through editor API | `public String greet(String name)`, return type `String`, owner `Greeter`                                           |
+
+The v0.5.4 release tag points to `c441b8451ceed18a899a5d12369e1139b01ef9d7`. That identifies the release tag, not the
+older embedded JAR's source revision. The probe records the installed manifest, client and server hashes separately. The
+stable warning and #1751 remain necessary; this result does not establish current-source feature support.
+
+Workspace trust and update checks were disabled only in the synthetic disposable profile. API hover is behavioral editor
+evidence, not a new screenshot, visual UI review, or accessibility result. Project dependency resolution,
+restricted/offline repositories, cold-cache Jenkins and real Spock execution remain unverified in #2021.
+
+The final documented-command rerun returned editor exit 0 and a successful receipt after verifying both the client and
+server hashes and all packaged manifest fields. VS Code adds per-installation `__metadata`, so the raw installed
+manifest hash varies; only that local field is excluded from comparison with the checksum-pinned packaged manifest.
+Negative controls reject altered client bytes, changed manifest entry points, empty hovers and unrelated signatures.
+
+Full private logs retain the editor's Node DEP0169 warning, built-in API-proposal/authentication-policy messages,
+non-Git-folder discovery warnings and the released extension's resource-scoped configuration warnings. Server INFO lines
+are logged at the client channel's error level. The first long temporary path also caused an optional editor agent-host
+socket failure; reruns used a short isolated temporary path. These diagnostics are recorded, not suppressed.
+
+The released extension left its server JVM alive after the test window exited; it was stopped by its verified owned
+process identity before removing the disposable profile. An experiment invoking `groovy.stopServer` explicitly produced
+a deactivation error and left the editor CLI waiting; its successful hover receipt is not a passing command result. The
+final probe keeps cleanup explicitly supervised and calls out the missing outer startup/shutdown deadline. Release
+maintainers own checking clean editor/server shutdown on a corrected release in #2021. All owned test processes and
+disposable profiles were removed; private receipts, source hashes and full logs remain as evidence.
