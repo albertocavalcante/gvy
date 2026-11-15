@@ -30,7 +30,8 @@ class ClasspathResolutionStrategy(
             policy = SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
         )
             ?: return SymbolResolutionStrategy.notFound("Current dependency context unavailable", STRATEGY_NAME)
-        return sourceResolution(navigator.locate(request.symbol, request.context), className, STRATEGY_NAME)
+        val symbol = request.symbol.copy(memberIsStatic = member?.let { true })
+        return sourceResolution(navigator.locate(symbol, request.context), className, STRATEGY_NAME)
     }
 
     companion object {

@@ -52,6 +52,7 @@ internal class GroovySourceDeclarationInspector {
         memberName: String,
         sourceUri: URI,
         checkCancelled: () -> Unit = {},
+        memberIsStatic: Boolean? = null,
     ): SourceDefinition? {
         checkCancelled()
         if (content.length > MAX_GROOVY_INSPECTION_CHARACTERS) return null
@@ -66,7 +67,7 @@ internal class GroovySourceDeclarationInspector {
         )
         return try {
             parsed.ast?.classes.orEmpty().singleOrNull { it.name == binaryName }?.let { owner ->
-                inspectOwnerMember(owner, binaryName, memberName, content, checkCancelled)
+                inspectOwnerMember(owner, binaryName, memberName, content, checkCancelled, memberIsStatic)
             }
         } finally {
             // Only detached spans escape. The separate shared transform loader remains owned by the native parser.
@@ -80,12 +81,14 @@ internal class GroovySourceDeclarationInspector {
         memberName: String,
         content: String,
         checkCancelled: () -> Unit,
+        memberIsStatic: Boolean?,
     ): SourceDefinition? {
         val methods = owner.methods.filter { method ->
             checkCancelled()
-            method.name == memberName && method.declaringClass.name == binaryName && !method.isSynthetic
+            method.name == memberName && method.declaringClass.name == binaryName && !method.isSynthetic &&
+                (memberIsStatic == null || method.isStatic == memberIsStatic)
         }
-        if (hasSameNameStaticFieldOrProperty(owner, binaryName, memberName, checkCancelled)) return null
+        if (hasSameNameFieldOrProperty(owner, binaryName, memberName, checkCancelled, memberIsStatic)) return null
 
         return methods.singleOrNull()?.let { method ->
             val ranges = CompilerSourceRanges(content)
@@ -111,20 +114,23 @@ internal class GroovySourceDeclarationInspector {
         }
     }
 
-    private fun hasSameNameStaticFieldOrProperty(
+    private fun hasSameNameFieldOrProperty(
         owner: org.codehaus.groovy.ast.ClassNode,
         binaryName: String,
         memberName: String,
         checkCancelled: () -> Unit,
+        memberIsStatic: Boolean?,
     ): Boolean {
         val hasField = owner.fields.any { field ->
             checkCancelled()
-            field.name == memberName && field.isStatic && field.declaringClass.name == binaryName && !field.isSynthetic
+            field.name == memberName && field.declaringClass.name == binaryName && !field.isSynthetic &&
+                (memberIsStatic == null || field.isStatic == memberIsStatic)
         }
         if (hasField) return true
         return owner.properties.any { property ->
             checkCancelled()
-            property.name == memberName && property.field.isStatic && property.declaringClass.name == binaryName
+            property.name == memberName && property.declaringClass.name == binaryName &&
+                (memberIsStatic == null || property.field.isStatic == memberIsStatic)
         }
     }
 

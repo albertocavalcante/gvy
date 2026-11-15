@@ -333,7 +333,13 @@ class SourceNavigationService(
         val source = storage.sourceFor(archive, symbol.binaryName, prefix)
             ?: return SourceLookupResult.Unavailable(MissingSourceReason.TYPE_NOT_PRESENT)
         val language = if (source.entryName.endsWith(".java")) "java" else "groovy"
-        val key = DefinitionKey(language, source.contentDigest, symbol.binaryName, symbol.memberName)
+        val key = DefinitionKey(
+            language,
+            source.contentDigest,
+            symbol.binaryName,
+            symbol.memberName,
+            symbol.memberIsStatic,
+        )
         val definition = inspectShared(source, symbol, key)
         if (!context.isCurrent()) return SourceLookupResult.Stale
         val descriptor = SourceDocumentDescriptor(
@@ -407,6 +413,7 @@ class SourceNavigationService(
                 symbol.memberName,
                 source.entryName,
                 checkCancelled,
+                symbol.memberIsStatic,
             )
         }
     } else if (symbol.memberName == null) {
@@ -418,6 +425,7 @@ class SourceNavigationService(
             symbol.memberName,
             source.contentPath.toUri(),
             checkCancelled,
+            symbol.memberIsStatic,
         )
     }
 
@@ -529,6 +537,7 @@ class SourceNavigationService(
         val content: String,
         val binaryName: String,
         val memberName: String?,
+        val memberIsStatic: Boolean?,
     )
     private data class CachedDefinition(val value: SourceDefinition?)
     private data class CachedInput(val value: InputResult, val createdAt: Long, val lifetime: Long)

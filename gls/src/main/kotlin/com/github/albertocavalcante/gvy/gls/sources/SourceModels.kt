@@ -58,7 +58,12 @@ class SourceLookupContext(
     suspend fun validateCurrent(): Boolean = validator?.invoke() ?: isCurrent()
 }
 
-data class ResolvedExternalSymbol(val binaryName: String, val origin: SourceOrigin, val memberName: String? = null)
+data class ResolvedExternalSymbol(
+    val binaryName: String,
+    val origin: SourceOrigin,
+    val memberName: String? = null,
+    val memberIsStatic: Boolean? = null,
+)
 
 data class ResolvedSourceRequest(val symbol: ResolvedExternalSymbol, val context: SourceLookupContext)
 

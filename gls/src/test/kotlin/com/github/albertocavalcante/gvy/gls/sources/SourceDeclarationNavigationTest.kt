@@ -71,6 +71,59 @@ class SourceDeclarationNavigationTest {
     }
 
     @Test
+    fun `Java static requests exclude instance members and keep implicit interface constants`(): Unit = runBlocking {
+        val content = """
+            package sample;
+            public interface Anno {
+                int CONSTANT = 1;
+                default int instanceOnly() { return 1; }
+                static int choose() { return 1; }
+                default int choose(int value) { return value; }
+            }
+        """.trimIndent()
+        val source = sourceJar(directory.resolve("repo/library-sources.jar"), content)
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        val owner = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            assertIs<SourceLookupResult.Located>(navigation.locate(owner.copy(memberName = "instanceOnly"), context()))
+            assertIs<SourceLookupResult.FileOnly>(
+                navigation.locate(owner.copy(memberName = "instanceOnly", memberIsStatic = true), context()),
+            )
+            for (member in listOf("CONSTANT", "choose")) {
+                assertIs<SourceLookupResult.Located>(
+                    navigation.locate(owner.copy(memberName = member, memberIsStatic = true), context()),
+                )
+            }
+            assertIs<SourceLookupResult.FileOnly>(navigation.locate(owner.copy(memberName = "choose"), context()))
+        }
+    }
+
+    @Test
+    fun `Groovy static requests exclude instance methods`(): Unit = runBlocking {
+        val content = """
+            package sample
+            class Anno {
+                String instanceOnly() { 'instance' }
+                static String choose() { 'static' }
+                String choose(String value) { value }
+            }
+        """.trimIndent()
+        val source = sourceJar(directory.resolve("repo/library-sources.jar"), content, "sample/Anno.groovy")
+        val resolver = RecordingResolver { VerifiedSourceArtifactResult.Available(source, digest(source)) }
+        val owner = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            assertIs<SourceLookupResult.Located>(navigation.locate(owner.copy(memberName = "instanceOnly"), context()))
+            assertIs<SourceLookupResult.FileOnly>(
+                navigation.locate(owner.copy(memberName = "instanceOnly", memberIsStatic = true), context()),
+            )
+            assertIs<SourceLookupResult.Located>(
+                navigation.locate(owner.copy(memberName = "choose", memberIsStatic = true), context()),
+            )
+            assertIs<SourceLookupResult.FileOnly>(navigation.locate(owner.copy(memberName = "choose"), context()))
+        }
+    }
+
+    @Test
     fun `verified Groovy source locates a unique method and leaves overloads file-only`(): Unit = runBlocking {
         val content = """
             package sample

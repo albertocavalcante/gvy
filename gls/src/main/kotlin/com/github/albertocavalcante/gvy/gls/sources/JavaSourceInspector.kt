@@ -10,6 +10,8 @@ import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.Providers
 import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.AnnotationDeclaration
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import com.github.javaparser.ast.body.EnumDeclaration
 import com.github.javaparser.ast.body.FieldDeclaration
 import com.github.javaparser.ast.body.MethodDeclaration
@@ -189,13 +191,14 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         memberName: String,
         sourceName: String = "<unknown>",
         checkCancelled: () -> Unit = {},
+        memberIsStatic: Boolean? = null,
     ): SourceDefinition? {
         checkCancelled()
         if (content.length > MAX_PARSE_CHARACTERS) return null
         return try {
             val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
             val owner = findJavaTypeDeclaration(unit, className, checkCancelled) ?: return null
-            val (declaration, name) = memberDeclarations(owner, memberName, checkCancelled).singleOrNull()
+            val (declaration, name) = memberDeclarations(owner, memberName, checkCancelled, memberIsStatic).singleOrNull()
                 ?: return null
             val declarationRange = declaration.range.orElse(null)?.toSourceSpan() ?: return null
             val nameRange = name.range.orElse(null)?.toSourceSpan() ?: return null
@@ -214,21 +217,28 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         owner: TypeDeclaration<*>,
         memberName: String,
         checkCancelled: () -> Unit,
+        memberIsStatic: Boolean?,
     ): List<Pair<Node, SimpleName>> = buildList {
         for (member in owner.members) {
             checkCancelled()
             when (member) {
-                is MethodDeclaration -> if (member.nameAsString == memberName) add(member to member.name)
+                is MethodDeclaration -> if (
+                    member.nameAsString == memberName && (memberIsStatic == null || member.isStatic == memberIsStatic)
+                ) add(member to member.name)
                 is FieldDeclaration -> member.variables.forEach { variable ->
                     checkCancelled()
-                    if (variable.nameAsString == memberName) add(member to variable.name)
+                    val isStatic = member.isStatic || owner is AnnotationDeclaration ||
+                        (owner is ClassOrInterfaceDeclaration && owner.isInterface)
+                    if (variable.nameAsString == memberName && (memberIsStatic == null || isStatic == memberIsStatic)) {
+                        add(member to variable.name)
+                    }
                 }
             }
         }
         if (owner is EnumDeclaration) {
             for (entry in owner.entries) {
                 checkCancelled()
-                if (entry.nameAsString == memberName) add(entry to entry.name)
+                if (entry.nameAsString == memberName && memberIsStatic != false) add(entry to entry.name)
             }
         }
     }
