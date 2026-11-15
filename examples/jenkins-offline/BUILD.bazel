@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+filegroup(
+    name = "project",
+    srcs = [
+        ".vscode/settings.json",
+        "Jenkinsfile",
+        "Jenkinsfile-scripted",
+        "README.md",
+        "pipeline.gdsl",
+        "plugins.txt",
+        "shared-library/resources/org/example/build.properties",
+        "shared-library/src/org/example/BuildHelper.groovy",
+        "shared-library/vars/release.groovy",
+        "shared-library/vars/release.txt",
+    ],
+    visibility = ["//jenkins:__pkg__"],
+)
+
+filegroup(
+    name = "scripted_fixture",
+    srcs = ["Jenkinsfile-scripted"],
+    visibility = ["//fmt:__pkg__"],
+)

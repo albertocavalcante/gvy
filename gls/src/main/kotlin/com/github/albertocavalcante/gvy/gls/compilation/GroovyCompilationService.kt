@@ -462,8 +462,14 @@ class GroovyCompilationService internal constructor(
 
     /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
-        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
-            ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+        cacheService.getSourceView(uri, workspaceManager.fingerprintFor(uri))
+            ?.let { source ->
+                CompiledDocumentSnapshot(
+                    sourceText = source.sourceText,
+                    parseResult = source.parseResult,
+                    sourceView = source,
+                )
+            }
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)
