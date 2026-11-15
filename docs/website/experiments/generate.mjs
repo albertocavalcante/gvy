@@ -1,26 +1,47 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { readFile, mkdir, writeFile, access } from 'node:fs/promises';
+import { dirname, resolve, posix } from 'node:path';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
+import remarkStringify from 'remark-stringify';
+import { visit } from 'unist-util-visit';
 
-const root = resolve('../..');
+// Match the production projection's link-node policy without its Starlight frontmatter.
+const processor = unified().use(remarkParse).use(remarkGfm).use(remarkStringify, { fences: true });
+const repo = resolve('../../..');
+const routes = {
+  'docs/user/quickstart.md': '/gvy/guides/quickstart/',
+  'docs/user/reference-settings.md': '/gvy/reference/settings/',
+};
 const pages = [
-  ['shared/home.md', '', ''],
-  ['../../user/quickstart.md', 'guides/quickstart', 'docs/user/quickstart.md'],
-  ['../../user/reference-settings.md', 'reference/settings', 'docs/user/reference-settings.md'],
-  ['shared/not-found.md', 'not-found', ''],
+  ['shared/home.md', '', null, null],
+  ['../../user/quickstart.md', 'guides/quickstart', 'docs/user/quickstart.md', 'docs/user/quickstart.md'],
+  ['../../user/reference-settings.md', 'reference/settings', 'docs/user/reference-settings.md', 'editors/code/package.json'],
+  ['shared/not-found.md', 'not-found', null, null],
 ];
-for (const [source, route, edit] of pages) {
-  let body = await readFile(source, 'utf8');
-  // Preserve selected routes locally; other canonical links point to their repository source.
-  body = body.replace(/\]\(([^)#]+\.md)(#[^)]*)?\)/g, (_, target, fragment = '') => {
-    const canonical = resolve(root, 'user', target).slice(resolve(root, '..').length + 1);
-    const local = canonical === 'docs/user/quickstart.md' ? '/gvy/guides/quickstart/' : canonical === 'docs/user/reference-settings.md' ? '/gvy/reference/settings/' : `https://github.com/albertocavalcante/gvy/blob/main/${canonical}`;
-    return `](${local}${fragment})`;
+for (const [input, route, source, edit] of pages) {
+  const tree = processor.parse(await readFile(input, 'utf8'));
+  tree.children = tree.children.filter(node => !(node.type === 'html' && /^<!-- SPDX-/.test(node.value)));
+  const localSources = [];
+  if (source) visit(tree, node => {
+    if (!['link', 'image', 'definition'].includes(node.type)) return;
+    const url = node.url;
+    if (!url || /^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(url)) return;
+    const [file, fragment] = url.split('#', 2);
+    const resolved = posix.normalize(posix.join(posix.dirname(source), decodeURI(file)));
+    localSources.push(resolve(repo, resolved));
+    node.url = `${routes[resolved] || `https://github.com/albertocavalcante/gvy/${node.type === 'image' ? 'raw' : 'blob'}/main/${resolved}`}${fragment ? `#${fragment}` : ''}`;
   });
-  const astro = route === 'not-found' ? 'astro/src/pages/404.md' : `astro/src/pages/${route ? `${route}/index` : 'index'}.md`;
+  await Promise.all(localSources.map(file => access(file)));
+  const body = processor.stringify(tree);
+  const astro = route === 'not-found' ? 'astro/src/pages/404.md' : route ? `astro/src/pages/${route}/index.md` : 'astro/src/pages/index.mdx';
   const svelte = `svelte/src/routes/${route ? `${route}/` : ''}+page.svx`;
   for (const file of [astro, svelte]) await mkdir(dirname(file), { recursive: true });
-  await writeFile(astro, `---\nlayout: ${route && route !== 'not-found' ? '../../../layouts/Docs.astro' : '../layouts/Docs.astro'}\nedit: ${edit || 'null'}\n---\n${body}`);
-  await writeFile(svelte, `---\nedit: ${edit || 'null'}\n---\n${body}`);
+  const astroImport = route === '' ? "\nimport Notice from '../components/Notice.astro';\n" : '';
+  const astroNotice = route === '' ? "\n<Notice />\n" : '';
+  const svelteNotice = route === '' ? '\n<aside aria-label="Experiment notice"><h2 id="about-this-experiment">About this experiment</h2><p>This is a four-page renderer experiment, not the published documentation.</p></aside>\n\n' : '';
+  await writeFile(astro, `---\nlayout: ${route && route !== 'not-found' ? '../../../layouts/Docs.astro' : '../layouts/Docs.astro'}\nedit: ${edit || 'null'}\n---\n${astroImport}\n${body}${astroNotice}`);
+  await writeFile(svelte, `---\nedit: ${edit || 'null'}\n---\n${body}${svelteNotice}`);
 }

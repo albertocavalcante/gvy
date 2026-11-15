@@ -9,5 +9,6 @@ svelte/.svelte-kit/
 svelte/src/routes/**/+page.svx
 astro/src/pages/**/*.md
 astro/src/pages/*.md
+astro/src/pages/*.mdx
 playwright-report/
 test-results/
