@@ -28,6 +28,26 @@ Run the commands below from the repository root. If you use direnv, review `.env
 worktree. On shared machines with `build-slot` installed, wrap Gradle invocations with `build-slot --` to queue
 memory-intensive work. Run one Gradle build at a time per machine.
 
+Common test-task defaults use one fork locally or two on GitHub Actions, with a 1 GiB maximum heap and a 256 MiB initial
+heap per fork. Set `-Pgvy.test.maxParallelForks=1` or `-Pgvy.test.maxHeapSize=768m` to change those common defaults; the
+fork count must be positive and heap sizes use a positive integer followed by `m` or `g`. If the maximum is below 256
+MiB, the common initial heap is reduced to match. A module or task can set its own values after these defaults: in
+particular, `:tests:e2eTest` uses its own heap and `-Pe2eParallelForks` controls its fork count, while
+`:tests:harnessTest` uses its focused limits. Gradle's `--max-workers` and shared-host `build-slot` still apply; a
+per-fork heap is not a limit on total memory, and E2E tests also launch server processes.
+
+To inspect configured task settings, run the source-only diagnostic init script:
+
+```bash
+build-slot -- ./gradlew help --no-configuration-cache -I tools/ci/test-resource-precedence.init.gradle \
+  -Pe2eParallelForks=1 -PtestResourceExpected=:tests:e2eTest=2G/1
+```
+
+The probe prints the settings after project evaluation and checks the supplied expectation. When one of the reported
+test tasks executes, it prints and checks the settings at task execution before the test worker starts. Other task
+actions may still change those settings afterward. Observing actual child JVM arguments and memory needs a separate
+bounded execution.
+
 ## Build and run the server
 
 Build the standalone server JAR:

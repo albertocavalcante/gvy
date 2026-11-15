@@ -295,57 +295,61 @@ subprojects {
         dependsOn("detekt", "spotlessCheck")
     }
 
-    // On GitHub Actions: two test JVMs with modest heaps (runner-sized)
-    // Otherwise, use parallel execution and generous memory locally
-    afterEvaluate {
-        tasks.withType<Test>().configureEach {
-            javaLauncher.set(testJavaLauncher)
-            if (System.getenv("GITHUB_ACTIONS") == "true") {
-                // Hosted runners have 4 vCPUs and 16 GB; two 1 GB test JVMs fit. Forks are separate
-                // JVMs, so they share no static state.
-                maxParallelForks = 2
-                minHeapSize = "256m"
-                maxHeapSize = "1g"
-            } else {
-                // Local development optimization
-                maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
-                minHeapSize = "512m"
-                maxHeapSize = "4g"
+    // Apply common defaults before project build scripts configure task-specific limits.
+    val requestedForks = findProperty("gvy.test.maxParallelForks")?.toString()?.let { value ->
+        value.toIntOrNull()?.takeIf { it > 0 }
+            ?: throw GradleException("gvy.test.maxParallelForks must be a positive integer")
+    }
+    val requestedHeap = findProperty("gvy.test.maxHeapSize")?.toString()?.let { value ->
+        val match = Regex("^([1-9][0-9]*)([mMgG])$").matchEntire(value)
+            ?: throw GradleException("gvy.test.maxHeapSize must be a positive heap size in m or g")
+        val amount = match.groupValues[1].toLongOrNull()
+            ?: throw GradleException("gvy.test.maxHeapSize is too large")
+        val gigabytes = match.groupValues[2].equals("g", ignoreCase = true)
+        val unitBytes = if (gigabytes) 1024L * 1024 * 1024 else 1024L * 1024
+        if (amount > Long.MAX_VALUE / unitBytes) throw GradleException("gvy.test.maxHeapSize is too large")
+        value to (gigabytes || amount >= 256)
+    }
+    tasks.withType<Test>().configureEach {
+        javaLauncher.set(testJavaLauncher)
+        val isCi = System.getenv("GITHUB_ACTIONS") == "true"
+        maxParallelForks = requestedForks ?: if (isCi) 2 else 1
+        maxHeapSize = requestedHeap?.first ?: "1g"
+        minHeapSize = requestedHeap?.takeUnless { it.second }?.first ?: "256m"
 
-                // Improve console output
-                testLogging {
-                    events("passed", "skipped", "failed")
-                    showStandardStreams = false // Reduce noise, only show failures usually
-                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-                }
+        if (!isCi) {
+            testLogging {
+                events("passed", "skipped", "failed")
+                showStandardStreams = false
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
             }
-
-            // Shared JVM args for better test performance
-            jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
-
-            // MockK also attaches bootstrap dispatchers in other modules' tests. Select a shared
-            // non-sharing test JVM policy instead of mapping a CDS archive that attachment invalidates.
-            // This changes archive reuse, not instrumentation or warning reporting.
-            // https://github.com/mockk/mockk/blob/1.14.12/doc/md/jep451-dynamic-agent-loading.md
-            jvmArgs("-Xshare:off")
-
-            // Fail on discovery warnings. JUnit silently skips a @Test that returns a value (e.g. a Kotlin
-            // `fun x() = runBlocking { ...; assertNotNull(y) }`); this turns that into a build failure.
-            systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
-
-            // Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache during tests.
-            // Mirrors JenkinsStubsLocation.CACHE_ROOT_PROPERTY.
-            val stubsCacheRoot = layout.buildDirectory.dir("tmp/jenkins-stubs-cache/$name")
-            jvmArgumentProviders.add(
-                object : CommandLineArgumentProvider {
-                    @get:LocalState
-                    val cacheRoot = stubsCacheRoot
-
-                    override fun asArguments() =
-                        listOf("-Dgroovy.lsp.jenkins.stubsCacheRoot=${cacheRoot.get().asFile.absolutePath}")
-                },
-            )
         }
+
+        // Shared JVM args for better test performance
+        jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
+
+        // MockK also attaches bootstrap dispatchers in other modules' tests. Select a shared
+        // non-sharing test JVM policy instead of mapping a CDS archive that attachment invalidates.
+        // This changes archive reuse, not instrumentation or warning reporting.
+        // https://github.com/mockk/mockk/blob/1.14.12/doc/md/jep451-dynamic-agent-loading.md
+        jvmArgs("-Xshare:off")
+
+        // Fail on discovery warnings. JUnit silently skips a @Test that returns a value (e.g. a Kotlin
+        // `fun x() = runBlocking { ...; assertNotNull(y) }`); this turns that into a build failure.
+        systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
+
+        // Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache during tests.
+        // Mirrors JenkinsStubsLocation.CACHE_ROOT_PROPERTY.
+        val stubsCacheRoot = layout.buildDirectory.dir("tmp/jenkins-stubs-cache/$name")
+        jvmArgumentProviders.add(
+            object : CommandLineArgumentProvider {
+                @get:LocalState
+                val cacheRoot = stubsCacheRoot
+
+                override fun asArguments() =
+                    listOf("-Dgroovy.lsp.jenkins.stubsCacheRoot=${cacheRoot.get().asFile.absolutePath}")
+            },
+        )
     }
 }
 
