@@ -9,6 +9,7 @@ import { promisify } from "util";
 import * as path from "path";
 import * as vscode from "vscode";
 import { getClient } from "../../server/client";
+import { toProtocolUri } from "../../server/uri";
 import { executePlan, Plan, ProcessPlan } from "./orchestrator";
 import { awaitTask } from "./taskCompletion";
 import { qualifyWindowsArguments, shortenJavaArguments } from "./javaArguments";
@@ -451,7 +452,7 @@ export function registerFileExecution(
                 const plan = await client.sendRequest<Plan>(
                   "groovy/prepareFileExecution",
                   {
-                    uri: document!.uri.toString(),
+                    uri: toProtocolUri(document!.uri.toString()),
                     version: document!.version,
                     action,
                     trusted: vscode.workspace.isTrusted,

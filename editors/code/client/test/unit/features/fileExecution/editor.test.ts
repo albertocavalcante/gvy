@@ -4,6 +4,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import proxyquire from "proxyquire";
+import { toProtocolUri } from "../../../../src/server/uri";
 
 describe("file execution editor integration", () => {
   function setup(
@@ -45,6 +46,7 @@ describe("file execution editor integration", () => {
     let progressCancelled = false;
     let cancelProgress = () => {};
     const requests: Array<{
+      uri: string;
       action: string;
       savedScopeDirectory?: string;
       contextId?: string;
@@ -104,10 +106,12 @@ describe("file execution editor integration", () => {
         for (const listener of this.listeners) listener(value);
       }
     }
+    let documentUri = "file:///work/a.groovy";
+    let protocolPlatform: NodeJS.Platform = globalThis.process.platform;
     const uri = {
       scheme: "file",
       fsPath: "/work/a.groovy",
-      toString: () => "file:///work/a.groovy",
+      toString: () => documentUri,
     };
     const document = {
       uri,
@@ -146,6 +150,7 @@ describe("file execution editor integration", () => {
       sendRequest: async (
         _method: string,
         request: {
+          uri: string;
           action: string;
           savedScopeDirectory?: string;
           contextId?: string;
@@ -353,6 +358,10 @@ describe("file execution editor integration", () => {
       {
         vscode,
         "../../server/client": { getClient: () => client },
+        "../../server/uri": {
+          toProtocolUri: (value: string) =>
+            toProtocolUri(value, protocolPlatform),
+        },
         "./projectJava": {
           resolveProjectJavaHome: async (
             configured: string | undefined,
@@ -465,6 +474,10 @@ describe("file execution editor integration", () => {
       calls,
       requests,
       executionSettings,
+      setDocumentUri: (value: string, platform: NodeJS.Platform) => {
+        documentUri = value;
+        protocolPlatform = platform;
+      },
       rejectPlanning: (reason: string) => {
         planningUnavailable = reason;
       },
@@ -477,6 +490,16 @@ describe("file execution editor integration", () => {
       releaseFirstPublication,
       getProvider: () => provider,
     };
+  }
+  for (const separator of ["%3A", "%3a"]) {
+    it(`uses the same Windows drive URI as didOpen with ${separator}`, async () => {
+      const h = setup(true, true);
+      h.setDocumentUri(`file:///c${separator}/work/a%3Ab.groovy`, "win32");
+      assert.strictEqual(await h.handlers.get("groovy.runFile")!(), true);
+      assert.ok(h.requests.length > 0);
+      for (const request of h.requests)
+        assert.strictEqual(request.uri, "file:///c:/work/a%3Ab.groovy");
+    });
   }
   it("blocks before planning in an untrusted workspace", async () => {
     const { handlers, calls } = setup(false, true);

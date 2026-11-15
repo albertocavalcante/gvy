@@ -7,6 +7,12 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 
+function taskDirectoryMatches(name: string, directory: string): boolean {
+  return process.platform === "win32"
+    ? name.toLowerCase().includes(directory.toLowerCase())
+    : name.includes(directory);
+}
+
 suite("Groovy file execution", () => {
   let directory: string;
   let outputDirectory: string | undefined;
@@ -24,9 +30,29 @@ suite("Groovy file execution", () => {
 
   suiteTeardown(async () => {
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    for (const terminal of vscode.window.terminals) {
+      if (
+        directory &&
+        (terminal.name.startsWith("Run · Standalone") ||
+          terminal.name.startsWith("Compile · Standalone")) &&
+        taskDirectoryMatches(terminal.name, directory)
+      )
+        terminal.dispose();
+    }
     if (outputDirectory)
-      await fs.rm(outputDirectory, { recursive: true, force: true });
-    if (directory) await fs.rm(directory, { recursive: true, force: true });
+      await fs.rm(outputDirectory, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    if (directory)
+      await fs.rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
   });
 
   test("runs a saved standalone script in an owned process task", async function () {
@@ -124,7 +150,7 @@ suite("Groovy file execution", () => {
     const listener = vscode.tasks.onDidStartTask((event) => {
       if (
         event.execution.task.name.startsWith("Run · Standalone") &&
-        event.execution.task.name.includes(folder)
+        taskDirectoryMatches(event.execution.task.name, folder)
       )
         active.add(event.execution);
     });
@@ -295,7 +321,7 @@ suite("Groovy file execution", () => {
     const startListener = vscode.tasks.onDidStartTask((event) => {
       if (
         event.execution.task.name.startsWith("Run · Standalone") &&
-        event.execution.task.name.includes(folder)
+        taskDirectoryMatches(event.execution.task.name, folder)
       )
         processes.add(event.execution);
     });
@@ -332,14 +358,14 @@ suite("Groovy file execution", () => {
         return (
           !!active &&
           active.name.includes("Run · Standalone") &&
-          active.name.includes(folder)
+          taskDirectoryMatches(active.name, folder)
         );
       }, "The active terminal did not become the running Groovy task");
       const terminal = vscode.window.activeTerminal;
       assert.ok(
         terminal &&
           terminal.name.includes("Run · Standalone") &&
-          terminal.name.includes(folder),
+          taskDirectoryMatches(terminal.name, folder),
       );
       terminal.sendText(value, true);
       const expected = [
