@@ -71,7 +71,7 @@ class SourceDeclarationNavigationTest {
     }
 
     @Test
-    fun `verified Groovy source locates a unique method and leaves overloads file-only`() = runBlocking {
+    fun `verified Groovy source locates a unique method and leaves overloads file-only`(): Unit = runBlocking {
         val content = """
             package sample
             class Anno {
@@ -101,7 +101,7 @@ class SourceDeclarationNavigationTest {
     }
 
     @Test
-    fun `ambiguous Groovy static field and method remain file-only`() = runBlocking {
+    fun `ambiguous Groovy static field and method remain file-only`(): Unit = runBlocking {
         val content = """
             package sample
             class Anno {
