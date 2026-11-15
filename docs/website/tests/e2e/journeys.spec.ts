@@ -74,15 +74,59 @@ for (const width of [360, 1440])
     await expect(dialog).toBeVisible();
     await expect(input).toBeFocused();
     await scanAccessibility(page, testInfo, "search-dialog-open");
-    for (let i = 0; i < 5; i++) {
-      await page.keyboard.press("Tab");
+    await page.evaluate(() => {
+      const events: { type: string; target: string }[] = [];
+      Object.assign(window, { focusEvents: events });
+      for (const type of ["focusin", "focusout", "focus", "blur"]) {
+        window.addEventListener(
+          type,
+          (event) => {
+            const target = event.target;
+            events.push({
+              type,
+              target:
+                target instanceof Element
+                  ? target.outerHTML.slice(0, 500)
+                  : String(target),
+            });
+          },
+          true,
+        );
+      }
+    });
+    const states = [];
+    for (const key of [
+      "Tab",
+      "Tab",
+      "Tab",
+      "Tab",
+      "Tab",
+      "Shift+Tab",
+      "Shift+Tab",
+      "Shift+Tab",
+      "Shift+Tab",
+      "Shift+Tab",
+    ]) {
+      await page.keyboard.press(key);
+      const state = await dialog.evaluate((el) => ({
+        active: document.activeElement?.outerHTML.slice(0, 500),
+        hasFocus: document.hasFocus(),
+        inDialog: el.contains(document.activeElement),
+        bodyActive: document.activeElement === document.body,
+      }));
+      states.push({ key, ...state });
+    }
+    const events = await page.evaluate(() =>
+      Reflect.get(window, "focusEvents"),
+    );
+    await testInfo.attach("search-focus-observations", {
+      body: JSON.stringify({ states, events }, null, 2),
+      contentType: "application/json",
+    });
+    for (const state of states) {
       expect(
-        await dialog.evaluate(
-          (el) =>
-            (document.activeElement === document.body &&
-              !document.hasFocus()) ||
-            el.contains(document.activeElement),
-        ),
+        state.inDialog || (state.bodyActive && !state.hasFocus),
+        JSON.stringify(state),
       ).toBe(true);
     }
     await page.keyboard.press("Escape");
