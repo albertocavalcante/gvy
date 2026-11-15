@@ -39,7 +39,7 @@ export default defineConfig({
         timeout: 30000,
       },
   projects: [
-    { name: "contracts", testMatch: /contracts\.spec\.ts/ },
+    { name: "contracts", testMatch: /(contracts|journeys)\.spec\.ts/ },
     ...[360, 768, 1440].flatMap((width) =>
       (["light", "dark"] as const).map((colorScheme) => ({
         name: `chromium-${width}-${colorScheme}`,

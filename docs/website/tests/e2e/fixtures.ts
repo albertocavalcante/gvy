@@ -1,6 +1,12 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
-import { test as base, expect } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type Page,
+  type TestInfo,
+} from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 export const test = base.extend({
   page: async ({ page, baseURL, browser }, use, testInfo) => {
@@ -40,3 +46,30 @@ export const test = base.extend({
   },
 });
 export { expect };
+
+export async function scanAccessibility(
+  page: Page,
+  testInfo: TestInfo,
+  name: string,
+) {
+  const scan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  await testInfo.attach(`axe-${name}`, {
+    body: JSON.stringify(
+      { violations: scan.violations, incomplete: scan.incomplete },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+  expect(
+    scan.violations.filter(
+      (v) =>
+        v.impact === "serious" ||
+        v.impact === "critical" ||
+        v.id === "label-content-name-mismatch",
+    ),
+    JSON.stringify(scan.violations, null, 2),
+  ).toEqual([]);
+}

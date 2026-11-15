@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
-import { test, expect } from "./fixtures";
-import AxeBuilder from "@axe-core/playwright";
+import { test, expect, scanAccessibility } from "./fixtures";
 
 for (const route of [
   "",
@@ -17,18 +16,7 @@ for (const route of [
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(await page.evaluate(() => innerWidth));
-    const scan = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      .analyze();
-    expect(
-      scan.violations.filter(
-        (v) =>
-          v.impact === "serious" ||
-          v.impact === "critical" ||
-          v.id === "label-content-name-mismatch",
-      ),
-      JSON.stringify(scan.violations, null, 2),
-    ).toEqual([]);
+    await scanAccessibility(page, testInfo, route || "home");
     if (!route)
       await testInfo.attach("home", {
         body: await page.screenshot({ fullPage: true }),
