@@ -33,6 +33,7 @@ class CompletionBuilder : LspBuilder<CompletionItem> {
     private var documentation: Either<String, MarkupContent>? = null
     private var insertText: String? = null
     private var insertTextFormat: InsertTextFormat = InsertTextFormat.PlainText
+    private var insertionTemplate: InsertionTemplate? = null
     private var sortText: String? = null
     private var filterText: String? = null
 
@@ -82,14 +83,16 @@ class CompletionBuilder : LspBuilder<CompletionItem> {
     fun insertText(text: String) {
         this.insertText = text
         this.insertTextFormat = InsertTextFormat.PlainText
+        this.insertionTemplate = null
     }
 
     /**
      * Set snippet insert text with placeholders.
      */
-    fun snippet(snippet: String) {
+    fun snippet(snippet: String, plainText: String = label) {
         this.insertText = snippet
         this.insertTextFormat = InsertTextFormat.Snippet
+        this.insertionTemplate = InsertionTemplate(snippet, plainText)
     }
 
     /**
@@ -119,6 +122,7 @@ class CompletionBuilder : LspBuilder<CompletionItem> {
         this.documentation = methodItem.documentation
         this.insertText = methodItem.insertText
         this.insertTextFormat = methodItem.insertTextFormat
+        this.insertionTemplate = (methodItem as? TemplateCompletionItem)?.insertionTemplate
     }
 
     /**
@@ -148,14 +152,15 @@ class CompletionBuilder : LspBuilder<CompletionItem> {
     /**
      * Create a keyword completion.
      */
-    fun keyword(keyword: String, snippet: String? = null, doc: String? = null) {
-        val keywordItem = KeywordCompletionBuilder().build(keyword, snippet, doc)
+    fun keyword(keyword: String, snippet: String? = null, doc: String? = null, plainText: String = keyword) {
+        val keywordItem = KeywordCompletionBuilder().build(keyword, snippet, doc, plainText)
         this.label = keywordItem.label
         this.kind = keywordItem.kind
         this.detail = keywordItem.detail
         this.documentation = keywordItem.documentation
         this.insertText = keywordItem.insertText
         this.insertTextFormat = keywordItem.insertTextFormat
+        this.insertionTemplate = (keywordItem as? TemplateCompletionItem)?.insertionTemplate
     }
 
     /**
@@ -182,7 +187,7 @@ class CompletionBuilder : LspBuilder<CompletionItem> {
         this.insertText = propertyItem.insertText
     }
 
-    override fun build(): CompletionItem = CompletionItem().apply {
+    override fun build(): CompletionItem = TemplateCompletionItem(insertionTemplate).apply {
         this.label = this@CompletionBuilder.label
         this.kind = this@CompletionBuilder.kind
         this.detail = this@CompletionBuilder.detail
@@ -212,7 +217,7 @@ class MethodCompletionBuilder {
             val paramSnippet = parameters.mapIndexed { index, param ->
                 $$"${$${index + 1}:$${escapeSnippet(param)}}"
             }.joinToString(", ")
-            snippet("${escapeSnippet(name)}($paramSnippet)")
+            snippet("${escapeSnippet(name)}($paramSnippet)", "$name()")
 
             doc?.let { documentation(it) }
         }
@@ -257,13 +262,18 @@ class FieldCompletionBuilder {
  */
 @LspDslMarker
 class KeywordCompletionBuilder {
-    fun build(keyword: String, snippetText: String? = null, doc: String? = null): CompletionItem = completion {
+    fun build(
+        keyword: String,
+        snippetText: String? = null,
+        doc: String? = null,
+        plainText: String = keyword,
+    ): CompletionItem = completion {
         label(keyword)
         kind(CompletionItemKind.Keyword)
         detail("Groovy keyword: $keyword")
 
         if (snippetText != null) {
-            snippet(snippetText)
+            snippet(snippetText, plainText)
         } else {
             insertText(keyword)
         }
@@ -310,7 +320,7 @@ class FunctionCompletionBuilder {
         label(name)
         kind(CompletionItemKind.Function)
         detail("$returnType $name()")
-        snippet("${escapeSnippet(name)}($1)")
+        snippet("${escapeSnippet(name)}($1)", "$name()")
         doc?.let { documentation(it) }
     }
 }
@@ -378,8 +388,8 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
     /**
      * Convenience method for keyword completions.
      */
-    fun keyword(keyword: String, snippet: String? = null, doc: String? = null) {
-        completions.add(KeywordCompletionBuilder().build(keyword, snippet, doc))
+    fun keyword(keyword: String, snippet: String? = null, doc: String? = null, plainText: String = keyword) {
+        completions.add(KeywordCompletionBuilder().build(keyword, snippet, doc, plainText))
     }
 
     /**

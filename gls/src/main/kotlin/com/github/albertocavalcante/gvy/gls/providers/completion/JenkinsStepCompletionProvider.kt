@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
+import com.github.albertocavalcante.gvy.gls.dsl.completion.TemplateCompletionItem
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
@@ -94,13 +95,13 @@ object JenkinsStepCompletionProvider {
         return params
             .filterKeys { key -> key !in existingKeys }
             .map { (key, param) ->
-                CompletionItem().apply {
+                val template = SnippetBuilder.buildParameterTemplate(key, param, if (useCommandExpression) ", " else "")
+                TemplateCompletionItem(template).apply {
                     label = "$key:"
                     kind = CompletionItemKind.Property
                     detail = param.type
                     // Use SnippetBuilder for type-aware insertion
-                    insertText =
-                        SnippetBuilder.buildParameterSnippet(key, param, if (useCommandExpression) ", " else "")
+                    insertText = template.snippet
                     insertTextFormat = InsertTextFormat.Snippet
                     // Sort required parameters first: "0_key" vs "1_key"
                     sortText = if (param.required) "0_$key" else "1_$key"

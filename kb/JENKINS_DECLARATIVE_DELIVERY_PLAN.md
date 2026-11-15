@@ -44,7 +44,7 @@ implementation work; it does not certify the open slices.
 | VS Code integration         | 6 tests passed on 1.146.0                                    | 3 provider captures plus 3 real suggest-widget acceptances; original baseline candidate hash checked.           |
 | Desktop widget              | Settled blank lists and partial entry inspected              | Both language modes showed five parameter names in the controlled host; original noisy list was not reproduced. |
 | Generic collection fix (03) | Actual-base fail-first; 27 targeted tests pass, no skips     | Root `lintFix` and normal hooks pass; final publication-head review and CI remain.                              |
-| Snippet capabilities (04)   | Omitted support reproduced; combined source reviewed         | Earlier draft: 114 cases, 5 existing skips; combined publication source still needs its own matrix and lint.    |
+| Snippet capabilities (04)   | Pre-rebase head 374d49ef: 395 tests, 17 existing skips; CI passed 32 checks with 3 applicability skips | Rebase adds upstream scripted slices; rerun frozen native matrix, hooks, and obtain independent final-head review. |
 | Document mode (05)          | Source reviewed after lifecycle and configuration race fixes | Public-protocol, editor lifecycle and grammar tests remain unexecuted.                                          |
 | Typed metadata (06)         | Complete draft passed independent source review              | Identity, projection and GDSL fixes reviewed; compilation, lint and runtime tests remain unexecuted.            |
 | Compatibility oracle (02)   | Official roots and advertised checksums inspected            | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.              |
@@ -359,7 +359,7 @@ row's next action is to implement its change and satisfy the completion gate in 
 | 01    | Server/editor tests; coordinator | Merged          | #2028 / `cd59df608`; reviewed head, CI, merge and owned publication cleanup verified.                                               |
 | 02    | Extractor/oracle                 | Pending         | Lock both complete graphs; boot and validate controls.                                                                              |
 | 03    | Completion insertion             | Validated draft | Base `cd59df608`: generic-list RED, 27 targeted GREEN with no skips, root `lintFix` and hooks; final review/CI/publication pending. |
-| 04    | LSP capability negotiation       | Reviewed draft  | Combined 03/04 source reviewed; reconcile actual 03 squash, then validate and review publication head.                              |
+| 04    | LSP capability negotiation       | Rebased validation pending | Pre-rebase 374d49ef: 395 tests, 17 existing skips; root lintFix/hooks and 32 CI checks passed (3 applicability skips). Re-run after rebase and review fixes. |
 | 05    | Document lifecycle/editor        | Draft           | Preserve language ID and test actual editor isolation.                                                                              |
 | 06    | Jenkins metadata                 | Reviewed draft  | Canonical candidates, provenance, legacy adaptation and guarded binding draft reviewed; compile/test/lint gates pending.            |
 | 07    | Declarative syntax view          | Pending         | Snapshot identity, UTF-16 ranges and recovery confidence.                                                                           |
