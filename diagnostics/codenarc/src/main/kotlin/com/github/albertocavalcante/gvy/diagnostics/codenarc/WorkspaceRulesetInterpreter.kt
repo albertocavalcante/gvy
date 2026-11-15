@@ -16,7 +16,13 @@ import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.ast.stmt.Statement
 
 /** Thrown for any construct outside the declarative subset; carries the reason shown to the user. */
-internal class Rejection(message: String) : RuntimeException(message, null, false, false)
+internal class Rejection(
+    message: String,
+    val line: Int? = null,
+    val column: Int? = null,
+    val endColumn: Int? = null,
+    val endLine: Int? = null,
+) : RuntimeException(message, null, false, false)
 
 /**
  * Turns a Groovy-DSL CodeNarc ruleset that came from the workspace into an equivalent **XML** ruleset without
@@ -38,7 +44,14 @@ internal object WorkspaceRulesetInterpreter {
 
     sealed interface Result {
         data class Accepted(val xml: String) : Result
-        data class Rejected(val reason: String) : Result
+        data class Rejected(
+            val reason: String,
+            val line: Int? = null,
+            val column: Int? = null,
+            val endColumn: Int? = null,
+            val contentHash: String? = null,
+            val endLine: Int? = null,
+        ) : Result
     }
 
     fun interpret(text: String): Result {
@@ -48,7 +61,7 @@ internal object WorkspaceRulesetInterpreter {
             is UntrustedParseResult.Parsed -> try {
                 Result.Accepted(render(parsed.module))
             } catch (e: Rejection) {
-                Result.Rejected(e.message ?: "rejected")
+                Result.Rejected(e.message ?: "rejected", e.line, e.column, e.endColumn, endLine = e.endLine)
             }
         }
     }
@@ -93,8 +106,19 @@ internal object WorkspaceRulesetInterpreter {
     }
 
     private fun ruleSetReference(call: MethodCallExpression, out: StringBuilder) {
-        val path = stringArg(args(call).filter { it !is ClosureExpression })
+        val arguments = args(call).filter { it !is ClosureExpression }
+        val path = stringArg(arguments)
         if (!CLASSPATH_RULESET.matches(path)) fail("only classpath rulesets/*.xml references are allowed: $path")
+        if (org.codenarc.CodeNarcRunner::class.java.classLoader.getResource(path) == null) {
+            val literal = arguments.single()
+            throw Rejection(
+                "Bundled CodeNarc ruleset not found: $path",
+                literal.lineNumber,
+                literal.columnNumber,
+                literal.lastColumnNumber,
+                literal.lastLineNumber,
+            )
+        }
         out.append("  <ruleset-ref path=\"").append(xml(path)).append("\"")
         val closure = closureOf(call.arguments)
         if (closure == null) {

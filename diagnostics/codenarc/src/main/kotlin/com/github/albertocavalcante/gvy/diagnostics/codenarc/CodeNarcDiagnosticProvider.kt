@@ -12,7 +12,9 @@ import org.codenarc.results.Results
 import org.codenarc.rule.Violation
 import org.codenarc.rule.formatting.FileEndsWithoutNewlineRule
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticRelatedInformation
 import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
@@ -37,10 +39,14 @@ class CodeNarcDiagnosticProvider(
 ) : DiagnosticProvider {
 
     private val notifiedIgnored = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    var onWorkspaceRulesetResolutionStarted: () -> Long = { 0L }
+    var onWorkspaceRulesetsResolved: (Long, Map<String, String?>) -> Unit = { _, _ -> }
 
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val LOG_FILE_NAME_LIMIT = 120
+        private const val MAX_REASON_LENGTH = 200
+        private const val MAX_CONFIGURATION_NAME_LENGTH = 80
         private const val CODENARC_HIGH_PRIORITY = 1
         private const val CODENARC_MEDIUM_PRIORITY = 2
         private const val CODENARC_LOW_PRIORITY = 3
@@ -75,49 +81,125 @@ class CodeNarcDiagnosticProvider(
      * @return List of LSP diagnostics representing violations found
      */
     fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String, uri: URI? = null): List<Diagnostic> {
-        logger.debug { "Starting CodeNarc analysis for: $fileName" }
+        val prepared = prepareRuleset(uri)
+        return prepared.notices + analyzeResolved(sourceCode, fileName, uri, prepared.configuration)
+    }
 
-        // Resolve the appropriate ruleset configuration
-        // Per file: a Jenkinsfile and an ordinary Groovy source in one workspace get different profiles (#1236).
-        val rulesetConfig = rulesetResolver.resolve(workspaceContext, uri)
+    /** Emit configuration notices before running the analyzer so an analyzer failure cannot hide them. */
+    suspend fun analyzeStreaming(source: String, uri: URI, emit: suspend (Diagnostic) -> Unit) {
+        if (!workspaceContext.getConfiguration().isEnabled) return
+        val prepared = prepareRuleset(uri)
+        prepared.notices.forEach { emit(it) }
+        analyzeResolved(source, extractFileName(uri), uri, prepared.configuration).forEach { emit(it) }
+    }
+
+    private data class PreparedRuleset(val configuration: RulesetConfiguration, val notices: List<Diagnostic>)
+
+    private fun prepareRuleset(uri: URI?): PreparedRuleset {
+        val resolutionId = onWorkspaceRulesetResolutionStarted()
+        val resolution = if (rulesetResolver is DetailedRulesetResolver) {
+            rulesetResolver.resolveDetailed(workspaceContext, uri)
+        } else {
+            RulesetResolution(rulesetResolver.resolve(workspaceContext, uri), emptyMap())
+        }
+        val rulesetConfig = resolution.configuration
         logger.debug { "Using ruleset from: ${rulesetConfig.source}" }
-        rulesetConfig.ignoredWorkspaceRulesets.filter { notifiedIgnored.add(it) }.forEach(onWorkspaceRulesetIgnored)
+        val ignored = rulesetConfig.ignoredWorkspaceRulesets
+        val rejected = ignored.associateWith { resolution.rejectionReasons[it] }
+        onWorkspaceRulesetsResolved(resolutionId, rejected)
+        ignored.filter { notifiedIgnored.add(it) }.forEach(onWorkspaceRulesetIgnored)
+        val withoutReferences = ignored.filterNot { name ->
+            resolution.invalidReferences.any { it.uri == workspaceContext.root?.resolve(name)?.toUri() }
+        }
+        return PreparedRuleset(
+            rulesetConfig,
+            ignoredRulesetNotice(withoutReferences, resolution.rejectionReasons, uri) +
+                invalidRulesetNotices(resolution.invalidReferences, uri),
+        )
+    }
 
-        // Execute CodeNarc analysis directly with ruleset content
+    private fun analyzeResolved(
+        sourceCode: String,
+        fileName: String,
+        uri: URI?,
+        configuration: RulesetConfiguration,
+    ): List<Diagnostic> {
+        logger.debug { "Starting CodeNarc analysis for: $fileName" }
         val results = codeAnalyzer.analyze(
             sourceCode = sourceCode,
             fileName = fileName,
-            rulesetContent = rulesetConfig.rulesetContent,
-            propertiesFile = rulesetConfig.propertiesFile,
+            rulesetContent = configuration.rulesetContent,
+            propertiesFile = configuration.propertiesFile,
         )
-
-        // Convert results to LSP diagnostics with triplication fix
-        val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode, uri) +
-            ignoredRulesetNotice(rulesetConfig.ignoredWorkspaceRulesets, uri)
-
-        logger.debug {
-            "CodeNarc analysis completed for ${fileName.take(LOG_FILE_NAME_LIMIT)}: ${diagnostics.size} diagnostics"
+        return convertResultsToDiagnosticsFixed(results, sourceCode, uri).also { diagnostics ->
+            logger.debug {
+                "CodeNarc analysis completed for ${fileName.take(LOG_FILE_NAME_LIMIT)}: ${diagnostics.size} diagnostics"
+            }
         }
-        return diagnostics
     }
+
+    private fun invalidRulesetNotices(references: List<InvalidRulesetReference>, uri: URI?): List<Diagnostic> =
+        references.map { reference ->
+            val location = reference.location
+            val literal = if (location == null) {
+                Range(Position(0, 0), Position(0, 0))
+            } else {
+                Range(
+                    Position(location.line - 1, location.column - 1),
+                    Position(
+                        location.endLine - 1,
+                        location.endColumn - 1,
+                    ),
+                )
+            }
+            val onConfiguration = uri == reference.uri
+            val configurationName = extractFileName(reference.uri).take(MAX_CONFIGURATION_NAME_LENGTH)
+            val reason =
+                reference.reason.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(MAX_REASON_LENGTH)
+                    ?: "unsupported workspace ruleset"
+            Diagnostic(
+                if (onConfiguration) literal else Range(Position(0, 0), Position(0, 0)),
+                if (location != null) {
+                    "CodeNarc configuration $configurationName is invalid: $reason. Check the ruleset reference."
+                } else {
+                    "CodeNarc configuration $configurationName is invalid: $reason. Check the workspace configuration."
+                },
+                DiagnosticSeverity.Information,
+                "gvy",
+                "gvy.providerFailure",
+            ).apply {
+                data = mapOf(
+                    "provider" to "codenarc",
+                    "configurationUri" to reference.uri.toString(),
+                    "configurationHash" to reference.contentHash,
+                )
+                if (!onConfiguration) {
+                    relatedInformation = listOf(
+                        DiagnosticRelatedInformation(Location(reference.uri.toString(), literal), reason),
+                    )
+                }
+            }
+        }
 
     /**
      * Tells the user why a workspace ruleset has no effect (it is never evaluated, for security). The notice is
      * attached only to the ignored ruleset file itself, so it does not flood the Problems panel of every file.
      */
-    private fun ignoredRulesetNotice(ignored: List<String>, uri: URI?): List<Diagnostic> {
+    private fun ignoredRulesetNotice(ignored: List<String>, reasons: Map<String, String>, uri: URI?): List<Diagnostic> {
         val root = workspaceContext.root
         val analysed = uri?.let { runCatching { Paths.get(it).normalize() }.getOrNull() }
-        val isIgnoredFile = root != null && analysed != null &&
-            ignored.any { root.resolve(it).normalize() == analysed }
-        return if (!isIgnoredFile) {
+        val ignoredFile = if (root != null && analysed != null) {
+            ignored.find { root.resolve(it).normalize() == analysed }
+        } else {
+            null
+        }
+        return if (ignoredFile == null) {
             emptyList()
         } else {
             listOf(
                 Diagnostic(
                     Range(Position(0, 0), Position(0, 0)),
-                    "This CodeNarc ruleset is ignored: it uses features that are not supported for security " +
-                        "reasons (workspace rulesets are never evaluated as Groovy).",
+                    "This CodeNarc ruleset is ignored: ${reasons[ignoredFile] ?: "unsupported workspace ruleset"}.",
                     DiagnosticSeverity.Information,
                     "CodeNarc",
                 ),
