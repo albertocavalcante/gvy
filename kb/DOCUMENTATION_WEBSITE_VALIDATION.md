@@ -210,6 +210,38 @@ checks pass, but local Astro production builds encountered a compile-metadata er
 symlink. The final browser gate therefore uses a clean hosted frozen install; no post-relocation local browser pass is
 claimed. The private handoff names temporary resources and their cleanup conditions.
 
+## Cross-browser journeys and reviewed Linux visuals (#2020)
+
+Draft #2050 adds the critical journeys in matching Playwright Firefox and WebKit while retaining the full Chromium
+route/viewport suite and one worker. The six bundled-Linux Chromium homepage baselines were individually inspected by
+the author and independent reviewer, copied byte for byte from hosted captures and supplied with SPDX sidecars. Their
+provenance is run 43675231390, attempt 1, job 132693792052, publication head `9310d037233ab8de7ebdb8ffead809e08e5f8f85`,
+tested virtual merge `decda3ef2885e24007ad8e10ce26dbe00a45f770`, Chromium 159.0.8154.6, Ubuntu 24.04 runner image
+20261111.370. Screenshot-only CSS hides the generated footer time in a fixed-width box after checking that the date
+exists; the date's appearance is excluded and mobile footer wrapping changes in the normalized image. System Chrome and
+non-Linux runs skip these comparisons.
+
+Runs 43676122511 and 43676833708 passed all six normal baseline comparisons without pixel mismatches. Each passed 47
+browser tests and failed two Firefox dialog-focus assertions. Per-key observations at 360 and 1440 px showed actual
+document/window blur, body as the active element and no focus on a background control; the next key returned to the
+dialog. Firefox reported `document.hasFocus()` as true during those body states, unlike the other tested engines.
+
+The revised assertion permits this measured transition only after a same-key window blur (or document loss of focus) and
+requires the next key to return to a dialog element. It also rejects background focus events and checks that
+programmatic background focus is blocked while the modal is open. A final body state receives one bounded extra key
+rather than omitting the return assertion. This is a test-contract correction based on native browser observations, not
+a new application focus trap or an unconditional body-focus exception. Exact-head hosted results remain recorded in the
+PR; these earlier failing attempts are retained separately from a future passing run. Manual zoom/reflow and
+assistive-technology review remain open in #2020.
+
+A subsequent run, 43677579475, passed the focus and visual checks but failed two fixture assertions on Firefox's exact
+`NS_BINDING_ABORTED` cancellation code. The traces showed an aborted hover-prefetch followed by a successful document
+load and an aborted old-page script fetched successfully on the next page. The fixture permits this exact Firefox code
+only for a prefetch or when a later request for the same URL and resource type finishes successfully. It retains each
+cancellation and its disposition in a report attachment; unrecovered asset failures still fail. Existing Chromium
+cancellation handling is unchanged. Mouse-click journeys remain intact, without a network-idle wait; a focused unit test
+rejects reset, timeout, generic failure and unknown error codes.
+
 ## Browser journey follow-up (#2020)
 
 The next increment clicks five Pagefind results and verifies their destination URL and heading, follows installation to
