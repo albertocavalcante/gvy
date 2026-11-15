@@ -45,6 +45,7 @@ class GroovyLanguageServerCapabilitiesContractTest {
 
         val capabilities = result.capabilities
         assertNotNull(capabilities)
+        assertEquals(true, (capabilities.experimental as? Map<*, *>)?.get("groovyDocumentAnalysis"))
 
         // Text document sync
         val syncKind = capabilities.textDocumentSync?.left

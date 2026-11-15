@@ -14,7 +14,7 @@ data class DocumentSnapshot(val content: String, val version: Int?) {
 }
 
 /** Identity of one open/close lifecycle; accepted edits retain it. */
-internal class DocumentIncarnation
+internal class DocumentIncarnation(val analysisSessionId: String? = null)
 
 /** A buffer's state and the lifecycle it belongs to, read together. */
 internal class OpenBuffer(val snapshot: DocumentSnapshot, val incarnation: DocumentIncarnation)
@@ -44,9 +44,11 @@ class DocumentProvider {
     }
 
     /** Open a buffer. A new open/close lifecycle may restart the client's version sequence. */
-    fun put(uri: URI, content: String, version: Int) {
+    fun put(uri: URI, content: String, version: Int) = put(uri, content, version, null)
+
+    internal fun put(uri: URI, content: String, version: Int, analysisSessionId: String?) {
         synchronized(lifecycleLock) {
-            documents[uri] = OpenDocument(DocumentSnapshot(content, version))
+            documents[uri] = OpenDocument(DocumentSnapshot(content, version), DocumentIncarnation(analysisSessionId))
         }
     }
 
@@ -85,6 +87,9 @@ class DocumentProvider {
                 true
             }
         }
+
+    /** Serialize a short operation against all document lifecycle mutations. */
+    internal fun <T> withLifecycleLock(action: () -> T): T = synchronized(lifecycleLock) { action() }
 
     /** Remove and clear only the incarnation targeted by a close, without clearing a reentrant reopen. */
     internal fun removeIfCurrent(uri: URI, captured: DocumentIncarnation, afterRemove: () -> Unit): Boolean =
