@@ -55,9 +55,11 @@ GVY_E2E_SYSTEM_CHROME=1 bun run test:e2e
 The default uses Playwright's matching bundled Chromium instead. CI installs it with
 `bunx playwright install --with-deps chromium`, then tests the same `dist` artifact produced by validation. One worker
 serves `/gvy/` on a private loopback port and shuts the server down afterward. It checks mapped routes and legacy
-fragments, search/focus, no-JavaScript content, keyboard scrolling, local assets/runtime errors, document overflow and
-axe findings. Representative pages run at 360/768/1440 px in both themes. Failed tests retain screenshots and traces;
-`playwright-report/` and `test-results/` are ignored locally and uploaded for seven days in CI.
+fragments, search result destinations, installation-to-quickstart navigation, mobile menu and search dialog keyboard
+focus, theme persistence, no-JavaScript content, keyboard scrolling, local assets/runtime errors, document overflow and
+axe findings. Axe violations and incomplete results are attached to the test report for review. Representative pages run
+at 360/768/1440 px in both themes. Failed tests retain screenshots and traces; `playwright-report/` and `test-results/`
+are ignored locally and uploaded for seven days in CI.
 
 `GVY_E2E_BASE_URL=https://albertocavalcante.github.io/gvy/` tests the public artifact instead of starting a local
 server. Use the trailing slash. The real clipboard assertion is skipped by default; CI opts in with

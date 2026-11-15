@@ -152,7 +152,9 @@ for (const [platform, shortcut, modifier] of [
   ["MacIntel", "⌘ K", "Meta"],
   ["Linux x86_64", "Ctrl K", "Control"],
 ] as const) {
-  test(`desktop search name matches ${platform} shortcut`, async ({ page }) => {
+  test(`desktop search name matches ${platform} shortcut`, async ({
+    page,
+  }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.addInitScript((value) => {
       Object.defineProperty(navigator, "platform", {
@@ -175,6 +177,14 @@ for (const [platform, shortcut, modifier] of [
     const result = await new AxeBuilder({ page })
       .withRules(["label-content-name-mismatch"])
       .analyze();
+    await testInfo.attach("axe-search-shortcut", {
+      body: JSON.stringify(
+        { violations: result.violations, incomplete: result.incomplete },
+        null,
+        2,
+      ),
+      contentType: "application/json",
+    });
     expect(result.violations).toEqual([]);
     await button.focus();
     await page.keyboard.press(`${modifier}+k`);

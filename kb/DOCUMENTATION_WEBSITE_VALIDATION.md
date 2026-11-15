@@ -209,3 +209,16 @@ volume after full file/symlink hash verification; no shared cache or another ses
 checks pass, but local Astro production builds encountered a compile-metadata error with the relocated dependency
 symlink. The final browser gate therefore uses a clean hosted frozen install; no post-relocation local browser pass is
 claimed. The private handoff names temporary resources and their cleanup conditions.
+
+## Browser journey follow-up (#2020)
+
+The next increment clicks five Pagefind results and verifies their destination URL and heading, follows installation to
+the quickstart, exercises mobile navigation and open search dialogs, and checks that theme selection survives navigation
+and reload. All axe scans retain complete violation and incomplete-result arrays in report attachments. The dialog check
+verifies in-document focus and allows focus to move to browser chrome; it does not establish a universal focus trap.
+
+Local validation used Bun 1.3.14, Playwright 1.65.1 and system Chrome 157.0.8103.79: 30 browser tests passed with only
+the deliberately opt-in clipboard test skipped. The final strengthened journey assertions passed six focused tests. The
+production build, 16 script tests and Astro check passed. These are local Chromium results; exact-head hosted results
+and independent review are recorded in the PR. Reviewed visual baselines, Firefox/WebKit and manual assistive-technology
+coverage remain open in #2020. Release/runtime proof and renderer experiments remain #2021 and #2022.
