@@ -256,4 +256,53 @@ class SnippetBuilderTest {
         // Dollar signs should be escaped
         assertEquals("variable: '\${1|\\\$HOME,\\\$PATH|}'", snippet)
     }
+
+    @Test
+    fun `generic collection types use collection scaffolds`() {
+        val types = listOf(
+            "List<String>",
+            "java.util.List<java.lang.String>",
+            "Map<String, List<java.lang.Integer>>",
+            "java.util.LinkedHashMap<java.lang.String, java.util.List<String>>",
+            "java.lang.String[]",
+            "List<String>[]",
+            "int[]",
+        )
+        for (type in types) {
+            assertEquals("value: [\$1]", snippetFor(type), type)
+        }
+    }
+
+    @Test
+    fun `primitive wrapper raw and unknown types retain their insertion forms`() {
+        val expected = mapOf(
+            "java.lang.Boolean" to "value: \${1|true,false|}",
+            "java.lang.Integer" to "value: \$1",
+            "double" to "value: \$1",
+            "java.util.Map" to "value: [\$1]",
+            "java.util.List" to "value: [\$1]",
+            "example.Unknown<java.lang.String>" to "value: '\$1'",
+        )
+        for ((type, snippet) in expected) {
+            assertEquals(snippet, snippetFor(type), type)
+        }
+    }
+
+    @Test
+    fun `string form for choice parameter remains quoted`() {
+        assertEquals("value: '\$1'", snippetFor("String"))
+    }
+
+    private fun snippetFor(type: String): String = SnippetBuilder.buildParameterSnippet(
+        "value",
+        MergedParameter(
+            name = "value",
+            type = type,
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = null,
+            examples = emptyList(),
+        ),
+    )
 }

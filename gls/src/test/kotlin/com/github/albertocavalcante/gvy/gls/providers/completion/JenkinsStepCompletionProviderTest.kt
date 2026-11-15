@@ -248,4 +248,20 @@ class JenkinsStepCompletionProviderTest {
             "Command expression snippet should start with a comma prefix",
         )
     }
+
+    @Test
+    fun `generic collection parameter completion inserts a list scaffold`() {
+        val metadata = createTestMetadata()
+        val step = metadata.steps.getValue("sh")
+        val parameter = step.namedParams.getValue("script").copy(name = "choices", type = "List<String>")
+        val withChoices = metadata.copy(steps = mapOf("sh" to step.copy(namedParams = mapOf("choices" to parameter))))
+
+        val completion = JenkinsStepCompletionProvider.getParameterCompletions(
+            stepName = "sh",
+            existingKeys = emptySet(),
+            metadata = withChoices,
+        ).single()
+
+        assertEquals("choices: [\$1]", completion.insertText)
+    }
 }
