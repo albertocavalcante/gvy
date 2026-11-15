@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.SourcePathAdmissionPolicy
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -161,7 +162,6 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     private suspend fun compile(uri: URI, content: String, compilePhase: Int, claim: Claim): CompilationResult {
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
-        val publication = claim.publication
         var admissionFingerprint: String? = null
 
         claim.modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
@@ -197,26 +197,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                         admittedInputs = sourceInputs,
                     )
                 } else {
-                    logger.debug { "Using cached parse result for: $uri" }
-                    // The symbol index may be absent or older than this result (e.g. after invalidation).
-                    // Semantics follow the symbol commit: published only when this ticket's index is current
-                    val excluded = workspaceManager.isExcludedSourceFile(uri)
-                    val symbols = if (excluded) null else symbolIndexer.prepare(content, cachedResult.astModel)
-                    symbols?.classes // materialize before taking the publication fence
-                    val semantic = cachedResult.ast?.let { ast ->
-                        publication?.let { token ->
-                            semanticIndexer?.preparePublication(token, content, ast, cachedResult.outcome.achievedPhase)
-                        }
-                    }
-                    transitionGate.publishIfCurrent(claim.modelSnapshot, workspaceManager::current) {
-                        var indexed = false
-                        ownership.commit(claim.ticket) {
-                            if (symbols != null) indexed = symbolIndexer.install(uri, symbols)
-                            else symbolIndexer.invalidate(uri)
-                        }
-                        if (indexed && semantic != null) semanticIndexer?.commitPublication(semantic)
-                    } ?: throw workspaceChanged()
-                    resultMapper.map(cachedResult, content).copy(admissionFingerprint = sourceInputs.fingerprint)
+                    publishCachedResult(CompilationInput(uri, content, claim), cachedResult, sourceInputs.fingerprint)
                 }
             } else {
                 performCompilation(
@@ -228,13 +209,50 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 )
             }
         }.getOrElse { throwable ->
-            when (throwable) {
-                is CancellationException -> throw throwable
-                is ResponseErrorException -> throw throwable
-                is Exception -> errorHandler.handleException(throwable, uri)
-                    .copy(admissionFingerprint = admissionFingerprint)
-                else -> throw throwable
+            handleCompileFailure(uri, throwable, admissionFingerprint)
+        }
+    }
+
+    private fun publishCachedResult(
+        input: CompilationInput,
+        cachedResult: ParseResult,
+        admissionFingerprint: String,
+    ): CompilationResult {
+        val (uri, content, claim) = input
+        logger.debug { "Using cached parse result for: $uri" }
+        // The symbol index may be absent or older than this result (e.g. after invalidation).
+        // Semantics follow the symbol commit: published only when this ticket's index is current
+        val excluded = workspaceManager.isExcludedSourceFile(uri)
+        val symbols = if (excluded) null else symbolIndexer.prepare(content, cachedResult.astModel)
+        symbols?.classes // materialize before taking the publication fence
+        val semantic = cachedResult.ast?.let { ast ->
+            claim.publication?.let { token ->
+                semanticIndexer?.preparePublication(token, content, ast, cachedResult.outcome.achievedPhase)
             }
+        }
+        transitionGate.publishIfCurrent(claim.modelSnapshot, workspaceManager::current) {
+            var indexed = false
+            ownership.commit(claim.ticket) {
+                if (symbols != null) {
+                    indexed = symbolIndexer.install(uri, symbols)
+                } else {
+                    symbolIndexer.invalidate(uri)
+                }
+            }
+            if (indexed && semantic != null) semanticIndexer?.commitPublication(semantic)
+        } ?: throw workspaceChanged()
+        return resultMapper.map(cachedResult, content).copy(admissionFingerprint = admissionFingerprint)
+    }
+
+    private fun handleCompileFailure(
+        uri: URI,
+        failure: Throwable,
+        admissionFingerprint: String?,
+    ): CompilationResult {
+        if (failure is CancellationException || failure is ResponseErrorException) throw failure
+        return when (failure) {
+            is Exception -> errorHandler.handleException(failure, uri).copy(admissionFingerprint = admissionFingerprint)
+            else -> throw failure
         }
     }
 
@@ -273,7 +291,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = sourceInputs.openSources,
-                sourcePathAdmission = sourceInputs.sourcePathAdmission,
+                sourcePathAdmission = SourcePathAdmissionPolicy(sourceInputs.sourcePathAdmission),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
@@ -287,6 +305,20 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         logIfDegraded(uri, parseResult)
 
+        publishCompiledResult(input, parseResult, compileContext, sourceInputs)
+
+        if (!transitionGate.isCurrent(claim.modelSnapshot, workspaceManager::current)) throw workspaceChanged()
+        return resultMapper.map(parseResult, content).copy(admissionFingerprint = sourceInputs.fingerprint)
+    }
+
+    private fun publishCompiledResult(
+        input: CompilationInput,
+        parseResult: ParseResult,
+        compileContext: DocumentCompileContext,
+        sourceInputs: AdmittedCompilationInputs,
+    ) {
+        val (uri, content, claim) = input
+        val checkCancelled = sourceInputs.checkCancelled
         val ast = parseResult.ast
 
         if (ast != null) {
@@ -326,9 +358,6 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 logger.debug { "Discarded the result of a retired compile of $uri" }
             }
         }
-
-        if (!transitionGate.isCurrent(claim.modelSnapshot, workspaceManager::current)) throw workspaceChanged()
-        return resultMapper.map(parseResult, content).copy(admissionFingerprint = sourceInputs.fingerprint)
     }
 
     /**
@@ -371,7 +400,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = sourceInputs.openSources,
-                sourcePathAdmission = sourceInputs.sourcePathAdmission,
+                sourcePathAdmission = SourcePathAdmissionPolicy(sourceInputs.sourcePathAdmission),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 checkCancelled = checkCancelled,
@@ -459,6 +488,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             }
             null
         } catch (e: WorkspaceChangedException) {
+            logger.debug(e) { "Workspace changed while awaiting compilation of $uri" }
             return Awaited.Retired
         } catch (e: CancellationException) {
             e
@@ -526,7 +556,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 buffer?.incarnation,
             )
             val outcome = awaitShared(uri, identity)
-            val checked = if (transitionGate.isCurrent(modelSnapshot, workspaceManager::current)) outcome else Awaited.Retired
+            val checked = if (transitionGate.isCurrent(modelSnapshot, workspaceManager::current)) {
+                outcome
+            } else {
+                Awaited.Retired
+            }
             checked.also {
                 if (it !is Awaited.Done) documentProvider?.getSnapshot(uri)?.let { current = it }
             }
@@ -588,43 +622,48 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // This handles cases where file is in symbol index but not yet opened/compiled
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
-            logger.debug { "Compiling from disk on-demand: $uri" }
-            // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
-            val claim = claim(uri, Origin.DISK)
-            // Read the model again now the ticket is taken, as the buffer path does: a change published
-            // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
-            val completed = claim.publication.use {
-                claim.modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
-                val compileWorkspace = claim.modelSnapshot.model
-                try {
-                    val content = withContext(ioDispatcher) {
-                        Files.readString(path)
-                    }
-                    // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                    performCompilation(
-                        CompilationInput(uri, content, claim),
-                        compileWorkspace,
-                        parseMode = ParseMode.MINIMAL,
-                        admittedInputs = requireNotNull(
-                            captureAdmittedInputs(uri, compileWorkspace, cancellationCheck()),
-                        ),
-                    )
-                } catch (e: CancellationException) {
-                    throw e // the request was cancelled; not a failure to compile
-                } catch (e: WorkspaceChangedException) {
-                    return Awaited.Retired
-                } catch (e: ResponseErrorException) {
-                    throw e
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
-                    null
-                }
-            }
-            return if (completed == null) Awaited.Done(null) else classifyCompleted(uri, completed)
+            return compileFromDisk(uri, path)
         }
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return Awaited.Done(null)
+    }
+
+    private suspend fun compileFromDisk(uri: URI, path: Path): Awaited {
+        logger.debug { "Compiling from disk on-demand: $uri" }
+        // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
+        val claim = claim(uri, Origin.DISK)
+        // Read the model again now the ticket is taken, as the buffer path does: a change published
+        // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
+        val completed = claim.publication.use {
+            claim.modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
+            val compileWorkspace = claim.modelSnapshot.model
+            try {
+                val content = withContext(ioDispatcher) {
+                    Files.readString(path)
+                }
+                // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
+                performCompilation(
+                    CompilationInput(uri, content, claim),
+                    compileWorkspace,
+                    parseMode = ParseMode.MINIMAL,
+                    admittedInputs = requireNotNull(
+                        captureAdmittedInputs(uri, compileWorkspace, cancellationCheck()),
+                    ),
+                )
+            } catch (e: CancellationException) {
+                throw e // the request was cancelled; not a failure to compile
+            } catch (e: WorkspaceChangedException) {
+                logger.debug(e) { "Workspace changed while compiling $uri from disk" }
+                return Awaited.Retired
+            } catch (e: ResponseErrorException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
+                null
+            }
+        }
+        return if (completed == null) Awaited.Done(null) else classifyCompleted(uri, completed)
     }
 
     /** Explicit admission I/O, shared by replay, parser input construction and feature currentness. */

@@ -37,6 +37,36 @@ import java.util.jar.JarFile
 private const val MAX_SOURCE_BINARY_IDENTITY_BYTES = 512L * 1024 * 1024
 private const val MAX_SESSION_BINARY_IDENTITY_BYTES = 512L * 1024 * 1024
 
+/** Length-prefixes digest fields so concatenated values cannot collide across field boundaries. */
+private class SourceContextIdentityDigest {
+    private val digest = MessageDigest.getInstance("SHA-256")
+
+    fun add(value: String) {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        digest.update(bytes.size.toString().toByteArray(Charsets.US_ASCII))
+        digest.update(':'.code.toByte())
+        digest.update(bytes)
+    }
+
+    fun add(stamp: NativeArtifactStamp, includeFileCount: Boolean = false) {
+        add(stamp.size.toString())
+        add(stamp.lastModifiedMillis.toString())
+        add(stamp.lastModifiedTime ?: "unknown-precision")
+        if (includeFileCount) add(stamp.files?.toString() ?: "file")
+        add(stamp.observedPaths.toString())
+        add(stamp.fileKey ?: "unknown-file-key")
+        add(stamp.creationTime ?: "unknown-creation-time")
+        add(stamp.directoryIdentity ?: "no-directory-identity")
+        add(stamp.changeTime ?: "unknown-change-time")
+        add(stamp.contentIdentity ?: "no-content-fallback")
+    }
+
+    fun finish(uri: URI, contextFingerprint: String): SourceContextIdentity {
+        val id = digest.digest().joinToString("") { "%02x".format(it) }
+        return SourceContextIdentity("native:$id", uri, contextFingerprint)
+    }
+}
+
 internal sealed interface SourceRequestSelection {
     data class Selected(val request: ResolvedSourceRequest) : SourceRequestSelection
     data object BinaryAbsent : SourceRequestSelection
@@ -343,14 +373,22 @@ internal class SourceRequestCapture(
         }
         val jdk = inputs.bootJdk ?: return false
         val home = runCatching { Path.of(System.getProperty("java.home")).toRealPath() }.getOrNull() ?: return false
-        if (home != jdk.imageHome || Runtime.version().toString() != jdk.runtimeVersion ||
-            System.getProperty("java.vendor") != jdk.vendor ||
-            !metadataMatches(home.resolve("lib/modules"), jdk.modulesStamp, checkCancelled)
-        ) return false
+        if (!jdkMetadataCurrent(home, jdk, checkCancelled)) return false
         return inputs.classpath.indices.all { index ->
             val expected = inputs.classpathStamps[index] ?: return@all false
             metadataMatches(inputs.classpath[index], expected, checkCancelled)
         }
+    }
+
+    private fun jdkMetadataCurrent(
+        home: Path,
+        jdk: NativeJdkIdentity,
+        checkCancelled: () -> Unit,
+    ): Boolean {
+        if (home != jdk.imageHome) return false
+        if (Runtime.version().toString() != jdk.runtimeVersion) return false
+        return System.getProperty("java.vendor") == jdk.vendor &&
+            metadataMatches(home.resolve("lib/modules"), jdk.modulesStamp, checkCancelled)
     }
 
     private suspend fun origin(resource: URI, binaryName: String, environment: CapturedEnvironment): SourceOrigin? {
@@ -523,66 +561,33 @@ internal class SourceRequestCapture(
         inputs: NativeClasspathInputs,
         admissionFingerprint: String,
     ): SourceContextIdentity {
-        val digest = MessageDigest.getInstance("SHA-256")
-        fun add(value: String) {
-            val bytes = value.toByteArray(Charsets.UTF_8)
-            digest.update(bytes.size.toString().toByteArray(Charsets.US_ASCII))
-            digest.update(':'.code.toByte())
-            digest.update(bytes)
-        }
-        add(uri.toString())
-        add(context.fingerprint)
-        add("source-admission")
-        add(admissionFingerprint)
-        add(inputs.classpath.size.toString())
+        val digest = SourceContextIdentityDigest()
+        digest.add(uri.toString())
+        digest.add(context.fingerprint)
+        digest.add("source-admission")
+        digest.add(admissionFingerprint)
+        digest.add(inputs.classpath.size.toString())
         inputs.classpath.forEachIndexed { index, path ->
-            add(path.toString())
-            val stamp = checkNotNull(inputs.classpathStamps[index])
-            add(stamp.size.toString())
-            add(stamp.lastModifiedMillis.toString())
-            add(stamp.lastModifiedTime ?: "unknown-precision")
-            add(stamp.files?.toString() ?: "file")
-            add(stamp.observedPaths.toString())
-            add(stamp.fileKey ?: "unknown-file-key")
-            add(stamp.creationTime ?: "unknown-creation-time")
-            add(stamp.directoryIdentity ?: "no-directory-identity")
-            add(stamp.changeTime ?: "unknown-change-time")
-            add(stamp.contentIdentity ?: "no-content-fallback")
+            digest.add(path.toString())
+            digest.add(checkNotNull(inputs.classpathStamps[index]), includeFileCount = true)
         }
-        add(inputs.sourceRoots.size.toString())
-        inputs.sourceRoots.forEach { add(it.toString()) }
+        digest.add(inputs.sourceRoots.size.toString())
+        inputs.sourceRoots.forEach { digest.add(it.toString()) }
         val sdk = inputs.compilerSdk
-        add(if (sdk == null) "no-compiler-sdk" else "compiler-sdk")
+        digest.add(if (sdk == null) "no-compiler-sdk" else "compiler-sdk")
         sdk?.let { compilerSdk ->
-            add(compilerSdk.componentId)
-            add(compilerSdk.container.toString())
-            add(compilerSdk.indexDigest)
-            add(compilerSdk.containerStamp.size.toString())
-            add(compilerSdk.containerStamp.lastModifiedMillis.toString())
-            add(compilerSdk.containerStamp.lastModifiedTime ?: "unknown-precision")
-            add(compilerSdk.containerStamp.observedPaths.toString())
-            add(compilerSdk.containerStamp.fileKey ?: "unknown-file-key")
-            add(compilerSdk.containerStamp.creationTime ?: "unknown-creation-time")
-            add(compilerSdk.containerStamp.directoryIdentity ?: "no-directory-identity")
-            add(compilerSdk.containerStamp.changeTime ?: "unknown-change-time")
-            add(compilerSdk.containerStamp.contentIdentity ?: "no-content-fallback")
+            digest.add(compilerSdk.componentId)
+            digest.add(compilerSdk.container.toString())
+            digest.add(compilerSdk.indexDigest)
+            digest.add(compilerSdk.containerStamp)
         }
         val bootJdk = checkNotNull(inputs.bootJdk)
-        add("boot-jdk")
-        add(bootJdk.imageHome.toString())
-        add(bootJdk.runtimeVersion)
-        add(bootJdk.vendor)
-        add(bootJdk.modulesStamp.size.toString())
-        add(bootJdk.modulesStamp.lastModifiedMillis.toString())
-        add(bootJdk.modulesStamp.lastModifiedTime ?: "unknown-precision")
-        add(bootJdk.modulesStamp.observedPaths.toString())
-        add(bootJdk.modulesStamp.fileKey ?: "unknown-file-key")
-        add(bootJdk.modulesStamp.creationTime ?: "unknown-creation-time")
-        add(bootJdk.modulesStamp.directoryIdentity ?: "no-directory-identity")
-        add(bootJdk.modulesStamp.changeTime ?: "unknown-change-time")
-        add(bootJdk.modulesStamp.contentIdentity ?: "no-content-fallback")
-        val id = digest.digest().joinToString("") { "%02x".format(it) }
-        return SourceContextIdentity("native:$id", uri, context.fingerprint)
+        digest.add("boot-jdk")
+        digest.add(bootJdk.imageHome.toString())
+        digest.add(bootJdk.runtimeVersion)
+        digest.add(bootJdk.vendor)
+        digest.add(bootJdk.modulesStamp)
+        return digest.finish(uri, context.fingerprint)
     }
 }
 
@@ -591,21 +596,25 @@ internal fun isMatchingArchiveClassEntry(archive: JarClassResource, binaryName: 
     val logicalEntry = binaryName.replace('.', '/') + ".class"
     if (archive.entryName == logicalEntry) return true
     val prefix = "META-INF/versions/"
-    if (!archive.entryName.startsWith(prefix)) return false
-    val versionAndEntry = archive.entryName.removePrefix(prefix)
+    val versionAndEntry = archive.entryName.takeIf { it.startsWith(prefix) }?.removePrefix(prefix) ?: return false
     val separator = versionAndEntry.indexOf('/')
-    if (separator < 0 || versionAndEntry.substring(separator + 1) != logicalEntry) return false
-    val version = versionAndEntry.substring(0, separator).toIntOrNull() ?: return false
-    if (version < MIN_MULTI_RELEASE_VERSION || version > Runtime.version().feature()) return false
-    return try {
-        JarFile(archive.archive.toFile(), true, JarFile.OPEN_READ, Runtime.version()).use { jar ->
-            jar.isMultiRelease && jar.getJarEntry(logicalEntry)?.realName == archive.entryName
-        }
-    } catch (_: IOException) {
-        false
-    } catch (_: SecurityException) {
-        false
+    val version = versionAndEntry.takeIf {
+        separator >= 0 && it.substring(separator + 1) == logicalEntry
+    }?.substring(0, separator)?.toIntOrNull()
+    val runtimeSupportsVersion = version?.let {
+        it >= MIN_MULTI_RELEASE_VERSION && it <= Runtime.version().feature()
+    } == true
+    return runtimeSupportsVersion && isRuntimeSelectedArchiveEntry(archive, logicalEntry)
+}
+
+private fun isRuntimeSelectedArchiveEntry(archive: JarClassResource, logicalEntry: String): Boolean = try {
+    JarFile(archive.archive.toFile(), true, JarFile.OPEN_READ, Runtime.version()).use { jar ->
+        jar.isMultiRelease && jar.getJarEntry(logicalEntry)?.realName == archive.entryName
     }
+} catch (_: IOException) {
+    false
+} catch (_: SecurityException) {
+    false
 }
 
 private const val MAX_BINARY_NAME = 4096

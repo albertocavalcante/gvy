@@ -14,6 +14,40 @@ private const val MAX_VIEW_VARIANTS = 16_384
 private const val DEFAULT_MAX_VIEW_BYTES = 256L * 1024 * 1024
 private const val MAX_PRESENTED_SOURCE_BYTES = 8L * 1024 * 1024
 
+private data class PresentationKey(val identity: String, val context: String, val source: String)
+
+private fun viewStem(key: PresentationKey, contentDigest: String): String =
+    sourceDigest("${key.identity}\u0000$contentDigest")
+
+private fun managedViewUri(uri: URI, directory: Path): URI? {
+    if (!uri.scheme.equals("file", ignoreCase = true)) return null
+    val path = try {
+        Path.of(uri).toAbsolutePath().normalize()
+    } catch (_: IllegalArgumentException) {
+        return null
+    }
+    return path.toUri().takeIf { path.startsWith(directory) }
+}
+
+private fun copyVerifiedContent(descriptor: SourceDocumentDescriptor, temporary: Path) {
+    Files.newInputStream(descriptor.contentPath).use { input ->
+        Files.newOutputStream(temporary).use { output ->
+            val digest = copyAndDigest(input, MAX_PRESENTED_SOURCE_BYTES, output::write)
+            if (digest != descriptor.contentDigest) throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
+        }
+    }
+}
+
+private fun isUnmodifiedView(path: Path, digest: String): Boolean = try {
+    verifyFileDigest(path, digest, MAX_PRESENTED_SOURCE_BYTES)
+    true
+} catch (failure: SourceStoreException) {
+    if (failure.failure == SourceFailure.UNSAFE_ARCHIVE) throw failure
+    false
+} catch (_: IOException) {
+    false
+}
+
 /**
  * Portable editors receive independent viewing copies. They are not advertised as read-only and can never mutate
  * the verified source store through a hardlink. Modified copies remain the user's files, even when a new view opens.
@@ -56,16 +90,13 @@ class PortableSourcePresentation(
             },
         ) {
             val uri = createView(descriptor, key)
-            try {
+            var committed = false
+            AutoCloseable {
+                if (!committed) rollbackNewView(uri, key, descriptor.contentDigest)
+            }.use {
                 commit(uri)
+                committed = true
                 uri
-            } catch (failure: Throwable) {
-                try {
-                    rollbackNewView(uri, key, descriptor.contentDigest)
-                } catch (rollbackFailure: Exception) {
-                    failure.addSuppressed(rollbackFailure)
-                }
-                throw failure
             }
         }
     }
@@ -74,7 +105,7 @@ class PortableSourcePresentation(
         val path = Path.of(uri)
         synchronized(monitor) {
             // An editor may already have opened or changed the file; never remove its work.
-            if (uri in openViews || !isUnmodified(path, digest)) return
+            if (uri in openViews || !isUnmodifiedView(path, digest)) return
             Files.deleteIfExists(path)
             Files.deleteIfExists(path.parent)
             if (presentations[key] == path) presentations.remove(key)
@@ -82,21 +113,21 @@ class PortableSourcePresentation(
     }
 
     internal fun opened(uri: URI, contentDigest: String, content: String) {
-        val view = managedViewUri(uri) ?: return
+        val view = managedViewUri(uri, directory) ?: return
         synchronized(monitor) {
             openViews[view] = OpenView(contentDigest, sourceDigest(content) != contentDigest)
         }
     }
 
     internal fun changed(uri: URI) {
-        val view = managedViewUri(uri) ?: return
+        val view = managedViewUri(uri, directory) ?: return
         synchronized(monitor) {
             openViews[view]?.let { current -> openViews[view] = current.copy(changed = true) }
         }
     }
 
     internal fun closed(uri: URI) {
-        val view = managedViewUri(uri) ?: return
+        val view = managedViewUri(uri, directory) ?: return
         synchronized(monitor) { openViews.remove(view) }
     }
 
@@ -139,10 +170,10 @@ class PortableSourcePresentation(
         for (view in views) {
             requireViewDirectory(view)
             val candidate = view.resolve(fileName)
-            if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS) &&
-                (!requirePersisted || isPersistedView(candidate.toUri(), descriptor)) &&
-                canReuse(candidate, descriptor.contentDigest)
-            ) {
+            val exists = Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)
+            val persisted = !requirePersisted || (exists && isPersistedView(candidate.toUri(), descriptor))
+            val eligibleForReuse = exists && persisted
+            if (eligibleForReuse && canReuse(candidate, descriptor.contentDigest)) {
                 return candidate
             }
         }
@@ -191,19 +222,6 @@ class PortableSourcePresentation(
     private fun viewParent(descriptor: SourceDocumentDescriptor, key: PresentationKey): Path =
         directory.resolve(sourceDigest(key.context)).resolve(descriptor.sourceDigest)
 
-    private fun viewStem(key: PresentationKey, contentDigest: String): String =
-        sourceDigest("${key.identity}\u0000$contentDigest")
-
-    private fun managedViewUri(uri: URI): URI? {
-        if (!uri.scheme.equals("file", ignoreCase = true)) return null
-        val path = try {
-            Path.of(uri).toAbsolutePath().normalize()
-        } catch (_: IllegalArgumentException) {
-            return null
-        }
-        return path.toUri().takeIf { path.startsWith(directory) }
-    }
-
     private fun requireViewDirectory(path: Path) {
         if (Files.isSymbolicLink(path) || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
             throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
@@ -242,32 +260,11 @@ class PortableSourcePresentation(
         return true
     }
 
-    private fun copyVerifiedContent(descriptor: SourceDocumentDescriptor, temporary: Path) {
-        Files.newInputStream(descriptor.contentPath).use { input ->
-            Files.newOutputStream(temporary).use { output ->
-                val digest = copyAndDigest(input, MAX_PRESENTED_SOURCE_BYTES, output::write)
-                if (digest != descriptor.contentDigest) throw SourceStoreException(SourceFailure.INTEGRITY_MISMATCH)
-            }
-        }
-    }
-
-    private fun isUnmodified(path: Path, digest: String): Boolean = try {
-        verifyFileDigest(path, digest, MAX_PRESENTED_SOURCE_BYTES)
-        true
-    } catch (failure: SourceStoreException) {
-        if (failure.failure == SourceFailure.UNSAFE_ARCHIVE) throw failure
-        false
-    } catch (_: IOException) {
-        false
-    }
-
     private fun putPresentation(key: PresentationKey, path: Path) {
         presentations.remove(key)
         presentations[key] = path
         while (presentations.size > MAX_PRESENTED_SOURCES) presentations.remove(presentations.keys.first())
     }
-
-    private data class PresentationKey(val identity: String, val context: String, val source: String)
 
     private companion object {
         val STABLE_VIEW_DIRECTORY = Regex("view-[0-9a-f]{64}-\\d+")

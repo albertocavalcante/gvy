@@ -19,8 +19,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.nio.file.Files
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -394,10 +394,7 @@ class WorkspaceCompilerTest {
         manager.updateWorkspaceModel(tempDir, listOf(v1), listOf(src))
         val index = WorkspaceSymbolIndex(GroovySemanticDB())
         val indexer = SemanticIndexer(index)
-        val pauseNextParse = AtomicBoolean(false)
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val parsedBeforeRetirement = CompletableDeferred<Unit>()
+        val pause = ParsePause()
         val transitionPublished = CompletableDeferred<Unit>()
         val releaseTransition = CountDownLatch(1)
         val refreshFinished = CountDownLatch(1)
@@ -407,11 +404,7 @@ class WorkspaceCompilerTest {
             val request = firstArg<ParseRequest>()
             requests += request
             val result = parser.parse(request)
-            if (pauseNextParse.compareAndSet(true, false)) {
-                entered.complete(Unit)
-                release.await()
-                parsedBeforeRetirement.complete(Unit)
-            }
+            pause.afterParse()
             result
         }
         val compiler = WorkspaceCompiler(worker, manager, indexer)
@@ -421,10 +414,10 @@ class WorkspaceCompilerTest {
         val secondContent = "class Second { String value }"
         first.writeText(firstContent)
         second.writeText(secondContent)
-        pauseNextParse.set(true)
+        pause.requested.set(true)
         val refreshing = async(Dispatchers.IO) { compiler.refreshFromDisk(listOf(first.toUri(), second.toUri())) }
         refreshing.invokeOnCompletion { refreshFinished.countDown() }
-        entered.await()
+        pause.entered.await()
 
         val updating = async(Dispatchers.IO) {
             compiler.duringWorkspaceTransition {
@@ -435,8 +428,8 @@ class WorkspaceCompilerTest {
             }
         }
         transitionPublished.await()
-        release.complete(Unit)
-        parsedBeforeRetirement.await()
+        pause.release.complete(Unit)
+        pause.completed.await()
         assertFalse(
             refreshFinished.await(300, TimeUnit.MILLISECONDS),
             "a stale refresh must wait for cache retirement before processing the next URI",
@@ -727,5 +720,20 @@ class WorkspaceCompilerTest {
 
         assertTrue(result.success)
         assertEquals(2, result.modules.size)
+    }
+
+    private class ParsePause {
+        val requested = AtomicBoolean(false)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val completed = CompletableDeferred<Unit>()
+
+        suspend fun afterParse() {
+            if (requested.compareAndSet(true, false)) {
+                entered.complete(Unit)
+                release.await()
+                completed.complete(Unit)
+            }
+        }
     }
 }

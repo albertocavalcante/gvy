@@ -8,10 +8,10 @@ import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseRequest
-import org.codehaus.groovy.control.Phases
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import java.net.URI
 import java.util.concurrent.CountDownLatch

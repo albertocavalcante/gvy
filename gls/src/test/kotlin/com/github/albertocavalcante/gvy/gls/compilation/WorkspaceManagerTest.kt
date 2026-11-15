@@ -129,7 +129,7 @@ class WorkspaceManagerTest {
         )
         val original = roots.single()
 
-        roots += tempDir.resolve("other").toAbsolutePath()
+        roots.add(tempDir.resolve("other").toAbsolutePath())
 
         assertEquals(setOf(original), model.unscannedRoots)
     }

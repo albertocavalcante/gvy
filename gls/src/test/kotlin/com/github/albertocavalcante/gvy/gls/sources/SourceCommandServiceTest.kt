@@ -289,7 +289,10 @@ class SourceCommandServiceTest {
             fixture.commands.resolve(resolve().copy(position = cursor, documentVersion = 2, allowDownload = true))
             fixture.commands.attach(attach().copy(position = cursor, documentVersion = 2))
 
-            assertEquals(listOf("java.lang.Math", "java.lang.Math"), fixture.navigator.calls.map { it.symbol.binaryName })
+            assertEquals(
+                listOf("java.lang.Math", "java.lang.Math"),
+                fixture.navigator.calls.map { it.symbol.binaryName },
+            )
             assertEquals(SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS, fixture.navigator.calls[0].policy)
             assertEquals(root.resolve("sources.jar"), fixture.navigator.calls[1].attachment)
         }

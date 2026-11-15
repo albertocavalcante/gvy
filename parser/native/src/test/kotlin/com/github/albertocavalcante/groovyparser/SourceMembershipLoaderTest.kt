@@ -5,6 +5,7 @@ package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.SourcePathAdmissionPolicy
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.messages.SimpleMessage
 import org.junit.jupiter.api.Test
@@ -89,7 +90,10 @@ class SourceMembershipLoaderTest {
                 uri = root.resolve("Uses.groovy").toUri(),
                 content = "class Uses { Dependency value }",
                 compilePhase = Phases.CANONICALIZATION,
-                sourcePathAdmission = { seen.add(it); false },
+                sourcePathAdmission = SourcePathAdmissionPolicy { path ->
+                    seen.add(path)
+                    false
+                },
             ),
         )
         val rawPath = root.resolve("missing/../sources.jar")
@@ -160,7 +164,7 @@ class SourceMembershipLoaderTest {
             uri = sourceRoot.resolve("Uses.groovy").toUri(),
             content = "class Uses { Dependency value }",
             sourceRoots = listOf(root),
-            sourcePathAdmission = { path ->
+            sourcePathAdmission = SourcePathAdmissionPolicy { path ->
                 admittedPaths.add(path)
                 false
             },
@@ -318,7 +322,7 @@ class SourceMembershipLoaderTest {
                 content = "class Uses { Dependency value }",
                 classpath = listOf(jar),
                 sourceRoots = listOf(sourceRoot),
-                sourcePathAdmission = { path ->
+                sourcePathAdmission = SourcePathAdmissionPolicy { path ->
                     admittedPaths.add(path)
                     !path.startsWith(managedRoot)
                 },

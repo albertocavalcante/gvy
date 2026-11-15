@@ -279,7 +279,8 @@ class ExternalSourceRegistryTest {
         val root = temporary.resolve("registry")
         val views = root.resolve("views")
         val presentation = PortableSourcePresentation(views, maxViewBytes = 8L * 1024 * 1024 + 128)
-        val registry = ExternalSourceRegistry(root, portablePresentation = presentation, maximumMetadataBytes = 64L * 1024)
+        val registry =
+            ExternalSourceRegistry(root, portablePresentation = presentation, maximumMetadataBytes = 64L * 1024)
         val original = descriptor()
         val existing = registry.register(original)
         val metadata = root.resolve("descriptors")

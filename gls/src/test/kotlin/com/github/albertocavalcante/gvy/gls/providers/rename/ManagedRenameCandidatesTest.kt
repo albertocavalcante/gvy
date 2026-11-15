@@ -87,7 +87,9 @@ class ManagedRenameCandidatesTest {
         Files.delete(target)
 
         val candidates = CandidateCollector(FileKeys(listOf(workspace)), 100).collect(
-            emptyMap(), listOf(alias.toUri()), Walked(emptyList(), overflow = false),
+            emptyMap(),
+            listOf(alias.toUri()),
+            Walked(emptyList(), overflow = false),
         )
 
         assertEquals(listOf(alias), candidates.unreadable)

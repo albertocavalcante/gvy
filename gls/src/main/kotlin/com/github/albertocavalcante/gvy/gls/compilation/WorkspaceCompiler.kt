@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.SourcePathAdmissionPolicy
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -126,7 +127,9 @@ class WorkspaceCompiler(
         val finalResult = checkNotNull(result)
         if (stable) workspaceCompiled = true
         if (!finalResult.success) {
-            logger.warn { "Workspace compilation produced partial semantic results (${finalResult.errors.size} errors)" }
+            logger.warn {
+                "Workspace compilation produced partial semantic results (${finalResult.errors.size} errors)"
+            }
         }
 
         val elapsed = System.currentTimeMillis() - startTime
@@ -188,7 +191,11 @@ class WorkspaceCompiler(
     }
 
     /** Whether [uri]'s document must be rebuilt from disk; drops it when there is no source file to build from. */
-    private fun needsRefresh(uri: URI, admission: SourceInputAdmission, snapshot: WorkspaceModelTransitionGate.Snapshot): Boolean {
+    private fun needsRefresh(
+        uri: URI,
+        admission: SourceInputAdmission,
+        snapshot: WorkspaceModelTransitionGate.Snapshot,
+    ): Boolean {
         // Owned before the open check: a reopen in between makes this removal stale (#1184).
         val ticket = ownership.begin(uri)
         if (semanticIndexer.followsBuffer(uri)) return false
@@ -215,7 +222,11 @@ class WorkspaceCompiler(
         }
     }
 
-    private fun removeClosed(uri: URI, ticket: ArtifactOwnership.Ticket, snapshot: WorkspaceModelTransitionGate.Snapshot) {
+    private fun removeClosed(
+        uri: URI,
+        ticket: ArtifactOwnership.Ticket,
+        snapshot: WorkspaceModelTransitionGate.Snapshot,
+    ) {
         transitionGate.publishIfCurrent(
             snapshot,
             workspaceManager::current,
@@ -302,21 +313,6 @@ class WorkspaceCompiler(
         return WorkspaceCompilationResult(modules, errors, success)
     }
 
-    private fun collect(
-        result: FileCompilationResult,
-        modules: MutableMap<URI, ModuleNode>,
-        errors: MutableList<CompilationError>,
-    ) {
-        when (result) {
-            is FileCompilationResult.Success -> {
-                modules[result.uri] = result.module
-                errors.addAll(result.errors)
-            }
-            is FileCompilationResult.Failure -> errors.addAll(result.errors)
-            is FileCompilationResult.Skipped -> Unit
-        }
-    }
-
     /**
      * Compiles a single file with the full workspace context.
      *
@@ -370,7 +366,7 @@ class WorkspaceCompiler(
                 locatorCandidates = locatorCandidates,
                 compilePhase = Phases.SEMANTIC_ANALYSIS,
                 checkCancelled = admission.checkCancelled,
-                sourcePathAdmission = sourcePathAdmission,
+                sourcePathAdmission = SourcePathAdmissionPolicy(sourcePathAdmission),
             )
 
             // Parse using worker session
@@ -439,40 +435,40 @@ class WorkspaceCompiler(
         var snapshot = initialSnapshot
         var shouldRecheckRefresh = false
         for (attempt in 0..MAX_WORKSPACE_MODEL_RESTARTS) {
-            if (!isCurrent(snapshot)) {
-                if (attempt < MAX_WORKSPACE_MODEL_RESTARTS) {
-                    snapshot = transitionGate.awaitSnapshot(workspaceManager::current)
-                    shouldRecheckRefresh = true
-                    continue
-                }
-                return workspaceInputsChangedFailure(sourcePath)
+            val result = if (isCurrent(snapshot)) {
+                compileRefreshAttempt(uri, sourcePath, snapshot, shouldRecheckRefresh)
+            } else {
+                null
             }
-            if (shouldRecheckRefresh) {
-                val context = currentCoroutineContext()
-                val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
-                val shouldRefresh = needsRefresh(uri, admission, snapshot)
-                if (!isCurrent(snapshot)) {
-                    if (attempt < MAX_WORKSPACE_MODEL_RESTARTS) {
-                        snapshot = transitionGate.awaitSnapshot(workspaceManager::current)
-                        continue
-                    }
-                    return workspaceInputsChangedFailure(sourcePath)
-                }
-                if (!shouldRefresh) return FileCompilationResult.Skipped(sourcePath)
-                shouldRecheckRefresh = false
-            }
-            if (!workspaceCompiled && uri !in semanticIndexer) {
-                return FileCompilationResult.Skipped(sourcePath)
-            }
-
-            val result = compileRefreshWithAdmissionRetry(sourcePath, snapshot)
-            if (isCurrent(snapshot)) return result
+            if (result != null) return result
             if (attempt < MAX_WORKSPACE_MODEL_RESTARTS) {
                 snapshot = transitionGate.awaitSnapshot(workspaceManager::current)
                 shouldRecheckRefresh = true
             }
         }
         return workspaceInputsChangedFailure(sourcePath)
+    }
+
+    /** A null result asks the outer retry loop to reacquire a ready model. */
+    private suspend fun compileRefreshAttempt(
+        uri: URI,
+        sourcePath: Path,
+        snapshot: WorkspaceModelTransitionGate.Snapshot,
+        shouldRecheckRefresh: Boolean,
+    ): FileCompilationResult? {
+        val shouldRefresh = if (shouldRecheckRefresh) {
+            val context = currentCoroutineContext()
+            val admission = SourceInputAdmission(workspaceManager::isExcludedSource) { context.ensureActive() }
+            needsRefresh(uri, admission, snapshot)
+        } else {
+            true
+        }
+        if (shouldRecheckRefresh && !isCurrent(snapshot)) return null
+        return when {
+            !shouldRefresh -> FileCompilationResult.Skipped(sourcePath)
+            !workspaceCompiled && uri !in semanticIndexer -> FileCompilationResult.Skipped(sourcePath)
+            else -> compileRefreshWithAdmissionRetry(sourcePath, snapshot).takeIf { isCurrent(snapshot) }
+        }
     }
 
     private suspend fun retryAfterAdmissionSkip(
@@ -509,33 +505,13 @@ class WorkspaceCompiler(
         return if (completionAdmission.allows(sourcePath)) admissionChangedFailure(sourcePath) else retryResult
     }
 
-    private fun admissionChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
-        listOf(
-            CompilationError(
-                sourcePath.toUri(),
-                "Source admission changed repeatedly while compiling",
-                "admission",
-            ),
-        ),
-    )
-
-    private fun workspaceInputsChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
-        listOf(
-            CompilationError(
-                sourcePath.toUri(),
-                "Workspace inputs changed repeatedly while refreshing this source",
-                "admission",
-            ),
-        ),
-    )
-
     private fun isCurrent(snapshot: WorkspaceModelTransitionGate.Snapshot): Boolean =
         transitionGate.isCurrent(snapshot, workspaceManager::current, WorkspaceModel::hasSameWorkspaceCompileInputs)
 
     internal fun <T> duringWorkspaceTransition(
-        action: () -> T,
         shouldAdvanceGeneration: (T) -> Boolean = { true },
-    ): T = transitionGate.transition(action, shouldAdvanceGeneration)
+        action: () -> T,
+    ): T = transitionGate.transition(shouldAdvanceGeneration = shouldAdvanceGeneration, action = action)
 
     private fun readSourceContent(
         sourcePath: Path,
@@ -564,7 +540,11 @@ class WorkspaceCompiler(
         return if (module != null) {
             logger.debug { "Successfully compiled: $uri" }
             val prepared = semanticIndexer.preparePublication(
-                publication, content, module, parseResult.outcome.achievedPhase, fromBuffer = false,
+                publication,
+                content,
+                module,
+                parseResult.outcome.achievedPhase,
+                fromBuffer = false,
             )
             val published = transitionGate.publishIfCurrent(
                 snapshot,
@@ -593,34 +573,6 @@ class WorkspaceCompiler(
         }
     }
 
-    private fun semanticAnalysisFailure(uri: URI, message: String) = FileCompilationResult.Failure(
-        listOf(CompilationError(uri = uri, message = message, phase = "SEMANTIC_ANALYSIS")),
-    )
-
-    /**
-     * Builds locator candidates for a source file.
-     * These help the compiler locate the source unit during error reporting.
-     */
-    private fun buildLocatorCandidates(uri: URI, sourcePath: Path): Set<String> {
-        val candidates = mutableSetOf<String>()
-        candidates += uri.toString()
-        candidates += uri.path
-        candidates += sourcePath.toString()
-        candidates += sourcePath.toAbsolutePath().toString()
-        return candidates
-    }
-
-    /**
-     * Internal result type for individual file compilation.
-     */
-    private sealed class FileCompilationResult {
-        data class Success(val uri: URI, val module: ModuleNode, val errors: List<CompilationError>) :
-            FileCompilationResult()
-        data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
-
-        data class Skipped(val sourcePath: Path) : FileCompilationResult()
-    }
-
     private companion object {
         /** Changed files beyond which one workspace compile is cheaper than compiling each against it. */
         const val BATCH_REFRESH_LIMIT = 8
@@ -628,4 +580,67 @@ class WorkspaceCompiler(
         /** Avoid publishing results from a retired model while bounding retries under continuous build updates. */
         const val MAX_WORKSPACE_MODEL_RESTARTS = 2
     }
+}
+
+private fun collect(
+    result: FileCompilationResult,
+    modules: MutableMap<URI, ModuleNode>,
+    errors: MutableList<CompilationError>,
+) {
+    when (result) {
+        is FileCompilationResult.Success -> {
+            modules[result.uri] = result.module
+            errors.addAll(result.errors)
+        }
+        is FileCompilationResult.Failure -> errors.addAll(result.errors)
+        is FileCompilationResult.Skipped -> Unit
+    }
+}
+
+private fun admissionChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
+    listOf(
+        CompilationError(
+            sourcePath.toUri(),
+            "Source admission changed repeatedly while compiling",
+            "admission",
+        ),
+    ),
+)
+
+private fun workspaceInputsChangedFailure(sourcePath: Path) = FileCompilationResult.Failure(
+    listOf(
+        CompilationError(
+            sourcePath.toUri(),
+            "Workspace inputs changed repeatedly while refreshing this source",
+            "admission",
+        ),
+    ),
+)
+
+private fun semanticAnalysisFailure(uri: URI, message: String) = FileCompilationResult.Failure(
+    listOf(CompilationError(uri = uri, message = message, phase = "SEMANTIC_ANALYSIS")),
+)
+
+/**
+ * Builds locator candidates for a source file.
+ * These help the compiler locate the source unit during error reporting.
+ */
+private fun buildLocatorCandidates(uri: URI, sourcePath: Path): Set<String> {
+    val candidates = mutableSetOf<String>()
+    candidates += uri.toString()
+    candidates += uri.path
+    candidates += sourcePath.toString()
+    candidates += sourcePath.toAbsolutePath().toString()
+    return candidates
+}
+
+/**
+ * Internal result type for individual file compilation.
+ */
+private sealed class FileCompilationResult {
+    data class Success(val uri: URI, val module: ModuleNode, val errors: List<CompilationError>) :
+        FileCompilationResult()
+    data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
+
+    data class Skipped(val sourcePath: Path) : FileCompilationResult()
 }

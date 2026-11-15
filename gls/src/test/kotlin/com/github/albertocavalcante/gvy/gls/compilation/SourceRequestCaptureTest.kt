@@ -5,10 +5,10 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.JarClassResource
-import com.github.albertocavalcante.nativeapi.NativeArtifactStamp
 import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
+import com.github.albertocavalcante.nativeapi.NativeArtifactStamp
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir

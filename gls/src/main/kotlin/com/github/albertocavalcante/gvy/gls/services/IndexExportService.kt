@@ -41,48 +41,58 @@ class IndexExportService(
     fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
         logger.info { "Exporting index format=${params.format} to=${params.outputPath}" }
 
-        val requestedOutput = Path.of(params.outputPath)
-        if (requestedOutput.any { it.toString() == ".." }) {
-            throw IOException("Cannot export index through a parent-directory path: ${params.outputPath}")
-        }
-        val normalizedOutput = requestedOutput.toAbsolutePath().normalize()
-        val parent = normalizedOutput.parent?.toRealPath()
-            ?: throw IOException("Cannot export index without an existing parent directory: $normalizedOutput")
-        val fileName = normalizedOutput.fileName
-            ?: throw IOException("Cannot export index to a directory: $normalizedOutput")
-        val output = parent.resolve(fileName)
-        if (isManagedDestination(output)) {
-            throw IOException("Cannot export index to a managed source path: $output")
-        }
-
-        val temporary = Files.createTempFile(parent, ".${output.fileName}.", ".tmp")
+        val output = resolveOutput(params.outputPath)
+        requireUnmanagedDestination(output)
+        val temporary = Files.createTempFile(output.parent, ".${output.fileName}.", ".tmp")
         try {
-            FileOutputStream(temporary.toFile()).use { fileOutputStream ->
-                val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
-
-                val buildToolManager = buildToolManagerProvider()
-                val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
-                val manager = buildTool?.name?.lowercase() ?: "manual"
-                val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
-                val indexer = UnifiedIndexer(writers, symbolGenerator)
-
-                try {
-                    indexFiles(workspaceRoot, indexer)
-                } finally {
-                    // Explicitly close writers to flush footers
-                    writers.forEach { it.close() }
-                }
-            }
-
-            if (isManagedDestination(output)) {
-                throw IOException("Cannot export index to a managed source path: $output")
-            }
+            writeExport(temporary, params.format, workspaceRoot)
+            requireUnmanagedDestination(output)
             replaceExport(output, temporary)
         } finally {
             Files.deleteIfExists(temporary)
         }
 
         return "Successfully exported ${params.format} index to ${params.outputPath}"
+    }
+
+    private fun resolveOutput(outputPath: String): Path {
+        val requestedOutput = Path.of(outputPath)
+        requireNoParentSegments(requestedOutput, outputPath)
+        val normalizedOutput = requestedOutput.toAbsolutePath().normalize()
+        val parent = normalizedOutput.parent?.toRealPath()
+            ?: throw IOException("Cannot export index without an existing parent directory: $normalizedOutput")
+        val fileName = normalizedOutput.fileName
+            ?: throw IOException("Cannot export index to a directory: $normalizedOutput")
+        return parent.resolve(fileName)
+    }
+
+    private fun requireNoParentSegments(path: Path, outputPath: String) {
+        if (path.any { it.toString() == ".." }) {
+            throw IOException("Cannot export index through a parent-directory path: $outputPath")
+        }
+    }
+
+    private fun requireUnmanagedDestination(output: Path) {
+        if (isManagedDestination(output)) {
+            throw IOException("Cannot export index to a managed source path: $output")
+        }
+    }
+
+    private fun writeExport(temporary: Path, format: IndexFormat, workspaceRoot: Path) {
+        FileOutputStream(temporary.toFile()).use { fileOutputStream ->
+            val writers = createWriters(format, fileOutputStream, workspaceRoot)
+            val buildToolManager = buildToolManagerProvider()
+            val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
+            val manager = buildTool?.name?.lowercase() ?: "manual"
+            val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
+            val indexer = UnifiedIndexer(writers, symbolGenerator)
+            try {
+                indexFiles(workspaceRoot, indexer)
+            } finally {
+                // Explicitly close writers to flush footers
+                writers.forEach { it.close() }
+            }
+        }
     }
 
     private fun replaceExport(output: Path, temporary: Path) {

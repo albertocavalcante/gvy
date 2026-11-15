@@ -318,7 +318,9 @@ class ManagedSourceDocumentServiceTest {
         val registry = ExternalSourceRegistry(cache, managedRoots = emptyList())
         val calls = mutableListOf<String>()
         val service = ManagedSourceDocumentService(
-            delegate(calls), registry, sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
+            delegate(calls),
+            registry,
+            sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
         )
         val uri = temporary.resolve("Ordinary.groovy").toUri().toString()
         service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, "class Ordinary {}")))

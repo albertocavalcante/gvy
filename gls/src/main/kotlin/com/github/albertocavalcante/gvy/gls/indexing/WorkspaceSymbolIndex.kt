@@ -355,7 +355,11 @@ private class FrozenWorkspaceMemberLookup(
     override val version: Long get() = if (isReady()) snapshot.version else -1L
 
     private fun definition(id: String): SymbolInfo? =
-        if (isReady()) snapshot.findDefinitions(id).firstOrNull { it.first !in hidden }?.second.takeIf { isReady() } else null
+        if (isReady()) {
+            snapshot.findDefinitions(id).firstOrNull { it.first !in hidden }?.second.takeIf { isReady() }
+        } else {
+            null
+        }
 
     private fun directMembers(classFqn: String): List<SymbolInfo> {
         val owner = "$classFqn#"

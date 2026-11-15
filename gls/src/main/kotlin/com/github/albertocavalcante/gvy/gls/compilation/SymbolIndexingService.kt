@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.utils.excludedSourceAlias
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.SourcePathAdmissionPolicy
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -311,7 +312,10 @@ class SymbolIndexingService(
         applied
     } ?: false
 
-    private fun discardExcludedDiskIndex(ticket: ArtifactOwnership.Ticket, snapshot: WorkspaceModelTransitionGate.Snapshot) {
+    private fun discardExcludedDiskIndex(
+        ticket: ArtifactOwnership.Ticket,
+        snapshot: WorkspaceModelTransitionGate.Snapshot,
+    ) {
         commitFromDisk(ticket, snapshot) { invalidate(ticket.uri) }
     }
 
@@ -349,7 +353,7 @@ class SymbolIndexingService(
                 content = content,
                 classpath = workspace.classpath,
                 sourceRoots = workspace.sourceRoots.filter(admission::allows),
-                sourcePathAdmission = admission.sourcePathAdmission(),
+                sourcePathAdmission = SourcePathAdmissionPolicy(admission.sourcePathAdmission()),
                 checkCancelled = admission.checkCancelled,
                 workspaceSources = emptyList(), // Don't recurse during indexing
                 locatorCandidates = buildLocatorCandidates(uri, path),

@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.indexing
 
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceModelTransitionGate
-
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.Range

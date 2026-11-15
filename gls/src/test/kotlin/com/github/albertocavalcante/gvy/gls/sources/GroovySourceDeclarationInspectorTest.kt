@@ -49,7 +49,8 @@ class GroovySourceDeclarationInspectorTest {
         for ((lineNumber, name) in listOf(2 to "FIELD", 3 to "property")) {
             val definition = requireNotNull(
                 inspector.inspectMember(
-                    source, SourceMemberTarget("sample.Example", SourceMemberQuery(name, isStatic = true)),
+                    source,
+                    SourceMemberTarget("sample.Example", SourceMemberQuery(name, isStatic = true)),
                     URI.create("file:///Example.groovy"),
                 ),
             )
@@ -64,7 +65,8 @@ class GroovySourceDeclarationInspectorTest {
         val source = "package sample\nclass Example { @Example static Example Example }"
         assertNull(
             inspector.inspectMember(
-                source, SourceMemberTarget("sample.Example", SourceMemberQuery("Example", isStatic = true)),
+                source,
+                SourceMemberTarget("sample.Example", SourceMemberQuery("Example", isStatic = true)),
                 URI.create("file:///Example.groovy"),
             ),
         )

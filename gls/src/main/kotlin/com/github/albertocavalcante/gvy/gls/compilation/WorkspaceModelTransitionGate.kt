@@ -28,7 +28,7 @@ internal class WorkspaceModelTransitionGate {
     private var failure: Throwable? = null
 
     /** Runs one synchronous model/cache transaction. Overlapping writers are serialized. */
-    fun <T> transition(action: () -> T, shouldAdvanceGeneration: (T) -> Boolean = { true }): T {
+    fun <T> transition(shouldAdvanceGeneration: (T) -> Boolean = { true }, action: () -> T): T {
         writerLock.lock()
         try {
             val completion = synchronized(monitor) {
@@ -39,10 +39,9 @@ internal class WorkspaceModelTransitionGate {
             var failed: Throwable? = null
             var advancesGeneration = true
             try {
-                return action().also { result -> advancesGeneration = shouldAdvanceGeneration(result) }
-            } catch (cause: Throwable) {
-                failed = cause
-                throw cause
+                return runCatching {
+                    action().also { result -> advancesGeneration = shouldAdvanceGeneration(result) }
+                }.onFailure { cause -> failed = cause }.getOrThrow()
             } finally {
                 synchronized(monitor) {
                     if (failed != null || advancesGeneration) generation++
@@ -90,9 +89,11 @@ internal class WorkspaceModelTransitionGate {
         snapshot: Snapshot,
         currentModel: () -> WorkspaceModel,
         hasSameInputs: (WorkspaceModel, WorkspaceModel) -> Boolean,
-    ): Boolean =
-        transition == null && failure == null && snapshot.generation == generation &&
-            currentModel().let { current -> current === snapshot.model || hasSameInputs(snapshot.model, current) }
+    ): Boolean {
+        if (transition != null || failure != null || snapshot.generation != generation) return false
+        val current = currentModel()
+        return current === snapshot.model || hasSameInputs(snapshot.model, current)
+    }
 
     fun isReady(): Boolean = synchronized(monitor) { transition == null && failure == null }
 
@@ -100,7 +101,9 @@ internal class WorkspaceModelTransitionGate {
     fun readPermit(): (() -> Boolean)? = synchronized(monitor) {
         if (transition != null || failure != null) return@synchronized null
         val captured = readEpoch
-        val current: () -> Boolean = { synchronized(monitor) { transition == null && failure == null && readEpoch == captured } }
+        val current: () -> Boolean = {
+            synchronized(monitor) { transition == null && failure == null && readEpoch == captured }
+        }
         current
     }
 
@@ -118,7 +121,6 @@ internal class WorkspaceModelTransitionGate {
                 null
             }
         }
-
 }
 
 /** Run a query without holding the gate and discard results if a transition crossed it. */

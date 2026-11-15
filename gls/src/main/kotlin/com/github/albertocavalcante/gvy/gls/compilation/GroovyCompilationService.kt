@@ -307,14 +307,8 @@ class GroovyCompilationService internal constructor(
         action: () -> T,
     ): T = workspaceCompiler.duringWorkspaceTransition(
         action = {
-            try {
-                action()
-            } catch (failure: Throwable) {
-                try {
-                    clearCachesUnderTransition()
-                } catch (cleanup: Throwable) {
-                    failure.addSuppressed(cleanup)
-                }
+            runCatching(action).getOrElse { failure ->
+                runCatching { clearCachesUnderTransition() }.exceptionOrNull()?.let(failure::addSuppressed)
                 throw failure
             }
         },

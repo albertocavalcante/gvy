@@ -184,9 +184,7 @@ class WorkspaceManager internal constructor(
             }
             val targetsChanged = !sameTargetFacts(current.targets, targets)
             val next = model(workspaceRoot, if (depsChanged) dependencies else current.classpath, roots, targets)
-            changed = depsChanged || sourcesChanged || targetsChanged ||
-                current.root != next.root || current.sourceRoots != next.sourceRoots ||
-                current.sources != next.sources || current.unscannedRoots != next.unscannedRoots
+            changed = depsChanged || sourcesChanged || targetsChanged || !current.hasSameSourceLayout(next)
             next
         }
         return changed
@@ -239,15 +237,7 @@ class WorkspaceManager internal constructor(
     fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
         // Disk work first, outside the update lock: spellings, case probes, stats and folder walks.
         val start = current()
-        val events = created + deleted
-        val needsRescan = start.configuredSourceRoots.any { root ->
-            val absolute = root.toAbsolutePath().normalize()
-            events.any { event ->
-                val path = event.toAbsolutePath().normalize()
-                absolute.startsWith(path) || (absolute in start.unscannedRoots && path.startsWith(absolute))
-            }
-        }
-        if (needsRescan) return rescanSourceChanges(start)
+        if (needsSourceRescan(start, created + deleted)) return rescanSourceChanges(start)
         val spelling = Spelling(start.sourceRoots, start.root)
         val createdPaths = created.mapNotNull(spelling::inRoot).distinct()
             .filterNot { excludedSourceFile(it, ::isExcludedSource) }
@@ -302,6 +292,15 @@ class WorkspaceManager internal constructor(
         }
         return result
     }
+
+    private fun needsSourceRescan(workspace: WorkspaceModel, events: Collection<Path>): Boolean =
+        workspace.configuredSourceRoots.any { root ->
+            val absolute = root.toAbsolutePath().normalize()
+            events.any { event ->
+                val path = event.toAbsolutePath().normalize()
+                absolute.startsWith(path) || (absolute in workspace.unscannedRoots && path.startsWith(absolute))
+            }
+        }
 
     /** Rescan outside the lock and retry if a concurrent writer published a newer model. */
     private fun rescanSourceChanges(start: WorkspaceModel): SourceListChange {
@@ -519,6 +518,7 @@ class WorkspaceManager internal constructor(
         private val unsafeRoots = configuredRoots.filter {
             excludedSourceAlias(it, ::isExcludedSource)
         }.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+
         // A root that is a link the trust boundary refuses takes no events at all: walking under it would cross it.
         private val starts = roots.associateWith { scanStart(it, workspaceRoot) }
         private val refused = starts.filterValues { it == null }.keys + unsafeRoots

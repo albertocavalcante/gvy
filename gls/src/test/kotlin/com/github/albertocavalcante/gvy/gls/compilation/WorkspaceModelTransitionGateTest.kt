@@ -81,9 +81,14 @@ class WorkspaceModelTransitionGateTest {
             "Default publication remains identity-based",
         )
         assertTrue(
-            gate.publishIfCurrent(snapshot, { equivalent }, WorkspaceModel::hasSameWorkspaceCompileInputs) { true } == true,
+            gate.publishIfCurrent(
+                snapshot,
+                { equivalent },
+                WorkspaceModel::hasSameWorkspaceCompileInputs,
+            ) { true } == true,
         )
-        val changed = WorkspaceModel(null, listOf(Path.of("dependency.jar")), emptyList(), emptyList()) { _, _ -> "test" }
+        val changed =
+            WorkspaceModel(null, listOf(Path.of("dependency.jar")), emptyList(), emptyList()) { _, _ -> "test" }
         assertNull(gate.publishIfCurrent(snapshot, { changed }, WorkspaceModel::hasSameWorkspaceCompileInputs) { true })
     }
 

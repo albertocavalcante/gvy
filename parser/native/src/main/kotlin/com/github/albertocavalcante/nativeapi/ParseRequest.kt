@@ -36,6 +36,15 @@ enum class ParseMode {
 }
 
 /**
+ * A per-request guard for source paths discovered by Groovy's classloader.
+ *
+ * This wrapper keeps the legacy [ParseRequest.workspaceClassLocator] trailing-lambda constructor unambiguous.
+ */
+class SourcePathAdmissionPolicy(private val accepts: (Path) -> Boolean) {
+    operator fun invoke(path: Path): Boolean = accepts(path)
+}
+
+/**
  * Input required to parse a Groovy document.
  */
 data class ParseRequest(
@@ -94,7 +103,7 @@ data class ParseRequest(
      */
     val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
     /** Fresh path check for implicitly discovered sources; copied with the rest of the parse request. */
-    val sourcePathAdmission: ((Path) -> Boolean)?,
+    val sourcePathAdmission: SourcePathAdmissionPolicy?,
 ) {
     /** Keeps the original source constructor shape, with [workspaceClassLocator] as the trailing lambda. */
     constructor(

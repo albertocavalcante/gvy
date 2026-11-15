@@ -15,6 +15,7 @@ import com.github.albertocavalcante.nativeapi.SourceAnnotationReference
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.io.StringReaderSource
@@ -29,6 +30,8 @@ internal class BoundTypeDefinitionResolver(
     private val compilation: GroovyCompilationService?,
     private val navigator: SourceNavigator?,
 ) {
+    private data class ImportedMemberCandidate(val owner: ClassNode, val member: ASTNode)
+
     suspend fun annotation(
         reference: SourceAnnotationReference,
         uri: URI,
@@ -47,19 +50,28 @@ internal class BoundTypeDefinitionResolver(
     }
 
     suspend fun importDefinition(node: ImportNode, uri: URI, position: Position): DefinitionResolver.DefinitionResult? {
-        val selected = node.type?.redirect() ?: return null
+        val selected = node.type?.redirect()?.takeUnless { isStubSourceName(it.module?.context?.name) } ?: return null
+        if (node.isStatic && node.fieldName != null) return staticImportDefinition(node, selected, uri, position)
         val module = selected.module
-        if (isStubSourceName(module?.context?.name)) return null
-        if (node.isStatic && node.fieldName != null) {
-            annotations.annotationImportedBy(node)?.let { return annotation(it, uri, position) }
-        }
-        if (node.isStatic && node.fieldName != null) {
-            return importedMemberDefinition(selected, node.fieldName, uri, position)
-        }
         return when {
             selected.isPrimaryClassNode && module != null -> importedSourceDefinition(selected, module)
             selected.isPrimaryClassNode || !selected.isResolved -> null
             else -> binary(node, uri, position)
+        }
+    }
+
+    private suspend fun staticImportDefinition(
+        node: ImportNode,
+        selected: ClassNode,
+        uri: URI,
+        position: Position,
+    ): DefinitionResolver.DefinitionResult? {
+        val name = checkNotNull(node.fieldName)
+        val annotation = annotations.annotationImportedBy(node)
+        return if (annotation == null) {
+            importedMemberDefinition(selected, name, uri, position)
+        } else {
+            annotation(annotation, uri, position)
         }
     }
 
@@ -78,50 +90,102 @@ internal class BoundTypeDefinitionResolver(
         uri: URI,
         position: Position,
     ): DefinitionResolver.DefinitionResult? {
+        val candidate = findImportedMember(selected, name) ?: return null
+        return resolveImportedMember(candidate, name, uri, position)
+    }
+
+    private fun findImportedMember(selected: ClassNode, name: String): ImportedMemberCandidate? {
         val seen = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
         val pending = ArrayDeque<ClassNode>()
         pending.add(selected)
         while (pending.isNotEmpty()) {
-            val levelSize = pending.size
-            val candidates = mutableListOf<Pair<ClassNode, ASTNode>>()
-            repeat(levelSize) {
-                val owner = pending.removeFirst().redirect()
-                if (seen.add(owner)) {
-                    val inherited = owner !== selected
-                    val fields = owner.fields.filter { field ->
-                        field.name == name && field.isStatic &&
-                            (!inherited || !field.isPrivate || owner.properties.any { it.name == name && !it.isPrivate })
-                    }
-                    val methods = owner.methods.filter { method ->
-                        method.name == name && method.isStatic &&
-                            (!inherited || (!method.isPrivate && !owner.isInterface))
-                    }
-                    candidates.addAll((fields + methods).map { owner to it })
-
-                    // A nearer declaration hides a same-named superclass member even when it is inaccessible or
-                    // non-static. Do not guess by continuing to a more distant declaration.
-                    val declaresName = owner.fields.any { it.name == name } || owner.methods.any { it.name == name }
-                    if (!declaresName) {
-                        owner.superClass?.let(pending::addLast)
-                        owner.interfaces.forEach(pending::addLast)
-                    }
-                }
-            }
-            if (candidates.isNotEmpty()) {
-                val (owner, member) = candidates.singleOrNull() ?: return null
-                val module = owner.module
-                if (isStubSourceName(module?.context?.name)) return null
-                if (owner.isPrimaryClassNode && module != null) {
-                    if (modules != null && modules.none { it === module }) return null
-                    if (declarations(module).none { it === owner }) return null
-                    return sourceDefinition(member, module)
-                }
-                if (owner.isPrimaryClassNode || !owner.isResolved) return null
-                return binary(ImportNode(owner, name, name), uri, position)
-            }
+            val candidates = collectImportedMemberCandidates(selected, name, pending, seen)
+            if (candidates.isNotEmpty()) return candidates.singleOrNull()
         }
         return null
     }
+
+    private fun collectImportedMemberCandidates(
+        selected: ClassNode,
+        name: String,
+        pending: ArrayDeque<ClassNode>,
+        seen: MutableSet<ClassNode>,
+    ): List<ImportedMemberCandidate> {
+        val candidates = mutableListOf<ImportedMemberCandidate>()
+        repeat(pending.size) {
+            val owner = pending.removeFirst().redirect()
+            if (seen.add(owner)) {
+                candidates += staticFields(owner, name, inherited = owner !== selected)
+                candidates += staticMethods(owner, name, inherited = owner !== selected)
+                    .map { ImportedMemberCandidate(owner, it) }
+                enqueueParentsWithoutDeclaration(owner, name, pending)
+            }
+        }
+        return candidates
+    }
+
+    private fun staticFields(owner: ClassNode, name: String, inherited: Boolean): List<ImportedMemberCandidate> =
+        owner.fields.filter { field ->
+            field.name == name && field.isStatic &&
+                isVisibleInheritedField(owner, field, name, inherited)
+        }.map { ImportedMemberCandidate(owner, it) }
+
+    private fun isVisibleInheritedField(
+        owner: ClassNode,
+        field: FieldNode,
+        name: String,
+        inherited: Boolean,
+    ): Boolean {
+        if (!inherited) return true
+        if (!field.isPrivate) return true
+        return owner.properties.any { it.name == name && !it.isPrivate }
+    }
+
+    private fun staticMethods(owner: ClassNode, name: String, inherited: Boolean) = owner.methods.filter { method ->
+        when {
+            method.name != name -> false
+            !method.isStatic -> false
+            !inherited -> true
+            else -> !method.isPrivate && !owner.isInterface
+        }
+    }
+
+    /** A nearer declaration hides a same-named parent member even when it is inaccessible or non-static. */
+    private fun enqueueParentsWithoutDeclaration(owner: ClassNode, name: String, pending: ArrayDeque<ClassNode>) {
+        val declaresName = owner.fields.any { it.name == name } || owner.methods.any { it.name == name }
+        if (!declaresName) {
+            owner.superClass?.let(pending::addLast)
+            owner.interfaces.forEach(pending::addLast)
+        }
+    }
+
+    private suspend fun resolveImportedMember(
+        candidate: ImportedMemberCandidate,
+        name: String,
+        uri: URI,
+        position: Position,
+    ): DefinitionResolver.DefinitionResult? {
+        val owner = candidate.owner
+        val module = owner.module
+        if (isStubSourceName(module?.context?.name)) return null
+        return when {
+            owner.isPrimaryClassNode -> importedSourceMemberDefinition(owner, candidate.member, module)
+            owner.isResolved -> binary(ImportNode(owner, name, name), uri, position)
+            else -> null
+        }
+    }
+
+    private fun importedSourceMemberDefinition(
+        owner: ClassNode,
+        member: ASTNode,
+        module: ModuleNode?,
+    ): DefinitionResolver.DefinitionResult.Source? {
+        val sourceModule = module?.takeIf { isSelectedModule(it) } ?: return null
+        if (declarations(sourceModule).none { it === owner }) return null
+        return sourceDefinition(member, sourceModule)
+    }
+
+    private fun isSelectedModule(module: ModuleNode): Boolean = modules == null || modules.any { it === module }
 
     private fun sourceDefinition(
         node: ASTNode,

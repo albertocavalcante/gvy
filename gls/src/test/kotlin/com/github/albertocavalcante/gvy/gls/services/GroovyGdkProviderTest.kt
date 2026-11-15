@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceModelTransitionGate
-
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import io.mockk.coEvery
 import io.mockk.every
