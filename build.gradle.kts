@@ -44,6 +44,23 @@ version =
 
 extra["baseVersion"] = baseVersion
 
+// A separate configuration keeps language-server dependencies out of user JVMs.
+val fileExecutionRuntime = configurations.create("fileExecutionRuntime") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+dependencies {
+    add(fileExecutionRuntime.name, libs.groovy.core)
+    add(fileExecutionRuntime.name, libs.ivy)
+}
+tasks.register<Sync>("stageFileExecutionRuntime") {
+    group = "distribution"
+    description = "Stage the dedicated runtime; editor packaging verifies its pinned checksums and notices."
+    from(fileExecutionRuntime)
+    into(project(":gls").layout.buildDirectory.dir("editor-server/runtime"))
+}
+
 val testJavaVersion = providers.gradleProperty("testJavaVersion").orElse("17").map { JavaLanguageVersion.of(it) }
 val testJavaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
     languageVersion.set(testJavaVersion)

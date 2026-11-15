@@ -12,6 +12,7 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 - Spock design notes: `SPOCK_SUPPORT.md`, `SPOCK_AST_SUPPORT.md`
 - Build server research: `GRADLE_BUILD_SERVER_INTEGRATION.md`
 - Build tooling compatibility: `GRADLE_TOOLING_JDK_COMPAT_PLAN.md`
+- File execution: [contextual Run/Compile design and qualification](FILE_EXECUTION.md)
 - Roadmap: `../docs/quality-bar.md` (the Quality Bar; `roadmap/README.md` points there)
 - Technical specs: `specs/INDEX.md`
 - Extension docs: `extension/`

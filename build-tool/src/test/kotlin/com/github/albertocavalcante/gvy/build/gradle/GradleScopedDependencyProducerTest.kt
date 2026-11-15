@@ -149,6 +149,63 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
+    fun `execution model uses the selected project Java without changing analysis Java`() = runBlocking {
+        val executionBuilder = mockk<ModelBuilder<GradleExecutionModel>>()
+        every { connection.model(GradleExecutionModel::class.java) } returns executionBuilder
+        every { executionBuilder.withArguments(*anyVararg()) } returns executionBuilder
+        every { executionBuilder.withCancellationToken(any()) } returns executionBuilder
+        every { executionBuilder.setJavaHome(any()) } returns executionBuilder
+        every { executionBuilder.get(any<ResultHandler<in GradleExecutionModel>>()) } answers {
+            firstArg<ResultHandler<in GradleExecutionModel>>().onComplete(null)
+        }
+        builder.completes(model)
+        val analysisJava = Path.of("analysis-java").toAbsolutePath()
+        val projectJava = Path.of("project-java").toAbsolutePath()
+        val producer = producer(analysisJava)
+
+        producer.resolveExecutionContexts(directory, javaHome = projectJava)
+        producer.resolveExecutionContexts(directory)
+        producer.resolve(directory, provenance)
+
+        verify(exactly = 1) { executionBuilder.setJavaHome(projectJava.toFile()) }
+        verify(exactly = 1) { executionBuilder.setJavaHome(any()) }
+        verify(exactly = 1) { builder.setJavaHome(analysisJava.toFile()) }
+    }
+
+    @Test
+    fun `cancelled execution model retains lease until callback`() = runBlocking {
+        val executionBuilder = mockk<ModelBuilder<GradleExecutionModel>>()
+        val callbacks = CopyOnWriteArrayList<ResultHandler<in GradleExecutionModel>>()
+        val releases = AtomicInteger()
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
+        every { connection.model(GradleExecutionModel::class.java) } returns executionBuilder
+        every { executionBuilder.withArguments(*anyVararg()) } returns executionBuilder
+        every { executionBuilder.withCancellationToken(any()) } returns executionBuilder
+        every { executionBuilder.get(any<ResultHandler<in GradleExecutionModel>>()) } answers {
+            callbacks.add(firstArg())
+        }
+        val producer = GradleScopedDependencyProducer(leasing, initScriptDirectory = temporary.resolve("init-scripts"))
+        val pending = async { producer.resolveExecutionContexts(directory) }
+        withTimeout(5.seconds) { while (callbacks.isEmpty()) yield() }
+
+        pending.cancelAndJoin()
+        assertEquals(0, releases.get())
+        callbacks.single().onFailure(BuildCancelledException("acknowledged"))
+        callbacks.single().onComplete(null)
+        assertEquals(1, releases.get())
+    }
+
+    @Test
+    fun `unexpected execution model failures propagate`() = runBlocking<Unit> {
+        val executionBuilder = mockk<ModelBuilder<GradleExecutionModel>>()
+        every { connection.model(GradleExecutionModel::class.java) } returns executionBuilder
+        every { executionBuilder.withArguments(*anyVararg()) } throws IllegalMonitorStateException("unexpected")
+
+        assertFailsWith<IllegalMonitorStateException> { producer().resolveExecutionContexts(directory) }
+    }
+
+    @Test
     fun `reuses one content addressed script and repairs a tampered copy`() = runBlocking {
         builder.completes(model)
         val producer = producer()

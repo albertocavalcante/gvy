@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
+import com.github.albertocavalcante.gvy.build.gradle.GradleExecutionContext
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -44,6 +46,13 @@ class BuildToolManager(
     private val gradleBuildStrategy: GradleBuildStrategy = GradleBuildStrategy.AUTO,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    /** Evaluates Gradle independently of analysis settings. Caller must enforce workspace trust. */
+    suspend fun executionContexts(workspaceRoot: Path, javaHome: Path? = null): List<GradleExecutionContext>? {
+        val gradle = buildTools.filterIsInstance<GradleBuildTool>().firstOrNull { it.canHandle(workspaceRoot) }
+            ?: return null
+        return gradle.executionContexts(workspaceRoot, javaHome)
+    }
 
     /**
      * Detects the appropriate build tool for the given workspace.
