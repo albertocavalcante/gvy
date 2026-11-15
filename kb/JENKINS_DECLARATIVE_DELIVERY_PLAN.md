@@ -37,17 +37,17 @@ inputs remain useful with incomplete metadata, with limitations stated explicitl
 [#2046](https://github.com/albertocavalcante/gvy/pull/2046), retain their own review and CI gates. This table records
 implementation work; it does not certify the open slices.
 
-| Evidence layer              | Executed result                                              | Scope / remaining gate                                                                                          |
-| --------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Server JSON-RPC             | 3 tests passed, no failures/errors/skips                     | Actual framed client/server requests and responses correlate; complete lists contain 5, 5 and 11 items.         |
-| Native checks               | Root `lintFix`, server staging and diagnostic gate passed    | Effective test worker: `-Xms256m -Xmx1g`, one fork; all normal commit hooks passed.                             |
-| VS Code integration         | 6 tests passed on 1.146.0                                    | 3 provider captures plus 3 real suggest-widget acceptances; original baseline candidate hash checked.           |
-| Desktop widget              | Settled blank lists and partial entry inspected              | Both language modes showed five parameter names in the controlled host; original noisy list was not reproduced. |
-| Generic collection fix (03) | Actual-base fail-first; 27 targeted tests pass, no skips     | Root `lintFix` and normal hooks pass; final publication-head review and CI remain.                              |
-| Snippet capabilities (04)   | Pre-rebase head 374d49ef: 395 tests, 17 existing skips; CI passed 32 checks with 3 applicability skips | Rebase adds upstream scripted slices; rerun frozen native matrix, hooks, and obtain independent final-head review. |
-| Document mode (05)          | Source reviewed after lifecycle and configuration race fixes | Public-protocol, editor lifecycle and grammar tests remain unexecuted.                                          |
-| Typed metadata (06)         | Complete draft passed independent source review              | Identity, projection and GDSL fixes reviewed; compilation, lint and runtime tests remain unexecuted.            |
-| Compatibility oracle (02)   | Official roots and advertised checksums inspected            | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.              |
+| Evidence layer              | Executed result                                                                     | Scope / remaining gate                                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Server JSON-RPC             | 3 tests passed, no failures/errors/skips                                            | Actual framed client/server requests and responses correlate; complete lists contain 5, 5 and 11 items.         |
+| Native checks               | Root `lintFix`, server staging and diagnostic gate passed                           | Effective test worker: `-Xms256m -Xmx1g`, one fork; all normal commit hooks passed.                             |
+| VS Code integration         | 6 tests passed on 1.146.0                                                           | 3 provider captures plus 3 real suggest-widget acceptances; original baseline candidate hash checked.           |
+| Desktop widget              | Settled blank lists and partial entry inspected                                     | Both language modes showed five parameter names in the controlled host; original noisy list was not reproduced. |
+| Generic collection fix (03) | Actual-base fail-first; 27 targeted tests pass, no skips                            | Root `lintFix` and normal hooks pass; final publication-head review and CI remain.                              |
+| Snippet capabilities (04)   | Rebased source: both defects reproduced; 398 total (381 passed, 17 unchanged skips) | Root `lintFix`/`:gls:lint` pass; old-head CI 32 pass/3 skip; fresh review and CI pending.                       |
+| Document mode (05)          | Source reviewed after lifecycle and configuration race fixes                        | Public-protocol, editor lifecycle and grammar tests remain unexecuted.                                          |
+| Typed metadata (06)         | Complete draft passed independent source review                                     | Identity, projection and GDSL fixes reviewed; compilation, lint and runtime tests remain unexecuted.            |
+| Compatibility oracle (02)   | Official roots and advertised checksums inspected                                   | Complete transitive locks, artifact-byte verification and both boot/control suites remain pending.              |
 
 The verified behavior source is commit `e75a3983ae8c2cc19edd7b2530f7296543dccfdd`, based on
 `71f7318e9397cc133b4172c097636be80db36c67`. Its complete diff matches the independently reviewed patch. The native run
@@ -354,32 +354,32 @@ resolves to the nearly full T9 volume. No implementation gate is closed by writi
 The coordinator owns integration, publication-head validation, independent review, merge verification and cleanup. Each
 row's next action is to implement its change and satisfy the completion gate in section 3 after its dependencies.
 
-| Slice | Responsible scope                | State           | Evidence / next action                                                                                                              |
-| ----- | -------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 01    | Server/editor tests; coordinator | Merged          | #2028 / `cd59df608`; reviewed head, CI, merge and owned publication cleanup verified.                                               |
-| 02    | Extractor/oracle                 | Pending         | Lock both complete graphs; boot and validate controls.                                                                              |
-| 03    | Completion insertion             | Validated draft | Base `cd59df608`: generic-list RED, 27 targeted GREEN with no skips, root `lintFix` and hooks; final review/CI/publication pending. |
-| 04    | LSP capability negotiation       | Rebased validation pending | Pre-rebase 374d49ef: 395 tests, 17 existing skips; root lintFix/hooks and 32 CI checks passed (3 applicability skips). Re-run after rebase and review fixes. |
-| 05    | Document lifecycle/editor        | Draft           | Preserve language ID and test actual editor isolation.                                                                              |
-| 06    | Jenkins metadata                 | Reviewed draft  | Canonical candidates, provenance, legacy adaptation and guarded binding draft reviewed; compile/test/lint gates pending.            |
-| 07    | Declarative syntax view          | Pending         | Snapshot identity, UTF-16 ranges and recovery confidence.                                                                           |
-| 08    | Shared resolution/hover          | Pending         | Context-qualified calls with shadowing.                                                                                             |
-| 09    | Insertion/signature help         | Pending         | Required arguments and accepted-call signatures.                                                                                    |
-| 10    | Completion sites                 | Pending         | Exact candidate sets, siblings and cardinality.                                                                                     |
-| 11    | Declaration index                | Pending         | Unsaved scoped params/env members and navigation.                                                                                   |
-| 12    | Descriptor extraction            | Pending         | Deterministic graphs and custom fixture plugin.                                                                                     |
-| 13    | Offline profile loading          | Pending         | Atomic reload, precedence and exact last-good identity.                                                                             |
-| 14    | Agents                           | Pending         | All legal forms, including node child options.                                                                                      |
-| 15    | Options                          | Pending         | Pipeline/stage/matrix scopes and eligible wrappers.                                                                                 |
-| 16    | Conditions                       | Pending         | Typed arguments, outer flags and child cardinality.                                                                                 |
-| 17    | Libraries                        | Pending         | lib entries and preserved shared-library navigation.                                                                                |
-| 18    | Input/entries                    | Pending         | Scoped input parameters, triggers and tools.                                                                                        |
-| 19    | Parallel/matrix                  | Pending         | Containing-stage failFast and axis/exclusion structure.                                                                             |
-| 20    | Structure diagnostics            | Pending         | Independent positive/negative cases and stable codes/ranges.                                                                        |
-| 21    | Values/binding                   | Pending         | Literal edits and conservative known-model validation.                                                                              |
-| 22    | Target language                  | Pending         | Both exact compilers/converters; no execution claims.                                                                               |
-| 23    | Recovery/performance             | Pending         | Generations, cancellation, eviction and measured workloads.                                                                         |
-| 24    | Regeneration/package closure     | Pending         | Deterministic regeneration, actual packaged flow and audit closure.                                                                 |
+| Slice | Responsible scope                | State           | Evidence / next action                                                                                                                                 |
+| ----- | -------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 01    | Server/editor tests; coordinator | Merged          | #2028 / `cd59df608`; reviewed head, CI, merge and owned publication cleanup verified.                                                                  |
+| 02    | Extractor/oracle                 | Pending         | Lock both complete graphs; boot and validate controls.                                                                                                 |
+| 03    | Completion insertion             | Validated draft | Base `cd59df608`: generic-list RED, 27 targeted GREEN with no skips, root `lintFix` and hooks; final review/CI/publication pending.                    |
+| 04    | LSP capability negotiation       | Validated draft | Rebased e8523b1: both defects reproduced; 398 total (381 run, 0 fail/errors, 17 unchanged skips); `lintFix`/`:gls:lint` pass. Final review/CI pending. |
+| 05    | Document lifecycle/editor        | Draft           | Preserve language ID and test actual editor isolation.                                                                                                 |
+| 06    | Jenkins metadata                 | Reviewed draft  | Canonical candidates, provenance, legacy adaptation and guarded binding draft reviewed; compile/test/lint gates pending.                               |
+| 07    | Declarative syntax view          | Pending         | Snapshot identity, UTF-16 ranges and recovery confidence.                                                                                              |
+| 08    | Shared resolution/hover          | Pending         | Context-qualified calls with shadowing.                                                                                                                |
+| 09    | Insertion/signature help         | Pending         | Required arguments and accepted-call signatures.                                                                                                       |
+| 10    | Completion sites                 | Pending         | Exact candidate sets, siblings and cardinality.                                                                                                        |
+| 11    | Declaration index                | Pending         | Unsaved scoped params/env members and navigation.                                                                                                      |
+| 12    | Descriptor extraction            | Pending         | Deterministic graphs and custom fixture plugin.                                                                                                        |
+| 13    | Offline profile loading          | Pending         | Atomic reload, precedence and exact last-good identity.                                                                                                |
+| 14    | Agents                           | Pending         | All legal forms, including node child options.                                                                                                         |
+| 15    | Options                          | Pending         | Pipeline/stage/matrix scopes and eligible wrappers.                                                                                                    |
+| 16    | Conditions                       | Pending         | Typed arguments, outer flags and child cardinality.                                                                                                    |
+| 17    | Libraries                        | Pending         | lib entries and preserved shared-library navigation.                                                                                                   |
+| 18    | Input/entries                    | Pending         | Scoped input parameters, triggers and tools.                                                                                                           |
+| 19    | Parallel/matrix                  | Pending         | Containing-stage failFast and axis/exclusion structure.                                                                                                |
+| 20    | Structure diagnostics            | Pending         | Independent positive/negative cases and stable codes/ranges.                                                                                           |
+| 21    | Values/binding                   | Pending         | Literal edits and conservative known-model validation.                                                                                                 |
+| 22    | Target language                  | Pending         | Both exact compilers/converters; no execution claims.                                                                                                  |
+| 23    | Recovery/performance             | Pending         | Generations, cancellation, eviction and measured workloads.                                                                                            |
+| 24    | Regeneration/package closure     | Pending         | Deterministic regeneration, actual packaged flow and audit closure.                                                                                    |
 
 ## Audit closure ledger
 
