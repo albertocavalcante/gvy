@@ -26,6 +26,25 @@ class GradleFailureAnalyzerTest {
     }
 
     @Test
+    fun `JDK mismatch suggestions include known bounds and avoid guessing future JDKs`() {
+        val java11 = analyzer.extractGradleJdkIncompatibleInfo(
+            RuntimeException("Unsupported class file major version 55"),
+        )
+        assertNotNull(java11)
+        assertTrue(java11!!.suggestions.any { it.contains("excluding, 9.0") })
+        assertTrue(java11.suggestions.any { it.contains("does not establish the JVM") })
+        val status = analyzer.classifyException(RuntimeException("Unsupported class file major version 55"))
+        assertFalse(status.message.contains("incompatible with JDK 11"))
+
+        val future = analyzer.extractGradleJdkIncompatibleInfo(
+            RuntimeException("Unsupported class file major version 72"),
+        )
+        assertNotNull(future)
+        assertTrue(future!!.suggestions.any { it.contains("compatibility matrix") })
+        assertFalse(future.suggestions.any { it.contains("JDK 27 or earlier") })
+    }
+
+    @Test
     fun `should detect init script errors`() {
         val error = BuildException("Could not run build action using init script", null)
         assertTrue(analyzer.isInitScriptError(error), "Should detect init script error")

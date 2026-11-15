@@ -56,7 +56,7 @@ class GradleDependencyResolverTest {
         every { buildEnvironment.gradle.gradleVersion } returns "8.5"
 
         // Assume compatible
-        every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { compatibilityService.checkCompatibility(any(), any()) } returns GradleRuntimeSupport.SUPPORTED
         every { modelBuilder.get() } returns ideaProject
 
         // For relaxed or missing answers in failure analyzer
@@ -95,7 +95,7 @@ class GradleDependencyResolverTest {
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "7.3"
         // We expect check compatible to be called with 17
-        every { compatibilityService.isCompatible("7.3", 17) } returns true
+        every { compatibilityService.checkCompatibility("7.3", 17) } returns GradleRuntimeSupport.SUPPORTED
 
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
         every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
@@ -114,7 +114,7 @@ class GradleDependencyResolverTest {
         resolver.resolveDependencies(Paths.get("/tmp/project"))
 
         // Then
-        verify { compatibilityService.isCompatible("7.3", 17) }
+        verify { compatibilityService.checkCompatibility("7.3", 17) }
     }
 
     @Test
@@ -133,7 +133,7 @@ class GradleDependencyResolverTest {
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "6.8" // Compatible with 8
-        every { compatibilityService.isCompatible("6.8", 8) } returns true
+        every { compatibilityService.checkCompatibility("6.8", 8) } returns GradleRuntimeSupport.SUPPORTED
 
         val resolver = GradleDependencyResolver(
             connectionFactory = connectionFactory,
@@ -146,7 +146,7 @@ class GradleDependencyResolverTest {
         runCatching { resolver.resolveDependencies(Paths.get("/tmp/project")) }
 
         // Then
-        verify { compatibilityService.isCompatible("6.8", 8) }
+        verify { compatibilityService.checkCompatibility("6.8", 8) }
     }
 
     @Test
@@ -164,7 +164,7 @@ class GradleDependencyResolverTest {
         every { buildEnvironment.gradle.gradleVersion } returns "8.0"
 
         val runtimeVersion = Runtime.version().feature()
-        every { compatibilityService.isCompatible("8.0", runtimeVersion) } returns true
+        every { compatibilityService.checkCompatibility("8.0", runtimeVersion) } returns GradleRuntimeSupport.SUPPORTED
 
         val resolver = GradleDependencyResolver(
             connectionFactory = connectionFactory,
@@ -177,7 +177,7 @@ class GradleDependencyResolverTest {
         runCatching { resolver.resolveDependencies(Paths.get("/tmp/project")) }
 
         // Then
-        verify { compatibilityService.isCompatible("8.0", runtimeVersion) }
+        verify { compatibilityService.checkCompatibility("8.0", runtimeVersion) }
     }
 
     @Test
@@ -187,7 +187,7 @@ class GradleDependencyResolverTest {
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "8.5"
-        every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { compatibilityService.checkCompatibility(any(), any()) } returns GradleRuntimeSupport.SUPPORTED
         every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.get() } returns ideaProject
@@ -207,6 +207,28 @@ class GradleDependencyResolverTest {
     }
 
     @Test
+    fun `unknown compatibility permits model resolution`() {
+        every { connectionFactory.getConnection(any(), any()) } returns connection
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { connection.model(IdeaProject::class.java) } returns modelBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "10.0"
+        every { compatibilityService.checkCompatibility(any(), any()) } returns GradleRuntimeSupport.UNKNOWN
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
+        every { modelBuilder.get() } returns ideaProject
+
+        GradleDependencyResolver(
+            connectionFactory = connectionFactory,
+            compatibilityService = compatibilityService,
+            failureAnalyzer = failureAnalyzer,
+        ).resolveDependencies(Paths.get("/tmp/project"))
+
+        verify(exactly = 1) { modelBuilder.get() }
+        verify(exactly = 0) { compatibilityService.suggestFix(any(), any()) }
+    }
+
+    @Test
     fun `holds a lease on the connection for the whole resolution when the factory supports it`() {
         val leasing = mockk<LeasingConnectionFactory>()
         var released = false
@@ -215,7 +237,7 @@ class GradleDependencyResolverTest {
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "8.5"
-        every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { compatibilityService.checkCompatibility(any(), any()) } returns GradleRuntimeSupport.SUPPORTED
         every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.get() } returns ideaProject

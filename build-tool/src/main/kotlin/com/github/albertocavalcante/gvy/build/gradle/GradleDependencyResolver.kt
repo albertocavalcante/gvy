@@ -287,15 +287,21 @@ class GradleDependencyResolver(
         // If not, use the current runtime JDK.
         val jdkMajor = javaHome?.let { captureJavaMajorVersion(it) } ?: Runtime.version().feature()
 
-        if (!compatibilityService.isCompatible(gradleVersion, jdkMajor)) {
-            val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
-            logger.error { suggestion }
-            throw GradleJdkIncompatibleException(
-                suggestion ?: "JDK $jdkMajor is incompatible with Gradle $gradleVersion",
-            )
+        when (compatibilityService.checkCompatibility(gradleVersion, jdkMajor)) {
+            GradleRuntimeSupport.UNSUPPORTED -> {
+                val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
+                logger.error { suggestion }
+                throw GradleJdkIncompatibleException(
+                    suggestion ?: "JDK $jdkMajor is incompatible with Gradle $gradleVersion",
+                )
+            }
+            GradleRuntimeSupport.UNKNOWN -> logger.info {
+                "JDK/Gradle compatibility is unknown: Gradle $gradleVersion with JDK $jdkMajor"
+            }
+            GradleRuntimeSupport.SUPPORTED -> logger.debug {
+                "JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor"
+            }
         }
-
-        logger.debug { "JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor" }
     }
 
     /**
