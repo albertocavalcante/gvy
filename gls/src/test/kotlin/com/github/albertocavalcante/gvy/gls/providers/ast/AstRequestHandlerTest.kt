@@ -4,14 +4,20 @@
 package com.github.albertocavalcante.gvy.gls.providers.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
+import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
+import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import groovy.lang.GroovyClassLoader
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -26,14 +32,24 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import org.codehaus.groovy.control.CompilationUnit
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AstRequestHandlerTest {
@@ -320,6 +336,173 @@ class AstRequestHandlerTest {
         } finally {
             parsed.compilationUnit.classLoader.close()
             other.compilationUnit.classLoader.close()
+        }
+    }
+
+    enum class LoaderCompletion {
+        SUCCESS,
+        UNAVAILABLE_AST,
+        CONVERTER_FAILURE,
+        POST_PARSE_CANCELLATION,
+        STALE_SOURCE,
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(LoaderCompletion::class)
+    fun `AST releases only its owned transient loader for every completion path`(
+        completion: LoaderCompletion,
+        @TempDir directory: Path,
+    ): Unit = runTest {
+        val uri = URI("file:///LoaderFixture.groovy")
+        val source = "class LoaderFixture {}"
+        val requestOwner = SupervisorJob()
+        OwnedParseFixture(directory, javaClass.classLoader).use { fixture ->
+            val compiled = fixture.compile(uri, source)
+            val parsed = if (completion == LoaderCompletion.UNAVAILABLE_AST) compiled.copy(ast = null) else compiled
+            documents.put(uri, source, 1)
+            coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
+                if (completion == LoaderCompletion.POST_PARSE_CANCELLATION) requestOwner.cancel()
+                if (completion == LoaderCompletion.STALE_SOURCE) documents.update(uri, "class Edited {}", 2)
+                parsed
+            }
+            val conversionFailure = IllegalStateException("controlled projection failure")
+            every { coreConverter.convert(any(), source) } throws conversionFailure
+            val handler = AstRequestHandler(
+                compilationService,
+                coreConverter,
+                NativeAstConverter(),
+                documents,
+                CoroutineScope(coroutineContext + requestOwner),
+            )
+            try {
+                assertLoaderOutcome(completion, handler, uri, conversionFailure)
+                runCurrent()
+                fixture.assertReleased()
+            } finally {
+                requestOwner.cancel()
+            }
+        }
+    }
+
+    private suspend fun assertLoaderOutcome(
+        completion: LoaderCompletion,
+        handler: AstRequestHandler,
+        uri: URI,
+        conversionFailure: IllegalStateException,
+    ) {
+        val projection = if (completion == LoaderCompletion.CONVERTER_FAILURE) "core" else "native"
+        when (completion) {
+            LoaderCompletion.SUCCESS -> assertTrue(
+                handler.getAst(AstParams(uri.toString(), projection)).await().ast.isNotBlank(),
+            )
+            LoaderCompletion.UNAVAILABLE_AST,
+            LoaderCompletion.STALE_SOURCE,
+            -> {
+                val error = assertFailsWith<ResponseErrorException> {
+                    handler.getAst(AstParams(uri.toString(), projection)).await()
+                }
+                val expected = if (completion == LoaderCompletion.STALE_SOURCE) {
+                    ResponseErrorCode.ContentModified
+                } else {
+                    ResponseErrorCode.RequestFailed
+                }
+                assertEquals(expected.value, error.responseError.code)
+            }
+            LoaderCompletion.CONVERTER_FAILURE -> {
+                val error = assertFailsWith<IllegalStateException> {
+                    handler.getAst(AstParams(uri.toString(), projection)).await()
+                }
+                // Coroutine stacktrace recovery may copy the exception across the future boundary.
+                assertEquals(conversionFailure.message, error.message)
+            }
+            LoaderCompletion.POST_PARSE_CANCELLATION -> assertFailsWith<CancellationException> {
+                handler.getAst(AstParams(uri.toString(), projection)).await()
+            }
+        }
+    }
+
+    private class OwnedParseFixture(private val directory: Path, parent: ClassLoader) : AutoCloseable {
+        private val marker = UUID.randomUUID().toString()
+        private val ownedResource = "gvy-ast-owned-$marker.txt"
+        private val parentResource = "gvy-ast-parent-$marker.txt"
+        private val transformResource = "gvy-ast-transform-$marker.txt"
+        private val parentLoader = CountingLoader(parent)
+        private val transformLoader = CountingLoader(parent)
+        private val ownedLoader = CountingLoader(parentLoader)
+
+        fun compile(uri: URI, source: String): ParseResult {
+            addResource(parentLoader, "parent", parentResource)
+            addResource(transformLoader, "transform", transformResource)
+            addResource(ownedLoader, "owned", ownedResource)
+            val configuration = CompilerConfiguration()
+            AnalysisCompilerPolicy.apply(configuration)
+            val unit = CompilationUnit(configuration, null, ownedLoader, transformLoader)
+            val sourceUnit = unit.addSource(uri.path, source)
+            unit.compile(Phases.CANONICALIZATION)
+            assertSame(ownedLoader, unit.classLoader)
+            assertSame(transformLoader, unit.transformLoader)
+            assertEquals(Phases.CANONICALIZATION, sourceUnit.phase)
+            assertTrue(sourceUnit.isPhaseComplete)
+            assertEquals(0, ownedLoader.closes)
+            assertEquals(0, parentLoader.closes)
+            assertEquals(0, transformLoader.closes)
+            assertNotNull(ownedLoader.getResource(ownedResource))
+            assertNotNull(parentLoader.getResource(parentResource))
+            assertNotNull(transformLoader.getResource(transformResource))
+            val ast = assertNotNull(sourceUnit.ast)
+            assertSame(sourceUnit, ast.context)
+            val model = RecursiveAstVisitor(NodeRelationshipTracker())
+            model.visitModule(ast, uri)
+            val symbols = SymbolTable()
+            symbols.buildFromVisitor(model)
+            return ParseResult(
+                ast = ast,
+                compilationUnit = unit,
+                sourceUnit = sourceUnit,
+                diagnostics = emptyList(),
+                symbolTable = symbols,
+                astModel = model,
+                outcome = ParseOutcome(requestedPhase = Phases.CANONICALIZATION),
+            )
+        }
+
+        fun assertReleased() {
+            assertEquals(1, ownedLoader.closes, "The request-owned loader must close exactly once")
+            assertNull(ownedLoader.getResource(ownedResource), "Its own resource must no longer be reachable")
+            assertEquals(0, parentLoader.closes, "The parent is borrowed")
+            assertNotNull(parentLoader.getResource(parentResource))
+            assertEquals(0, transformLoader.closes, "The shared transform loader is borrowed")
+            assertNotNull(transformLoader.getResource(transformResource))
+        }
+
+        private fun addResource(loader: GroovyClassLoader, child: String, name: String) {
+            val root = Files.createDirectories(directory.resolve(child))
+            Files.writeString(root.resolve(name), "test resource")
+            loader.addClasspath(root.toString())
+            assertNotNull(loader.getResource(name), "Resource control must be live before dispatch")
+        }
+
+        override fun close() {
+            try {
+                if (ownedLoader.closes == 0) ownedLoader.close()
+            } finally {
+                try {
+                    transformLoader.close()
+                } finally {
+                    parentLoader.close()
+                }
+            }
+        }
+    }
+
+    private class CountingLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
+        var closes = 0
+            private set
+
+        override fun close() {
+            super.close()
+            closes++
         }
     }
 

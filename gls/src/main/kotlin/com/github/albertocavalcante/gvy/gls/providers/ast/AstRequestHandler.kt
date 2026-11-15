@@ -57,24 +57,26 @@ class AstRequestHandler(
         }
         currentCoroutineContext().ensureActive()
         val parsed = compilationService.compileTransient(uri, snapshot.content, Phases.CANONICALIZATION)
-        currentCoroutineContext().ensureActive()
-        requireCurrent(uri, snapshot)
-        val nativeAst = requireCanonicalAst(parsed, uri)
-        val astDto: AstNodeDto = when (parser) {
-            "core" -> coreConverter.convert(GroovyParser.convertFromNative(nativeAst), snapshot.content)
-            else -> nativeConverter.convert(nativeAst, snapshot.content)
+        parsed.compilationUnit.classLoader.use {
+            currentCoroutineContext().ensureActive()
+            requireCurrent(uri, snapshot)
+            val nativeAst = requireCanonicalAst(parsed, uri)
+            val astDto: AstNodeDto = when (parser) {
+                "core" -> coreConverter.convert(GroovyParser.convertFromNative(nativeAst), snapshot.content)
+                else -> nativeConverter.convert(nativeAst, snapshot.content)
+            }
+            val result = AstResult(
+                ast = Json.encodeToString<AstNodeDto>(astDto),
+                parser = requestedParser,
+                documentVersion = snapshot.version,
+                sourceHash = snapshot.contentHash,
+            )
+            currentCoroutineContext().ensureActive()
+            // This is the request's linearization point. Later edits must be rejected by the client using the
+            // returned identity; completing a future under the document lock could run arbitrary callbacks there.
+            requireCurrent(uri, snapshot)
+            result
         }
-        val result = AstResult(
-            ast = Json.encodeToString<AstNodeDto>(astDto),
-            parser = requestedParser,
-            documentVersion = snapshot.version,
-            sourceHash = snapshot.contentHash,
-        )
-        currentCoroutineContext().ensureActive()
-        // This is the request's linearization point. Later edits must be rejected by the client using the
-        // returned identity; completing a future under the document lock could run arbitrary callbacks there.
-        requireCurrent(uri, snapshot)
-        result
     }
 
     private fun requireCanonicalAst(parsed: ParseResult, uri: URI): ModuleNode {
