@@ -435,6 +435,7 @@ function createClientOptions(
   fileWatcher: vscode.FileSystemWatcher,
   outputChannel?: vscode.LogOutputChannel,
 ): LanguageClientOptions {
+  const pendingSessions = new Map<string, string[]>();
   const clientOptions: LanguageClientOptions = {
     // Register the server for Groovy and Jenkinsfile documents
     documentSelector: [
@@ -449,15 +450,53 @@ function createClientOptions(
     },
     initializationOptions: buildInitializationOptions(),
     middleware: {
-      didOpen: async (document, next) => {
-        const sessionId = analysisUi?.beginSession(document);
-        if (sessionId && client) {
-          await client.sendNotification("groovy/documentAnalysisSession", {
-            uri: toProtocolUri(document.uri.toString()),
-            sessionId,
-          });
+      didOpen: (document, next) => {
+        const experimental = client?.initializeResult?.capabilities
+          ?.experimental as { groovyDocumentAnalysis?: unknown } | undefined;
+        let queued: { uri: string; sessionId: string } | undefined;
+        if (experimental?.groovyDocumentAnalysis === true) {
+          const sessionId = analysisUi?.beginSession(document);
+          if (sessionId) {
+            const uri = toProtocolUri(document.uri.toString());
+            const queue = pendingSessions.get(uri) ?? [];
+            queue.push(sessionId);
+            pendingSessions.set(uri, queue);
+            queued = { uri, sessionId };
+          }
         }
-        await next(document);
+        return next(document).catch((error: unknown) => {
+          if (queued) {
+            const queue = pendingSessions.get(queued.uri);
+            const index = queue?.indexOf(queued.sessionId) ?? -1;
+            if (queue && index >= 0) queue.splice(index, 1);
+            if (queue?.length === 0) pendingSessions.delete(queued.uri);
+          }
+          throw error;
+        });
+      },
+      sendNotification: (type, next, params) => {
+        const method = typeof type === "string" ? type : type.method;
+        if (method !== "textDocument/didOpen") return next(type, params);
+        const uri = (params as { textDocument?: { uri?: unknown } } | undefined)
+          ?.textDocument?.uri;
+        if (typeof uri !== "string") {
+          pendingSessions.clear();
+          return next(type, params);
+        }
+        const queue = pendingSessions.get(uri);
+        const sessionId = queue?.shift();
+        if (queue?.length === 0) pendingSessions.delete(uri);
+        if (!sessionId) return next(type, params);
+        const sendSession = next as (
+          method: string,
+          payload: { uri: string; sessionId: string },
+        ) => Promise<void>;
+        const session = sendSession("groovy/documentAnalysisSession", {
+          uri,
+          sessionId,
+        });
+        const opened = next(type, params);
+        return Promise.all([session, opened]).then(() => {});
       },
     },
     outputChannel: outputChannel,

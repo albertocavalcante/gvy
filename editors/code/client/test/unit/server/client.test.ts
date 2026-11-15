@@ -34,6 +34,14 @@ interface FakeClientOptions {
       document: unknown,
       next: (document: unknown) => Promise<void>,
     ) => Promise<void>;
+    sendNotification: (
+      type: string | { method: string },
+      next: (
+        type: string | { method: string },
+        params?: unknown,
+      ) => Promise<void>,
+      params: unknown,
+    ) => Promise<void>;
   };
   outputChannel?: unknown;
   stdioOptions?: { stdout: (input: PassThrough, channel: unknown) => void };
@@ -185,23 +193,111 @@ describe("server/client lifecycle", () => {
     });
   });
 
-  it("sends the incarnation token before opening a document", async () => {
-    const events: string[] = [];
+  it("opens legacy documents immediately without a session notification", async () => {
     mod.setAnalysisUi({ setClient: () => {}, beginSession: () => "session-1" });
     await mod.startClient();
     const instance = FakeClient.instances[0];
-    instance.sendNotification.callsFake(async () => {
-      events.push("session");
-    });
+    const events: string[] = [];
     const document = { uri: { toString: () => "file:///a.groovy" } };
-    await instance.clientOptions.middleware!.didOpen(document, async () => {
-      events.push("open");
+    const pending = instance.clientOptions.middleware!.didOpen(
+      document,
+      async () => {
+        events.push("open");
+      },
+    );
+    assert.deepStrictEqual(events, ["open"]);
+    await pending;
+    assert.strictEqual(instance.sendNotification.callCount, 0);
+  });
+
+  it("enqueues each supported session and open before a later request", async () => {
+    let sequence = 0;
+    mod.setAnalysisUi({
+      setClient: () => {},
+      beginSession: () => `session-${++sequence}`,
     });
-    assert.deepStrictEqual(events, ["session", "open"]);
-    assert.deepStrictEqual(instance.sendNotification.firstCall.args, [
-      "groovy/documentAnalysisSession",
-      { uri: "file:///a.groovy", sessionId: "session-1" },
+    await mod.startClient();
+    const instance = FakeClient.instances[0];
+    instance.initializeResult = {
+      capabilities: { experimental: { groovyDocumentAnalysis: true } },
+    };
+    const middleware = instance.clientOptions.middleware!;
+    const document = { uri: { toString: () => "file:///a.groovy" } };
+    const open = { textDocument: { uri: "file:///a.groovy" } };
+    const gate = deferred();
+    const events: string[] = [];
+    const raw = (type: string | { method: string }, params?: unknown) => {
+      const method = typeof type === "string" ? type : type.method;
+      events.push(
+        method === "groovy/documentAnalysisSession"
+          ? (params as { sessionId: string }).sessionId
+          : method,
+      );
+      return method === "groovy/documentAnalysisSession"
+        ? gate.promise
+        : Promise.resolve();
+    };
+    const next = () =>
+      middleware.sendNotification(
+        { method: "textDocument/didOpen" },
+        raw,
+        open,
+      );
+    const first = middleware.didOpen(document, next);
+    events.push("request");
+    assert.deepStrictEqual(events, [
+      "session-1",
+      "textDocument/didOpen",
+      "request",
     ]);
+    gate.resolve();
+    await first;
+    await middleware.sendNotification(
+      { method: "textDocument/didClose" },
+      raw,
+      { textDocument: { uri: "file:///a.groovy" } },
+    );
+    await middleware.didOpen(document, next);
+    assert.deepStrictEqual(events.slice(-3), [
+      "textDocument/didClose",
+      "session-2",
+      "textDocument/didOpen",
+    ]);
+  });
+
+  it("discards an unforwarded session when opening fails", async () => {
+    let sequence = 0;
+    mod.setAnalysisUi({
+      setClient: () => {},
+      beginSession: () => `session-${++sequence}`,
+    });
+    await mod.startClient();
+    const instance = FakeClient.instances[0];
+    instance.initializeResult = {
+      capabilities: { experimental: { groovyDocumentAnalysis: true } },
+    };
+    const middleware = instance.clientOptions.middleware!;
+    const document = { uri: { toString: () => "file:///a.groovy" } };
+    await assert.rejects(
+      middleware.didOpen(document, async () => {
+        throw new Error("open failed");
+      }),
+    );
+    const sent: string[] = [];
+    const raw = async (type: string | { method: string }, params?: unknown) => {
+      const method = typeof type === "string" ? type : type.method;
+      sent.push(
+        method === "groovy/documentAnalysisSession"
+          ? (params as { sessionId: string }).sessionId
+          : method,
+      );
+    };
+    await middleware.didOpen(document, () =>
+      middleware.sendNotification({ method: "textDocument/didOpen" }, raw, {
+        textDocument: { uri: "file:///a.groovy" },
+      }),
+    );
+    assert.deepStrictEqual(sent, ["session-2", "textDocument/didOpen"]);
   });
 
   it("serializes restart behind an in-flight start (no second server)", async () => {
