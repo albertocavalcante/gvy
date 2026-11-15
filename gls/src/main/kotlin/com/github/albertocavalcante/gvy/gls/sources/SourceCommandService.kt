@@ -103,11 +103,12 @@ internal class SourceCommandService(
         } catch (_: IllegalArgumentException) {
             null
         } ?: return invalid("Choose a local source archive.")
+        val expectedSha256 = params.expectedSha256?.lowercase()
         if (params.expectedSha256 != null && !SHA256.matches(params.expectedSha256)) {
             return invalid("Expected source SHA-256 must contain 64 hexadecimal characters.")
         }
         return act(params.documentUri, params.position, params.documentVersion) { request ->
-            navigator.attachSource(request.symbol, request.context, source, params.expectedSha256)
+            navigator.attachSource(request.symbol, request.context, source, expectedSha256)
         }
     }
 
@@ -304,6 +305,6 @@ internal class SourceCommandService(
     )
 
     private companion object {
-        val SHA256 = Regex("[a-f0-9]{64}")
+        val SHA256 = Regex("[a-fA-F0-9]{64}")
     }
 }

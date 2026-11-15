@@ -303,8 +303,8 @@ class GroovyCompilationService internal constructor(
      * running when this returns is only wasted work, because its ticket belongs to the retired epoch.
      */
     private fun <T> workspaceTransition(
-        action: () -> T,
         shouldAdvanceGeneration: (T) -> Boolean = { true },
+        action: () -> T,
     ): T = workspaceCompiler.duringWorkspaceTransition(
         action = {
             try {

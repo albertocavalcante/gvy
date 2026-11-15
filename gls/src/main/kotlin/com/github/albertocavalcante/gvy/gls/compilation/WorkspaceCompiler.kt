@@ -101,7 +101,7 @@ class WorkspaceCompiler(
             } else {
                 compileFiles(workspaceSources, snapshot)
             }
-            if (transitionGate.isCurrent(snapshot, workspaceManager::current)) {
+            if (isCurrent(snapshot)) {
                 result = compiled
                 stable = true
                 break
@@ -216,7 +216,11 @@ class WorkspaceCompiler(
     }
 
     private fun removeClosed(uri: URI, ticket: ArtifactOwnership.Ticket, snapshot: WorkspaceModelTransitionGate.Snapshot) {
-        transitionGate.publishIfCurrent(snapshot, workspaceManager::current) {
+        transitionGate.publishIfCurrent(
+            snapshot,
+            workspaceManager::current,
+            hasSameInputs = WorkspaceModel::hasSameWorkspaceCompileInputs,
+        ) {
             ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
         }
     }
@@ -562,7 +566,11 @@ class WorkspaceCompiler(
             val prepared = semanticIndexer.preparePublication(
                 publication, content, module, parseResult.outcome.achievedPhase, fromBuffer = false,
             )
-            val published = transitionGate.publishIfCurrent(snapshot, workspaceManager::current) {
+            val published = transitionGate.publishIfCurrent(
+                snapshot,
+                workspaceManager::current,
+                hasSameInputs = WorkspaceModel::hasSameWorkspaceCompileInputs,
+            ) {
                 prepared?.let(semanticIndexer::commitPublication)
                 true
             } ?: false

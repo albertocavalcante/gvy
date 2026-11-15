@@ -305,6 +305,44 @@ class SourceBrowserServiceTest {
     }
 
     @Test
+    fun `target edit during final validation rejects stale declaration ranges`() = runBlocking {
+        val registry = ExternalSourceRegistry(temporary.resolve("registry"), virtualDocumentsEnabled = { true })
+        val uri = document(registry)
+        val target = document(registry, "package groovy.transform; enum TypeCheckingMode { STATIC }", "target")
+        val targetDigest = checkNotNull(registry.descriptor(target)).contentDigest
+        val validating = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val service = SourceBrowserService(parserScope, registry, {
+            SourceBrowserLookupSession(
+                locateType = { name ->
+                    SourceLookupResult.Located(
+                        target,
+                        name,
+                        SourceDefinition(SourceSpan(0, 0, 0, 48), SourceSpan(0, 28, 0, 44)),
+                        contentDigest = targetDigest,
+                    )
+                },
+                isCurrent = { true },
+                validateCurrent = {
+                    validating.complete(Unit)
+                    release.await()
+                    true
+                },
+            )
+        })
+        withTimeout(10_000) {
+            supervisorScope {
+                val pending = async { service.definition(uri, Position(0, content.indexOf("TypeCheckingMode"))) }
+                validating.await()
+                registry.changed(target)
+                release.complete(Unit)
+                val failure = assertFailsWith<ResponseErrorException> { pending.await() }
+                assertEquals(ResponseErrorCode.ContentModified.value, failure.responseError.code)
+            }
+        }
+    }
+
+    @Test
     fun `a qualified type package prefix cannot navigate to a competing same package type`() = runBlocking {
         val registry = ExternalSourceRegistry(temporary.resolve("registry"), virtualDocumentsEnabled = { true })
         val text = "package sample; class C { other.lib.Foo value; }"

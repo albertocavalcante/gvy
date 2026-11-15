@@ -670,6 +670,7 @@ internal fun metadataMatches(path: Path, expected: NativeArtifactStamp, checkCan
         path,
         maxPaths = if (expected.files == null) 1 else NativeArtifactStamp.MAX_DIRECTORY_PATHS,
         checkCancelled = checkCancelled,
+        maxContentBytes = NativeArtifactStamp.MAX_CONTENT_IDENTITY_BYTES,
         includeContentIdentity = false,
     ) == expected.copy(contentIdentity = null)
 

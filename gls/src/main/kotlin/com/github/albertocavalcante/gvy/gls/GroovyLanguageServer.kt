@@ -349,9 +349,10 @@ class GroovyLanguageServer(
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult(
             prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,
         )
-        initializeResult.capabilities.experimental = mapOf("groovySourceBrowser" to mapOf("version" to 1))
-
-        initializeResult.capabilities.experimental = mapOf("groovyDocumentAnalysis" to true)
+        initializeResult.capabilities.experimental = mapOf(
+            "groovySourceBrowser" to mapOf("version" to 1),
+            "groovyDocumentAnalysis" to true,
+        )
 
         implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
@@ -456,25 +457,27 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/sourceContent")
     fun sourceContent(params: SourceDocumentParams): CompletableFuture<SourceContentResult?> =
-        sourceBrowser.content(params)
+        guardCustomRequest { sourceBrowser.content(params) }
 
     @JsonRequest("groovy/sourceDefinition")
     fun sourceDefinition(params: SourceDefinitionParams): CompletableFuture<List<org.eclipse.lsp4j.LocationLink>> =
-        sourceBrowser.definition(params)
+        guardCustomRequest { sourceBrowser.definition(params) }
 
     @JsonRequest("groovy/sourceDetails")
     fun sourceDetails(params: SourceDocumentParams): CompletableFuture<SourceDetailsResult?> =
-        sourceBrowser.details(params)
+        guardCustomRequest { sourceBrowser.details(params) }
 
     @JsonRequest("groovy/sourceResolve")
     fun sourceResolve(params: SourceResolveParams): CompletableFuture<SourceResolveResult> =
-        sourceBrowser.resolve(params)
+        guardCustomRequest { sourceBrowser.resolve(params) }
 
     @JsonRequest("groovy/sourceAttach")
-    fun sourceAttach(params: SourceAttachParams): CompletableFuture<SourceResolveResult> = sourceBrowser.attach(params)
+    fun sourceAttach(params: SourceAttachParams): CompletableFuture<SourceResolveResult> =
+        guardCustomRequest { sourceBrowser.attach(params) }
 
     @JsonRequest("groovy/sourceIsManaged")
-    fun sourceIsManaged(params: SourceDocumentParams): CompletableFuture<Boolean> = sourceBrowser.isManaged(params)
+    fun sourceIsManaged(params: SourceDocumentParams): CompletableFuture<Boolean> =
+        guardCustomRequest { sourceBrowser.isManaged(params) }
 
     override fun getWorkspaceService(): WorkspaceService = workspaceService
 
@@ -531,6 +534,15 @@ class GroovyLanguageServer(
         !implementationRequestsReady ->
             ResponseError(ResponseErrorCode.ServerNotInitialized, "Server is not initialized", null)
         else -> null
+    }
+
+    private fun <T> guardCustomRequest(request: () -> CompletableFuture<T>): CompletableFuture<T> {
+        val error = customRequestLifecycleError()
+        return if (error == null) {
+            request()
+        } else {
+            CompletableFuture.failedFuture(ResponseErrorException(error))
+        }
     }
 
     @JsonRequest("groovy/prepareFileExecution")

@@ -100,6 +100,38 @@ class ManagedIndexExportTest {
         assertEquals(original, Files.readString(managedFile))
     }
 
+    @Test
+    fun `index export replaces hard link destination without truncating managed inode`() {
+        val managedFile = root.resolve("managed/Mode.groovy")
+        source(managedFile)
+        val original = Files.readString(managedFile)
+        val externalAlias = root.resolve("external.lsif")
+        try {
+            Files.createLink(externalAlias, managedFile)
+        } catch (exception: UnsupportedOperationException) {
+            assumeTrue(false, "Hard links are unsupported: $exception")
+        } catch (exception: IOException) {
+            assumeTrue(false, "Hard-link creation is unavailable: $exception")
+        } catch (exception: SecurityException) {
+            assumeTrue(false, "Hard-link creation is not permitted: $exception")
+        }
+        val registry = ExternalSourceRegistry(root.resolve("browser"), managedRoots = listOf(managedFile.parent))
+        val exporter = IndexExportService(
+            sourceExclusion = { registry.isManaged(it.toUri()) },
+            isManagedDestination = { registry.isManagedDestination(it.toUri()) },
+            buildToolManagerProvider = { null },
+        )
+
+        assertEquals(false, registry.isManagedDestination(externalAlias.toUri()))
+
+        exporter.exportIndex(ExportIndexParams(IndexFormat.LSIF, externalAlias.toString()), root)
+
+        assertEquals(original, Files.readString(managedFile))
+        assertTrue(Files.isSameFile(managedFile, externalAlias).not())
+        assertTrue(Files.isRegularFile(externalAlias))
+        assertTrue(documents(externalAlias).isEmpty())
+    }
+
     private fun documents(output: Path): List<String> = Files.readAllLines(output)
         .filter(String::isNotBlank)
         .map { Json.parseToJsonElement(it).jsonObject }

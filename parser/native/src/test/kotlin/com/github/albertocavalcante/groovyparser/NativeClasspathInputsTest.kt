@@ -71,6 +71,14 @@ class NativeClasspathInputsTest {
         assertTrue(request.sourcePathAdmission?.invoke(candidate) == true)
         val copied = request.copy(content = "class Example {}")
         assertTrue(copied.sourcePathAdmission?.invoke(candidate) == true)
+        assertTrue(
+            ParseRequest::class.java.declaredConstructors.any { constructor ->
+                constructor.parameterCount == 14 &&
+                    constructor.parameterTypes[12] == checkNotNull(Int::class.javaPrimitiveType) &&
+                    constructor.parameterTypes[13].name == "kotlin.jvm.internal.DefaultConstructorMarker"
+            },
+            "The original 12-parameter constructor's Kotlin default-argument entry point must remain present",
+        )
     }
 
     @Test

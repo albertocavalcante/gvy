@@ -70,6 +70,8 @@ internal class SourceAnnotationCapture(
         // Keep this borrowed table only until finish freezes the compiler-selected entries and discards it.
         if (request.parseMode == ParseMode.MINIMAL && request.workspaceClassLocator == null) {
             emptyMap()
+        } else if (locatorBuffers.isEmpty()) {
+            request.openSources
         } else {
             locatorBuffers + request.openSources
         },

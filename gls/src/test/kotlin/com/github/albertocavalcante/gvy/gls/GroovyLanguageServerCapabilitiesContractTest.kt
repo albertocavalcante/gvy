@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls
 
+import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentParams
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.ClientInfo
@@ -10,10 +11,14 @@ import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.TextDocumentSyncKind
 import org.eclipse.lsp4j.WorkspaceFolder
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
+import java.util.concurrent.ExecutionException
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -45,7 +50,9 @@ class GroovyLanguageServerCapabilitiesContractTest {
 
         val capabilities = result.capabilities
         assertNotNull(capabilities)
-        assertEquals(true, (capabilities.experimental as? Map<*, *>)?.get("groovyDocumentAnalysis"))
+        val experimental = capabilities.experimental as? Map<*, *>
+        assertEquals(true, experimental?.get("groovyDocumentAnalysis"))
+        assertEquals(mapOf("version" to 1), experimental?.get("groovySourceBrowser"))
 
         // Text document sync
         val syncKind = capabilities.textDocumentSync?.left
@@ -67,5 +74,32 @@ class GroovyLanguageServerCapabilitiesContractTest {
         val signatureHelp = capabilities.signatureHelpProvider
         assertNotNull(signatureHelp, "Signature help should be advertised when implemented.")
         assertEquals(listOf("(", ","), signatureHelp.triggerCharacters)
+    }
+
+    @Test
+    fun `source browser requests honor initialization and shutdown state`() {
+        val params = SourceDocumentParams("file:///workspace/Mode.groovy")
+        val beforeInitialization = assertFailsWith<ExecutionException> { server.sourceIsManaged(params).get() }
+        assertEquals(
+            ResponseErrorCode.ServerNotInitialized.value,
+            (beforeInitialization.cause as ResponseErrorException).responseError.code,
+        )
+
+        val workspaceRoot = Files.createTempDirectory("groovy-lsp-lifecycle")
+        server.initialize(
+            InitializeParams().apply {
+                processId = null
+                workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "lifecycle"))
+                capabilities = ClientCapabilities()
+            },
+        ).get()
+
+        val shutdown = server.shutdown()
+        val duringShutdown = assertFailsWith<ExecutionException> { server.sourceIsManaged(params).get() }
+        assertEquals(
+            ResponseErrorCode.InvalidRequest.value,
+            (duringShutdown.cause as ResponseErrorException).responseError.code,
+        )
+        shutdown.get()
     }
 }

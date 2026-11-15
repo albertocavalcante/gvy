@@ -354,7 +354,9 @@ class SourceNavigationService(
         )
         ensureOpen()
         val uri = runInterruptible(Dispatchers.IO) { sourcePresentation.register(descriptor) }
-        return definition?.let { SourceLookupResult.Located(uri, symbol.binaryName, it) }
+        return definition?.let {
+            SourceLookupResult.Located(uri, symbol.binaryName, it, contentDigest = source.contentDigest)
+        }
             ?: SourceLookupResult.FileOnly(uri, symbol.binaryName, MissingSourceReason.DECLARATION_NOT_LOCATED)
     }
 

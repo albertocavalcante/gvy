@@ -57,6 +57,7 @@ internal class SourceBrowserService(
                     reference.range,
                     isCurrent = session.isCurrent,
                     validateCurrent = session.validateCurrent,
+                    targetContentDigest = result.value.contentDigest,
                 )
             }
         }
@@ -107,7 +108,7 @@ internal class SourceBrowserService(
         data class Located(val value: SourceLookupResult.Located) : TierResult
     }
 
-    @Suppress("LongParameterList", "ThrowsCount") // Publication must recheck content and session in order.
+    @Suppress("LongParameterList", "ThrowsCount") // Publication must recheck source, target and session in order.
     private suspend fun currentLink(
         source: URI,
         target: URI,
@@ -115,12 +116,14 @@ internal class SourceBrowserService(
         origin: SourceSpan,
         isCurrent: () -> Boolean = { true },
         validateCurrent: suspend () -> Boolean = { true },
+        targetContentDigest: String? = null,
     ): List<LocationLink> {
         requireContent(source)
         if (!isCurrent()) throw staleContext()
         if (!validateCurrent()) throw staleContext()
         if (!isCurrent()) throw staleContext()
         requireContent(source)
+        targetContentDigest?.let { requireTargetContent(target, it) }
         return listOf(link(target, definition, origin))
     }
 
@@ -128,6 +131,14 @@ internal class SourceBrowserService(
         if (registry.content(uri) == null) {
             throw ResponseErrorException(
                 ResponseError(ResponseErrorCode.ContentModified, "Dependency source content changed", null),
+            )
+        }
+    }
+
+    private fun requireTargetContent(uri: URI, expectedDigest: String) {
+        if (registry.descriptor(uri)?.contentDigest != expectedDigest || registry.content(uri) == null) {
+            throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.ContentModified, "Dependency target content changed", null),
             )
         }
     }

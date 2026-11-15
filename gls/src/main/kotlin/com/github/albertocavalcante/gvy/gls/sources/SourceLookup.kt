@@ -8,7 +8,12 @@ import java.net.URI
 import java.nio.file.Path
 
 sealed interface SourceLookupResult {
-    data class Located(val uri: URI, val binaryName: String, val definition: SourceDefinition) : SourceLookupResult
+    data class Located(
+        val uri: URI,
+        val binaryName: String,
+        val definition: SourceDefinition,
+        val contentDigest: String? = null,
+    ) : SourceLookupResult
     data class FileOnly(val uri: URI, val binaryName: String, val reason: MissingSourceReason) : SourceLookupResult
     data class Unavailable(val reason: MissingSourceReason) : SourceLookupResult
     data class Failed(val failure: SourceFailure) : SourceLookupResult

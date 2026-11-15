@@ -65,13 +65,13 @@ class SourceCommandServiceTest {
     @Test
     fun `attachment passes the selected local archive and digest without granting downloads`(): Unit = runBlocking {
         withCommands { fixture ->
-            val request = attach().copy(expectedSha256 = "a".repeat(64))
+            val request = attach().copy(expectedSha256 = "A".repeat(64))
 
             fixture.commands.attach(request)
 
             val call = fixture.navigator.calls.single()
             assertEquals(root.resolve("sources.jar"), call.attachment)
-            assertEquals(request.expectedSha256, call.sha256)
+            assertEquals(request.expectedSha256?.lowercase(), call.sha256)
             assertEquals(SourceLookupPolicy.LOCAL_ONLY, call.policy)
             assertEquals("groovy.transform.CompileStatic", call.symbol.binaryName)
         }

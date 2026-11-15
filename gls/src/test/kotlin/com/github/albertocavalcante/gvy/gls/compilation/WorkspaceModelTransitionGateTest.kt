@@ -8,11 +8,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -74,5 +76,38 @@ class WorkspaceModelTransitionGateTest {
         gate.transition(action = { false }, shouldAdvanceGeneration = { it })
 
         assertTrue(gate.isCurrent(snapshot, { equivalent }, WorkspaceModel::hasSameWorkspaceCompileInputs))
+        assertNull(
+            gate.publishIfCurrent(snapshot, { equivalent }) { true },
+            "Default publication remains identity-based",
+        )
+        assertTrue(
+            gate.publishIfCurrent(snapshot, { equivalent }, WorkspaceModel::hasSameWorkspaceCompileInputs) { true } == true,
+        )
+        val changed = WorkspaceModel(null, listOf(Path.of("dependency.jar")), emptyList(), emptyList()) { _, _ -> "test" }
+        assertNull(gate.publishIfCurrent(snapshot, { changed }, WorkspaceModel::hasSameWorkspaceCompileInputs) { true })
+    }
+
+    @Test
+    fun `equivalent inputs cannot publish across an active transition or retired generation`(): Unit = runTest {
+        val gate = WorkspaceModelTransitionGate()
+        val model = WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "test" }
+        val snapshot = gate.awaitSnapshot { model }
+        val equivalent = WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "test" }
+        var published = false
+
+        gate.transition {
+            assertNull(
+                gate.publishIfCurrent(snapshot, { equivalent }, WorkspaceModel::hasSameWorkspaceCompileInputs) {
+                    published = true
+                },
+            )
+        }
+
+        assertNull(
+            gate.publishIfCurrent(snapshot, { equivalent }, WorkspaceModel::hasSameWorkspaceCompileInputs) {
+                published = true
+            },
+        )
+        assertFalse(published)
     }
 }

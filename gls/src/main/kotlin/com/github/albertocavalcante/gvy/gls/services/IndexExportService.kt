@@ -19,10 +19,13 @@ import com.github.albertocavalcante.gvy.gls.utils.sourceExclusionForRoot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.extension
 import kotlin.io.path.name
@@ -42,29 +45,54 @@ class IndexExportService(
         if (requestedOutput.any { it.toString() == ".." }) {
             throw IOException("Cannot export index through a parent-directory path: ${params.outputPath}")
         }
-        val output = requestedOutput.toAbsolutePath().normalize()
+        val normalizedOutput = requestedOutput.toAbsolutePath().normalize()
+        val parent = normalizedOutput.parent?.toRealPath()
+            ?: throw IOException("Cannot export index without an existing parent directory: $normalizedOutput")
+        val fileName = normalizedOutput.fileName
+            ?: throw IOException("Cannot export index to a directory: $normalizedOutput")
+        val output = parent.resolve(fileName)
         if (isManagedDestination(output)) {
             throw IOException("Cannot export index to a managed source path: $output")
         }
 
-        FileOutputStream(output.toFile()).use { fileOutputStream ->
-            val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
+        val temporary = Files.createTempFile(parent, ".${output.fileName}.", ".tmp")
+        try {
+            FileOutputStream(temporary.toFile()).use { fileOutputStream ->
+                val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
 
-            val buildToolManager = buildToolManagerProvider()
-            val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
-            val manager = buildTool?.name?.lowercase() ?: "manual"
-            val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
-            val indexer = UnifiedIndexer(writers, symbolGenerator)
+                val buildToolManager = buildToolManagerProvider()
+                val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
+                val manager = buildTool?.name?.lowercase() ?: "manual"
+                val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
+                val indexer = UnifiedIndexer(writers, symbolGenerator)
 
-            try {
-                indexFiles(workspaceRoot, indexer)
-            } finally {
-                // Explicitly close writers to flush footers
-                writers.forEach { it.close() }
+                try {
+                    indexFiles(workspaceRoot, indexer)
+                } finally {
+                    // Explicitly close writers to flush footers
+                    writers.forEach { it.close() }
+                }
             }
+
+            if (isManagedDestination(output)) {
+                throw IOException("Cannot export index to a managed source path: $output")
+            }
+            replaceExport(output, temporary)
+        } finally {
+            Files.deleteIfExists(temporary)
         }
 
         return "Successfully exported ${params.format} index to ${params.outputPath}"
+    }
+
+    private fun replaceExport(output: Path, temporary: Path) {
+        try {
+            Files.move(temporary, output, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: FileAlreadyExistsException) {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     private fun createWriters(format: IndexFormat, outputStream: FileOutputStream, root: Path): List<IndexWriter> =

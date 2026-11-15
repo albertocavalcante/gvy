@@ -94,7 +94,37 @@ data class ParseRequest(
      */
     val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
     /** Fresh path check for implicitly discovered sources; copied with the rest of the parse request. */
-    val sourcePathAdmission: ((Path) -> Boolean)? = null,
+    val sourcePathAdmission: ((Path) -> Boolean)?,
 ) {
+    /** Keeps the original source constructor shape, with [workspaceClassLocator] as the trailing lambda. */
+    constructor(
+        uri: URI,
+        content: String,
+        classpath: List<Path> = emptyList(),
+        sourceRoots: List<Path> = emptyList(),
+        workspaceSources: List<Path> = emptyList(),
+        openSources: Map<URI, String> = emptyMap(),
+        excludedSources: Set<Path> = emptySet(),
+        locatorCandidates: Set<String> = emptySet(),
+        compilePhase: Int = Phases.CONVERSION,
+        parseMode: ParseMode = ParseMode.WORKSPACE,
+        checkCancelled: () -> Unit = {},
+        workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
+    ) : this(
+        uri,
+        content,
+        classpath,
+        sourceRoots,
+        workspaceSources,
+        openSources,
+        excludedSources,
+        locatorCandidates,
+        compilePhase,
+        parseMode,
+        checkCancelled,
+        workspaceClassLocator,
+        null,
+    )
+
     val sourceUnitName: String = uri.path ?: uri.toString()
 }

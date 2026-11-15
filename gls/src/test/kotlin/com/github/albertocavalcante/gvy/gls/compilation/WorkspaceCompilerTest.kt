@@ -31,6 +31,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -101,6 +102,105 @@ class WorkspaceCompilerTest {
         compiler.compileWorkspace()
 
         assertNull(index.getDocument(file.toUri()), "in-flight results must not undo cache invalidation")
+    }
+
+    @Test
+    fun `equivalent model replacement during every parse does not restart workspace compilation`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Equivalent.groovy").apply { writeText("class Equivalent {}") }
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val worker = mockk<WorkerSessionManager>()
+        lateinit var compiler: WorkspaceCompiler
+        val parses = AtomicInteger()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parses.incrementAndGet()
+            val before = workspaceManager.current()
+            compiler.duringWorkspaceTransition(
+                action = { workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src)) },
+                shouldAdvanceGeneration = { it },
+            ).also { changed -> assertFalse(changed) }
+            assertNotSame(before, workspaceManager.current())
+            result
+        }
+        compiler = WorkspaceCompiler(worker, workspaceManager, SemanticIndexer(index))
+
+        val result = compiler.compileWorkspace()
+
+        assertTrue(result.success, result.errors.toString())
+        assertEquals(1, parses.get(), "Equivalent inputs must not consume model or admission retries")
+        assertNotNull(index.getDocument(file.toUri()))
+    }
+
+    @Test
+    fun `disk refresh publishes new content after an equivalent model replacement`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Refreshed.groovy").apply { writeText("class Refreshed {}") }
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val worker = mockk<WorkerSessionManager>()
+        lateinit var compiler: WorkspaceCompiler
+        val replaceModel = AtomicBoolean()
+        val parses = AtomicInteger()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parses.incrementAndGet()
+            if (replaceModel.get()) {
+                val before = workspaceManager.current()
+                compiler.duringWorkspaceTransition(
+                    action = { workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src)) },
+                    shouldAdvanceGeneration = { it },
+                ).also { changed -> assertFalse(changed) }
+                assertNotSame(before, workspaceManager.current())
+            }
+            result
+        }
+        compiler = WorkspaceCompiler(worker, workspaceManager, indexer)
+        assertTrue(compiler.compileWorkspace().success)
+        val updated = "class Refreshed { String current }"
+        file.writeText(updated)
+        replaceModel.set(true)
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertTrue(indexer.isCurrent(file.toUri(), updated), "Refresh must replace the old semantic content")
+        assertEquals(2, parses.get(), "The initial compile and refresh each parse once")
+    }
+
+    @Test
+    fun `disk refresh removes deleted facts after an equivalent model replacement`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Deleted.groovy").apply { writeText("class Deleted {}") }
+        var onAdmission: (java.nio.file.Path) -> Unit = {}
+        val manager = WorkspaceManager(sourceExclusion = { path ->
+            onAdmission(path)
+            false
+        })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val compiler = WorkspaceCompiler(workerSessionManager, manager, SemanticIndexer(index))
+        assertTrue(compiler.compileWorkspace().success)
+        assertNotNull(index.getDocument(file.toUri()))
+        val before = manager.current()
+        onAdmission = { path ->
+            if (path == file) {
+                onAdmission = {}
+                compiler.duringWorkspaceTransition(
+                    action = { manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src)) },
+                    shouldAdvanceGeneration = { it },
+                ).also { changed -> assertFalse(changed) }
+                // Delete after the equivalent replacement, before refresh reads this source.
+                Files.delete(file)
+            }
+        }
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertNotSame(before, manager.current())
+        assertTrue(before.hasSameWorkspaceCompileInputs(manager.current()))
+        assertNull(index.getDocument(file.toUri()), "A no-op model update must not prevent stale fact removal")
     }
 
     @Test

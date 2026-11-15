@@ -52,22 +52,24 @@ class WorkspaceSymbolIndex(
      * a DB mutation copies declaration indexes; later captures reuse them, while each call copies [hiddenUris].
      */
     fun captureMembers(hiddenUris: Set<URI>): MemberLookup {
+        val ready = isReady
         val current = readPermit() ?: { false }
         return FrozenWorkspaceMemberLookup(
             semanticDb.snapshotDeclarations(),
             Collections.unmodifiableSet(hiddenUris.toSet()),
-        ) { isReady() && current() }
+        ) { ready() && current() }
     }
 
     internal fun captureMemberSnapshot(hiddenUris: Set<URI>): CapturedWorkspaceMembers {
+        val ready = isReady
         val current = readPermit() ?: { false }
         val snapshot = semanticDb.snapshotDeclarations()
         val lookup = FrozenWorkspaceMemberLookup(snapshot, Collections.unmodifiableSet(hiddenUris.toSet())) {
-            isReady() && current()
+            ready() && current()
         }
         val database = WeakReference(semanticDb)
         return CapturedWorkspaceMembers(lookup) {
-            isReady() && current() && database.get()?.isCurrentDeclarationSnapshot(snapshot) == true
+            ready() && current() && database.get()?.isCurrentDeclarationSnapshot(snapshot) == true
         }
     }
 

@@ -83,9 +83,17 @@ internal class WorkspaceModelTransitionGate {
         currentModel: () -> WorkspaceModel,
         hasSameInputs: (WorkspaceModel, WorkspaceModel) -> Boolean = { expected, current -> expected === current },
     ): Boolean = synchronized(monitor) {
+        isCurrentUnderLock(snapshot, currentModel, hasSameInputs)
+    }
+
+    private fun isCurrentUnderLock(
+        snapshot: Snapshot,
+        currentModel: () -> WorkspaceModel,
+        hasSameInputs: (WorkspaceModel, WorkspaceModel) -> Boolean,
+    ): Boolean =
         transition == null && failure == null && snapshot.generation == generation &&
             currentModel().let { current -> current === snapshot.model || hasSameInputs(snapshot.model, current) }
-    }
+
     fun isReady(): Boolean = synchronized(monitor) { transition == null && failure == null }
 
     /** A permit is invalidated at the start of every transition, including no-op transitions. */
@@ -96,15 +104,18 @@ internal class WorkspaceModelTransitionGate {
         current
     }
 
-    /** Runs a short publication while a transition cannot begin. */
-    fun <T> publishIfCurrent(snapshot: Snapshot, currentModel: () -> WorkspaceModel, action: () -> T): T? =
+    /** Runs a short publication while a transition cannot begin; [hasSameInputs] must be pure. */
+    fun <T> publishIfCurrent(
+        snapshot: Snapshot,
+        currentModel: () -> WorkspaceModel,
+        hasSameInputs: (WorkspaceModel, WorkspaceModel) -> Boolean = { expected, current -> expected === current },
+        action: () -> T,
+    ): T? =
         synchronized(monitor) {
-            if (transition != null || failure != null || snapshot.generation != generation ||
-                currentModel() !== snapshot.model
-            ) {
-                null
-            } else {
+            if (isCurrentUnderLock(snapshot, currentModel, hasSameInputs)) {
                 action()
+            } else {
+                null
             }
         }
 
