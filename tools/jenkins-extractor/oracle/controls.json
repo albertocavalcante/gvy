@@ -1,0 +1,42 @@
+[
+  {
+    "id": "minimal",
+    "file": "minimal.Jenkinsfile",
+    "expected": "accepted"
+  },
+  {
+    "id": "docker",
+    "file": "docker.Jenkinsfile",
+    "expected": "accepted"
+  },
+  {
+    "id": "kubernetes",
+    "file": "kubernetes.Jenkinsfile",
+    "expected": "accepted"
+  },
+  {
+    "id": "missing-agent",
+    "file": "missing-agent.Jenkinsfile",
+    "expected": "rejected"
+  },
+  {
+    "id": "unknown-section",
+    "file": "unknown-section.Jenkinsfile",
+    "expected": "rejected"
+  },
+  {
+    "id": "malformed",
+    "file": "malformed.Jenkinsfile",
+    "expected": "rejected"
+  },
+  {
+    "id": "scripted",
+    "file": "scripted.Jenkinsfile",
+    "expected": "missing-pipeline"
+  },
+  {
+    "id": "never-execute",
+    "file": "never-execute.Jenkinsfile",
+    "expected": "accepted"
+  }
+]
