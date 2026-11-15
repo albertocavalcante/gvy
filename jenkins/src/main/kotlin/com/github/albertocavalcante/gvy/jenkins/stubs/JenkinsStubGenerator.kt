@@ -52,9 +52,14 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
 
     private fun cpsScript(metadata: MergedJenkinsMetadata): String {
         val methodStubs = StringBuilder()
+        val signatures = mutableSetOf(
+            "pipeline" to listOf("Closure"),
+            "methodMissing" to listOf("String", "Object"),
+            "propertyMissing" to listOf("String"),
+        )
 
         metadata.steps.values.sortedBy { it.name }.forEach { step ->
-            generateStepMethods(step, methodStubs)
+            generateStepMethods(step, methodStubs, signatures)
         }
 
         return """
@@ -84,34 +89,47 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
         """.trimIndent()
     }
 
-    private fun generateStepMethods(step: MergedStepMetadata, builder: StringBuilder) {
-        val name = step.name
+    private fun generateStepMethods(
+        step: MergedStepMetadata,
+        builder: StringBuilder,
+        signatures: MutableSet<Pair<String, List<String>>>,
+    ) {
+        // Quoted Groovy method names preserve keywords as method names. Escape metadata as a literal,
+        // since not every metadata source passes through the GDSL identifier validator.
+        val name = "'" + step.name.replace("\\", "\\\\").replace("'", "\\'")
+            .replace("\n", "\\n").replace("\r", "\\r") + "'"
         val hasBody = step.namedParams.containsKey("body")
         val positionalParams = step.positionalParams
+        fun appendMethod(parameters: List<Pair<String, String>>) {
+            if (!signatures.add(step.name to parameters.map { it.first })) return
+            val declaration = parameters.joinToString(", ") { (type, parameter) -> "$type $parameter" }
+            builder.append("\n    def $name($declaration) {}")
+        }
 
         // 1. Map-based variant: step(name: 'foo', ...)
-        builder.append("\n    def $name(Map args) {}")
+        appendMethod(listOf("Map" to "args"))
 
         if (hasBody) {
             // 2. Map + Body variant: step(name: 'foo') { ... }
-            builder.append("\n    def $name(Map args, Closure body) {}")
+            appendMethod(listOf("Map" to "args", "Closure" to "body"))
 
             // 3. Body-only variant: step { ... } (common for block steps like timeout, parallel, etc)
-            builder.append("\n    def $name(Closure body) {}")
+            appendMethod(listOf("Closure" to "body"))
         }
 
         // 4. Positional variants: step('foo') or step('foo') { ... }
         if (positionalParams.isNotEmpty()) {
-            val typedParams = positionalParams.map { paramName ->
+            val typedParams = positionalParams.mapIndexed { index, paramName ->
                 val type = step.namedParams[paramName]?.type ?: "Object"
-                // Simplify type to Object if complex, or keep simple types
-                if (type.contains(".")) "Object $paramName" else "$type $paramName"
-            }.joinToString(", ")
+                // Metadata names can be Groovy keywords or collide with the generated closure parameter.
+                val stubType = if (type.contains(".")) "Object" else type
+                stubType to "arg$index"
+            }
 
-            builder.append("\n    def $name($typedParams) {}")
+            appendMethod(typedParams)
 
             if (hasBody) {
-                builder.append("\n    def $name($typedParams, Closure body) {}")
+                appendMethod(typedParams + ("Closure" to "body"))
             }
         }
     }
