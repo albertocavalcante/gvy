@@ -13,14 +13,14 @@ internal enum class SourcePathAdmission { ORDINARY, MANAGED, UNAVAILABLE }
 /** Explicit admission-time I/O. A new file is classified through its nearest existing ancestor. */
 internal fun classifySourcePath(path: Path, excluded: (Path) -> Boolean): SourcePathAdmission {
     val raw = path.toAbsolutePath()
-    // Normalizing a parent segment can change its meaning across a symbolic link.
-    if (raw.any { it.toString() == ".." }) return SourcePathAdmission.UNAVAILABLE
     val absolute = raw.normalize()
     if (excluded(absolute)) return SourcePathAdmission.MANAGED
     return try {
-        val physical = resolveSourcePath(absolute)
+        val physical = resolveSourcePath(raw)
         when {
             physical == null -> SourcePathAdmission.UNAVAILABLE
+            raw.any { it.toString() == ".." } && physical != resolveSourcePath(absolute) ->
+                SourcePathAdmission.UNAVAILABLE
             excluded(physical) -> SourcePathAdmission.MANAGED
             else -> SourcePathAdmission.ORDINARY
         }
@@ -34,6 +34,8 @@ internal fun classifySourcePath(path: Path, excluded: (Path) -> Boolean): Source
 /** Resolve missing descendants without interpreting a dangling link as an ordinary new path. */
 private fun resolveSourcePath(absolute: Path): Path? {
     return try {
+        // Missing paths with parent segments cannot safely be reconstructed lexically.
+        if (absolute.any { it.toString() == ".." } && !Files.exists(absolute)) return null
         var existing = absolute
         val missing = ArrayDeque<Path>()
         var resolved = realPathOrMissing(existing)

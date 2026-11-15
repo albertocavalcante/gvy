@@ -48,6 +48,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -308,6 +309,24 @@ class ManagedSourceDocumentServiceTest {
         service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(missing.toString(), "groovy", 1, "class New {}")))
         assertFalse(registry.isManaged(missing))
         service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(missing.toString())))
+        assertEquals(listOf("didOpen", "didClose"), calls)
+    }
+
+    @Test
+    fun `ordinary close reaches delegate when source cache initialization fails`() {
+        val cache = temporary.resolve("unavailable-cache")
+        val registry = ExternalSourceRegistry(cache, managedRoots = emptyList())
+        val calls = mutableListOf<String>()
+        val service = ManagedSourceDocumentService(
+            delegate(calls), registry, sourceDefinitions = { CompletableFuture.completedFuture(emptyList()) },
+        )
+        val uri = temporary.resolve("Ordinary.groovy").toUri().toString()
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, "class Ordinary {}")))
+        Files.writeString(cache, "not a directory")
+
+        assertFailsWith<java.io.IOException> {
+            service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(uri)))
+        }
         assertEquals(listOf("didOpen", "didClose"), calls)
     }
 

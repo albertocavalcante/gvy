@@ -34,27 +34,50 @@ class PortableSourcePresentation(
     private val presentations = linkedMapOf<PresentationKey, Path>()
     private val openViews = mutableMapOf<URI, OpenView>()
 
-    override fun register(descriptor: SourceDocumentDescriptor): URI {
+    override fun register(descriptor: SourceDocumentDescriptor): URI = registerAndCommit(descriptor) { }
+
+    /** Keep creation and metadata publication under the view admission lock across registry instances. */
+    internal fun registerAndCommit(descriptor: SourceDocumentDescriptor, commit: (URI) -> Unit): URI {
         verifyFileDigest(descriptor.contentPath, descriptor.contentDigest, MAX_PRESENTED_SOURCE_BYTES)
         val key = PresentationKey(
             identity = sourceDigest(SourceDescriptorCodec.identity(descriptor)),
             context = descriptor.context.id,
             source = descriptor.sourceDigest,
         )
-        val previous = synchronized(monitor) { presentations[key] }
-        if (previous != null && canReuse(previous, descriptor.contentDigest)) return previous.toUri()
-
         return withSourceDiskAdmissionOrReuse(
             directory,
             maxViewBytes,
             MAX_PRESENTED_SOURCE_BYTES,
             reuse = {
                 findReusableView(descriptor, key)?.also { path ->
+                    commit(path.toUri())
                     synchronized(monitor) { putPresentation(key, path) }
                 }?.toUri()
             },
         ) {
-            createView(descriptor, key)
+            val uri = createView(descriptor, key)
+            try {
+                commit(uri)
+                uri
+            } catch (failure: Throwable) {
+                try {
+                    rollbackNewView(uri, key, descriptor.contentDigest)
+                } catch (rollbackFailure: Exception) {
+                    failure.addSuppressed(rollbackFailure)
+                }
+                throw failure
+            }
+        }
+    }
+
+    private fun rollbackNewView(uri: URI, key: PresentationKey, digest: String) {
+        val path = Path.of(uri)
+        synchronized(monitor) {
+            // An editor may already have opened or changed the file; never remove its work.
+            if (uri in openViews || !isUnmodified(path, digest)) return
+            Files.deleteIfExists(path)
+            Files.deleteIfExists(path.parent)
+            if (presentations[key] == path) presentations.remove(key)
         }
     }
 
@@ -81,8 +104,14 @@ class PortableSourcePresentation(
         val parent = viewParent(descriptor, key)
         if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) return null
         ensureManagedDirectory(parent)
-
         val stablePrefix = "view-${viewStem(key, descriptor.contentDigest)}-"
+        val (stableViews, legacyViews) = collectViewCandidates(parent, stablePrefix)
+        val fileName = descriptor.entryName.substringAfterLast('/')
+        return findReusableCandidate(stableViews, fileName, descriptor, false)
+            ?: findReusableCandidate(legacyViews, fileName, descriptor, true)
+    }
+
+    private fun collectViewCandidates(parent: Path, stablePrefix: String): Pair<List<Path>, List<Path>> {
         val stableViews = mutableListOf<Pair<Int, Path>>()
         val legacyViews = mutableListOf<Path>()
         Files.list(parent).use { entries ->
@@ -98,20 +127,20 @@ class PortableSourcePresentation(
                 }
             }
         }
+        return stableViews.sortedBy { it.first }.map { it.second } to legacyViews
+    }
 
-        val fileName = descriptor.entryName.substringAfterLast('/')
-        for (view in stableViews.sortedBy { it.first }.map { it.second }) {
-            requireViewDirectory(view)
-            val candidate = view.resolve(fileName)
-            if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS) && canReuse(candidate, descriptor.contentDigest)) {
-                return candidate
-            }
-        }
-        for (view in legacyViews) {
+    private fun findReusableCandidate(
+        views: List<Path>,
+        fileName: String,
+        descriptor: SourceDocumentDescriptor,
+        requirePersisted: Boolean,
+    ): Path? {
+        for (view in views) {
             requireViewDirectory(view)
             val candidate = view.resolve(fileName)
             if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS) &&
-                isPersistedView(candidate.toUri(), descriptor) &&
+                (!requirePersisted || isPersistedView(candidate.toUri(), descriptor)) &&
                 canReuse(candidate, descriptor.contentDigest)
             ) {
                 return candidate
@@ -195,8 +224,14 @@ class PortableSourcePresentation(
     private fun hasSafeManagedAncestors(path: Path): Boolean {
         val absolute = path.toAbsolutePath().normalize()
         if (!absolute.startsWith(directory)) throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
-        val parent = absolute.parent ?: return false
-        var current = absolute.root ?: return false
+        val parent = absolute.parent
+        val root = absolute.root
+        if (parent == null || root == null) return false
+        return safeDirectoryChain(root, parent) && Files.exists(absolute, LinkOption.NOFOLLOW_LINKS)
+    }
+
+    private fun safeDirectoryChain(root: Path, parent: Path): Boolean {
+        var current = root
         for (part in parent) {
             current = current.resolve(part)
             if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) return false
@@ -204,7 +239,7 @@ class PortableSourcePresentation(
                 throw SourceStoreException(SourceFailure.UNSAFE_ARCHIVE)
             }
         }
-        return Files.exists(absolute, LinkOption.NOFOLLOW_LINKS)
+        return true
     }
 
     private fun copyVerifiedContent(descriptor: SourceDocumentDescriptor, temporary: Path) {

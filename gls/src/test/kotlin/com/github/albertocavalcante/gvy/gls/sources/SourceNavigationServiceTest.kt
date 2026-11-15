@@ -11,7 +11,9 @@ import com.github.albertocavalcante.gvy.build.VerifiedSourceArtifactResult
 import com.github.javaparser.JavaParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
@@ -294,6 +296,47 @@ class SourceNavigationServiceTest {
             assertEquals(1L, navigation.getStatistics()["declarationInspections"])
             assertEquals(1L, navigation.getStatistics()["sourceMaterializations"])
             assertEquals(1L, navigation.getStatistics()["archiveImports"])
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun `concurrent navigation requests share verified acquisition and declaration inspection`() = runBlocking {
+        val source = sourceJar(directory.resolve("download.jar"), JAVA_SOURCE)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val resolver = RecordingResolver {
+            started.complete(Unit)
+            release.await()
+            VerifiedSourceArtifactResult.Available(source, digest(source))
+        }
+        val symbol = binary("selected/library.jar")
+        service(resolver).use { navigation ->
+            val requests = mutableListOf<kotlinx.coroutines.Deferred<SourceLookupResult>>()
+            try {
+                requests += async(start = CoroutineStart.UNDISPATCHED) {
+                    navigation.locate(symbol, context(download = true))
+                }
+                started.await()
+                repeat(11) {
+                    requests += async(start = CoroutineStart.UNDISPATCHED) {
+                        navigation.locate(symbol, context(download = true))
+                    }
+                }
+
+                assertEquals(1, resolver.calls.get())
+                assertTrue(requests.all { !it.isCompleted })
+                release.complete(Unit)
+                val results = requests.awaitAll()
+                assertTrue(results.all { it == results.first() })
+                assertIs<SourceLookupResult.Located>(results.first())
+                assertEquals(1L, navigation.getStatistics()["declarationInspections"])
+                assertEquals(1L, navigation.getStatistics()["sourceMaterializations"])
+                assertEquals(1L, navigation.getStatistics()["archiveImports"])
+            } finally {
+                release.complete(Unit)
+                requests.forEach { it.cancelAndJoin() }
+            }
         }
     }
 

@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.gls.sources.BundledSourceCatalog
+import com.github.albertocavalcante.gvy.gls.sources.JarClassResource
 import com.github.albertocavalcante.gvy.gls.sources.ResolvedExternalSymbol
 import com.github.albertocavalcante.gvy.gls.sources.ResolvedSourceRequest
 import com.github.albertocavalcante.gvy.gls.sources.SourceContextIdentity
@@ -31,6 +32,7 @@ import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.jar.JarFile
 
 private const val MAX_SOURCE_BINARY_IDENTITY_BYTES = 512L * 1024 * 1024
 private const val MAX_SESSION_BINARY_IDENTITY_BYTES = 512L * 1024 * 1024
@@ -62,6 +64,7 @@ internal class SourceRequestCapture(
     private val workspace: WorkspaceManager,
     private val captureInputs: (URI, WorkspaceModel, () -> Unit) -> AdmittedCompilationInputs?,
     private val bundledSources: BundledSourceCatalog = BundledSourceCatalog(),
+    private val transitionGate: WorkspaceModelTransitionGate = WorkspaceModelTransitionGate(),
 ) {
     // This compatibility entry point keeps the optional snapshot fence beside cancellation and lookup policy.
     @Suppress("LongParameterList")
@@ -214,12 +217,13 @@ internal class SourceRequestCapture(
 
     // Each fail-closed exit protects a distinct captured authority; preserve their validation order.
     @Suppress("ReturnCount", "CyclomaticComplexMethod")
-    private fun environment(
+    private suspend fun environment(
         uri: URI,
         expectedContext: SourceContextIdentity? = null,
         checkCancelled: () -> Unit = {},
     ): CapturedEnvironment? {
-        val model = workspace.current()
+        val modelSnapshot = transitionGate.awaitSnapshot(workspace::current)
+        val model = modelSnapshot.model
         // Avoid a workspace-wide admission pass when there is no receipt-bearing compilation to capture.
         val snapshot = snapshots.captureCached(uri) ?: return null
         val admitted = captureInputs(uri, model, checkCancelled) ?: return null
@@ -235,25 +239,25 @@ internal class SourceRequestCapture(
         if (compileContext.fingerprint != snapshot.configurationFingerprint) return null
         if (
             inputs.classpathStamps.any { it == null } ||
-            !classpathCurrent(inputs, includeDirectories = true, checkCancelled = checkCancelled)
+            !classpathCurrent(inputs, strong = true, checkCancelled = checkCancelled)
         ) {
             return null
         }
         val identity = identity(uri, compileContext, inputs, admitted.fingerprint)
         if (expectedContext != null && identity != expectedContext) return null
         val environmentCurrent = {
-            snapshots.isCurrent(uri, snapshot) &&
+            transitionGate.isCurrent(modelSnapshot, workspace::current) &&
+                snapshots.isCurrent(uri, snapshot) &&
                 workspace.compileContextFor(uri, snapshot.sourceText).let { currentContext ->
                     currentContext.fingerprint == compileContext.fingerprint &&
                         currentContext.classpath == inputs.classpath
                 } &&
                 workspace.current().sourceRoots == model.sourceRoots &&
-                classpathCurrent(inputs, includeDirectories = false, checkCancelled = checkCancelled)
+                classpathCurrent(inputs, strong = false, checkCancelled = checkCancelled)
         }
         val validateCurrent = {
             environmentCurrent() &&
                 sourcePathsCurrent() &&
-                classpathCurrent(inputs, includeDirectories = true, checkCancelled = checkCancelled) &&
                 environmentCurrent()
         }
         return CapturedEnvironment(
@@ -329,24 +333,23 @@ internal class SourceRequestCapture(
 
     private fun classpathCurrent(
         inputs: NativeClasspathInputs,
-        includeDirectories: Boolean,
+        strong: Boolean,
         checkCancelled: () -> Unit,
     ): Boolean {
-        if (!compilerSdkCurrent(inputs, checkCancelled)) return false
-        return if (includeDirectories) {
+        if (!compilerSdkCurrent(inputs, checkCancelled, strong)) return false
+        if (strong) {
             val observed = NativeClasspathInputs.capture(inputs.classpath, emptyList(), checkCancelled)
-            observed.classpathStamps == inputs.classpathStamps && observed.bootJdk == inputs.bootJdk
-        } else {
-            NativeJdkIdentity.observe(checkCancelled) == inputs.bootJdk &&
-                inputs.classpath.indices.all { index ->
-                    checkCancelled()
-                    val expected = inputs.classpathStamps[index] ?: return@all false
-                    expected.files != null || NativeArtifactStamp.observe(
-                        inputs.classpath[index],
-                        maxPaths = 1,
-                        checkCancelled = checkCancelled,
-                    ) == expected
-                }
+            return observed.classpathStamps == inputs.classpathStamps && observed.bootJdk == inputs.bootJdk
+        }
+        val jdk = inputs.bootJdk ?: return false
+        val home = runCatching { Path.of(System.getProperty("java.home")).toRealPath() }.getOrNull() ?: return false
+        if (home != jdk.imageHome || Runtime.version().toString() != jdk.runtimeVersion ||
+            System.getProperty("java.vendor") != jdk.vendor ||
+            !metadataMatches(home.resolve("lib/modules"), jdk.modulesStamp, checkCancelled)
+        ) return false
+        return inputs.classpath.indices.all { index ->
+            val expected = inputs.classpathStamps[index] ?: return@all false
+            metadataMatches(inputs.classpath[index], expected, checkCancelled)
         }
     }
 
@@ -355,7 +358,11 @@ internal class SourceRequestCapture(
         val archive = parseJarClassResource(resource)
         return when {
             archive != null -> {
-                if (archive.entryName == binaryName.replace('.', '/') + ".class") {
+                val validEntry = runInterruptible(Dispatchers.IO) {
+                    environment.checkCancelled()
+                    isMatchingArchiveClassEntry(archive, binaryName)
+                }
+                if (validEntry) {
                     archiveOrigin(archive.archive, environment)
                 } else {
                     null
@@ -533,8 +540,14 @@ internal class SourceRequestCapture(
             val stamp = checkNotNull(inputs.classpathStamps[index])
             add(stamp.size.toString())
             add(stamp.lastModifiedMillis.toString())
+            add(stamp.lastModifiedTime ?: "unknown-precision")
             add(stamp.files?.toString() ?: "file")
             add(stamp.observedPaths.toString())
+            add(stamp.fileKey ?: "unknown-file-key")
+            add(stamp.creationTime ?: "unknown-creation-time")
+            add(stamp.directoryIdentity ?: "no-directory-identity")
+            add(stamp.changeTime ?: "unknown-change-time")
+            add(stamp.contentIdentity ?: "no-content-fallback")
         }
         add(inputs.sourceRoots.size.toString())
         inputs.sourceRoots.forEach { add(it.toString()) }
@@ -546,7 +559,13 @@ internal class SourceRequestCapture(
             add(compilerSdk.indexDigest)
             add(compilerSdk.containerStamp.size.toString())
             add(compilerSdk.containerStamp.lastModifiedMillis.toString())
+            add(compilerSdk.containerStamp.lastModifiedTime ?: "unknown-precision")
             add(compilerSdk.containerStamp.observedPaths.toString())
+            add(compilerSdk.containerStamp.fileKey ?: "unknown-file-key")
+            add(compilerSdk.containerStamp.creationTime ?: "unknown-creation-time")
+            add(compilerSdk.containerStamp.directoryIdentity ?: "no-directory-identity")
+            add(compilerSdk.containerStamp.changeTime ?: "unknown-change-time")
+            add(compilerSdk.containerStamp.contentIdentity ?: "no-content-fallback")
         }
         val bootJdk = checkNotNull(inputs.bootJdk)
         add("boot-jdk")
@@ -555,14 +574,43 @@ internal class SourceRequestCapture(
         add(bootJdk.vendor)
         add(bootJdk.modulesStamp.size.toString())
         add(bootJdk.modulesStamp.lastModifiedMillis.toString())
+        add(bootJdk.modulesStamp.lastModifiedTime ?: "unknown-precision")
         add(bootJdk.modulesStamp.observedPaths.toString())
+        add(bootJdk.modulesStamp.fileKey ?: "unknown-file-key")
+        add(bootJdk.modulesStamp.creationTime ?: "unknown-creation-time")
+        add(bootJdk.modulesStamp.directoryIdentity ?: "no-directory-identity")
+        add(bootJdk.modulesStamp.changeTime ?: "unknown-change-time")
+        add(bootJdk.modulesStamp.contentIdentity ?: "no-content-fallback")
         val id = digest.digest().joinToString("") { "%02x".format(it) }
         return SourceContextIdentity("native:$id", uri, context.fingerprint)
     }
 }
 
+/** Accepts the exact class entry selected by the runtime, including a valid multi-release entry. */
+internal fun isMatchingArchiveClassEntry(archive: JarClassResource, binaryName: String): Boolean {
+    val logicalEntry = binaryName.replace('.', '/') + ".class"
+    if (archive.entryName == logicalEntry) return true
+    val prefix = "META-INF/versions/"
+    if (!archive.entryName.startsWith(prefix)) return false
+    val versionAndEntry = archive.entryName.removePrefix(prefix)
+    val separator = versionAndEntry.indexOf('/')
+    if (separator < 0 || versionAndEntry.substring(separator + 1) != logicalEntry) return false
+    val version = versionAndEntry.substring(0, separator).toIntOrNull() ?: return false
+    if (version < MIN_MULTI_RELEASE_VERSION || version > Runtime.version().feature()) return false
+    return try {
+        JarFile(archive.archive.toFile(), true, JarFile.OPEN_READ, Runtime.version()).use { jar ->
+            jar.isMultiRelease && jar.getJarEntry(logicalEntry)?.realName == archive.entryName
+        }
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+}
+
 private const val MAX_BINARY_NAME = 4096
 private const val MAX_NAME_SEGMENTS = 64
+private const val MIN_MULTI_RELEASE_VERSION = 9
 
 private fun validBinaryName(name: String): Boolean = name.isNotBlank() &&
     name.length <= MAX_BINARY_NAME &&
@@ -601,7 +649,7 @@ private fun classResources(loader: ClassLoader, binaryName: String): List<Pair<S
         candidate to resource
     }
 
-private fun compilerSdkCurrent(inputs: NativeClasspathInputs, checkCancelled: () -> Unit): Boolean {
+private fun compilerSdkCurrent(inputs: NativeClasspathInputs, checkCancelled: () -> Unit, strong: Boolean): Boolean {
     val sdk = inputs.compilerSdk ?: return true
     if (sdk.container.scheme != "file" || sdk.containerStamp.files != null) return false
     val container =
@@ -610,9 +658,20 @@ private fun compilerSdkCurrent(inputs: NativeClasspathInputs, checkCancelled: ()
         } catch (_: IllegalArgumentException) {
             null
         }
-    return container != null &&
+    return container != null && if (strong) {
         NativeArtifactStamp.observe(container, maxPaths = 1, checkCancelled = checkCancelled) == sdk.containerStamp
+    } else {
+        metadataMatches(container, sdk.containerStamp, checkCancelled)
+    }
 }
+
+internal fun metadataMatches(path: Path, expected: NativeArtifactStamp, checkCancelled: () -> Unit): Boolean =
+    NativeArtifactStamp.observe(
+        path,
+        maxPaths = if (expected.files == null) 1 else NativeArtifactStamp.MAX_DIRECTORY_PATHS,
+        checkCancelled = checkCancelled,
+        includeContentIdentity = false,
+    ) == expected.copy(contentIdentity = null)
 
 private fun selectionWithoutUniqueResource(count: Int, isCurrent: () -> Boolean): SourceRequestSelection? = when {
     count == 1 -> null

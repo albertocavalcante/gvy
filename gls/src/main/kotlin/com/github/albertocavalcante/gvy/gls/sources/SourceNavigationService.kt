@@ -409,11 +409,8 @@ class SourceNavigationService(
         } else {
             javaSourceInspector.inspectMemberDefinitionFromContent(
                 content,
-                symbol.binaryName,
-                symbol.memberName,
-                source.entryName,
-                checkCancelled,
-                symbol.memberIsStatic,
+                SourceMemberTarget(symbol.binaryName, SourceMemberQuery(symbol.memberName, symbol.memberIsStatic)),
+                JavaMemberInspectionOptions(source.entryName, checkCancelled),
             )
         }
     } else if (symbol.memberName == null) {
@@ -421,11 +418,9 @@ class SourceNavigationService(
     } else {
         groovySourceInspector.inspectMember(
             content,
-            symbol.binaryName,
-            symbol.memberName,
+            SourceMemberTarget(symbol.binaryName, SourceMemberQuery(symbol.memberName, symbol.memberIsStatic)),
             source.contentPath.toUri(),
             checkCancelled,
-            symbol.memberIsStatic,
         )
     }
 

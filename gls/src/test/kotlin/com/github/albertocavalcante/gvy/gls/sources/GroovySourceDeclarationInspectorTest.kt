@@ -38,6 +38,39 @@ class GroovySourceDeclarationInspectorTest {
     }
 
     @Test
+    fun `finds static field and property names in the selected owner`() {
+        val source = """
+            package sample
+            class Example {
+                public static final int FIELD = 1
+                static String property = "value"
+            }
+        """.trimIndent()
+        for ((lineNumber, name) in listOf(2 to "FIELD", 3 to "property")) {
+            val definition = requireNotNull(
+                inspector.inspectMember(
+                    source, SourceMemberTarget("sample.Example", SourceMemberQuery(name, isStatic = true)),
+                    URI.create("file:///Example.groovy"),
+                ),
+            )
+            val column = source.lines()[lineNumber].indexOf(name)
+            assertEquals(SourceSpan(lineNumber, column, lineNumber, column + name.length), definition.nameRange)
+            assertTrue(definition.declarationRange.contains(definition.nameRange))
+        }
+    }
+
+    @Test
+    fun `declines a field when its declaration name cannot be distinguished`() {
+        val source = "package sample\nclass Example { @Example static Example Example }"
+        assertNull(
+            inspector.inspectMember(
+                source, SourceMemberTarget("sample.Example", SourceMemberQuery("Example", isStatic = true)),
+                URI.create("file:///Example.groovy"),
+            ),
+        )
+    }
+
+    @Test
     fun `declines overloaded methods instead of guessing from the name alone`() {
         val source = """
             package sample

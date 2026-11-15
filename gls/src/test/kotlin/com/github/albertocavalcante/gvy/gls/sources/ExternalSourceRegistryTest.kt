@@ -111,7 +111,8 @@ class ExternalSourceRegistryTest {
         val original = descriptor()
         val registry = ExternalSourceRegistry(temporary.resolve("registry"))
         val first = registry.register(original)
-        val secondDescriptor = original.copy(origin = SourceOrigin.Unknown(URI.create("jar:file:///other.jar!/CompileStatic.class")))
+        val otherOrigin = SourceOrigin.Unknown(URI.create("jar:file:///other.jar!/CompileStatic.class"))
+        val secondDescriptor = original.copy(origin = otherOrigin)
         val second = registry.register(secondDescriptor)
 
         assertNotEquals(first, second)
@@ -271,6 +272,37 @@ class ExternalSourceRegistryTest {
         assertEquals(SourceFailure.LIMIT_EXCEEDED, failure.failure)
         registry.closed(uri)
         assertEquals(original, ExternalSourceRegistry(root).descriptor(uri))
+    }
+
+    @Test
+    fun `failed portable metadata admission removes only new views and preserves quota`() {
+        val root = temporary.resolve("registry")
+        val views = root.resolve("views")
+        val presentation = PortableSourcePresentation(views, maxViewBytes = 8L * 1024 * 1024 + 128)
+        val registry = ExternalSourceRegistry(root, portablePresentation = presentation, maximumMetadataBytes = 64L * 1024)
+        val original = descriptor()
+        val existing = registry.register(original)
+        val metadata = root.resolve("descriptors")
+        Files.list(metadata).use { files ->
+            files.filter { it.fileName.toString().endsWith(".properties") }.forEach { Files.delete(it) }
+        }
+        val full = metadata.resolve("full-budget.bin")
+        Files.write(full, ByteArray(64 * 1024))
+
+        // Reuse must not delete the existing view when its metadata cannot be restored.
+        assertFailsWith<SourceStoreException> { registry.register(original) }
+        assertTrue(Files.exists(Path.of(existing)))
+        val next = original.copy(context = SourceContextIdentity("new-context"))
+        repeat(3) {
+            val failure = assertFailsWith<SourceStoreException> { registry.register(next) }
+            assertEquals(SourceFailure.LIMIT_EXCEEDED, failure.failure)
+            Files.walk(views).use { paths ->
+                assertEquals(1L, paths.filter { it.fileName.toString() == "CompileStatic.java" }.count())
+            }
+        }
+        Files.delete(full)
+        assertTrue(Files.exists(Path.of(registry.register(next))))
+        assertTrue(Files.exists(Path.of(existing)))
     }
 
     @Test

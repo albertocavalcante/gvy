@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceModelTransitionGate
+
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import io.mockk.coEvery
 import io.mockk.every
@@ -26,6 +28,28 @@ class GroovyGdkProviderTest {
         classpathService = ClasspathService()
         gdkProvider = GroovyGdkProvider(classpathService)
         gdkProvider.initialize()
+    }
+
+    @Test
+    fun `gdk query discards methods when a no op transition crosses it`() {
+        val gate = WorkspaceModelTransitionGate()
+        gdkProvider.isReady = gate::isReady
+        gdkProvider.readPermit = {
+            gate.readPermit()?.let { permit ->
+                {
+                    gate.transition(action = { false }, shouldAdvanceGeneration = { it })
+                    permit()
+                }
+            }
+        }
+        assertThat(gdkProvider.getMethodsForType("java.util.List")).isEmpty()
+    }
+
+    @Test
+    fun `retained provider hides methods while unavailable`() {
+        gdkProvider.isReady = { false }
+        assertThat(gdkProvider.getMethodsForType("java.util.List")).isEmpty()
+        assertThat(gdkProvider.getQualifiedMethodsForType("java.util.List")).isEmpty()
     }
 
     @Test

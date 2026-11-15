@@ -56,6 +56,14 @@ class SourceInputAdmissionTest {
     }
 
     @Test
+    fun `safe parent traversal admits an existing source root`() {
+        val src = Files.createDirectory(root.resolve("src"))
+        val admission = SourceInputAdmission({ false }) {}
+
+        assertTrue(admission.allows(src.resolve("../src")))
+    }
+
+    @Test
     fun `parent traversal cannot reuse an ordinary cached admission`() {
         assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privilege is not assumed")
         val managed = Files.createDirectory(root.resolve("managed"))

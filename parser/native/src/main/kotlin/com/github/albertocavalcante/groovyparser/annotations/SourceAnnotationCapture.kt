@@ -49,7 +49,10 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /** Installed before the analysis policy strips annotations; never evaluates their member expressions. */
-internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCustomizer(CompilePhase.CONVERSION) {
+internal class SourceAnnotationCapture(
+    request: ParseRequest,
+    locatorBuffers: Map<URI, String> = emptyMap(),
+) : CompilationCustomizer(CompilePhase.CONVERSION) {
     private val sourceName = request.sourceUnitName
 
     private class RequestState(
@@ -68,7 +71,7 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
         if (request.parseMode == ParseMode.MINIMAL && request.workspaceClassLocator == null) {
             emptyMap()
         } else {
-            request.openSources
+            locatorBuffers + request.openSources
         },
     )
     private val content: String

@@ -3,22 +3,104 @@
 
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.messages.SimpleMessage
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class SourceMembershipLoaderTest {
     @TempDir
     lateinit var root: Path
+
+    @Test
+    fun `trailing lambda remains the workspace class locator`() {
+        val request = ParseRequest(root.resolve("Uses.groovy").toUri(), "") { listOf(root.resolve(it)) }
+        assertEquals(listOf(root.resolve("Dependency")), request.workspaceClassLocator?.invoke("Dependency"))
+    }
+
+    @Test
+    fun `legacy positional workspace locator remains source compatible`() {
+        val locator: (String) -> List<Path> = { listOf(root.resolve(it)) }
+        val request = ParseRequest(
+            root.resolve("Uses.groovy").toUri(),
+            "",
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyMap(),
+            emptySet(),
+            emptySet(),
+            Phases.CONVERSION,
+            ParseMode.WORKSPACE,
+            {},
+            locator,
+        )
+
+        assertSame(locator, request.workspaceClassLocator)
+        assertNull(request.sourcePathAdmission)
+    }
+
+    @Test
+    fun `locator buffer retains annotation source identity`() {
+        val disk = Files.writeString(root.resolve("Different.groovy"), "class Placeholder {}")
+        val alias = Files.createSymbolicLink(root.resolve("Open.groovy"), disk)
+        val result = GroovyParserFacade().parseWithSourceFilter(
+            ParseRequest(
+                uri = root.resolve("Uses.groovy").toUri(),
+                content = "@Mark class Uses {}",
+                parseMode = ParseMode.MINIMAL,
+                compilePhase = Phases.CANONICALIZATION,
+                workspaceClassLocator = { if (it == "Mark") listOf(disk) else emptyList() },
+            ),
+            sourceFilter = { true },
+            locatorBuffers = mapOf(alias.toUri() to "@interface Mark {}"),
+        )
+        assertEquals(alias.toUri(), result.sourceAnnotations.sourceUri(alias.toUri().path))
+        assertNotNull(result.sourceAnnotations.foreignDeclaration(alias.toUri().path, "Mark"))
+    }
+
+    @Test
+    fun `local jar admission receives unnormalized localhost path and fails closed on invalid path`() {
+        val seen = mutableListOf<Path>()
+        fun parse(url: URL) = GroovyParserFacade(
+            GroovyParserFacade::class.java.classLoader,
+            { parent ->
+                SdkFallbackGroovyClassLoader(parent).apply {
+                    resourceLoader = groovy.lang.GroovyResourceLoader { name ->
+                        if (name == "Dependency") url else null
+                    }
+                }
+            },
+            null,
+        ).parse(
+            ParseRequest(
+                uri = root.resolve("Uses.groovy").toUri(),
+                content = "class Uses { Dependency value }",
+                compilePhase = Phases.CANONICALIZATION,
+                sourcePathAdmission = { seen.add(it); false },
+            ),
+        )
+        val rawPath = root.resolve("missing/../sources.jar")
+        val result = parse(URL("jar:file://localhost${rawPath.toUri().rawPath}!/Dependency.groovy"))
+        assertTrue(seen.contains(rawPath), "admission must see the path before normalization: $seen")
+        assertTrue(result.compilationUnit.ast.classes.none { it.name == "Dependency" })
+        seen.clear()
+        val invalid = parse(URL("jar:file://remote-host/path.jar!/Dependency.groovy"))
+        assertTrue(seen.isEmpty())
+        assertTrue(invalid.compilationUnit.ast.classes.none { it.name == "Dependency" })
+    }
 
     @Test
     fun `on demand lookup uses unsaved dependency through symlink alias`() {
@@ -85,7 +167,7 @@ class SourceMembershipLoaderTest {
                 },
                 compilePhase = Phases.CANONICALIZATION,
             ),
-            emptySet(),
+            setOf(dependency),
         )
 
         assertTrue(

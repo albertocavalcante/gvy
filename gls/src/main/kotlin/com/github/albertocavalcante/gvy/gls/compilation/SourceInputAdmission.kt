@@ -17,11 +17,10 @@ internal class SourceInputAdmission(private val excluded: (Path) -> Boolean, val
     fun allows(path: Path): Boolean {
         checkCancelled()
         val raw = path.toAbsolutePath()
-        // Check before normalizing or looking up a decision cached under a different spelling.
-        if (raw.any { it.toString() == ".." }) return false
-        val absolute = raw.normalize()
-        return decisions.getOrPut(absolute) {
-            classifySourcePath(absolute, excluded) == SourcePathAdmission.ORDINARY
+        // Parent traversal must keep its spelling: it can resolve differently across a link.
+        val key = if (raw.any { it.toString() == ".." }) raw else raw.normalize()
+        return decisions.getOrPut(key) {
+            classifySourcePath(raw, excluded) == SourcePathAdmission.ORDINARY
         }
     }
 

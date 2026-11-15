@@ -27,6 +27,11 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
+internal data class JavaMemberInspectionOptions(
+    val sourceName: String = "<unknown>",
+    val checkCancelled: () -> Unit = {},
+)
+
 /**
  * Service to inspect Java source files using JavaParser.
  *
@@ -184,21 +189,32 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
     )
 
     /** A name-only member request can select a field, enum constant or unambiguous method. */
-    @Suppress("ReturnCount", "TooGenericExceptionCaught")
     fun inspectMemberDefinitionFromContent(
         content: String,
         className: String,
         memberName: String,
         sourceName: String = "<unknown>",
-        checkCancelled: () -> Unit = {},
-        memberIsStatic: Boolean? = null,
+    ): SourceDefinition? = inspectMemberDefinitionFromContent(
+        content,
+        SourceMemberTarget(className, SourceMemberQuery(memberName)),
+        JavaMemberInspectionOptions(sourceName),
+    )
+
+    @Suppress("ReturnCount", "TooGenericExceptionCaught")
+    internal fun inspectMemberDefinitionFromContent(
+        content: String,
+        target: SourceMemberTarget,
+        options: JavaMemberInspectionOptions = JavaMemberInspectionOptions(),
     ): SourceDefinition? {
+        val (className, member) = target
+        val (sourceName, checkCancelled) = options
+        val memberName = member.name
         checkCancelled()
         if (content.length > MAX_PARSE_CHARACTERS) return null
         return try {
             val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
             val owner = findJavaTypeDeclaration(unit, className, checkCancelled) ?: return null
-            val (declaration, name) = memberDeclarations(owner, memberName, checkCancelled, memberIsStatic).singleOrNull()
+            val (declaration, name) = memberDeclarations(owner, member, checkCancelled).singleOrNull()
                 ?: return null
             val declarationRange = declaration.range.orElse(null)?.toSourceSpan() ?: return null
             val nameRange = name.range.orElse(null)?.toSourceSpan() ?: return null
@@ -215,30 +231,43 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
 
     private fun memberDeclarations(
         owner: TypeDeclaration<*>,
-        memberName: String,
+        query: SourceMemberQuery,
         checkCancelled: () -> Unit,
-        memberIsStatic: Boolean?,
     ): List<Pair<Node, SimpleName>> = buildList {
+        val memberName = query.name
+        val memberIsStatic = query.isStatic
         for (member in owner.members) {
             checkCancelled()
             when (member) {
-                is MethodDeclaration -> if (
-                    member.nameAsString == memberName && (memberIsStatic == null || member.isStatic == memberIsStatic)
-                ) add(member to member.name)
-                is FieldDeclaration -> member.variables.forEach { variable ->
-                    checkCancelled()
-                    val isStatic = member.isStatic || owner is AnnotationDeclaration ||
-                        (owner is ClassOrInterfaceDeclaration && owner.isInterface)
-                    if (variable.nameAsString == memberName && (memberIsStatic == null || isStatic == memberIsStatic)) {
-                        add(member to variable.name)
-                    }
+                is MethodDeclaration -> {
+                    if (matchesMethod(member, query)) add(member to member.name)
                 }
+                is FieldDeclaration -> addAll(fieldDeclarations(owner, member, query, checkCancelled))
             }
         }
         if (owner is EnumDeclaration) {
             for (entry in owner.entries) {
                 checkCancelled()
                 if (entry.nameAsString == memberName && memberIsStatic != false) add(entry to entry.name)
+            }
+        }
+    }
+
+    private fun matchesMethod(method: MethodDeclaration, query: SourceMemberQuery): Boolean =
+        method.nameAsString == query.name && (query.isStatic == null || method.isStatic == query.isStatic)
+
+    private fun fieldDeclarations(
+        owner: TypeDeclaration<*>,
+        field: FieldDeclaration,
+        query: SourceMemberQuery,
+        checkCancelled: () -> Unit,
+    ): List<Pair<Node, SimpleName>> = buildList {
+        for (variable in field.variables) {
+            checkCancelled()
+            val isStatic = field.isStatic || owner is AnnotationDeclaration ||
+                (owner is ClassOrInterfaceDeclaration && owner.isInterface)
+            if (variable.nameAsString == query.name && (query.isStatic == null || isStatic == query.isStatic)) {
+                add(field to variable.name)
             }
         }
     }

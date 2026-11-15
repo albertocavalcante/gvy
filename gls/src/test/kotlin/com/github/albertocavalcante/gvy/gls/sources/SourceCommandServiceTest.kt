@@ -278,6 +278,24 @@ class SourceCommandServiceTest {
     }
 
     @Test
+    fun `static member imports resolve and attach the compiler selected owner`(): Unit = runBlocking {
+        withCommands { fixture ->
+            val source = "import static java.lang.Math.PI\nclass Money { def value = PI }"
+            assertNotNull(fixture.documents.update(uri, source, 2))
+            fixture.compilation.clearCaches()
+            assertTrue(fixture.compilation.compile(uri, source).isSuccess)
+            val cursor = Position(0, source.indexOf("PI"))
+
+            fixture.commands.resolve(resolve().copy(position = cursor, documentVersion = 2, allowDownload = true))
+            fixture.commands.attach(attach().copy(position = cursor, documentVersion = 2))
+
+            assertEquals(listOf("java.lang.Math", "java.lang.Math"), fixture.navigator.calls.map { it.symbol.binaryName })
+            assertEquals(SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS, fixture.navigator.calls[0].policy)
+            assertEquals(root.resolve("sources.jar"), fixture.navigator.calls[1].attachment)
+        }
+    }
+
+    @Test
     fun `source action resolves a binary constructor after non BMP text`(): Unit = runBlocking {
         withCommands { fixture ->
             val line = "class Money { /*😀😀😀😀😀😀😀😀😀😀*/ def n = new BigDecimal('1'); def later = 3 }"

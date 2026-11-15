@@ -5,12 +5,19 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.contentHash
 import java.net.URI
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
 
 /** Text and the client's version captured from the same buffer state. Null means unversioned input. */
 data class DocumentSnapshot(val content: String, val version: Int?) {
-    /** SHA-256 of [content], computed once per buffer state (readiness checks run on every navigation). */
+    /** Internal collision-resistant identity for exact Kotlin text, including malformed surrogate pairs. */
     internal val contentHash: String by lazy { contentHash(content) }
+
+    /** SHA-256 of the UTF-8 wire text, used when synchronizing a source snapshot with an editor client. */
+    internal val sourceHash: String by lazy {
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray(Charsets.UTF_8)))
+    }
 }
 
 /** Identity of one open/close lifecycle; accepted edits retain it. */

@@ -142,13 +142,57 @@ class SemanticIndexer(
     }
 
     /** A built document with the implementation facts stored alongside it, or null when building failed. */
-    private class Built(val document: SemanticDocument, val implementations: ImplementationFacts.Snapshot)
+    internal class Built(val document: SemanticDocument, val implementations: ImplementationFacts.Snapshot)
 
     /**
      * Stores the document for [content] unless the entry already supersedes it. The document is built before
      * taking the entry's lock, so a slow build blocks no other file and no removal; the decision is then
      * taken again under the lock against whatever landed meanwhile.
      */
+    internal class PreparedPublication(
+        val publication: Publication,
+        val content: String,
+        val hash: String,
+        val phase: Int,
+        val fromBuffer: Boolean,
+        val excluded: Boolean,
+        val built: Built?,
+    )
+
+    internal fun preparePublication(
+        publication: Publication,
+        content: String,
+        ast: ModuleNode,
+        phase: Int,
+        fromBuffer: Boolean = true,
+    ): PreparedPublication? {
+        val uri = publication.uri
+        if (excluded(uri)) return PreparedPublication(publication, content, "", phase, fromBuffer, true, null)
+        val hash = contentHash(content)
+        if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return null
+        val built = buildOrNull(ast, uri)
+        return PreparedPublication(publication, content, hash, phase, fromBuffer, excluded(uri), built)
+    }
+
+    internal fun commitPublication(prepared: PreparedPublication) {
+        val publication = prepared.publication
+        if (prepared.excluded) {
+            removeExcluded(publication, prepared.fromBuffer)
+            return
+        }
+        val uri = publication.uri
+        swap.read {
+            entries.computeIfPresent(uri) { _, state ->
+                if (replaces(state, publication, prepared.hash, prepared.phase, prepared.fromBuffer)) {
+                    state.entry = Entry(prepared.hash, prepared.phase, publication.generation)
+                        .takeIf { store(uri, prepared.built, prepared.content) }
+                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                }
+                state
+            }
+        }
+    }
+
     internal fun publish(
         publication: Publication,
         content: String,
@@ -156,28 +200,7 @@ class SemanticIndexer(
         phase: Int,
         fromBuffer: Boolean = true,
     ) {
-        val uri = publication.uri
-        if (excluded(uri)) {
-            removeExcluded(publication, fromBuffer)
-            return
-        }
-        val hash = contentHash(content)
-        if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
-        val built = buildOrNull(ast, uri)
-        if (excluded(uri)) {
-            removeExcluded(publication, fromBuffer)
-            return
-        }
-        // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
-        swap.read {
-            entries.computeIfPresent(uri) { _, state ->
-                if (replaces(state, publication, hash, phase, fromBuffer)) {
-                    state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
-                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
-                }
-                state
-            }
-        }
+        preparePublication(publication, content, ast, phase, fromBuffer)?.let(::commitPublication)
     }
 
     /** An excluded replacement drops old facts only if this publication still owns the decision. */

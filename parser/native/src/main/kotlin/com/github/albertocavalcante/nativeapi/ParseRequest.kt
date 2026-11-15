@@ -96,5 +96,35 @@ data class ParseRequest(
     /** Fresh path check for source files discovered implicitly below [sourceRoots]. */
     val sourcePathAdmission: ((Path) -> Boolean)? = null,
 ) {
+    /** Keeps source and JVM constructor compatibility for callers passing the old locator positionally. */
+    constructor(
+        uri: URI,
+        content: String,
+        classpath: List<Path>,
+        sourceRoots: List<Path>,
+        workspaceSources: List<Path>,
+        openSources: Map<URI, String>,
+        excludedSources: Set<Path>,
+        locatorCandidates: Set<String>,
+        compilePhase: Int,
+        parseMode: ParseMode,
+        checkCancelled: () -> Unit,
+        workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)?,
+    ) : this(
+        uri,
+        content,
+        classpath,
+        sourceRoots,
+        workspaceSources,
+        openSources,
+        excludedSources,
+        locatorCandidates,
+        compilePhase,
+        parseMode,
+        checkCancelled,
+        workspaceClassLocator = workspaceClassLocator,
+        sourcePathAdmission = null,
+    )
+
     val sourceUnitName: String = uri.path ?: uri.toString()
 }

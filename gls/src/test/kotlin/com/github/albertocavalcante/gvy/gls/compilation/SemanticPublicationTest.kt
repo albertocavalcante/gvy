@@ -9,8 +9,13 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.control.Phases
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
@@ -25,6 +30,34 @@ class SemanticPublicationTest {
     private val indexer = SemanticIndexer(index)
     private val content = "class Example {}"
     private val ast = checkNotNull(GroovyParserFacade().parse(ParseRequest(uri = uri, content = content)).ast)
+
+    @Test
+    fun `slow semantic preparation does not block a transition or publish stale facts`() = runBlocking {
+        val gate = WorkspaceModelTransitionGate()
+        val model = WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "test" }
+        val snapshot = gate.awaitSnapshot { model }
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slow = SemanticIndexer(index, build = { module, documentUri ->
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+            SemanticDocumentBuilder(module, documentUri).build()
+        })
+        val work = async(Dispatchers.IO) {
+            slow.begin(uri).use { publication ->
+                val prepared = slow.preparePublication(publication, content, ast, Phases.CANONICALIZATION)
+                gate.publishIfCurrent(snapshot, { model }) { prepared?.let(slow::commitPublication) }
+            }
+        }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            gate.transition { Unit }
+        } finally {
+            release.countDown()
+        }
+        work.await()
+        assertNull(index.getDocument(uri))
+    }
 
     @Test
     fun `deleted document rejects its outstanding publication`() {

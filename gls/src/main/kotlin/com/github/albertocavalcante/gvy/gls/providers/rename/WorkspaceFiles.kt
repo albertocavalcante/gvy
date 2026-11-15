@@ -6,8 +6,9 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceScanner
 import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
+import com.github.albertocavalcante.gvy.gls.utils.SourcePathAdmission
+import com.github.albertocavalcante.gvy.gls.utils.classifySourcePath
 import com.github.albertocavalcante.gvy.gls.utils.defaultWorkspaceSourceExclusion
-import com.github.albertocavalcante.gvy.gls.utils.excludedSourceAlias
 import com.github.albertocavalcante.gvy.gls.utils.excludedSourceFile
 import java.io.IOException
 import java.net.URI
@@ -294,15 +295,22 @@ internal class CandidateCollector(
     private val files = LinkedHashMap<Path, Path>()
 
     fun collect(sources: Map<Path, Path>, documents: Collection<URI>, walked: Walked): CandidateFiles {
-        sources.filterNot { (key, path) -> excluded(key) || excludedSourceAlias(path, excluded) }
-            .forEach { (key, path) -> files.putIfAbsent(key, path) }
+        val unreadable = walked.unreadable.toMutableList()
+        fun add(key: Path, path: Path) {
+            if (excluded(key)) return
+            when (classifySourcePath(path, excluded)) {
+                SourcePathAdmission.ORDINARY -> files.putIfAbsent(key, path)
+                SourcePathAdmission.MANAGED -> Unit
+                SourcePathAdmission.UNAVAILABLE -> unreadable.add(path)
+            }
+        }
+        sources.forEach { (key, path) -> add(key, path) }
         for (uri in documents) {
-            val path =
-                UriPathConverter.toPath(uri)?.takeIf(::isSourceFile) ?.takeUnless { excludedSourceAlias(it, excluded) }
-                    ?: continue
-            keys.of(path).takeIf { keys.inScope(it) && !excluded(it) }?.let { files.putIfAbsent(it, path) }
+            val path = UriPathConverter.toPath(uri)?.takeIf(::isSourceFile) ?: continue
+            val key = keys.of(path)
+            if (keys.inScope(key)) add(key, path)
         }
         walked.files.filterNot { excludedSourceFile(it, excluded) }.forEach { files.putIfAbsent(it, it) }
-        return CandidateFiles(files, walked.overflow || files.size > maxFiles, walked.unreadable)
+        return CandidateFiles(files, walked.overflow || files.size > maxFiles, unreadable)
     }
 }

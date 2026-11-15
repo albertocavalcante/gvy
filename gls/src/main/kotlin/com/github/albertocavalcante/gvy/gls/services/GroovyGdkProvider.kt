@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.gls.compilation.guardedWorkspaceRead
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
@@ -23,6 +24,8 @@ class GroovyGdkProvider(
     private val classpathService: ClasspathService,
     private val groovySourceResolver: GroovySourceResolver? = null,
 ) {
+    internal var isReady: () -> Boolean = { true }
+    internal var readPermit: () -> (() -> Boolean)? = { { true } }
     private val logger = KotlinLogging.logger {}
 
     // Map of <TargetType, List<ExtensionMethod>>
@@ -61,7 +64,7 @@ class GroovyGdkProvider(
     }
 
     private fun indexGdkClass(className: String) {
-        val clazz = classpathService.loadClass(className) ?: return
+        val clazz = classpathService.loadClassForInitialization(className) ?: return
 
         // GDK methods are always public static
         val methods = clazz.methods.filter {
@@ -111,14 +114,18 @@ class GroovyGdkProvider(
      * Handles class hierarchy (e.g. Iterable methods are available on List).
      */
     fun getMethodsForType(className: String): List<GdkExtensionMethod> =
-        collectMethodsForType(className).map { it.display }.distinctBy { it.signatureKey() }
+        guardedWorkspaceRead(isReady, readPermit, emptyList()) {
+            collectMethodsForType(className).map { it.display }.distinctBy { it.signatureKey() }
+        }
 
     /**
      * Like [getMethodsForType], but keeps each overload's qualified erased parameter types beside its
      * simple-name display so callers can de-duplicate against source members exactly.
      */
     internal fun getQualifiedMethodsForType(className: String): List<QualifiedGdkMethod> =
-        collectMethodsForType(className).distinctBy { it.display.name to it.qualifiedParameters }
+        guardedWorkspaceRead(isReady, readPermit, emptyList()) {
+            collectMethodsForType(className).distinctBy { it.display.name to it.qualifiedParameters }
+        }
 
     private fun collectMethodsForType(className: String): List<QualifiedGdkMethod> {
         ensureInitialized()

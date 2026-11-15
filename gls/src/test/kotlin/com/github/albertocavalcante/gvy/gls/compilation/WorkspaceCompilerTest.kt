@@ -13,10 +13,15 @@ import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.writeText
@@ -195,9 +200,9 @@ class WorkspaceCompilerTest {
         runTest {
             val src = Files.createDirectories(tempDir.resolve("src"))
             val file = src.resolve("Recovered.groovy").apply { writeText("class Recovered {}") }
-            val rejectNextProbe = AtomicBoolean(false)
+            val rejectedProbes = AtomicInteger()
             val manager = WorkspaceManager(sourceExclusion = { candidate ->
-                candidate == file && rejectNextProbe.compareAndSet(true, false)
+                candidate == file && rejectedProbes.getAndUpdate { probes -> (probes - 1).coerceAtLeast(0) } > 0
             })
             manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
             val index = WorkspaceSymbolIndex(GroovySemanticDB())
@@ -206,16 +211,145 @@ class WorkspaceCompilerTest {
             val worker = mockk<WorkerSessionManager>()
             coEvery { worker.parse(any()) } coAnswers {
                 val result = parser.parse(firstArg())
-                if (parseCalls.incrementAndGet() == 1) rejectNextProbe.set(true)
+                if (parseCalls.incrementAndGet() == 1) rejectedProbes.set(2)
                 result
             }
 
             val result = WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
 
             assertTrue(result.success, result.errors.toString())
-            assertEquals(2, parseCalls.get(), "The skipped source must be retried with fresh admission")
+            assertEquals(2, parseCalls.get(), "The batch boundary retries after per-file recovery declines")
             assertNotNull(index.getDocument(file.toUri()))
         }
+
+    @Test
+    fun `retired workspace compilation restarts with the current classpath`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Uses.groovy").apply { writeText("class Uses {}") }
+        val v1 = Files.createDirectory(tempDir.resolve("dependency-v1"))
+        val v2 = Files.createDirectory(tempDir.resolve("dependency-v2"))
+        val manager = WorkspaceManager()
+        manager.updateWorkspaceModel(tempDir, listOf(v1), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val ownership = ArtifactOwnership()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val parsedBeforeRetirement = CompletableDeferred<Unit>()
+        val transitionPublished = CompletableDeferred<Unit>()
+        val releaseTransition = CountDownLatch(1)
+        val compilationFinished = CountDownLatch(1)
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests += request
+            val result = parser.parse(request)
+            if (requests.size == 1) {
+                entered.complete(Unit)
+                release.await()
+                parsedBeforeRetirement.complete(Unit)
+            }
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer, ownership = ownership)
+
+        val compiling = async(Dispatchers.IO) { compiler.compileWorkspace() }
+        compiling.invokeOnCompletion { compilationFinished.countDown() }
+        entered.await()
+        val updating = async(Dispatchers.IO) {
+            compiler.duringWorkspaceTransition {
+                manager.updateWorkspaceModel(tempDir, listOf(v2), listOf(src))
+                transitionPublished.complete(Unit)
+                check(releaseTransition.await(5, TimeUnit.SECONDS))
+                ownership.retireAll { indexer.clear() }
+            }
+        }
+        transitionPublished.await()
+        release.complete(Unit)
+        parsedBeforeRetirement.await()
+        assertFalse(
+            compilationFinished.await(300, TimeUnit.MILLISECONDS),
+            "a stale parse must wait for cache retirement before retrying",
+        )
+        assertEquals(1, requests.size, "the retry must not parse against a half-published model")
+        releaseTransition.countDown()
+        updating.await()
+
+        val result = compiling.await()
+
+        assertTrue(result.success, result.errors.toString())
+        assertEquals(listOf(listOf(v1), listOf(v2)), requests.map(ParseRequest::classpath))
+        assertNotNull(index.getDocument(file.toUri()), "only the fresh-model result may publish")
+    }
+
+    @Test
+    fun `refresh reacquires the ready model for every stale source`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val first = src.resolve("First.groovy").apply { writeText("class First {}") }
+        val second = src.resolve("Second.groovy").apply { writeText("class Second {}") }
+        val v1 = Files.createDirectory(tempDir.resolve("refresh-dependency-v1"))
+        val v2 = Files.createDirectory(tempDir.resolve("refresh-dependency-v2"))
+        val manager = WorkspaceManager()
+        manager.updateWorkspaceModel(tempDir, listOf(v1), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val pauseNextParse = AtomicBoolean(false)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val parsedBeforeRetirement = CompletableDeferred<Unit>()
+        val transitionPublished = CompletableDeferred<Unit>()
+        val releaseTransition = CountDownLatch(1)
+        val refreshFinished = CountDownLatch(1)
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests += request
+            val result = parser.parse(request)
+            if (pauseNextParse.compareAndSet(true, false)) {
+                entered.complete(Unit)
+                release.await()
+                parsedBeforeRetirement.complete(Unit)
+            }
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+        assertTrue(compiler.compileWorkspace().success)
+
+        val firstContent = "class First { String value }"
+        val secondContent = "class Second { String value }"
+        first.writeText(firstContent)
+        second.writeText(secondContent)
+        pauseNextParse.set(true)
+        val refreshing = async(Dispatchers.IO) { compiler.refreshFromDisk(listOf(first.toUri(), second.toUri())) }
+        refreshing.invokeOnCompletion { refreshFinished.countDown() }
+        entered.await()
+
+        val updating = async(Dispatchers.IO) {
+            compiler.duringWorkspaceTransition {
+                manager.updateWorkspaceModel(tempDir, listOf(v2), listOf(src))
+                transitionPublished.complete(Unit)
+                check(releaseTransition.await(5, TimeUnit.SECONDS))
+                indexer.clear()
+            }
+        }
+        transitionPublished.await()
+        release.complete(Unit)
+        parsedBeforeRetirement.await()
+        assertFalse(
+            refreshFinished.await(300, TimeUnit.MILLISECONDS),
+            "a stale refresh must wait for cache retirement before processing the next URI",
+        )
+        assertEquals(2, requests.size, "the next URI must not parse against a half-published model")
+        releaseTransition.countDown()
+        updating.await()
+        refreshing.await()
+
+        assertTrue(indexer.isCurrent(first.toUri(), firstContent))
+        assertTrue(indexer.isCurrent(second.toUri(), secondContent))
+        assertEquals(listOf(listOf(v1), listOf(v2), listOf(v2)), requests.drop(2).map(ParseRequest::classpath))
+    }
 
     @Test
     fun `disk refresh retries a skipped source when admission recovers at the refresh boundary`(): Unit = runTest {

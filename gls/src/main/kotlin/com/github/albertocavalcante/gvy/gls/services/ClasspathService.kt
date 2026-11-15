@@ -4,8 +4,11 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
+import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
+import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import com.github.albertocavalcante.gvy.gls.compilation.guardedWorkspaceRead
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
 import java.net.URLClassLoader
@@ -25,6 +28,11 @@ class ClasspathService(
     private val classpathIndex: ClasspathIndex = JvmClasspathIndex(),
     private val reflectionProvider: ClasspathReflection? = null,
 ) {
+    internal var isReady: () -> Boolean = { true }
+    internal var readPermit: () -> (() -> Boolean)? = { { true } }
+
+    private inline fun <T> guarded(fallback: T, read: () -> T): T =
+        guardedWorkspaceRead(isReady, readPermit, fallback, read)
     private val logger = KotlinLogging.logger {}
 
     internal companion object {
@@ -39,7 +47,9 @@ class ClasspathService(
     private val typeSolverFacade = object : TypeSolver {
         override var parent: TypeSolver? = null
 
-        override fun tryToSolveType(name: String) = generations.current().solver.tryToSolveType(name)
+        override fun tryToSolveType(name: String) = guarded(SymbolReference.unsolved<ResolvedTypeDeclaration>()) {
+            generations.current().solver.tryToSolveType(name)
+        }
 
         override fun toString(): String = "ClasspathTypeSolver(${generations.current().solver})"
     }
@@ -81,8 +91,15 @@ class ClasspathService(
      * A prebuilt custom reflection provider is not known to be generation-bound, so acquisition rejects it.
      */
     fun acquireClasspath(): ClasspathLease {
+        check(isReady()) { "Workspace model is transitioning or failed" }
+        val permit = checkNotNull(readPermit()) { "Workspace model is transitioning or failed" }
         check(reflectionProvider == null) { "Cannot lease a classpath with a custom reflection provider" }
-        return generations.acquire()
+        val lease = generations.acquire { isReady() && permit() }
+        if (!lease.isCurrent()) {
+            lease.close()
+            error("Workspace model changed while acquiring the classpath")
+        }
+        return lease
     }
 
     /** Retires current and grace generations; active leases release their loaders when the last reader closes. */
@@ -93,7 +110,7 @@ class ClasspathService(
      * This is called lazily on first type parameter completion request.
      */
     fun indexAllClasses() {
-        if (isIndexed.get()) return
+        if (!isReady() || isIndexed.get()) return
 
         synchronized(this) {
             if (isIndexed.get()) return
@@ -126,7 +143,8 @@ class ClasspathService(
      * Returns list of ClassInfo with simple name and fully qualified name.
      */
     fun findClassesByPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
-        if (prefix.isBlank()) return emptyList()
+        if (!isReady() || prefix.isBlank()) return emptyList()
+        val permit = readPermit() ?: return emptyList()
 
         if (!isIndexed.get()) {
             indexAllClasses()
@@ -150,14 +168,15 @@ class ClasspathService(
                 }
             }
 
-        return results.take(maxResults)
+        return if (isReady() && permit()) results.take(maxResults) else emptyList()
     }
 
     /**
      * Finds classes by fully qualified prefix (e.g., "java.util.L").
      */
     fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
-        if (prefix.isBlank()) return emptyList()
+        if (!isReady() || prefix.isBlank()) return emptyList()
+        val permit = readPermit() ?: return emptyList()
 
         if (!isIndexed.get()) {
             indexAllClasses()
@@ -174,13 +193,14 @@ class ClasspathService(
                 results.add(ClassInfo(simpleName, fullName, packageName))
             }
 
-        return results
+        return if (isReady() && permit()) results else emptyList()
     }
 
     /**
      * Tries to load a class by name and returns its reflected methods.
      */
-    fun getMethods(className: String): List<ReflectedMethod> = reflection.getMethods(className)
+    fun getMethods(className: String): List<ReflectedMethod> =
+        guarded(emptyList()) { reflection.getMethods(className) }
 
     /**
      * Loads fields (including constants) from a class using reflection.
@@ -188,12 +208,17 @@ class ClasspathService(
      * @param className The fully qualified class name (e.g., "java.lang.Math")
      * @return List of reflected fields
      */
-    fun getFields(className: String): List<ReflectedField> = reflection.getFields(className)
+    fun getFields(className: String): List<ReflectedField> =
+        guarded(emptyList()) { reflection.getFields(className) }
 
     /**
      * Tries to load a class by name.
      */
-    fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
+    fun loadClass(className: String): Class<*>? =
+        guarded(null) { reflection.loadClass(className) }
+
+    /** The transition writer must initialize GDK against the classpath it is installing. */
+    internal fun loadClassForInitialization(className: String): Class<*>? = reflection.loadClass(className)
 
     /**
      * Returns a TypeSolver that resolves against the current classpath generation at each lookup (a fresh cache
@@ -284,16 +309,31 @@ private class ClasspathGenerations {
         grace = previous
     }
 
-    fun acquire(): ClasspathLease = synchronized(this) {
+    fun acquire(isReady: () -> Boolean): ClasspathLease = synchronized(this) {
         val generation = current.get()
         generation.readers++
         ClasspathLease(
-            solver = generation.solver,
-            reflection = JvmClasspathReflection { generation.loader },
+            solver = object : TypeSolver {
+                override var parent: TypeSolver? = null
+                override fun tryToSolveType(name: String) = if (isReady()) {
+                    generation.solver.tryToSolveType(name).takeIf { isReady() } ?: SymbolReference.unsolved()
+                } else {
+                    SymbolReference.unsolved()
+                }
+            },
+            reflection = object : ClasspathReflection {
+                private val delegate = JvmClasspathReflection { generation.loader }
+                override fun getMethods(className: String) =
+                    if (isReady()) delegate.getMethods(className).takeIf { isReady() }.orEmpty() else emptyList()
+                override fun getFields(className: String) =
+                    if (isReady()) delegate.getFields(className).takeIf { isReady() }.orEmpty() else emptyList()
+                override fun loadClass(className: String) =
+                    if (isReady()) delegate.loadClass(className).takeIf { isReady() } else null
+            },
             classpath = generation.paths,
             classLoader = generation.loader,
             release = { release(generation) },
-            current = { synchronized(this) { current.get() === generation } },
+            current = { isReady() && synchronized(this) { current.get() === generation } },
         )
     }
 

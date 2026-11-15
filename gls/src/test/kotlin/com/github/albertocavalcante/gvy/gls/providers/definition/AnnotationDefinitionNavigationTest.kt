@@ -330,6 +330,70 @@ class AnnotationDefinitionNavigationTest {
     }
 
     @Test
+    fun `inherited source static imports navigate to declaring members`(): Unit = runBlocking {
+        val source = """
+            package p
+            import static p.Child.ANSWER
+            import static p.Child.make
+            class Parent {
+                static int ANSWER = 42
+                static int make() { 42 }
+            }
+            class Child extends Parent {}
+        """.trimIndent()
+        val service = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
+        val provider = DefinitionProvider(service)
+        try {
+            assertTrue(service.compile(uri, source).isSuccess)
+            val lines = source.lines()
+            val field = provider.provideDefinitionLinks(uri.toString(), Position(1, lines[1].indexOf("ANSWER") + 1))
+                .toList().single()
+            val method = provider.provideDefinitionLinks(uri.toString(), Position(2, lines[2].indexOf("make") + 1))
+                .toList().single()
+            assertEquals(uri.toString(), field.targetUri)
+            assertEquals(4, field.targetRange.start.line)
+            assertEquals(uri.toString(), method.targetUri)
+            assertEquals(5, method.targetRange.start.line)
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
+    fun `inherited binary static import looks up the declaring class`(): Unit = runBlocking {
+        val calls = mutableListOf<Pair<String, String>>()
+        val navigator = object : SourceNavigator {
+            override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult =
+                error("Expected a member lookup")
+
+            override suspend fun navigateToMethodSource(
+                classpathUri: URI,
+                className: String,
+                methodName: String,
+            ): SourceNavigator.SourceResult {
+                calls.add(className to methodName)
+                return SourceNavigator.SourceResult.SourceLocation(
+                    URI.create("file:///sources/JComponent.java"),
+                    className,
+                    definition = SourceDefinition(SourceSpan(0, 0, 0, 20), SourceSpan(0, 0, 0, 12)),
+                )
+            }
+        }
+        val source = "import static javax.swing.JPanel.WHEN_FOCUSED\nclass Money {}"
+        val service = GroovyCompilationService(parentClassLoader = CompileStatic::class.java.classLoader)
+        try {
+            assertTrue(service.compile(uri, source).isSuccess)
+            val provider = DefinitionProvider(service, navigator)
+            val target = provider.provideDefinitions(uri.toString(), Position(0, source.indexOf("WHEN_FOCUSED") + 1))
+                .toList().single()
+            assertEquals("file:///sources/JComponent.java", target.uri)
+            assertEquals(listOf("javax.swing.JComponent" to "WHEN_FOCUSED"), calls)
+        } finally {
+            service.shutdown()
+        }
+    }
+
+    @Test
     fun `a static field and method sharing an import name remain ambiguous`(): Unit = runBlocking {
         val source = """
             package p

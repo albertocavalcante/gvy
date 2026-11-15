@@ -214,8 +214,10 @@ internal class SourceCommandService(
 
     private fun dependencyImportName(import: ImportNode, annotations: SourceAnnotationIndex): String? {
         if (import.isStatic && import.fieldName != null) {
-            val annotation = annotations.annotationImportedBy(import) ?: return null
-            return if (annotation.sourceUnitName == null) annotation.binaryName else null
+            val annotation = annotations.annotationImportedBy(import)
+            if (annotation != null) return if (annotation.sourceUnitName == null) annotation.binaryName else null
+            val range = annotations.importRange(import) ?: return null
+            if (!annotations.canRuleOutAnnotationUse(range)) return null
         }
         return dependencyType(import.type)?.name
     }

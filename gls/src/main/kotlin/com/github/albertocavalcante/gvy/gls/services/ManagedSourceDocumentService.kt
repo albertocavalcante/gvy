@@ -130,12 +130,15 @@ class ManagedSourceDocumentService(
             synchronized(lifecycle.monitor) {
                 val admission = lifecycle.admission.getAndSet(null)
                 lifecycle.deferredOpen = null
-                registry.closed(uri)
-                if (
-                    admission?.delegated == true ||
-                    (admission == null && !knownManaged(params.textDocument.uri))
-                ) {
-                    delegate.didClose(params)
+                try {
+                    registry.closed(uri)
+                } finally {
+                    if (
+                        admission?.delegated == true ||
+                        (admission == null && !knownManaged(params.textDocument.uri))
+                    ) {
+                        delegate.didClose(params)
+                    }
                 }
             }
         }

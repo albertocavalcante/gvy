@@ -139,21 +139,29 @@ private fun locatorPath(locator: String): Any = if (locator.startsWith("file:"))
     runCatching { Path.of(locator).toAbsolutePath().normalize() }.getOrDefault(locator)
 }
 
-private fun urlPath(url: URL): Path? = if (url.protocol == "file") {
-    runCatching { Path.of(url.toURI()).toAbsolutePath().normalize() }.getOrNull()
-} else {
-    null
-}
+private fun localFilePath(url: URL): Path? = runCatching {
+    val uri = url.toURI()
+    when (uri.authority) {
+        null, "" -> Path.of(uri)
+        "localhost" -> Path.of(uri.path)
+        else -> null
+    }
+}.getOrNull()
+
+private fun urlPath(url: URL): Path? = if (url.protocol == "file") localFilePath(url) else null
 
 /** A file source uses its own path; a JAR source uses its local container for managed-path admission. */
 private fun urlArchivePath(url: URL): Path? = if (url.protocol == "jar") {
     runCatching {
         val archive = (url.openConnection() as? JarURLConnection)?.jarFileURL
-        if (archive?.protocol == "file") Path.of(archive.toURI()).toAbsolutePath().normalize() else null
+        if (archive?.protocol == "file") localFilePath(archive) else null
     }.getOrNull()
 } else {
     null
 }
+
+private fun requiresLocalAdmission(url: URL): Boolean = url.protocol == "file" ||
+    (url.protocol == "jar" && url.path.startsWith("file:", ignoreCase = true))
 
 /**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
@@ -547,7 +555,7 @@ class GroovyParserFacade internal constructor(
     ): ParseResult {
         // Before any work: building the configuration below opens every classpath jar.
         request.checkCancelled()
-        val annotationCapture = SourceAnnotationCapture(request)
+        val annotationCapture = SourceAnnotationCapture(request, lookup.buffers)
         try {
             return parseInternalWithCapture(request, inputs, stubs, annotationCapture, lookup)
         } finally {
@@ -664,7 +672,8 @@ class GroovyParserFacade internal constructor(
                         val accepted = canonical == null || sourceFilter == null ||
                             roots.none(canonical::startsWith) || sourceFilter(canonical)
                         canonical !in excluded && canonical !in bufferPaths && accepted &&
-                            (admissionPath == null || sourcePathAdmission?.invoke(admissionPath) != false)
+                            (sourcePathAdmission == null ||
+                                if (admissionPath != null) sourcePathAdmission(admissionPath) else !requiresLocalAdmission(url))
                     }
                 }
             }

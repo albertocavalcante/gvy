@@ -4,6 +4,8 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.sources.JarClassResource
+import com.github.albertocavalcante.nativeapi.NativeArtifactStamp
 import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
 import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
@@ -12,8 +14,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.net.URL
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.jar.Attributes
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import java.util.jar.Manifest
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -27,6 +34,72 @@ class SourceRequestCaptureTest {
 
     private val uri = URI.create("file:///source-context/Money.groovy")
     private val original = "class Money { String currency }"
+
+    @Test
+    fun `lightweight currentness accepts fallback receipt and detects metadata changes`() {
+        val archive = root.resolve("metadata-provider.zip")
+        FileSystems.newFileSystem(URI.create("jar:${archive.toUri()}"), mapOf("create" to "true")).use { fs ->
+            val file = Files.writeString(fs.getPath("/dependency.jar"), "original")
+            val receipt = requireNotNull(NativeArtifactStamp.observe(file))
+            assertNotNull(receipt.contentIdentity)
+            assertTrue(metadataMatches(file, receipt) {})
+            Files.writeString(file, "replacement")
+            assertFalse(metadataMatches(file, receipt) {})
+        }
+    }
+
+    @Test
+    fun `archive class entry validation accepts only effective multi-release entries`() {
+        val archive = root.resolve("multi-release.jar")
+        val manifest = Manifest().apply {
+            mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
+            mainAttributes.putValue("Multi-Release", "true")
+        }
+        JarOutputStream(Files.newOutputStream(archive), manifest).use { jar ->
+            listOf(
+                "sample/Versioned.class",
+                "META-INF/versions/9/sample/Versioned.class",
+                "META-INF/versions/999/sample/Versioned.class",
+                "META-INF/versions/9/sample/Other.class",
+            ).forEach { name ->
+                jar.putNextEntry(JarEntry(name))
+                jar.write(byteArrayOf(0))
+                jar.closeEntry()
+            }
+        }
+
+        assertTrue(
+            isMatchingArchiveClassEntry(
+                JarClassResource(archive, "META-INF/versions/9/sample/Versioned.class"),
+                "sample.Versioned",
+            ),
+        )
+        assertFalse(
+            isMatchingArchiveClassEntry(
+                JarClassResource(archive, "META-INF/versions/999/sample/Versioned.class"),
+                "sample.Versioned",
+            ),
+        )
+        assertFalse(
+            isMatchingArchiveClassEntry(
+                JarClassResource(archive, "META-INF/versions/9/sample/Other.class"),
+                "sample.Versioned",
+            ),
+        )
+
+        val nonMultiRelease = root.resolve("ordinary.jar")
+        JarOutputStream(Files.newOutputStream(nonMultiRelease)).use { jar ->
+            jar.putNextEntry(JarEntry("META-INF/versions/9/sample/Versioned.class"))
+            jar.write(byteArrayOf(0))
+            jar.closeEntry()
+        }
+        assertFalse(
+            isMatchingArchiveClassEntry(
+                JarClassResource(nonMultiRelease, "META-INF/versions/9/sample/Versioned.class"),
+                "sample.Versioned",
+            ),
+        )
+    }
 
     @Test
     fun `a request captures JDK origin and retires with its buffer revision`(): Unit = runBlocking {

@@ -76,6 +76,23 @@ class ManagedRenameCandidatesTest {
         assertEquals(listOf(ordinary), candidates.files.values.toList())
     }
 
+    @Test
+    fun `unavailable open buffer alias makes rename unverifiable`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val workspace = Files.createDirectories(root.resolve("workspace"))
+        val target = Files.createDirectories(root.resolve("target"))
+        val alias = Files.createSymbolicLink(workspace.resolve("link"), target).resolve("Use.groovy")
+        source(target.resolve("Use.groovy"))
+        Files.delete(target.resolve("Use.groovy"))
+        Files.delete(target)
+
+        val candidates = CandidateCollector(FileKeys(listOf(workspace)), 100).collect(
+            emptyMap(), listOf(alias.toUri()), Walked(emptyList(), overflow = false),
+        )
+
+        assertEquals(listOf(alias), candidates.unreadable)
+    }
+
     private fun source(path: Path) = path.also {
         Files.createDirectories(it.parent)
         Files.writeString(it, "new Mode()")

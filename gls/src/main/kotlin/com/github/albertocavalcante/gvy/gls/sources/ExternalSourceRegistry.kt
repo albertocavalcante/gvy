@@ -60,20 +60,27 @@ class ExternalSourceRegistry(
             "Source content failed verification"
         }
         val key = sha256(SourceDescriptorCodec.identity(descriptor).toByteArray(StandardCharsets.UTF_8))
-        val uri = if (virtualDocumentsEnabled()) {
-            URI(SCHEME, key, "/" + descriptor.sourceDigest + "/" + descriptor.entryName, null)
-        } else {
-            presentation.register(descriptor)
-        }
-        require(uri.scheme == SCHEME || uri.scheme == "file") { "Unsupported source presentation" }
-        filePath(uri)?.let { view ->
-            require(managedPaths.contains(uri)) { "A source viewing copy must use a managed namespace" }
-            require(!Files.isSameFile(view, descriptor.contentPath)) {
-                "A viewing copy must not expose immutable content"
+        fun commit(uri: URI) {
+            require(uri.scheme == SCHEME || uri.scheme == "file") { "Unsupported source presentation" }
+            filePath(uri)?.let { view ->
+                require(managedPaths.contains(uri)) { "A source viewing copy must use a managed namespace" }
+                require(!Files.isSameFile(view, descriptor.contentPath)) {
+                    "A viewing copy must not expose immutable content"
+                }
             }
+            persist(uri, descriptor)
         }
 
-        persist(uri, descriptor)
+        val uri = if (virtualDocumentsEnabled()) {
+            URI(SCHEME, key, "/" + descriptor.sourceDigest + "/" + descriptor.entryName, null).also(::commit)
+        } else {
+            val target = presentation
+            if (target is PortableSourcePresentation) {
+                target.registerAndCommit(descriptor, ::commit)
+            } else {
+                target.register(descriptor).also(::commit)
+            }
+        }
         cache(uri, descriptor)
         return uri
     }
