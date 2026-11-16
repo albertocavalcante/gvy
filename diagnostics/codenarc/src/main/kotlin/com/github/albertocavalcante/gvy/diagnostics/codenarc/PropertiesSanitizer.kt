@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.util.Properties
 
@@ -15,8 +16,10 @@ private val logger = KotlinLogging.logger {}
  *
  * The file normally comes from an untrusted workspace and CodeNarc applies it to rule objects, where a
  * regular-expression property can be a catastrophic pattern (ReDoS, #1324). Only `RuleName.property` entries for
- * known CodeNarc rules are kept; regex-valued properties are dropped, and values must be a boolean, an integer
- * from 0 to [MAX_INT_VALUE], or a short wildcard-name list. Everything else is dropped and logged.
+ * known CodeNarc rules are kept, and the property must have a setter on the rule class whose type matches the value:
+ * boolean, integer from 0 to [MAX_INT_VALUE], or a plain name list without wildcards (CodeNarc turns `*` and `?`
+ * into backtracking regex quantifiers, so wildcards are never accepted). Regex-valued property names are dropped.
+ * Everything else is dropped and logged. Symlinks and non-regular files are not read.
  */
 internal object PropertiesSanitizer {
     const val MAX_FILE_BYTES = 64L * 1024
@@ -25,7 +28,7 @@ internal object PropertiesSanitizer {
 
     private val KEY = Regex("([A-Za-z][A-Za-z0-9_]*)\\.([A-Za-z][A-Za-z0-9_]*)")
     private val INTEGER = Regex("[0-9]{1,7}")
-    private val NAME_LIST = Regex("[A-Za-z0-9_.,*?$ -]{0,$MAX_VALUE_LENGTH}")
+    private val NAME_LIST = Regex("[A-Za-z_][A-Za-z0-9_.,$ ]{0,${MAX_VALUE_LENGTH - 1}}")
 
     data class Result(val content: String, val rejectedKeys: List<String>)
 
@@ -33,11 +36,16 @@ internal object PropertiesSanitizer {
     fun sanitize(file: Path): Result? {
         val properties = Properties()
         try {
-            if (Files.size(file) > MAX_FILE_BYTES) {
+            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+                logger.warn { "Ignoring CodeNarc properties file that is not a regular file: $file" }
+                return null
+            }
+            val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_FILE_BYTES.toInt() + 1) }
+            if (bytes.size > MAX_FILE_BYTES) {
                 logger.warn { "Ignoring CodeNarc properties file larger than $MAX_FILE_BYTES bytes: $file" }
                 return null
             }
-            Files.newBufferedReader(file).use { properties.load(it) }
+            properties.load(bytes.toString(Charsets.UTF_8).reader())
         } catch (e: java.io.IOException) {
             logger.warn { "Ignoring unreadable CodeNarc properties file $file: ${e.message}" }
             return null
@@ -67,12 +75,17 @@ internal object PropertiesSanitizer {
         val match = KEY.matchEntire(name) ?: return false
         val (rule, property) = match.destructured
         if (isRegexProperty(property)) return false
-        if (runCatching { requireRule(rule) }.isFailure) return false
-        return when {
-            value == "true" || value == "false" -> true
-            INTEGER.matches(value) -> value.toInt() <= MAX_INT_VALUE
-            value.all { it.isDigit() } -> false
-            else -> value.isNotEmpty() && NAME_LIST.matches(value)
+        val ruleClass = runCatching { Class.forName(requireRule(rule)) }.getOrNull() ?: return false
+        val setterName = "set" + property.replaceFirstChar { it.uppercase() }
+        val type = ruleClass.methods.singleOrNull { it.name == setterName && it.parameterCount == 1 }
+            ?.parameterTypes?.single() ?: return false
+        return when (type) {
+            Boolean::class.javaPrimitiveType, java.lang.Boolean::class.java -> value == "true" || value == "false"
+            Int::class.javaPrimitiveType, java.lang.Integer::class.java,
+            Long::class.javaPrimitiveType, java.lang.Long::class.java,
+            -> INTEGER.matches(value) && value.toInt() <= MAX_INT_VALUE
+            String::class.java -> NAME_LIST.matches(value)
+            else -> false
         }
     }
 }

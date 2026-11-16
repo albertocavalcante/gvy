@@ -130,7 +130,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
 
     internal fun sanitizedPropertiesUri(analysisDir: Path, propertiesFile: String): String? {
         val sanitized = PropertiesSanitizer.sanitize(Paths.get(propertiesFile)) ?: return null
-        val target = analysisDir.resolve("codenarc.properties")
+        val target = analysisDir.resolve(".codenarc-sanitized.properties")
         Files.write(target, sanitized.content.toByteArray(StandardCharsets.UTF_8))
         return target.toUri().toString()
     }

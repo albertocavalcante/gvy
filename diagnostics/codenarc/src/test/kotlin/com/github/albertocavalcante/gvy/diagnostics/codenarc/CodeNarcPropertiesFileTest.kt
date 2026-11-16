@@ -10,7 +10,6 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class CodeNarcPropertiesFileTest {
     @TempDir
@@ -33,14 +32,18 @@ class CodeNarcPropertiesFileTest {
     }
 
     @Test
-    fun `regex properties unknown rules and bad values are dropped`() {
+    fun `regex properties wildcards unknown rules and mistyped values are dropped`() {
         val file = write(
             """
             MethodName.regex=(a+)+${'$'}
-            ClassName.ignoreClassNames=Foo*
             ClassName.doNotApplyToFilesMatching=(a+)+
+            TrailingWhitespace.doNotApplyToClassNames=${"*".repeat(150)}x
+            TrailingWhitespace.applyToClassNames=Foo*
             NoSuchRule.priority=1
+            TrailingWhitespace.nosuch=true
             TrailingWhitespace.priority=999999999
+            TrailingWhitespace.priority=-5
+            TrailingWhitespace.enabled=1e9
             TrailingWhitespace.enabled=true
             Evil.name.x=1
             """.trimIndent(),
@@ -48,8 +51,24 @@ class CodeNarcPropertiesFileTest {
 
         val result = assertNotNull(PropertiesSanitizer.sanitize(file))
 
-        assertEquals("ClassName.ignoreClassNames=Foo*\nTrailingWhitespace.enabled=true\n", result.content)
-        assertTrue(result.rejectedKeys.containsAll(listOf("MethodName.regex", "NoSuchRule.priority")))
+        assertEquals("TrailingWhitespace.enabled=true\n", result.content)
+    }
+
+    @Test
+    fun `plain name lists for string properties are kept`() {
+        val file = write("TrailingWhitespace.doNotApplyToClassNames=Foo,Bar\n")
+
+        val result = assertNotNull(PropertiesSanitizer.sanitize(file))
+
+        assertEquals("TrailingWhitespace.doNotApplyToClassNames=Foo,Bar\n", result.content)
+    }
+
+    @Test
+    fun `a symlinked properties file is not read`() {
+        val target = write("TrailingWhitespace.priority=1\n")
+        val link = Files.createSymbolicLink(dir.resolve("link.properties"), target)
+
+        assertNull(PropertiesSanitizer.sanitize(link))
     }
 
     @Test
