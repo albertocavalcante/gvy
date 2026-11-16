@@ -230,10 +230,11 @@ class WarmIncompleteBufferRecoveryTest {
     )
 
     private companion object {
-        // Measured in the source-qualified a174 baseline for LF and CRLF. Later checks were blocked.
+        // Measured in source-qualified a174/7eb baselines for LF and CRLF. Later checks were blocked.
         // See https://github.com/albertocavalcante/gvy/issues/2082; remove metadata when the check passes.
         val observedFailures = mapOf(
             "hole.tokens.before" to "recovery: missing class token BeforeWarmV2",
+            "hole.tokens.after" to "recovery: missing class token AfterWarmV2",
         )
         val checks = listOf(
             "diagnostics.integrity",
