@@ -106,6 +106,7 @@ jobs:
       run_bazel_ci: ${{ steps.filter.outputs.run_bazel_ci }}
       run_zed_ci: ${{ steps.filter.outputs.run_zed_ci }}
       run_jetbrains_ci: ${{ steps.filter.outputs.run_jetbrains_ci }}
+      provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,6 +119,102 @@ jobs:
       - name: Classify exact revisions
         id: filter
         run: node tools/ci/ci-applicability.mjs "$RUNNER_TEMP/ci-applicability.json"
+      # Runner availability (formerly the separate "Check Runner Availability" job, folded in to save a
+      # queue round trip). Only meaningful when main CI applies; any failure here fails check-paths, which
+      # every downstream job and Validation Check require.
+      - name: Determine Runner Label
+        id: mode
+        if: steps.filter.outputs.run_main_ci == 'true'
+        env:
+          RUNNER_LABEL_INPUT: ${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'github-hosted' }}
+        run: |
+          # Priority: Input > Variable > Default(github-hosted)
+          echo "label=$RUNNER_LABEL_INPUT" >> "$GITHUB_OUTPUT"
+          echo "Checking availability for: $RUNNER_LABEL_INPUT"
+
+      # --- Magalu Check ---
+      - name: Check Magalu runner
+        if: steps.filter.outputs.run_main_ci == 'true' && steps.mode.outputs.label == 'magalu'
+        id: check-magalu
+        uses: ./.github/actions/runner-status
+        with:
+          mode: check
+          label: magalu
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+
+      - name: Trigger provisioning (Magalu)
+        if: steps.filter.outputs.run_main_ci == 'true' && steps.mode.outputs.label == 'magalu' && steps.check-magalu.outputs.has-runners != 'true'
+        id: exit-early
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
+        run: |
+          echo "Triggering runner-provision.yml..."
+          gh workflow run runner-provision.yml --repo "${{ github.repository }}"
+          echo ""
+          echo "⏳ Provisioning triggered. Manual approval may be required."
+          echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
+          echo ""
+          echo "::notice::Provisioning requested. Required validation remains blocked; rerun this revision after the runner is available."
+          # Set output to signal downstream jobs to skip
+          echo "provisioning_triggered=true" >> "$GITHUB_OUTPUT"
+
+      # --- Local macOS Check ---
+      - name: Check Local macOS runner
+        if: steps.filter.outputs.run_main_ci == 'true' && steps.mode.outputs.label == 'local-macos'
+        id: check-local
+        uses: ./.github/actions/runner-status
+        with:
+          mode: check
+          label: local-macos
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+
+      - name: Verify Local macOS Availability
+        if: steps.filter.outputs.run_main_ci == 'true' && steps.mode.outputs.label == 'local-macos' && steps.check-local.outputs.has-runners != 'true'
+        run: |
+          echo "❌ No local macOS runner found online with label 'local-macos'."
+          echo ""
+          echo "To set up a runner on your Mac:"
+          echo "  ./tools/github/actions/setup-macos-runner.sh"
+          echo ""
+          echo "Ensure the runner service is active:"
+          echo "  cd ~/.gha-runners/groovy-lsp-*"
+          echo "  ./svc.sh status"
+          echo ""
+          exit 1
+
+      # --- Summary ---
+      - name: Runner Check Summary
+        if: always() && steps.filter.outputs.run_main_ci == 'true'
+        env:
+          LABEL: ${{ steps.mode.outputs.label }}
+          MAGALU_AVAILABLE: ${{ steps.check-magalu.outputs.has-runners }}
+          LOCAL_AVAILABLE: ${{ steps.check-local.outputs.has-runners }}
+        run: |
+          echo "Runner label: $LABEL"
+
+          case "$LABEL" in
+            "magalu")
+              if [[ "$MAGALU_AVAILABLE" == "true" ]]; then
+                echo "✅ Magalu runner available"
+              else
+                echo "⏳ Magalu runner provisioning triggered"
+              fi
+              ;;
+            "local-macos")
+              if [[ "$LOCAL_AVAILABLE" == "true" ]]; then
+                echo "✅ Local macOS runner available"
+              else
+                echo "❌ Local macOS runner check failed (see above)"
+              fi
+              ;;
+            "github-hosted")
+              echo "✅ Using GitHub-hosted cloud runners (no check needed)"
+              ;;
+            *)
+              echo "✅ Runner check complete for: $LABEL"
+              ;;
+          esac
+
       - name: Upload applicability evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -151,118 +248,13 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci-bazel.yml
 
-  check-runner:
-    name: Check Runner Availability
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    needs: [check-paths, license]
-    if: needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true'
-    outputs:
-      provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
-    steps:
-      - name: Checkout (for local action)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/actions
-          persist-credentials: false
-
-      - name: Determine Runner Label
-        id: mode
-        run: |
-          # Priority: Input > Variable > Default(github-hosted)
-          LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'github-hosted' }}"
-          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
-          echo "Checking availability for: $LABEL"
-
-      # --- Magalu Check ---
-      - name: Check Magalu runner
-        if: steps.mode.outputs.label == 'magalu'
-        id: check-magalu
-        uses: ./.github/actions/runner-status
-        with:
-          mode: check
-          label: magalu
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-
-      - name: Trigger provisioning (Magalu)
-        if: steps.mode.outputs.label == 'magalu' && steps.check-magalu.outputs.has-runners != 'true'
-        id: exit-early
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
-        run: |
-          echo "Triggering runner-provision.yml..."
-          gh workflow run runner-provision.yml --repo "${{ github.repository }}"
-          echo ""
-          echo "⏳ Provisioning triggered. Manual approval may be required."
-          echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
-          echo ""
-          echo "::notice::Provisioning requested. Required validation remains blocked; rerun this revision after the runner is available."
-          # Set output to signal downstream jobs to skip
-          echo "provisioning_triggered=true" >> "$GITHUB_OUTPUT"
-
-      # --- Local macOS Check ---
-      - name: Check Local macOS runner
-        if: steps.mode.outputs.label == 'local-macos'
-        id: check-local
-        uses: ./.github/actions/runner-status
-        with:
-          mode: check
-          label: local-macos
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-
-      - name: Verify Local macOS Availability
-        if: steps.mode.outputs.label == 'local-macos' && steps.check-local.outputs.has-runners != 'true'
-        run: |
-          echo "❌ No local macOS runner found online with label 'local-macos'."
-          echo ""
-          echo "To set up a runner on your Mac:"
-          echo "  ./tools/github/actions/setup-macos-runner.sh"
-          echo ""
-          echo "Ensure the runner service is active:"
-          echo "  cd ~/.gha-runners/groovy-lsp-*"
-          echo "  ./svc.sh status"
-          echo ""
-          exit 1
-
-      # --- Summary ---
-      - name: Runner Check Summary
-        if: always()
-        run: |
-          LABEL="${{ steps.mode.outputs.label }}"
-          echo "Runner label: $LABEL"
-
-          case "$LABEL" in
-            "magalu")
-              if [[ "${{ steps.check-magalu.outputs.has-runners }}" == "true" ]]; then
-                echo "✅ Magalu runner available"
-              else
-                echo "⏳ Magalu runner provisioning triggered"
-              fi
-              ;;
-            "local-macos")
-              if [[ "${{ steps.check-local.outputs.has-runners }}" == "true" ]]; then
-                echo "✅ Local macOS runner available"
-              else
-                echo "❌ Local macOS runner check failed (see above)"
-              fi
-              ;;
-            "github-hosted")
-              echo "✅ Using GitHub-hosted cloud runners (no check needed)"
-              ;;
-            *)
-              echo "✅ Runner check complete for: $LABEL"
-              ;;
-          esac
-
   lint:
     name: Lint
-    needs: [check-paths, check-runner, license]
+    needs: [check-paths, license]
     # Run if paths require CI and no provisioning triggered
     if: |
-      !cancelled() && needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
+      !cancelled() && needs.license.result == 'success' && needs.check-paths.result == 'success' &&
+      needs.check-paths.outputs.run_main_ci == 'true' && needs.check-paths.outputs.provisioning_triggered != 'true'
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
@@ -304,11 +296,11 @@ jobs:
 
   build:
     name: Build and Test
-    needs: [check-paths, check-runner, license]
+    needs: [check-paths, license]
     # Applicable code must run on an available runner for this revision.
     if: |
-      !cancelled() && needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
+      !cancelled() && needs.license.result == 'success' && needs.check-paths.result == 'success' &&
+      needs.check-paths.outputs.run_main_ci == 'true' && needs.check-paths.outputs.provisioning_triggered != 'true'
     timeout-minutes: 45
     # For self-hosted runners, we need label arrays; for cloud runners, use the matrix value directly
     runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os == 'local-macos' && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || matrix.os }}
@@ -643,10 +635,10 @@ jobs:
     name: E2E Tests (shard ${{ matrix.shard }})
     # Runs alongside the build, not after it: this job builds what it needs itself (Gradle
     # cache), and waiting on the build only added its duration to the critical path.
-    needs: [check-paths, check-runner, license]
+    needs: [check-paths, license]
     if: |
-      !cancelled() && needs.license.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
+      !cancelled() && needs.license.result == 'success' && needs.check-paths.result == 'success' &&
+      needs.check-paths.outputs.run_main_ci == 'true' && needs.check-paths.outputs.provisioning_triggered != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -886,7 +878,7 @@ jobs:
       contents: read
       actions: read
       checks: read
-    needs: [license, lint, build, e2e-test, smoke-test, launcher, zed, bazel, jetbrains, check-runner, check-paths]
+    needs: [license, lint, build, e2e-test, smoke-test, launcher, zed, bazel, jetbrains, check-paths]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
