@@ -38,8 +38,8 @@ class CodeNarcPropertiesFileTest {
             """
             MethodName.regex=(a+)+${'$'}
             ClassName.doNotApplyToFilesMatching=(a+)+
-            TrailingWhitespace.doNotApplyToClassNames=${"*".repeat(150)}x
-            TrailingWhitespace.applyToClassNames=Foo*
+            ClassName.doNotApplyToClassNames=${"*".repeat(150)}x
+            ClassName.applyToClassNames=Foo*
             NoSuchRule.priority=1
             TrailingWhitespace.nosuch=true
             TrailingWhitespace.priority=999999999
@@ -62,11 +62,11 @@ class CodeNarcPropertiesFileTest {
 
     @Test
     fun `plain name lists for string properties are kept`() {
-        val file = write("TrailingWhitespace.doNotApplyToClassNames=Foo,Bar\n")
+        val file = write("ClassName.doNotApplyToClassNames=Foo,Bar\n")
 
         val result = assertNotNull(PropertiesSanitizer.sanitize(file))
 
-        assertEquals("TrailingWhitespace.doNotApplyToClassNames=Foo,Bar\n", result.content)
+        assertEquals("ClassName.doNotApplyToClassNames=Foo,Bar\n", result.content)
     }
 
     @Test
