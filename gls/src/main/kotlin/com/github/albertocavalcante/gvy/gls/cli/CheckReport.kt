@@ -26,8 +26,17 @@ internal fun sarifArtifactUri(file: File, workspace: File?): String {
     return if (path == null || path == ".." || path.startsWith("../")) {
         absolute.toURI().toString()
     } else {
-        URI(null, null, path, null).rawPath
+        // A leading "./" keeps a first segment containing ':' from being read as a URI scheme.
+        val safePath = if (path.substringBefore('/').contains(':')) "./$path" else path
+        URI(null, null, safePath, null).rawPath
     }
+}
+
+/** Writes the plain text report to [output]; returns false (writing nothing) when [output] is null. */
+internal fun writeTextReportTo(output: File?, allDiagnostics: Map<File, List<Diagnostic>>): Boolean {
+    output ?: return false
+    output.writeText(plainTextReport(allDiagnostics))
+    return true
 }
 
 /** Plain (uncolored) text report written by `gls check -o FILE`. */

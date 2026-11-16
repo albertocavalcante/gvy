@@ -156,11 +156,7 @@ class CheckCommand : CliktCommand(name = "check") {
     }
 
     private fun outputText(allDiagnostics: Map<File, List<Diagnostic>>) {
-        val outputFile = output
-        if (outputFile != null) {
-            outputFile.writeText(plainTextReport(allDiagnostics))
-            return
-        }
+        if (writeTextReportTo(output, allDiagnostics)) return
         for ((file, diagnostics) in allDiagnostics) {
             if (diagnostics.isEmpty()) {
                 terminal.println(green("OK: ${file.path}"))
@@ -214,12 +210,13 @@ class CheckCommand : CliktCommand(name = "check") {
         diagnosticLine(file, diagnostic, formatDiagnosticSeverity(diagnostic.severity))
 
     private fun formatDiagnosticSeverity(severity: DiagnosticSeverity?): String {
-        val (label, style) = when (severity) {
-            DiagnosticSeverity.Error -> "ERROR" to brightRed
-            DiagnosticSeverity.Warning -> "WARNING" to brightYellow
-            DiagnosticSeverity.Information -> "INFO" to cyan
-            DiagnosticSeverity.Hint -> "HINT" to green
-            else -> "UNKNOWN" to null
+        val label = severityLabel(severity)
+        val style = when (severity) {
+            DiagnosticSeverity.Error -> brightRed
+            DiagnosticSeverity.Warning -> brightYellow
+            DiagnosticSeverity.Information -> cyan
+            DiagnosticSeverity.Hint -> green
+            else -> null
         }
 
         return if (terminal.terminalInfo.ansiLevel == AnsiLevel.NONE) {
