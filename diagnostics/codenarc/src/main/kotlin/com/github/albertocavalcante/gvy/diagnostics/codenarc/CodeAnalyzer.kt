@@ -53,10 +53,9 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
 
         // Base temp directory
         private val baseTempDir: Path = Files.createTempDirectory("codenarc-lsp-")
-            .also { it.toFile().deleteOnExit() }
+            .also { registerTreeCleanup(it) }
 
         private val rulesetCacheDir: Path = Files.createDirectory(baseTempDir.resolve("rulesets"))
-            .also { it.toFile().deleteOnExit() }
 
         private val rulesetFileCache = RulesetFileCache(cacheDir = rulesetCacheDir)
 
