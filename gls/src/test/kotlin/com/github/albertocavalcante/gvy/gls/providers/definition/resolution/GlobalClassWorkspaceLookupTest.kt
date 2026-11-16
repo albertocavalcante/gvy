@@ -143,6 +143,16 @@ class GlobalClassWorkspaceLookupTest {
     }
 
     @Test
+    fun `same named excluded class is not selected before an included definition`(): Unit = runBlocking {
+        val excluded = file("a.groovy", "package app\nclass Shared {}")
+        val included = file("z.groovy", "package app\nclass Shared {}")
+        listOf(excluded, included).forEach { compilation.symbolIndexingService.indexFile(it) }
+        val view = compilation.getWorkspaceSymbolIndex()!!.scopedTo(setOf(included))
+        val scoped = GlobalClassResolutionStrategy(compilation, view)
+        assertEquals(included to "app.Shared", resolve("app.Shared", resolver = scoped))
+    }
+
+    @Test
     fun `the lookup does not scan every indexed file`(): Unit = runBlocking {
         compilation.symbolIndexingService.indexFile(file("Greeter.groovy", "package app\nclass Greeter {}"))
 
@@ -159,13 +169,17 @@ class GlobalClassWorkspaceLookupTest {
         return uri
     }
 
-    private suspend fun resolve(name: String, from: URI = URI.create("file:///Main.groovy")): Pair<URI, String>? {
+    private suspend fun resolve(
+        name: String,
+        from: URI = URI.create("file:///Main.groovy"),
+        resolver: GlobalClassResolutionStrategy = strategy,
+    ): Pair<URI, String>? {
         val context = ResolutionContext(
             targetNode = ClassNode(name, 0, ClassHelper.OBJECT_TYPE),
             documentUri = from,
             position = Position(0, 0),
         )
-        return strategy.resolve(context).fold(
+        return resolver.resolve(context).fold(
             ifLeft = { null },
             ifRight = { result ->
                 val source = result as DefinitionResolver.DefinitionResult.Source

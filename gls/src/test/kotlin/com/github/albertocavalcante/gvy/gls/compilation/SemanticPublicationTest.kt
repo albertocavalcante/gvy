@@ -4,12 +4,17 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import kotlinx.coroutines.Job
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.nio.file.Path
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
@@ -24,6 +29,31 @@ class SemanticPublicationTest {
     private val indexer = SemanticIndexer(index)
     private val content = "class Example {}"
     private val ast = checkNotNull(GroovyParserFacade().parse(ParseRequest(uri = uri, content = content)).ast)
+
+    @Test
+    fun `strategy transition at semantic commit rejects the old policy`() {
+        var ready = true
+        val strategy = object : ProjectStrategy {
+            override val id = "transition"
+            override val displayName = "Transition"
+            override fun canHandle(workspaceRoot: Path, config: ServerConfiguration) = true
+            override suspend fun initialize(workspaceRoot: Path, config: ServerConfiguration): Job? = null
+            override fun overridesClasspath(uri: URI) = ready
+        }
+        val registry = ProjectStrategyRegistry(listOf(strategy))
+        registry.selectStrategies(Path.of("."), ServerConfiguration())
+        val manager = WorkspaceManager()
+        manager.setStrategyRegistry(registry)
+        val policy = manager.captureSourcePolicy(uri, manager.current())
+        assertTrue(policy.isCurrent())
+        indexer.begin(uri).use { publication ->
+            indexer.publishIfCurrent(publication, SemanticContent(content, ast, Phases.CANONICALIZATION)) { commit ->
+                ready = false
+                policy.publishIfCurrent(commit)
+            }
+        }
+        assertNull(index.getDocument(uri))
+    }
 
     @Test
     fun `deleted document rejects its outstanding publication`() {

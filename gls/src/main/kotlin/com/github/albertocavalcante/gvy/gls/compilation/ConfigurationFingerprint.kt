@@ -56,4 +56,22 @@ object ConfigurationFingerprint {
             }
         },
     )
+
+    /** Distinguishes unknown membership from each authoritative set, independent of enumeration order. */
+    fun withMembership(base: String, sources: Set<Path>?, boundary: String = ""): String = if (sources == null) {
+        base
+    } else {
+        sha256(
+            buildString {
+                append(base).append("\nmembership:").append(boundary.length).append(':').append(boundary)
+                sources.map { it.toString() }.sorted().forEach { source ->
+                    append('\n').append(source.length).append(':').append(source)
+                }
+            },
+        )
+    }
+
+    /** Strategy ownership changes the source policy even when the flat classpath is unchanged. */
+    fun withStrategy(base: String, strategyId: String): String =
+        sha256("$base\nstrategy:${strategyId.length}:$strategyId")
 }

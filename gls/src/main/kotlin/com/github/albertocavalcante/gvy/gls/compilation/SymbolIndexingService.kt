@@ -106,17 +106,28 @@ class SymbolIndexingService(
     internal fun ensureIndexed(
         ticket: ArtifactOwnership.Ticket,
         content: String,
+        isValid: () -> Boolean = { true },
+        publish: (() -> Unit) -> Unit = { it() },
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
         val hash = contentHash(content)
         entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { stored ->
             // A matching index answers only a current ticket, so a non-null result always means "committed or
             // already current for this ticket" (#1399)
-            return stored.index.takeIf { ownership.isCurrent(ticket) }
+            return stored.index.takeIf { ownership.isCurrent(ticket) && isValid() }
         }
         val astModel = astModelProvider() ?: return null
         val prepared = build(hash, astModel)
-        return prepared.index.takeIf { ownership.commit(ticket) { install(ticket.uri, prepared) } }
+        var installed = false
+        publish {
+            ownership.commit(ticket) {
+                if (isValid()) {
+                    install(ticket.uri, prepared)
+                    installed = true
+                }
+            }
+        }
+        return prepared.index.takeIf { installed && isValid() }
     }
 
     /**
@@ -261,31 +272,51 @@ class SymbolIndexingService(
     private suspend fun performIndexing(uri: URI, path: Path, ticket: ArtifactOwnership.Ticket): SymbolIndex? = try {
         val content = Files.readString(path)
         val hash = contentHash(content)
+        val workspace = workspaceManager.current()
+        val context = workspaceManager.compileContextFor(uri, content, workspace)
+        val policy = context.sourcePolicy
         entries[uri]?.takeIf { it.contentHash == hash }?.let {
             logger.debug { "File already indexed: $uri" }
-            return it.index
+            var cached: SymbolIndex? = null
+            val read = { if (entries[uri] === it) cached = it.index }
+            if (policy == null) read() else policy.publishIfCurrent(read)
+            return cached
         }
 
         // Parse the source code for indexing
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
         // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
-        val workspace = workspaceManager.current()
-        val parseResult = workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = workspace.classpath,
-                sourceRoots = workspace.sourceRoots,
-                workspaceSources = emptyList(), // Don't recurse during indexing
-                locatorCandidates = buildLocatorCandidates(uri, path),
-            ),
+        val request = ParseRequest(
+            uri = uri,
+            content = content,
+            classpath = context.classpath,
+            sourceRoots = policy?.sourceRoots() ?: workspaceManager.sourceRootsFor(uri, workspace),
+            workspaceSources = emptyList(), // Don't recurse during indexing
+            locatorCandidates = buildLocatorCandidates(uri, path),
         )
+        val sourceFilter = if (policy ==
+            null
+        ) {
+            workspaceManager.sourceFilterFor(uri, workspace)
+        } else {
+            policy.sourceFilter()
+        }
+        val parseResult = if (sourceFilter == null) {
+            workerSessionManager.parse(request)
+        } else {
+            workerSessionManager.parseWithSourceFilter(request, sourceFilter)
+        }
 
         // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
         val prepared = build(hash, parseResult.astModel)
-        if (commitFromDisk(ticket) { install(uri, prepared) }) {
+        var committed = false
+        val publish = { committed = commitFromDisk(ticket) { install(uri, prepared) } }
+        if (policy == null) publish() else policy.publishIfCurrent(publish)
+        if (committed && policy?.isCurrent() != false) {
             logger.debug { "Indexed workspace file: $uri" }
             prepared.index
+        } else if (policy?.isCurrent() == false) {
+            null
         } else {
             entries[uri]?.index
         }

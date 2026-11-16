@@ -74,6 +74,16 @@ interface ProjectStrategy {
      */
     fun overridesClasspath(uri: URI): Boolean = false
 
+    /** Even revision of the strategy's source/classpath state; odd means an update is in progress. */
+    val sourcePolicyRevision: Long get() = 0
+
+    /** Run a short publication only if this revision is still current. */
+    fun withCurrentSourcePolicyRevision(revision: Long, action: () -> Unit): Boolean {
+        if (revision % 2L != 0L || sourcePolicyRevision != revision) return false
+        action()
+        return true
+    }
+
     /**
      * Called when configuration changes.
      *

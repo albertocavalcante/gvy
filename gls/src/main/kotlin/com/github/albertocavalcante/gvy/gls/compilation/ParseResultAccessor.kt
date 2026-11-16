@@ -147,49 +147,62 @@ class ParseResultAccessor(
         val fingerprint = workspaceManager.fingerprintFor(uri, workspace)
         val (cachedContent, cachedResult) = cacheService.getCachedWithContent(uri, fingerprint) ?: return null
 
-        // Use helper function to check for suspicious Script node
-        if (isSuspiciousScript(uri, cachedResult)) {
-            logger.info { "Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase" }
-            // Re-parse the text this entry was compiled from. Reading the disk instead would publish the file
-            // over an open, unsaved buffer that the entry describes.
-            val content = cachedContent
-            val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-            logger.info {
-                "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
-            }
-            val parseResult = workerSessionManager.parse(
-                ParseRequest(
-                    uri = uri,
-                    content = content,
-                    classpath = workspaceManager.getClasspathForFile(uri, content, workspace),
-                    // Don't add source roots - prevents classloader from finding .groovy file
-                    sourceRoots = emptyList(),
-                    // Don't add other sources - causes Script fallback
-                    workspaceSources = emptyList(),
-                    locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                    compilePhase = Phases.CONVERSION,
-                ),
-            )
+        if (!isSuspiciousScript(uri, cachedResult)) return cachedResult
+        return reparseSuspicious(uri, cachedContent, workspace, fingerprint, ticket)
+    }
 
-            // Replace the cached result and its symbol index together, unless they were retired meanwhile
-            if (parseResult.ast != null) {
-                val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-                cacheService.publish(ticket, content, parseResult, fingerprint) { symbolIndexer.install(uri, symbols) }
-            }
-            logger.info {
-                "Re-parsed $uri at CONVERSION: classes=${
-                    parseResult.ast?.classes?.map {
-                        "${it.name} (super=${it.superClass?.name ?: "null"})"
-                    }
-                }"
-            }
-            logger.debug {
-                "Content preview: ${content.take(CONTENT_PREVIEW_LENGTH).replace("\n", "\\n")}"
-            }
-            return parseResult
+    private suspend fun reparseSuspicious(
+        uri: URI,
+        content: String,
+        workspace: WorkspaceModel,
+        fingerprint: String,
+        ticket: ArtifactOwnership.Ticket,
+    ): ParseResult? {
+        logger.info { "Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase" }
+        // Re-parse the cached text so a disk read cannot replace an unsaved buffer.
+        val context = workspaceManager.compileContextFor(uri, content, workspace)
+        if (context.fingerprint != fingerprint || context.sourcePolicy?.isCurrent() == false) return null
+        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+        logger.info {
+            "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
         }
+        val parseResult = workerSessionManager.parse(
+            ParseRequest(
+                uri = uri,
+                content = content,
+                classpath = context.classpath,
+                // Don't add source roots - prevents classloader from finding .groovy file
+                sourceRoots = emptyList(),
+                // Don't add other sources - causes Script fallback
+                workspaceSources = emptyList(),
+                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                compilePhase = Phases.CONVERSION,
+            ),
+        )
 
-        return cachedResult
+        // Replace the cached result and its symbol index together, unless they were retired meanwhile
+        if (context.sourcePolicy?.isCurrent() == false) return null
+        if (parseResult.ast != null) {
+            val symbols = symbolIndexer.prepare(content, parseResult.astModel)
+            val install = {
+                cacheService.publish(ticket, content, parseResult, fingerprint) {
+                    symbolIndexer.install(uri, symbols)
+                }
+                Unit
+            }
+            if (context.sourcePolicy == null) install() else context.sourcePolicy.publishIfCurrent(install)
+        }
+        logger.info {
+            "Re-parsed $uri at CONVERSION: classes=${
+                parseResult.ast?.classes?.map {
+                    "${it.name} (super=${it.superClass?.name ?: "null"})"
+                }
+            }"
+        }
+        logger.debug {
+            "Content preview: ${content.take(CONTENT_PREVIEW_LENGTH).replace("\n", "\\n")}"
+        }
+        return parseResult.takeIf { context.sourcePolicy?.isCurrent() != false }
     }
 
     private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {

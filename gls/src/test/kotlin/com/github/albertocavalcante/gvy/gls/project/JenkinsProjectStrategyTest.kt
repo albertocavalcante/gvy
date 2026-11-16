@@ -201,6 +201,17 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
+    fun `unchanged Jenkins configuration preserves source policy revision`(): Unit = runBlocking {
+        val config = createConfig(filePatterns = listOf("**/Jenkinsfile"))
+        strategy.initialize(tempDir, config)
+        val revision = strategy.sourcePolicyRevision
+        strategy.updateConfiguration(config)
+        assertEquals(revision, strategy.sourcePolicyRevision)
+        strategy.updateConfiguration(createConfig(filePatterns = listOf("**/pipeline.groovy")))
+        assertTrue(strategy.sourcePolicyRevision > revision)
+    }
+
+    @Test
     fun `awaitInitialization waits for async job`(): Unit = runBlocking {
         val config = createConfig(filePatterns = listOf("**/Jenkinsfile"))
         val job = strategy.initialize(tempDir, config)

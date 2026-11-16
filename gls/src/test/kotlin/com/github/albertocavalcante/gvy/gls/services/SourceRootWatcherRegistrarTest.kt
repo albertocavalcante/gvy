@@ -62,6 +62,28 @@ class SourceRootWatcherRegistrarTest {
     }
 
     @Test
+    fun `external task members use exact file patterns rather than recursive parent watches`() {
+        val registrar = SourceMemberWatcherRegistrar()
+        val external = Path.of("/shared/src/Member.groovy")
+        registrar.attach(client, capabilities())
+        registrar.sync(listOf(external))
+        val options = registered.single().registrations.single().registerOptions
+            as DidChangeWatchedFilesRegistrationOptions
+        val watcher = options.watchers.single()
+        assertEquals(external.parent.toUri().toString(), watcher.globPattern.right.baseUri.right)
+        assertEquals("Member.groovy", watcher.globPattern.right.pattern)
+        assertEquals(WatchKind.Create + WatchKind.Change + WatchKind.Delete, watcher.kind)
+    }
+
+    @Test
+    fun `external file names with glob metacharacters are not registered as broad patterns`() {
+        val registrar = SourceMemberWatcherRegistrar()
+        registrar.attach(client, capabilities())
+        registrar.sync(listOf(Path.of("/shared/Member[1].groovy")))
+        assertEquals(emptyList(), registered)
+    }
+
+    @Test
     fun `registers one relative watcher per source root`() {
         val registrar = SourceRootWatcherRegistrar()
         registrar.attach(client, capabilities())

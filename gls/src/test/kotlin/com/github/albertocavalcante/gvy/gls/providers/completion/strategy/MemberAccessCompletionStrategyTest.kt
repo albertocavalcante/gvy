@@ -340,6 +340,61 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
+    fun `member completion ignores a same named excluded class`(): Unit = runTest {
+        val included = URI.create("file:///workspace/Included.groovy")
+        val excluded = URI.create("file:///workspace/Excluded.groovy")
+        val owner = "example/Shared#"
+        val db = com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB()
+        val index = com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex(db)
+        fun add(uri: URI, name: String) {
+            val range = com.github.albertocavalcante.gvy.semantics.db.Range(0, 0, 0, 1)
+            index.updateDocument(
+                uri,
+                com.github.albertocavalcante.gvy.semantics.db.SemanticDocument(
+                    uri,
+                    listOf(
+                        com.github.albertocavalcante.gvy.semantics.db.SymbolInfo(
+                            owner,
+                            com.github.albertocavalcante.gvy.semantics.db.SymbolKind.CLASS,
+                            range,
+                            "Shared",
+                            null,
+                        ),
+                        com.github.albertocavalcante.gvy.semantics.db.SymbolInfo(
+                            "$owner$name().",
+                            com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD,
+                            range,
+                            name,
+                            owner,
+                        ),
+                    ),
+                    emptyList(),
+                ),
+            )
+        }
+        add(included, "includedOnly")
+        add(excluded, "excludedOnly")
+        val scoped = index.scopedTo(setOf(included))
+        val uri = URI.create("file:///workspace/Use.groovy")
+        val content = "def obj = null\nobj.${CompletionProvider.DUMMY_IDENTIFIER}"
+        val result = compilationService.compileTransient(uri, content)
+        val context = CompletionContext(
+            uri, 1, 4, result.ast!!, result.astModel, result.tokenIndex, compilationService,
+            content, semanticResolver.withWorkspaceMemberLookup(scoped), result.ast, scoped,
+        )
+        val scopedStrategy = MemberAccessCompletionStrategy(compilationService, scoped)
+        val output = scopedStrategy.complete(
+            createStrategyContext(context, CompletionProvider.ContextType.MemberAccess("example.Shared", "obj")),
+        )
+        output.fold(
+            ifLeft = { throw AssertionError("Expected completions: $it") },
+            ifRight = { items ->
+                assertThat(items.map { it.label }).contains("includedOnly").doesNotContain("excludedOnly")
+            },
+        )
+    }
+
+    @Test
     fun `should resolve workspace class FQNs from imports`(): Unit = runTest {
         // Arrange
         val content = """

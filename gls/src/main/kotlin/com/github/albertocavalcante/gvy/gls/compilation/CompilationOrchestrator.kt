@@ -11,6 +11,7 @@ import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -156,52 +157,56 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     private suspend fun compile(uri: URI, content: String, compilePhase: Int, claim: Claim): CompilationResult {
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
-        val publication = claim.publication
-
+        val input = CompilationInput(uri, content, claim)
         return runCatching {
-            // One workspace model supplies this compile's key and inputs (H1). It may already be newer than
-            // the claim; a retirement in between rejects the publication (#1184).
+            // The cache key and all compile inputs come from one captured workspace and source policy.
             val workspace = workspaceManager.current()
-            // This document's classpath and key from that one model: a selected target's own (#1235)
             val context = workspaceManager.compileContextFor(uri, content, workspace)
-            val configFingerprint = context.fingerprint
-
-            // Check cache first - validates both content AND configuration fingerprint
-            val cachedResult = cacheService.getCached(uri, content, configFingerprint)
-            if (cachedResult != null) {
-                // Check for suspicious Script node
-                val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
-
-                if (isSuspiciousScriptNode) {
-                    logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
-                    performCompilation(
-                        CompilationInput(uri, content, claim),
-                        workspace,
-                        compilePhase,
-                        context = context,
-                    )
-                } else {
-                    logger.debug { "Using cached parse result for: $uri" }
-                    // The symbol index may be absent or older than this result (e.g. after invalidation).
-                    // Semantics follow the symbol commit: published only when this ticket's index is current
-                    val indexed = symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel } != null
-                    cachedResult.ast?.takeIf { indexed }?.let {
-                        publication?.let { token ->
-                            semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
-                        }
-                    }
-                    resultMapper.map(cachedResult, content)
-                }
+            requireCurrentSourcePolicy(context.sourcePolicy, uri)
+            val cached = cacheService.getCached(uri, content, context.fingerprint)
+            if (cached == null || parseAccessor.isSuspiciousScript(uri, cached)) {
+                if (cached != null) logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
+                performCompilation(input, workspace, compilePhase, context = context)
             } else {
-                performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase, context = context)
+                reuseCachedResult(input, cached, context)
             }
         }.getOrElse { throwable ->
             when (throwable) {
-                is CancellationException -> throw throwable
+                is CancellationException, is ResponseErrorException -> throw throwable
                 is Exception -> errorHandler.handleException(throwable, uri)
                 else -> throw throwable
             }
         }
+    }
+
+    private fun reuseCachedResult(
+        input: CompilationInput,
+        cached: ParseResult,
+        context: DocumentCompileContext,
+    ): CompilationResult {
+        val (uri, content, claim) = input
+        val policy = context.sourcePolicy
+        logger.debug { "Using cached parse result for: $uri" }
+        // Semantics follow the symbol commit; a retired source policy can publish neither one.
+        val indexed = symbolIndexer.ensureIndexed(
+            claim.ticket,
+            content,
+            isValid = { policy?.isCurrent() != false },
+            publish = { commit -> publishWithinSourcePolicy(policy, commit) },
+        ) { cached.astModel } != null
+        cached.ast?.takeIf { indexed }?.let { ast ->
+            claim.publication?.let { publication ->
+                semanticIndexer?.publishIfCurrent(
+                    publication,
+                    SemanticContent(content, ast, cached.outcome.achievedPhase),
+                ) { commit -> publishWithinSourcePolicy(policy, commit) }
+            }
+        }
+        requireCurrentSourcePolicy(policy, uri)
+        return resultMapper.map(cached, content).copy(
+            sourceMembershipKnown = context.sourceMembershipKnown,
+            sourceVisibilityKnown = context.sourceVisibilityKnown,
+        )
     }
 
     private suspend fun performCompilation(
@@ -211,7 +216,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         parseMode: ParseMode = ParseMode.WORKSPACE,
         context: DocumentCompileContext? = null,
     ): CompilationResult {
-        val (uri, content, claim) = input
+        val (uri, content) = input
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // File-specific classpath and its cache key, from the same workspace as roots and sources (#1235)
@@ -220,31 +225,54 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // Use bounded workspace selection when dependency info is available (Issue #743)
         // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, logBounded = true)
+        val policy = compileContext.sourcePolicy
+        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, policy, logBounded = true)
 
         // Parse the source code; the compile aborts between phases if this coroutine is cancelled
         val checkCancelled = cancellationCheck()
-        val locator = symbolIndexer.classLocator(sourcePath)
-        val parseResult = workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
-                workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                compilePhase = compilePhase,
-                parseMode = parseMode,
-                checkCancelled = checkCancelled,
-                // MINIMAL adds no workspace sources; the class index still finds a class declared in a file
-                // named otherwise, one file per name the resolver asks for (#1425).
-                workspaceClassLocator = locator.takeIf { parseMode == ParseMode.MINIMAL },
-            ),
+        val sourceFilter = if (policy == null) {
+            workspaceManager.sourceFilterFor(uri, workspace)
+        } else {
+            policy.sourceFilter()
+        }
+        val (openSources, locatorBuffers) = openSourcesFor(uri, workspace, policy)
+        val locate = symbolIndexer.classLocator(sourcePath)
+        val locator = { name: String -> locate(name).filter { sourceFilter == null || sourceFilter(it) } }
+        val request = ParseRequest(
+            uri = uri,
+            content = content,
+            classpath = classpath,
+            sourceRoots = policy?.sourceRoots() ?: workspaceManager.sourceRootsFor(uri, workspace),
+            workspaceSources = workspaceSources,
+            openSources = openSources,
+            locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+            compilePhase = compilePhase,
+            parseMode = parseMode,
+            checkCancelled = checkCancelled,
+            // Locate unknown dependency sources on demand, including task-added files outside roots.
+            workspaceClassLocator = locator,
         )
+        val parseResult = workerSessionManager.parseWithSourcePolicy(request, sourceFilter, locatorBuffers)
 
-        logIfDegraded(uri, parseResult)
+        if (policy?.isCurrent() == false) throw contentModified(uri)
+        logIfDegraded(uri, parseResult, loggedDegradations, logger)
 
+        installParsedResult(input, parseResult, compileContext)
+
+        if (policy?.isCurrent() == false) throw contentModified(uri)
+        return resultMapper.map(parseResult, content).copy(
+            sourceMembershipKnown = compileContext.sourceMembershipKnown,
+            sourceVisibilityKnown = compileContext.sourceVisibilityKnown,
+        )
+    }
+
+    private fun installParsedResult(
+        input: CompilationInput,
+        parseResult: ParseResult,
+        compileContext: DocumentCompileContext,
+    ) {
+        val (uri, content, claim) = input
+        val policy = compileContext.sourcePolicy
         val ast = parseResult.ast
 
         if (ast != null) {
@@ -252,35 +280,25 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // index, as one commit that a retired compile cannot make (#1184)
             val fingerprint = compileContext.fingerprint
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
-                symbolIndexer.install(uri, symbols)
+            var published = false
+            val install = {
+                published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, { claim.isValid() }) {
+                    symbolIndexer.install(uri, symbols)
+                }
             }
+            if (policy == null) install() else policy.publishIfCurrent(install)
 
             if (published) {
                 // Semantic document for cross-file resolution
                 claim.publication?.let {
-                    semanticIndexer?.publish(it, content, ast, parseResult.outcome.achievedPhase)
+                    semanticIndexer?.publishIfCurrent(
+                        it,
+                        SemanticContent(content, ast, parseResult.outcome.achievedPhase),
+                    ) { commit -> publishWithinSourcePolicy(policy, commit) }
                 }
             } else {
                 logger.debug { "Discarded the result of a retired compile of $uri" }
             }
-        }
-
-        return resultMapper.map(parseResult, content)
-    }
-
-    /**
-     * Says at INFO why a file compiled without its types. Once per (uri, outcome): typing in a degraded
-     * file does not repeat it, a different cause logs again, and a clean compile resets it.
-     */
-    private fun logIfDegraded(uri: URI, parseResult: ParseResult) {
-        val outcome = parseResult.outcome
-        if (!outcome.isDegraded) {
-            loggedDegradations.remove(uri)
-            return
-        }
-        if (loggedDegradations.put(uri, outcome) != outcome) {
-            logger.info { outcome.describe(uri.toString()) }
         }
     }
 
@@ -291,31 +309,37 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         logger.debug { "Transient compile: $uri" }
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val workspace = workspaceManager.current()
-        val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
+        val context = workspaceManager.compileContextFor(uri, content, workspace)
+        val policy = context.sourcePolicy
+        val classpath = context.classpath
 
         // Use bounded workspace selection when available (Issue #743)
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace)
+        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, policy)
         val checkCancelled = cancellationCheck()
+        val sourceFilter = if (policy == null) {
+            workspaceManager.sourceFilterFor(uri, workspace)
+        } else {
+            policy.sourceFilter()
+        }
+        val (openSources, locatorBuffers) = openSourcesFor(uri, workspace, policy)
+        val locate = symbolIndexer.classLocator(sourcePath)
+        val locator = { name: String -> locate(name).filter { sourceFilter == null || sourceFilter(it) } }
 
-        return workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
-                workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                compilePhase = compilePhase,
-                checkCancelled = checkCancelled,
-            ),
+        val request = ParseRequest(
+            uri = uri,
+            content = content,
+            classpath = classpath,
+            sourceRoots = policy?.sourceRoots() ?: workspaceManager.sourceRootsFor(uri, workspace),
+            workspaceSources = workspaceSources,
+            openSources = openSources,
+            locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+            compilePhase = compilePhase,
+            checkCancelled = checkCancelled,
+            workspaceClassLocator = locator,
         )
-    }
-
-    /** A hook that throws [CancellationException] once the calling coroutine is cancelled. */
-    private suspend fun cancellationCheck(): () -> Unit {
-        val job = currentCoroutineContext()[Job]
-        return { job?.ensureActive() }
+        val result = workerSessionManager.parseWithSourcePolicy(request, sourceFilter, locatorBuffers)
+        if (policy?.isCurrent() == false) throw contentModified(uri)
+        return result
     }
 
     /**
@@ -463,7 +487,15 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // A closed file's entry is retired when its buffer closes or the file changes, so it follows the disk
         cacheService.getCachedWithContent(uri, configFingerprint)?.let { (content, parseResult) ->
             logger.debug { "Using cached result for: $uri" }
-            return Awaited.Done(resultMapper.mapFromCache(parseResult, content))
+            return Awaited.Done(
+                resultMapper.mapFromCache(parseResult, content)?.let { cached ->
+                    val context = workspaceManager.compileContextFor(uri, content, workspace)
+                    cached.copy(
+                        sourceMembershipKnown = context.sourceMembershipKnown,
+                        sourceVisibilityKnown = context.sourceVisibilityKnown,
+                    )
+                },
+            )
         }
 
         // Use on-demand compilation from disk if file exists
@@ -513,6 +545,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private fun getWorkspaceSourcesForCompilation(
         uri: URI,
         workspace: WorkspaceModel,
+        policy: SourcePolicySnapshot?,
         logBounded: Boolean = false,
     ): List<Path> {
         val sources = if (dependencyGraph?.hasInfo(uri) == true) {
@@ -527,7 +560,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // A buffer open under another spelling already carries its file: its listed disk copy would be a second
         // definition of every class in it (#1446).
         val hidden = shadowed()
-        return if (hidden.isEmpty()) sources else sources.filterNot { it.toUri() in hidden }
+        val scoped = policy?.sourcesFor(sources) ?: workspaceManager.sourcesFor(uri, workspace, sources)
+        return if (hidden.isEmpty()) scoped else scoped.filterNot { it.toUri() in hidden }
     }
 
     /**
@@ -535,8 +569,32 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * two new files can reference each other before either is saved. The parser keeps only
      * `.groovy` sources and lets each buffer replace its on-disk copy.
      */
-    private fun openSourcesFor(uri: URI): Map<URI, String> =
-        documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
+    private fun openSourcesFor(
+        uri: URI,
+        workspace: WorkspaceModel,
+        policy: SourcePolicySnapshot?,
+    ): Pair<Map<URI, String>, Map<URI, String>> {
+        val scope = policy?.scope ?: workspaceManager.sourceScopeFor(uri, workspace)
+        val buffers = documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
+        if (scope.mode == SourceMode.LEGACY_UNKNOWN) {
+            val filtered = buffers.filterKeys { candidate ->
+                val path = runCatching { Path.of(candidate) }.getOrNull()
+                path == null || scope.classify(path) != SourceCandidate.EXCLUDED
+            }
+            return filtered to emptyMap()
+        }
+        val eager = mutableMapOf<URI, String>()
+        val onDemand = mutableMapOf<URI, String>()
+        buffers.forEach { (candidate, content) ->
+            val path = runCatching { Path.of(candidate) }.getOrNull() ?: return@forEach
+            when (scope.classify(path)) {
+                SourceCandidate.VISIBLE -> eager[candidate] = content
+                SourceCandidate.UNKNOWN -> onDemand[candidate] = content
+                SourceCandidate.EXCLUDED -> Unit
+            }
+        }
+        return eager to onDemand
+    }
 }
 
 private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
@@ -611,4 +669,48 @@ private fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Pa
         .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
         .filter { it != self }
         .distinct()
+}
+
+private fun WorkerSessionManager.parseWithSourcePolicy(
+    request: ParseRequest,
+    sourceFilter: ((Path) -> Boolean)?,
+    locatorBuffers: Map<URI, String>,
+): ParseResult = if (sourceFilter == null && locatorBuffers.isEmpty()) {
+    parse(request)
+} else {
+    parseWithSourceFilter(request, sourceFilter, locatorBuffers)
+}
+
+/** A hook that throws [CancellationException] once the calling coroutine is cancelled. */
+private suspend fun cancellationCheck(): () -> Unit {
+    val job = currentCoroutineContext()[Job]
+    return { job?.ensureActive() }
+}
+
+/**
+ * Says at INFO why a file compiled without its types. Once per (uri, outcome): typing in a degraded
+ * file does not repeat it, a different cause logs again, and a clean compile resets it.
+ */
+private fun logIfDegraded(
+    uri: URI,
+    parseResult: ParseResult,
+    loggedDegradations: ConcurrentHashMap<URI, ParseOutcome>,
+    logger: KLogger,
+) {
+    val outcome = parseResult.outcome
+    if (!outcome.isDegraded) {
+        loggedDegradations.remove(uri)
+        return
+    }
+    if (loggedDegradations.put(uri, outcome) != outcome) {
+        logger.info { outcome.describe(uri.toString()) }
+    }
+}
+
+private fun requireCurrentSourcePolicy(policy: SourcePolicySnapshot?, uri: URI) {
+    if (policy?.isCurrent() == false) throw contentModified(uri)
+}
+
+private fun publishWithinSourcePolicy(policy: SourcePolicySnapshot?, commit: () -> Unit) {
+    if (policy == null) commit() else policy.publishIfCurrent(commit)
 }

@@ -20,8 +20,10 @@ import org.codehaus.groovy.ast.ModuleNode
  *
  * **Priority: MEDIUM** - runs after local symbol resolution.
  */
-class GlobalClassResolutionStrategy(private val compilationService: GroovyCompilationService) :
-    SymbolResolutionStrategy {
+class GlobalClassResolutionStrategy(
+    private val compilationService: GroovyCompilationService,
+    private val workspaceIndex: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex? = null,
+) : SymbolResolutionStrategy {
 
     private val logger = KotlinLogging.logger {}
 
@@ -38,6 +40,7 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         // is exactly the reference wins (#1336): `b.Shared` must not open `a.Shared`. Without such a class, the
         // simple name decides and each file offers its first match, as before.
         val matches = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleClassName))
+            .filter { workspaceIndex?.isVisibleUri(it.uri) != false }
         val exact = if (className.contains('.') || referencedFromDefaultPackage(context.documentUri)) {
             matches.filter { it.fullyQualifiedName == className }.ifEmpty { nestedExactMatches(className) }
         } else {
@@ -76,7 +79,7 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
             val name = candidate
             val found = compilationService.symbolIndexingService
                 .findClasses(ClassNameQuery.Exact(name.substringAfterLast('.')))
-                .filter { it.fullyQualifiedName == name }
+                .filter { it.fullyQualifiedName == name && workspaceIndex?.isVisibleUri(it.uri) != false }
             if (found.isNotEmpty()) return found
         }
         return emptyList()

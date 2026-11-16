@@ -26,6 +26,10 @@ import org.codehaus.groovy.ast.ModuleNode
 class SemanticTypeResolver(private val typeSolver: TypeSolver, workspaceMemberLookup: MemberLookup? = null) {
     val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry(), workspaceMemberLookup)
 
+    /** A request-local resolver retaining the same type solver with a scoped workspace view. */
+    fun withWorkspaceMemberLookup(lookup: MemberLookup?): SemanticTypeResolver =
+        SemanticTypeResolver(typeSolver, lookup)
+
     companion object {
         private val logger = KotlinLogging.logger {}
     }

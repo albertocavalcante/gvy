@@ -4,8 +4,11 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
@@ -17,6 +20,7 @@ import io.mockk.unmockkObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.future.await
@@ -34,6 +38,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -186,6 +191,46 @@ class HoverSnapshotTest {
             coEvery { fixture.compilation.ensureCompiled(fixture.uri) } throws CancellationException("cancelled")
 
             assertFailsWith<CancellationException> { fixture.endpoint.hover(fixture.params()).await() }
+        }
+    }
+
+    @Test
+    fun `held native hover declines a retired strategy policy`(): Unit = runBlocking {
+        fixture(EngineType.Native).use { fixture ->
+            val active = AtomicBoolean(true)
+            val strategy = object : ProjectStrategy {
+                override val id = "changing-strategy"
+                override val displayName = "Changing strategy"
+                override fun canHandle(workspaceRoot: Path, config: ServerConfiguration) = true
+                override suspend fun initialize(workspaceRoot: Path, config: ServerConfiguration): Job? = null
+                override fun overridesClasspath(uri: URI) = active.get()
+            }
+            val registry = ProjectStrategyRegistry(listOf(strategy))
+            registry.selectStrategies(workspace, ServerConfiguration())
+            fixture.compilation.workspaceManager.setStrategyRegistry(registry)
+            assertTrue(fixture.compilation.compile(fixture.uri, ORIGINAL_SOURCE).isSuccess)
+            val captured = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
+            assertTrue(assertNotNull(captured.sourcePolicy).isCurrent())
+            val workspaceBefore = fixture.compilation.workspaceManager.current()
+            active.set(false)
+            assertSame(workspaceBefore, fixture.compilation.workspaceManager.current())
+            val hover = fixture.compilation.getHoverSession(fixture.uri, captured).features.hoverProvider
+                .getHover(fixture.params())
+            assertEquals("", hover.contents.right.value)
+        }
+    }
+
+    @Test
+    fun `held native hover declines a retired workspace snapshot`(): Unit = runBlocking {
+        fixture(EngineType.Native).use { fixture ->
+            val captured = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
+            assertSame(fixture.compilation.workspaceManager.current(), captured.workspace)
+            val replacement = java.nio.file.Files.createDirectory(workspace.resolve("replacement"))
+            fixture.compilation.workspaceManager.initializeWorkspace(replacement)
+
+            val hover = fixture.compilation.getHoverSession(fixture.uri, captured).features.hoverProvider
+                .getHover(fixture.params())
+            assertEquals("", hover.contents.right.value)
         }
     }
 

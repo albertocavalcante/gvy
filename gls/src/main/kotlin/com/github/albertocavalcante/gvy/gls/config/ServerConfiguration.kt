@@ -68,8 +68,8 @@ data class ServerConfiguration(
 
     /**
      * Observe each Gradle source set's own compile classpath and compile its documents against it (#1235).
-     * Off by default: it runs one more Gradle Tooling API operation per resolution, before the classpath is
-     * published. Machine-scoped in the client, because it runs the build's configuration.
+     * Off by default: membership is observed independently, while this setting also selects per-target classpaths.
+     * Machine-scoped in the client, because it runs the build's configuration.
      */
     val gradleTargetClasspathsEnabled: Boolean = false,
 

@@ -17,6 +17,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertSame
 
 class DocumentTargetSelectorTest {
@@ -58,6 +59,153 @@ class DocumentTargetSelectorTest {
 
         val selection = assertIs<TargetSelection.Selected>(select("src/test/groovy/p/ASpec.groovy", main, test))
         assertSame(test, selection.snapshot)
+    }
+
+    @Test
+    fun `authoritative membership excludes files under a source root`() {
+        val target = TargetDependencySnapshot(
+            target = DependencyTarget(URI.create("test:main"), root, "main"),
+            role = DependencyRole.COMPILE,
+            provenance = provenance,
+            state = TargetDependencyState.COMPLETE,
+            artifacts = emptyList(),
+            sourceRoots = listOf(root.resolve("src")),
+            sourceFiles = listOf(root.resolve("src/Included.groovy")),
+        )
+        assertIs<TargetSelection.Selected>(select("src/Included.groovy", target))
+        assertSame(TargetSelection.Unowned, select("src/Excluded.groovy", target))
+        assertSame(TargetSelection.Unowned, select("src/New.groovy", target))
+    }
+
+    @Test
+    fun `source boundaries restrict other files while retaining legacy recovery`() {
+        val included = root.resolve("src/Included.groovy")
+        val excluded = root.resolve("src/Excluded.groovy")
+        val target = TargetDependencySnapshot(
+            target = DependencyTarget(URI.create("test:main"), root, "main"),
+            role = DependencyRole.COMPILE,
+            provenance = provenance,
+            state = TargetDependencyState.COMPLETE,
+            artifacts = emptyList(),
+            sourceRoots = listOf(root.resolve("src")),
+            sourceFiles = listOf(included),
+        )
+        val model = WorkspaceModel(
+            root,
+            emptyList(),
+            listOf(root.resolve("src")),
+            listOf(included, excluded),
+            TargetDependencyEvidence.Scoped(listOf(target), enumerationComplete = true),
+        ) { _, _ -> "fingerprint" }
+
+        assertEquals(true, model.compileContextFor(included).sourceMembershipKnown)
+        assertEquals(false, model.compileContextFor(excluded).sourceMembershipKnown)
+        assertEquals(listOf(included), model.sourcesFor(included, model.sources))
+        assertEquals(emptyList(), model.sourcesFor(excluded, model.sources))
+        assertEquals(listOf(root.resolve("src")), model.rootsFor(included))
+        assertEquals(emptyList(), model.rootsFor(excluded))
+        val legacy = WorkspaceModel(root, emptyList(), listOf(root.resolve("src")), listOf(included, excluded)) {
+                _,
+                _,
+            ->
+            "fingerprint"
+        }
+        assertEquals(null, legacy.compileContextFor(excluded).sourceMembershipKnown)
+        assertEquals(legacy.sources, legacy.sourcesFor(excluded, legacy.sources))
+        assertEquals(legacy.sourceRoots, legacy.rootsFor(excluded))
+    }
+
+    @Test
+    fun `unknown target membership retains recovery for unowned documents`() {
+        val unknown = snapshot("unknown", "other")
+        val known = TargetDependencySnapshot(
+            target = DependencyTarget(URI.create("test:main"), root, "main"),
+            role = DependencyRole.COMPILE,
+            provenance = provenance,
+            state = TargetDependencyState.COMPLETE,
+            artifacts = emptyList(),
+            sourceRoots = listOf(root.resolve("src")),
+            sourceFiles = emptyList(),
+        )
+        val path = root.resolve("src/Unmodeled.groovy")
+        val model = WorkspaceModel(
+            root,
+            emptyList(),
+            listOf(root.resolve("src")),
+            listOf(path),
+            TargetDependencyEvidence.Scoped(listOf(known, unknown)),
+        ) { _, _ -> "fingerprint" }
+        assertEquals(false, model.compileContextFor(path).sourceMembershipKnown)
+        assertEquals(listOf(path), model.sourcesFor(path, model.sources))
+    }
+
+    @Test
+    fun `ambiguous membership preserves recovery and is marked limited`() {
+        val file = root.resolve("src/Shared.groovy")
+        fun owner(id: String) = TargetDependencySnapshot(
+            DependencyTarget(URI.create("test:$id"), root, id),
+            DependencyRole.COMPILE,
+            provenance,
+            TargetDependencyState.COMPLETE,
+            emptyList(),
+            listOf(root.resolve("src")),
+            listOf(file),
+        )
+        val model = WorkspaceModel(
+            root,
+            emptyList(),
+            listOf(root.resolve("src")),
+            listOf(file),
+            TargetDependencyEvidence.Scoped(listOf(owner("one"), owner("two"))),
+        ) { _, _ -> "fingerprint" }
+        val context = model.compileContextFor(file)
+        assertIs<TargetSelection.Ambiguous>(context.selection)
+        assertEquals(false, context.sourceMembershipKnown)
+        assertEquals(listOf(file), model.sourcesFor(file, model.sources))
+    }
+
+    @Test
+    fun `membership changes the fingerprint even when roots and classpath do not`() {
+        val first = root.resolve("src/First.groovy")
+        val sibling = root.resolve("src/Sibling.groovy")
+        fun model(files: List<Path>) = WorkspaceModel(
+            root,
+            emptyList(),
+            listOf(root.resolve("src")),
+            listOf(first, sibling),
+            TargetDependencyEvidence.Scoped(
+                listOf(
+                    TargetDependencySnapshot(
+                        DependencyTarget(URI.create("test:main"), root, "main"),
+                        DependencyRole.COMPILE,
+                        provenance,
+                        TargetDependencyState.COMPLETE,
+                        emptyList(),
+                        listOf(root.resolve("src")),
+                        files,
+                    ),
+                ),
+                useTargetClasspaths = false,
+            ),
+        ) { _, _ -> "same" }
+        assertNotEquals(
+            model(listOf(first)).compileContextFor(first).fingerprint,
+            model(listOf(first, sibling)).compileContextFor(first).fingerprint,
+        )
+    }
+
+    @Test
+    fun `membership observation does not opt into target classpaths`() {
+        val target = snapshot("main", "src")
+        val legacyClasspath = listOf(root.resolve("legacy.jar"))
+        val model = WorkspaceModel(
+            root,
+            legacyClasspath,
+            listOf(root.resolve("src")),
+            emptyList(),
+            TargetDependencyEvidence.Scoped(listOf(target), useTargetClasspaths = false),
+        ) { _, _ -> "legacy" }
+        assertEquals(legacyClasspath, model.compileContextFor(root.resolve("src/Uses.groovy")).classpath)
     }
 
     @Test

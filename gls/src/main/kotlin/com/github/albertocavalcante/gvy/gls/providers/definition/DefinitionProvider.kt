@@ -8,6 +8,7 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceLookupContext
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
@@ -56,14 +57,16 @@ class DefinitionProvider(
         logger.debug { "Providing definitions for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
+        val lookup = compilationService.captureWorkspaceLookup(documentUri)
         spockDefinition(compilationService, documentUri, position)?.let {
+            if (!lookup.isCurrent()) return@flow
             telemetrySink.report(DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS))
             emit(it)
             return@flow
         }
         val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
-        emitDefinitions(uri, documentUri, position.toGroovyPosition(), context)
+        emitDefinitions(uri, documentUri, position.toGroovyPosition(), context, lookup)
     }
 
     /**
@@ -73,7 +76,9 @@ class DefinitionProvider(
         logger.debug { "Providing definition links for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
+        val lookup = compilationService.captureWorkspaceLookup(documentUri)
         spockDefinition(compilationService, documentUri, position)?.let {
+            if (!lookup.isCurrent()) return@flow
             emit(LocationLink(it.uri, it.range, it.range))
             return@flow
         }
@@ -84,7 +89,7 @@ class DefinitionProvider(
             context.symbolTable,
             compilationService,
             sourceNavigator,
-            compilationService.getWorkspaceSymbolIndex(),
+            lookup.index,
         )
 
         // Find the origin node at the position
@@ -99,7 +104,7 @@ class DefinitionProvider(
         }
 
         val locationLink = resolveDefinitionLink(resolver, documentUri, position, originNode, context.visitor)
-        if (locationLink != null) {
+        if (locationLink != null && lookup.isCurrent()) {
             emit(locationLink)
         }
     }
@@ -323,6 +328,7 @@ class DefinitionProvider(
             return@flow
         }
 
+        val lookup = compilationService.captureWorkspaceLookup(documentUri)
         val ast = compilationService.getAst(documentUri) ?: return@flow
         val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
@@ -332,9 +338,10 @@ class DefinitionProvider(
             symbolTable,
             compilationService,
             sourceNavigator,
-            compilationService.getWorkspaceSymbolIndex(),
+            lookup.index,
         )
         val targets = resolver.findTargetsAt(documentUri, position.toGroovyPosition(), targetKinds)
+        if (!lookup.isCurrent()) return@flow
 
         // Convert each target to Location and emit
         targets.forEach { targetNode ->
@@ -391,17 +398,19 @@ class DefinitionProvider(
         documentUri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
         context: DefinitionContext,
+        lookup: WorkspaceLookupContext,
     ) {
         val resolver = DefinitionResolver(
             context.visitor,
             context.symbolTable,
             compilationService,
             sourceNavigator,
-            compilationService.getWorkspaceSymbolIndex(),
+            lookup.index,
         )
         var definitionFound = false
         try {
             val result = resolver.findDefinitionAt(documentUri, position)
+            if (!lookup.isCurrent()) return
 
             if (result != null) {
                 when (result) {

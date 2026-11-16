@@ -6,4 +6,9 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.nativeapi.ParseResult
 
 /** Source and parse components captured from one cache entry. Consumers treat the AST as read-only. */
-internal data class CompiledDocumentSnapshot(val sourceText: String, val parseResult: ParseResult)
+internal data class CompiledDocumentSnapshot(
+    val sourceText: String,
+    val parseResult: ParseResult,
+    val workspace: WorkspaceModel? = null,
+    val sourcePolicy: SourcePolicySnapshot? = null,
+)

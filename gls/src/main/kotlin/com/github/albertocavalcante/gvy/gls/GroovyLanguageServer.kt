@@ -186,6 +186,7 @@ class GroovyLanguageServer(
         classpathRestamper = classpathRestamper,
         reportEngineSetting = coreEngineDeprecation::report,
         onBuildFilesChanged = { paths -> startupManager.dependencyManager?.onWatchedFilesChanged(paths) },
+        refreshSourceMembership = { startupManager.dependencyManager?.refreshSourceMembership() },
     )
 
     // Helpers

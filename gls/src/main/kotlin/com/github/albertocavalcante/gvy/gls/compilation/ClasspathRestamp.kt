@@ -117,9 +117,17 @@ internal object ClasspathRestamp {
             }
             if (artifacts == snapshot.artifacts) snapshot else snapshot.withArtifacts(artifacts)
         }
-        return if (changed) TargetDependencyEvidence.Scoped(snapshots) else null
+        return if (changed) {
+            TargetDependencyEvidence.Scoped(
+                snapshots,
+                evidence.useTargetClasspaths,
+                evidence.enumerationComplete,
+            )
+        } else {
+            null
+        }
     }
 
     private fun TargetDependencySnapshot.withArtifacts(artifacts: List<ResolvedDependencyArtifact>) =
-        TargetDependencySnapshot(target, role, provenance, state, artifacts, sourceRoots)
+        TargetDependencySnapshot(target, role, provenance, state, artifacts, sourceRoots, sourceFiles)
 }

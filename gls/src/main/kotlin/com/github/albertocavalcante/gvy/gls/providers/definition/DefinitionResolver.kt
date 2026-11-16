@@ -94,8 +94,8 @@ class DefinitionResolver(
                     add(SemanticDBResolutionStrategy(index))
                 }
                 compilationService?.let {
-                    add(MethodResolutionStrategy(it, sourceNavigator))
-                    add(GlobalClassResolutionStrategy(it))
+                    add(MethodResolutionStrategy(it, sourceNavigator, workspaceSymbolIndex))
+                    add(GlobalClassResolutionStrategy(it, workspaceSymbolIndex))
                     add(ClasspathResolutionStrategy(it, sourceNavigator))
                 }
             }

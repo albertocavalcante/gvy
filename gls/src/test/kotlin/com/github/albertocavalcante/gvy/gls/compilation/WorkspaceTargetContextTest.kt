@@ -21,9 +21,12 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class WorkspaceTargetContextTest {
     @TempDir
@@ -104,6 +107,8 @@ class WorkspaceTargetContextTest {
         assertEquals(manager.getClasspathForFile(uri, "class ASpec {}"), context.classpath)
         assertEquals(manager.getConfigurationFingerprint(), context.fingerprint)
         assertSame(TargetSelection.LegacyOnly, context.selection)
+        assertEquals(null, context.sourceMembershipKnown)
+        assertEquals(null, context.sourceVisibilityKnown)
     }
 
     @Test
@@ -207,7 +212,7 @@ class WorkspaceTargetContextTest {
     }
 
     @Test
-    fun `an overriding strategy supplies the classpath and keeps the workspace key on one predicate`() {
+    fun `an overriding strategy supplies its classpath and a distinct strategy key`() {
         val main = root.resolve("src/main/groovy")
         val (manager, _) = manager(TargetDependencyEvidence.Scoped(listOf(snapshot("main", main, "m.jar"))))
         val jenkinsfile = main.resolve("Jenkinsfile.groovy").toUri()
@@ -218,7 +223,7 @@ class WorkspaceTargetContextTest {
 
         val overridden = manager.compileContextFor(jenkinsfile, "")
         assertEquals(listOf(root.resolve("strategy.jar")), overridden.classpath)
-        assertEquals(manager.getConfigurationFingerprint(), overridden.fingerprint)
+        assertNotEquals(manager.getConfigurationFingerprint(), overridden.fingerprint)
         assertSame(TargetSelection.StrategyOverride, overridden.selection)
         assertEquals(overridden.fingerprint, manager.fingerprintFor(jenkinsfile))
 
@@ -228,6 +233,122 @@ class WorkspaceTargetContextTest {
 
         val ordinary = manager.compileContextFor(main.resolve("A.groovy").toUri(), "")
         assertIs<TargetSelection.Selected>(ordinary.selection)
+    }
+
+    @Test
+    fun `strategy override keeps legacy source recovery in scoped Gradle workspace`() {
+        val sourceRoot = Files.createDirectories(root.resolve("src/main/groovy"))
+        val jenkinsfile = sourceRoot.resolve("Jenkinsfile.groovy").toUri()
+        val other = sourceRoot.resolve("vars/Shared.groovy")
+        val target = TargetDependencySnapshot(
+            target = DependencyTarget(URI.create("test:main"), root, "main"),
+            role = DependencyRole.COMPILE,
+            provenance = provenance,
+            state = TargetDependencyState.COMPLETE,
+            artifacts = emptyList(),
+            sourceRoots = listOf(sourceRoot),
+            sourceFiles = emptyList(),
+        )
+        val (manager, _) = manager(TargetDependencyEvidence.Scoped(listOf(target), enumerationComplete = true))
+        val registry = ProjectStrategyRegistry(listOf(FakeStrategy(setOf(jenkinsfile), jenkinsfile)))
+        registry.selectStrategies(root, ServerConfiguration())
+        manager.setStrategyRegistry(registry)
+        val workspace = manager.current()
+
+        val context = manager.compileContextFor(jenkinsfile, "", workspace)
+        assertEquals(null, context.sourceMembershipKnown)
+        assertEquals(null, context.sourceVisibilityKnown)
+        assertEquals(SourceMode.LEGACY_UNKNOWN, manager.sourceScopeFor(jenkinsfile, workspace).mode)
+        assertEquals(SourceCandidate.UNKNOWN, manager.sourceScopeFor(jenkinsfile, workspace).classify(other))
+        assertEquals(listOf(other), manager.sourcesFor(jenkinsfile, workspace, listOf(other)))
+        assertEquals(null, manager.sourceFilterFor(jenkinsfile, workspace))
+    }
+
+    @Test
+    fun `failed Gradle observation carries unknown source flags`() {
+        val (manager, roots) = manager(TargetDependencyEvidence.Scoped(emptyList(), enumerationComplete = false))
+        val context = manager.compileContextFor(roots.getValue("main").resolve("A.groovy").toUri(), "")
+        assertEquals(false, context.sourceMembershipKnown)
+        assertEquals(false, context.sourceVisibilityKnown)
+    }
+
+    @Test
+    fun `strategy readiness transition retires the captured source policy and changes the key`() {
+        val sourceRoot = Files.createDirectories(root.resolve("src/main/groovy"))
+        val uri = sourceRoot.resolve("Jenkinsfile.groovy").toUri()
+        val target = TargetDependencySnapshot(
+            target = DependencyTarget(URI.create("test:main"), root, "main"),
+            role = DependencyRole.COMPILE,
+            provenance = provenance,
+            state = TargetDependencyState.COMPLETE,
+            artifacts = emptyList(),
+            sourceRoots = listOf(sourceRoot),
+            sourceFiles = emptyList(),
+        )
+        val (manager, _) = manager(TargetDependencyEvidence.Scoped(listOf(target), enumerationComplete = true))
+        var ready = false
+        val strategy = object : ProjectStrategy {
+            override val id = "transition"
+            override val displayName = "Transition"
+            override fun canHandle(workspaceRoot: Path, config: ServerConfiguration) = true
+            override suspend fun initialize(workspaceRoot: Path, config: ServerConfiguration): Job? = null
+            override fun overridesClasspath(uri: URI) = ready
+            override fun getClasspathForFile(uri: URI, content: String, projectDependencies: List<Path>) =
+                listOf(root.resolve("jenkins.jar"))
+        }
+        val registry = ProjectStrategyRegistry(listOf(strategy))
+        registry.selectStrategies(root, ServerConfiguration())
+        manager.setStrategyRegistry(registry)
+        val workspace = manager.current()
+        val before = manager.compileContextFor(uri, "", workspace)
+        val policy = assertNotNull(before.sourcePolicy)
+        assertEquals(SourceMode.INDEPENDENT, policy.scope.mode)
+        assertTrue(policy.isCurrent())
+
+        ready = true
+        assertEquals(
+            SourceMode.INDEPENDENT,
+            policy.scope.mode,
+            "captured policy does not switch underneath the compile",
+        )
+        assertFalse(policy.isCurrent())
+        val after = manager.compileContextFor(uri, "", workspace)
+        assertSame(TargetSelection.StrategyOverride, after.selection)
+        assertEquals(SourceMode.LEGACY_UNKNOWN, assertNotNull(after.sourcePolicy).scope.mode)
+        assertNotEquals(before.fingerprint, after.fingerprint)
+        assertEquals(after.fingerprint, manager.fingerprintFor(uri, workspace))
+    }
+
+    @Test
+    fun `same strategy configuration revision retires its captured source policy`() {
+        val uri = root.resolve("Jenkinsfile").toUri()
+        val (manager, _) = manager(TargetDependencyEvidence.Scoped(emptyList(), enumerationComplete = false))
+        var revision = 0L
+        var duringUpdate: SourcePolicySnapshot? = null
+        var acceptedDuringUpdate = true
+        val strategy = object : ProjectStrategy {
+            override val id = "mutable"
+            override val displayName = "Mutable"
+            override val sourcePolicyRevision get() = revision
+            override fun canHandle(workspaceRoot: Path, config: ServerConfiguration) = true
+            override suspend fun initialize(workspaceRoot: Path, config: ServerConfiguration): Job? = null
+            override fun overridesClasspath(uri: URI) = true
+            override fun updateConfiguration(config: ServerConfiguration) {
+                revision = 1
+                duringUpdate = manager.captureSourcePolicy(uri, manager.current())
+                acceptedDuringUpdate = checkNotNull(duringUpdate).isCurrent()
+                revision = 2
+            }
+        }
+        val registry = ProjectStrategyRegistry(listOf(strategy))
+        registry.selectStrategies(root, ServerConfiguration())
+        manager.setStrategyRegistry(registry)
+        val before = manager.compileContextFor(uri, "")
+        strategy.updateConfiguration(ServerConfiguration())
+        assertFalse(acceptedDuringUpdate)
+        assertFalse(assertNotNull(duringUpdate).isCurrent(), "a snapshot during mutation is never current")
+        assertFalse(assertNotNull(before.sourcePolicy).isCurrent())
+        assertNotEquals(before.fingerprint, manager.compileContextFor(uri, "").fingerprint)
     }
 
     private inner class FakeStrategy(private val owned: Set<URI>, private val withClasspath: URI) : ProjectStrategy {

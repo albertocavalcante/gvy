@@ -42,6 +42,7 @@ data class HintContext(
     val semanticResolver: SemanticTypeResolver,
     val config: InlayHintsConfiguration,
     val logger: KLogger,
+    val workspaceIndex: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex? = null,
 ) {
     /**
      * [workspaceSymbols]' methods keyed by method name and owner simple name, built once per request on

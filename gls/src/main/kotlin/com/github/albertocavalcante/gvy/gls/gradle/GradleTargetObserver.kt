@@ -15,15 +15,23 @@ import kotlin.time.Duration.Companion.minutes
 /**
  * Observes Gradle source-set classpaths with [GradleScopedDependencyProducer] (#1217) for Gradle
  * workspaces; every other tool keeps Legacy evidence. This runs one more Gradle Tooling API operation
- * per resolution attempt, so it is opt-in (`groovy.gradle.targetClasspaths.enabled`, machine-scoped).
+ * per resolution attempt. Target-specific classpaths remain opt-in; membership is observed by default.
  */
 class GradleTargetObserver(
     private val producer: GradleScopedDependencyProducer,
     private val timeout: Duration = DEFAULT_TIMEOUT,
+    private val useTargetClasspaths: Boolean = true,
 ) : TargetEvidenceObserver {
     override suspend fun observe(tool: BuildTool, workspaceRoot: Path, generation: Long): TargetDependencyEvidence =
         if (tool is GradleBuildTool) {
-            producer.resolve(workspaceRoot, DependencyProvenance(PRODUCER, generation), timeout)
+            when (val evidence = producer.resolve(workspaceRoot, DependencyProvenance(PRODUCER, generation), timeout)) {
+                is TargetDependencyEvidence.Scoped -> TargetDependencyEvidence.Scoped(
+                    evidence.snapshots,
+                    useTargetClasspaths,
+                    evidence.enumerationComplete,
+                )
+                TargetDependencyEvidence.Legacy -> evidence
+            }
         } else {
             TargetDependencyEvidence.Legacy
         }

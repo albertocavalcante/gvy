@@ -68,6 +68,7 @@ class WorkspaceManager internal constructor(
 
     // Serializes writers; readers never take it.
     private val updateLock = Any()
+    private val strategyLock = Any()
 
     // Project strategy registry for project-type-specific functionality
     @Volatile
@@ -80,8 +81,13 @@ class WorkspaceManager internal constructor(
      * Sets the project strategy registry.
      * The registry manages project-type-specific strategies (Jenkins, Gradle, etc.).
      */
-    fun setStrategyRegistry(registry: ProjectStrategyRegistry) {
-        this.strategyRegistry = registry
+    fun setStrategyRegistry(registry: ProjectStrategyRegistry, retire: () -> Unit = {}) {
+        synchronized(strategyLock) {
+            if (this.strategyRegistry !== registry) {
+                this.strategyRegistry = registry
+                retire()
+            }
+        }
         logger.info { "Strategy registry set with ${registry.activeStrategies.size} strategies" }
     }
 
@@ -89,6 +95,27 @@ class WorkspaceManager internal constructor(
      * Gets the project strategy registry.
      */
     fun getStrategyRegistry(): ProjectStrategyRegistry? = strategyRegistry
+
+    /** Mutate strategy configuration and retire derived artifacts under the same publication fence. */
+    fun updateStrategies(
+        config: com.github.albertocavalcante.gvy.gls.config.ServerConfiguration,
+        retire: () -> Unit,
+    ): Boolean = synchronized(strategyLock) {
+        val registry = strategyRegistry ?: return@synchronized false
+        synchronized(registry) {
+            val active = registry.activeStrategies.toList()
+            val before = active.map { it.sourcePolicyRevision }
+            var changed = false
+            try {
+                active.forEach { it.updateConfiguration(config) }
+            } finally {
+                changed = active != registry.activeStrategies ||
+                    active.indices.any { active[it].sourcePolicyRevision != before[it] }
+                if (changed) retire()
+            }
+            changed
+        }
+    }
 
     /**
      * Gets Jenkins capabilities from the strategy registry.
@@ -139,9 +166,18 @@ class WorkspaceManager internal constructor(
         dependencies: List<Path>,
         sourceDirectories: List<Path>,
         targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
+    ): Boolean = updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets) {}
+
+    /** Retire policy-derived facts under the same fence that publishes the replacement model. */
+    internal fun updateWorkspaceModel(
+        workspaceRoot: Path,
+        dependencies: List<Path>,
+        sourceDirectories: List<Path>,
+        targets: TargetDependencyEvidence,
+        retire: () -> Unit,
     ): Boolean {
         var changed = false
-        update { current ->
+        update(beforePublish = { if (changed) retire() }) { current ->
             val depsChanged = classpathChanged(current.classpath, dependencies)
             if (depsChanged) logger.info { "Updated dependency classpath with ${dependencies.size} dependencies" }
             val sourcesChanged = sourceDirectories.toSet() != current.sourceRoots.toSet()
@@ -582,8 +618,15 @@ class WorkspaceManager internal constructor(
         path.extension.equals("groovy", ignoreCase = true) && Files.isRegularFile(path)
 
     /** Builds the next model outside any reader's view (including disk walks) and publishes it whole. */
-    private inline fun update(next: (WorkspaceModel) -> WorkspaceModel) {
-        synchronized(updateLock) { model.set(next(model.get())) }
+    private inline fun update(beforePublish: () -> Unit = {}, next: (WorkspaceModel) -> WorkspaceModel) {
+        synchronized(updateLock) {
+            val replacement = next(model.get())
+            // Build/scan before the short publication fence; policy readers and writers share this fence.
+            synchronized(strategyLock) {
+                beforePublish()
+                model.set(replacement)
+            }
+        }
     }
 
     private fun model(
@@ -595,18 +638,43 @@ class WorkspaceManager internal constructor(
         root,
         classpath,
         sourceRoots,
-        scanSources(sourceRoots.distinct(), root),
+        scanSourcesWithMembers(sourceRoots, root, targets),
         targets,
         computeFingerprint = fingerprintComputer,
     )
 
+    private fun scanSourcesWithMembers(
+        roots: List<Path>,
+        workspaceRoot: Path?,
+        targets: TargetDependencyEvidence,
+    ): List<Path> {
+        val scanned = scanSources(roots.distinct(), workspaceRoot)
+        val members = (targets as? TargetDependencyEvidence.Scoped)?.snapshots.orEmpty().flatMap { snapshot ->
+            snapshot.sourceFiles.orEmpty().map { file ->
+                if (file.isAbsolute) file else snapshot.target.projectDirectory.resolve(file)
+            }
+        }.filter(::isGroovySource)
+        return (scanned + members).distinctBy(DocumentTargetSelector::canonical).sortedBy { it.toString() }
+    }
+
     /** Structural comparison of target facts; provenance (generation) alone is not a change. */
     private fun sameTargetFacts(current: TargetDependencyEvidence, next: TargetDependencyEvidence): Boolean =
-        targetFacts(current) == targetFacts(next)
+        targetFacts(current) == targetFacts(next) &&
+            (current as? TargetDependencyEvidence.Scoped)?.useTargetClasspaths ==
+            (next as? TargetDependencyEvidence.Scoped)?.useTargetClasspaths &&
+            (current as? TargetDependencyEvidence.Scoped)?.enumerationComplete ==
+            (next as? TargetDependencyEvidence.Scoped)?.enumerationComplete
 
     private fun targetFacts(evidence: TargetDependencyEvidence): List<List<Any?>>? =
         (evidence as? TargetDependencyEvidence.Scoped)?.snapshots?.map { snapshot ->
-            listOf(snapshot.target, snapshot.role, snapshot.state, snapshot.artifacts, snapshot.sourceRoots)
+            listOf(
+                snapshot.target,
+                snapshot.role,
+                snapshot.state,
+                snapshot.artifacts,
+                snapshot.sourceRoots,
+                snapshot.sourceFiles,
+            )
         }
 
     private fun emptyModel(root: Path?) =
@@ -733,30 +801,74 @@ class WorkspaceManager internal constructor(
     /**
      * The classpath, fingerprint and target for one document from [workspace] alone (#1235).
      * A strategy that [overrides][ProjectStrategy.overridesClasspath] the document supplies its
-     * classpath and keeps the workspace fingerprint, exactly as before; that single predicate also
-     * drives [fingerprintFor], so reads and writes always use the same cache key.
+     * classpath and a strategy-specific fingerprint, using the same captured source policy.
      */
     fun compileContextFor(uri: URI, content: String): DocumentCompileContext =
         compileContextFor(uri, content, current())
 
+    /** Captures the active strategy and source boundary once for a request. */
+    fun captureSourcePolicy(uri: URI, workspace: WorkspaceModel): SourcePolicySnapshot {
+        val registry = strategyRegistry
+        val revisions = registry?.activeStrategies.orEmpty().map { it to it.sourcePolicyRevision }
+        val strategy = overridingStrategy(uri)
+        val revision = revisions.firstOrNull { it.first === strategy }?.second ?: 0L
+        val path = documentPath(uri)
+        val scope = if (strategy != null) workspace.legacySourceScopeFor(path) else workspace.sourceScopeFor(path)
+        val fence: (() -> Boolean) -> Boolean = { action ->
+            synchronized(strategyLock) {
+                if (registry == null) action() else synchronized(registry) { action() }
+            }
+        }
+        return SourcePolicySnapshot(uri, workspace, StrategyObservation(strategy, revision, revisions), scope, fence) {
+            fence {
+                current() === workspace && strategyRegistry === registry &&
+                    registry?.activeStrategies.orEmpty().let { active ->
+                        active.size == revisions.size && active.indices.all { active[it] === revisions[it].first }
+                    } && overridingStrategy(uri) === strategy && revisions.all { (candidate, captured) ->
+                        captured % 2L == 0L && candidate.sourcePolicyRevision == captured
+                    }
+            }
+        }
+    }
+
+    /** Strategy-owned documents do not inherit a Gradle source boundary. */
+    fun sourceScopeFor(uri: URI, workspace: WorkspaceModel): SourceScope = if (overridingStrategy(uri) != null) {
+        workspace.legacySourceScopeFor(documentPath(uri))
+    } else {
+        workspace.sourceScopeFor(documentPath(uri))
+    }
+
+    fun sourceFilterFor(uri: URI, workspace: WorkspaceModel): ((Path) -> Boolean)? =
+        if (overridingStrategy(uri) != null) null else workspace.sourceFilterFor(documentPath(uri))
+
+    fun sourcesFor(uri: URI, workspace: WorkspaceModel, candidates: List<Path>): List<Path> =
+        if (overridingStrategy(uri) != null) candidates else workspace.sourcesFor(documentPath(uri), candidates)
+
+    fun sourceRootsFor(uri: URI, workspace: WorkspaceModel): List<Path> =
+        if (overridingStrategy(uri) != null) workspace.sourceRoots else workspace.rootsFor(documentPath(uri))
+
     /** [compileContextFor] against one [workspace] snapshot a compile already holds. */
     fun compileContextFor(uri: URI, content: String, workspace: WorkspaceModel): DocumentCompileContext {
-        overridingStrategy(uri)?.let { strategy ->
+        val policy = captureSourcePolicy(uri, workspace)
+        policy.strategy?.let { strategy ->
             val classpath = strategy.getClasspathForFile(uri, content, workspace.classpath) ?: workspace.classpath
-            return DocumentCompileContext(classpath, workspace.fingerprint, TargetSelection.StrategyOverride)
+            return DocumentCompileContext(
+                classpath,
+                policy.fingerprint(),
+                TargetSelection.StrategyOverride,
+                null,
+                null,
+                policy,
+            )
         }
-        return workspace.compileContextFor(documentPath(uri))
+        return workspace.compileContextFor(documentPath(uri)).copy(sourcePolicy = policy)
     }
 
     /** The fingerprint [compileContextFor] uses for [uri], without computing a classpath. */
     fun fingerprintFor(uri: URI): String = fingerprintFor(uri, current())
 
     /** [fingerprintFor] against one [workspace] snapshot. */
-    fun fingerprintFor(uri: URI, workspace: WorkspaceModel): String = if (overridingStrategy(uri) != null) {
-        workspace.fingerprint
-    } else {
-        workspace.compileContextFor(documentPath(uri)).fingerprint
-    }
+    fun fingerprintFor(uri: URI, workspace: WorkspaceModel): String = captureSourcePolicy(uri, workspace).fingerprint()
 
     /**
      * The classpath for a file: a strategy classpath when one applies, else the selected target's,
@@ -773,6 +885,56 @@ class WorkspaceManager internal constructor(
 
     private fun documentPath(uri: URI): Path? =
         if (uri.scheme == "file") runCatching { Path.of(uri) }.getOrNull() else null
+}
+
+internal data class StrategyObservation(
+    val strategy: ProjectStrategy?,
+    val revision: Long,
+    val revisions: List<Pair<ProjectStrategy, Long>>,
+)
+
+/** Source policy bound to one workspace and one strategy-applicability observation. */
+class SourcePolicySnapshot internal constructor(
+    val uri: URI,
+    val workspace: WorkspaceModel,
+    private val observation: StrategyObservation,
+    val scope: SourceScope,
+    private val publicationFence: (() -> Boolean) -> Boolean,
+    private val current: () -> Boolean,
+) {
+    internal val strategy: ProjectStrategy? get() = observation.strategy
+
+    fun isCurrent(): Boolean = current()
+
+    /** Holds strategy mutation fences only around a short, synchronous artifact publication. */
+    fun publishIfCurrent(action: () -> Unit): Boolean {
+        fun lock(index: Int): Boolean {
+            if (index == observation.revisions.size) {
+                if (!isCurrent()) return false
+                action()
+                return true
+            }
+            val (candidate, version) = observation.revisions[index]
+            var published = false
+            candidate.withCurrentSourcePolicyRevision(version) { published = lock(index + 1) }
+            return published
+        }
+        return publicationFence { lock(0) }
+    }
+
+    fun fingerprint(): String = strategy?.let {
+        ConfigurationFingerprint.withStrategy(workspace.fingerprint, "${it.id}:${observation.revision}")
+    }
+        ?: workspace.compileContextFor(filePath()).fingerprint
+
+    fun sourceRoots(): List<Path> = if (strategy != null) workspace.sourceRoots else workspace.rootsFor(filePath())
+
+    fun sourcesFor(candidates: List<Path>): List<Path> =
+        if (strategy != null) candidates else workspace.sourcesFor(filePath(), candidates)
+
+    fun sourceFilter(): ((Path) -> Boolean)? = if (strategy != null) null else workspace.sourceFilterFor(filePath())
+
+    private fun filePath(): Path? = if (uri.scheme == "file") runCatching { Path.of(uri) }.getOrNull() else null
 }
 
 /**

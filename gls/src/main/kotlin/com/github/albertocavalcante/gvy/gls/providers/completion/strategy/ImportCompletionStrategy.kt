@@ -29,7 +29,10 @@ import java.lang.reflect.Modifier
  * This is a specialized strategy that is typically invoked early in the completion pipeline
  * when an import statement is detected.
  */
-internal class ImportCompletionStrategy(private val compilationService: GroovyCompilationService) {
+internal class ImportCompletionStrategy(
+    private val compilationService: GroovyCompilationService,
+    private val workspaceIndex: com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex? = null,
+) {
     /**
      * Adds import-specific completions (static keyword and matching class names).
      */
@@ -337,7 +340,10 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
         val isFqn = className.contains('.')
         return compilationService.symbolIndexingService
             .findClasses(ClassNameQuery.Exact(className.substringAfterLast('.')))
-            .filter { symbol -> !isFqn || symbol.fullyQualifiedName == className }
+            .filter { symbol ->
+                (workspaceIndex?.isVisibleUri(symbol.uri) != false) &&
+                    (!isFqn || symbol.fullyQualifiedName == className)
+            }
     }
 
     /**
