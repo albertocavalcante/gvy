@@ -91,7 +91,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 ruleSetFiles = rulesetFile.toUri().toString()
 
                 // Set properties file if provided
-                // Only a sanitized copy reaches CodeNarc, addressed by URI: a bare path is read as a classpath resource.
+                // Only a sanitized copy reaches CodeNarc, addressed by URI: a bare path is a classpath resource.
                 propertiesFile?.let { propFile ->
                     sanitizedPropertiesUri(analysisDir, propFile)?.let { uri ->
                         propertiesFilename = uri
