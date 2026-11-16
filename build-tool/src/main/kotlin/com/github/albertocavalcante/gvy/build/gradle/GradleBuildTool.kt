@@ -143,8 +143,9 @@ class GradleBuildTool(
         logger.info { "Extracting dependency metadata from Gradle project: $workspaceRoot" }
 
         return try {
-            val connection = connectionFactory.getConnection(workspaceRoot, null)
-            val ideaProject = connection.model(IdeaProject::class.java).get()
+            // Same lease, daemon arguments, Java home and cancellation as resolve(): a bare connection.model(...)
+            // would start a second, differently configured daemon.
+            val ideaProject = dependencyResolver.fetchIdeaProject(workspaceRoot)
 
             val dependencies = extractDependenciesFromModules(ideaProject)
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
