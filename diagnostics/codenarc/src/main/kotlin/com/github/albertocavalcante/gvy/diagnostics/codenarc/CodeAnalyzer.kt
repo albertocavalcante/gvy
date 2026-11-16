@@ -83,6 +83,9 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
             // Efficient write with NIO - direct UTF-8 bytes
             Files.write(tempSourceFile, sourceCode.toByteArray(StandardCharsets.UTF_8))
 
+            // Only a sanitized copy reaches CodeNarc, addressed by URI: a bare path is a classpath resource.
+            val propertiesUri = propertiesFile?.let { sanitizedPropertiesUri(analysisDir, it) }
+
             val runner = CodeNarcRunner().apply {
                 routeSummaryToStderr()
                 sourceAnalyzer = SingleFileSourceAnalyzer(analysisDir, safeFileName)
@@ -90,11 +93,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 // Set the ruleset file
                 ruleSetFiles = rulesetFile.toUri().toString()
 
-                // Set properties file if provided
-                propertiesFile?.let { propFile ->
-                    propertiesFilename = propFile
-                    logger.debug { "Using CodeNarc properties file: $propFile" }
-                }
+                propertiesUri?.let { propertiesFilename = it }
             }
 
             // Execute analysis on the source code
@@ -123,6 +122,13 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 logger.debug { "Temp file cleanup failed for $fileName: ${e.message}" }
             }
         }
+    }
+
+    internal fun sanitizedPropertiesUri(analysisDir: Path, propertiesFile: String): String? {
+        val sanitized = PropertiesSanitizer.sanitize(Paths.get(propertiesFile)) ?: return null
+        val target = analysisDir.resolve(".codenarc-sanitized.properties")
+        Files.write(target, sanitized.content.toByteArray(StandardCharsets.UTF_8))
+        return target.toUri().toString()
     }
 
     internal fun resolveSafeFileName(fileName: String): String = try {
