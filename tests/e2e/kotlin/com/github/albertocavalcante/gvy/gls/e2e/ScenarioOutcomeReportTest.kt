@@ -153,13 +153,11 @@ class ScenarioOutcomeReportTest {
             ScenarioCompletion.Cancelled("interrupted"),
         )
 
-        assertThatThrownBy { run(outcome) }
-            .isInstanceOf(java.util.concurrent.CancellationException::class.java)
-            .satisfies { failure ->
-                val io = failure.suppressed.single()
-                assertThat(io).isInstanceOf(IOException::class.java)
-                assertThat(io.suppressed.single().message).contains("worker live", "cancelled", "unconfirmed")
-            }
+        val failure = checkNotNull(catchThrowable { run(outcome) })
+        assertThat(failure).isInstanceOf(java.util.concurrent.CancellationException::class.java)
+        val io = failure.suppressed.single()
+        assertThat(io).isInstanceOf(IOException::class.java)
+        assertThat(io.suppressed.single().message).contains("worker live", "cancelled", "unconfirmed")
     }
 
     @Test
