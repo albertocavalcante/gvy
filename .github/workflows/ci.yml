@@ -55,13 +55,15 @@ env:
         (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
 concurrency:
   # PRs: group by head_ref (cancel outdated runs for same branch)
-  # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
+  # Main pushes: one group per branch, never cancelling a run in progress. A running main run always
+  #   finishes; GitHub keeps at most one pending run per group, so only superseded *pending* runs are
+  #   dropped. A burst of merges is therefore batched: not every merge commit gets its own result.
   # workflow_dispatch: group by run ID (never wait for other CI runs)
   group: >-
     ${{ github.workflow }}-${{
       github.event_name == 'pull_request' && github.head_ref ||
       github.event_name == 'workflow_dispatch' && github.run_id ||
-      github.sha
+      github.ref
     }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
