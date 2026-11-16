@@ -214,6 +214,23 @@ class ScenarioOutcomeReportTest {
     }
 
     @Test
+    fun `packaged evidence remains associated with the same sealed execution`() {
+        val outcome = ScenarioOutcome(
+            listOf("passed"),
+            listOf(ObservationResult("passed", ObservationStatus.Passed)),
+            CleanupOutcome.Succeeded,
+        )
+        val evidence = Json.parseToJsonElement(
+            """{"sourceHash":"authored-hash","bindings":[{"requestId":7,"clientVersion":1}]}""",
+        ).jsonObject
+        val definition = ScenarioDefinition(Scenario("packaged", steps = emptyList()), "packaged-test.kt")
+
+        ScenarioOutcomeReport.write(definition, outcome, evidence)
+
+        assertThat(report().getValue("evidence")).isEqualTo(evidence)
+    }
+
+    @Test
     fun `repeated scenario executions retain separate complete reports`() {
         val outcome = ScenarioOutcome(
             listOf("passed"),

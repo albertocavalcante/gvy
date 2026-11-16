@@ -47,6 +47,21 @@ including LF, CRLF and CR input. Omitted position encoding uses the LSP UTF-16 d
 Its pure mutation tests establish decoding behavior, not product recovery or request/source provenance. The packaged
 recovery workload must still bind request identities and assert current names, kinds and spans.
 
+`ColdIncompleteBufferRecoveryTest` launches a fresh packaged stdio process and empty workspace for each cold first
+feature, using unsaved handwritten source. Valid controls and malformed LF/CRLF cases exercise exact class tokens,
+hover ranges, outline ranges and declared enum members. The sealed named report includes launch/runtime facts,
+initialized capabilities, original bounded wire and request/source bindings. Missing or inconsistent evidence fails
+the test; these requests do not provide response document versions where LSP omits them. Dirty packaged sources are
+rejected by the existing launch verifier, so commit the test source before a qualifying packaged run.
+
+This is the cold replay slice of M0.1a. Warm edits, reused-version reopen, actual supplementary-character coordinates
+and shadowed/unknown completion receivers still require their own packaged controls. Pure decoder tests do not close
+those gates. Passing-test server-log diagnostic coverage remains tracked in #1603.
+
+The named `diagnostics.integrity` control checks terminal URI/version, completion, provider failures and source bounds;
+it preserves all supplied diagnostic metadata in the bound response. It does not establish the expected syntax-error
+location or attribution. Those semantic diagnostic assertions remain part of #2082's open workload gates.
+
 The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
 still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 

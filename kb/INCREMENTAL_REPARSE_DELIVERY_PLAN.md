@@ -725,6 +725,12 @@ and authored UTF-16 source, with corrupt-data and coordinate controls. Neither s
 Issue #2082 owns the observed loss of tokens, hover and outline around incomplete member access; the workload must
 retain passing completion controls and measure each required replay before assigning narrow expected failures.
 
+Cold replay work follows the pure oracle (#2083): fresh serial packaged processes, unsaved handwritten source,
+LF/CRLF and independent first-feature requests with valid controls. Its named outcomes retain bounded wire,
+request/source bindings and launch/runtime facts. This is only the cold slice: warm edits, reused-version reopen,
+actual supplementary-character coordinates and unknown/shadowed receiver controls remain acceptance gates, alongside
+M0.1b. A source review or pure oracle pass does not establish a packaged replay result.
+
 **Owner and goal:** parser/session test owner. Make the reported failure reproducible through public LSP requests and
 retain exact source/package identity. This is the next concrete PR:
 `test(lsp): capture incomplete-buffer recovery controls`.
