@@ -34,28 +34,9 @@ internal object PropertiesSanitizer {
 
     data class Result(val content: String, val rejectedKeys: List<String>)
 
-    /** Returns the sanitized properties text, or null when [file] is unreadable or too large. */
+    /** Returns the sanitized properties text, or null when [file] is unreadable, malformed or too large. */
     fun sanitize(file: Path): Result? {
-        val properties = Properties()
-        try {
-            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-                logger.warn { "Ignoring CodeNarc properties file that is not a regular file: $file" }
-                return null
-            }
-            val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_FILE_BYTES.toInt() + 1) }
-            if (bytes.size > MAX_FILE_BYTES) {
-                logger.warn { "Ignoring CodeNarc properties file larger than $MAX_FILE_BYTES bytes: $file" }
-                return null
-            }
-            properties.load(bytes.toString(Charsets.UTF_8).reader())
-        } catch (e: java.io.IOException) {
-            logger.warn { "Ignoring unreadable CodeNarc properties file $file: ${e.message}" }
-            return null
-        } catch (e: IllegalArgumentException) {
-            logger.warn { "Ignoring malformed CodeNarc properties file $file: ${e.message}" }
-            return null
-        }
-
+        val properties = load(file) ?: return null
         val rejected = mutableListOf<String>()
         val content = buildString {
             for (name in properties.stringPropertyNames().sorted()) {
@@ -73,12 +54,30 @@ internal object PropertiesSanitizer {
         return Result(content, rejected)
     }
 
+    /** Reads at most [MAX_FILE_BYTES] from a regular, non-symlink file; null (logged) otherwise. */
+    private fun load(file: Path): Properties? {
+        val problem = try {
+            readBounded(file)?.let { return Properties().apply { load(it.toString(Charsets.UTF_8).reader()) } }
+                ?: "is not a regular file or is larger than $MAX_FILE_BYTES bytes"
+        } catch (e: java.io.IOException) {
+            "is unreadable: ${e.message}"
+        } catch (e: IllegalArgumentException) {
+            "is malformed: ${e.message}"
+        }
+        logger.warn { "Ignoring CodeNarc properties file $file: it $problem" }
+        return null
+    }
+
+    private fun readBounded(file: Path): ByteArray? {
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) return null
+        val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_FILE_BYTES.toInt() + 1) }
+        return bytes.takeIf { it.size <= MAX_FILE_BYTES }
+    }
+
     private fun isAllowed(name: String, value: String): Boolean {
-        val match = KEY.matchEntire(name) ?: return false
-        val (rule, property) = match.destructured
-        if (isRegexProperty(property)) return false
-        val ruleClass = runCatching { Class.forName(requireRule(rule)) }.getOrNull() ?: return false
-        val type = settablePropertyType(ruleClass, property) ?: return false
+        val match = KEY.matchEntire(name)
+        val (rule, property) = match?.destructured ?: return false
+        val type = if (isRegexProperty(property)) null else settablePropertyType(rule, property)
         return when (type) {
             // Only primitives: CodeNarc converts strings for int/long/boolean and would mis-assign boxed types.
             Boolean::class.javaPrimitiveType -> value == "true" || value == "false"
@@ -93,7 +92,8 @@ internal object PropertiesSanitizer {
      * The property type as CodeNarc's `PropertyUtil` sees it (Groovy metaclass), or null when the property is missing
      * or has no setter. Groovy-generated and hand-written setters both show up here.
      */
-    private fun settablePropertyType(ruleClass: Class<*>, property: String): Class<*>? {
+    private fun settablePropertyType(rule: String, property: String): Class<*>? {
+        val ruleClass = runCatching { Class.forName(requireRule(rule)) }.getOrNull() ?: return null
         val meta = GroovySystem.getMetaClassRegistry().getMetaClass(ruleClass)
         val metaProperty = meta.getMetaProperty(property) as? MetaBeanProperty ?: return null
         return metaProperty.type.takeIf { metaProperty.setter != null }
