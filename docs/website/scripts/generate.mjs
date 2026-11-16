@@ -17,7 +17,8 @@ if (hash !== 'db861176b359244c84713f0f77711e0ac4fadbf5d042a60eeb826640b3cb9f4e')
 const stable = JSON.parse(snapshot);
 const currentBytes = await readFile(path.join(root, 'editors/code/package.json'));
 const current = JSON.parse(currentBytes);
-const currentHash = createHash('sha256').update(currentBytes).digest('hex');
+// Hash only the `contributes` section the tables are built from, so a version-only bump is not reference drift.
+const currentHash = createHash('sha256').update(JSON.stringify(current.contributes)).digest('hex');
 const check = process.argv.includes('--check');
 const intro = '<!-- SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors -->\n<!-- SPDX-License-Identifier: Apache-2.0 -->\n\n';
 const escape = value => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ');
@@ -30,7 +31,7 @@ function table(kind, manifest) {
 }
 await mkdir(path.join(root, 'docs/user'), { recursive: true });
 for (const kind of ['settings', 'commands']) {
-  let content = `${intro}# VS Code ${kind}\n\nThese entries come from extension manifests; their presence does not guarantee runtime support. The [stable manifest](../website/stable-v0.5.4-package.json) is a release snapshot; the [current manifest](../../editors/code/package.json) is maintained in the checkout.\n\n## Stable v0.5.4\n\nPackaged manifest from the official v0.5.4 VSIX at tag commit \`c441b8451ceed18a899a5d12369e1139b01ef9d7\`. VSIX SHA-256 \`128a9f76b8595611196890b4305702b8005335f64b75f1f83e24f6172196a93b\`; manifest SHA-256 \`${hash}\`.\n\n${table(kind, stable)}\n\n## Current checkout\n\nManifest SHA-256 \`${currentHash}\`.\n\n${table(kind, current)}\n`;
+  let content = `${intro}# VS Code ${kind}\n\nThese entries come from extension manifests; their presence does not guarantee runtime support. The [stable manifest](../website/stable-v0.5.4-package.json) is a release snapshot; the [current manifest](../../editors/code/package.json) is maintained in the checkout.\n\n## Stable v0.5.4\n\nPackaged manifest from the official v0.5.4 VSIX at tag commit \`c441b8451ceed18a899a5d12369e1139b01ef9d7\`. VSIX SHA-256 \`128a9f76b8595611196890b4305702b8005335f64b75f1f83e24f6172196a93b\`; manifest SHA-256 \`${hash}\`.\n\n${table(kind, stable)}\n\n## Current checkout\n\nContributes SHA-256 \`${currentHash}\`.\n\n${table(kind, current)}\n`;
   const formatted = spawnSync('node_modules/.bin/dprint', ['fmt', '--config', 'dprint.json', '--stdin', 'reference.md'], { input: content, encoding: 'utf8' });
   if (formatted.status !== 0) throw new Error(`dprint failed: ${formatted.stderr}`);
   content = formatted.stdout;
