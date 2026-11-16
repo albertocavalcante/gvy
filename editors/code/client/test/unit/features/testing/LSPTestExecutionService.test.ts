@@ -6,6 +6,7 @@ import * as sinon from "sinon";
 import { EventEmitter } from "events";
 import { PassThrough } from "stream";
 import proxyquire from "proxyquire";
+import type { TestSelectionDescriptor } from "../../../../src/features/testing/testTarget";
 
 interface LSPTestExecutionServiceInstance {
   runTestsWithCoverage: (
@@ -28,6 +29,7 @@ interface LSPTestExecutionServiceType {
     testService: unknown,
     logger: unknown,
     extensionPath: string,
+    describe: (item: FixtureItem) => TestSelectionDescriptor<FixtureItem>,
   ): LSPTestExecutionServiceInstance;
 }
 
@@ -85,6 +87,12 @@ interface PathMock {
 const unquoted = (args: string[]) =>
   args.map((arg) => arg.replace(/^"|"$/gu, ""));
 
+interface FixtureItem {
+  id: string;
+  parent?: FixtureItem;
+  children?: { forEach(callback: (item: FixtureItem) => void): void };
+}
+
 describe("LSPTestExecutionService", () => {
   let LSPTestExecutionService: LSPTestExecutionServiceType;
   let service: LSPTestExecutionServiceInstance;
@@ -121,7 +129,7 @@ describe("LSPTestExecutionService", () => {
       },
       window: {
         showErrorMessage: sandbox.stub().resolves(),
-        showWarningMessage: sandbox.stub(),
+        showWarningMessage: sandbox.stub().resolves(),
       },
       TestRunRequest: class {
         constructor(public include: unknown[]) {}
@@ -218,11 +226,77 @@ describe("LSPTestExecutionService", () => {
       },
     );
     LSPTestExecutionService = module.LSPTestExecutionService;
+    const metadata = new Map<
+      FixtureItem,
+      TestSelectionDescriptor<FixtureItem>
+    >();
     service = new LSPTestExecutionService(
       testServiceMock,
       loggerMock,
       "/extension/path",
+      (item) => metadata.get(item) ?? { kind: "unrepresentable" },
     );
+
+    // Older stream/Java-home fixtures deliberately use server names as IDs.
+    // Supply their intended discovery provenance and native parent/root links.
+    // The separate selection-boundary suite uses opaque IDs and explicit names.
+    const seedDiscovery = (input: unknown, controller: unknown) => {
+      const request = input as {
+        include?: FixtureItem[];
+        exclude?: FixtureItem[];
+      };
+      const ctrl = controller as {
+        items?: { forEach(callback: (item: FixtureItem) => void): void };
+      };
+      const roots = new Set<FixtureItem>();
+      ctrl.items?.forEach((item) => roots.add(item));
+      for (const item of [
+        ...(request.include ?? []),
+        ...(request.exclude ?? []),
+      ]) {
+        let root = item;
+        while (root.parent) root = root.parent;
+        roots.add(root);
+      }
+      const seen = new Set<FixtureItem>();
+      const visit = (item: FixtureItem) => {
+        if (seen.has(item)) return;
+        seen.add(item);
+        const children: FixtureItem[] = [];
+        item.children?.forEach((child) => {
+          child.parent = item;
+          children.push(child);
+          visit(child);
+        });
+        metadata.set(
+          item,
+          item.parent
+            ? {
+                kind: "feature",
+                test: item.id.slice(item.parent.id.length + 1),
+              }
+            : {
+                kind: "suite",
+                suite: item.id,
+                completeChildren: item.children ? children : undefined,
+              },
+        );
+      };
+      for (const root of roots) visit(root);
+      for (const item of request.include ?? [])
+        if (!seen.has(item)) visit(item);
+      ctrl.items = { forEach: (callback) => roots.forEach(callback) };
+    };
+    const runTests = service.runTests.bind(service);
+    service.runTests = (request, token, controller) => {
+      seedDiscovery(request, controller);
+      return runTests(request, token, controller);
+    };
+    const runWithCoverage = service.runTestsWithCoverage.bind(service);
+    service.runTestsWithCoverage = (request, token, controller, coverage) => {
+      seedDiscovery(request, controller);
+      return runWithCoverage(request, token, controller, coverage);
+    };
   });
 
   afterEach(() => {
@@ -1505,11 +1579,15 @@ describe("LSPTestExecutionService", () => {
         uri,
         children: { forEach: () => {} },
       };
+      const remaining = { ...child, id: "suite.remaining", label: "remaining" };
       const suite = {
         id: "suite",
         label: "suite",
         uri,
-        children: { forEach: (f: (item: unknown) => void) => f(child) },
+        children: {
+          forEach: (f: (item: unknown) => void) =>
+            [child, remaining].forEach(f),
+        },
       };
       const token = {
         isCancellationRequested: false,
@@ -1565,7 +1643,14 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
-      assert.ok(run.errored.calledWith(suite));
+      assert.ok(run.errored.calledWith(remaining));
+      assert.ok(
+        testServiceMock.getTestCommand.calledOnceWithExactly(
+          "file:///w/a",
+          "suite",
+          "remaining",
+        ),
+      );
       assert.ok(!run.errored.calledWith(child));
     });
   });
@@ -1832,9 +1917,17 @@ describe("LSPTestExecutionService", () => {
         uri: item.uri,
         children: { forEach: () => {} },
       };
+      const remaining = {
+        ...child,
+        id: `${item.id}.remaining`,
+        label: "remaining",
+      };
       const suite = {
         ...item,
-        children: { forEach: (f: (value: unknown) => void) => f(child) },
+        children: {
+          forEach: (f: (value: unknown) => void) =>
+            [child, remaining].forEach(f),
+        },
       };
       testServiceMock.getTestResults.resolves({
         results: [
@@ -1860,6 +1953,10 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
+      assert.ok(
+        testServiceMock.getTestResults.calledOnce,
+        "exercise report filtering after a real selection",
+      );
       assert.ok(!run.passed.calledWith(child));
       assert.ok(!run.failed.calledWith(child));
       assert.ok(!run.errored.calledWith(child));
@@ -1946,6 +2043,156 @@ describe("LSPTestExecutionService", () => {
 
       assert.ok(proc.kill.calledOnce, "build process should be killed");
       assert.ok(run.end.calledOnce);
+    });
+  });
+
+  describe("suites expanded into remaining features", () => {
+    const uri = { toString: () => "file:///w/a" };
+    const leaf = (id: string, label: string) => ({
+      id,
+      label,
+      uri,
+      children: { forEach: () => {} },
+    });
+    function setup(executable: string, featureNames: string[]) {
+      const features = featureNames.map((name) => leaf(`suite.${name}`, name));
+      const created: unknown[] = [];
+      const suite = {
+        id: "suite",
+        label: "suite",
+        uri,
+        children: {
+          forEach: (f: (item: unknown) => void) => features.forEach(f),
+          add: (child: unknown) => created.push(child),
+        },
+      };
+      const token = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+      const run = {
+        enqueued: sandbox.stub(),
+        started: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token,
+      };
+      const controller = {
+        createTestRun: () => run,
+        createTestItem: (id: string, label: string) => leaf(id, label),
+        items: { forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable,
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      const newProc = () =>
+        Object.assign(new EventEmitter(), {
+          pid: 123 as number | undefined,
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          kill: sandbox.stub(),
+        });
+      const finish = async (proc: ReturnType<typeof newProc>) => {
+        proc.stdout.end();
+        proc.stderr.end();
+        await Promise.all([
+          new Promise((resolve) => proc.stdout.on("close", resolve)),
+          new Promise((resolve) => proc.stderr.on("close", resolve)),
+        ]);
+        proc.emit("close", 0);
+      };
+      return {
+        features,
+        suite,
+        created,
+        token,
+        run,
+        controller,
+        newProc,
+        finish,
+      };
+    }
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+    it("keeps the suite as event context for unrolled rows", async () => {
+      const {
+        features,
+        suite,
+        created,
+        token,
+        run,
+        controller,
+        newProc,
+        finish,
+      } = setup("/w/gradlew", ["a", "b"]);
+      const proc = newProc();
+      cpMock.spawn.returns(proc);
+      const done = service.runTests(
+        { include: [suite], exclude: [features[1]] },
+        token,
+        controller,
+      );
+      await tick();
+      proc.stdout.write(
+        JSON.stringify({
+          event: "testFinished",
+          id: "suite.row #0",
+          name: "row #0",
+          parent: "suite",
+          result: "SUCCESS",
+          duration: 1,
+        }) + "\n",
+      );
+      await finish(proc);
+      await done;
+      assert.strictEqual(created.length, 1, "row attached under the suite");
+      assert.ok(run.passed.calledWith(created[0]));
+      assert.ok(!run.enqueued.calledWith(suite), "suite is context only");
+    });
+
+    it("applies each Maven command's report before the next rewrites it", async () => {
+      const { features, suite, token, run, controller, newProc, finish } =
+        setup("/w/mvnw", ["a", "b", "c"]);
+      const first = newProc();
+      const second = newProc();
+      cpMock.spawn.onFirstCall().returns(first);
+      cpMock.spawn.onSecondCall().returns(second);
+      const report = (item: { id: string; label: string }) => ({
+        results: [
+          {
+            testId: item.id,
+            name: item.label,
+            status: "SUCCESS",
+            durationMs: 1,
+          },
+        ],
+      });
+      // Both commands write the same report file, so each read sees only its own.
+      testServiceMock.getTestResults
+        .onFirstCall()
+        .resolves(report(features[0]));
+      testServiceMock.getTestResults
+        .onSecondCall()
+        .resolves(report(features[1]));
+      const done = service.runTests(
+        { include: [suite], exclude: [features[2]] },
+        token,
+        controller,
+      );
+      await tick();
+      await finish(first);
+      await tick();
+      await finish(second);
+      await done;
+      assert.ok(run.passed.calledWith(features[0]));
+      assert.ok(run.passed.calledWith(features[1]));
     });
   });
 });
