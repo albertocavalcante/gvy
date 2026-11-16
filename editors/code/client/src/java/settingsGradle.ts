@@ -123,10 +123,12 @@ export function planFoojayInsertion(text: string): FoojayInsertion {
     }
   }
   if (offset > 0) {
-    // Continue on the line after the closing brace.
+    // Continue on the line after the closing brace, also past a trailing comment.
     const nl = text.indexOf("\n", offset);
-    const rest = text.slice(offset, nl < 0 ? text.length : nl);
-    offset = rest.trim() === "" ? (nl < 0 ? text.length : nl + 1) : offset;
+    const rest = commentFree.slice(offset, nl < 0 ? text.length : nl);
+    if (rest.trim() === "") {
+      offset = nl < 0 ? text.length : nl + 1;
+    }
   }
   return { kind: "newBlock", offset };
 }

@@ -31,6 +31,12 @@ describe("settingsGradle", () => {
       assert.deepEqual(plan, { kind: "newBlock", offset: head.length });
     });
 
+    it("skips a trailing comment after the closing brace", () => {
+      const head = "pluginManagement {\n} // end\n";
+      const plan = planFoojayInsertion(`${head}include 'x'\n`);
+      assert.deepEqual(plan, { kind: "newBlock", offset: head.length });
+    });
+
     it("ignores plugins nested in pluginManagement", () => {
       const text =
         "pluginManagement {\n  plugins {\n    id 'x' version '1'\n  }\n}\n";
