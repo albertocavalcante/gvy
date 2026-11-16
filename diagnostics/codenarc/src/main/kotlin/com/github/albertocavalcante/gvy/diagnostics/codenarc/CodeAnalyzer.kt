@@ -91,9 +91,12 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 ruleSetFiles = rulesetFile.toUri().toString()
 
                 // Set properties file if provided
+                // Only a sanitized copy reaches CodeNarc, addressed by URI: a bare path is read as a classpath resource.
                 propertiesFile?.let { propFile ->
-                    propertiesFilename = propFile
-                    logger.debug { "Using CodeNarc properties file: $propFile" }
+                    sanitizedPropertiesUri(analysisDir, propFile)?.let { uri ->
+                        propertiesFilename = uri
+                        logger.debug { "Using sanitized CodeNarc properties from: $propFile" }
+                    }
                 }
             }
 
@@ -123,6 +126,13 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 logger.debug { "Temp file cleanup failed for $fileName: ${e.message}" }
             }
         }
+    }
+
+    internal fun sanitizedPropertiesUri(analysisDir: Path, propertiesFile: String): String? {
+        val sanitized = PropertiesSanitizer.sanitize(Paths.get(propertiesFile)) ?: return null
+        val target = analysisDir.resolve("codenarc.properties")
+        Files.write(target, sanitized.content.toByteArray(StandardCharsets.UTF_8))
+        return target.toUri().toString()
     }
 
     internal fun resolveSafeFileName(fileName: String): String = try {
