@@ -231,6 +231,7 @@ private fun fixUnnecessarySemicolon(context: FixContext): TextEdit? {
  * @param context The fix context containing diagnostic and source information
  * @return A TextEdit that removes extra blank lines, or null if the fix cannot be applied
  */
+@Suppress("ReturnCount") // Multiple validation checks require early returns
 private fun fixConsecutiveBlankLines(context: FixContext): TextEdit? {
     val lines = context.lines
     val diagnosticLine = context.diagnostic.range.start.line
@@ -270,26 +271,38 @@ private fun blankRunAt(lines: List<String>, line: Int): IntRange? {
 private fun findPackageLine(lines: List<String>): Int? {
     var inBlockComment = false
     for ((index, raw) in lines.withIndex()) {
-        var text = raw.trim()
-        if (inBlockComment) {
-            val close = text.indexOf("*/")
-            if (close < 0) continue
-            inBlockComment = false
-            text = text.substring(close + 2).trim()
+        val (text, stillInBlock) = stripComments(raw.trim(), inBlockComment)
+        inBlockComment = stillInBlock
+        if (text.isNotEmpty() && !text.startsWith("//") && !text.startsWith("#!")) {
+            return if (text.startsWith("package ") || text.startsWith("package\t")) index else null
         }
-        while (text.startsWith("/*")) {
-            val close = text.indexOf("*/", 2)
-            if (close < 0) {
-                inBlockComment = true
-                text = ""
-                break
-            }
-            text = text.substring(close + 2).trim()
-        }
-        if (inBlockComment || text.isEmpty() || text.startsWith("//") || text.startsWith("#!")) continue
-        return if (text.startsWith("package ") || text.startsWith("package\t")) index else null
     }
     return null
+}
+
+/** Removes leading block comments from [text]; returns the remaining code and whether a block comment is still open. */
+private fun stripComments(text: String, startInBlock: Boolean): Pair<String, Boolean> {
+    var rest = text
+    var inBlock = startInBlock
+    var done = false
+    while (!done) {
+        if (inBlock) {
+            val close = rest.indexOf("*/")
+            if (close < 0) {
+                rest = ""
+                done = true
+            } else {
+                rest = rest.substring(close + 2).trim()
+                inBlock = false
+            }
+        } else if (rest.startsWith("/*")) {
+            inBlock = true
+            rest = rest.substring(2)
+        } else {
+            done = true
+        }
+    }
+    return rest to inBlock
 }
 
 /**

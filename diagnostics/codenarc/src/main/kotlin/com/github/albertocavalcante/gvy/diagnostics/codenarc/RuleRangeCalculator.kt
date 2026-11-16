@@ -110,8 +110,8 @@ object RuleRangeCalculator {
             "GStringExpressionWithinString" -> calculateGStringRange(sourceLine, message)
             "ExplicitCallToEqualsMethod" -> calculateMethodCallRange(sourceLine, "equals")
             "ExplicitCallToCompareToMethod" -> calculateMethodCallRange(sourceLine, "compareTo")
-            "UnnecessaryGetter" -> calculateUnnecessaryGetterRange(sourceLine)
-            "UnnecessarySetter" -> calculateUnnecessarySetterRange(sourceLine)
+            "UnnecessaryGetter" -> calculateUnnecessaryGetterRange(sourceLine, message)
+            "UnnecessarySetter" -> calculateUnnecessarySetterRange(sourceLine, message)
             "GetterMethodCouldBeProperty" -> calculateGetterNameRange(sourceLine, message)
 
             // Exception rules
@@ -253,16 +253,19 @@ object RuleRangeCalculator {
     /**
      * Range of the first zero-argument getter call, e.g. `getName()`, so the quick fix sees the whole call.
      */
-    private fun calculateUnnecessaryGetterRange(sourceLine: String): Pair<Int, Int> {
-        val match = GETTER_CALL.find(sourceLine) ?: return calculateDefaultRange(sourceLine)
+    private fun calculateUnnecessaryGetterRange(sourceLine: String, message: String): Pair<Int, Int> {
+        // Several getters can share a line; prefer the one the message names (e.g. "getName() can ...").
+        val matches = GETTER_CALL.findAll(sourceLine).toList()
+        val match = (matches.firstOrNull { message.contains(it.value) } ?: matches.firstOrNull()) ?: return calculateDefaultRange(sourceLine)
         return Pair(match.range.first, match.range.last + 1)
     }
 
     /**
      * Range of the first setter call, from `setXxx(` through its balanced closing parenthesis.
      */
-    private fun calculateUnnecessarySetterRange(sourceLine: String): Pair<Int, Int> {
-        val match = SETTER_CALL_START.find(sourceLine) ?: return calculateDefaultRange(sourceLine)
+    private fun calculateUnnecessarySetterRange(sourceLine: String, message: String): Pair<Int, Int> {
+        val matches = SETTER_CALL_START.findAll(sourceLine).toList()
+        val match = (matches.firstOrNull { message.contains(it.value) } ?: matches.firstOrNull()) ?: return calculateDefaultRange(sourceLine)
         var depth = 0
         var quote: Char? = null
         var index = match.range.last // the opening parenthesis

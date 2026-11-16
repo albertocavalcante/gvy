@@ -809,6 +809,16 @@ class RuleRangeCalculatorTest {
     }
 
     @Test
+    fun `UnnecessaryGetter - should pick the getter named in the message when several share a line`() {
+        val sourceLine = "a.getX() + b.getY()"
+        val violation = createViolation("UnnecessaryGetter", "getY() can probably be rewritten as y", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRangeInSource(violation, sourceLine)
+
+        assertRangeHighlights(sourceLine, range, "getY()")
+    }
+
+    @Test
     fun `UnnecessarySetter - should cover the whole setter call with nested parentheses`() {
         val sourceLine = "    person.setName(compute(a, \")\")) // done"
         val violation = createViolation("UnnecessarySetter", "setName(..) can probably be rewritten", sourceLine)
