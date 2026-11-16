@@ -207,6 +207,20 @@ describe("extension activation", () => {
     assert.ok(start.calledOnce);
   });
 
+  it("retries the initial start after a failed attempt", async () => {
+    const start = sinon.stub();
+    start.onFirstCall().rejects(new Error("Java validation failed"));
+    start.onSecondCall().resolves();
+    const { ext, stubs } = load(start, [gdsl]);
+    await ext.activate(context());
+    const request = stubs.registerCommands.firstCall
+      .args[1] as () => Promise<boolean>;
+    assert.strictEqual(await request(), false);
+    assert.strictEqual(await request(), true);
+    assert.strictEqual(await request(), true);
+    assert.ok(start.calledTwice);
+  });
+
   it("keeps activation usable if the workspace search fails", async () => {
     const start = sinon.stub().resolves();
     const { ext, stubs } = load(start, [gdsl]);

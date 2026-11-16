@@ -75,7 +75,10 @@ export async function activate(context: vscode.ExtensionContext) {
   getStatusBarManager()?.setOutputChannel(serverOutputChannel);
   let initialStart: Promise<boolean> | undefined;
   const requestInitialStart = (): Promise<boolean> => {
-    initialStart ??= (async () => {
+    if (initialStart) {
+      return initialStart;
+    }
+    const attempt: Promise<boolean> = (async () => {
       try {
         await startClient(serverOutputChannel);
         return true;
@@ -84,8 +87,16 @@ export async function activate(context: vscode.ExtensionContext) {
         console.error("Groovy Language Server did not start:", error);
         return false;
       }
-    })();
-    return initialStart;
+    })().then((started) => {
+      // Do not cache a failed start: the next request must retry (for example
+      // after the user installs Java).
+      if (!started && initialStart === attempt) {
+        initialStart = undefined;
+      }
+      return started;
+    });
+    initialStart = attempt;
+    return attempt;
   };
   context.subscriptions.push(
     onClientStarted(() => {
