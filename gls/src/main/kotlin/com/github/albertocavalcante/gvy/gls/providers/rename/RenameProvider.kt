@@ -111,7 +111,7 @@ class RenameProvider private constructor(
         "long", "native", "new", "null", "package", "private", "protected",
         "public", "return", "short", "static", "strictfp", "super", "switch",
         "synchronized", "this", "throw", "throws", "trait", "transient", "try",
-        "void", "volatile", "while",
+        "void", "volatile", "while", "true", "false",
     )
 
     /**
@@ -212,7 +212,7 @@ class RenameProvider private constructor(
         val definitionLocation = definition.toLspLocation(visitor)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine definition location")
 
-        if (!isInWorkspace(definitionLocation.uri)) {
+        if (!isInWorkspace(definitionLocation.uri, documentUri)) {
             throw createError(
                 ResponseErrorCode.InvalidRequest,
                 "Cannot rename symbols defined in dependencies (read-only): ${definitionLocation.uri}",
@@ -241,8 +241,8 @@ class RenameProvider private constructor(
         }
 
         // Check if any references are in dependencies
-        val workspaceLocations = locations.filter { isInWorkspace(it.uri) }
-        val dependencyLocations = locations.filter { !isInWorkspace(it.uri) }
+        val workspaceLocations = locations.filter { isInWorkspace(it.uri, target.documentUri) }
+        val dependencyLocations = locations.filter { !isInWorkspace(it.uri, target.documentUri) }
 
         if (dependencyLocations.isNotEmpty()) {
             logger.warn { "Found ${dependencyLocations.size} references in dependencies - these will not be renamed" }
@@ -323,25 +323,34 @@ class RenameProvider private constructor(
                 ResponseErrorCode.InvalidParams,
                 "'$newName' is a Groovy keyword and cannot be used as an identifier",
             )
-            !newName.matches(Regex("^[a-zA-Z_][a-zA-Z0-9_]*$")) -> throw createError(
+            !isJavaIdentifier(newName) -> throw createError(
                 ResponseErrorCode.InvalidParams,
                 "'$newName' is not a valid identifier",
             )
         }
     }
 
+    private fun isJavaIdentifier(name: String): Boolean {
+        val first = name.codePointAt(0)
+        return Character.isJavaIdentifierStart(first) &&
+            name.codePoints().skip(1).allMatch(Character::isJavaIdentifierPart)
+    }
+
     /**
-     * Check if a URI is within the workspace (not a dependency).
+     * Check if a URI is editable: inside any workspace folder (not a dependency). Without any folder
+     * (single-file mode) only the document being renamed and other open buffers qualify.
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun isInWorkspace(uriString: String): Boolean {
-        val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
-            ?: return false // No workspace, treat as not in workspace
-
+    private fun isInWorkspace(uriString: String, documentUri: URI): Boolean {
+        val roots = (listOfNotNull(compilationService.workspaceManager.getWorkspaceRoot()) + extraRoots()).distinct()
         return try {
             val uri = URI.create(uriString)
-            val path = Paths.get(uri)
-            path.startsWith(workspaceRoot)
+            if (roots.isEmpty()) {
+                uri == documentUri || uri in openBuffers().keys
+            } else {
+                val path = Paths.get(uri)
+                roots.any { path.startsWith(it) }
+            }
         } catch (e: Exception) {
             logger.warn(e) { "Could not parse URI: $uriString" }
             false

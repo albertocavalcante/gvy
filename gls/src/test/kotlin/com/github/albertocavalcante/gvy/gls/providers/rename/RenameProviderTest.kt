@@ -274,6 +274,61 @@ class RenameProviderTest {
     }
 
     @Test
+    fun `rename to boolean literal should fail`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("test.groovy").toUri().toString()
+        val javaUri = java.net.URI.create(uri)
+        val content = "def myVar = 42\nprintln myVar"
+        documentProvider.put(javaUri, content)
+        compilationService.compile(javaUri, content)
+
+        listOf("true", "false", "null").forEach { name ->
+            val exception = assertThrows<ResponseErrorException> {
+                renameProvider.provideRename(uri, Position(0, 8), name)
+            }
+            assertTrue(exception.responseError.message.contains("keyword"), name)
+        }
+    }
+
+    @Test
+    fun `rename accepts dollar and unicode identifiers`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("test.groovy").toUri().toString()
+        val javaUri = java.net.URI.create(uri)
+        val content = "def myVar = 42\nprintln myVar"
+        documentProvider.put(javaUri, content)
+        compilationService.compile(javaUri, content)
+
+        listOf("\$x", "caf\u00e9", "\uD835\uDC00x").forEach { name ->
+            assertNotNull(renameProvider.provideRename(uri, Position(0, 8), name), name)
+        }
+    }
+
+    @Test
+    fun `rename works in a workspace folder other than the first`(): Unit = runBlocking {
+        val second = Files.createTempDirectory("groovy-lsp-rename-second")
+        val file = second.resolve("Other.groovy")
+        val content = "def myVar = 42\nprintln myVar"
+        Files.writeString(file, content)
+        val javaUri = file.toUri()
+        documentProvider.put(javaUri, content)
+        compilationService.compile(javaUri, content)
+        val provider = RenameProvider(compilationService, documentProvider, extraRoots = { listOf(second) })
+
+        assertNotNull(provider.provideRename(javaUri.toString(), Position(0, 8), "renamed"))
+    }
+
+    @Test
+    fun `rename works in single-file mode without a workspace`(): Unit = runBlocking {
+        val service = GroovyCompilationService()
+        val file = Files.createTempDirectory("groovy-lsp-rename-single").resolve("Lone.groovy")
+        val content = "def myVar = 42\nprintln myVar"
+        val javaUri = file.toUri()
+        service.compile(javaUri, content)
+        val provider = RenameProvider(service) { if (it == javaUri) content else null }
+
+        assertNotNull(provider.provideRename(javaUri.toString(), Position(0, 8), "renamed"))
+    }
+
+    @Test
     fun `rename method updates all calls`(): Unit = runBlocking {
         val content = """
             def oldMethod() {
