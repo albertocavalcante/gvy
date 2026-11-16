@@ -55,12 +55,13 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         logger.debug { "Finding highlights for $uri at ${position.line}:${position.character}" }
 
         val documentUri = URI.create(uri)
-        val source = compilationService.getCompiledSnapshot(documentUri)?.sourceText ?: return emptyList()
-        val index = TextIndex(source)
+        // One snapshot supplies text, AST and symbols, so a concurrent recompile cannot mix generations.
+        val snapshot = compilationService.getCompiledSnapshot(documentUri) ?: return emptyList()
+        val index = TextIndex(snapshot.sourceText)
         val groovyPosition = index.codePointPosition(position)?.toGroovyPosition() ?: return emptyList()
 
-        val astModel = compilationService.getAstModel(documentUri)
-        val symbolTable = compilationService.getSymbolTable(documentUri)
+        val astModel = snapshot.parseResult.astModel
+        val symbolTable = snapshot.parseResult.symbolTable
         val targetNode = astModel?.getNodeAt(documentUri, groovyPosition)
 
         val resolved = when {
