@@ -15,6 +15,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerRouter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.eclipse.lsp4j.WorkspaceSymbolParams
@@ -25,11 +26,17 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.ExecutionException
 
 class GroovyWorkspaceServiceTest {
 
     private val testScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    @TempDir
+    lateinit var tempDir: Path
 
     @Test
     fun `blank workspace symbol query returns empty result`() {
@@ -40,6 +47,23 @@ class GroovyWorkspaceServiceTest {
 
         assertTrue(either.isLeft)
         assertTrue(either.left.isEmpty())
+    }
+
+    @Test
+    fun `empty workspace symbol query lists the indexed symbols without imports`() {
+        val file = Files.writeString(
+            tempDir.resolve("Greeter.groovy"),
+            "import java.util.concurrent.TimeUnit\nclass Greeter {\n    def hello() {}\n}\n",
+        )
+        val compilationService = GroovyCompilationService()
+        runBlocking { compilationService.symbolIndexingService.indexFile(file.toUri()) }
+        val service = GroovyWorkspaceService(compilationService, compilationService.symbolIndexingService, testScope)
+
+        val names = service.symbol(WorkspaceSymbolParams("")).get().left.map { it.name }
+
+        assertTrue(names.any { it.contains("Greeter") }, "classes are listed: $names")
+        assertTrue(names.any { it.contains("hello") }, "methods are listed: $names")
+        assertTrue(names.none { it.contains("TimeUnit") }, "imports are not symbols: $names")
     }
 
     @Test

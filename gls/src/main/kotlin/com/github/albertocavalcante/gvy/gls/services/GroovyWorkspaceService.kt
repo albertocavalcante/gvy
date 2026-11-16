@@ -27,6 +27,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.onClosed
+import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
@@ -93,6 +94,9 @@ class GroovyWorkspaceService(
 
     companion object {
         const val COMMAND_VERSION = "groovy.version"
+
+        /** Upper bound on `workspace/symbol` results, so one request cannot flood the client. */
+        const val MAX_WORKSPACE_SYMBOLS = 1000
 
         /** Commands handled by [executeCommand]; advertised via `executeCommandProvider`. */
         val SUPPORTED_COMMANDS: List<String> = listOf(COMMAND_VERSION)
@@ -372,18 +376,24 @@ class GroovyWorkspaceService(
     override fun symbol(
         params: WorkspaceSymbolParams,
     ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> {
-        val query = params.query
-        if (query.isNullOrBlank()) {
-            logger.debug { "Workspace symbol query blank; returning empty result" }
-            return CompletableFuture.completedFuture(Either.forLeft(emptyList()))
+        val query = params.query.orEmpty()
+        // The scan covers every index, so it runs off the message thread.
+        return coroutineScope.future(Dispatchers.Default) {
+            val results = symbolIndexer.getAllSymbolIndices().asSequence()
+                .flatMap { (uri, storage) ->
+                    if (query.isBlank()) {
+                        // LSP: an empty query asks for all symbols. Skip the noise a picker cannot use.
+                        storage.getSymbols(uri).asSequence().filter { it.isWorkspaceSymbol() }
+                    } else {
+                        storage.findMatching(uri, query).asSequence()
+                    }
+                }
+                .mapNotNull { it.toSymbolInformation() }
+                .take(MAX_WORKSPACE_SYMBOLS)
+                .toList()
+            Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(results)
         }
-        val storages = symbolIndexer.getAllSymbolIndices()
-        val results = storages.flatMap { (uri, storage) ->
-            val symbols: List<Symbol> = storage.findMatching(uri, query)
-
-            symbols.mapNotNull { it.toSymbolInformation() }
-        }
-
-        return CompletableFuture.completedFuture(Either.forLeft(results))
     }
+
+    private fun Symbol.isWorkspaceSymbol(): Boolean = this !is Symbol.Import && this !is Symbol.Variable
 }
