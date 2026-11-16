@@ -39,7 +39,7 @@ class GroovyWorkspaceServiceTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `blank workspace symbol query returns empty result`() {
+    fun `blank workspace symbol query returns empty result for an empty workspace`() {
         val compilationService = GroovyCompilationService()
         val service = GroovyWorkspaceService(compilationService, compilationService.symbolIndexingService, testScope)
 

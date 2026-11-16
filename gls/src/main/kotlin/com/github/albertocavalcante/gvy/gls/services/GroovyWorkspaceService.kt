@@ -95,8 +95,11 @@ class GroovyWorkspaceService(
     companion object {
         const val COMMAND_VERSION = "groovy.version"
 
-        /** Upper bound on `workspace/symbol` results, so one request cannot flood the client. */
-        const val MAX_WORKSPACE_SYMBOLS = 1000
+        /**
+         * Upper bound on `workspace/symbol` results, so one request cannot flood the client. Results are
+         * ordered by file URI, so a capped answer omits symbols from the last files.
+         */
+        internal const val MAX_WORKSPACE_SYMBOLS = 1000
 
         /** Commands handled by [executeCommand]; advertised via `executeCommandProvider`. */
         val SUPPORTED_COMMANDS: List<String> = listOf(COMMAND_VERSION)
