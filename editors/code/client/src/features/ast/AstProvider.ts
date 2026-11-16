@@ -4,6 +4,11 @@
 import * as vscode from "vscode";
 import { getClient } from "../../server/client";
 
+/** Languages the client's document selector routes to the Groovy server. */
+function isAstLanguage(languageId: string | undefined): boolean {
+  return languageId === "groovy" || languageId === "jenkinsfile";
+}
+
 export function registerAstFeatures(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("groovy.ast.show", () => {
@@ -129,7 +134,7 @@ class AstProvider {
 
   /** Remembers `editor` if it shows a Groovy file; returns whether it did. */
   private trackEditor(editor: vscode.TextEditor | undefined): boolean {
-    if (editor?.document.languageId !== "groovy") {
+    if (!editor || !isAstLanguage(editor.document.languageId)) {
       return false;
     }
     this._documentUri = editor.document.uri.toString();
@@ -156,7 +161,7 @@ class AstProvider {
       return;
     }
 
-    if (editor.document.languageId !== "groovy") {
+    if (!isAstLanguage(editor.document.languageId)) {
       this._panel.webview.postMessage({
         type: "error",
         message: "Active editor is not a Groovy file",

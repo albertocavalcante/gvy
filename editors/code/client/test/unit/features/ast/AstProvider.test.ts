@@ -6,10 +6,10 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 describe("AstProvider", () => {
-  it("keeps targeting the Groovy editor after the AST panel takes focus", async () => {
+  async function keepsTargetingEditor(languageId: string) {
     const doc = {
       uri: { toString: () => "file:///w/A.groovy" },
-      languageId: "groovy",
+      languageId,
     };
     const editor = {
       document: doc,
@@ -108,5 +108,11 @@ describe("AstProvider", () => {
     // Malformed ranges from the webview are ignored instead of throwing.
     onMessage!({ type: "highlight", range: { startLine: "x" } });
     assert.ok(editor.revealRange.calledOnce);
-  });
+  }
+
+  it("keeps targeting the Groovy editor after the AST panel takes focus", () =>
+    keepsTargetingEditor("groovy"));
+
+  it("accepts Jenkinsfile documents", () =>
+    keepsTargetingEditor("jenkinsfile"));
 });
