@@ -20,9 +20,9 @@ import java.util.concurrent.CancellationException
 internal object ScenarioOutcomeReport {
     const val DIRECTORY_PROPERTY = "groovy.lsp.e2e.outcomeDir"
 
-    fun write(definition: ScenarioDefinition, outcome: ScenarioOutcome) {
+    fun write(definition: ScenarioDefinition, outcome: ScenarioOutcome, evidence: JsonObject? = null) {
         val executionId = UUID.randomUUID().toString()
-        val payload = encode(definition, executionId, outcome).toString()
+        val payload = encode(definition, executionId, outcome, evidence).toString()
         try {
             val directory = outputDirectory(
                 System.getProperty(DIRECTORY_PROPERTY),
@@ -74,28 +74,33 @@ internal object ScenarioOutcomeReport {
         }
     }
 
-    private fun encode(definition: ScenarioDefinition, executionId: String, outcome: ScenarioOutcome): JsonObject =
-        buildJsonObject {
-            put("schemaVersion", 1)
-            put("executionId", executionId)
-            put("scenario", definition.scenario.name)
-            put("source", definition.source)
-            put("isSuccessful", outcome.isSuccessful)
-            put("planned", buildJsonArray { outcome.planned.forEach { add(it) } })
-            put("blocked", buildJsonArray { outcome.blocked.forEach { add(it) } })
-            put("observed", buildJsonArray { outcome.observed.forEach { add(observation(it)) } })
-            putJsonObject("counts") {
-                put("planned", outcome.counts.planned)
-                put("executed", outcome.counts.executed)
-                put("passed", outcome.counts.passed)
-                put("knownFailed", outcome.counts.knownFailed)
-                put("failed", outcome.counts.failed)
-                put("unexpectedPass", outcome.counts.unexpectedPass)
-                put("blocked", outcome.counts.blocked)
-            }
-            put("completion", completion(outcome.completion))
-            put("cleanup", cleanup(outcome.cleanup))
+    private fun encode(
+        definition: ScenarioDefinition,
+        executionId: String,
+        outcome: ScenarioOutcome,
+        evidence: JsonObject?,
+    ): JsonObject = buildJsonObject {
+        put("schemaVersion", 1)
+        put("executionId", executionId)
+        put("scenario", definition.scenario.name)
+        put("source", definition.source)
+        put("isSuccessful", outcome.isSuccessful)
+        put("planned", buildJsonArray { outcome.planned.forEach { add(it) } })
+        put("blocked", buildJsonArray { outcome.blocked.forEach { add(it) } })
+        put("observed", buildJsonArray { outcome.observed.forEach { add(observation(it)) } })
+        putJsonObject("counts") {
+            put("planned", outcome.counts.planned)
+            put("executed", outcome.counts.executed)
+            put("passed", outcome.counts.passed)
+            put("knownFailed", outcome.counts.knownFailed)
+            put("failed", outcome.counts.failed)
+            put("unexpectedPass", outcome.counts.unexpectedPass)
+            put("blocked", outcome.counts.blocked)
         }
+        put("completion", completion(outcome.completion))
+        put("cleanup", cleanup(outcome.cleanup))
+        evidence?.let { put("evidence", it) }
+    }
 
     private fun observation(result: ObservationResult): JsonObject = buildJsonObject {
         put("id", result.id)
