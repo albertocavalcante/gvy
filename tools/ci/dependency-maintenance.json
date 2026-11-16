@@ -518,7 +518,7 @@
       "reason": "Release Please scans an immutable paired-nightly release and warns about its unconfigured parsed component. Preserve legitimate published history and the single stable package while investigating supported channel interoperability.",
       "upstreamStatus": "Official action v5.0.0 bundles release-please 17.6.0. Its manifest release discovery warns before skipping an unconfigured component; the inspected 17.11.2 source retains this branch and the same greedy tag parser. No supported release-list exclusion was found in the 17.6.0 configuration schema. This is a source observation, not a tested replacement or a claim that stable releases are blocked.",
       "upstreamTrigger": "A supported release-discovery/channel policy handles the existing immutable nightly tag without an extra manifest package or diagnostic suppression; evaluate an official action release when it adopts such behavior.",
-      "verification": "Successful main run 43219347338 / job 131186578235 at 2714b9273401711f428a1ef23e4cc46804721366 emitted exactly: Found release tag with component 'nightly-0.5.4-nightly', but not configured in manifest. The public prerelease tag is nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1 and targets 99ee759adaa337e8bc1427218adf7861763f7057. Release discovery then found v0.5.4 and continued. This record covers that exact advisory and source combination only; it neither suppresses logs nor validates future publishing. Latest action v5.0.0 and engine v17.11.2 release metadata, pinned engine strategy/parser/manifest and schema, and current engine parser/manifest were inspected. No candidate engine was installed or executed.",
+      "verification": "Successful main run 43219347338 / job 131186578235 at 2714b9273401711f428a1ef23e4cc46804721366 emitted exactly: Found release tag with component 'nightly-0.5.4-nightly', but not configured in manifest. The public prerelease tag is nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1 and targets 99ee759adaa337e8bc1427218adf7861763f7057. Release discovery then found v0.5.4 and continued. This record covers that exact advisory and source combination only; it neither suppresses logs nor validates future publishing. Latest action v5.0.0 and engine v17.11.2 release metadata, pinned engine strategy/parser/manifest and schema, and current engine parser/manifest were inspected. No candidate engine was installed or executed. On 2026-11-16 the fingerprint of .github/workflows/nightly.yml was refreshed after a change that only adds a setup-gradle gradle-home-cache-excludes input (PR #2167, issue #2166); the nightly tag expression and release behavior were not changed and were not re-verified, and lastVerified is intentionally unchanged.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/actions/runs/43219347338/job/131186578235",
         "https://github.com/albertocavalcante/gvy/releases/tag/nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1",
@@ -535,7 +535,7 @@
       "sources": [
         {
           "id": "manual:release-nightly-channel",
-          "sha256": "d3c0eb7c3ec37bdfb4ff7ec5644e0f63752f06be367e02a47d10e148db6c0af5"
+          "sha256": "ae36903cdbdd996cfc7e8767432645d9cd4a9e21ebf991e2757d70c25f1b2395"
         },
         {
           "id": "manual:release-nightly-discovery",
