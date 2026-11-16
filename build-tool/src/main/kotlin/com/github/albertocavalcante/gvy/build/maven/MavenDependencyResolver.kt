@@ -58,53 +58,53 @@ class MavenDependencyResolver : DependencyResolver {
 
         @Suppress("TooGenericExceptionCaught") // Catch-all for resolution errors
         return try {
-            val repositorySystem = AetherSessionFactory.repositorySystem
-            val session = newRepositorySystemSession()
-
-            // Parse the POM to get dependencies
             val model = parsePom(projectFile)
             if (model == null) {
                 logger.error { "Failed to parse pom.xml" }
-                return MavenResolutionResult.EMPTY
+                MavenResolutionResult.EMPTY
+            } else {
+                resolveRequest(buildCollectRequest(model))
             }
-
-            // Build collect request from dependencies
-            val collectRequest = CollectRequest()
-            collectRequest.repositories = getRemoteRepositories(model)
-
-            model.dependencies.forEach { dep ->
-                if (dep.version.isNullOrBlank()) {
-                    logger.warn { "Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}" }
-                    return@forEach
-                }
-                // Include all scopes (compile, test, etc.)
-                collectRequest.addDependency(toAetherDependency(dep))
-            }
-
-            // Pin transitive versions/exclusions the way Maven does (inline dependencyManagement)
-            model.dependencyManagement?.dependencies
-                ?.filterNot { it.version.isNullOrBlank() }
-                ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it, managed = true)) }
-
-            // Resolve dependencies
-            val dependencyRequest = DependencyRequest(collectRequest, null)
-            val result = try {
-                repositorySystem.resolveDependencies(session, dependencyRequest)
-            } catch (e: DependencyResolutionException) {
-                // The exception carries every artifact that did resolve; keep them.
-                logger.warn(e) { "Maven Resolver could not resolve every dependency; keeping partial results" }
-                return partialResult(e)
-            }
-
-            val dependencies = result.artifactResults
-                .filter { it.isResolved }
-                .mapNotNull { it.artifact?.file?.toPath() }
-
-            logger.info { "Resolved ${dependencies.size} dependencies via Maven Resolver" }
-            MavenResolutionResult(dependencies, emptyList())
         } catch (e: Exception) {
             logger.error(e) { "Failed to resolve dependencies with Maven Resolver" }
             MavenResolutionResult.EMPTY
+        }
+    }
+
+    private fun buildCollectRequest(model: Model): CollectRequest {
+        val collectRequest = CollectRequest()
+        collectRequest.repositories = getRemoteRepositories(model)
+
+        model.dependencies.forEach { dep ->
+            if (dep.version.isNullOrBlank()) {
+                logger.warn { "Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}" }
+                return@forEach
+            }
+            // Include all scopes (compile, test, etc.)
+            collectRequest.addDependency(toAetherDependency(dep))
+        }
+
+        // Pin transitive versions/exclusions the way Maven does (inline dependencyManagement)
+        model.dependencyManagement?.dependencies
+            ?.filterNot { it.version.isNullOrBlank() }
+            ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it, managed = true)) }
+        return collectRequest
+    }
+
+    private fun resolveRequest(collectRequest: CollectRequest): MavenResolutionResult {
+        val repositorySystem = AetherSessionFactory.repositorySystem
+        val session = newRepositorySystemSession()
+        return try {
+            val result = repositorySystem.resolveDependencies(session, DependencyRequest(collectRequest, null))
+            val dependencies = result.artifactResults
+                .filter { it.isResolved }
+                .mapNotNull { it.artifact?.file?.toPath() }
+            logger.info { "Resolved ${dependencies.size} dependencies via Maven Resolver" }
+            MavenResolutionResult(dependencies, emptyList())
+        } catch (e: DependencyResolutionException) {
+            // The exception carries every artifact that did resolve; keep them.
+            logger.warn(e) { "Maven Resolver could not resolve every dependency; keeping partial results" }
+            partialResult(e)
         }
     }
 
