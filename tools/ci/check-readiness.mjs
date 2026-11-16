@@ -27,12 +27,11 @@ export function evaluateReadiness(needs) {
     if (value !== 'true' && value !== 'false') errors.push(`Missing or invalid applicability: ${field}.`);
     applicability[field] = value;
   }
-  if (jobs['check-runner']?.outputs?.provisioning_triggered === 'true') {
+  if (paths?.outputs?.provisioning_triggered === 'true') {
     errors.push('Runner provisioning is pending; rerun this revision after the runner is available.');
   }
   const requirements = {
     license: 'true',
-    'check-runner': applicability.run_main_ci,
     lint: applicability.run_main_ci,
     build: applicability.run_main_ci,
     launcher: applicability.run_main_ci,

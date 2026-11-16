@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const mainJobs = ['lint', 'build', 'e2e-test'];
-const jobs = ['bazel', 'check-runner', ...mainJobs, 'launcher', 'zed', 'dependency-check'];
+const jobs = ['bazel', ...mainJobs, 'launcher', 'zed', 'dependency-check'];
 
 function jobBlock(source, name) {
   return source.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))`, 'm'))?.[1];
@@ -25,7 +25,7 @@ function hasLicenseGate(block, name) {
   if (!expression.startsWith(prefix)) return false;
   const rest = expression.slice(prefix.length);
   if (mainJobs.includes(name)) {
-    return rest === "needs.check-paths.outputs.run_main_ci == 'true' && needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'";
+    return rest === "needs.check-paths.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' && needs.check-paths.outputs.provisioning_triggered != 'true'";
   }
   if (name === 'launcher' || name === 'zed') {
     const output = name === 'launcher' ? 'run_main_ci' : 'run_zed_ci';
@@ -58,4 +58,10 @@ test('contract rejects removed dependencies and guards that permit a bypass', ()
     assert.notEqual(ungrouped, block, name);
     assert.equal(hasLicenseGate(ungrouped, name), false, `${name}: ungrouped dispatch`);
   }
+});
+
+test('check-paths declares the provisioning output that the main jobs and readiness read', () => {
+  const block = jobBlock(workflow, 'check-paths');
+  assert.match(block, /^      provisioning_triggered: \$\{\{ steps\.exit-early\.outputs\.provisioning_triggered \}\}$/m);
+  assert.match(block, /^        id: exit-early$/m);
 });

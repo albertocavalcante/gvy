@@ -8,8 +8,7 @@ import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 function successful(main = true, bazel = true, zed = true, jetbrains = zed) {
   return {
     license: { result: 'success' },
-    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed), run_jetbrains_ci: String(jetbrains) } },
-    'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
+    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed), run_jetbrains_ci: String(jetbrains), provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
     build: { result: main ? 'success' : 'skipped' },
     launcher: { result: main ? 'success' : 'skipped' },
@@ -59,8 +58,8 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
   }
 });
 
-test('every applicable producer must succeed, including Bazel and the runner check', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
+test('every applicable producer must succeed, including Bazel', () => {
+  for (const name of ['lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
     for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
       const jobs = successful();
       jobs[name].result = result;
@@ -74,7 +73,7 @@ test('every applicable producer must succeed, including Bazel and the runner che
 
 test('provisioning pending cannot satisfy required readiness', () => {
   const jobs = successful();
-  jobs['check-runner'].outputs.provisioning_triggered = 'true';
+  jobs['check-paths'].outputs.provisioning_triggered = 'true';
   for (const name of ['lint', 'build', 'e2e-test']) jobs[name].result = 'skipped';
   const report = evaluateReadiness(jobs);
   assert.equal(report.ok, false);
@@ -82,7 +81,7 @@ test('provisioning pending cannot satisfy required readiness', () => {
 });
 
 test('excluded jobs must be skipped; failures remain visible', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
+  for (const name of ['lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
     for (const result of ['success', 'failure', 'cancelled', undefined]) {
       const jobs = successful(false, false, false);
       jobs[name].result = result;
