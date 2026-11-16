@@ -62,19 +62,9 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
         val astModel = snapshot.parseResult.astModel
         val symbolTable = snapshot.parseResult.symbolTable
-        val targetNode = astModel?.getNodeAt(documentUri, groovyPosition)
+        val targetNode = astModel.getNodeAt(documentUri, groovyPosition)
 
         val resolved = when {
-            astModel == null -> {
-                logger.debug { "No AST model available for $uri" }
-                null
-            }
-
-            symbolTable == null -> {
-                logger.debug { "No symbol table available for $uri" }
-                null
-            }
-
             targetNode == null || !targetNode.isHighlightableSymbol() -> {
                 logger.debug { "No highlightable symbol at position" }
                 null
