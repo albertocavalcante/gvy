@@ -7,7 +7,6 @@ import groovy.lang.Closure
 import groovy.lang.ExpandoMetaClass
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.CodeNarcRunner
-import org.codenarc.analyzer.FilesSourceAnalyzer
 import org.codenarc.results.Results
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
@@ -87,18 +86,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
 
             val runner = CodeNarcRunner().apply {
                 routeSummaryToStderr()
-                // FilesSourceAnalyzer produces FileResults (supports getChildren())
-                sourceAnalyzer = FilesSourceAnalyzer().also { analyzer ->
-                    // Use reflection to set properties since Kotlin can't access Groovy property setters directly
-                    analyzer.javaClass.getDeclaredField("baseDirectory").apply {
-                        isAccessible = true
-                        set(analyzer, analysisDir.toString())
-                    }
-                    analyzer.javaClass.getDeclaredField("sourceFiles").apply {
-                        isAccessible = true
-                        set(analyzer, arrayOf(tempSourceFile.fileName.toString()))
-                    }
-                }
+                sourceAnalyzer = SingleFileSourceAnalyzer(analysisDir, safeFileName)
 
                 // Set the ruleset file
                 ruleSetFiles = rulesetFile.toUri().toString()
