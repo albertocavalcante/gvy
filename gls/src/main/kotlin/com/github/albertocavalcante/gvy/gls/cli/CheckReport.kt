@@ -24,7 +24,7 @@ internal fun sarifArtifactUri(file: File, workspace: File?): String {
         ?: file.takeUnless { it.isAbsolute }?.normalize()
     val path = relative?.invariantSeparatorsPath
     return if (path == null || path == ".." || path.startsWith("../")) {
-        absolute.toURI().toString()
+        absolute.toURI().toASCIIString()
     } else {
         // A leading "./" keeps a first segment containing ':' from being read as a URI scheme.
         val safePath = if (path.substringBefore('/').contains(':')) "./$path" else path
