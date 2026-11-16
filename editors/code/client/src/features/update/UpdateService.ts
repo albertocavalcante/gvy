@@ -54,12 +54,18 @@ export class UpdateService {
       return;
     }
 
+    // Schedule the recurring check first: neither a pending notification nor a
+    // failing check may stop the 24-hour loop.
+    this.scheduleNextCheck(config.checkIntervalHours);
+
     // Perform initial check
     const result = await this.checker.checkForUpdate();
-    await this.handleResult(result, config.notifications);
-
-    // Schedule next check
-    this.scheduleNextCheck(config.checkIntervalHours);
+    // Do not await the toast; it stays pending until the user dismisses it.
+    void this.handleResult(result, config.notifications).catch(
+      (error: unknown) => {
+        console.warn("Update notification failed:", error);
+      },
+    );
   }
 
   /**
@@ -91,15 +97,20 @@ export class UpdateService {
     );
     this.checkTimeout = setTimeout(async () => {
       const config = getUpdateConfiguration();
+      // Re-arm before the check so a pending toast or a throw cannot stop the loop.
+      this.scheduleNextCheck(config.checkIntervalHours);
       try {
         const result = await this.checker.checkForUpdate();
         if (!this.disposed) {
-          await this.handleResult(result, config.notifications);
+          void this.handleResult(result, config.notifications).catch(
+            (error: unknown) => {
+              console.warn("Update notification failed:", error);
+            },
+          );
         }
       } catch (error) {
         console.warn("Scheduled update check failed:", error);
       }
-      this.scheduleNextCheck(config.checkIntervalHours);
     }, intervalMs);
   }
 
