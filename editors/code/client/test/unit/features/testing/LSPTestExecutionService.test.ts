@@ -2195,4 +2195,130 @@ describe("LSPTestExecutionService", () => {
       assert.ok(run.passed.calledWith(features[1]));
     });
   });
+
+  describe("build exit status", () => {
+    const uri = { toString: () => "file:///w/a" };
+    const leaf = (id: string, label: string) => ({
+      id,
+      label,
+      uri,
+      children: { forEach: () => {} },
+    });
+    function setup() {
+      const features = [leaf("suite.a", "a"), leaf("suite.b", "b")];
+      const suite = {
+        id: "suite",
+        label: "suite",
+        uri,
+        children: {
+          forEach: (f: (item: unknown) => void) => features.forEach(f),
+        },
+      };
+      const token = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+      const run = {
+        enqueued: sandbox.stub(),
+        started: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token,
+      };
+      const controller = {
+        createTestRun: () => run,
+        items: { forEach: () => {} },
+      };
+      const proc = Object.assign(new EventEmitter(), {
+        pid: 123 as number | undefined,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: sandbox.stub(),
+      });
+      cpMock.spawn.returns(proc);
+      testServiceMock.getTestCommand.resolves({
+        executable: "/w/gradlew",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      const coverage = { addCoverageToRun: sandbox.stub().resolves() };
+      const finish = async (code: number, events: object[] = []) => {
+        await new Promise((resolve) => setImmediate(resolve));
+        for (const event of events)
+          proc.stdout.write(JSON.stringify(event) + "\n");
+        proc.stdout.end();
+        proc.stderr.end();
+        await Promise.all([
+          new Promise((resolve) => proc.stdout.on("close", resolve)),
+          new Promise((resolve) => proc.stderr.on("close", resolve)),
+        ]);
+        proc.emit("close", code);
+      };
+      return { features, suite, token, run, controller, coverage, finish };
+    }
+
+    it("errors tests that reported nothing when Gradle exits non-zero", async () => {
+      const { features, suite, token, run, controller, finish } = setup();
+      const done = service.runTests({ include: [suite] }, token, controller);
+      await finish(1);
+      await done;
+      assert.ok(run.errored.calledWith(features[0]));
+      assert.ok(run.errored.calledWith(features[1]));
+      assert.ok(!run.errored.calledWith(suite), "only leaves are marked");
+    });
+
+    it("keeps real results when Gradle exits non-zero because tests failed", async () => {
+      const { features, suite, token, run, controller, finish } = setup();
+      const done = service.runTests({ include: [suite] }, token, controller);
+      await finish(1, [
+        {
+          event: "testFinished",
+          id: "suite.a",
+          name: "a",
+          result: "FAILURE",
+          duration: 1,
+        },
+        {
+          event: "testFinished",
+          id: "suite.b",
+          name: "b",
+          result: "SUCCESS",
+          duration: 1,
+        },
+      ]);
+      await done;
+      assert.ok(run.failed.calledWith(features[0]));
+      assert.ok(run.passed.calledWith(features[1]));
+      assert.ok(run.errored.notCalled, "no extra incomplete error");
+    });
+
+    it("skips coverage after a failed build and adds it after a clean one", async () => {
+      const failed = setup();
+      const failedRun = service.runTestsWithCoverage(
+        { include: [failed.suite] },
+        failed.token,
+        failed.controller,
+        failed.coverage,
+      );
+      await failed.finish(1);
+      await failedRun;
+      assert.ok(failed.coverage.addCoverageToRun.notCalled);
+
+      const clean = setup();
+      const cleanRun = service.runTestsWithCoverage(
+        { include: [clean.suite] },
+        clean.token,
+        clean.controller,
+        clean.coverage,
+      );
+      await clean.finish(0);
+      await cleanRun;
+      assert.ok(clean.coverage.addCoverageToRun.calledOnce);
+    });
+  });
 });
