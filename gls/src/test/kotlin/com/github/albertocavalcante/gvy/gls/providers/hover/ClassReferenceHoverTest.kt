@@ -81,8 +81,10 @@ class ClassReferenceHoverTest {
 
             val hover = assertNotNull(provider.provideHover(useUri.toString(), Position(line, character)))
 
-            assertContains(hover.contents.right.value, "label")
-            assertFalse(hover.contents.right.value.contains("Caller documentation"), hover.contents.right.value)
+            val content = hover.contents.right.value
+            // Only the declaring class can supply this text, so the hover resolved to the inherited property.
+            assertContains(content, "Base label documentation")
+            assertFalse(content.contains("Caller documentation"), content)
         } finally {
             compilation.shutdown()
             DocumentationProvider.reset()

@@ -390,25 +390,15 @@ class HoverProvider(
             is ImportNode -> node.type?.redirect()
             else -> null
         }
-        if (classDeclaration != null) {
-            val attached = DocExtractor.extractAttachedDocumentation(classDeclaration)
-            if (!attached.isEmpty()) return attached
-            // A referenced class's positions index into its own source, never the caller's buffer.
-            if (classDeclaration.module !== module(uri, snapshot)) return Documentation.EMPTY
-        }
         val declaration = classDeclaration ?: node
-        if (classDeclaration == null && declaration is AnnotatedNode) {
-            val attached = DocExtractor.extractAttachedDocumentation(declaration)
-            if (!attached.isEmpty()) return attached
-            // A member inherited from another file carries that file's line numbers.
-            val owner = declaration.declaringClassOrNull()
-            val current = module(uri, snapshot)
-            if (owner?.module != null && current != null && owner.module !== current) return Documentation.EMPTY
-        }
-        return if (snapshot != null) {
-            DocExtractor.extractDocumentation(snapshot.sourceText, declaration)
-        } else {
-            documentationProvider.getDocumentation(declaration, uri)
+        val attached = (declaration as? AnnotatedNode)?.let(DocExtractor::extractAttachedDocumentation)
+            ?: Documentation.EMPTY
+        return when {
+            !attached.isEmpty() -> attached
+            // A declaration from another file carries that file's line numbers, never the caller buffer's.
+            declaration.isDeclaredInAnotherModule(module(uri, snapshot)) -> Documentation.EMPTY
+            snapshot != null -> DocExtractor.extractDocumentation(snapshot.sourceText, declaration)
+            else -> documentationProvider.getDocumentation(declaration, uri)
         }
     }
 
@@ -456,9 +446,16 @@ class HoverProvider(
     }
 }
 
-private fun AnnotatedNode.declaringClassOrNull(): ClassNode? = when (this) {
-    is FieldNode -> declaringClass
-    is PropertyNode -> declaringClass
-    is MethodNode -> declaringClass
-    else -> null
+/** Whether this class or member is declared in a module other than [current]. */
+private fun ASTNode.isDeclaredInAnotherModule(current: ModuleNode?): Boolean {
+    val owner = when (this) {
+        is FieldNode -> declaringClass
+        is PropertyNode -> declaringClass
+        is MethodNode -> declaringClass
+        else -> null
+    }
+    return when {
+        this is ClassNode -> module !== current
+        else -> owner?.module.let { it != null && current != null && it !== current }
+    }
 }
