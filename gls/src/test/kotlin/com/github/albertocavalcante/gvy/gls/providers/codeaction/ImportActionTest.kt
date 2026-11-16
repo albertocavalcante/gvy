@@ -227,4 +227,54 @@ class ImportActionTest {
         // Should be at beginning (line 0)
         assertEquals(0, edit.range.start.line)
     }
+
+    private fun importEdit(content: String, line: Int): org.eclipse.lsp4j.TextEdit = runBlocking {
+        compilationService.compile(
+            URI.create("file:///src/com/example/Target.groovy"),
+            "package com.example; class Target {}",
+        )
+        val diagnostic = Diagnostic().apply {
+            range = Range(Position(line, 0), Position(line, 6))
+            message = "unable to resolve class Target"
+        }
+        val actions = importAction.createImportActions(testUri, listOf(diagnostic), content)
+        assertEquals(1, actions.size)
+        actions.first().edit.changes[testUri]!!.first()
+    }
+
+    @Test
+    fun `inserts below package when a multi-line license header precedes it`() {
+        val content = "/*\n * Copyright 2026\n */\npackage foo\n\nclass T {\n    Target t\n}"
+        val edit = importEdit(content, 6)
+        assertEquals(4, edit.range.start.line)
+    }
+
+    @Test
+    fun `inserts below a shebang line`() {
+        val content = "#!/usr/bin/env groovy\nTarget t = null"
+        val edit = importEdit(content, 1)
+        assertEquals(1, edit.range.start.line)
+    }
+
+    @Test
+    fun `inserts below package after a shebang`() {
+        val content = "#!/usr/bin/env groovy\npackage foo\n\nTarget t = null"
+        val edit = importEdit(content, 3)
+        assertEquals(2, edit.range.start.line)
+    }
+
+    @Test
+    fun `uses CRLF in CRLF files`() {
+        val content = "package foo\r\n\r\nclass T {\r\n    Target t\r\n}"
+        val edit = importEdit(content, 3)
+        assertEquals("import com.example.Target\r\n", edit.newText)
+    }
+
+    @Test
+    fun `appends after last line when package has no trailing newline`() {
+        val edit = importEdit("package foo", 0)
+        assertEquals(0, edit.range.start.line)
+        assertEquals(11, edit.range.start.character)
+        assertEquals("\nimport com.example.Target", edit.newText)
+    }
 }
