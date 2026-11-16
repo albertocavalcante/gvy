@@ -412,13 +412,6 @@ class HoverProvider(
         }
     }
 
-    private fun AnnotatedNode.declaringClassOrNull(): ClassNode? = when (this) {
-        is FieldNode -> declaringClass
-        is PropertyNode -> declaringClass
-        is MethodNode -> declaringClass
-        else -> null
-    }
-
     private suspend fun sourceDocumentation(node: ASTNode): Documentation? {
         val navigator = sourceNavigator ?: return null
         val className = extractClassNameForDocumentation(node) ?: return null
@@ -461,4 +454,11 @@ class HoverProvider(
             range = baseHover.range
         }
     }
+}
+
+private fun AnnotatedNode.declaringClassOrNull(): ClassNode? = when (this) {
+    is FieldNode -> declaringClass
+    is PropertyNode -> declaringClass
+    is MethodNode -> declaringClass
+    else -> null
 }
