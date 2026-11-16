@@ -62,6 +62,12 @@ The named `diagnostics.integrity` control checks terminal URI/version, completio
 it preserves all supplied diagnostic metadata in the bound response. It does not establish the expected syntax-error
 location or attribution. Those semantic diagnostic assertions remain part of #2082's open workload gates.
 
+The initial packaged baseline observed missing before-anchor facts with 26 passed, 6 failed and 6 blocked checks. After
+classifying only those observed failures, the next run reached all after-anchor checks: 26 passed, 6 known failures, 6
+failed and none blocked. The final issue-linked metadata therefore covers only measured missing class tokens, empty
+class hovers and absent outline declarations in malformed buffers. Valid controls and enum completion remain required.
+Any unexpected pass fails until the corresponding metadata is removed; known failures never make `isSuccessful` true.
+
 The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
 still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 

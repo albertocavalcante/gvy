@@ -286,12 +286,15 @@ class ColdIncompleteBufferRecoveryTest {
     private enum class Feature { Tokens, Hover, Outline, Completion }
 
     private companion object {
-        // Only these before-anchor failures have executed in the qualifying packaged baseline.
-        // After-anchor checks remain required until reached; see https://github.com/albertocavalcante/gvy/issues/2082.
+        // Each exact failure executed in the qualifying packaged baseline; valid and completion controls stay required.
+        // See https://github.com/albertocavalcante/gvy/issues/2082. Remove metadata when each check starts passing.
         val observedFailures = mapOf(
             "tokens.before" to "recovery: missing class token BeforeCold",
+            "tokens.after" to "recovery: missing class token AfterCold",
             "hover.before" to "recovery: empty class hover BeforeCold",
+            "hover.after" to "recovery: empty class hover AfterCold",
             "outline.before" to "recovery: missing outline class BeforeCold",
+            "outline.after" to "recovery: missing outline class AfterCold",
         )
         const val REQUEST_SECONDS = 30L
         const val WHOLE_CASE_SECONDS = 120L
