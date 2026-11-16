@@ -736,6 +736,14 @@ after-anchor checks blocked. Classifying only the observed failures allowed the 
 failures without blocked checks. #2082 now has narrow per-check metadata for those measured absences; valid and
 enum-completion controls remain required. Semantic diagnostic attribution and the other M0.1a replays remain open.
 
+The warm M0.1a replay exposed a separate hover freshness failure: a completed current parse with no AST can leave the
+last successful source cached. Treating that older cache as the acquired current result produces `ContentModified`
+without another client edit. A real-compiler regression reproduces this path and the fallback compilation path. The
+bounded handler fix observes the completed no-AST result before consulting that cache, while retaining cancellation,
+source and buffer-lifecycle guards. Empty compiler hover represents unavailable facts; useful current-source hover,
+tokens and outline still require the independent recovery work in #2082. Closed-file disk freshness remains governed by
+existing invalidation; this slice does not establish a filesystem snapshot contract.
+
 **Owner and goal:** parser/session test owner. Make the reported failure reproducible through public LSP requests and
 retain exact source/package identity. This is the next concrete PR:
 `test(lsp): capture incomplete-buffer recovery controls`.
