@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
+import com.github.albertocavalcante.gvy.gls.dsl.completion.InsertionTemplate
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
 
 /**
@@ -31,6 +32,34 @@ object SnippetBuilder {
         val valueSnippet = buildValueSnippet(param)
         return "${prefix}$paramName: $valueSnippet"
     }
+
+    /** Produce both client representations from the same parameter metadata. */
+    fun buildParameterTemplate(paramName: String, param: MergedParameter, prefix: String = ""): InsertionTemplate {
+        val value = param.validValues?.firstOrNull()
+        val type = normalizeType(param.type)
+        val plainValue = when {
+            value != null && type in numericAndBooleanTypes -> value
+            value != null -> "'${escapeGroovyString(value)}'"
+            type == "boolean" -> "true"
+            type in numericAndBooleanTypes -> "0"
+            type == "closure" -> "{\n    \n}"
+            type == "map" -> "[:]"
+            type == "list" -> "[]"
+            else -> "''"
+        }
+        return InsertionTemplate(buildParameterSnippet(paramName, param, prefix), "$prefix$paramName: $plainValue")
+    }
+
+    private fun escapeGroovyString(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("\b", "\\b")
+        .replace("\u000C", "\\f")
+
+    private val numericAndBooleanTypes = setOf("int", "long", "short", "byte", "float", "double", "boolean")
 
     /**
      * Build just the value portion of a snippet based on parameter type.

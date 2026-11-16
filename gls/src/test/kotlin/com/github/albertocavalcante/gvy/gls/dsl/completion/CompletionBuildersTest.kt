@@ -5,8 +5,10 @@ package com.github.albertocavalcante.gvy.gls.dsl.completion
 
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.InsertTextFormat
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class CompletionBuildersTest {
 
@@ -67,5 +69,49 @@ class CompletionBuildersTest {
 
         assertEquals("my\\\$fn(\$1)", item.insertText)
         assertEquals("void my\$fn()", item.detail)
+    }
+
+    @Test
+    fun `snippet plain text defaults to the final label`() {
+        val builder = CompletionBuilder()
+        builder.snippet("item(\$1)")
+        builder.label("finalLabel")
+
+        val item = builder.build() as TemplateCompletionItem
+
+        assertEquals("finalLabel", item.insertionTemplate?.plainText)
+    }
+
+    @Test
+    fun `snippet preserves an explicitly empty plain alternative`() {
+        val item = completion {
+            snippet("item(\$1)", plainText = "")
+            label("finalLabel")
+        } as TemplateCompletionItem
+
+        assertEquals("", item.insertionTemplate?.plainText)
+    }
+
+    @Test
+    fun `non-snippet convenience builders clear prior snippet state`() {
+        val replacements: List<Pair<String, CompletionBuilder.() -> Unit>> = listOf(
+            "Example" to { clazz("Example") },
+            "value" to { field("value", "String") },
+            "value" to { variable("value", "String") },
+            "value" to { property("value", "String") },
+        )
+
+        replacements.forEach { (expectedText, replacement) ->
+            val builder = CompletionBuilder()
+            builder.snippet("old(\$1)")
+            builder.label("old")
+            builder.replacement()
+
+            val item = builder.build() as TemplateCompletionItem
+
+            assertEquals(expectedText, item.insertText)
+            assertEquals(InsertTextFormat.PlainText, item.insertTextFormat)
+            assertNull(item.insertionTemplate)
+        }
     }
 }

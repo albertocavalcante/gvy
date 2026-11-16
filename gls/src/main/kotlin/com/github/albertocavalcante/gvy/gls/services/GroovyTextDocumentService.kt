@@ -158,6 +158,9 @@ class GroovyTextDocumentService(
     @Volatile
     private var labelDetailsSupport: Boolean = false
 
+    @Volatile
+    private var snippetSupport: Boolean = false
+
     private val logger = KotlinLogging.logger {}
 
     /** Providers are built per request; this keeps unchanged workspace files cached across rename checks. */
@@ -182,6 +185,10 @@ class GroovyTextDocumentService(
     /** Whether the client renders `CompletionItem.labelDetails` (LSP 3.17), from its initialize capabilities. */
     fun updateLabelDetailsSupport(supported: Boolean) {
         labelDetailsSupport = supported
+    }
+
+    fun updateSnippetSupport(supported: Boolean) {
+        snippetSupport = supported
     }
 
     fun updateDefinitionLinkSupport(supported: Boolean) {
@@ -487,7 +494,7 @@ class GroovyTextDocumentService(
             )
 
             logger.debug { "Returning ${completions.size} completions" }
-            Either.forLeft(completions.forClient(labelDetailsSupport))
+            Either.forLeft(completions.forClient(labelDetailsSupport, snippetSupport))
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
