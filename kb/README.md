@@ -5,6 +5,9 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 
 ## Index
 
+- Active recovery and mixed-version architecture:
+  [required contract, restart handoff and PR packets](INCREMENTAL_REPARSE_DELIVERY_PLAN.md#recovery-and-mixed-version-implementation-contract)
+
 - Architecture: `ARCHITECTURE.md`
 - Analysis SDK and infrastructure extraction delivery: [dependency-ordered plan](SDK_EXTRACTION_DELIVERY_PLAN.md)
 - CodeNarc integration notes: `CODENARC.md`

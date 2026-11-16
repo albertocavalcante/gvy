@@ -61,7 +61,32 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
    tests. Review readability separately from lint: make alternatives and logical groups visible, use meaningful names,
    and prefer clear control flow over dense expressions. Preserve evaluation and failure behavior during style changes.
 
+## Recovery and mixed-version architecture requirements
+
+Before changing parsing, completion/hover/tokens, analysis sessions, target/import selection, caches/indexes, semantic
+edits, compiler workers or framework providers, read the
+[current contract and PR packets](kb/INCREMENTAL_REPARSE_DELIVERY_PLAN.md#recovery-and-mixed-version-implementation-contract)
+and the relevant [SDK boundary](kb/SDK_EXTRACTION_DELIVERY_PLAN.md). These requirements remain active across sessions;
+verified implementation adds regression obligations rather than retiring the invariants.
+
+- Ordinary incomplete buffers need useful current-source syntax and unaffected editor facts, including on a cold open. A
+  last-good AST, completion-only repair or host compiler upgrade does not satisfy the independent syntax requirement.
+- The public syntax/analysis boundary must be compiler-free. Version-specific compiler facts are optional, qualified
+  providers; never equate a configured version with the compiler actually loaded.
+- One session must support distinct target/compiler/JDK/framework contexts, including shared files. Global selected
+  compilers, union classpaths and URI-only semantic stores cannot certify mixed-context analysis.
+- Before mixed-context exposure, every semantic entry point uses context-owned state or explicitly reports unavailable
+  (M2.4). Unique target membership per file does not make a shared global index safe. Physical edits require affected-
+  context impact proof or conservative refusal; context switches must retire client-visible cached results.
+
+Each affected PR identifies its packet, remaining acceptance gates and actual evidence. Update the canonical delivery
+record before handoff; keep proposed, reviewed, passed, merged and installed states distinct. Backend choice, exact
+supported versions and resource defaults remain experiment-gated. The packet sequence is a staged migration, not an
+instruction to rewrite every feature at once. Unrelated changes do not need to read the full program.
+
 ## Architecture
+
+The following describes the current implementation; the required migration boundary is recorded above.
 
 - `gls/`: the LSP server. `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
 - Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves language features. Hover goes through the
