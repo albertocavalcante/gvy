@@ -300,7 +300,7 @@ async function handleActionClick(
   // Check for settings-related actions
   if (
     lowerAction.includes("settings") ||
-    lowerAction.includes("groovy.project.javaHome")
+    lowerAction.includes("groovy.project.javahome")
   ) {
     // Open settings to groovy.project.javaHome (declared in package.json)
     vscode.commands.executeCommand(
