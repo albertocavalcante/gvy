@@ -81,7 +81,7 @@ class MavenDependencyResolver : DependencyResolver {
                 collectRequest.addDependency(toAetherDependency(dep))
             }
 
-            // Pin transitive versions/exclusions the way Maven does (BOMs, dependencyManagement)
+            // Pin transitive versions/exclusions the way Maven does (inline dependencyManagement)
             model.dependencyManagement?.dependencies
                 ?.filterNot { it.version.isNullOrBlank() }
                 ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it, managed = true)) }

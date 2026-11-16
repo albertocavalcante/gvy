@@ -171,4 +171,21 @@ class MavenDependencyResolverTest {
         assertTrue(outcome.isPartial)
         assertEquals(listOf("g:bad:jar:1"), outcome.unresolved)
     }
+
+    @Test
+    fun `resolveDetailed reports collection failures alongside resolved artifacts`() {
+        val system = mockk<RepositorySystem>()
+        stubAether(system)
+        every { system.resolveDependencies(any(), any()) } answers {
+            val result = DependencyResult(secondArg<DependencyRequest>())
+                .setCollectExceptions(listOf(RuntimeException("bad version range")))
+            throw DependencyResolutionException(result, RuntimeException("boom"))
+        }
+        val pomFile = tempDir.resolve("pom.xml").also { it.writeText(pom) }
+
+        val outcome = MavenDependencyResolver().resolveDetailed(pomFile)
+
+        assertTrue(outcome.isPartial)
+        assertEquals(listOf("collection failed: bad version range"), outcome.unresolved)
+    }
 }

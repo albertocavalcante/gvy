@@ -65,10 +65,10 @@ class MavenBuildTool : BuildTool {
             }
             embedded.isPartial -> {
                 // The embedded session ignores settings.xml mirrors/credentials/proxies; real Maven may resolve
-                // what it could not. Prefer the CLI result when it is at least as complete.
+                // what it could not. A non-empty CLI result means mvn exited 0, i.e. the classpath is complete.
                 logger.info { "Embedded resolution was partial, trying CLI for a complete classpath" }
                 val cliDeps = resolveViaCli(workspaceRoot)
-                if (cliDeps.size >= embeddedDeps.size) {
+                if (cliDeps.isNotEmpty()) {
                     cliDeps
                 } else {
                     partialWarning = partialStatus(embedded)
