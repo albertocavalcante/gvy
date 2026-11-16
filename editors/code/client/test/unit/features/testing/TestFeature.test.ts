@@ -4,6 +4,9 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
+import {
+  isInsideDirectory as realIsInsideDirectory,
+} from "../../../../src/features/testing/SpockGenerator";
 
 interface MockFileSystemErrorConstructor {
   new (message: string, code: string): Error & { code: string };
@@ -45,6 +48,7 @@ interface MockVscode {
 }
 
 interface MockSpockGenerator {
+  isInsideDirectory: (root: string, target: string) => boolean;
   SpockGenerator: sinon.SinonStub;
 }
 
@@ -142,6 +146,7 @@ describe("TestFeature", () => {
 
     // Mock SpockGenerator
     mockSpockGenerator = {
+      isInsideDirectory: realIsInsideDirectory,
       SpockGenerator: sandbox.stub().returns({
         detectPackage: sandbox.stub().returns("com.example"),
         generateSpec: sandbox.stub().returns("// Generated Spock spec"),
