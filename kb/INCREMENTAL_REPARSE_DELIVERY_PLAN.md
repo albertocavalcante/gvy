@@ -720,6 +720,11 @@ Delivery is split into M0.1a (packaged incomplete-buffer controls) and M0.1b (ex
 controls). M0.1a first supplies durable named-result reporting, followed by the actual recovery workload; report
 plumbing alone does not close it. Parent M0.1 remains incomplete until both slices have their acceptance evidence.
 
+The report producer landed in #2081. The next pure test-oracle slice decodes semantic tokens against the actual legend
+and authored UTF-16 source, with corrupt-data and coordinate controls. Neither slice establishes packaged recovery.
+Issue #2082 owns the observed loss of tokens, hover and outline around incomplete member access; the workload must
+retain passing completion controls and measure each required replay before assigning narrow expected failures.
+
 **Owner and goal:** parser/session test owner. Make the reported failure reproducible through public LSP requests and
 retain exact source/package identity. This is the next concrete PR:
 `test(lsp): capture incomplete-buffer recovery controls`.
