@@ -240,6 +240,21 @@ class GradleDependencyResolver(
         }
     }
 
+    /**
+     * Fetches the raw [IdeaProject] model under the same policy as a resolution: the connection is leased for the
+     * whole fetch, the daemon arguments and configured Java home are applied (so no second, differently-configured
+     * daemon starts), and the fetch is cancellable through [cancellation].
+     */
+    internal fun fetchIdeaProject(
+        projectDir: Path,
+        cancellation: ResolutionCancellation = ResolutionCancellation(),
+    ): IdeaProject = connectionFactory.acquire(projectDir, null).use { lease ->
+        val modelBuilder = lease.connection.model(IdeaProject::class.java)
+        modelBuilder.applyDaemonArguments()
+        if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
+        modelBuilder.getCancellable(cancellation)
+    }
+
     private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
         // Pre-flight check: validate JDK/Gradle compatibility before attempting model fetch
         checkJdkGradleCompatibility(connection, cancellation)
