@@ -7,6 +7,9 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedCatalogue
+import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.gvy.jenkins.plugins.PluginConfiguration
 import com.github.albertocavalcante.gvy.jenkins.scanning.JenkinsClasspathScanner
@@ -254,5 +257,43 @@ class JenkinsMetadataMemoizationTest {
     private companion object {
         /** A Jenkinsfile never compiled: its view has bundled metadata only. */
         val UNCOMPILED: java.net.URI = java.net.URI.create("file:///workspace/Jenkinsfile")
+    }
+
+    @Test
+    fun `omitted catalogue adapts legacy merged constructor data`() {
+        assertEquals(
+            setOf("echo", "sh"),
+            base.catalogue.symbols.filter { it.kind == SymbolKind.EXECUTABLE_STEP }.map { it.name }.toSet(),
+        )
+    }
+
+    @Test
+    fun `explicit empty catalogue remains authoritative in merged constructor`() {
+        val explicit = TypedCatalogue()
+        assertSame(explicit, base.copy(catalogue = explicit).catalogue)
+        assertTrue(explicit.symbols.isEmpty())
+    }
+
+    @Test
+    fun `core archive metadata survives an explicit plugin filter`() {
+        val context = JenkinsContext(
+            configuration = JenkinsConfiguration(
+                pluginConfig = PluginConfiguration(plugins = listOf("git"), includeDefaultPlugins = false),
+            ),
+            workspaceRoot = tempDir,
+            pluginManager = JenkinsPluginManager(),
+            bundledMetadataLoader = { VersionedMetadataLoader().loadMerged() },
+            classpathScanner = { dynamic() },
+        )
+        assertEquals(
+            "core",
+            context.getAllMetadata(null).catalogue.unique(SymbolKind.EXECUTABLE_STEP, "archiveArtifacts")?.ownerPlugin,
+        )
+        val archive = context.getAllMetadata(null).steps.getValue("archiveArtifacts")
+        assertEquals("core", archive.plugin)
+        assertEquals(
+            "https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts",
+            archive.documentationUrl,
+        )
     }
 }

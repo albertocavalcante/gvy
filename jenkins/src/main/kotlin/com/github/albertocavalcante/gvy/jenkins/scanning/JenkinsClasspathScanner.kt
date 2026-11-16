@@ -16,6 +16,8 @@ import com.github.albertocavalcante.gvy.common.text.toStepName
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MetadataProvenance
+import com.github.albertocavalcante.gvy.jenkins.metadata.SourceKind
 import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
@@ -114,6 +116,7 @@ class JenkinsClasspathScanner {
                 steps[stepName] = JenkinsStepMetadata(
                     name = stepName,
                     plugin = pluginName,
+                    provenance = MetadataProvenance(SourceKind.STATIC_DISCOVERY, plugin = pluginName),
                     positionalParams = positionalParams,
                     parameters = parameters,
                     documentation = doc,

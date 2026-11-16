@@ -9,6 +9,8 @@ import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverStrategy
+import com.github.albertocavalcante.gvy.gls.providers.jenkins.CredentialBindingSite
+import com.github.albertocavalcante.gvy.gls.providers.jenkins.credentialBindingSite
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
@@ -48,7 +50,9 @@ class JenkinsParameterHoverStrategy(
         if (!modeResolver.isJenkinsModeEnabled(context.documentUri)) return null
         val metadata = jenkinsCapabilities?.getAllMetadata(context.documentUri) ?: return null
         return when (node) {
-            is ConstantExpression -> context.astModel?.let { parameterHover(node, it, metadata) }
+            is ConstantExpression -> context.astModel?.let {
+                parameterHover(node, it, metadata, context.documentUri, context.reliableSource)
+            }
             is VariableExpression -> globalVariableHover(node, metadata)
             else -> null
         }
@@ -58,11 +62,19 @@ class JenkinsParameterHoverStrategy(
         key: ConstantExpression,
         astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
+        uri: java.net.URI,
+        reliableSource: Boolean,
     ): Hover? {
         val name = key.value as? String ?: return null
         val call = callOwningArgumentKey(key, astModel) ?: return null
         val callName = call.methodAsString ?: return null
-        val parameter = parametersOf(callName, enclosingCallName(call, astModel), metadata)?.get(name) ?: return null
+        val site = astModel.credentialBindingSite(call, uri, metadata, jenkinsCapabilities, reliableSource)
+        val parameters = when (site) {
+            CredentialBindingSite.BINDING -> metadata.nestedDescribables[callName]?.namedParams
+            CredentialBindingSite.UNKNOWN -> return null
+            CredentialBindingSite.NOT_BINDING -> parametersOf(callName, enclosingCallName(call, astModel), metadata)
+        }
+        val parameter = parameters?.get(name) ?: return null
 
         return hover(parameterMarkdown(callName, parameter), key)
     }
@@ -112,7 +124,7 @@ class JenkinsParameterHoverStrategy(
 
     private fun parameterMarkdown(callName: String, parameter: MergedParameter): String = markdown {
         h2("Parameter `${parameter.name}` of `$callName`")
-        val required = if (parameter.required) " *(required)*" else ""
+        val required = if (parameter.required == true) " *(required)*" else ""
         val default = parameter.defaultValue?.let { " (default: `$it`)" } ?: ""
         text("**Type:** `${parameter.type}`$required$default")
         parameter.description?.let(::text)

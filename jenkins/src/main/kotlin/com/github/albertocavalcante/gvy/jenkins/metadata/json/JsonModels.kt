@@ -8,8 +8,13 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.DeclarativeOptionMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MetadataProvenance
+import com.github.albertocavalcante.gvy.jenkins.metadata.OwnerEvidence
 import com.github.albertocavalcante.gvy.jenkins.metadata.PostConditionMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.SourceKind
 import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedCatalogue
 import kotlinx.serialization.Serializable
 
 /**
@@ -27,6 +32,7 @@ data class MetadataJson(
     val agentTypes: Map<String, AgentTypeJson> = emptyMap(),
     /** Entries of declarative directives such as `triggers`, `parameters` and `tools`, keyed by directive. */
     val directiveEntries: Map<String, Map<String, DeclarativeOptionJson>> = emptyMap(),
+    val typedCatalogue: TypedCatalogue? = null,
 )
 
 @Serializable
@@ -35,12 +41,14 @@ data class StepJson(
     val positionalParams: List<String> = emptyList(),
     val parameters: Map<String, ParameterJson>,
     val documentation: String? = null,
+    val kind: SymbolKind = SymbolKind.EXECUTABLE_STEP,
+    val returnType: String? = null,
 )
 
 @Serializable
 data class ParameterJson(
     val type: String,
-    val required: Boolean = false,
+    val required: Boolean? = null,
     val default: String? = null,
     val documentation: String? = null,
 )
@@ -65,7 +73,10 @@ data class AgentTypeJson(val parameters: Map<String, ParameterJson> = emptyMap()
  * Extension function to convert JSON model to domain model.
  */
 fun MetadataJson.toBundledMetadata(): BundledJenkinsMetadata = BundledJenkinsMetadata(
-    steps = steps.mapValues { (stepName, step) -> step.toDomain(stepName) },
+    steps = steps.filterValues { it.kind == SymbolKind.EXECUTABLE_STEP }
+        .mapValues { (stepName, step) -> step.toDomain(stepName) },
+    nestedDescribables = steps.filterValues { it.kind == SymbolKind.NESTED_DESCRIBABLE }
+        .mapValues { (stepName, step) -> step.toDomain(stepName) },
     globalVariables = globalVariables.mapValues { (varName, globalVar) ->
         GlobalVariableMetadata(
             name = varName,
@@ -86,6 +97,7 @@ fun MetadataJson.toBundledMetadata(): BundledJenkinsMetadata = BundledJenkinsMet
         entries.mapValues { (entryName, entry) -> entry.toDomain(entryName) }
     },
     jenkinsVersion = jenkinsVersion,
+    typedCatalogue = typedCatalogue,
 )
 
 private fun StepJson.toDomain(stepName: String): JenkinsStepMetadata = JenkinsStepMetadata(
@@ -93,6 +105,11 @@ private fun StepJson.toDomain(stepName: String): JenkinsStepMetadata = JenkinsSt
     plugin = plugin,
     positionalParams = positionalParams,
     parameters = parameters.toStepParameters(),
+    kind = kind,
+    returnType = returnType,
+    provenance = MetadataProvenance(SourceKind.CURATED, plugin = plugin),
+    ownerPlugin = plugin,
+    ownerEvidence = OwnerEvidence.CURATED,
     documentation = documentation,
 )
 

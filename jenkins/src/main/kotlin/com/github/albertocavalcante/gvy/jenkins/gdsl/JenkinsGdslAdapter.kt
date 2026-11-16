@@ -11,7 +11,22 @@ import com.github.albertocavalcante.gvy.gdsl.model.PropertyDescriptor
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.Knowledge
+import com.github.albertocavalcante.gvy.jenkins.metadata.MetadataProvenance
+import com.github.albertocavalcante.gvy.jenkins.metadata.SourceKind
 import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedCatalogue
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedSymbol
+import com.github.albertocavalcante.gvy.jenkins.metadata.isActionableUnqualified
+import com.github.albertocavalcante.gvy.jenkins.metadata.toTypedSymbol
+import com.github.albertocavalcante.gvy.jenkins.metadata.withCanonicalProjection
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.util.UUID
 
 /**
  * Adapter that converts GDSL parse results to Jenkins metadata.
@@ -69,27 +84,65 @@ class JenkinsGdslAdapter {
      * Converts a complete GDSL parse result to Jenkins metadata.
      *
      * @param result The parse result from GdslExecutor
-     * @param pluginSource Optional plugin name for attribution
+     * @param pluginSource Legacy compatibility label, not plugin ownership
+     * @param sourceOrigin File or discovery input label for canonical provenance
+     * @param sourceNamespace Stable identity of a known source, separate from provenance and owner
      * @return BundledJenkinsMetadata containing steps and global variables
      */
-    fun convert(result: GdslParseResult, pluginSource: String = DEFAULT_PLUGIN): BundledJenkinsMetadata {
+    fun convert(
+        result: GdslParseResult,
+        pluginSource: String = DEFAULT_PLUGIN,
+        sourceOrigin: String? = null,
+        sourceNamespace: String? = null,
+    ): BundledJenkinsMetadata {
         if (!result.success) {
             return BundledJenkinsMetadata(steps = emptyMap(), globalVariables = emptyMap())
         }
 
-        val steps = result.methods
-            .filter { isIdentifier(it.name) }
-            .map { convertMethod(it, pluginSource) }
-            .associateBy { it.name }
-
-        val globalVariables = result.properties
-            .filter { isIdentifier(it.name) }
-            .map { convertProperty(it) }
-            .associateBy { it.name }
+        val origin = sourceOrigin ?: pluginSource
+        val namespace = sourceNamespace?.let { "gdsl-source:$it" } ?: "gdsl-ingestion:${UUID.randomUUID()}"
+        val methods = result.methods.filter { isIdentifier(it.name) }
+        val properties = result.properties.filter { isIdentifier(it.name) }
+        val symbols = methods.mapIndexed { index, method ->
+            convertMethod(method, pluginSource, origin).toTypedSymbol().copy(
+                id = "gdsl:method:$index:${method.name}",
+                ownerPlugin = null,
+                legacyDerived = false,
+                sourceNamespace = namespace,
+                gdslContext = method.context.toJsonContext(),
+            )
+        } + properties.mapIndexed { index, property ->
+            val converted = convertProperty(property)
+            TypedSymbol(
+                id = "gdsl:property:$index:${property.name}",
+                name = property.name,
+                kind = SymbolKind.GLOBAL,
+                returnType = converted.type,
+                contexts = property.enclosingCall?.let(::listOf),
+                gdslContext = property.context.toJsonContext(),
+                provenance = MetadataProvenance(SourceKind.GDSL, origin = origin),
+                sourceNamespace = namespace,
+                documentation = converted.documentation,
+            )
+        }
+        val eligible = symbols.groupBy { it.kind to it.name }.values.mapNotNull { candidates ->
+            candidates.singleOrNull()?.takeIf { it.isActionableUnqualified() }
+        }
+        val steps = methods.mapIndexedNotNull { index, method ->
+            val symbol = symbols[index]
+            if (symbol !in eligible) return@mapIndexedNotNull null
+            convertMethod(method, pluginSource, origin).withCanonicalProjection(symbol)
+        }.associateBy { it.name }
+        val globals = properties.mapIndexedNotNull { index, property ->
+            val symbol = symbols[methods.size + index]
+            if (symbol !in eligible) return@mapIndexedNotNull null
+            convertProperty(property).withCanonicalProjection(symbol)
+        }.associateBy { it.name }
 
         return BundledJenkinsMetadata(
             steps = steps,
-            globalVariables = globalVariables,
+            globalVariables = globals,
+            typedCatalogue = TypedCatalogue(symbols = symbols),
         )
     }
 
@@ -97,21 +150,28 @@ class JenkinsGdslAdapter {
      * Converts a single method descriptor to Jenkins step metadata.
      *
      * @param method The method descriptor from GDSL
-     * @param pluginSource Optional plugin name for attribution
+     * @param pluginSource Legacy compatibility label
+     * @param sourceOrigin File or discovery input label for canonical provenance
      * @return JenkinsStepMetadata for the step
      */
-    fun convertMethod(method: MethodDescriptor, pluginSource: String = DEFAULT_PLUGIN): JenkinsStepMetadata {
-        // Prefer named parameters over positional (they have more metadata)
-        val parameters = if (method.namedParameters.isNotEmpty()) {
-            convertNamedParameters(method.namedParameters)
-        } else {
-            convertPositionalParameters(method.parameters)
-        }
+    fun convertMethod(
+        method: MethodDescriptor,
+        pluginSource: String = DEFAULT_PLUGIN,
+        sourceOrigin: String = pluginSource,
+    ): JenkinsStepMetadata {
+        // Named descriptors enrich matching positional parameters without discarding either form.
+        val parameters = convertPositionalParameters(method.parameters) + convertNamedParameters(method.namedParameters)
 
         return JenkinsStepMetadata(
             name = method.name,
             plugin = pluginSource,
+            provenance = MetadataProvenance(SourceKind.GDSL, origin = sourceOrigin),
             parameters = parameters,
+            positionalParams = method.parameters.map { it.name }.filter(::isIdentifier),
+            namedBinding = if (method.namedParameters.isNotEmpty()) Knowledge.YES else Knowledge.UNKNOWN,
+            contexts = method.enclosingCall?.let(::listOf),
+            returnType = method.returnType.takeIf { it.length <= MAX_TYPE_LENGTH && TYPE_NAME.matches(it) }
+                ?: FALLBACK_TYPE,
             documentation = method.documentation?.let(::literalMarkdown),
         )
     }
@@ -151,7 +211,7 @@ class JenkinsGdslAdapter {
             param.name to StepParameter(
                 name = param.name,
                 type = simplifyType(param.type),
-                required = false, // Positional params don't have required info
+                required = null, // Positional params do not supply requiredness
                 default = null,
                 documentation = param.documentation?.let(::literalMarkdown),
             )
@@ -178,4 +238,22 @@ class JenkinsGdslAdapter {
         }
         return simplified
     }
+}
+
+/** The AST interpreter admits scalar facts, scalar lists and scalar scope maps, never live objects. */
+private fun Map<String, Any>.toJsonContext(): JsonObject = JsonObject(mapValues { (_, value) -> value.toContextJson() })
+
+private fun Any?.toContextJson(): JsonElement = when (this) {
+    null -> JsonNull
+    is String -> JsonPrimitive(this)
+    is Boolean -> JsonPrimitive(this)
+    is Number -> JsonPrimitive(this)
+    is List<*> -> JsonArray(map { it.toContextJson() })
+    is Map<*, *> -> JsonObject(
+        entries.associate { (key, value) ->
+            require(key is String) { "GDSL context keys must be strings" }
+            key to value.toContextJson()
+        },
+    )
+    else -> error("Unsupported GDSL context fact: ${javaClass.name}")
 }

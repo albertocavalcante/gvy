@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 class MetadataMergerTest {
 
     @Test
-    fun `stable steps override bundled when available`() {
+    fun `unknown owner bundled step and stable step remain ambiguous`() {
         val bundled = createBundledMetadata(
             steps = mapOf(
                 "sh" to JenkinsStepMetadata(
@@ -41,12 +41,8 @@ class MetadataMergerTest {
 
         val merged = MetadataMerger.merge(bundled, StableStepDefinitions.all())
 
-        val sh = merged.steps["sh"]
-        assertNotNull(sh)
-        // Stable should have more parameters than bundled
-        assertTrue(sh.parameters.size > 1, "Stable sh should have more parameters")
-        assertTrue(sh.parameters.containsKey("returnStdout"))
-        assertEquals("workflow-durable-task-step", sh.plugin)
+        assertEquals(null, merged.steps["sh"])
+        assertEquals(2, merged.typedCatalogue?.candidates(SymbolKind.EXECUTABLE_STEP, "sh")?.size)
     }
 
     @Test
@@ -109,7 +105,7 @@ class MetadataMergerTest {
     }
 
     @Test
-    fun `merge with user overrides takes highest priority`() {
+    fun `legacy override stays unresolved when base owners are ambiguous`() {
         val bundled = createBundledMetadata(
             steps = mapOf(
                 "sh" to JenkinsStepMetadata(
@@ -142,11 +138,8 @@ class MetadataMergerTest {
             userOverrides = userOverrides,
         )
 
-        val sh = merged.steps["sh"]
-        assertNotNull(sh)
-        assertEquals("user-override", sh.plugin)
-        assertEquals("User override sh", sh.documentation)
-        assertTrue(sh.parameters.containsKey("customParam"))
+        assertEquals(null, merged.steps["sh"])
+        assertEquals(1, merged.typedCatalogue?.unresolvedOverrides?.size)
     }
 
     @Test

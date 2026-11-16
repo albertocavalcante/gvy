@@ -78,7 +78,7 @@ class JenkinsDocProvider(
                     text("**Parameters:**")
                     list(
                         metadata.parameters.map { (paramName, param) ->
-                            "`$paramName`: `${param.type}`${if (param.required) " *(required)*" else ""}"
+                            "`$paramName`: `${param.type}`${if (param.required == true) " *(required)*" else ""}"
                         },
                     )
                 }

@@ -3,6 +3,12 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.jenkins.config.UserMetadataLoader
+import com.github.albertocavalcante.gvy.jenkins.metadata.MetadataMerger
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedSymbol
+import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
+import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.JenkinsEnrichment
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
@@ -266,6 +272,9 @@ class JenkinsContextTest {
                 method(name: 'env', type: 'void')
                 method(name: 'both', type: 'void')
                 property(name: 'both', type: 'java.lang.String')
+                method(name: 'sh', type: 'void')
+                method(name: 'overloaded', type: 'java.lang.String', params: [text: 'String'])
+                method(name: 'overloaded', type: 'java.lang.Integer', params: [number: 'int'])
             }
             """.trimIndent(),
         )
@@ -282,5 +291,152 @@ class JenkinsContextTest {
         assertEquals(before.getStep("env"), after.getStep("env"))
         assertNotNull(after.getStep("both"))
         assertNull(after.getGlobalVariable("both"))
+        assertEquals(before.getStep("sh"), after.getStep("sh"), "GDSL must not degrade a known signature")
+        assertNull(after.getStep("overloaded"), "A singular legacy view must not choose an overload")
+        assertEquals(2, after.catalogue.symbols.count { it.name == "overloaded" })
+    }
+
+    @Test
+    fun `repeated configured GDSL source retains one canonical method and global`() {
+        val file = tempDir.resolve("repeated.gdsl")
+        Files.writeString(
+            file,
+            "contributor(context()) { method(name: 'deployUnique', type: 'String'); " +
+                "property(name: 'deploymentUnique', type: 'String') }",
+        )
+        fun load(paths: List<String>): JenkinsContext {
+            val context = JenkinsContext(JenkinsConfiguration(gdslPaths = paths, gdslExecutionEnabled = true), tempDir)
+            val result = context.loadGdslMetadata()
+            assertTrue(result.successful.isNotEmpty(), "The configured source must actually be read")
+            assertTrue(result.failed.isEmpty())
+            return context
+        }
+        val single = load(listOf(file.toString())).getAllMetadata(null)
+        assertEquals(1, single.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique").size)
+        assertEquals(1, single.catalogue.candidates(SymbolKind.GLOBAL, "deploymentUnique").size)
+        assertNotNull(single.getStep("deployUnique"))
+        assertNotNull(single.getGlobalVariable("deploymentUnique"))
+
+        val repeated = load(listOf(file.toString(), file.toString())).getAllMetadata(null)
+        val methodCount = repeated.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique").size
+        val globalCount = repeated.catalogue.candidates(SymbolKind.GLOBAL, "deploymentUnique").size
+        assertEquals(listOf(1, 1), listOf(methodCount, globalCount), "One source declaration must not multiply")
+        assertNotNull(repeated.getStep("deployUnique"))
+        assertNotNull(repeated.getGlobalVariable("deploymentUnique"))
+    }
+
+    @Test
+    fun `distinct GDSL sources and same-source overloads remain ambiguous`() {
+        val first = tempDir.resolve("first.gdsl")
+        val second = tempDir.resolve("second.gdsl")
+        Files.writeString(
+            first,
+            "contributor(context()) { method(name: 'deployUnique', type: 'String'); " +
+                "method(name: 'overloadUnique', type: 'String'); method(name: 'overloadUnique', type: 'Integer'); " +
+                "property(name: 'deploymentUnique', type: 'String') }",
+        )
+        Files.writeString(
+            second,
+            "contributor(context()) { method(name: 'deployUnique', type: 'String'); " +
+                "property(name: 'deploymentUnique', type: 'String') }",
+        )
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(first.toString(), second.toString()), gdslExecutionEnabled = true),
+            tempDir,
+        )
+        val loaded = context.loadGdslMetadata()
+        assertEquals(2, loaded.successful.size)
+        assertTrue(loaded.failed.isEmpty())
+        val metadata = context.getAllMetadata(null)
+        val methods = metadata.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique")
+        val globals = metadata.catalogue.candidates(SymbolKind.GLOBAL, "deploymentUnique")
+        val overloads = metadata.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "overloadUnique")
+        assertEquals(2, methods.size)
+        assertEquals(2, globals.size)
+        assertEquals(2, overloads.size)
+        assertEquals(setOf(first.toString(), second.toString()), methods.map { it.provenance.origin }.toSet())
+        assertEquals(setOf(first.toString(), second.toString()), globals.map { it.provenance.origin }.toSet())
+        assertEquals(setOf("String", "Integer"), overloads.map { it.returnType }.toSet())
+        assertNull(metadata.getStep("deployUnique"))
+        assertNull(metadata.getGlobalVariable("deploymentUnique"))
+        assertNull(metadata.getStep("overloadUnique"))
+    }
+
+    @Test
+    fun `configured GDSL source already present in base is not duplicated`() {
+        val file = tempDir.resolve("shared.gdsl")
+        Files.writeString(
+            file,
+            "contributor(context()) { method(name: 'deployUnique', type: 'String'); " +
+                "property(name: 'deploymentUnique', type: 'String') }",
+        )
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(configDir.resolve("jenkins.json"), """{"gdslFile":"shared.gdsl"}""")
+        val input = assertNotNull(UserMetadataLoader(tempDir).load())
+        val base = MetadataMerger.mergeWithEnrichment(input, JenkinsEnrichment())
+        val method = base.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique").single()
+        val global = base.catalogue.candidates(SymbolKind.GLOBAL, "deploymentUnique").single()
+        assertNotNull(base.getStep("deployUnique"))
+        assertNotNull(base.getGlobalVariable("deploymentUnique"))
+        val context = JenkinsContext(
+            configuration = JenkinsConfiguration(gdslPaths = listOf(file.toString()), gdslExecutionEnabled = true),
+            workspaceRoot = tempDir,
+            pluginManager = JenkinsPluginManager(),
+            bundledMetadataLoader = { base },
+            classpathScanner = { input },
+        )
+        val loaded = context.loadGdslMetadata()
+        assertEquals(1, loaded.successful.size)
+        assertTrue(loaded.failed.isEmpty())
+        val combined = context.getAllMetadata(null)
+        assertEquals(listOf(method), combined.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique"))
+        assertEquals(listOf(global), combined.catalogue.candidates(SymbolKind.GLOBAL, "deploymentUnique"))
+        assertNotNull(combined.getStep("deployUnique"))
+        assertNotNull(combined.getGlobalVariable("deploymentUnique"))
+
+        Files.writeString(file, "contributor(context()) { method(name: 'deployUnique', type: 'Integer') }")
+        assertEquals(1, context.loadGdslMetadata().successful.size)
+        val changed = context.getAllMetadata(null).catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique")
+        assertEquals(2, changed.size, "Changed facts from the same source must remain competing")
+        assertEquals(setOf("String", "Integer"), changed.map { it.returnType }.toSet())
+        assertNull(context.getAllMetadata(null).getStep("deployUnique"))
+    }
+
+    @Test
+    fun `configured GDSL retains an unrelated occupied presentation identity`() {
+        val file = tempDir.resolve("collision.gdsl")
+        Files.writeString(file, "contributor(context()) { method(name: 'deployUnique', type: 'String') }")
+        val config = JenkinsConfiguration(gdslPaths = listOf(file.toString()), gdslExecutionEnabled = true)
+        val probe = JenkinsContext(config, tempDir)
+        assertEquals(1, probe.loadGdslMetadata().successful.size)
+        val incoming = probe.getAllMetadata(
+            null,
+        ).catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique").single()
+        val occupied =
+            TypedSymbol(id = incoming.id, name = "unrelatedUnique", kind = SymbolKind.GLOBAL, returnType = "String")
+        val defaultBase = VersionedMetadataLoader().loadMerged()
+        val base = defaultBase.copy(
+            catalogue = defaultBase.catalogue.copy(
+                symbols =
+                defaultBase.catalogue.symbols + occupied,
+            ),
+        )
+        assertEquals(occupied, base.catalogue.symbols.single { it.id == incoming.id })
+        val context = JenkinsContext(
+            configuration = config,
+            workspaceRoot = tempDir,
+            pluginManager = JenkinsPluginManager(),
+            bundledMetadataLoader = { base },
+            classpathScanner = { error("No classpath scan is expected") },
+        )
+        assertEquals(1, context.loadGdslMetadata().successful.size)
+        val combined = context.getAllMetadata(null).catalogue
+        val actual = combined.candidates(SymbolKind.EXECUTABLE_STEP, "deployUnique").single()
+        assertEquals(occupied, combined.symbols.single { it.id == occupied.id })
+        assertTrue(actual.id != occupied.id)
+        assertEquals(incoming.sourceId ?: incoming.id, actual.sourceId)
+        assertEquals(incoming.sourceNamespace, actual.sourceNamespace)
+        assertEquals(incoming.provenance, actual.provenance)
     }
 }

@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.completion
 import com.github.albertocavalcante.gvy.gls.dsl.completion.TemplateCompletionItem
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
@@ -90,26 +91,44 @@ object JenkinsStepCompletionProvider {
             ?: metadata.getStep(stepName)?.namedParams
             ?: metadata.getDeclarativeOption(stepName)?.parameters
             ?: return emptyList()
+        return parameterCompletions(params, existingKeys, useCommandExpression)
+    }
 
-        // Use named parameters for steps and declarative options.
-        return params
-            .filterKeys { key -> key !in existingKeys }
-            .map { (key, param) ->
-                val template = SnippetBuilder.buildParameterTemplate(key, param, if (useCommandExpression) ", " else "")
-                TemplateCompletionItem(template).apply {
-                    label = "$key:"
-                    kind = CompletionItemKind.Property
-                    detail = param.type
-                    // Use SnippetBuilder for type-aware insertion
-                    insertText = template.snippet
-                    insertTextFormat = InsertTextFormat.Snippet
-                    // Sort required parameters first: "0_key" vs "1_key"
-                    sortText = if (param.required) "0_$key" else "1_$key"
-                    // Use enriched description if available
-                    documentation = param.description?.let {
-                        Either.forRight(MarkupContent(MarkupKind.MARKDOWN, it))
-                    }
+    internal fun getNestedBindingParameterCompletions(
+        stepName: String,
+        existingKeys: Set<String>,
+        metadata: MergedJenkinsMetadata,
+        useCommandExpression: Boolean,
+    ): List<CompletionItem> {
+        val params = metadata.nestedDescribables[stepName]?.namedParams ?: return emptyList()
+        return parameterCompletions(params, existingKeys, useCommandExpression)
+    }
+
+    private fun parameterCompletions(
+        params: Map<String, MergedParameter>,
+        existingKeys: Set<String>,
+        useCommandExpression: Boolean,
+    ): List<CompletionItem> = params
+        .filterKeys { key -> key !in existingKeys }
+        .map { (key, param) ->
+            val template = SnippetBuilder.buildParameterTemplate(key, param, if (useCommandExpression) ", " else "")
+            TemplateCompletionItem(template).apply {
+                label = "$key:"
+                kind = CompletionItemKind.Property
+                detail = param.type
+                // Use SnippetBuilder for type-aware insertion
+                insertText = template.snippet
+                insertTextFormat = InsertTextFormat.Snippet
+                // Unknown requiredness stays distinct from explicitly optional parameters.
+                sortText = when (param.required) {
+                    true -> "0_$key"
+                    false -> "1_$key"
+                    null -> "2_$key"
+                }
+                // Use enriched description if available
+                documentation = param.description?.let {
+                    Either.forRight(MarkupContent(MarkupKind.MARKDOWN, it))
                 }
             }
-    }
+        }
 }

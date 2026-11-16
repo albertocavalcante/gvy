@@ -135,4 +135,23 @@ class VersionedMetadataLoaderTest {
         assertTrue(versions.isNotEmpty())
         assertTrue(versions.contains("default"))
     }
+
+    @Test
+    fun `node and workspace metadata retain verified durable task ownership`() {
+        val metadata = VersionedMetadataLoader().loadMerged()
+        for (name in listOf("node", "ws")) {
+            assertEquals("workflow-durable-task-step", assertNotNull(metadata.getStep(name)).plugin)
+            assertEquals(
+                "workflow-durable-task-step",
+                assertNotNull(metadata.catalogue.unique(SymbolKind.EXECUTABLE_STEP, name)).ownerPlugin,
+            )
+        }
+    }
+
+    @Test
+    fun `bundled positional order survives stable and enrichment merging`() {
+        val metadata = VersionedMetadataLoader().loadMerged()
+        assertEquals(listOf("script"), assertNotNull(metadata.getStep("sh")).positionalParams)
+        assertEquals(listOf("label"), assertNotNull(metadata.getStep("node")).positionalParams)
+    }
 }

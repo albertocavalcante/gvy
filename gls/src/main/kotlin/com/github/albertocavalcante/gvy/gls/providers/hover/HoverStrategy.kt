@@ -53,4 +53,5 @@ data class HoverContext(
     val contentGenerator: HoverContentGenerator,
     val documentUri: java.net.URI,
     val astModel: GroovyAstModel? = null,
+    val reliableSource: Boolean = false,
 )
