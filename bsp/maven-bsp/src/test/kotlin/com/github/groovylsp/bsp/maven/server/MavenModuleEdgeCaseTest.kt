@@ -41,11 +41,25 @@ class MavenModuleEdgeCaseTest {
         server.buildInitialize(TestFixtures.createInitParams(tempDir)).get()
         server.onBuildInitialized()
 
-        val main = server.buildTargetOutputPaths(OutputPathsParams(listOf(BuildTargetIdentifier("maven:g:test")))).get()
-        val test = server.buildTargetOutputPaths(OutputPathsParams(listOf(BuildTargetIdentifier("maven:g:test:test")))).get()
+        val main = outputPaths(server, "maven:g:test")
+        val test = outputPaths(server, "maven:g:test:test")
 
         assertThat(main.items.single().outputPaths.single().uri).contains("target/classes")
         assertThat(test.items.single().outputPaths.single().uri).contains("target/test-classes")
+    }
+
+    private fun outputPaths(server: MavenBuildServer, id: String) =
+        server.buildTargetOutputPaths(OutputPathsParams(listOf(BuildTargetIdentifier(id)))).get()
+
+    @Test
+    fun `sibling module outside the aggregator directory is still scanned`() {
+        val aggregator = tempDir.resolve("agg").createDirectories()
+        aggregator.resolve("pom.xml").writeText(pom("agg", listOf("../sibling")))
+        tempDir.resolve("sibling").createDirectories().resolve("pom.xml").writeText(pom("sibling"))
+
+        val modules = MavenWorkspaceScanner().scan(aggregator)
+
+        assertThat(modules.map { it.artifactId }).containsExactly("agg", "sibling")
     }
 
     @Test
