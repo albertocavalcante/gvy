@@ -1,0 +1,249 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { closeSync, fstatSync, lstatSync, mkdirSync, openSync, readlinkSync, readSync, realpathSync, writeFileSync } from 'node:fs';
+import { devNull } from 'node:os';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const LIMIT = 16 * 1024 * 1024;
+const KEYS = ['SCHEMA', 'SHA', 'DIRTY', 'DIRTY_HASH', 'BRANCH', 'COMMIT_TIME', 'RELEASE'];
+const unknown = (release) => ({
+  SCHEMA: '1',
+  SHA: 'unknown',
+  DIRTY: 'unknown',
+  DIRTY_HASH: '',
+  BRANCH: 'unknown',
+  COMMIT_TIME: 'unknown',
+  RELEASE: String(release),
+});
+const singleLine = (s) => /^[\x21-\x7e]+$/.test(s);
+const iso = (s) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(s) && !Number.isNaN(Date.parse(s));
+
+export function collectStatus(root, env = process.env, gitCommand = 'git') {
+  const release = env.GITHUB_REF_TYPE === 'tag' || (env.GITHUB_HEAD_REF || '').includes('release-please');
+  const fallback = unknown(release);
+  try {
+    root = realpathSync(root);
+    const git = (...args) => {
+      const gitArgs = [
+        '-c', 'core.fsmonitor=false', '-c', 'core.abbrev=40',
+        '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false', ...args,
+      ];
+      const result = spawnSync(gitCommand, gitArgs, {
+        cwd: root,
+        encoding: 'buffer',
+        maxBuffer: LIMIT,
+        timeout: 10000,
+        env: {
+          PATH: process.env.PATH || '',
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_CONFIG_GLOBAL: devNull,
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_OPTIONAL_LOCKS: '0',
+          LC_ALL: 'C',
+        },
+      });
+      if (result.error || result.status !== 0) throw new Error('git unavailable');
+      return result.stdout;
+    };
+    const line = (...args) => git(...args).toString('utf8').trim();
+    if (realpathSync(line('rev-parse', '--show-toplevel')) !== root) return fallback;
+    const sha = line('rev-parse', '--verify', 'HEAD');
+    const branchValue = line('rev-parse', '--abbrev-ref', 'HEAD');
+    const branch = branchValue === 'HEAD' ? 'detached' : branchValue;
+    const time = line('log', '-1', '--format=%cI', 'HEAD');
+    if (!/^[a-f0-9]{40}$/.test(sha) || !singleLine(branch) || !iso(time)) return fallback;
+    const index = git('ls-files', '-v', '-z').toString('utf8').split('\0').filter(Boolean);
+    if (index.some((entry) => /^[a-zS] /.test(entry))) return fallback;
+    const ignored = git(
+      'ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--',
+      ':(glob)**/src/**', ':(glob)tools/**', ':(glob)tests/e2e/**',
+      ':(glob)tests/lsp-client/**', ':(glob)**/BUILD', ':(glob)**/BUILD.bazel',
+      ':(glob)**/*.bzl', ':(glob)**/*.bazel', ':(glob)**/*.bazelrc',
+      ':(glob)**/WORKSPACE', ':(glob)**/MODULE.bazel', 'build.gradle.kts',
+    );
+    if (ignored.length) return fallback;
+    const readStatus = () => git('status', '--porcelain=v2', '-z', '--untracked-files=all', '--ignore-submodules=none');
+    const status = readStatus();
+    // Submodule worktree changes are not represented by the superproject diff.
+    if (/(?:^|\0)[12u] [^ ]+ S[^ ]* /u.test(status.toString('utf8'))) return fallback;
+    const snapshot = () => {
+      const diff = git(
+        'diff', 'HEAD', '--full-index', '--binary', '--no-renames', '--no-ext-diff',
+        '--no-textconv', '--no-color', '--src-prefix=a/', '--dst-prefix=b/',
+        '--ignore-submodules=none', '--',
+      );
+      const untracked = git('ls-files', '--others', '--exclude-standard', '-z');
+      const hash = createHash('sha256');
+      hash.update(diff);
+      let bytes = diff.length;
+      const names = untracked.toString('utf8').split('\0').filter(Boolean).sort();
+      if (!Buffer.from(names.join('\0') + (names.length ? '\0' : '')).equals(untracked)) throw new Error('invalid path encoding');
+      for (const name of names) {
+        const path = resolve(root, name);
+        const rel = relative(root, path);
+        if (!rel || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) throw new Error('invalid path');
+        const stat = lstatSync(path);
+        if (stat.size > LIMIT - bytes) throw new Error('file too large');
+        const data = stat.isSymbolicLink() ? Buffer.from(readlinkSync(path)) : stat.isFile() ? readBoundedBytes(path, LIMIT - bytes) : null;
+        if (!data || (bytes += data.length + Buffer.byteLength(name)) > LIMIT) throw new Error('unreadable file');
+        hash.update(name);
+        hash.update('\0');
+        hash.update(String(data.length));
+        hash.update('\0');
+        hash.update(data);
+      }
+      return { digest: hash.digest('hex'), diffLength: diff.length, count: names.length };
+    };
+    const first = snapshot();
+    const dirty = status.length > 0;
+    if (!dirty && (first.diffLength || first.count)) return fallback;
+    // A dirty state unsupported by either content source cannot be identified honestly.
+    if (dirty && !first.diffLength && !first.count) return fallback;
+    if (dirty && snapshot().digest !== first.digest) return fallback;
+    if (!status.equals(readStatus())) return fallback;
+    if (line('rev-parse', '--verify', 'HEAD') !== sha) return fallback;
+    return {
+      SCHEMA: '1',
+      SHA: sha,
+      DIRTY: String(dirty),
+      DIRTY_HASH: dirty ? first.digest.slice(0, 12) : '',
+      BRANCH: branch,
+      COMMIT_TIME: time,
+      RELEASE: String(release),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export function renderStatus(status) {
+  return KEYS.map((key) => `STABLE_GVY_${key} ${status[key]}\n`).join('');
+}
+
+function parseStatus(text, stable) {
+  const result = {};
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    const match = /^([^ ]+) (.*)$/.exec(line);
+    if (!match || /[\r\x00-\x1f\x7f]/.test(line)) throw new Error('malformed status');
+    const key = match[1];
+    if (stable && !key.startsWith('STABLE_GVY_')) continue;
+    if (!stable && key !== 'BUILD_TIMESTAMP') continue;
+    if (Object.hasOwn(result, key)) throw new Error('duplicate status');
+    result[key] = match[2];
+  }
+  return result;
+}
+
+export function renderProperties(stableText, volatileText, versionText) {
+  let status = parseStatus(stableText, true);
+  if (Object.keys(status).length === 0) {
+    status = parseStatus(renderStatus(unknown(false)), true);
+  }
+  if (Object.keys(status).length !== KEYS.length || KEYS.some((key) => !Object.hasOwn(status, `STABLE_GVY_${key}`))) throw new Error('invalid status keys');
+  const get = (key) => status[`STABLE_GVY_${key}`];
+  const [schema, sha, dirty, dirtyHash, branch, commitTime, release] = KEYS.map(get);
+  if (schema !== '1' || !['true', 'false', 'unknown'].includes(dirty) || !['true', 'false'].includes(release)) throw new Error('invalid status');
+  if (sha === 'unknown') {
+    if (dirty !== 'unknown' || dirtyHash !== '' || branch !== 'unknown' || commitTime !== 'unknown') throw new Error('contradictory unknown');
+  } else if (
+    !/^[a-f0-9]{40}$/.test(sha) || !singleLine(branch) || !iso(commitTime) ||
+    dirty === 'unknown' || (dirty === 'true' ? !/^[a-f0-9]{12}$/.test(dirtyHash) : dirtyHash !== '')
+  ) {
+    throw new Error('contradictory provenance');
+  }
+  const blocks = [...versionText.matchAll(/\/\/ x-release-please-start-version\s*\n([\s\S]*?)\/\/ x-release-please-end/g)];
+  if (blocks.length !== 1 || (versionText.match(/x-release-please-start-version/g) || []).length !== 1 || (versionText.match(/x-release-please-end/g) || []).length !== 1) throw new Error('invalid version markers');
+  const match = /^\s*val baseVersion = "(\d+\.\d+\.\d+)"\s*$/m.exec(blocks[0][1]);
+  if (!match || (blocks[0][1].match(/\bbaseVersion\b/g) || []).length !== 1) throw new Error('invalid base version');
+  const base = match[1];
+  const short = sha === 'unknown' ? 'unknown' : sha.slice(0, 7);
+  const volatile = parseStatus(volatileText, false);
+  let buildTime = dirty === 'false' ? commitTime : '';
+  if (dirty === 'true' && volatile.BUILD_TIMESTAMP !== undefined) {
+    if (!/^\d{1,12}$/.test(volatile.BUILD_TIMESTAMP)) throw new Error('invalid build timestamp');
+    const date = new Date(Number(volatile.BUILD_TIMESTAMP) * 1000);
+    if (!Number.isFinite(date.getTime())) throw new Error('invalid build timestamp');
+    buildTime = date.toISOString();
+  }
+  const displayVersion = release === 'true'
+    ? base
+    : `${base}-dev+${sha === 'unknown' ? 'unknown' : `g${short}${dirty === 'true' ? '.dirty' : ''}`}`;
+  const values = {
+    version: release === 'true' ? base : `${base}-SNAPSHOT`,
+    baseVersion: base,
+    displayVersion,
+    release,
+    gitSha: sha,
+    gitShaShort: short,
+    gitDirty: dirty,
+    gitDirtyHash: dirtyHash,
+    gitBranch: branch,
+    commitTime,
+    buildTime,
+  };
+  const escape = (value) => value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t');
+  return Object.entries(values).map(([key, value]) => `${key}=${escape(value)}\n`).join('');
+}
+
+function readBoundedBytes(path, limit = LIMIT) {
+  // Declared Bazel inputs can be symlinks; bound the opened target, not the link.
+  const fd = openSync(path, 'r');
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > limit) throw new Error('invalid input');
+    const data = Buffer.alloc(limit + 1);
+    let length = 0;
+    while (length < data.length) {
+      const count = readSync(fd, data, length, data.length - length, null);
+      if (count === 0) break;
+      length += count;
+    }
+    if (length > limit) throw new Error('input too large');
+    return data.subarray(0, length);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function readBounded(path) {
+  return readBoundedBytes(path).toString('utf8');
+}
+
+function main(args) {
+  if (args.length === 1 && args[0] === 'status') {
+    process.stdout.write(renderStatus(collectStatus(process.cwd())));
+    return;
+  }
+  if (args[0] !== 'properties' || args.length !== 9) throw new Error('invalid arguments');
+  const options = {};
+  for (let i = 1; i < args.length; i += 2) {
+    if (!['--stable-status', '--volatile-status', '--version-source', '--output'].includes(args[i]) || Object.hasOwn(options, args[i])) throw new Error('invalid arguments');
+    options[args[i]] = args[i + 1];
+  }
+  const properties = renderProperties(
+    readBounded(options['--stable-status']),
+    readBounded(options['--volatile-status']),
+    readBounded(options['--version-source']),
+  );
+  mkdirSync(dirname(options['--output']), { recursive: true });
+  writeFileSync(options['--output'], properties);
+}
+let isMain = false;
+try {
+  isMain = Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+} catch {
+  // Imports must not execute the CLI when the caller has no resolvable script path.
+}
+if (isMain) {
+  try {
+    main(process.argv.slice(2));
+  } catch {
+    process.stderr.write('source-stamp: invalid or unavailable input\n');
+    process.exitCode = 1;
+  }
+}

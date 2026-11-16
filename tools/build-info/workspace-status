@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Without a host collector, the declared-input writer records unknown provenance.
+if command -v node >/dev/null 2>&1; then
+        exec node "$(dirname "$0")/source-stamp.mjs" status
+fi

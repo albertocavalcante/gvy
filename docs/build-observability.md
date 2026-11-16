@@ -36,6 +36,38 @@ rerun is separate evidence with a new invocation ID and directory.
 
 ## Capture local evidence
 
+### Server source metadata
+
+Bazel generates the root `version.properties` resource from explicit stable and volatile workspace-status inputs.
+`gls-lib` and the deploy JAR share this runtime resource; source identity changes do not require recompiling server
+bytecode. The base version comes from the release-managed declaration in `build.gradle.kts`.
+
+Known-source qualification requires Git and Node.js 20.19 or newer on the **host PATH**, in addition to Bazel's declared
+Node toolchain. The host collector reads Git outside the action sandbox; the properties writer uses the declared
+toolchain and only its declared inputs. If host Node or Git is unavailable, or the checkout cannot be classified safely,
+the resource explicitly records unknown provenance. Ordinary builds remain supported, while strict packaged-launch
+qualification rejects unknown source. A custom `--workspace_status_command` that supplies no GVY fields has the same
+unknown fallback; partial or malformed GVY fields fail the resource action.
+
+The stamp records an observed Git state, not an atomic snapshot of every compiler input or cryptographic attestation.
+Build a quiescent, clean checkout when qualifying a publication artifact. Clean metadata uses the commit timestamp;
+dirty metadata includes a content fingerprint and the volatile build timestamp. Stable source changes invalidate the
+resource action; wall-clock changes alone do not invalidate clean resources. Bazel's evidence wrapper removes GitHub
+environment context from the child process, so its artifacts use development version labels.
+
+Validate the collector and the actual runtime/deploy resource with:
+
+```bash
+node --test tools/ci/source-stamp.test.mjs
+build-slot -- bazel --nohome_rc test //tools/build-info:resource_test
+```
+
+The resource test also supports dirty and unknown states. A passing resource test proves consistent packaging, while the
+strict cold replay separately requires a clean, identified artifact. Native Windows status-launcher validation must be
+recorded separately from Linux/macOS results.
+
+### Invocation capture
+
 The same wrapper works locally and in CI. It creates a fresh invocation directory beneath the report root, generates
 identity metadata from Git and GitHub's event context, captures both output streams, validates the BEP and checks that
 the trace profile exists and is nonempty. It returns the original Bazel failure code; successful Bazel execution with
