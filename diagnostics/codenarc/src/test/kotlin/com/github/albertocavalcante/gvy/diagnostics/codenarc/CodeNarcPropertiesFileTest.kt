@@ -10,6 +10,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CodeNarcPropertiesFileTest {
     @TempDir
@@ -42,8 +43,8 @@ class CodeNarcPropertiesFileTest {
             NoSuchRule.priority=1
             TrailingWhitespace.nosuch=true
             TrailingWhitespace.priority=999999999
-            TrailingWhitespace.priority=-5
-            TrailingWhitespace.enabled=1e9
+            ClassName.priority=-5
+            LineLength.enabled=1e9
             TrailingWhitespace.enabled=true
             Evil.name.x=1
             """.trimIndent(),
@@ -52,6 +53,11 @@ class CodeNarcPropertiesFileTest {
         val result = assertNotNull(PropertiesSanitizer.sanitize(file))
 
         assertEquals("TrailingWhitespace.enabled=true\n", result.content)
+        assertTrue(
+            result.rejectedKeys.containsAll(
+                listOf("TrailingWhitespace.priority", "ClassName.priority", "LineLength.enabled"),
+            ),
+        )
     }
 
     @Test

@@ -80,10 +80,10 @@ internal object PropertiesSanitizer {
         val type = ruleClass.methods.singleOrNull { it.name == setterName && it.parameterCount == 1 }
             ?.parameterTypes?.single() ?: return false
         return when (type) {
-            Boolean::class.javaPrimitiveType, java.lang.Boolean::class.java -> value == "true" || value == "false"
-            Int::class.javaPrimitiveType, java.lang.Integer::class.java,
-            Long::class.javaPrimitiveType, java.lang.Long::class.java,
-            -> INTEGER.matches(value) && value.toInt() <= MAX_INT_VALUE
+            // Only primitives: CodeNarc converts strings for int/long/boolean and would mis-assign boxed types.
+            Boolean::class.javaPrimitiveType -> value == "true" || value == "false"
+            Int::class.javaPrimitiveType, Long::class.javaPrimitiveType ->
+                INTEGER.matches(value) && value.toInt() <= MAX_INT_VALUE
             String::class.java -> NAME_LIST.matches(value)
             else -> false
         }
