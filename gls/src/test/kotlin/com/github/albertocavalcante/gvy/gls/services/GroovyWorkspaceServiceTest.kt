@@ -59,7 +59,8 @@ class GroovyWorkspaceServiceTest {
         runBlocking { compilationService.symbolIndexingService.indexFile(file.toUri()) }
         val service = GroovyWorkspaceService(compilationService, compilationService.symbolIndexingService, testScope)
 
-        val names = service.symbol(WorkspaceSymbolParams("")).get().left.map { it.name }
+        // SymbolInformation's accessors are deprecated in LSP4J; its rendering lists the name and kind.
+        val names = service.symbol(WorkspaceSymbolParams("")).get().left.map { it.toString() }
 
         assertTrue(names.any { it.contains("Greeter") }, "classes are listed: $names")
         assertTrue(names.any { it.contains("hello") }, "methods are listed: $names")
