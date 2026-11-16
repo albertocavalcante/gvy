@@ -9,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class TempTreeCleanupTest {
     @Test
@@ -19,7 +20,7 @@ class TempTreeCleanupTest {
 
         val hook = registerTreeCleanup(dir) { registered += it }
         assertEquals(listOf(hook), registered)
-        assertEquals(true, Files.exists(dir))
+        assertTrue(Files.exists(dir))
 
         hook.run()
 
