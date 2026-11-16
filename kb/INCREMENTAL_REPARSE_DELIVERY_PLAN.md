@@ -7,18 +7,26 @@ planning time, not permanent status. This plan serves the Fast, Correct and Safe
 [#1547](https://github.com/albertocavalcante/gvy/issues/1547) and
 [#1551](https://github.com/albertocavalcante/gvy/issues/1551). It is a delivery design, not another project roadmap.
 
+> [!IMPORTANT]
+> The [recovery and mixed-version implementation contract](#recovery-and-mixed-version-implementation-contract) below
+> records the current owner requirement, restart instructions and 33 PR packets. It qualifies the older single-Native
+> semantic direction and moves the first tolerant syntax consumer before optional subtree reuse. These are required
+> outcomes, not delivered support.
+
 ## Recommendation and first milestone
 
-Use Native as the shared compiler-backed semantic authority. Retain `parser/core` utilities and existing consumers; do
+Use a qualified target provider for compiler-backed semantic facts; Native remains the current default adapter during
+the migration. The bundled compiler is not universal authority across target versions. Independent tolerant syntax
+serves ordinary broken buffers without successful compilation. Retain `parser/core` utilities and existing consumers; do
 not turn its lossy AST adapter into the new incremental syntax foundation. Deliver coherent ranged text updates, remove
 duplicate default-hover parsing through the existing hover work, and establish a reproducible editing baseline first.
 Then bound compilation to conservatively affected files and evaluate true syntax reuse behind a separate, versioned
 contract.
 
-The first milestone is **one coherent editor state, one shared default semantic result, and measured edit costs**. Its
-gate is a real protocol replay proving that text, versions, diagnostics, hover and navigation agree after edits;
-unchanged default hover must not invoke a second parser. Ranged sync can land independently of hover consolidation.
-Neither milestone may be described as incremental AST reparsing.
+The original transport milestone is **one coherent editor state, one shared semantic result per qualified target, and
+measured edit costs**. Its gate is a real protocol replay proving that text, versions, diagnostics, hover and navigation
+agree after edits; unchanged default hover must not invoke a second parser. Ranged sync can land independently of hover
+consolidation. Neither milestone may be described as incremental AST reparsing.
 
 The [PR queue and next-PR packet](#pr-queue-and-next-pr-packet) below expand these phases into independently reviewable
 changes. Their planning baseline is newer than the original source audit; open prerequisites are not counted as landed.
@@ -67,10 +75,11 @@ Concrete Core losses: `GroovyAstConverter.kt:320` converts unknown expressions t
 only whether a field has an initializer. Its current tree therefore cannot serve as a full-fidelity incremental syntax
 tree without major representation and parser changes.
 
-Native is the recommended authority, not a claim that its inference is complete. The main compile requests
-CANONICALIZATION, and workspace compilation requests SEMANTIC_ANALYSIS. The compiler type-checker investigation in
-[#1547](https://github.com/albertocavalcante/gvy/issues/1547) remains relevant; do not equate these phases with complete
-compiler-derived expression types or manufacture a second type system in a new syntax frontend.
+Native is the current default compiler adapter for qualified contexts, not a claim of complete inference or universal
+version compatibility. The main compile requests CANONICALIZATION, and workspace compilation requests SEMANTIC_ANALYSIS.
+The compiler type-checker investigation in [#1547](https://github.com/albertocavalcante/gvy/issues/1547) remains
+relevant; do not equate these phases with complete compiler-derived expression types or manufacture a second type system
+in a new syntax frontend.
 
 [#1276](https://github.com/albertocavalcante/gvy/issues/1276) proposes retiring Core hover. Active
 [PR #1775](https://github.com/albertocavalcante/gvy/pull/1775) already changes the default and improves Native cards,
@@ -302,11 +311,11 @@ whole-file parsing.
 
 ## PR queue and next-PR packet
 
-Queue baseline: `dd3a3a20a28a1854c879071092ba241e41343508`, 2026-11-11 Pacific. The next PR is Q01. There are **18
-scoped PR packets and four experiment-gated follow-ons**, not 22 branches or promises of a selected parser. “Scoped”
-means the problem, contract, proof and boundary can be specified now; dependencies still have to land and integration
-heads must be rechecked. Q identifiers are planning references, not GitHub issue numbers. Existing issues remain the
-live trackers.
+Queue baseline: `dd3a3a20a28a1854c879071092ba241e41343508`, 2026-11-11 Pacific. At that baseline the next transport PR
+was Q01. There are **18 scoped PR packets and four experiment-gated follow-ons**, not 22 branches or promises of a
+selected parser. “Scoped” means the problem, contract, proof and boundary can be specified now; dependencies still have
+to land and integration heads must be rechecked. Q identifiers are planning references, not GitHub issue numbers.
+Existing issues remain the live trackers.
 
 ### Coordinate existing work before opening a replacement
 
@@ -569,12 +578,12 @@ experiment PR; no grammar gets selected from API availability alone. Rollback: p
 These contracts can be planned now, but exact implementation files, dependencies and supported edit classes cannot be
 honestly frozen before Q18. Refresh them from the selected backend instead of opening speculative implementation PRs.
 
-| ID  | Bounded follow-on                                                                  | Entry gate / completion proof / rollback                                                                                                                                                                                                                                                                                                                                                    |
-| --- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G01 | Versioned syntax snapshot API with a fresh-parse backend and bounded edit history  | Q18 chooses ownership/representation; Q01/Q02 supply edits. Prove base/result/grammar identity, full-reset/history-overflow fallback, cancellation, old-snapshot immutability and a real consumer seam. Revert to fresh parsing without losing buffer text.                                                                                                                                 |
-| G02 | Lexer restart/checkpoint reuse, only if the selected route requires custom support | Q18/G01 and a demonstrated complete lexer restart state. Compare full tokens/classification and lexer state after every edit, including interpolation/slashy/newline cases; bound checkpoints/relex work and fall back to EOF. Disable checkpoint reuse independently. A backend that already supplies this absorbs the packet.                                                             |
-| G03 | First proven local syntax reparse and subtree reuse                                | G01 and any required G02 proof. Select the edit class from experiments, not a promise that every method body is context-free. Show fresh syntax/error/range equivalence, actual unchanged-structure reuse and immutable older snapshots. Unsupported or ambiguous edits use full parsing.                                                                                                   |
-| G04 | First syntax-only consumer and measured default rollout                            | G03 plus measured benefit in a selected consumer, protocol/package/corpus proof and explicit budgets. Semantic/refactoring operations continue requiring current Native facts. Gate zero correctness regressions in the declared matrix, bounded memory/fallback behavior and the recorded latency budget. Disable the syntax consumer and restore full parsing independently of transport. |
+| ID  | Bounded follow-on                                                                  | Entry gate / completion proof / rollback                                                                                                                                                                                                                                                                                                                               |
+| --- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G01 | Versioned syntax snapshot API with a fresh-parse backend and bounded edit history  | Q18 chooses ownership/representation; Q01/Q02 supply edits. Prove base/result/grammar identity, full-reset/history-overflow fallback, cancellation, old-snapshot immutability and a real consumer seam. Revert to fresh parsing without losing buffer text.                                                                                                            |
+| G02 | Lexer restart/checkpoint reuse, only if the selected route requires custom support | Q18/G01 and a demonstrated complete lexer restart state. Compare full tokens/classification and lexer state after every edit, including interpolation/slashy/newline cases; bound checkpoints/relex work and fall back to EOF. Disable checkpoint reuse independently. A backend that already supplies this absorbs the packet.                                        |
+| G03 | First proven local syntax reparse and subtree reuse                                | G01 and any required G02 proof. Select the edit class from experiments, not a promise that every method body is context-free. Show fresh syntax/error/range equivalence, actual unchanged-structure reuse and immutable older snapshots. Unsupported or ambiguous edits use full parsing.                                                                              |
+| G04 | First syntax-only consumer and measured default rollout                            | Q18/G01 with a qualified fresh tolerant backend, consumer/protocol/package/corpus proof and explicit budgets; G03 reuse is optional and follows recovery. M4.5–M4.8 below define current-source outline/tokens/completion gates. Compiler-backed semantic/refactoring facts stay context-qualified. Disable the new consumer independently without losing source text. |
 
 ### Dependency lanes and execution rule
 
@@ -588,17 +597,802 @@ flowchart LR
     Q07 --> Q13 --> Q14 --> Q15
     Q03 --> Q12
     Q03 --> Q16 --> Q18
-    Q17 --> Q18 --> G01 --> G03 --> G04
+    Q17 --> Q18 --> G01 --> G04
+    G04 --> G03
     G01 -. if needed .-> G02 --> G03
 ```
 
-Start Q01 next. Q03, Q06 and Q17 can be authored independently; use the smallest available team and serialize heavy
-checks under the host build slot. Coordinate existing owners before touching the same call paths. Each open PR must
-stand alone with passing tests; do not stack unrelated lanes or create all proposed branches in advance. Rebase any
-necessary stack onto the verified squash result, not onto assumed ancestry.
+For the original transport queue, Q01 is its first unit; refresh its actual landing before starting it. The current
+recovery/mixed-version next actions are M0.1, M1.1 and M3.1 below. Q03, Q06 and Q17 can be authored independently; use
+the smallest available team and serialize heavy checks under the host build slot. Coordinate existing owners before
+touching the same call paths. Each open PR must stand alone with passing tests; do not stack unrelated lanes or create
+all proposed branches in advance. Rebase any necessary stack onto the verified squash result, not onto assumed ancestry.
 
 When a gate fails, record its concrete limitation in the existing issue and keep the conservative path. Defer decisions
 that require Q18: a new grammar/runtime, persistent syntax-node layout, exact local-reparse boundaries and a syntax
 consumer selected without cost evidence. Also defer ABI-only invalidation, rope migration and complete Core removal
 until their own correctness/performance case exists. This queue specifies all currently bounded deliveries without
 pretending those architecture choices are settled.
+
+## Recovery and mixed-version implementation contract
+
+**Owner requirement, recorded 2026-11-16. Status: implementation required; product support is not established by this
+plan.** Preserve useful services while a user is typing invalid Groovy, and support different Groovy/compiler/JDK/
+framework environments concurrently in one editor session. This section is the current contract for the original
+recovery report and the SDK/worker migration. It qualifies the older single-Native authority language above and
+supersedes the earlier G04 ordering: **fresh tolerant syntax consumers precede optional subtree reuse**.
+
+### Start here after a session ends
+
+1. Read this contract, the relevant packet below and the [SDK extraction boundary](SDK_EXTRACTION_DELIVERY_PLAN.md).
+2. Refresh actual main, issue/PR heads, source membership and check results before claiming a prerequisite landed.
+   Initial coordination includes #2073 compiler evidence, #2067 membership, #2069 Jenkins source/call contexts,
+   #1834/#1856 ordered/atomic edits and the #2068 compatibility oracle. These identifiers are lineage, not current
+   readiness assertions.
+3. Select the next packet whose evidence prerequisites pass; record responsible scope, actual base/head, next action,
+   acceptance gate and unresolved debt. Start M0.1, M1.1 and M3.1 independently when their owners are available.
+4. Before handoff update the delivery record with observed passes/failures and remaining gates. A planned, reviewed or
+   merged document is not an implemented feature; a merged feature is not an installed-client verification.
+
+No private chat, machine-specific path, agent memory or previous session is required to recover these requirements.
+Supporting private investigation may exist, but the required outcomes, code seams, packets and gates are retained here.
+
+### Why the work is critical
+
+The triggering edit removes a member from a valid chain, leaving `.status(OrderStatus.)`. The reported behavior is loss
+of useful semantic highlighting/hover across the file and irrelevant completion entries. Ordinary editor buffers are
+often invalid; successful batch compilation cannot be a prerequisite for syntax structure or every unaffected editor
+fact. Regressions must cover the first request after a cold malformed open, not only a warm last-good AST. Use declared
+constants such as `NEW`, `PAID`, `SHIPPED`, `CANCELLED` in the minimized enum fixture; the original `PENDING` example
+was not a declared enum constant.
+
+The reviewed Core parser invokes Groovy compilation before converting the result; Kotlin-shaped AST values alone do not
+establish an independent grammar. The reviewed worker factory shares one bundled parser between in-process sessions;
+version detection/descriptor selection does not load the target's compiler. The existing Go frontend is independent
+syntax work, but complete version coverage, immutable host snapshots, bridge packaging and incremental reuse need proof.
+See the
+[Core parse path](https://github.com/albertocavalcante/gvy/blob/47f55c7749ba0fc179984882e301e02b8881948f/parser/core/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParser.kt#L84-L116)
+and
+[bundled factory](https://github.com/albertocavalcante/gvy/blob/71c7241e6ca89b3399c8ad107b256558ebb3ac58/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/GroovyCompilationService.kt#L83-L87).
+These are pinned source observations, not claims about every future revision.
+
+### Required invariants and open design choices
+
+| Required outcome                              | Evidence needed to close it                                                                                                                                                                                          |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Useful current-source recovery                | Valid → missing member → partial member → valid and cold malformed LSP replays retain useful declarations, ranges, tokens, declared enum completion and unaffected declaration hover; local errors remain attributed |
+| Independent reusable syntax/analysis boundary | Isolated compile/runtime consumer has no mandatory Groovy compiler, foreign AST, host Class or reflection escape hatch; parsing preserves exact source and explicit coordinate units                                 |
+| Concurrent target semantics                   | Root/build/target, compiler/JDK/artifacts, source closure, language/API and framework policy qualify requests, caches, indexes and provider facts; shared URI/FQN variants coexist without union classpaths          |
+| Safe incremental migration                    | Before mixed-context activation every semantic route/resolver is context-owned or unavailable (M2.4); legacy whole-store single-context exceptions cannot rely on unique membership per file                         |
+| Honest availability                           | Unknown/ambiguous membership, missing offline artifacts, provider failure and unsupported facts stay explicit; no highest-JAR or silent bundled-compiler fallback claims exact target support                        |
+| Safe editor presentation and edits            | Context-only switches invalidate client cached results/resolves; physical edits account for all affected contexts/dependents or refuse; stock LSP post-delivery limitations remain explicit                          |
+| Qualified compiler/framework providers        | Actual loaded artifact/JDK/adapter handshake, old/new same-session proof, controlled transforms and bounded lifecycle/RSS pass; no Pipeline/build execution is needed for ordinary editor analysis                   |
+
+Frontend choice (Go bridge, independent Kotlin or justified alternative), exact version/JDK/framework support, worker
+reuse and numeric resource defaults remain evidence-gated. A newer bundled analyzer with proven language/API modes can
+serve qualified targets; exact historical compilers are not required for every keystroke. This does not permit
+pretending one Groovy flag reproduces every historical compiler/plugin environment. Necessary API breaks are accepted;
+preserve useful existing consumers through explicit adapters while they migrate.
+
+Metals offers per-build-target presentation compilers, so one server need not mean one Scala version; supported versions
+and fallback behavior are bounded. Java/Kotlin analyzers also distinguish target language/API modes from their host
+runtime, rather than promising every historical compiler's behavior. This is a design precedent, not proof of Groovy
+compatibility. Sources:
+[Metals compiler ownership](https://github.com/scalameta/metals/blob/49625bab0b32e533158d00c80e69230d9e6d1fe1/metals/src/main/scala/scala/meta/internal/metals/Compilers.scala#L160-L173),
+[JDT LS target/runtime setup](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/af3be304735d76d42fae8edf471944d2d6fbc744/README.md#L14-L45).
+A pinned Jenkins release still declares Groovy 2.4.21; CPS, libraries and plugins add separate profile semantics.
+[Release-specific Jenkins BOM](https://github.com/jenkinsci/jenkins/blob/c82499bc18e254051ec6a1c88a409293b97c5200/bom/pom.xml#L40-L42).
+A hypothetical newer Groovy application does not establish that a particular Grails/Groovy pairing is released.
+
+### PR review and completion gates
+
+For an affected PR, identify its packet and explain the concrete failure fixed, required invariants, actual validation
+and remaining unsupported surface. Independent review inspects failure/retirement/rollback paths, consumer dependency
+closure and the actual publication head. Preserve the first failing control and its subsequent required pass. Do not
+replace missing behavior with a text-presence check, broad skipped suite or a green documentation check.
+
+The packet descriptions below are implementation work, not passes. Existing runtime checks do not yet enforce all of
+these outcomes. M0.1 establishes visible failing controls; the corresponding behavior PR must make its acceptance
+assertions required before it merges. Once implemented, those behavior tests provide stronger regression protection than
+agent instructions alone. No instruction can guarantee that every tool or future agent reads a document.
+
+### Delivery evidence and next action
+
+| Responsibility                | Current evidence                                                                          | Next action / completion gate                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Parser/session test owner     | Reported defect and source investigation; cold packaged LSP acceptance still required     | M0.1: minimize and capture exact request/output controls; no false product pass                |
+| Build import owner            | #2073 defines the missing compiler role                                                   | M1.1: actual two-task/offline producer evidence                                                |
+| Source/syntax SDK owner       | Existing neutral line-index work and compiler-coupled parser APIs                         | M3.1: isolated compiler-free syntax consumer                                                   |
+| Analysis routing/index owners | Existing snapshot retirement; contextual variants and all-route quarantine still required | M2.1–M2.4: captured context, separated stores, physical edit guard and guarded entry points    |
+| Frontend/worker owners        | Candidate/provider approach is a plan                                                     | M4/M5: choose from retained experiment evidence and prove actual isolated old/new environments |
+
+Update this record in each affected implementation PR with merged identity and observed evidence. Keep unresolved items
+visible with impact, responsible scope, next action and gate. The following 33 packets include repeatable/conditional
+families; they are not a promise that exactly 33 PRs suffice or that all should be opened as speculative stacks.
+
+### Phase 1: exact contracts, repro and evidence
+
+#### M0.1 — Capture the broken-buffer and mixed-context acceptance controls
+
+**Depends on:** none.
+
+**Owner and goal:** parser/session test owner. Make the reported failure reproducible through public LSP requests and
+retain exact source/package identity. This is the next concrete PR:
+`test(lsp): capture incomplete-buffer recovery controls`.
+
+**Owned seams:** existing `gls` service/token/completion tests, `tests/lsp-client` session support and
+`tests/e2e/resources/scenarios`; extend existing builder-chain, current-buffer tokens and cold completion fixtures. Keep
+the source workload reusable by the existing performance harness. Add a small two-target fixture without requiring
+project-selected compilers to work yet.
+
+**Fail-first evidence:** valid → `OrderStatus.` → partial member → valid; first request after a cold malformed open;
+close/reopen at a reused version; an unrelated declaration before/after the error; the same URI and FQN with
+contradictory target members. Use declared `NEW`, `PAID`, `SHIPPED`, `CANCELLED` constants in assertions: the
+screenshot's `PENDING` is not declared in the original reported enum. Separate compiler diagnostics from CodeNarc
+failure.
+
+**Gate:** expected spans/kinds/declarations and context-specific positive/negative assertions exist, the
+packaged/current baseline's failures are recorded with request ordering and artifacts, and the replay has a positive
+control proving the harness can observe correct results. No production acceptance pass is claimed. The
+characterization/report job can merge green while reporting the known failing product checks explicitly; it must not
+silently turn failures into success or introduce broad disabled tests. Each behavior PR activates its corresponding
+required acceptance assertion before merging. If the existing harness cannot express that visibly, keep the failing test
+in that behavior PR and merge only the reusable replay/fixtures first.
+
+**Rollback:** fixture/harness only. No product flag or default changes. Preserve this plan's qualified-provider scope
+and fresh-consumer-before-reuse order in follow-on PRs; this test PR must not imply independent syntax is already
+available.
+
+#### M1.1 — Publish role-specific compiler-task evidence
+
+**Depends on:** none.
+
+**Owner and goal:** build-import owner, coordinating [#2073](https://github.com/albertocavalcante/gvy/issues/2073) and
+#2067. Capture each GroovyCompile task's ordered compiler distribution, membership and launcher evidence separately from
+application classpath, Gradle daemon and GVY runtime.
+
+**Owned seams:** `build-tool` Gradle scoped models/producer/init script and producer integration fixtures; preserve the
+existing published model generation. Language/API policy, declared launcher constraints, observable selected launcher
+and verified runtime are separate facts; artifact verification remains a downstream handoff.
+
+**Fail-first test and gate:** two tasks in one build use different distributions and JDK configuration; membership
+conflicts, missing capability, fork overrides, reordered/changed artifacts and refresh remain attributed. Restricted,
+offline and custom repository fixtures prove observing metadata neither acquires a toolchain nor executes compile or
+preparation tasks. Existing execution consumers remain compatible. Read the actual merged execution producer, not the
+older local copy.
+
+**Rollback:** preserve the execution APIs and report compiler evidence as unknown. No highest-JAR inference. Lineage:
+SDK B1/B2 and incremental Q07/Q08; this is additive producer evidence, not worker implementation.
+
+#### M1.2 — Construct explicit target contexts and guard uncertain selection
+
+**Depends on:** M1.1.
+
+**Owner and goal:** workspace/context owner. Convert published evidence into immutable effective context descriptors
+with root/build/target identity, language/API policy, ordered dependency/source closure, compiler/JDK evidence,
+framework/transform policy and existing generation authority.
+
+**Owned seams:** `DocumentTargetSelector`, `WorkspaceModel`, `WorkspaceManager` and target-selection tests. Preserve
+Selected/Ambiguous/NotComplete/Unowned/LegacyOnly distinctions. The descriptor records evidence, not an invented promise
+that the configured compiler was loaded.
+
+**Fail-first test and gate:** known incompatible or ambiguous target membership cannot fall through to a certified
+flat-classpath semantic result. A sole complete target selects deterministically; source membership changes retire its
+descriptor. Unknown targets still receive syntax and useful existing analysis-limit notices. Genuine legacy unmodeled
+projects retain a separately named compatibility policy; this is not an ambiguity escape hatch.
+
+**Rollback:** disable scoped semantic claims on uncertainty; retain the declared legacy path only in its valid scope.
+Lineage: #1235/#1974, SDK A1/B2, incremental Q07/Q08.
+
+#### M3.1 — Prove a compiler-free source and syntax contract
+
+**Depends on:** none.
+
+**Owner and goal:** source/syntax SDK owner. Add the smallest typed contract an independent frontend and a real consumer
+can share. Reuse `source` and the landed line-index work; do not force a final red/green storage layout before
+comparison.
+
+**Owned seams:** lean syntax values adjacent to the existing parser/API work, source identity/ranges and independent
+consumer fixture. Include exact snapshot/incarnation identity, syntax profile/grammar identity, token/trivia and
+missing/error-node access, diagnostics and explicit cancelled/failed outcomes. Compiler configuration, foreign ASTs,
+`Class`, `Any` escape hatches, LSP DTOs and process handles belong in adapters.
+
+**Fail-first test and gate:** an isolated consumer compiles and runs useful malformed-tree traversal without Groovy
+compiler artifacts on compile or runtime graphs. Old snapshots remain immutable; spans and zero-width missing tokens
+refer to original source. CRLF, supplementary characters and isolated UTF-16 surrogates have an explicit lossless
+transport/mapping policy; Go bytes cannot silently substitute text and then return misleading offsets. Honor negotiated
+LSP encoding at the product boundary. A value API alone does not prove its backend compiler-independent.
+
+**Rollback:** leave legacy ParseUnit/API consumers on explicit adapters. Lineage: SDK S1/S2/A2/V1 and revised G01;
+source snapshot work coordinates with #1834/#1856 and #1852 rather than duplicating them.
+
+#### M4.1 — Establish the independent syntax comparison corpus and runner
+
+**Depends on:** M0.1, M3.1.
+
+**Owner and goal:** parser validation owner. Make the frontend decision falsifiable using the same source, queries and
+workload boundary for every candidate.
+
+**Owned seams:** existing parser test/corpus infrastructure and explicit developer-only oracle/performance entry points.
+Pin old/new syntax examples, command expressions, slashy/dollar-slashy strings, interpolation, closures, generics,
+newline ambiguities, imports, annotations and malformed edit sequences. Record feature/version/profile expectations,
+fixture provenance, independent oracle identity and exclusions.
+
+**Fail-first test and gate:** a round-trip-only or empty-tree candidate fails usefulness checks. Missing requested
+corpus inputs fail the full gate. External compiler/oracle execution is explicit, reproducible and separated from
+ordinary dependency tests. Consumer download/compile/execute cost is reported separately. No candidate generates its own
+oracle.
+
+**Rollback:** validation-only. Lineage: Q03/Q16/Q17/Q18 and SDK N1/P1.
+
+### Phase 2: contextual and editor vertical slices
+
+#### M2.1 — Capture one contextual request end to end
+
+**Depends on:** M1.2.
+
+**Owner and goal:** analysis-session owner. Capture the document incarnation/text, context, companion/dependency inputs,
+provider requirements and achieved capability once for one existing query. Reuse the newer incarnation/session-ID and
+publication fences; do not add competing readiness counters.
+
+**Owned seams:** `GroovyCompilationService`, `CompilationIdentity`, `ArtifactOwnership`, current analysis/session
+capture and one hover path, coordinated with #2079/#2071. Phase-sensitive compatibility uses owned capabilities publicly
+and compiler phases only inside the adapter. Unmigrated callers remain explicitly limited to a sole valid context. Here
+“sole” means the entire legacy service/store scope has one verified effective semantic environment, not merely one
+membership for the queried file. M2.4 enforces that boundary before mixed-context activation.
+
+**Fail-first test and gate:** delayed A cannot publish as B after target/config/companion changes without a text edit;
+close/reopen and phase upgrade cannot reuse the wrong result. One real query consumes the captured request throughout;
+no handler rereads mutable global workspace state mid-request. This is a single-query gate, not an all-feature claim.
+
+**Rollback:** old query path only for the verified sole-context case, otherwise explicit unavailable. Lineage:
+#1713/#1591, SDK A1 and incremental Q06–Q08.
+
+#### M2.2 — Retain contextual semantic variants and qualified symbol identities
+
+**Depends on:** M2.1.
+
+**Owner and goal:** semantic storage/index owner. Preserve two contradictory semantic interpretations of one physical
+document instead of letting URI-keyed state overwrite one with the other.
+
+**Owned seams:** `CompilationCache`, `GroovySemanticDB`, semantic indexing and the narrow hover/definition consumer. Key
+artifacts by source snapshot, immutable context, dependencies, provider and achieved capabilities. Qualify symbols by
+declaring source/artifact/realm/signature, and follow declared dependency visibility and ordered resolution. Different
+targets may validly share a dependency; exact-target-only lookup is also incorrect.
+
+**Fail-first test and gate:** shared URI and same FQN expose different members in A/B concurrently; a dependent module
+is visible, an unrelated one is not; refresh, retirement, close and eviction cannot cross-contaminate variants. Cache
+and index publication share artifact ownership. If storage and global index migration are independently reviewable,
+split them and keep the contextual feature gated until both halves pass. Do not activate a partial dependency graph as
+if complete.
+
+**Rollback:** retire contextual entries and disable the affected feature; do not fall back to shared global entries.
+Lineage: SDK A4, incremental Q09–Q14 and #622.
+
+#### M2.3 — Guard physical edits before exposing multiple contexts
+
+**Depends on:** M1.2.
+
+**Owner and goal:** rename/code-action owner. Stop a context-specific edit from silently changing another target's
+binding. This early guard deliberately precedes the more capable M7.3 planner.
+
+**Owned seams:** `RenameProvider`, `CrossFileUseGuard`, imports/fixes and other semantic edit producers. Inventory every
+physical-edit entry point; syntax-only edits still need original-source and text preconditions. Require proven sole
+affected context or refuse semantic edits when membership/dependent impact is multiple or incomplete.
+
+**Fail-first test and gate:** rename/import valid in A but conflicting in B is refused with an attributed reason;
+incomplete membership, target refresh while planning and closed-file uncertainty cannot bypass the guard. Existing
+single-context safe cases remain available. Guard delivery centrally, not only in the UI.
+
+**Rollback:** conservative refusal remains the fallback. No context switching or mixed-target editing is enabled before
+this gate. Lineage: SDK S2/A2 and existing safe-edit guards.
+
+#### M2.4 — Quarantine every unqualified semantic entry point
+
+**Depends on:** M2.1, M2.3.
+
+**Owner and goal:** analysis routing owner with feature owners. Make partial migration safe before concurrent contexts
+are exposed. A narrow contextual hover pass does not qualify references, parameter hints, tokens or other callers that
+still consume global symbols or a selected singleton worker.
+
+**Owned seams:** central request/provider dispatch, capability/availability reporting and a complete inventory of
+semantic feature and deferred-resolve entry points, including `InlayHintsProvider`, workspace symbol/reference readers
+and direct `GroovySemanticDB` access. Each route captures a context and either uses a verified context-owned provider/
+store, a context-compatible isolated adapter, or refuses with an explicit limitation. Old direct bypasses are removed or
+guarded. A legacy exception requires the whole provider/store scope to have one verified environment; unique membership
+of individual documents does not satisfy it.
+
+**Fail-first test and gate:** concurrent A-only and B-only files each have unique membership but different members for
+the same FQN. Exercise an unmigrated inlay/reference/global-index route: it must be correctly isolated or unavailable,
+never consume the union or whichever target was selected last. Exercise every inventory route, resolves, provider
+changes and root retirement. Mixed-context capability activation fails if a route lacks a policy. Useful migrated
+features and independent syntax remain available; this guard does not require migrating all features at once.
+
+**Rollback:** disable affected semantic routes or mixed-context exposure; keep context-owned proven routes. Lineage: SDK
+A1/A3/A4 and #1713/#1591. M3.4 progressively replaces guarded refusals with qualified consumers.
+
+#### M3.2 — Detach one semantic query and prove an independent SDK consumer
+
+**Depends on:** M2.1, M3.1.
+
+**Owner and goal:** analysis SDK/compiler-adapter owner. Expose owned declaration/member facts and typed
+found/absent/unknown/ambiguous/unsupported/failed/stale outcomes, then serve one feature and one standalone consumer.
+
+**Owned seams:** `parser:api`, `semantics:core`, `SemanticDocumentBuilder`, Native extraction and one held-snapshot
+query. Move `ModuleNode`/`CompilationUnit`/`SourceUnit` handling into typed adapters. Facts carry origin, context/source
+binding, availability and supported capability. Preserve useful Core documentation/type-solver code rather than deleting
+it as part of a package move. A provider may use the compiler internally; the public API and consumer must not require
+it.
+
+**Fail-first test and gate:** declaration/member query plus editor hover uses the same detached facts; an independent
+batch fixture consumes serialized/constructed values without server/editor/compiler artifacts. Adapter integration
+separately proves real compiler extraction, unknown facts remain unknown, and returned objects contain no AST/Class or
+reflection back door. Dependency/signature audit includes runtime closure, not only `compileOnly` declarations.
+
+**Rollback:** retain the typed Native adapter and gate the new query. Lineage: SDK A2/A3/F1; preserve F1/F2 producer
+work and do not block the minimal consumer on unrelated CLI delivery.
+
+#### M3.3 — Remove host classloading from the first target member query
+
+**Depends on:** M3.2.
+
+**Owner and goal:** JVM metadata owner. Represent the ordered target type environment with value descriptors instead of
+host `Class` values. Start with the external member query actually needed by the editor/worker slice.
+
+**Owned seams:** existing Core/reflection solver and JVM metadata seams, source attachments and SDK J1/J2. Member
+signatures, target platform, generic/hierarchy evidence, missing dependencies and order have explicit outcomes. This
+packet is the minimum target-qualified metadata consumer; broader metadata coverage splits along real consumers.
+
+**Fail-first test and gate:** same FQN in two target JARs yields distinct members; project classes are inspected without
+initializing/loading them in the host; absent dependencies remain partial. Target JDK and source attachment lookup are
+context-qualified. A compiler provider may still own deeper resolution internally.
+
+**Rollback:** mark unsupported metadata queries unavailable instead of using host reflection as a silent substitute.
+Lineage: SDK J1/J2/J3.
+
+#### M4.2 — Prove the existing Go frontend through the neutral consumer boundary
+
+**Depends on:** M4.1.
+
+**Owner and goal:** Go parser owner and host bridge owner. Test the existing independent parser rather than estimating
+its usefulness from source or round-trip results.
+
+**Owned seams:** explicit experimental frontend adapter; any reusable parser fixes belong in `groovy-parser-go` through
+its own reviewed PRs. Exercise real Kotlin/host transport, exact text/coordinate mapping, recovery nodes and queries.
+Keep changes out of unrelated dirty sibling checkouts. Do not force `cst-go` integration solely for consistency.
+
+**Fail-first test and gate:** cold class/enum/member-hole structure, version/dialect ambiguities, immutable older views,
+bounded cancellation/size/depth, bridge failure and packaged launch work on M4.1's corpus. Record cold parse, transport,
+traversal and full feature latency separately, with total memory and artifact/consumer costs. Exported mutable green
+fields, incomplete version gating and absent incremental support are gaps to measure, not assumed solved.
+
+**Rollback:** remove/disable the experimental adapter. No production route is chosen here. Lineage: SDK N1, Q18.
+
+#### M4.3 — Prove a bounded independent Kotlin frontend on the same hard cases
+
+**Depends on:** M4.1.
+
+**Owner and goal:** Kotlin parser owner. Test the intended JavaParser-style independent frontend without invoking Groovy
+first. Existing Core conversion is a comparison baseline, not this candidate.
+
+**Owned seams:** bounded lexer/grammar/recovery prototype using M3.1; reuse independently useful Core utilities only if
+their dependency graph stays clean. Cover the difficult grammar classes in M4.1 and report unsupported surface rather
+than building a second indefinite production grammar in parallel.
+
+**Fail-first test and gate:** same useful recovery, context/profile, encoding and resource checks as M4.2, with compiler
+artifacts absent. Record work required to expand the declared grammar and actual packaging/maintenance differences. A
+toy enum-only grammar cannot win a whole-language decision. If the prototype cannot meet the bounded gate, record that
+result; do not lower the corpus to produce a favorable comparison.
+
+**Rollback:** retire the prototype, retaining corpus/results. Lineage: Q18; contract work remains useful whichever route
+wins.
+
+#### M4.4 — Select one production syntax route from retained evidence
+
+**Depends on:** M4.2, M4.3.
+
+**Owner and goal:** parser/architecture owner with independent review. Choose Go bridge, Kotlin frontend, a justified
+alternative or “no candidate yet”; name the unsupported syntax and further work required before rollout.
+
+**Owned seams:** existing Q18 decision record and retained experiment evidence. A third candidate is conditional on
+concrete evidence that it can change the decision; define its bounded experiment before adding a PR. Compare compiler
+independence, useful recovery, language profiles, distribution/platforms, maintenance, latency and total RSS.
+
+**Fail-first test and gate:** reject candidates losing source/ranges, recovery usefulness, mandatory old/new grammar or
+consumer independence. Measured results come from named identical workloads; no arbitrary score or unsupported speedup.
+Choose one evolving production grammar owner; end duplicate prototypes. A compiler-upgrade/retained-compiler bridge can
+be a separately qualified temporary mitigation, but does not satisfy the independent frontend gate.
+
+**Rollback:** decision/prototype only, no default switch. Preserve the revised G04 order: recovery works with fresh
+parsing before optional subtree reuse.
+
+#### M4.5 — Serve current outline from the selected fresh tolerant frontend
+
+**Depends on:** M4.4.
+
+**Owner and goal:** syntax host/outline owner. Open a cold malformed file and expose its useful current declarations
+without compiler success. Adopt the selected frontend with fresh parsing first.
+
+**Owned seams:** captured source-to-syntax adapter and `UnifiedDocumentSymbolProvider` or its current equivalent. Only
+syntax claims are projected; syntactic grammar/profile identity is explicit. Feature-gate the adapter, preserve ordinary
+buffers on parser failure, and retire old snapshots with existing lifecycle authority.
+
+**Fail-first test and gate:** broken member access preserves named declarations and original ranges on first request;
+cold open, rapid replacement, cancellation, close/reopen and Unicode tests pass through the packaged LSP. An adapter
+that silently invokes Groovy fails the independence check. A parser failure returns an explicit failure and bounded
+lexical service if available, never stale declarations represented as current.
+
+**Rollback:** disable the new outline provider, preserving source and honest limitations. Lineage: SDK N1/A3, revised
+G01/G04. This packet does not wait for compiler realms or subtree reuse.
+
+#### M4.6 — Preserve current highlighting across incomplete syntax
+
+**Depends on:** M4.5, M2.1.
+
+**Owner and goal:** tokens owner. Combine tolerant syntax classifications with only matching contextual semantic facts
+so deleting one identifier cannot erase unrelated useful classifications across the file.
+
+**Owned seams:** `SemanticTokensHandler`, token provider/merger and current-buffer protocol tests. Define precedence,
+non-overlap and recovery-region policy explicitly; distinguish lexical/syntactic identifiers from semantic resolution.
+Do not label an unresolved identifier as a resolved class merely to retain its former color.
+
+**Fail-first test and gate:** named unaffected declarations retain correct token kinds at their new ranges; malformed
+region is local, valid/partial/valid transitions and cold first request work; delayed or reopened snapshots cannot
+publish tokens. Context-specific semantic modifiers remain qualified. Full-result identity is fenced now; hot target
+switching and delta-baseline invalidation wait for M7.2.
+
+**Rollback:** disable semantic overlay or the new provider independently; return truthful current classifications, not
+last-good semantic tokens. Lineage: M0.1 and the existing token snapshot tests.
+
+#### M4.7 — Recover enum completion and declaration hover from current facts
+
+**Depends on:** M4.5, M3.2, M3.3, M2.2.
+
+**Owner and goal:** completion/hover owner. Interpret the current member-hole receiver and use trustworthy declaration
+and target facts to return enum members and unaffected declaration hover on the first request.
+
+**Owned seams:** `AstCompletionContextDetector`, `MemberAccessCompletionStrategy`, source declaration collection and the
+migrated hover query. Add owned syntax queries and narrowly reliable local binding/declaration facts; a compiler that
+fails on the whole file cannot be the only producer. Combine compiler facts only when current and compatible. Preserve
+the distinction between a class receiver and an instance; suppress/rank inappropriate GDK instance suggestions for a
+proven enum type receiver.
+
+**Fail-first test and gate:** exact declared enum members for `OrderStatus.` and a prefix, shadowed/unknown receivers,
+source-vs-binary precedence and unrelated declaration hover are asserted. Synthetic completion repair cannot leak dummy
+names, source diagnostics or edits. If repair remains useful for deeper semantic guesses, it is an ephemeral mapped
+hypothesis with explicit origin, never the authoritative syntax snapshot or a claim of successful compilation.
+
+**Rollback:** turn off the migrated strategy and report unsupported facts honestly. The narrower recovery slice can ship
+while other semantic features remain provider-dependent. Deep expression typing/refactoring parity is excluded.
+
+#### M4.8 — Qualify fresh recovery before enabling it by default
+
+**Depends on:** M4.6, M4.7.
+
+**Owner and goal:** parser/consumer validation owner. Establish the supported syntax/recovery surface and failure bounds
+of the fresh implementation, independent of eventual reuse.
+
+**Owned seams:** explicit corpus/oracle/resource gates and packaged-client tests. Test real and synthetic workloads,
+deep nesting, large/recovered files, malformed strings/comments, invalid UTF-16, cancellation, immutable prior
+snapshots, crash/failure and target grammar differences. Use pinned corpora with clear ownership and exclusions.
+
+**Fail-first test and gate:** useful results and termination bounds pass; hidden corpus skips or changed workload hashes
+fail qualification. Record cold/typing latency, source/tree/transport allocations and total resident costs on the named
+machine. Set supported-surface and resource budgets from evidence; syntax parsing success is not semantic compatibility.
+
+**Rollback:** keep the new route opt-in or disable a failing capability. Do not make recovery wait for measured subtree
+reuse. Lineage: CST maintenance, Q16/Q18, SDK P1/N1.
+
+### Phase 3: real environments, roots and frameworks
+
+#### M5.1 — Define and validate the neutral semantic worker protocol
+
+**Depends on:** M3.2, M3.3, M2.2.
+
+**Owner and goal:** worker/protocol owner. Replace the declared-range handshake placeholder with a versioned data-only
+query protocol for the already proven semantic slice.
+
+**Owned seams:** `gls/worker/WorkerProtocol`, connector/session interfaces and typed codec/transport tests.
+Requests/replies bind document snapshot/incarnation, context/dependencies, requested/achieved capabilities and worker
+epoch. Handshake reports actual loaded compiler artifacts/hashes, runtime JDK, adapter/schema and policy identity,
+compared to expected evidence. Public facts contain no foreign ASTs or phase integers.
+
+**Fail-first test and gate:** wrong hashes/runtime/schema/capability, oversized/malformed frames, cancellation, unknown
+response IDs, stdout log contamination and stale epochs fail honestly. Define update/replay/retirement behavior before
+process launch. Library API remains usable without transport/server dependencies.
+
+The wire schema does not require sharing a modern host runtime library with an old child. Qualify the bootstrap/codec's
+class-file target and runtime dependencies against the oldest selected worker JDK; a Kotlin/JDK 17 host artifact cannot
+be assumed loadable on a legacy JDK. A small separately compiled bridge is an option if the compatibility test requires
+it.
+
+**Rollback:** retain the existing in-process adapter for its declared scope; unsupported contexts remain partial.
+Lineage: SDK W1 after A2/A3; a codec/handshake test is not proof of separate compilers.
+
+#### M5.2 — Serve one real query from a supervised child JVM
+
+**Depends on:** M5.1, M4.5.
+
+**Owner and goal:** worker lifecycle owner. Demonstrate actual process isolation using one pinned compiler/adapter and
+one feature, with host syntax service independent of child health.
+
+**Owned seams:** process connector/launcher, `WorkerSessionManager`, bounded IO/logging and lifecycle tests. Replace
+global selected-session routing with explicit context-to-realm routing. Use the neutral query adapter; verify loaded
+artifacts and runtime, preserve unsaved source closure, and use an explicit JVM heap.
+
+**Fail-first test and gate:** the child reports its actual identity, serves correct facts consumed by the editor and
+standalone SDK, and can be killed without losing buffers/syntax. Delayed replies, cancellation and restart cannot
+publish retired facts. Replaying a source update cannot revive closed or older contexts.
+
+**Rollback:** disable the child provider and retire its facts; the independent syntax path continues. Lineage: SDK W2.
+One successful child does not establish mixed-version support or a security sandbox. Protocol/launch experiments can
+begin after M5.1; the integrated crash/syntax survival gate must wait for M4.5's actual independent frontend rather than
+substitute M3.1's value contract.
+
+#### M5.3 — Prove two incompatible compiler environments in one session
+
+**Depends on:** M5.2, M1.1, M2.2, M2.3, M2.4.
+
+**Owner and goal:** compiler compatibility owner. Add the legacy adapter needed for a pinned Jenkins/Groovy 2.4 fixture
+and one verified newer Groovy fixture; run both at once, including shared-source membership.
+
+**Owned seams:** narrowly version-specific typed adapters and launch/toolchain evidence. Realm identity includes
+verified compiler/adapter/JDK/environment/policy. Reusing one process across classpaths needs explicit reset/isolation
+proof; otherwise isolate those realms. Choose exact fixture versions/JDKs from verified artifacts, not a major-version
+string or an assumed Grails/Groovy 6 pairing.
+
+**Fail-first test and gate:** a version-distinguishing semantic/diagnostic query and same-FQN member controls return the
+right answers in both targets on first request; task compiler and app classpaths differ intentionally. Wrong JDK,
+unavailable adapter or offline missing artifacts yields attributed partial/unavailable semantics and useful syntax.
+Neither worker ingests unrelated target buffers or changes the other's answer.
+
+**Rollback:** remove the new adapter from advertised support and retire its facts. Do not silently route it to the
+bundled compiler. Further versions require the same qualification packet, not an open-ended minimum version.
+
+#### M5.4 — Bound realms and qualify lifecycle under mixed-target load
+
+**Depends on:** M5.3, M4.8.
+
+**Owner and goal:** worker/resource owner. Make optional providers safe to leave running on the shared 16 GB host.
+
+**Owned seams:** lazy admission, queues/coalescing/fairness, idle eviction, cancellation/deadlines and owned process
+cleanup; use existing performance envelope. Budget resident weights/bytes/history and measured native overhead, not only
+cache entry count or heap. Do not start a permanent JVM per target.
+
+**Fail-first test and gate:** active editing plus target switching, crash loops, hung transforms, classpath churn and
+memory pressure preserve syntax and unaffected targets; stale queued jobs are discarded, workers terminate/reset and
+handles are released. Record host plus all children RSS, queue delay and useful feature latency. Derive defaults from
+this workload rather than promising a worker count in advance. Execute only qualified analysis/transform policy; a
+process is not a sandbox and Pipeline/build execution is excluded.
+
+**Rollback:** lower admission to a proven sequential provider mode or disable affected providers with explicit limits.
+Lineage: SDK W2/P1, incremental Q14/Q15, #1569/#1571.
+
+#### M7.1 — Dispatch root lifecycles without a first-folder singleton
+
+**Depends on:** M1.2, M2.1, M2.4.
+
+**Owner and goal:** workspace host owner. Give each imported root/build its lifecycle while one document may retain
+membership in several targets. This can start before workers finish.
+
+**Owned seams:** `ProjectStartupManager`, `WorkspaceManager`, folder-change handling and routing tests. Share the source
+store by exact identity where appropriate; route target state through root/build IDs, not mutable process globals or
+longest-path guesses. Define nested roots, overlap, symlinks and unowned files explicitly.
+
+**Fail-first test and gate:** two roots with different targets, duplicate names and shared sources select the correct
+captured context; adding/removing a root retires only owned contexts/jobs. Unknown/ambiguous files remain useful for
+syntax. No active target hot switch is exposed yet.
+
+**Rollback:** pin supported contexts or refuse uncertain selection. Do not restore first-root semantics for all files.
+Lineage: #826/#726/#1974; reuse existing per-root/plugin work where it actually owns this lifecycle.
+
+#### M7.2 — Switch the client view without reusing old contextual results
+
+**Depends on:** M7.1, M2.2, M2.3, M2.4, M4.6.
+
+**Owner and goal:** LSP/client owner. Offer explicit per-document target selection and show one contextual projection
+while retaining all stored semantic variants separately.
+
+**Owned seams:** server context selection, token/diagnostic result IDs, deferred resolve payloads and VS Code
+integration. Namespace presentation/context generations, reject old delta baselines/resolves, fence delayed replies,
+replace/clear diagnostics and negotiate supported refresh methods. The server computes the selection/evidence; UI
+presents it.
+
+**Fail-first test and gate:** A → B at the same document version cannot show A's cached diagnostics, token deltas,
+hover, completion resolve or code action as B. Supported clients refresh through actual frames. Where
+refresh/cached-state semantics are insufficient, pin the context until a controlled reopen/client adapter rather than
+promise transparent hot switching. Root removal and delayed A responses are covered in a real client.
+
+**Rollback:** disable switching and pin a proven context; preserve stored variants. Stock LSP does not carry context
+generation on ordinary requests, so client cooperation/fallback is part of the gate.
+
+#### M7.3 — Plan physical edits against every affected context
+
+**Depends on:** M2.2, M2.3, M7.1, M3.2.
+
+**Owner and goal:** semantic edit owner. Replace conservative refusals only where complete cross-context impact can be
+proven. Complete membership and dependency impact are evidence requirements, not assumed consequences of a selection.
+
+**Owned seams:** rename, import/code-action/fix planning, source edit contracts and context-qualified reference graph.
+Enumerate every changed source's contexts and affected dependents; compare bindings and captured input identity in each.
+Keep textual edits tied to the original snapshot and validate freshness before delivery.
+
+**Fail-first test and gate:** rename/import valid in A but altering B, target-specific names, unknown membership,
+dependent references, closed files and configuration churn are refused or produce a proved compatible plan. Refusal
+names the conflict/uncertainty. Do not require this advanced planner to ship read-only mixed-target features: M2.3 is
+their safe fallback.
+
+**Rollback:** restore conservative refusal. A versioned TextDocumentEdit fences text version, not target generation; an
+already delivered edit cannot be revoked under stock LSP. Any strict post-delivery context guard is a separate,
+conditional client-mediated application PR with its own protocol and race tests; no such guarantee is advertised here.
+
+#### M6.1 — Bind Jenkins profile and source-role facts to target analysis
+
+**Depends on:** M5.3, M2.2, M7.1.
+
+**Owner and goal:** Jenkins metadata/analysis owner. Compose the landed compatibility oracle, existing
+JenkinsMetadataProfile and eventual #2069 source/call binding facts with the target/worker boundary.
+
+**Owned seams:** current Jenkins profile/catalog, source-role/call-context resolver and contextual analysis adapter.
+Distinguish controller/core/plugins/compiler/JDK, build/agent runtime and trust/transform policy. Preserve `src`,
+`vars`, Jenkinsfile, static `@Library`, dynamic library, Declarative/`script {}` and CPS/`@NonCPS` boundaries. No new
+parallel profile schema, no Pipeline execution in editor analysis.
+
+**Fail-first test and gate:** two pinned controller/plugin profiles plus the newer application coexist; a shared file
+retains separate permitted APIs and call interpretation, plugin changes retire only matching contexts, and dynamic or
+unproved CPS edges stay uncertain. Oracle validation is distinguished from runtime/CPS execution guarantees. Existing
+locked profiles are fixtures, not proof of a live controller's installed environment.
+
+**Rollback:** disable a profile augmentation and preserve syntax/known metadata with explicit limits. Lineage: SDK K1–K3
+and the Jenkins Declarative delivery plan. Split metadata transport from feature adoption if needed.
+
+#### M6.2 — Qualify CodeNarc and findings per provider environment
+
+**Depends on:** M3.2, M5.3.
+
+**Owner and goal:** diagnostics/findings owner. Keep a compiler-coupled analyzer's failure from masquerading as the
+source's complete diagnostic result or disabling unrelated editor features.
+
+**Owned seams:** `CodeNarcDiagnosticProvider`, findings API/F1–F2 and diagnostic orchestration. Qualify
+analyzer/ruleset/ compiler compatibility separately from a file's rules profile, and retain original-source spans,
+provider origin, completion/failure and fix preconditions.
+
+**Fail-first test and gate:** incomplete input, incompatible provider version, provider crash, target change and stale
+fixes preserve syntax/other diagnostics and publish attributed partial/provider failure. Empty source diagnostics must
+not imply successful lint. F1/F2 and CLI consumers remain compatible after their own reviewed prerequisites land.
+
+**Rollback:** disable only the unqualified analyzer and surface the limitation. No forced host Groovy upgrade is the
+compatibility policy. Further compiler-coupled analyzers use the same qualification pattern in separate PRs.
+
+#### M6.3 — Qualify one real application transform/framework consumer
+
+**Depends on:** M5.3, M3.3, M2.2.
+
+**Owner and goal:** application framework owner. Prove the selected application fixture's indispensable generated-member
+or extension semantics under its verified target environment. Choose the actual Grails/Spock/transform consumer from the
+fixture inventory; this is not one PR claiming complete support for all three.
+
+**Owned seams:** the chosen target's existing augmentation/adapter and framework-specific fixtures. Give generated,
+inferred and compiler-observed facts explicit origin and precedence; transforms/plugins execute only under qualified
+analysis policy. Independent syntax is always available when those providers are absent.
+
+**Fail-first test and gate:** the named generated/extension member appears only in the correct target, overload/binding
+and conflicting-provider behavior are deterministic, and stale/offline/unqualified transform paths remain partial. Pin
+the actual application/compiler/framework/JDK combination and document exclusions. A newer Groovy application does not
+by itself prove a matching released Grails version exists.
+
+**Rollback:** disable that augmentation; retain supported base facts. Each additional framework/transform is another
+bounded consumer PR with this gate, not a new global semantic engine.
+
+### Phase 4: defaults, API migration and measured reuse
+
+#### M8.1 — Enable only the qualified support surface by default
+
+**Depends on:** M4.8, M5.4, M7.2, M2.3, M6.1, M6.2, M6.3.
+
+**Owner and goal:** release/consumer owner. Ship the proved editor and mixed-target behavior with a truthful feature ×
+compiler/JDK/profile × achieved-capability support matrix and clear offline/unavailable behavior.
+
+**Owned seams:** package assembly, capability/configuration defaults, user support documentation and installed-client
+tests. Separate syntax compatibility, independent inference, exact compiler observations, Declarative oracle and runtime
+claims. The legacy single-context path cannot certify unsupported project versions.
+
+**Fail-first test and gate:** packaged valid/incomplete/valid and cold malformed replays pass; mixed roots/tasks/shared
+URI, same FQN, context refresh, worker failure, Unicode and provider-unavailable controls pass for the declared matrix.
+Run actual consumer/install/platform checks and the measured resource workload. The safe-edit guard may still refuse
+unproved operations; M7.3 is not a prerequisite for read-only defaults. Record all exclusions and applicable CI at the
+reviewed publication head.
+
+**Rollback:** previous release or individually disabled provider/feature, with context cache retirement and honest
+single-target limits. This is the first combined milestone closure; partial earlier slices retain their narrower claims.
+
+#### M3.4 — Migrate the next real feature off foreign AST APIs
+
+**Depends on:** M3.2, M2.2.
+
+**Owner and goal:** the next affected feature owner. Migrate one consumer at a time after the declaration/member slice:
+references, hierarchy, index export, documentation/tree viewing or another inventoried production consumer. Select the
+next feature by remaining compiler leaks and actual user need; do not open an all-provider rewrite PR.
+
+**Owned seams:** that consumer, its needed detached facts and typed extraction. Maintain target/snapshot/provenance
+through the query. Broader expression semantics require versioned independent/compiler evidence, not generic AST casts.
+
+**Fail-first test and gate:** old/new behavior comparison and target-specific positive/negative cases for the named
+feature, missing/failed provider cases and a foreign-type/dependency audit. Only migrate proven fact coverage;
+unsupported questions return honest outcomes. Separate PRs repeat this packet until the public consumer inventory is
+closed.
+
+**Rollback:** keep the previous typed adapter for its declared context; invalidate affected artifacts. Lineage: SDK
+A3/A4/A5/V1, incremental Q13. This family may run during phase 3; it does not block the first editor slice.
+
+#### M3.5 — Publish the proved reusable library boundary
+
+**Depends on:** M3.2, M4.8.
+
+**Owner and goal:** SDK release owner. Publish the independently useful source/syntax/analysis boundary from its owning
+library repository and pin actual product consumers. Public API scope is only the surface proved so far.
+
+**Owned seams:** existing SDK extraction/publication work; reusable libraries remain separate from user-facing CLI/apps.
+Do not mechanically create one repository per helper. A transitional internal module can prove the seam, but does not
+satisfy the final separately reusable library goal.
+
+**Fail-first test and gate:** isolated published-artifact consumer with sibling substitutions disabled; compile/runtime
+dependency closure has no mandatory compiler/editor/server stack; supported syntax and neutral value queries work.
+Compiler-backed integrations are separately consumed optional adapters. For a Go route inspect the actual module archive
+and a `GOWORK=off` consumer, not only local workspace tests. Record version/migration and product pins.
+
+**Rollback:** pin prior published artifacts/product release. Lineage: SDK A6/N1. Repository/license/visibility choices
+follow the owning existing program; this plan does not authorize creating unrelated remotes.
+
+#### M3.6 — Remove the migrated foreign surface and obsolete paths
+
+**Depends on:** M3.4, M3.5.
+
+**Owner and goal:** API/consumer owners. Finish the breaking boundary cut after every relevant production and published
+consumer is accounted for. The gate covers all repetitions of M3.4 required by the inventory, not just its first PR.
+
+**Owned seams:** remaining public ParseResult/ModuleNode/SourceUnit/compiler policy APIs, old engine/symbol paths and
+Core conversion where truly unconsumed. Preserve reusable Groovydoc/type solvers and legitimate optional compiler
+adapters. Names such as “core” do not establish dependency freedom.
+
+**Fail-first test and gate:** signature/dependency scan and independent consumers prove the advertised APIs no longer
+need compiler types or runtime artifacts; no reflection/`Any` escape hatch remains; package/install/feature regressions
+and migration notes pass. Remove compatibility shims with their usages in the same reviewed slice, not before.
+
+**Rollback:** previous artifact/product release; document the accepted breaking change. A lingering compiler adapter
+does not violate optionality, while a mandatory transitive compiler dependency does. Lineage: SDK A5/A6.
+
+#### M8.2 — Add only measured incremental reuse
+
+**Depends on:** M4.8, M8.1.
+
+**Owner and goal:** syntax/performance owner. Optimize the proved fresh implementation only where a named workload shows
+useful latency/allocation benefit. This is a conditional PR family, not permission for a large optimization PR.
+
+**Owned seams:** existing Q16/Q18/G01–G03. First prove bounded edit history and fresh equivalence; then lexer restart
+state if required; then one empirically safe subtree/edit class. A selected backend with native incremental support
+still must prove its host mapping, recovery and snapshot contracts. Semantic affected-set reuse is a separate family
+under Q09–Q15 and cannot assume a complete dependency graph.
+
+**Fail-first test and gate:** after every edit compare fresh/reused tokens, tree, diagnostics, ranges and feature
+output; prove older snapshots immutable and actual reuse measured. Unsupported/ambiguous edits, history overflow and
+cancellation fall back to fresh parsing with bounded work/history/RSS. Retain workload/toolchain/revision/raw results;
+use repeated comparable measurements, including the CST skill's Go benchmark requirements where applicable. No speedup
+claim from a single busy-host run.
+
+**Rollback:** disable reuse without changing source, syntax contract or recovery. Each lexer/subtree/semantic reuse PR
+has its own gate; optimization failure never disables the fresh editor service.
+
+### Required first milestone and deliberate deferrals
+
+The first user-visible gate is useful cold incomplete-buffer outline, highlighting, enum completion and declaration
+hover through the packaged LSP, alongside one neutral target-qualified query. Independent syntax and contextual semantic
+ownership proceed in parallel. The next integrated gate is actual verified old/new compiler coexistence, including
+shared source and failure isolation. No feature claims complete expression-type, transform or runtime/CPS parity from
+CST structure alone.
+
+Do not put a full grammar rewrite, all-feature migration, universal compiler range, automatic toolchain acquisition,
+permanent duplicate grammars or incremental subtree optimization ahead of the narrow editor slice. Broader semantic
+coverage, framework integrations and proven reuse follow their own packets. A target-aware child-LSP proxy is a viable
+experiment if neutral worker delivery fails or comparative evidence favors it, but must solve shared-target routing,
+URI/resolve/result mapping, client refresh/edit mediation and duplicated-store resource costs.
