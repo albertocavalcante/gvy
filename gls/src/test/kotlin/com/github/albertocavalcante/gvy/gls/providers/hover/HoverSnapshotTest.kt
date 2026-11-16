@@ -11,9 +11,7 @@ import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import io.mockk.coEvery
 import io.mockk.every
-import io.mockk.mockkObject
 import io.mockk.spyk
-import io.mockk.unmockkObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,7 +35,9 @@ import java.nio.file.Path
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -103,28 +103,126 @@ class HoverSnapshotTest {
             val original = assertNotNull(fixture.compilation.getParseResult(fixture.uri))
             fixture.change(CURRENT_SOURCE, 42)
             val cache = fixture.compilation.compilationCacheService
-            mockkObject(cache)
-            try {
-                every { cache.getCachedWithContent(fixture.uri, any()) } answers {
-                    callOriginal().also {
-                        cache.publish(cache.ownership.begin(fixture.uri), ORIGINAL_SOURCE, original, secondArg())
-                    }
-                }
-
-                val hover = fixture.endpoint.hover(fixture.params()).await()
-
-                assertContains(hover.contents.right.value, "Integer")
-                assertEquals(CURRENT_SOURCE, fixture.documents.get(fixture.uri))
-                assertEquals(
-                    ORIGINAL_SOURCE,
-                    cache.getCachedWithContent(
-                        fixture.uri,
-                        fixture.compilation.workspaceManager.getConfigurationFingerprint(),
-                    )?.first,
-                )
-            } finally {
-                unmockkObject(cache)
+            val fingerprint = fixture.compilation.workspaceManager.getConfigurationFingerprint()
+            var captures = 0
+            var published = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                assertEquals(CURRENT_SOURCE, captured.sourceText)
+                assertNotSame(original, captured.parseResult)
+                captures++
+                published = cache.publish(cache.ownership.begin(fixture.uri), ORIGINAL_SOURCE, original, fingerprint)
+                captured
             }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals(1, captures, "The replacement must occur after exactly one snapshot capture")
+            assertTrue(published, "The older parse must actually replace the cache")
+            assertEquals(ORIGINAL_SOURCE, cache.getCachedWithContent(fixture.uri, fingerprint)?.first)
+            assertContains(hover.contents.right.value, "Integer")
+            assertEquals(CURRENT_SOURCE, fixture.documents.get(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `native hover retains an older capture when a newer parse replaces the cache`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            val original = assertNotNull(fixture.compilation.getParseResult(fixture.uri))
+            val newer = fixture.compilation.compileTransient(fixture.uri, CURRENT_SOURCE)
+            assertNotNull(newer.ast)
+            val cache = fixture.compilation.compilationCacheService
+            val fingerprint = fixture.compilation.workspaceManager.getConfigurationFingerprint()
+            var captures = 0
+            var published = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                assertEquals(ORIGINAL_SOURCE, captured.sourceText)
+                assertSame(original, captured.parseResult)
+                captures++
+                published = cache.publish(cache.ownership.begin(fixture.uri), CURRENT_SOURCE, newer, fingerprint)
+                captured
+            }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals(1, captures)
+            assertTrue(published, "The newer parse must actually replace the cache")
+            assertEquals(CURRENT_SOURCE, cache.getCachedWithContent(fixture.uri, fingerprint)?.first)
+            assertContains(hover.contents.right.value, "String value()")
+            assertEquals(ORIGINAL_SOURCE, fixture.documents.get(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `hover rejects a version change during snapshot capture`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            val incarnation = assertNotNull(fixture.documents.getIncarnation(fixture.uri))
+            var captures = 0
+            var updated = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                captures++
+                updated = fixture.documents.update(fixture.uri, ORIGINAL_SOURCE, 42) != null
+                captured
+            }
+
+            val result = runCatching { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(1, captures)
+            assertTrue(updated, "The version update must be accepted during capture")
+            assertSame(incarnation, fixture.documents.getIncarnation(fixture.uri))
+            assertEquals(ORIGINAL_SOURCE, fixture.documents.getSnapshot(fixture.uri)?.content)
+            assertEquals(42, fixture.documents.getSnapshot(fixture.uri)?.version)
+            val error = assertIs<ResponseErrorException>(result.exceptionOrNull())
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `hover rejects a closed and reopened identical buffer during snapshot capture`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            val incarnation = assertNotNull(fixture.documents.getIncarnation(fixture.uri))
+            var captures = 0
+            var removed = false
+            var reopened = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                captures++
+                fixture.documents.remove(fixture.uri)
+                removed = fixture.documents.getSnapshot(fixture.uri) == null
+                fixture.documents.put(fixture.uri, ORIGINAL_SOURCE, 41)
+                reopened = fixture.documents.getIncarnation(fixture.uri) !== incarnation
+                captured
+            }
+
+            val result = runCatching { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(1, captures)
+            assertTrue(removed, "The captured buffer must be closed during capture")
+            assertTrue(reopened, "A new buffer incarnation must be opened during capture")
+            assertNotSame(incarnation, fixture.documents.getIncarnation(fixture.uri))
+            assertEquals(ORIGINAL_SOURCE, fixture.documents.getSnapshot(fixture.uri)?.content)
+            assertEquals(41, fixture.documents.getSnapshot(fixture.uri)?.version)
+            val error = assertIs<ResponseErrorException>(result.exceptionOrNull())
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `hover propagates cancellation during snapshot capture`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            var captures = 0
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                assertNotNull(callOriginal())
+                captures++
+                throw CancellationException("cancelled during snapshot capture")
+            }
+
+            val result = runCatching { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(1, captures)
+            assertIs<CancellationException>(result.exceptionOrNull())
         }
     }
 
