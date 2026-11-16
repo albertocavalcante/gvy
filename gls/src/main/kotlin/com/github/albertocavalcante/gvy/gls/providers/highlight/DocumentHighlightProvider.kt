@@ -9,6 +9,10 @@ import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.declaredName
+import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
+import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -29,6 +33,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.DocumentHighlight
 import org.eclipse.lsp4j.DocumentHighlightKind
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import java.net.URI
 
 /**
@@ -50,7 +55,9 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         logger.debug { "Finding highlights for $uri at ${position.line}:${position.character}" }
 
         val documentUri = URI.create(uri)
-        val groovyPosition = position.toGroovyPosition()
+        val source = compilationService.getCompiledSnapshot(documentUri)?.sourceText ?: return emptyList()
+        val index = TextIndex(source)
+        val groovyPosition = index.codePointPosition(position)?.toGroovyPosition() ?: return emptyList()
 
         val astModel = compilationService.getAstModel(documentUri)
         val symbolTable = compilationService.getSymbolTable(documentUri)
@@ -85,7 +92,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
         if (resolved == null) return emptyList()
         val (definition, model, table) = resolved
-        return findHighlights(definition, model, table, documentUri)
+        return findHighlights(definition, model, table, documentUri, index)
     }
 
     /**
@@ -96,6 +103,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         astModel: GroovyAstModel,
         symbolTable: SymbolTable,
         documentUri: URI,
+        index: TextIndex,
     ): List<DocumentHighlight> {
         val highlights = mutableListOf<DocumentHighlight>()
         val seen = mutableSetOf<String>()
@@ -120,7 +128,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
                     // Skip DeclarationExpressions - we emit their inner VariableExpression
                     if (node is DeclarationExpression) return@forEach
 
-                    val highlight = createHighlight(node, astModel, seen)
+                    val highlight = createHighlight(node, astModel, seen, index)
                     if (highlight != null) {
                         highlights.add(highlight)
                     }
@@ -138,8 +146,9 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         node: ASTNode,
         astModel: GroovyAstModel,
         seen: MutableSet<String>,
+        index: TextIndex,
     ): DocumentHighlight? {
-        val range = node.toLspRange() ?: return null
+        val range = node.identifierRange(index) ?: return null
         val key = "${range.start.line}:${range.start.character}"
 
         // Skip duplicates
@@ -147,6 +156,36 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
         val kind = classifyHighlightKind(node, astModel)
         return DocumentHighlight(range, kind)
+    }
+
+    /**
+     * The identifier this node stands for, in protocol coordinates. A declaration or call spans its
+     * body or arguments, which must not be highlighted; the name is found inside the node's own span
+     * (the method or property name node for calls). Nodes without a name keep their whole span.
+     */
+    private fun ASTNode.identifierRange(index: TextIndex): Range? {
+        val span = nameSearchNode().toLspRange() ?: toLspRange() ?: return null
+        val protocolSpan = index.utf16Range(span) ?: return null
+        val name = highlightName() ?: return protocolSpan
+        return firstNameOccurrence(index, protocolSpan, name) ?: protocolSpan
+    }
+
+    private fun ASTNode.nameSearchNode(): ASTNode = when (this) {
+        is MethodCallExpression -> method
+        is PropertyExpression -> property
+        is ConstructorCallExpression -> type
+        is ClassExpression -> type
+        else -> this
+    }
+
+    private fun ASTNode.highlightName(): String? = when (this) {
+        is MethodCallExpression -> methodAsString
+        is PropertyExpression -> propertyAsString
+        is ConstructorCallExpression -> type.sourceSimpleName()
+        is ClassExpression -> type.sourceSimpleName()
+        is PostfixExpression -> (expression as? VariableExpression)?.name
+        is PrefixExpression -> (expression as? VariableExpression)?.name
+        else -> declaredName()
     }
 
     /**
