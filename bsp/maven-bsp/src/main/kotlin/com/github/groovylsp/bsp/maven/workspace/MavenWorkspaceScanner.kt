@@ -38,7 +38,7 @@ class MavenWorkspaceScanner {
         }
 
         val modules = mutableListOf<MavenModuleInfo>()
-        scanRecursive(rootPom, modules)
+        scanRecursive(rootPom, modules, mutableSetOf(), workspaceRoot.toRealPath())
         return modules
     }
 
@@ -58,7 +58,18 @@ class MavenWorkspaceScanner {
         return modelToModuleInfo(model, pomPath)
     }
 
-    private fun scanRecursive(pomPath: Path, modules: MutableList<MavenModuleInfo>) {
+    private fun scanRecursive(
+        pomPath: Path,
+        modules: MutableList<MavenModuleInfo>,
+        visited: MutableSet<Path>,
+        workspaceRoot: Path,
+    ) {
+        // Maven rejects reactor cycles; here a repeated or out-of-workspace POM is skipped instead of recursing.
+        val realPom = pomPath.toRealPath()
+        if (!realPom.startsWith(workspaceRoot) || !visited.add(realPom)) {
+            logger.debug { "Skipping repeated or out-of-workspace module POM: $pomPath" }
+            return
+        }
         val module = parseModule(pomPath) ?: return
         modules.add(module)
 
@@ -68,7 +79,7 @@ class MavenWorkspaceScanner {
             val childPom = childDir.resolve("pom.xml")
 
             if (childDir.exists() && childDir.isDirectory() && childPom.exists()) {
-                scanRecursive(childPom, modules)
+                scanRecursive(childPom, modules, visited, workspaceRoot)
             } else {
                 logger.debug { "Skipping non-Maven module: $childModuleName at $childDir" }
             }
