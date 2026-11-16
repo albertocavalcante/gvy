@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build.maven
 
+import com.github.albertocavalcante.gvy.build.BoundedProcessRunner
 import com.github.albertocavalcante.gvy.build.BuildExecutableResolver
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.DependencyMetadata
@@ -13,16 +14,19 @@ import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.exists
+import kotlin.time.Duration.Companion.minutes
 
 class MavenBuildTool : BuildTool {
     private val logger = KotlinLogging.logger {}
+
+    private companion object {
+        private val CLI_TIMEOUT = 5.minutes
+    }
 
     override val name: String = "Maven"
 
@@ -150,40 +154,28 @@ class MavenBuildTool : BuildTool {
             val mvnCommand = BuildExecutableResolver.resolveMaven(workspaceRoot)
             val command = listOf(
                 mvnCommand,
+                "-B",
                 "dependency:build-classpath",
                 "-DincludeScope=test",
                 "-Dmdep.outputFile=${cpFile.toAbsolutePath()}",
             )
 
             logger.debug { "Running Maven command: $command" }
-            val processBuilder = ProcessBuilder(command)
-            processBuilder.directory(workspaceRoot.toFile())
-            processBuilder.redirectErrorStream(true)
+            val outcome = BoundedProcessRunner.run(command, workspaceRoot, CLI_TIMEOUT)
 
-            val process = processBuilder.start()
-
-            try {
-                // Read output to log it (and avoid blocking if buffer fills)
-                val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                    reader.readText()
-                }
-
-                val exitCode = process.waitFor()
-
-                if (exitCode != 0) {
-                    logger.error { "Maven CLI dependency resolution failed. Output:\n$output" }
-                } else {
-                    val classpathString = Files.readString(cpFile)
-                    result = classpathString
-                        .split(File.pathSeparator)
-                        .mapNotNull { entry ->
-                            runCatching { Paths.get(entry.trim()) }
-                                .getOrNull()
-                                ?.takeIf { it.exists() }
-                        }
-                }
-            } finally {
-                process.destroyForcibly()
+            if (outcome.timedOut) {
+                logger.error { "Maven CLI timed out after $CLI_TIMEOUT. Output:\n${outcome.output}" }
+            } else if (outcome.exitCode != 0) {
+                logger.error { "Maven CLI dependency resolution failed. Output:\n${outcome.output}" }
+            } else {
+                val classpathString = Files.readString(cpFile)
+                result = classpathString
+                    .split(File.pathSeparator)
+                    .mapNotNull { entry ->
+                        runCatching { Paths.get(entry.trim()) }
+                            .getOrNull()
+                            ?.takeIf { it.exists() }
+                    }
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()

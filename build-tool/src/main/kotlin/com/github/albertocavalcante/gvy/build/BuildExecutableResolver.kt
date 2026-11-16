@@ -34,6 +34,7 @@ object BuildExecutableResolver {
         wrapperName = "gradlew",
         windowsWrapperName = "gradlew.bat",
         systemCommand = "gradle",
+        windowsSystemCommand = "gradle.bat",
         useWindows = isWindows,
     )
 
@@ -49,6 +50,7 @@ object BuildExecutableResolver {
         wrapperName = "mvnw",
         windowsWrapperName = "mvnw.cmd",
         systemCommand = "mvn",
+        windowsSystemCommand = "mvn.cmd",
         useWindows = isWindows,
     )
 
@@ -60,6 +62,7 @@ object BuildExecutableResolver {
         wrapperName = "gradlew",
         windowsWrapperName = "gradlew.bat",
         systemCommand = "gradle",
+        windowsSystemCommand = "gradle.bat",
         useWindows = forceWindows,
     )
 
@@ -71,6 +74,7 @@ object BuildExecutableResolver {
         wrapperName = "mvnw",
         windowsWrapperName = "mvnw.cmd",
         systemCommand = "mvn",
+        windowsSystemCommand = "mvn.cmd",
         useWindows = forceWindows,
     )
 
@@ -83,8 +87,11 @@ object BuildExecutableResolver {
         wrapperName: String,
         windowsWrapperName: String,
         systemCommand: String,
+        windowsSystemCommand: String,
         useWindows: Boolean,
     ): String {
+        // ProcessBuilder on Windows does not apply PATHEXT: Maven/Gradle ship only .cmd/.bat launchers.
+        val systemCommand = if (useWindows) windowsSystemCommand else systemCommand
         val wrapper = if (useWindows) windowsWrapperName else wrapperName
         val wrapperPath = workspaceRoot.resolve(wrapper)
 
