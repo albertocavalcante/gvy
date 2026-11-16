@@ -10,11 +10,15 @@ import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.eclipse.aether.RepositorySystemSession
+import org.eclipse.aether.artifact.Artifact
+import org.eclipse.aether.artifact.ArtifactProperties
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.collection.CollectRequest
 import org.eclipse.aether.graph.Dependency
+import org.eclipse.aether.graph.Exclusion
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.DependencyRequest
+import org.eclipse.aether.resolution.DependencyResolutionException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -38,59 +42,102 @@ class MavenDependencyResolver : DependencyResolver {
      * @param projectFile Path to the pom.xml file
      * @return List of resolved dependency JAR paths
      */
-    override fun resolveDependencies(projectFile: Path): List<Path> {
+    override fun resolveDependencies(projectFile: Path): List<Path> = resolveDetailed(projectFile).dependencies
+
+    /**
+     * Like [resolveDependencies] but also reports artifacts that could not be resolved, so callers can
+     * distinguish a complete classpath from a partial one.
+     */
+    fun resolveDetailed(projectFile: Path): MavenResolutionResult {
         logger.info { "Resolving dependencies using Maven Resolver for: $projectFile" }
 
         if (!Files.exists(projectFile)) {
             logger.error { "pom.xml not found at: $projectFile" }
-            return emptyList()
+            return MavenResolutionResult.EMPTY
         }
 
         @Suppress("TooGenericExceptionCaught") // Catch-all for resolution errors
         return try {
-            val repositorySystem = AetherSessionFactory.repositorySystem
-            val session = newRepositorySystemSession()
-
-            // Parse the POM to get dependencies
             val model = parsePom(projectFile)
             if (model == null) {
                 logger.error { "Failed to parse pom.xml" }
-                return emptyList()
+                MavenResolutionResult.EMPTY
+            } else {
+                resolveRequest(buildCollectRequest(model))
             }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to resolve dependencies with Maven Resolver" }
+            MavenResolutionResult.EMPTY
+        }
+    }
 
-            // Build collect request from dependencies
-            val collectRequest = CollectRequest()
-            collectRequest.repositories = getRemoteRepositories(model)
+    private fun buildCollectRequest(model: Model): CollectRequest {
+        val collectRequest = CollectRequest()
+        collectRequest.repositories = getRemoteRepositories(model)
 
-            model.dependencies.forEach { dep ->
-                if (dep.version.isNullOrBlank()) {
-                    logger.warn { "Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}" }
-                    return@forEach
-                }
-                val artifact = DefaultArtifact(
-                    dep.groupId,
-                    dep.artifactId,
-                    dep.classifier ?: "",
-                    dep.type ?: "jar",
-                    dep.version,
-                )
-                // Include all scopes (compile, test, etc.)
-                collectRequest.addDependency(Dependency(artifact, dep.scope ?: "compile"))
+        model.dependencies.forEach { dep ->
+            if (dep.version.isNullOrBlank()) {
+                logger.warn { "Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}" }
+                return@forEach
             }
+            // Include all scopes (compile, test, etc.)
+            collectRequest.addDependency(toAetherDependency(dep))
+        }
 
-            // Resolve dependencies
-            val dependencyRequest = DependencyRequest(collectRequest, null)
-            val result = repositorySystem.resolveDependencies(session, dependencyRequest)
+        // Pin transitive versions/exclusions the way Maven does (inline dependencyManagement)
+        model.dependencyManagement?.dependencies
+            ?.filterNot { it.version.isNullOrBlank() }
+            ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it, managed = true)) }
+        return collectRequest
+    }
 
+    private fun resolveRequest(collectRequest: CollectRequest): MavenResolutionResult {
+        val repositorySystem = AetherSessionFactory.repositorySystem
+        val session = newRepositorySystemSession()
+        return try {
+            val result = repositorySystem.resolveDependencies(session, DependencyRequest(collectRequest, null))
             val dependencies = result.artifactResults
                 .filter { it.isResolved }
                 .mapNotNull { it.artifact?.file?.toPath() }
-
             logger.info { "Resolved ${dependencies.size} dependencies via Maven Resolver" }
-            dependencies
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to resolve dependencies with Maven Resolver" }
-            emptyList()
+            MavenResolutionResult(dependencies, emptyList())
+        } catch (e: DependencyResolutionException) {
+            // The exception carries every artifact that did resolve; keep them.
+            logger.warn(e) { "Maven Resolver could not resolve every dependency; keeping partial results" }
+            partialResult(e)
+        }
+    }
+
+    private fun partialResult(e: DependencyResolutionException): MavenResolutionResult {
+        val artifactResults = e.result?.artifactResults.orEmpty()
+        val resolved = artifactResults.filter { it.isResolved }.mapNotNull { it.artifact?.file?.toPath() }
+        val unresolved = artifactResults.filterNot { it.isResolved }
+            .map { it.request?.artifact?.toString() ?: "unknown artifact" } +
+            e.result?.collectExceptions.orEmpty().map { "collection failed: ${it.message}" }
+        val reported = unresolved.ifEmpty { listOf(e.message ?: "dependency resolution failed") }
+        logger.info { "Maven Resolver kept ${resolved.size} dependencies; ${reported.size} unresolved" }
+        return MavenResolutionResult(resolved, reported)
+    }
+
+    private fun toAetherDependency(dep: org.apache.maven.model.Dependency, managed: Boolean = false): Dependency {
+        var artifact: Artifact = DefaultArtifact(
+            dep.groupId,
+            dep.artifactId,
+            dep.classifier ?: "",
+            dep.type ?: "jar",
+            dep.version,
+        )
+        if (dep.scope == "system" && !dep.systemPath.isNullOrBlank()) {
+            artifact = artifact.setProperties(mapOf(ArtifactProperties.LOCAL_PATH to dep.systemPath))
+        }
+        val exclusions = dep.exclusions.map {
+            Exclusion(it.groupId, it.artifactId, "*", "*")
+        }
+        // Managed entries must not force defaults: an unset scope/optional means "not managed" (as in Maven).
+        return if (managed) {
+            Dependency(artifact, dep.scope.orEmpty(), dep.optional?.toBoolean(), exclusions)
+        } else {
+            Dependency(artifact, dep.scope ?: "compile", dep.isOptional, exclusions)
         }
     }
 
@@ -195,5 +242,14 @@ class MavenDependencyResolver : DependencyResolver {
         }
 
         return repos
+    }
+}
+
+/** Outcome of an embedded Maven resolution; [unresolved] is non-empty when the classpath is partial. */
+data class MavenResolutionResult(val dependencies: List<Path>, val unresolved: List<String>) {
+    val isPartial: Boolean get() = unresolved.isNotEmpty()
+
+    companion object {
+        val EMPTY = MavenResolutionResult(emptyList(), emptyList())
     }
 }
