@@ -1039,4 +1039,25 @@ class WhitespaceFixHandlersTest {
         val setter = assertNotNull(runOnRange("UnnecessarySetter", "p.setName(f(1, 2))", "setName(f(1, 2))"))
         assertEquals("name = f(1, 2)", setter.newText)
     }
+
+    @Test
+    fun `consecutive blank lines fix for exactly two blanks works on first or second blank line`() {
+        val content = "def x = 1\n\n\ndef y = 2" // blank lines 1 and 2
+        // 0 = line above (0-based index read as 1-based), 1 = first blank, 2 = second blank (+1 convention)
+        for (line in 0..2) {
+            val edit = assertNotNull(runHandler("ConsecutiveBlankLines", content, line), "line $line")
+            assertEquals(2, edit.range.start.line, "line $line")
+            assertEquals(3, edit.range.end.line, "line $line")
+        }
+    }
+
+    @Test
+    fun `blank line before package single blank works on blank line, line above and package line`() {
+        val content = "// header\n\npackage foo" // blank at 1, package at 2
+        for (line in 0..2) {
+            val edit = assertNotNull(runHandler("BlankLineBeforePackage", content, line), "line $line")
+            assertEquals(1, edit.range.start.line, "line $line")
+            assertEquals(2, edit.range.end.line, "line $line")
+        }
+    }
 }
