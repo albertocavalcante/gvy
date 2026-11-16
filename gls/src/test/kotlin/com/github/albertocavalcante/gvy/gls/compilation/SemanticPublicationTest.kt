@@ -6,10 +6,16 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
@@ -24,6 +30,34 @@ class SemanticPublicationTest {
     private val indexer = SemanticIndexer(index)
     private val content = "class Example {}"
     private val ast = checkNotNull(GroovyParserFacade().parse(ParseRequest(uri = uri, content = content)).ast)
+
+    @Test
+    fun `slow semantic preparation does not block a transition or publish stale facts`() = runBlocking {
+        val gate = WorkspaceModelTransitionGate()
+        val model = WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "test" }
+        val snapshot = gate.awaitSnapshot { model }
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slow = SemanticIndexer(index, build = { module, documentUri ->
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+            SemanticDocumentBuilder(module, documentUri).build()
+        })
+        val work = async(Dispatchers.IO) {
+            slow.begin(uri).use { publication ->
+                val prepared = slow.preparePublication(publication, content, ast, Phases.CANONICALIZATION)
+                gate.publishIfCurrent(snapshot, { model }) { prepared?.let(slow::commitPublication) }
+            }
+        }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            gate.transition { Unit }
+        } finally {
+            release.countDown()
+        }
+        work.await()
+        assertNull(index.getDocument(uri))
+    }
 
     @Test
     fun `deleted document rejects its outstanding publication`() {
@@ -115,5 +149,50 @@ class SemanticPublicationTest {
             indexer.publish(afterClose, "class Example { def fresh() {} }", ast, Phases.CANONICALIZATION)
         }
         assertTrue(indexer.isCurrent(uri, "class Example { def fresh() {} }"), "later work still publishes")
+    }
+
+    @Test
+    fun `excluded disk publication removes old facts only while it owns the closed document`() {
+        var excluded = false
+        var open = false
+        val guarded = SemanticIndexer(index, isOpen = { open }, excluded = { excluded })
+        guarded.update(uri, content, ast, Phases.CANONICALIZATION)
+        val old = guarded.begin(uri)
+        guarded.retirePublications(uri)
+        excluded = true
+
+        guarded.publish(old, "changed", ast, Phases.CANONICALIZATION, fromBuffer = false)
+        assertNotNull(index.getDocument(uri), "a retired publication must not erase current facts")
+        old.close()
+
+        open = true
+        guarded.begin(uri).use { publication ->
+            guarded.publish(publication, "changed", ast, Phases.CANONICALIZATION, fromBuffer = false)
+        }
+        assertNotNull(index.getDocument(uri), "disk work must not erase an open buffer's facts")
+
+        open = false
+        guarded.begin(uri).use { publication ->
+            guarded.publish(publication, "changed", ast, Phases.CANONICALIZATION, fromBuffer = false)
+        }
+        assertNull(index.getDocument(uri))
+        assertFalse(uri in guarded)
+    }
+
+    @Test
+    fun `a source excluded while semantic facts are built drops the previous document`() {
+        var excluded = false
+        var excludeWhileBuilding = false
+        val guarded = SemanticIndexer(index, excluded = { excluded }, build = { module, source ->
+            if (excludeWhileBuilding) excluded = true
+            SemanticDocumentBuilder(module, source).build()
+        })
+        guarded.update(uri, content, ast, Phases.CANONICALIZATION)
+        assertNotNull(index.getDocument(uri))
+        excludeWhileBuilding = true
+
+        guarded.update(uri, "changed", ast, Phases.CANONICALIZATION)
+
+        assertNull(index.getDocument(uri))
     }
 }

@@ -9,9 +9,15 @@ import com.github.javaparser.ParseStart
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.Providers
 import com.github.javaparser.ast.CompilationUnit
+import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.AnnotationDeclaration
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
+import com.github.javaparser.ast.body.EnumDeclaration
+import com.github.javaparser.ast.body.FieldDeclaration
 import com.github.javaparser.ast.body.MethodDeclaration
 import com.github.javaparser.ast.body.TypeDeclaration
 import com.github.javaparser.ast.comments.JavadocComment
+import com.github.javaparser.ast.expr.SimpleName
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import java.io.StringReader
@@ -21,12 +27,18 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
+internal data class JavaMemberInspectionOptions(
+    val sourceName: String = "<unknown>",
+    val checkCancelled: () -> Unit = {},
+)
+
 /**
  * Service to inspect Java source files using JavaParser.
  *
  * Extracts class definitions, line numbers, and Javadoc documentation from .java files.
  * Uses JavaParser for supported Java syntax, without executing or loading the inspected source.
  */
+@Suppress("TooManyFunctions") // The inspector exposes the related class, member, and documentation queries.
 class JavaSourceInspector internal constructor(private val parserFactory: () -> JavaParser) {
     constructor() : this(::newJavaSourceParser)
 
@@ -175,6 +187,90 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         end.line - 1,
         end.column,
     )
+
+    /** A name-only member request can select a field, enum constant or unambiguous method. */
+    fun inspectMemberDefinitionFromContent(
+        content: String,
+        className: String,
+        memberName: String,
+        sourceName: String = "<unknown>",
+    ): SourceDefinition? = inspectMemberDefinitionFromContent(
+        content,
+        SourceMemberTarget(className, SourceMemberQuery(memberName)),
+        JavaMemberInspectionOptions(sourceName),
+    )
+
+    @Suppress("ReturnCount", "TooGenericExceptionCaught")
+    internal fun inspectMemberDefinitionFromContent(
+        content: String,
+        target: SourceMemberTarget,
+        options: JavaMemberInspectionOptions = JavaMemberInspectionOptions(),
+    ): SourceDefinition? {
+        val (className, member) = target
+        val (sourceName, checkCancelled) = options
+        val memberName = member.name
+        checkCancelled()
+        if (content.length > MAX_PARSE_CHARACTERS) return null
+        return try {
+            val unit = parseUnit(content, sourceName, checkCancelled) ?: return null
+            val owner = findJavaTypeDeclaration(unit, className, checkCancelled) ?: return null
+            val (declaration, name) = memberDeclarations(owner, member, checkCancelled).singleOrNull()
+                ?: return null
+            val declarationRange = declaration.range.orElse(null)?.toSourceSpan() ?: return null
+            val nameRange = name.range.orElse(null)?.toSourceSpan() ?: return null
+            val documentation = (declaration.comment.orElse(null) as? JavadocComment)?.let(::parseJavadoc)
+                ?: Documentation()
+            SourceDefinition(declarationRange, nameRange, documentation)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to inspect Java member $className.$memberName" }
+            null
+        }
+    }
+
+    private fun memberDeclarations(
+        owner: TypeDeclaration<*>,
+        query: SourceMemberQuery,
+        checkCancelled: () -> Unit,
+    ): List<Pair<Node, SimpleName>> = buildList {
+        val memberName = query.name
+        val memberIsStatic = query.isStatic
+        for (member in owner.members) {
+            checkCancelled()
+            when (member) {
+                is MethodDeclaration -> {
+                    if (matchesMethod(member, query)) add(member to member.name)
+                }
+                is FieldDeclaration -> addAll(fieldDeclarations(owner, member, query, checkCancelled))
+            }
+        }
+        if (owner is EnumDeclaration) {
+            for (entry in owner.entries) {
+                checkCancelled()
+                if (entry.nameAsString == memberName && memberIsStatic != false) add(entry to entry.name)
+            }
+        }
+    }
+
+    private fun matchesMethod(method: MethodDeclaration, query: SourceMemberQuery): Boolean =
+        method.nameAsString == query.name && (query.isStatic == null || method.isStatic == query.isStatic)
+
+    private fun fieldDeclarations(
+        owner: TypeDeclaration<*>,
+        field: FieldDeclaration,
+        query: SourceMemberQuery,
+        checkCancelled: () -> Unit,
+    ): List<Pair<Node, SimpleName>> = buildList {
+        for (variable in field.variables) {
+            checkCancelled()
+            val isStatic = field.isStatic || owner is AnnotationDeclaration ||
+                (owner is ClassOrInterfaceDeclaration && owner.isInterface)
+            if (variable.nameAsString == query.name && (query.isStatic == null || isStatic == query.isStatic)) {
+                add(field to variable.name)
+            }
+        }
+    }
 
     /**
      * Inspect Java source content to find a specific method within a class.

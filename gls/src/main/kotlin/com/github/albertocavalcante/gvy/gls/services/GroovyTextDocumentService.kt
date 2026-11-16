@@ -48,6 +48,8 @@ import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.ast.ModuleNode
@@ -341,9 +343,11 @@ class GroovyTextDocumentService(
             logger.debug { "Prepare call hierarchy requested for ${params.textDocument.uri}" }
             val uri = URI.create(params.textDocument.uri)
 
+            val context = currentCoroutineContext()
+            context.ensureActive()
             compilationService.ensureCompiled(uri)
-
-            callHierarchyProvider.prepareCallHierarchy(params)
+            context.ensureActive()
+            callHierarchyProvider.prepareCallHierarchy(params) { context.ensureActive() }
         }
 
     override fun callHierarchyIncomingCalls(
@@ -357,7 +361,8 @@ class GroovyTextDocumentService(
         params: CallHierarchyOutgoingCallsParams,
     ): CompletableFuture<List<CallHierarchyOutgoingCall>> = coroutineScope.future {
         logger.debug { "Outgoing calls requested for ${params.item.name}" }
-        callHierarchyProvider.outgoingCalls(params)
+        val context = currentCoroutineContext()
+        callHierarchyProvider.outgoingCalls(params) { context.ensureActive() }
     }
 
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {

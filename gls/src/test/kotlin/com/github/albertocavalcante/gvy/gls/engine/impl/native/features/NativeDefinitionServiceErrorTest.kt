@@ -7,6 +7,9 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit
 import com.github.albertocavalcante.gvy.gls.engine.adapters.UnifiedNode
 import com.github.albertocavalcante.gvy.gls.engine.adapters.UnifiedSymbol
+import com.github.albertocavalcante.gvy.gls.sources.ResolvedExternalSymbol
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupContext
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import kotlinx.coroutines.runBlocking
@@ -23,7 +26,7 @@ class NativeDefinitionServiceErrorTest {
 
     /** Overflows when a classpath strategy asks for a class's source: a recursion bug inside the strategies. */
     private val overflowing = object : SourceNavigator by SourceNavigationService() {
-        override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult =
+        override suspend fun locate(symbol: ResolvedExternalSymbol, context: SourceLookupContext): SourceLookupResult =
             throw StackOverflowError("simulated deep recursion")
     }
 

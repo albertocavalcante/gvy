@@ -26,8 +26,10 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.Sema
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SymbolResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
@@ -41,17 +43,28 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.Statement
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import java.net.URI
 
+// Optional collaborators preserve the public resolver API and its standalone test configurations.
+@Suppress("LongParameterList")
 class DefinitionResolver(
     private val astVisitor: GroovyAstModel,
     private val symbolTable: SymbolTable,
     private val compilationService: GroovyCompilationService? = null,
     private val sourceNavigator: SourceNavigator? = null,
     private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
+    private val sourceAnnotations: SourceAnnotationIndex = SourceAnnotationIndex.UNAVAILABLE,
+    private val compiledSources: List<ModuleNode>? = null,
 ) {
 
     private val logger = KotlinLogging.logger {}
+    private val boundTypes = BoundTypeDefinitionResolver(
+        compiledSources,
+        sourceAnnotations,
+        compilationService,
+        sourceNavigator,
+    )
 
     /**
      * Resolution pipeline using Railway-Oriented Programming with Arrow Either.
@@ -112,21 +125,27 @@ class DefinitionResolver(
      */
     sealed class DefinitionResult {
         data class Source(val node: ASTNode, val uri: URI) : DefinitionResult()
-        data class Binary(val uri: URI, val name: String, val range: Range? = null) : DefinitionResult()
+        data class Binary(
+            val uri: URI,
+            val name: String,
+            val range: Range? = null,
+            val declarationRange: Range? = null,
+        ) : DefinitionResult()
     }
 
     /**
      * Find the definition of the symbol at the given position.
      * Throws specific exceptions for different failure scenarios.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
-    suspend fun findDefinitionAt(
-        uri: URI,
-        position: Position,
-    ): DefinitionResult? {
+    // Preserve protocol/domain exceptions and map only unexpected failures at this request boundary.
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    suspend fun findDefinitionAt(uri: URI, position: Position): DefinitionResult? {
         logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
 
         return try {
+            validatePosition(position, uri)
+            val import = boundImportAt(uri, position)
+            if (import != null) return boundTypes.importDefinition(import, uri, position)
             val targetNode = validateAndFindNode(uri, position)
             val result = resolveDefinition(targetNode, uri, position)
 
@@ -137,6 +156,8 @@ class DefinitionResolver(
         } catch (e: GroovyLspException) {
             // Re-throw our specific exceptions
             logger.debug { "Specific error finding definition: $e" }
+            throw e
+        } catch (e: ResponseErrorException) {
             throw e
         } catch (e: Exception) {
             rethrowIfCancellationOrError(e) // a cancelled lookup is not "symbol not found"
@@ -151,6 +172,14 @@ class DefinitionResolver(
      */
     private fun validateAndFindNode(uri: URI, position: Position): ASTNode {
         validatePosition(position, uri)
+        if (sourceAnnotations.isHeadNameTriviaAt(position.line, position.character)) {
+            throw uri.nodeNotFoundAtPosition(position.line, position.character)
+        }
+        sourceAnnotations.headAt(position.line, position.character)?.let { reference ->
+            val binaryName = reference.binaryName ?: throw uri.nodeNotFoundAtPosition(position.line, position.character)
+            // Head-only dispatch: argument members retain the existing expression resolution path.
+            return ClassHelper.makeWithoutCaching(binaryName)
+        }
         val trackedNode = astVisitor.getNodeAt(uri, position)
         val targetNode = selectBestNode(uri, position, trackedNode)
         return resolveEffectiveTarget(targetNode, trackedNode, uri, position)
@@ -183,9 +212,10 @@ class DefinitionResolver(
     /**
      * Determine if the fallback node should be preferred over the tracked node.
      */
-    private fun shouldPreferFallback(trackedNode: ASTNode?, fallbackNode: ASTNode?): Boolean =
-        trackedNode != null && fallbackNode != null &&
-            isBroadContainer(trackedNode) && !isBroadContainer(fallbackNode)
+    private fun shouldPreferFallback(trackedNode: ASTNode?, fallbackNode: ASTNode?): Boolean = trackedNode != null &&
+        fallbackNode != null &&
+        isBroadContainer(trackedNode) &&
+        !isBroadContainer(fallbackNode)
 
     /**
      * Resolve the effective target, preferring MethodCallExpression when applicable.
@@ -226,11 +256,15 @@ class DefinitionResolver(
             else -> null
         }
 
-    private fun isBroadContainer(node: ASTNode): Boolean = node is ClassNode ||
-        node is MethodNode ||
-        node is BlockStatement ||
-        node is Statement ||
-        node is DeclarationExpression
+    private fun isBroadContainer(node: ASTNode): Boolean = when (node) {
+        is ClassNode,
+        is MethodNode,
+        is BlockStatement,
+        is Statement,
+        is DeclarationExpression,
+        -> true
+        else -> false
+    }
 
     private fun findMethodCallWhereNodeIsMethodExpression(node: ASTNode): MethodCallExpression? {
         var current: ASTNode? = node
@@ -259,10 +293,15 @@ class DefinitionResolver(
      * - Strategies are tried in priority order (Jenkins vars → Local → Global → Classpath)
      */
     private suspend fun resolveDefinition(targetNode: ASTNode, uri: URI, position: Position): DefinitionResult? {
+        sourceAnnotations.headAt(position.line, position.character)?.let { reference ->
+            return boundTypes.annotation(reference, uri, position)
+        }
+        if (targetNode is ImportNode) return boundTypes.importDefinition(targetNode, uri, position)
         val context = ResolutionContext(
             targetNode = targetNode,
             documentUri = uri,
             position = position,
+            requireExactClassName = sourceAnnotations.headAt(position.line, position.character) != null,
         )
 
         val result = resolutionPipeline.resolve(context)
@@ -271,6 +310,13 @@ class DefinitionResolver(
             logger.debug { "Resolution failed [${error.source}]: ${error.reason}" }
             null
         }
+    }
+
+    private fun boundImportAt(uri: URI, position: Position): ImportNode? {
+        val module = compiledSources?.singleOrNull { SourceAnnotationIndex.fromModule(it) === sourceAnnotations }
+        val imports = module?.let { it.imports + it.staticImports.values }
+            ?: symbolTable.registry.getImportDeclarations(uri).values
+        return sourceAnnotations.importAt(imports, position.line, position.character)
     }
 
     /**

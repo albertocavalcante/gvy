@@ -31,6 +31,7 @@ class NativeClasspathInputs(
 
     companion object {
         const val MAX_CLASSPATH_OBSERVATION_PATHS = 16_384
+        const val MAX_CLASSPATH_CONTENT_IDENTITY_BYTES = 512L * 1024 * 1024
 
         /** Copy caller collections before callbacks; retain unknown evidence instead of a partial tree stamp. */
         fun capture(
@@ -38,10 +39,13 @@ class NativeClasspathInputs(
             sourceRoots: Iterable<Path>,
             checkCancelled: () -> Unit = {},
             maxObservedPaths: Int = MAX_CLASSPATH_OBSERVATION_PATHS,
+            maxContentBytes: Long = MAX_CLASSPATH_CONTENT_IDENTITY_BYTES,
         ): NativeClasspathInputs {
             require(maxObservedPaths > 0)
+            require(maxContentBytes >= 0)
             val frozen = NativeClasspathInputs(classpath, sourceRoots)
             var remaining = maxObservedPaths
+            var remainingContentBytes = maxContentBytes
             var complete = true
             val stamps = frozen.classpath.map { path ->
                 if (!complete || remaining <= 0) {
@@ -51,9 +55,16 @@ class NativeClasspathInputs(
                         path,
                         maxPaths = minOf(remaining, NativeArtifactStamp.MAX_DIRECTORY_PATHS),
                         checkCancelled = checkCancelled,
+                        maxContentBytes = remainingContentBytes,
                     )
-                    if (observed == null) complete = false else remaining -= observed.observedPaths
-                    observed
+                    if (observed == null || observed.contentIdentity != null && observed.size > remainingContentBytes) {
+                        complete = false
+                        null
+                    } else {
+                        remaining -= observed.observedPaths
+                        if (observed.contentIdentity != null) remainingContentBytes -= observed.size
+                        observed
+                    }
                 }
             }
             val bootJdk = NativeJdkIdentity.observe(checkCancelled)

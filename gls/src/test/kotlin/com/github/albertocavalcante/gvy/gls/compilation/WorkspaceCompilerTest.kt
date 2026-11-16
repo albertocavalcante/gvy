@@ -8,12 +8,22 @@ import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -21,6 +31,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -91,6 +102,379 @@ class WorkspaceCompilerTest {
         compiler.compileWorkspace()
 
         assertNull(index.getDocument(file.toUri()), "in-flight results must not undo cache invalidation")
+    }
+
+    @Test
+    fun `equivalent model replacement during every parse does not restart workspace compilation`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Equivalent.groovy").apply { writeText("class Equivalent {}") }
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val worker = mockk<WorkerSessionManager>()
+        lateinit var compiler: WorkspaceCompiler
+        val parses = AtomicInteger()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parses.incrementAndGet()
+            val before = workspaceManager.current()
+            compiler.duringWorkspaceTransition(
+                action = { workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src)) },
+                shouldAdvanceGeneration = { it },
+            ).also { changed -> assertFalse(changed) }
+            assertNotSame(before, workspaceManager.current())
+            result
+        }
+        compiler = WorkspaceCompiler(worker, workspaceManager, SemanticIndexer(index))
+
+        val result = compiler.compileWorkspace()
+
+        assertTrue(result.success, result.errors.toString())
+        assertEquals(1, parses.get(), "Equivalent inputs must not consume model or admission retries")
+        assertNotNull(index.getDocument(file.toUri()))
+    }
+
+    @Test
+    fun `disk refresh publishes new content after an equivalent model replacement`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Refreshed.groovy").apply { writeText("class Refreshed {}") }
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val worker = mockk<WorkerSessionManager>()
+        lateinit var compiler: WorkspaceCompiler
+        val replaceModel = AtomicBoolean()
+        val parses = AtomicInteger()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parses.incrementAndGet()
+            if (replaceModel.get()) {
+                val before = workspaceManager.current()
+                compiler.duringWorkspaceTransition(
+                    action = { workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(src)) },
+                    shouldAdvanceGeneration = { it },
+                ).also { changed -> assertFalse(changed) }
+                assertNotSame(before, workspaceManager.current())
+            }
+            result
+        }
+        compiler = WorkspaceCompiler(worker, workspaceManager, indexer)
+        assertTrue(compiler.compileWorkspace().success)
+        val updated = "class Refreshed { String current }"
+        file.writeText(updated)
+        replaceModel.set(true)
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertTrue(indexer.isCurrent(file.toUri(), updated), "Refresh must replace the old semantic content")
+        assertEquals(2, parses.get(), "The initial compile and refresh each parse once")
+    }
+
+    @Test
+    fun `disk refresh removes deleted facts after an equivalent model replacement`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Deleted.groovy").apply { writeText("class Deleted {}") }
+        var onAdmission: (java.nio.file.Path) -> Unit = {}
+        val manager = WorkspaceManager(sourceExclusion = { path ->
+            onAdmission(path)
+            false
+        })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val compiler = WorkspaceCompiler(workerSessionManager, manager, SemanticIndexer(index))
+        assertTrue(compiler.compileWorkspace().success)
+        assertNotNull(index.getDocument(file.toUri()))
+        val before = manager.current()
+        onAdmission = { path ->
+            if (path == file) {
+                onAdmission = {}
+                compiler.duringWorkspaceTransition(
+                    action = { manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src)) },
+                    shouldAdvanceGeneration = { it },
+                ).also { changed -> assertFalse(changed) }
+                // Delete after the equivalent replacement, before refresh reads this source.
+                Files.delete(file)
+            }
+        }
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertNotSame(before, manager.current())
+        assertTrue(before.hasSameWorkspaceCompileInputs(manager.current()))
+        assertNull(index.getDocument(file.toUri()), "A no-op model update must not prevent stale fact removal")
+    }
+
+    @Test
+    fun `refresh removes semantic facts when an unchanged source becomes a managed alias`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val content = "class Mode {}"
+        val file = src.resolve("Mode.groovy").apply { writeText(content) }
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText(content) }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        var open = false
+        val indexer = SemanticIndexer(index, isOpen = { open }, excluded = manager::isExcludedSourceFile)
+        var parses = 0
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            parses++
+            parser.parse(firstArg())
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+        compiler.compileWorkspace()
+        assertNotNull(index.getDocument(file.toUri()))
+        assertEquals(1, parses)
+
+        Files.delete(file)
+        Files.createSymbolicLink(file, managedFile)
+        open = true
+        compiler.refreshFromDisk(listOf(file.toUri()))
+        assertNotNull(index.getDocument(file.toUri()), "disk refresh must not remove an open buffer")
+
+        open = false
+        compiler.refreshFromDisk(listOf(file.toUri()))
+        assertNull(index.getDocument(file.toUri()))
+        compiler.compileWorkspace()
+        assertEquals(1, parses, "managed content must not be parsed as a workspace source")
+    }
+
+    @Test
+    fun `workspace compilation excludes managed secondary sources and guards implicit lookup`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val alias = Files.createDirectories(src.resolve("p")).resolve("Mode.groovy")
+        alias.writeText("package p\nclass Mode {}")
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText("package p\nclass Mode {}") }
+        val consumer = src.resolve("Consumer.groovy").apply { writeText("import p.Mode\nclass Consumer {}") }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        Files.delete(alias)
+        Files.createSymbolicLink(alias, managedFile)
+
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests.add(request)
+            parser.parse(request)
+        }
+        val indexer = SemanticIndexer(WorkspaceSymbolIndex(GroovySemanticDB()))
+
+        WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
+
+        assertEquals(listOf(consumer.toUri()), requests.map { it.uri })
+        val request = requests.single()
+        assertFalse(alias in request.workspaceSources)
+        assertFalse(requireNotNull(request.sourcePathAdmission)(alias))
+    }
+
+    @Test
+    fun `source retargeted during workspace compilation cannot publish semantic facts`(): Unit = runTest {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val file = src.resolve("Mode.groovy").apply { writeText("class Mode {}") }
+        val managedFile = managed.resolve("Mode.groovy").apply { writeText("class Mode {}") }
+        val manager = WorkspaceManager(sourceExclusion = { it.startsWith(managed) })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            Files.delete(file)
+            Files.createSymbolicLink(file, managedFile)
+            result
+        }
+
+        val result = WorkspaceCompiler(worker, manager, SemanticIndexer(index)).compileWorkspace()
+
+        assertTrue(result.modules.isEmpty())
+        assertNull(index.getDocument(file.toUri()))
+    }
+
+    @Test
+    fun `workspace compilation retries a skipped source when admission recovers before batch completion`(): Unit =
+        runTest {
+            val src = Files.createDirectories(tempDir.resolve("src"))
+            val file = src.resolve("Recovered.groovy").apply { writeText("class Recovered {}") }
+            val rejectedProbes = AtomicInteger()
+            val manager = WorkspaceManager(sourceExclusion = { candidate ->
+                candidate == file && rejectedProbes.getAndUpdate { probes -> (probes - 1).coerceAtLeast(0) } > 0
+            })
+            manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+            val index = WorkspaceSymbolIndex(GroovySemanticDB())
+            val indexer = SemanticIndexer(index)
+            val parseCalls = AtomicInteger()
+            val worker = mockk<WorkerSessionManager>()
+            coEvery { worker.parse(any()) } coAnswers {
+                val result = parser.parse(firstArg())
+                if (parseCalls.incrementAndGet() == 1) rejectedProbes.set(2)
+                result
+            }
+
+            val result = WorkspaceCompiler(worker, manager, indexer).compileWorkspace()
+
+            assertTrue(result.success, result.errors.toString())
+            assertEquals(2, parseCalls.get(), "The batch boundary retries after per-file recovery declines")
+            assertNotNull(index.getDocument(file.toUri()))
+        }
+
+    @Test
+    fun `retired workspace compilation restarts with the current classpath`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Uses.groovy").apply { writeText("class Uses {}") }
+        val v1 = Files.createDirectory(tempDir.resolve("dependency-v1"))
+        val v2 = Files.createDirectory(tempDir.resolve("dependency-v2"))
+        val manager = WorkspaceManager()
+        manager.updateWorkspaceModel(tempDir, listOf(v1), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val ownership = ArtifactOwnership()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val parsedBeforeRetirement = CompletableDeferred<Unit>()
+        val transitionPublished = CompletableDeferred<Unit>()
+        val releaseTransition = CountDownLatch(1)
+        val compilationFinished = CountDownLatch(1)
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests += request
+            val result = parser.parse(request)
+            if (requests.size == 1) {
+                entered.complete(Unit)
+                release.await()
+                parsedBeforeRetirement.complete(Unit)
+            }
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer, ownership = ownership)
+
+        val compiling = async(Dispatchers.IO) { compiler.compileWorkspace() }
+        compiling.invokeOnCompletion { compilationFinished.countDown() }
+        entered.await()
+        val updating = async(Dispatchers.IO) {
+            compiler.duringWorkspaceTransition {
+                manager.updateWorkspaceModel(tempDir, listOf(v2), listOf(src))
+                transitionPublished.complete(Unit)
+                check(releaseTransition.await(5, TimeUnit.SECONDS))
+                ownership.retireAll { indexer.clear() }
+            }
+        }
+        transitionPublished.await()
+        release.complete(Unit)
+        parsedBeforeRetirement.await()
+        assertFalse(
+            compilationFinished.await(300, TimeUnit.MILLISECONDS),
+            "a stale parse must wait for cache retirement before retrying",
+        )
+        assertEquals(1, requests.size, "the retry must not parse against a half-published model")
+        releaseTransition.countDown()
+        updating.await()
+
+        val result = compiling.await()
+
+        assertTrue(result.success, result.errors.toString())
+        assertEquals(listOf(listOf(v1), listOf(v2)), requests.map(ParseRequest::classpath))
+        assertNotNull(index.getDocument(file.toUri()), "only the fresh-model result may publish")
+    }
+
+    @Test
+    fun `refresh reacquires the ready model for every stale source`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val first = src.resolve("First.groovy").apply { writeText("class First {}") }
+        val second = src.resolve("Second.groovy").apply { writeText("class Second {}") }
+        val v1 = Files.createDirectory(tempDir.resolve("refresh-dependency-v1"))
+        val v2 = Files.createDirectory(tempDir.resolve("refresh-dependency-v2"))
+        val manager = WorkspaceManager()
+        manager.updateWorkspaceModel(tempDir, listOf(v1), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val pause = ParsePause()
+        val transitionPublished = CompletableDeferred<Unit>()
+        val releaseTransition = CountDownLatch(1)
+        val refreshFinished = CountDownLatch(1)
+        val requests = CopyOnWriteArrayList<ParseRequest>()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val request = firstArg<ParseRequest>()
+            requests += request
+            val result = parser.parse(request)
+            pause.afterParse()
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+        assertTrue(compiler.compileWorkspace().success)
+
+        val firstContent = "class First { String value }"
+        val secondContent = "class Second { String value }"
+        first.writeText(firstContent)
+        second.writeText(secondContent)
+        pause.requested.set(true)
+        val refreshing = async(Dispatchers.IO) { compiler.refreshFromDisk(listOf(first.toUri(), second.toUri())) }
+        refreshing.invokeOnCompletion { refreshFinished.countDown() }
+        pause.entered.await()
+
+        val updating = async(Dispatchers.IO) {
+            compiler.duringWorkspaceTransition {
+                manager.updateWorkspaceModel(tempDir, listOf(v2), listOf(src))
+                transitionPublished.complete(Unit)
+                check(releaseTransition.await(5, TimeUnit.SECONDS))
+                indexer.clear()
+            }
+        }
+        transitionPublished.await()
+        pause.release.complete(Unit)
+        pause.completed.await()
+        assertFalse(
+            refreshFinished.await(300, TimeUnit.MILLISECONDS),
+            "a stale refresh must wait for cache retirement before processing the next URI",
+        )
+        assertEquals(2, requests.size, "the next URI must not parse against a half-published model")
+        releaseTransition.countDown()
+        updating.await()
+        refreshing.await()
+
+        assertTrue(indexer.isCurrent(first.toUri(), firstContent))
+        assertTrue(indexer.isCurrent(second.toUri(), secondContent))
+        assertEquals(listOf(listOf(v1), listOf(v2), listOf(v2)), requests.drop(2).map(ParseRequest::classpath))
+    }
+
+    @Test
+    fun `disk refresh retries a skipped source when admission recovers at the refresh boundary`(): Unit = runTest {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val file = src.resolve("Refreshed.groovy").apply { writeText("class Refreshed {}") }
+        val rejectedProbes = AtomicInteger()
+        val rejectDuringNextParse = AtomicBoolean(false)
+        val manager = WorkspaceManager(sourceExclusion = { candidate ->
+            candidate == file && rejectedProbes.getAndUpdate { probes -> (probes - 1).coerceAtLeast(0) } > 0
+        })
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(src))
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val parseCalls = AtomicInteger()
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            parseCalls.incrementAndGet()
+            if (rejectDuringNextParse.compareAndSet(true, false)) rejectedProbes.set(2)
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, manager, indexer)
+
+        assertTrue(compiler.compileWorkspace().success)
+        val updated = "class Refreshed { String value }"
+        file.writeText(updated)
+        rejectDuringNextParse.set(true)
+
+        compiler.refreshFromDisk(listOf(file.toUri()))
+
+        assertEquals(3, parseCalls.get(), "The refresh must retry after its first admitted parse is discarded")
+        assertTrue(indexer.isCurrent(file.toUri(), updated))
     }
 
     @Test
@@ -336,5 +720,20 @@ class WorkspaceCompilerTest {
 
         assertTrue(result.success)
         assertEquals(2, result.modules.size)
+    }
+
+    private class ParsePause {
+        val requested = AtomicBoolean(false)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val completed = CompletableDeferred<Unit>()
+
+        suspend fun afterParse() {
+            if (requested.compareAndSet(true, false)) {
+                entered.complete(Unit)
+                release.await()
+                completed.complete(Unit)
+            }
+        }
     }
 }

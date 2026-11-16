@@ -49,7 +49,10 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /** Installed before the analysis policy strips annotations; never evaluates their member expressions. */
-internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCustomizer(CompilePhase.CONVERSION) {
+internal class SourceAnnotationCapture(
+    request: ParseRequest,
+    locatorBuffers: Map<URI, String> = emptyMap(),
+) : CompilationCustomizer(CompilePhase.CONVERSION) {
     private val sourceName = request.sourceUnitName
 
     private class RequestState(
@@ -63,7 +66,15 @@ internal class SourceAnnotationCapture(request: ParseRequest) : CompilationCusto
         request.content,
         null,
         request.uri,
-        if (request.parseMode == ParseMode.MINIMAL) emptyMap() else request.openSources,
+        // A minimal locator can still select a buffered source whose StringReaderSource has no original URI.
+        // Keep this borrowed table only until finish freezes the compiler-selected entries and discards it.
+        if (request.parseMode == ParseMode.MINIMAL && request.workspaceClassLocator == null) {
+            emptyMap()
+        } else if (locatorBuffers.isEmpty()) {
+            request.openSources
+        } else {
+            locatorBuffers + request.openSources
+        },
     )
     private val content: String
         get() = checkNotNull(requestState?.content) { "Source annotation capture was discarded" }

@@ -68,6 +68,22 @@ class WorkspaceSourceAliasTest {
     }
 
     @Test
+    fun `an event crossing a linked directory before a parent segment cannot add or remove a source`() {
+        val src = Files.createDirectories(workspace.resolve("src"))
+        val outside = Files.createDirectories(base.resolve("outside/child"))
+        val link = Files.createSymbolicLink(src.resolve("link"), outside)
+        val manager = manager().apply { updateWorkspaceModel(workspace, emptyList(), listOf(src)) }
+        val ordinary = write(src.resolve("B.groovy"))
+        val traversal = link.resolve("../B.groovy")
+
+        assertEquals(SourceListChange.NONE, manager.applySourceChanges(listOf(traversal), emptyList()))
+        assertTrue(manager.getWorkspaceSources().isEmpty())
+        assertEquals(listOf(ordinary), manager.applySourceChanges(listOf(ordinary), emptyList()).added)
+        assertEquals(SourceListChange.NONE, manager.applySourceChanges(emptyList(), listOf(traversal)))
+        assertEquals(listOf(ordinary), manager.getWorkspaceSources())
+    }
+
+    @Test
     fun `on a case-insensitive file system roots differing only in case list each file once`() {
         val src = Files.createDirectories(workspace.resolve("src"))
         // Distinct directories on case-sensitive Linux; one directory on a case-insensitive disk.

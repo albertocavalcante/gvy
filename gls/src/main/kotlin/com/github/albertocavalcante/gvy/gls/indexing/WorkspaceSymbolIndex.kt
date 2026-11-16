@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.indexing
 
+import com.github.albertocavalcante.gvy.gls.compilation.guardedWorkspaceRead
 import com.github.albertocavalcante.gvy.semantics.db.DeclarationIndexSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
@@ -39,31 +40,43 @@ class WorkspaceSymbolIndex(
     private val shadowed: () -> Set<URI> = { emptySet() },
 ) : MemberLookup {
 
+    internal var isReady: () -> Boolean = { true }
+    internal var readPermit: () -> (() -> Boolean)? = { { true } }
+
+    private inline fun <T> guarded(fallback: T, read: () -> T): T =
+        guardedWorkspaceRead(isReady, readPermit, fallback, read)
+
     /**
      * Captures a detached member view. [hiddenUris] is copied but is not coordinated with DB publication;
      * request owners must capture and validate document/workspace identities separately. The first capture after
      * a DB mutation copies declaration indexes; later captures reuse them, while each call copies [hiddenUris].
      */
-    fun captureMembers(hiddenUris: Set<URI>): MemberLookup = FrozenWorkspaceMemberLookup(
-        semanticDb.snapshotDeclarations(),
-        Collections.unmodifiableSet(hiddenUris.toSet()),
-    )
+    fun captureMembers(hiddenUris: Set<URI>): MemberLookup {
+        val ready = isReady
+        val current = readPermit() ?: { false }
+        return FrozenWorkspaceMemberLookup(
+            semanticDb.snapshotDeclarations(),
+            Collections.unmodifiableSet(hiddenUris.toSet()),
+        ) { ready() && current() }
+    }
 
-    /**
-     * Captures a member lookup with an O(1) database-only retirement check. The supplied shadow set is copied,
-     * but this check does not validate the shadows, editor buffers, workspace, classpath, or result publication.
-     */
     internal fun captureMemberSnapshot(hiddenUris: Set<URI>): CapturedWorkspaceMembers {
+        val ready = isReady
+        val current = readPermit() ?: { false }
         val snapshot = semanticDb.snapshotDeclarations()
-        val lookup = FrozenWorkspaceMemberLookup(snapshot, Collections.unmodifiableSet(hiddenUris.toSet()))
+        val lookup = FrozenWorkspaceMemberLookup(snapshot, Collections.unmodifiableSet(hiddenUris.toSet())) {
+            ready() && current()
+        }
         val database = WeakReference(semanticDb)
-        return CapturedWorkspaceMembers(lookup) { database.get()?.isCurrentDeclarationSnapshot(snapshot) == true }
+        return CapturedWorkspaceMembers(lookup) {
+            ready() && current() && database.get()?.isCurrentDeclarationSnapshot(snapshot) == true
+        }
     }
 
     /** The definition of [symbolId] in a document not [shadowed]: the database's first one when none is. */
-    private fun definition(symbolId: String): Pair<URI, SymbolInfo>? {
+    private fun definition(symbolId: String): Pair<URI, SymbolInfo>? = guarded(null) {
         val hidden = shadowed()
-        return if (hidden.isEmpty()) {
+        if (hidden.isEmpty()) {
             semanticDb.findSymbolDefinition(symbolId)
         } else {
             semanticDb.findAllSymbolDefinitions(symbolId).firstOrNull { it.first !in hidden }
@@ -76,10 +89,10 @@ class WorkspaceSymbolIndex(
      * @param uri The document URI
      * @return The semantic document, or null if not found
      */
-    fun getDocument(uri: URI): SemanticDocument? = semanticDb.getDocument(uri)
+    fun getDocument(uri: URI): SemanticDocument? = guarded(null) { semanticDb.getDocument(uri) }
 
     /** Import bindings, raw Groovy ranges and source text captured together. */
-    fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? = semanticDb.getDocumentSnapshot(uri)
+    fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? = guarded(null) { semanticDb.getDocumentSnapshot(uri) }
 
     /**
      * Find a symbol by its unique ID.
@@ -107,42 +120,42 @@ class WorkspaceSymbolIndex(
      * @param symbolId The symbol ID in SemanticDB format
      * @return List of all locations where this symbol is used
      */
-    fun findReferences(symbolId: String): List<Location> {
+    fun findReferences(symbolId: String): List<Location> = guarded(emptyList()) {
         val hidden = shadowed()
         val occurrences = semanticDb.findAllOccurrences(symbolId).filter { it.first !in hidden }
-        return occurrences.map { (uri, occurrence) ->
+        occurrences.map { (uri, occurrence) ->
             Location(uri.toString(), rangeToLspRange(occurrence.range))
         }
     }
 
     /** Reference occurrences with the exact source text used to build their ranges. */
-    fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> {
+    fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> = guarded(emptyList()) {
         val hidden = shadowed()
-        return semanticDb.findOccurrenceSnapshots(symbolId).filter { it.uri !in hidden }
+        semanticDb.findOccurrenceSnapshots(symbolId).filter { it.uri !in hidden }
     }
 
     /** One snapshot per matching document; callers can reuse its source index for every occurrence. */
-    fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> {
+    fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> = guarded(emptyMap()) {
         val hidden = shadowed()
-        return semanticDb.findReferenceDocuments(symbolId).filterKeys { it !in hidden }
+        semanticDb.findReferenceDocuments(symbolId).filterKeys { it !in hidden }
     }
 
     /** Hierarchy, source and semantic ranges from one atomic database read. */
-    val implementationSnapshot: Map<URI, ImplementationDocument> get() {
+    val implementationSnapshot: Map<URI, ImplementationDocument> get() = guarded(emptyMap()) {
         val hidden = shadowed()
         val snapshot = semanticDb.implementationSnapshot
-        return if (hidden.isEmpty()) snapshot else snapshot.filterKeys { it !in hidden }
+        if (hidden.isEmpty()) snapshot else snapshot.filterKeys { it !in hidden }
     }
 
     /** The single indexed document defining [symbolId], without copying the rest of the workspace. */
-    fun findImplementationDocument(symbolId: String): ImplementationDocument? {
+    fun findImplementationDocument(symbolId: String): ImplementationDocument? = guarded(null) {
         val hidden = shadowed()
-        if (hidden.isEmpty()) return semanticDb.findImplementationDocument(symbolId)
+        if (hidden.isEmpty()) return@guarded semanticDb.findImplementationDocument(symbolId)
         // A shadowed copy is a second definition the database would refuse: pick among the visible ones, which
         // copies every document, but only while a buffer shadows one.
         val uri = semanticDb.findAllSymbolDefinitions(symbolId).map { it.first }.distinct()
-            .filter { it !in hidden }.singleOrNull() ?: return null
-        return semanticDb.implementationSnapshot[uri]
+            .filter { it !in hidden }.singleOrNull() ?: return@guarded null
+        semanticDb.implementationSnapshot[uri]
     }
 
     /**
@@ -244,14 +257,14 @@ class WorkspaceSymbolIndex(
             .filter { arity == null || extractParameterCount(it.symbol) == arity }
             .map { it.toMemberInfo() }
 
-    override val version: Long get() = semanticDb.version
+    override val version: Long get() = guarded(-1L) { semanticDb.version }
 
     /** The symbols owned by the class, from the owner index; empty for a class the workspace does not define. */
-    private fun directMembers(classFqn: String): List<SymbolInfo> {
+    private fun directMembers(classFqn: String): List<SymbolInfo> = guarded(emptyList()) {
         val classSymbolId = "$classFqn#"
-        findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
+        findSymbol(classSymbolId) ?: return@guarded emptyList()
         val hidden = shadowed()
-        return semanticDb.findMembers(classSymbolId).filter { it.first !in hidden }.map { it.second }
+        semanticDb.findMembers(classSymbolId).filter { it.first !in hidden }.map { it.second }
     }
 
     /**
@@ -337,16 +350,22 @@ internal class CapturedWorkspaceMembers(val lookup: MemberLookup, private val da
 private class FrozenWorkspaceMemberLookup(
     private val snapshot: DeclarationIndexSnapshot,
     private val hidden: Set<URI>,
+    private val isReady: () -> Boolean,
 ) : MemberLookup {
-    override val version: Long get() = snapshot.version
+    override val version: Long get() = if (isReady()) snapshot.version else -1L
 
     private fun definition(id: String): SymbolInfo? =
-        snapshot.findDefinitions(id).firstOrNull { it.first !in hidden }?.second
+        if (isReady()) {
+            snapshot.findDefinitions(id).firstOrNull { it.first !in hidden }?.second.takeIf { isReady() }
+        } else {
+            null
+        }
 
     private fun directMembers(classFqn: String): List<SymbolInfo> {
         val owner = "$classFqn#"
         if (definition(owner) == null) return emptyList()
-        return snapshot.findMembers(owner).filter { it.first !in hidden }.map { it.second }
+        val found = snapshot.findMembers(owner).filter { it.first !in hidden }.map { it.second }
+        return if (isReady()) found else emptyList()
     }
 
     override fun findField(classFqn: String, fieldName: String): MemberInfo? =

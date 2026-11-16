@@ -44,12 +44,18 @@ class CustomRequestMetadataTest {
 
     @TestFactory
     fun `generic custom results retain their JSON through the SDK`(): List<DynamicTest> =
-        productMethods().filterNot { it in LEGACY_TYPED_METHODS }.flatMap { method ->
+        productMethods().filterNot { it in TYPED_RESULT_METHODS }.flatMap { method ->
             RESULTS.map { (shape, expected) ->
                 dynamicTest("$method $shape") {
                     assertEquals(expected, observedResult(method, expected))
                 }
             }
+        }
+
+    @TestFactory
+    fun `source custom results decode through their typed SDK signatures`(): List<DynamicTest> =
+        SOURCE_TYPED_RESULTS.map { (method, expected) ->
+            dynamicTest(method) { assertEquals(expected, observedResult(method, expected)) }
         }
 
     private fun observedResult(method: String, expected: JsonElement): JsonElement {
@@ -114,7 +120,16 @@ class CustomRequestMetadataTest {
 
     private companion object {
         const val TIMEOUT_SECONDS = 5L
-        val LEGACY_TYPED_METHODS = setOf("groovy/discoverTests", "groovy/runTest")
+        val TYPED_RESULT_METHODS = setOf(
+            "groovy/discoverTests",
+            "groovy/runTest",
+            "groovy/sourceAttach",
+            "groovy/sourceContent",
+            "groovy/sourceDefinition",
+            "groovy/sourceDetails",
+            "groovy/sourceIsManaged",
+            "groovy/sourceResolve",
+        )
         val RESULTS = listOf(
             "object" to Json.parseToJsonElement("""{"value":"control","optional":null,"nested":{"missing":null}}"""),
             "array" to Json.parseToJsonElement("""[null,{"value":"control"},17]"""),
@@ -123,6 +138,25 @@ class CustomRequestMetadataTest {
             "true" to JsonPrimitive(true),
             "false" to JsonPrimitive(false),
             "null" to JsonNull,
+        )
+        val SOURCE_TYPED_RESULTS = listOf(
+            "groovy/sourceContent" to JsonNull,
+            "groovy/sourceContent" to Json.parseToJsonElement(
+                """{"uri":"gvy-source://id/sha/Example.java","content":"class Example {}","languageId":"java","displayName":"Example.java","readOnly":true}""",
+            ),
+            "groovy/sourceDefinition" to Json.parseToJsonElement(
+                """[{"originSelectionRange":{"start":{"line":0,"character":2},"end":{"line":0,"character":5}},"targetUri":"file:///Example.java","targetRange":{"start":{"line":3,"character":0},"end":{"line":4,"character":1}},"targetSelectionRange":{"start":{"line":3,"character":6},"end":{"line":3,"character":13}}}]""",
+            ),
+            "groovy/sourceDetails" to Json.parseToJsonElement(
+                """{"uri":"file:///Example.java","displayName":"Example.java","originLabel":"Groovy SDK","languageId":"java","sourceDigest":"${"a".repeat(64)}","contentDigest":"${"b".repeat(64)}","suggestedFileName":"Example.java","readOnly":true,"contextLabel":"Groovy 4.0"}""",
+            ),
+            "groovy/sourceResolve" to Json.parseToJsonElement(
+                """{"status":"FILE_ONLY","locations":[],"fileUri":"gvy-source://id/sha/Example.java"}""",
+            ),
+            "groovy/sourceAttach" to Json.parseToJsonElement(
+                """{"status":"LOCATED","locations":[{"originSelectionRange":{"start":{"line":0,"character":1},"end":{"line":0,"character":4}},"targetUri":"file:///Example.java","targetRange":{"start":{"line":1,"character":0},"end":{"line":2,"character":1}},"targetSelectionRange":{"start":{"line":1,"character":6},"end":{"line":1,"character":13}}}]}""",
+            ),
+            "groovy/sourceIsManaged" to JsonPrimitive(true),
         )
     }
 }

@@ -19,9 +19,29 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-/** SHA-256 of [content], the key that says two compiles saw the same text. */
-internal fun contentHash(content: String): String =
-    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray()))
+/** SHA-256 of the exact UTF-16 code units in [content], including malformed surrogate pairs. */
+internal fun contentHash(content: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(CONTENT_HASH_DOMAIN)
+    val buffer = ByteArray(HASH_BUFFER_BYTES)
+    var offset = 0
+    while (offset < content.length) {
+        val count = minOf(buffer.size / CODE_UNIT_BYTES, content.length - offset)
+        for (index in 0 until count) {
+            val codeUnit = content[offset + index].code
+            buffer[index * CODE_UNIT_BYTES] = (codeUnit ushr BITS_PER_BYTE).toByte()
+            buffer[index * CODE_UNIT_BYTES + 1] = codeUnit.toByte()
+        }
+        digest.update(buffer, 0, count * CODE_UNIT_BYTES)
+        offset += count
+    }
+    return HexFormat.of().formatHex(digest.digest())
+}
+
+private const val CODE_UNIT_BYTES = 2
+private const val BITS_PER_BYTE = 8
+private const val HASH_BUFFER_BYTES = 2048
+private val CONTENT_HASH_DOMAIN = "gvy-content-utf16-v1\u0000".toByteArray(Charsets.US_ASCII)
 
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
@@ -41,6 +61,7 @@ internal fun contentHash(content: String): String =
 class SemanticIndexer(
     private val index: WorkspaceSymbolIndex,
     private val isOpen: (URI) -> Boolean = { false },
+    private val excluded: (URI) -> Boolean = { false },
     private val build: (ModuleNode, URI) -> SemanticDocument = { ast, uri ->
         SemanticDocumentBuilder(ast, uri).build()
     },
@@ -121,13 +142,67 @@ class SemanticIndexer(
     }
 
     /** A built document with the implementation facts stored alongside it, or null when building failed. */
-    private class Built(val document: SemanticDocument, val implementations: ImplementationFacts.Snapshot)
+    internal class Built(val document: SemanticDocument, val implementations: ImplementationFacts.Snapshot)
+
+    internal class PublicationSource(val content: String, val hash: String)
 
     /**
-     * Stores the document for [content] unless the entry already supersedes it. The document is built before
+     * Stores the document for [PublicationSource.content] unless the entry already supersedes it. It is built before
      * taking the entry's lock, so a slow build blocks no other file and no removal; the decision is then
      * taken again under the lock against whatever landed meanwhile.
      */
+    internal class PreparedPublication(
+        val publication: Publication,
+        val source: PublicationSource,
+        val phase: Int,
+        val fromBuffer: Boolean,
+        val excluded: Boolean,
+        val built: Built?,
+    )
+
+    internal fun preparePublication(
+        publication: Publication,
+        content: String,
+        ast: ModuleNode,
+        phase: Int,
+        fromBuffer: Boolean = true,
+    ): PreparedPublication? {
+        val uri = publication.uri
+        if (excluded(uri)) {
+            return PreparedPublication(publication, PublicationSource(content, ""), phase, fromBuffer, true, null)
+        }
+        val hash = contentHash(content)
+        if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return null
+        val built = buildOrNull(ast, uri)
+        return PreparedPublication(
+            publication,
+            PublicationSource(content, hash),
+            phase,
+            fromBuffer,
+            excluded(uri),
+            built,
+        )
+    }
+
+    internal fun commitPublication(prepared: PreparedPublication) {
+        val publication = prepared.publication
+        if (prepared.excluded) {
+            removeExcluded(publication, prepared.fromBuffer)
+            return
+        }
+        val uri = publication.uri
+        swap.read {
+            entries.computeIfPresent(uri) { _, state ->
+                if (replaces(state, publication, prepared.source.hash, prepared.phase, prepared.fromBuffer)) {
+                    state.entry = Entry(prepared.source.hash, prepared.phase, publication.generation)
+                        .takeIf { store(uri, prepared.built, prepared.source.content) }
+                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                }
+                state
+            }
+        }
+    }
+
     internal fun publish(
         publication: Publication,
         content: String,
@@ -135,16 +210,23 @@ class SemanticIndexer(
         phase: Int,
         fromBuffer: Boolean = true,
     ) {
-        val uri = publication.uri
-        val hash = contentHash(content)
-        if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
-        val built = buildOrNull(ast, uri)
-        // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
+        preparePublication(publication, content, ast, phase, fromBuffer)?.let(::commitPublication)
+    }
+
+    /** An excluded replacement drops old facts only if this publication still owns the decision. */
+    private fun removeExcluded(publication: Publication, fromBuffer: Boolean) {
         swap.read {
-            entries.computeIfPresent(uri) { _, state ->
-                if (replaces(state, publication, hash, phase, fromBuffer)) {
-                    state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
-                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+            entries.computeIfPresent(publication.uri) { uri, state ->
+                val current =
+                    state === publication.identity &&
+                        publication.generation == generation &&
+                        !publication.isClosed &&
+                        (fromBuffer || !isOpen(uri)) &&
+                        publication.ticket > state.highestTicket
+                if (current) {
+                    store(uri, null, "")
+                    state.entry = null
+                    state.highestTicket = publication.ticket
                 }
                 state
             }
@@ -165,8 +247,11 @@ class SemanticIndexer(
         } else {
             publication.ticket > (state?.highestTicket ?: 0L)
         }
-        return state === publication.identity && publication.generation == generation && !publication.isClosed &&
-            (fromBuffer || !isOpen(publication.uri)) && supersedes
+        return state === publication.identity &&
+            publication.generation == generation &&
+            !publication.isClosed &&
+            (fromBuffer || !isOpen(publication.uri)) &&
+            supersedes
     }
 
     /**

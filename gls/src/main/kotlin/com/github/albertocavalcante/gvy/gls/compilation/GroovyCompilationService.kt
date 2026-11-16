@@ -15,6 +15,8 @@ import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
+import com.github.albertocavalcante.gvy.gls.sources.SourceDocumentDescriptor
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
@@ -97,6 +99,7 @@ class GroovyCompilationService internal constructor(
     private val cacheService =
         CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen, ownership = ownership)
     val workspaceManager = workspaceManager
+    private val transitionGate = WorkspaceModelTransitionGate()
     private val symbolIndexer =
         SymbolIndexingService(
             ioDispatcher,
@@ -105,17 +108,31 @@ class GroovyCompilationService internal constructor(
             ownership,
             shadowed = shadows::shadowed,
             isOpen = isOpen,
-        )
+        ).also { it.transitionGate = transitionGate }
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
-    val workspaceScanner = WorkspaceScanner()
-    val classpathService = ClasspathService()
-    val gdkProvider = GroovyGdkProvider(classpathService)
+    val workspaceScanner = WorkspaceScanner(workspaceManager::isExcludedSource)
+    val classpathService = ClasspathService().also {
+        it.isReady = transitionGate::isReady
+        it.readPermit = transitionGate::readPermit
+    }
+    val gdkProvider = GroovyGdkProvider(classpathService).also {
+        it.isReady = transitionGate::isReady
+        it.readPermit = transitionGate::readPermit
+    }
 
     // Semantic database and workspace symbol index for cross-file resolution
     // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb, shadows::shadowed)
-    private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen)
+        .also {
+            it.isReady = transitionGate::isReady
+            it.readPermit = transitionGate::readPermit
+        }
+    private val semanticIndexer = SemanticIndexer(
+        workspaceSymbolIndex,
+        isOpen,
+        excluded = workspaceManager::isExcludedSourceFile,
+    )
     private val semanticSnapshotGuard = SemanticSnapshotGuard { workspaceSymbolIndex.implementationSnapshot }
 
     // Shared dependency graph for bounded workspace selection (Issue #743)
@@ -126,7 +143,7 @@ class GroovyCompilationService internal constructor(
         semanticIndexer,
         dependencyGraph = dependencyGraph,
         ownership = ownership,
-    )
+    ).also { it.transitionGate = transitionGate }
 
     // Managers that handle complex lifecycle and orchestration
     private val engineManager = LanguageEngineManager(
@@ -156,7 +173,7 @@ class GroovyCompilationService internal constructor(
             documentProvider = documentProvider,
             shadowed = shadows::shadowed,
         ),
-    )
+    ).also { it.transitionGate = transitionGate }
 
     // ==========================================================================
     // Core Compilation API (Delegated to Orchestrator)
@@ -206,14 +223,19 @@ class GroovyCompilationService internal constructor(
     fun getGroovyVersionInfo(): GroovyVersionInfo? = engineManager.getGroovyVersionInfo()
 
     fun updateSelectedWorker(worker: WorkerDescriptor?): Boolean {
-        val changed = engineManager.getSelectedWorker() != worker
-        if (changed) {
-            engineManager.updateSelectedWorker(worker)
-            workerSessionManager.select(worker)
-            clearCaches()
-            logger.info { "Worker changed to ${worker?.id}; cleared compilation caches" }
-        }
-        return changed
+        return workspaceTransition(
+            action = {
+                val changed = engineManager.getSelectedWorker() != worker
+                if (changed) {
+                    engineManager.updateSelectedWorker(worker)
+                    workerSessionManager.select(worker)
+                    clearCachesUnderTransition()
+                    logger.info { "Worker changed to ${worker?.id}; cleared compilation caches" }
+                }
+                changed
+            },
+            shouldAdvanceGeneration = { it },
+        )
     }
 
     fun getSelectedWorker(): WorkerDescriptor? = engineManager.getSelectedWorker()
@@ -236,7 +258,7 @@ class GroovyCompilationService internal constructor(
      *
      * @return The workspace symbol index, or null if not available
      */
-    fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
+    fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex.takeIf { transitionGate.isReady() }
 
     /**
      * The buffer for [uri] closed: the listed spelling it shadowed, when the client named the file otherwise
@@ -250,14 +272,18 @@ class GroovyCompilationService internal constructor(
     internal fun beginImplementationQuery(): SemanticSnapshotGuard.Generation = semanticSnapshotGuard.begin()
 
     internal fun captureImplementationSnapshot(generation: SemanticSnapshotGuard.Generation) =
-        semanticSnapshotGuard.capture(generation)
+        guardedWorkspaceRead(transitionGate::isReady, transitionGate::readPermit, null) {
+            semanticSnapshotGuard.capture(generation)
+        }
 
     fun findClasspathClass(className: String): URI? {
+        if (!transitionGate.isReady()) return null
+        val permit = transitionGate.readPermit() ?: return null
         val classLoader = engineManager.getOrCreateClassLoader()
         val resourceName = className.replace('.', '/') + ".class"
         val resource = classLoader.getResource(resourceName) ?: return null
         return try {
-            resource.toURI()
+            resource.toURI().takeIf { permit() }
         } catch (e: Exception) {
             logger.warn(e) { "Invalid classpath resource URI: $resource" }
             null
@@ -276,7 +302,22 @@ class GroovyCompilationService internal constructor(
      * pending jobs' waiters are woken and the jobs cancelled once no lock is held (#1429); one that is still
      * running when this returns is only wasted work, because its ticket belongs to the retired epoch.
      */
-    fun clearCaches() = retireAll {
+    private fun <T> workspaceTransition(
+        shouldAdvanceGeneration: (T) -> Boolean = { true },
+        action: () -> T,
+    ): T = workspaceCompiler.duringWorkspaceTransition(
+        action = {
+            runCatching(action).getOrElse { failure ->
+                runCatching { clearCachesUnderTransition() }.exceptionOrNull()?.let(failure::addSuppressed)
+                throw failure
+            }
+        },
+        shouldAdvanceGeneration = shouldAdvanceGeneration,
+    )
+
+    fun clearCaches() = workspaceTransition { clearCachesUnderTransition() }
+
+    private fun clearCachesUnderTransition() = retireAll {
         symbolIndexer.clear()
         semanticIndexer.clear()
     }
@@ -291,7 +332,10 @@ class GroovyCompilationService internal constructor(
      * and its semantic publication was retired with them. A kept fact describes its file's text, which did not
      * change; a deleted source's facts are dropped by the caller through [invalidateCache].
      */
-    fun clearCompileCaches() = retireAll {
+    fun clearCompileCaches() =
+        workspaceTransition { clearCompileCachesUnderTransition() }
+
+    private fun clearCompileCachesUnderTransition() = retireAll {
         symbolIndexer.unparseable.clear() // stale anyway: each entry carries a ticket retired here
         semanticIndexer.retireAllPublications()
     }
@@ -324,12 +368,17 @@ class GroovyCompilationService internal constructor(
      * before the retirement and cannot publish; a compile after it reads the new list.
      */
     fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
-        val change = workspaceManager.applySourceChanges(created, deleted)
-        if (change.changed) {
-            clearCompileCaches()
-            shadows.refresh() // on the source queue: the next request finds the new listing's spellings ready
-        }
-        return change
+        return workspaceTransition(
+            action = {
+                val change = workspaceManager.applySourceChanges(created, deleted)
+                if (change.changed) {
+                    clearCompileCachesUnderTransition()
+                    shadows.refresh() // on the source queue: the next request finds the new listing's spellings ready
+                }
+                change
+            },
+            shouldAdvanceGeneration = { it.changed },
+        )
     }
 
     /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */
@@ -405,8 +454,11 @@ class GroovyCompilationService internal constructor(
      * before it are spelled against its discovered roots now, off the request path (#1446).
      */
     fun initializeWorkspace(workspaceRoot: Path) {
-        workspaceManager.initializeWorkspace(workspaceRoot)
-        shadows.refresh()
+        workspaceTransition {
+            workspaceManager.initializeWorkspace(workspaceRoot)
+            clearCachesUnderTransition()
+            shadows.refresh()
+        }
     }
 
     fun updateWorkspaceModel(
@@ -415,14 +467,21 @@ class GroovyCompilationService internal constructor(
         sourceDirectories: List<Path>,
         targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
     ) {
-        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets)
-        if (changed) {
-            // The published model's classpath: the same snapshot every compile now reads
-            classpathService.updateClasspath(workspaceManager.current().classpath)
-            gdkProvider.initialize()
-            clearCaches()
-            shadows.refresh() // off the request path: open buffers are spelled against the new roots now
-        }
+        workspaceTransition(
+            action = {
+                val changed =
+                    workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets)
+                if (changed) {
+                    // The published model's classpath: the same snapshot every compile now reads
+                    classpathService.updateClasspath(workspaceManager.current().classpath)
+                    gdkProvider.initialize()
+                    clearCachesUnderTransition()
+                    shadows.refresh() // off the request path: open buffers are spelled against the new roots now
+                }
+                changed
+            },
+            shouldAdvanceGeneration = { it },
+        )
     }
 
     /**
@@ -432,9 +491,14 @@ class GroovyCompilationService internal constructor(
      * semantic facts are kept ([clearCompileCaches]). Returns whether it landed.
      */
     fun restampTargets(expected: TargetDependencyEvidence.Scoped, refreshed: TargetDependencyEvidence.Scoped): Boolean {
-        val published = workspaceManager.restampTargets(expected, refreshed)
-        if (published) clearCompileCaches()
-        return published
+        return workspaceTransition(
+            action = {
+                val published = workspaceManager.restampTargets(expected, refreshed)
+                if (published) clearCompileCachesUnderTransition()
+                published
+            },
+            shouldAdvanceGeneration = { it },
+        )
     }
 
     fun createContext(uri: URI): CompilationContext? {
@@ -456,14 +520,76 @@ class GroovyCompilationService internal constructor(
 
     fun getAst(uri: URI) = parseAccessor.getAst(uri)
 
-    /** The source text the cached AST for [uri] was compiled from, so AST positions index into it. */
+    /** Raw positional text only; semantic consumers acquire a freshly admission-validated snapshot. */
     fun getCompiledContent(uri: URI): String? =
         cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))?.first
 
-    /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
+    private val compiledSnapshots = CompiledSnapshotAccess(cacheService, workspaceManager, documentProvider)
+    private val sourceRequests = SourceRequestCapture(
+        compiledSnapshots,
+        workspaceManager,
+        transitionGate = transitionGate,
+        captureInputs = { uri, model, checkCancelled ->
+            orchestrator.captureAdmittedInputs(uri, model, checkCancelled)
+        },
+    )
+
+    internal suspend fun captureSourceRequest(
+        documentUri: URI,
+        binaryName: String,
+        memberName: String? = null,
+        checkCancelled: () -> Unit = {},
+        policy: SourceLookupPolicy = SourceLookupPolicy.LOCAL_ONLY,
+    ) = sourceRequests.capture(documentUri, binaryName, memberName, checkCancelled, policy = policy)
+
+    /** Capture dependency provenance only if it is from the exact parse used to build a feature result. */
+    internal suspend fun captureSourceRequestForSnapshot(
+        documentUri: URI,
+        binaryName: String,
+        snapshot: CompiledDocumentSnapshot,
+        checkCancelled: () -> Unit = {},
+    ) = sourceRequests.capture(
+        documentUri,
+        binaryName,
+        checkCancelled = checkCancelled,
+        expectedSnapshot = snapshot,
+    )
+
+    internal suspend fun recaptureSourceRequest(binaryName: String, descriptor: SourceDocumentDescriptor) =
+        sourceRequests.recapture(binaryName, descriptor)
+
+    internal suspend fun selectSourceType(binaryName: String, descriptor: SourceDocumentDescriptor) =
+        sourceRequests.select(binaryName, descriptor)
+
+    internal suspend fun captureSourceLookupSession(
+        descriptor: SourceDocumentDescriptor,
+        checkCancelled: () -> Unit = {},
+    ) = sourceRequests.openSession(descriptor, checkCancelled)
+
+    /** Capture source and parse from the cache, as held by existing language features. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
         cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
             ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+
+    /** Fresh filesystem admission for source-navigation requests, outside cache/ownership locks. */
+    internal fun getAdmittedCompiledSnapshot(uri: URI, checkCancelled: () -> Unit): CompiledDocumentSnapshot? {
+        val captured = compiledSnapshots.captureCached(uri) ?: return null
+        val inputs = orchestrator.captureAdmittedInputs(uri, checkCancelled = checkCancelled) ?: return null
+        return captured.takeIf {
+            it.admissionFingerprint == inputs.fingerprint && compiledSnapshots.isCurrent(uri, it)
+        }
+    }
+
+    /** Cache/buffer identity only; callers still need fresh admission validation at emission. */
+    internal fun isAdmittedCompiledSnapshotCurrent(
+        uri: URI,
+        snapshot: CompiledDocumentSnapshot,
+        checkCancelled: () -> Unit,
+    ): Boolean {
+        if (!compiledSnapshots.isCurrent(uri, snapshot)) return false
+        val inputs = orchestrator.captureAdmittedInputs(uri, checkCancelled = checkCancelled) ?: return false
+        return inputs.fingerprint == snapshot.admissionFingerprint && compiledSnapshots.isCurrent(uri, snapshot)
+    }
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)
@@ -471,8 +597,8 @@ class GroovyCompilationService internal constructor(
     fun getAstModel(uri: URI) = parseAccessor.getAstModel(uri)
     fun getSymbolTable(uri: URI) = parseAccessor.getSymbolTable(uri)
     suspend fun getValidParseResult(uri: URI) = parseAccessor.getValidParseResult(uri)
-    fun getSymbolStorage(uri: URI) = symbolIndexer.getSymbolIndex(uri)
-    fun getAllSymbolStorages() = symbolIndexer.getAllSymbolIndices()
+    fun getSymbolStorage(uri: URI) = if (transitionGate.isReady()) symbolIndexer.getSymbolIndex(uri) else null
+    fun getAllSymbolStorages() = if (transitionGate.isReady()) symbolIndexer.getAllSymbolIndices() else emptyMap()
     suspend fun indexAllWorkspaceSources(uris: List<URI>, onProgress: (Int, Int) -> Unit = { _, _ -> }) =
         symbolIndexer.indexAllWorkspaceSources(uris, onProgress)
 

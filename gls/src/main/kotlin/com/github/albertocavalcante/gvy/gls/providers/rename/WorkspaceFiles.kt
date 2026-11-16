@@ -6,6 +6,10 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceScanner
 import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
+import com.github.albertocavalcante.gvy.gls.utils.SourcePathAdmission
+import com.github.albertocavalcante.gvy.gls.utils.classifySourcePath
+import com.github.albertocavalcante.gvy.gls.utils.defaultWorkspaceSourceExclusion
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceFile
 import java.io.IOException
 import java.net.URI
 import java.nio.file.FileVisitResult
@@ -90,6 +94,7 @@ internal class WorkspaceLayout(
     val sources: () -> List<Path>,
     val roots: () -> List<Path>,
     val sourceRoots: () -> List<Path> = { emptyList() },
+    val excluded: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
 )
 
 /**
@@ -141,11 +146,14 @@ private fun hasFile(dir: Path, name: String) = Files.exists(dir.resolve(name))
  * is skipped (`com/acme/build/` is a package). Outside source roots, `build`, `out` and `target` are skipped
  * only directly under a workspace root or a module root, and only when they hold no source files directly.
  */
+// Walking limits and cancellation remain explicit at this shared traversal boundary.
+@Suppress("LongParameterList")
 internal fun walkWorkspace(
     roots: List<Path>,
     sourceRoots: List<Path>,
     maxFiles: Int,
     maxEntries: Int,
+    excluded: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
     active: () -> Unit,
 ): Walked {
     val files = LinkedHashSet<Path>()
@@ -162,7 +170,7 @@ internal fun walkWorkspace(
 
         override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
             active()
-            if (isSourceFile(file)) files.add(file)
+            if (isSourceFile(file) && !excludedSourceFile(file, excluded)) files.add(file)
             overflow = overflow || files.size > maxFiles || ++entries > maxEntries
             return if (overflow) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
         }
@@ -179,6 +187,7 @@ internal fun walkWorkspace(
          * checked here, so an unreadable one refuses rather than guesses. A path whose kind cannot be read counts.
          */
         private fun mayHideSources(path: Path): Boolean = when {
+            excluded(path) -> false
             Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) -> !isAlwaysSkipped(path)
             Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) -> isSourceFile(path)
             else -> true
@@ -190,6 +199,7 @@ internal fun walkWorkspace(
             dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES
 
         private fun isSkipped(dir: Path): Boolean {
+            if (excluded(dir)) return true
             val name = dir.fileName?.toString() ?: return false
             return when {
                 dir in roots || sourceRoots.any(dir::startsWith) -> false
@@ -277,16 +287,30 @@ internal data class CandidateFiles(
  * Merges every source of candidates: the workspace's known sources, indexed documents and open buffers in scope,
  * and the files a walk found on disk.
  */
-internal class CandidateCollector(private val keys: FileKeys, private val maxFiles: Int) {
+internal class CandidateCollector(
+    private val keys: FileKeys,
+    private val maxFiles: Int,
+    private val excluded: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
+) {
     private val files = LinkedHashMap<Path, Path>()
 
     fun collect(sources: Map<Path, Path>, documents: Collection<URI>, walked: Walked): CandidateFiles {
-        sources.forEach { (key, path) -> files.putIfAbsent(key, path) }
+        val unreadable = walked.unreadable.toMutableList()
+        fun add(key: Path, path: Path) {
+            if (excluded(key)) return
+            when (classifySourcePath(path, excluded)) {
+                SourcePathAdmission.ORDINARY -> files.putIfAbsent(key, path)
+                SourcePathAdmission.MANAGED -> Unit
+                SourcePathAdmission.UNAVAILABLE -> unreadable.add(path)
+            }
+        }
+        sources.forEach { (key, path) -> add(key, path) }
         for (uri in documents) {
             val path = UriPathConverter.toPath(uri)?.takeIf(::isSourceFile) ?: continue
-            keys.of(path).takeIf(keys::inScope)?.let { files.putIfAbsent(it, path) }
+            val key = keys.of(path)
+            if (keys.inScope(key)) add(key, path)
         }
-        walked.files.forEach { files.putIfAbsent(it, it) }
-        return CandidateFiles(files, walked.overflow || files.size > maxFiles, walked.unreadable)
+        walked.files.filterNot { excludedSourceFile(it, excluded) }.forEach { files.putIfAbsent(it, it) }
+        return CandidateFiles(files, walked.overflow || files.size > maxFiles, unreadable)
     }
 }

@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
@@ -23,6 +24,114 @@ class WorkspaceManagerTest {
     @BeforeTest
     fun setup() {
         workspaceManager = WorkspaceManager()
+    }
+
+    @Test
+    fun `source list change retains its two list JVM constructor`() {
+        val constructor = SourceListChange::class.java.getConstructor(List::class.java, List::class.java)
+        val change = constructor.newInstance(emptyList<Path>(), emptyList<Path>())
+        assertFalse(change.changed)
+    }
+
+    @Test
+    fun `repeated build model update reports newly discovered sources`() {
+        val root = Files.createDirectories(tempDir.resolve("src"))
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(root))
+        val source = Files.writeString(root.resolve("Added.groovy"), "class Added {}")
+
+        assertTrue(workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(root)))
+        assertTrue(source in workspaceManager.current().sources)
+        assertFalse(workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(root)))
+    }
+
+    @Test
+    fun `source root with safe parent segment is scanned`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val source = Files.writeString(src.resolve("Example.groovy"), "class Example {}")
+        val configured = src.resolve("../src")
+
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(configured))
+
+        assertEquals(listOf(src), workspaceManager.getSourceRoots())
+        assertEquals(listOf(source), workspaceManager.getWorkspaceSources())
+    }
+
+    @Test
+    fun `parent segment across a link does not scan the normalized directory`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        Files.writeString(src.resolve("Example.groovy"), "class Example {}")
+        val nested = Files.createDirectories(tempDir.resolve("other/nested"))
+        Files.createSymbolicLink(src.resolve("link"), nested)
+        val configured = src.resolve("link/../src")
+
+        workspaceManager.updateWorkspaceModel(tempDir, emptyList(), listOf(configured))
+
+        assertTrue(workspaceManager.getSourceRoots().isEmpty())
+        assertEquals(listOf(configured), workspaceManager.current().configuredSourceRoots)
+        assertTrue(workspaceManager.getWorkspaceSources().isEmpty())
+    }
+
+    @Test
+    fun `root admission change is reported even when the source list stays empty`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val root = tempDir.resolve("src")
+        Files.createSymbolicLink(root, managed)
+        val manager = WorkspaceManager { path -> path.toAbsolutePath().normalize().startsWith(managed) }
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(root))
+        assertTrue(manager.getSourceRoots().isEmpty())
+
+        Files.delete(root)
+        Files.createDirectory(root)
+        val change = manager.applySourceChanges(listOf(root), emptyList())
+
+        assertEquals(listOf(root), manager.getSourceRoots())
+        assertTrue(change.added.isEmpty())
+        assertTrue(change.removed.isEmpty())
+        assertTrue(change.changed)
+        assertTrue(change.compileInputsChanged)
+    }
+
+    @Test
+    fun `managed root recovers after replacement and descendant event`() {
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "Symlink privileges are not assumed")
+        val managed = Files.createDirectories(tempDir.resolve("managed"))
+        val root = tempDir.resolve("src")
+        Files.createSymbolicLink(root, managed)
+        val manager = WorkspaceManager { path -> path.toAbsolutePath().normalize().startsWith(managed) }
+        manager.updateWorkspaceModel(tempDir, emptyList(), listOf(root))
+        assertTrue(manager.getSourceRoots().isEmpty())
+        assertEquals(listOf(root), manager.current().configuredSourceRoots)
+        assertTrue(manager.getWorkspaceSources().isEmpty())
+
+        Files.delete(root)
+        Files.createDirectory(root)
+        val first = Files.writeString(root.resolve("First.groovy"), "class First {}")
+        val second = Files.writeString(root.resolve("Second.groovy"), "class Second {}")
+        val change = manager.applySourceChanges(listOf(first), emptyList())
+
+        assertEquals(listOf(root), manager.getSourceRoots())
+        assertEquals(listOf(first, second), manager.getWorkspaceSources())
+        assertEquals(listOf(first, second), change.added)
+    }
+
+    @Test
+    fun `workspace model owns its unscanned root set`() {
+        val roots = mutableSetOf(tempDir.resolve("missing").toAbsolutePath())
+        val model = WorkspaceModel(
+            root = tempDir,
+            classpath = emptyList(),
+            sourceRoots = emptyList(),
+            sources = emptyList(),
+            unscannedRoots = roots,
+            computeFingerprint = { _, _ -> "test" },
+        )
+        val original = roots.single()
+
+        roots.add(tempDir.resolve("other").toAbsolutePath())
+
+        assertEquals(setOf(original), model.unscannedRoots)
     }
 
     // Tests for getBoundedWorkspaceSources (Issue #743 - bounded workspace selection)

@@ -12,34 +12,80 @@ import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.common.FileExtensions
 import com.github.albertocavalcante.gvy.gls.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.gvy.gls.utils.defaultWorkspaceSourceExclusion
+import com.github.albertocavalcante.gvy.gls.utils.excludedSourceFile
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.gls.utils.sourceExclusionForRoot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.extension
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
-class IndexExportService(private val buildToolManagerProvider: () -> BuildToolManager?) {
+class IndexExportService(
+    private val sourceExclusion: (Path) -> Boolean = defaultWorkspaceSourceExclusion(),
+    private val isManagedDestination: (Path) -> Boolean = { false },
+    private val buildToolManagerProvider: () -> BuildToolManager?,
+) {
     private val logger = KotlinLogging.logger {}
 
     fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
         logger.info { "Exporting index format=${params.format} to=${params.outputPath}" }
 
-        FileOutputStream(params.outputPath).use { fileOutputStream ->
-            val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
+        val output = resolveOutput(params.outputPath)
+        requireUnmanagedDestination(output)
+        val temporary = Files.createTempFile(output.parent, ".${output.fileName}.", ".tmp")
+        try {
+            writeExport(temporary, params.format, workspaceRoot)
+            requireUnmanagedDestination(output)
+            replaceExport(output, temporary)
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
 
+        return "Successfully exported ${params.format} index to ${params.outputPath}"
+    }
+
+    private fun resolveOutput(outputPath: String): Path {
+        val requestedOutput = Path.of(outputPath)
+        requireNoParentSegments(requestedOutput, outputPath)
+        val normalizedOutput = requestedOutput.toAbsolutePath().normalize()
+        val parent = normalizedOutput.parent?.toRealPath()
+            ?: throw IOException("Cannot export index without an existing parent directory: $normalizedOutput")
+        val fileName = normalizedOutput.fileName
+            ?: throw IOException("Cannot export index to a directory: $normalizedOutput")
+        return parent.resolve(fileName)
+    }
+
+    private fun requireNoParentSegments(path: Path, outputPath: String) {
+        if (path.any { it.toString() == ".." }) {
+            throw IOException("Cannot export index through a parent-directory path: $outputPath")
+        }
+    }
+
+    private fun requireUnmanagedDestination(output: Path) {
+        if (isManagedDestination(output)) {
+            throw IOException("Cannot export index to a managed source path: $output")
+        }
+    }
+
+    private fun writeExport(temporary: Path, format: IndexFormat, workspaceRoot: Path) {
+        FileOutputStream(temporary.toFile()).use { fileOutputStream ->
+            val writers = createWriters(format, fileOutputStream, workspaceRoot)
             val buildToolManager = buildToolManagerProvider()
             val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
             val manager = buildTool?.name?.lowercase() ?: "manual"
             val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
             val indexer = UnifiedIndexer(writers, symbolGenerator)
-
             try {
                 indexFiles(workspaceRoot, indexer)
             } finally {
@@ -47,8 +93,16 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
                 writers.forEach { it.close() }
             }
         }
+    }
 
-        return "Successfully exported ${params.format} index to ${params.outputPath}"
+    private fun replaceExport(output: Path, temporary: Path) {
+        try {
+            Files.move(temporary, output, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: FileAlreadyExistsException) {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     private fun createWriters(format: IndexFormat, outputStream: FileOutputStream, root: Path): List<IndexWriter> =
@@ -66,20 +120,20 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
             .getOrThrow()
 
     private fun indexFiles(root: Path, indexer: UnifiedIndexer) {
+        val excluded = sourceExclusionForRoot(root, sourceExclusion)
+        if (excluded(root)) return
         Files.walkFileTree(
             root,
             object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
-                    if (dir != root && isExcludedDirectory(root, dir)) {
+                    if (excluded(dir) || dir != root && isExcludedDirectory(root, dir)) {
                         FileVisitResult.SKIP_SUBTREE
                     } else {
                         FileVisitResult.CONTINUE
                     }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (!attrs.isDirectory &&
-                        (file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES)
-                    ) {
+                    if (!attrs.isDirectory && !excludedSourceFile(file, excluded) && isIndexableSource(file)) {
                         indexFile(root, file, indexer)
                     }
                     return FileVisitResult.CONTINUE
@@ -93,6 +147,9 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
             },
         )
     }
+
+    private fun isIndexableSource(file: Path): Boolean =
+        file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES
 
     private fun indexFile(root: Path, path: Path, indexer: UnifiedIndexer) {
         runCatching {

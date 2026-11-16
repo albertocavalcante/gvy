@@ -7,8 +7,19 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
+import com.github.albertocavalcante.gvy.gls.sources.MissingSourceReason
+import com.github.albertocavalcante.gvy.gls.sources.ResolvedExternalSymbol
+import com.github.albertocavalcante.gvy.gls.sources.ResolvedSourceRequest
+import com.github.albertocavalcante.gvy.gls.sources.SourceContextIdentity
+import com.github.albertocavalcante.gvy.gls.sources.SourceDefinition
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupContext
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupPolicy
+import com.github.albertocavalcante.gvy.gls.sources.SourceLookupResult
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.sources.SourceOrigin
+import com.github.albertocavalcante.gvy.gls.sources.SourceSpan
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
@@ -56,6 +67,36 @@ class MethodResolutionStrategyTest {
         every { compilationService.getWorkspaceSymbolIndex() } returns null
 
         strategy = MethodResolutionStrategy(compilationService, sourceNavigator)
+    }
+
+    @Test
+    fun `method definition requests verified source acquisition`(): Unit = runBlocking {
+        val document = URI("file:///test.groovy")
+        val context = mockk<ResolutionContext>()
+        every { context.targetNode } returns createStaticMethodCall("java.lang.String", "length", 0)
+        every { context.documentUri } returns document
+        every { classpathService.getMethods("java.lang.String") } returns
+            listOf(createReflectedMethod("length", emptyList(), "java.lang.String"))
+        coEvery {
+            compilationService.captureSourceRequest(
+                document,
+                "java.lang.String",
+                "length",
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            )
+        } returns null
+
+        assertTrue(strategy.resolve(context).isLeft())
+        coVerify(exactly = 1) {
+            compilationService.captureSourceRequest(
+                document,
+                "java.lang.String",
+                "length",
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            )
+        }
     }
 
     // =============================================================================
@@ -142,16 +183,7 @@ class MethodResolutionStrategyTest {
             )
             every { classpathService.getMethods("java.lang.Integer") } returns listOf(reflectedMethod)
 
-            val classpathUri = URI("jar:file:///path/to/rt.jar!/java/lang/Integer.class")
-            every { compilationService.findClasspathClass("java.lang.Integer") } returns classpathUri
-
-            coEvery {
-                sourceNavigator.navigateToMethodSource(classpathUri, "java.lang.Integer", "valueOf")
-            } returns SourceNavigator.SourceResult.SourceLocation(
-                uri = URI("file:///jdk/src/Integer.java"),
-                className = "java.lang.Integer",
-                lineNumber = 100,
-            )
+            stubSource("java.lang.Integer", "valueOf", line = 100)
 
             val result = strategy.resolve(context)
 
@@ -253,16 +285,7 @@ class MethodResolutionStrategyTest {
             )
             every { classpathService.getMethods("java.lang.String") } returns listOf(method1Arg, method2Args)
 
-            val classpathUri = URI("jar:file:///path/to/rt.jar!/java/lang/String.class")
-            every { compilationService.findClasspathClass("java.lang.String") } returns classpathUri
-
-            coEvery {
-                sourceNavigator.navigateToMethodSource(classpathUri, "java.lang.String", "substring")
-            } returns SourceNavigator.SourceResult.SourceLocation(
-                uri = URI("file:///jdk/src/String.java"),
-                className = "java.lang.String",
-                lineNumber = 200,
-            )
+            stubSource("java.lang.String", "substring", line = 200)
 
             val result = strategy.resolve(context)
 
@@ -391,17 +414,8 @@ class MethodResolutionStrategyTest {
             val method = createReflectedMethod("format", listOf("String"), "java.lang.String")
             every { classpathService.getMethods("java.lang.String") } returns listOf(method)
 
-            val classpathUri = URI("jar:file:///path/to/rt.jar!/java/lang/String.class")
-            every { compilationService.findClasspathClass("java.lang.String") } returns classpathUri
-
             val expectedLine = 2946
-            coEvery {
-                sourceNavigator.navigateToMethodSource(classpathUri, "java.lang.String", "format")
-            } returns SourceNavigator.SourceResult.SourceLocation(
-                uri = URI("file:///jdk/src/String.java"),
-                className = "java.lang.String",
-                lineNumber = expectedLine,
-            )
+            stubSource("java.lang.String", "format", line = expectedLine)
 
             val result = strategy.resolve(context)
 
@@ -415,7 +429,7 @@ class MethodResolutionStrategyTest {
         }
 
         @Test
-        fun `returns not found when source navigator returns BinaryOnly`(): Unit = runBlocking {
+        fun `returns not found when source navigator reports unavailable source`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "format", 1)
 
             val context = mockk<ResolutionContext>()
@@ -425,16 +439,7 @@ class MethodResolutionStrategyTest {
             val method = createReflectedMethod("format", listOf("String"), "java.lang.String")
             every { classpathService.getMethods("java.lang.String") } returns listOf(method)
 
-            val classpathUri = URI("jar:file:///path/to/rt.jar!/java/lang/String.class")
-            every { compilationService.findClasspathClass("java.lang.String") } returns classpathUri
-
-            coEvery {
-                sourceNavigator.navigateToMethodSource(classpathUri, "java.lang.String", "format")
-            } returns SourceNavigator.SourceResult.BinaryOnly(
-                uri = classpathUri,
-                className = "java.lang.String",
-                reason = "Source JAR not found",
-            )
+            stubSource("java.lang.String", "format", available = false)
 
             val result = strategy.resolve(context)
 
@@ -455,8 +460,7 @@ class MethodResolutionStrategyTest {
 
             val method = createReflectedMethod("length", emptyList(), "java.lang.String")
             every { classpathService.getMethods("java.lang.String") } returns listOf(method)
-            every { compilationService.findClasspathClass("java.lang.String") } returns
-                URI("jar:file:///rt.jar!/java/lang/String.class")
+            stubSource("java.lang.String", "length")
 
             val result = strategyNoNav.resolve(context)
 
@@ -605,6 +609,30 @@ class MethodResolutionStrategyTest {
     // =============================================================================
     // Helper Methods
     // =============================================================================
+
+    private fun stubSource(className: String, methodName: String, line: Int = 1, available: Boolean = true) {
+        val document = URI("file:///test.groovy")
+        val symbol =
+            ResolvedExternalSymbol(className, SourceOrigin.Unknown(URI("file:///dependency.class")), methodName)
+        val context = SourceLookupContext(SourceContextIdentity("test")) { true }
+        val request = ResolvedSourceRequest(symbol, context)
+        coEvery {
+            compilationService.captureSourceRequest(
+                document,
+                className,
+                methodName,
+                any(),
+                SourceLookupPolicy.ALLOW_VERIFIED_DOWNLOADS,
+            )
+        } returns request
+        val span = SourceSpan(line - 1, 0, line - 1, 1)
+        val result = if (available) {
+            SourceLookupResult.Located(URI("file:///jdk/src/Source.java"), className, SourceDefinition(span, span))
+        } else {
+            SourceLookupResult.Unavailable(MissingSourceReason.NO_ATTACHMENT)
+        }
+        coEvery { sourceNavigator.locate(symbol, context) } returns result
+    }
 
     private fun createReflectedMethod(
         name: String,

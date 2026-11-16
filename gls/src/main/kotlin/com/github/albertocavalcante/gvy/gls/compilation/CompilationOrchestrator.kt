@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.SourcePathAdmissionPolicy
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -60,6 +61,8 @@ data class CompilationOrchestratorDependencies(
     val shadowed: () -> Set<URI> = { emptySet() },
 )
 
+// The orchestrator keeps compilation, cancellation and publication ownership in one facade.
+@Suppress("TooManyFunctions")
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
     private val cacheService = dependencies.cacheService
     private val workerSessionManager = dependencies.workerSessionManager
@@ -75,6 +78,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val waiterScope = dependencies.waiterScope
     private val shadowed = dependencies.shadowed
     private val ownership = cacheService.ownership
+    internal var transitionGate = WorkspaceModelTransitionGate()
 
     private val logger = KotlinLogging.logger {}
 
@@ -102,7 +106,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val ticket: ArtifactOwnership.Ticket,
         val publication: SemanticIndexer.Publication?,
         val isValid: () -> Boolean,
-    )
+    ) {
+        lateinit var modelSnapshot: WorkspaceModelTransitionGate.Snapshot
+    }
 
     private data class CompilationInput(val uri: URI, val content: String, val claim: Claim)
 
@@ -156,18 +162,27 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     private suspend fun compile(uri: URI, content: String, compilePhase: Int, claim: Claim): CompilationResult {
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
-        val publication = claim.publication
+        var admissionFingerprint: String? = null
 
+        claim.modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
         return runCatching {
             // One workspace model supplies this compile's key and inputs (H1). It may already be newer than
             // the claim; a retirement in between rejects the publication (#1184).
-            val workspace = workspaceManager.current()
+            val workspace = claim.modelSnapshot.model
+            val admission = SourceInputAdmission(workspaceManager::isExcludedSource, cancellationCheck())
+            admission.requireDocument(uri)
+            val sourceInputs = checkNotNull(captureAdmittedInputs(uri, workspace, admission.checkCancelled, admission))
+            admissionFingerprint = sourceInputs.fingerprint
             // This document's classpath and key from that one model: a selected target's own (#1235)
             val context = workspaceManager.compileContextFor(uri, content, workspace)
             val configFingerprint = context.fingerprint
 
             // Check cache first - validates both content AND configuration fingerprint
-            val cachedResult = cacheService.getCached(uri, content, configFingerprint)
+            // A previously ordinary alias may now expose a managed source without a watcher/model update.
+            // Such secondary inputs must be removed before reusing a parse that may contain their declarations.
+            val cachedResult = cacheService.getCachedRecord(uri, configFingerprint)
+                ?.takeIf { it.content == content && it.admissionFingerprint == sourceInputs.fingerprint }
+                ?.parseResult
             if (cachedResult != null) {
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
@@ -179,39 +194,82 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                         workspace,
                         compilePhase,
                         context = context,
+                        admittedInputs = sourceInputs,
                     )
                 } else {
-                    logger.debug { "Using cached parse result for: $uri" }
-                    // The symbol index may be absent or older than this result (e.g. after invalidation).
-                    // Semantics follow the symbol commit: published only when this ticket's index is current
-                    val indexed = symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel } != null
-                    cachedResult.ast?.takeIf { indexed }?.let {
-                        publication?.let { token ->
-                            semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
-                        }
-                    }
-                    resultMapper.map(cachedResult, content)
+                    publishCachedResult(CompilationInput(uri, content, claim), cachedResult, sourceInputs.fingerprint)
                 }
             } else {
-                performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase, context = context)
+                performCompilation(
+                    CompilationInput(uri, content, claim),
+                    workspace,
+                    compilePhase,
+                    context = context,
+                    admittedInputs = sourceInputs,
+                )
             }
         }.getOrElse { throwable ->
-            when (throwable) {
-                is CancellationException -> throw throwable
-                is Exception -> errorHandler.handleException(throwable, uri)
-                else -> throw throwable
-            }
+            handleCompileFailure(uri, throwable, admissionFingerprint)
         }
     }
 
+    private fun publishCachedResult(
+        input: CompilationInput,
+        cachedResult: ParseResult,
+        admissionFingerprint: String,
+    ): CompilationResult {
+        val (uri, content, claim) = input
+        logger.debug { "Using cached parse result for: $uri" }
+        // The symbol index may be absent or older than this result (e.g. after invalidation).
+        // Semantics follow the symbol commit: published only when this ticket's index is current
+        val excluded = workspaceManager.isExcludedSourceFile(uri)
+        val symbols = if (excluded) null else symbolIndexer.prepare(content, cachedResult.astModel)
+        symbols?.classes // materialize before taking the publication fence
+        val semantic = cachedResult.ast?.let { ast ->
+            claim.publication?.let { token ->
+                semanticIndexer?.preparePublication(token, content, ast, cachedResult.outcome.achievedPhase)
+            }
+        }
+        transitionGate.publishIfCurrent(claim.modelSnapshot, workspaceManager::current) {
+            var indexed = false
+            ownership.commit(claim.ticket) {
+                if (symbols != null) {
+                    indexed = symbolIndexer.install(uri, symbols)
+                } else {
+                    symbolIndexer.invalidate(uri)
+                }
+            }
+            if (indexed && semantic != null) semanticIndexer?.commitPublication(semantic)
+        } ?: throw workspaceChanged()
+        return resultMapper.map(cachedResult, content).copy(admissionFingerprint = admissionFingerprint)
+    }
+
+    private fun handleCompileFailure(
+        uri: URI,
+        failure: Throwable,
+        admissionFingerprint: String?,
+    ): CompilationResult {
+        if (failure is CancellationException || failure is ResponseErrorException) throw failure
+        return when (failure) {
+            is Exception -> errorHandler.handleException(failure, uri).copy(admissionFingerprint = admissionFingerprint)
+            else -> throw failure
+        }
+    }
+
+    // Keep the captured inputs and publication context explicit across the compilation boundary.
+    @Suppress("LongParameterList")
     private suspend fun performCompilation(
         input: CompilationInput,
         workspace: WorkspaceModel,
         compilePhase: Int = Phases.CANONICALIZATION,
         parseMode: ParseMode = ParseMode.WORKSPACE,
         context: DocumentCompileContext? = null,
+        admittedInputs: AdmittedCompilationInputs? = null,
     ): CompilationResult {
         val (uri, content, claim) = input
+        val sourceInputs = admittedInputs ?: requireNotNull(
+            captureAdmittedInputs(uri, workspace, cancellationCheck()),
+        ) { "Managed or unavailable source paths cannot be compiled as workspace documents" }
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // File-specific classpath and its cache key, from the same workspace as roots and sources (#1235)
@@ -220,19 +278,20 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // Use bounded workspace selection when dependency info is available (Issue #743)
         // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, logBounded = true)
+        val workspaceSources = sourceInputs.workspaceSources
 
         // Parse the source code; the compile aborts between phases if this coroutine is cancelled
-        val checkCancelled = cancellationCheck()
-        val locator = symbolIndexer.classLocator(sourcePath)
-        val parseResult = workerSessionManager.parse(
+        val checkCancelled = sourceInputs.checkCancelled
+        val locator = symbolIndexer.classLocator(sourcePath, sourceInputs.allowsSource)
+        val parseResult = parseAdmitted(
             ParseRequest(
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
+                sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
+                openSources = sourceInputs.openSources,
+                sourcePathAdmission = SourcePathAdmissionPolicy(sourceInputs.sourcePathAdmission),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
@@ -241,32 +300,64 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 // named otherwise, one file per name the resolver asks for (#1425).
                 workspaceClassLocator = locator.takeIf { parseMode == ParseMode.MINIMAL },
             ),
+            sourceInputs,
         )
 
         logIfDegraded(uri, parseResult)
 
+        publishCompiledResult(input, parseResult, compileContext, sourceInputs)
+
+        if (!transitionGate.isCurrent(claim.modelSnapshot, workspaceManager::current)) throw workspaceChanged()
+        return resultMapper.map(parseResult, content).copy(admissionFingerprint = sourceInputs.fingerprint)
+    }
+
+    private fun publishCompiledResult(
+        input: CompilationInput,
+        parseResult: ParseResult,
+        compileContext: DocumentCompileContext,
+        sourceInputs: AdmittedCompilationInputs,
+    ) {
+        val (uri, content, claim) = input
+        val checkCancelled = sourceInputs.checkCancelled
         val ast = parseResult.ast
 
         if (ast != null) {
             // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
             // index, as one commit that a retired compile cannot make (#1184)
             val fingerprint = compileContext.fingerprint
-            val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
-                symbolIndexer.install(uri, symbols)
-            }
-
-            if (published) {
-                // Semantic document for cross-file resolution
-                claim.publication?.let {
-                    semanticIndexer?.publish(it, content, ast, parseResult.outcome.achievedPhase)
-                }
+            val symbols = if (workspaceManager.isExcludedSourceFile(uri)) {
+                null
             } else {
+                symbolIndexer.prepare(content, parseResult.astModel)
+            }
+            symbols?.classes // materialize before taking the publication fence
+            val semantic = claim.publication?.let { publication ->
+                semanticIndexer?.preparePublication(publication, content, ast, parseResult.outcome.achievedPhase)
+            }
+            // Observe paths before the publication fence; the fence performs only captured-value checks.
+            val observedAdmission = captureAdmittedInputs(uri, checkCancelled = checkCancelled)?.fingerprint
+            val admissionCurrent = observedAdmission == sourceInputs.fingerprint
+            val published = transitionGate.publishIfCurrent(claim.modelSnapshot, workspaceManager::current) {
+                cacheService.publish(
+                    claim.ticket,
+                    content,
+                    parseResult,
+                    fingerprint,
+                    isValid = { claim.isValid() && admissionCurrent },
+                    admissionFingerprint = sourceInputs.fingerprint,
+                ) {
+                    symbols?.let { symbolIndexer.install(uri, it) }
+                }.also { published ->
+                    if (published) {
+                        semantic?.let { semanticIndexer?.commitPublication(it) }
+                    }
+                }
+            } ?: throw workspaceChanged()
+
+            if (!published) {
                 logger.debug { "Discarded the result of a retired compile of $uri" }
             }
         }
-
-        return resultMapper.map(parseResult, content)
     }
 
     /**
@@ -289,27 +380,41 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
         logger.debug { "Transient compile: $uri" }
+        val modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
+        val workspace = modelSnapshot.model
+        val sourceInputs = requireNotNull(captureAdmittedInputs(uri, workspace, cancellationCheck())) {
+            "Managed or unavailable source paths cannot be compiled as workspace documents"
+        }
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-        val workspace = workspaceManager.current()
         val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
 
         // Use bounded workspace selection when available (Issue #743)
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace)
-        val checkCancelled = cancellationCheck()
+        val workspaceSources = sourceInputs.workspaceSources
+        val checkCancelled = sourceInputs.checkCancelled
 
-        return workerSessionManager.parse(
+        val result = parseAdmitted(
             ParseRequest(
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
+                sourceRoots = sourceInputs.sourceRoots,
                 workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
+                openSources = sourceInputs.openSources,
+                sourcePathAdmission = SourcePathAdmissionPolicy(sourceInputs.sourcePathAdmission),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 checkCancelled = checkCancelled,
             ),
+            sourceInputs,
         )
+        if (!transitionGate.isCurrent(modelSnapshot, workspaceManager::current)) throw workspaceChanged()
+        return result
+    }
+
+    private fun parseAdmitted(request: ParseRequest, inputs: AdmittedCompilationInputs): ParseResult = try {
+        workerSessionManager.parse(request)
+    } finally {
+        inputs.releaseObservedPaths()
     }
 
     /** A hook that throws [CancellationException] once the calling coroutine is cancelled. */
@@ -378,8 +483,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val pending = scheduleCompilation(waiterScope, uri, identity)
         val cause = try {
             // A retirement wakes this waiter at once, not after the stale compile returns (#1429)
-            pending.awaitUnlessRetired()?.let { return Awaited.Done(it) }
+            pending.awaitUnlessRetired()?.let { completed ->
+                return classifyCompleted(uri, completed)
+            }
             null
+        } catch (e: WorkspaceChangedException) {
+            logger.debug(e) { "Workspace changed while awaiting compilation of $uri" }
+            return Awaited.Retired
         } catch (e: CancellationException) {
             e
         }
@@ -395,6 +505,18 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         return if (ownerCancelled) Awaited.OwnerCancelled else Awaited.Retired
     }
 
+    /** Every producer keeps its own receipt, whether it ran as shared work or directly from disk. */
+    private suspend fun classifyCompleted(uri: URI, completed: CompilationResult): Awaited {
+        currentCoroutineContext().ensureActive()
+        ensureRunning()
+        val observed = captureAdmittedInputs(uri, checkCancelled = cancellationCheck())
+        return if (observed != null && completed.admissionFingerprint == observed.fingerprint) {
+            Awaited.Done(completed)
+        } else {
+            Awaited.Retired
+        }
+    }
+
     /**
      * Ensures a file is compiled, either by awaiting active compilation or fetching from cache.
      * Validates configuration fingerprint for cache coherency (Issue #743).
@@ -406,7 +528,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
         ensureRunning()
-        return resolveBounded(uri) { resolveCompiled(uri) }
+        return resolveBounded(uri) {
+            val snapshot = transitionGate.awaitSnapshot(workspaceManager::current)
+            val result = resolveCompiled(uri)
+            if (transitionGate.isCurrent(snapshot, workspaceManager::current)) result else Awaited.Retired
+        }
     }
 
     /**
@@ -416,8 +542,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     suspend fun ensureCompiled(uri: URI, snapshot: DocumentSnapshot): CompilationResult {
         ensureRunning()
+        if (!SourceInputAdmission(workspaceManager::isExcludedSource, cancellationCheck()).allows(uri)) {
+            return CompilationResult.failure(emptyList())
+        }
         var current = snapshot
         val result = resolveBounded(uri) {
+            val modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
             val buffer = documentProvider?.getBuffer(uri)?.takeIf { it.snapshot === current }
             val identity = CompilationIdentity(
                 current.content,
@@ -425,12 +555,24 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 current,
                 buffer?.incarnation,
             )
-            awaitShared(uri, identity).also { outcome ->
-                if (outcome !is Awaited.Done) documentProvider?.getSnapshot(uri)?.let { current = it }
+            val outcome = awaitShared(uri, identity)
+            val checked = if (transitionGate.isCurrent(modelSnapshot, workspaceManager::current)) {
+                outcome
+            } else {
+                Awaited.Retired
+            }
+            checked.also {
+                if (it !is Awaited.Done) documentProvider?.getSnapshot(uri)?.let { current = it }
             }
         }
         return checkNotNull(result) { "Shared compilation of $uri completed without a result" }
     }
+
+    private class WorkspaceChangedException : ResponseErrorException(
+        ResponseError(ResponseErrorCode.ContentModified, "Workspace changed during compilation", null),
+    )
+
+    private fun workspaceChanged(): ResponseErrorException = WorkspaceChangedException()
 
     /** After [shutdown] waiters are cancelled at once instead of re-resolving into a stopped scope. */
     private fun ensureRunning() {
@@ -439,6 +581,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
     private suspend fun resolveCompiled(uri: URI): Awaited {
+        val admission = SourceInputAdmission(workspaceManager::isExcludedSource, cancellationCheck())
+        if (!admission.allows(uri)) return Awaited.Done(null)
         // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
         // disk or the cached parse, and didOpen compiles it in a background job that may not have
         // started yet. Resolve its identity before selecting any pending job.
@@ -460,46 +604,83 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             return awaitShared(uri, pending.identity)
         }
 
-        // A closed file's entry is retired when its buffer closes or the file changes, so it follows the disk
-        cacheService.getCachedWithContent(uri, configFingerprint)?.let { (content, parseResult) ->
-            logger.debug { "Using cached result for: $uri" }
-            return Awaited.Done(resultMapper.mapFromCache(parseResult, content))
+        // Only cached results need a full workspace admission scan here. A cold miss will capture fresh inputs
+        // after taking its publication ticket below; doing both scans would classify every workspace source twice.
+        val cached = cacheService.getCachedRecord(uri, configFingerprint)
+        if (cached != null) {
+            val sourceInputs = captureAdmittedInputs(uri, workspace, admission.checkCancelled, admission)
+                ?: return Awaited.Done(null)
+            if (cached.admissionFingerprint == sourceInputs.fingerprint) {
+                logger.debug { "Using cached result for: $uri" }
+                val result = resultMapper.mapFromCache(cached.parseResult, cached.content)
+                    ?.copy(admissionFingerprint = cached.admissionFingerprint)
+                return Awaited.Done(result)
+            }
         }
 
         // Use on-demand compilation from disk if file exists
         // This handles cases where file is in symbol index but not yet opened/compiled
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
-            logger.debug { "Compiling from disk on-demand: $uri" }
-            // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
-            val claim = claim(uri, Origin.DISK)
-            // Read the model again now the ticket is taken, as the buffer path does: a change published
-            // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
-            val compileWorkspace = workspaceManager.current()
-            return Awaited.Done(
-                claim.publication.use {
-                    try {
-                        val content = withContext(ioDispatcher) {
-                            Files.readString(path)
-                        }
-                        // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                        performCompilation(
-                            CompilationInput(uri, content, claim),
-                            compileWorkspace,
-                            parseMode = ParseMode.MINIMAL,
-                        )
-                    } catch (e: CancellationException) {
-                        throw e // the request was cancelled; not a failure to compile
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
-                        null
-                    }
-                },
-            )
+            return compileFromDisk(uri, path)
         }
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return Awaited.Done(null)
+    }
+
+    private suspend fun compileFromDisk(uri: URI, path: Path): Awaited {
+        logger.debug { "Compiling from disk on-demand: $uri" }
+        // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
+        val claim = claim(uri, Origin.DISK)
+        // Read the model again now the ticket is taken, as the buffer path does: a change published
+        // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
+        val completed = claim.publication.use {
+            claim.modelSnapshot = transitionGate.awaitSnapshot(workspaceManager::current)
+            val compileWorkspace = claim.modelSnapshot.model
+            try {
+                val content = withContext(ioDispatcher) {
+                    Files.readString(path)
+                }
+                // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
+                performCompilation(
+                    CompilationInput(uri, content, claim),
+                    compileWorkspace,
+                    parseMode = ParseMode.MINIMAL,
+                    admittedInputs = requireNotNull(
+                        captureAdmittedInputs(uri, compileWorkspace, cancellationCheck()),
+                    ),
+                )
+            } catch (e: CancellationException) {
+                throw e // the request was cancelled; not a failure to compile
+            } catch (e: WorkspaceChangedException) {
+                logger.debug(e) { "Workspace changed while compiling $uri from disk" }
+                return Awaited.Retired
+            } catch (e: ResponseErrorException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
+                null
+            }
+        }
+        return if (completed == null) Awaited.Done(null) else classifyCompleted(uri, completed)
+    }
+
+    /** Explicit admission I/O, shared by replay, parser input construction and feature currentness. */
+    internal fun captureAdmittedInputs(
+        uri: URI,
+        workspace: WorkspaceModel = workspaceManager.current(),
+        checkCancelled: () -> Unit = {},
+        sourceAdmission: SourceInputAdmission? = null,
+    ): AdmittedCompilationInputs? {
+        val admission = sourceAdmission ?: SourceInputAdmission(workspaceManager::isExcludedSource, checkCancelled)
+        if (!admission.allows(uri)) return null
+        return AdmittedCompilationInputs(
+            workspace.sourceRoots.filter(admission::allows),
+            getWorkspaceSourcesForCompilation(uri, workspace).filter(admission::allows),
+            openSourceSnapshotsFor(uri).filterKeys(admission::allows),
+            admission,
+        )
     }
 
     /**
@@ -535,8 +716,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * two new files can reference each other before either is saved. The parser keeps only
      * `.groovy` sources and lets each buffer replace its on-disk copy.
      */
-    private fun openSourcesFor(uri: URI): Map<URI, String> =
-        documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
+    private fun openSourceSnapshotsFor(uri: URI): Map<URI, DocumentSnapshot> =
+        documentProvider?.snapshotDocuments()?.filterKeys { it != uri }.orEmpty()
 }
 
 private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
@@ -605,10 +786,11 @@ private sealed interface Awaited {
  * index: an exact qualified-name match only, so a same-named class in another package is never added, and never
  * [self]. Before startup indexing has run the index is empty and nothing is found, as before #1425.
  */
-private fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
-    findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
-        .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
-        .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
-        .filter { it != self }
-        .distinct()
-}
+private fun SymbolIndexingService.classLocator(self: Path?, allowed: (Path) -> Boolean): (String) -> List<Path> =
+    { fullyQualifiedName ->
+        findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
+            .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
+            .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
+            .filter { it != self && allowed(it) }
+            .distinct()
+    }

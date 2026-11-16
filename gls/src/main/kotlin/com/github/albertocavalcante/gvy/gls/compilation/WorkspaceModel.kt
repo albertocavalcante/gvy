@@ -31,11 +31,29 @@ class WorkspaceModel internal constructor(
     val targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
     /** How documents and roots are canonicalised (filesystem I/O); injectable for tests. */
     private val canonicalise: (Path) -> Path = DocumentTargetSelector::canonical,
+    configuredSourceRoots: List<Path> = sourceRoots,
+    unscannedRoots: Set<Path> = emptySet(),
     private val computeFingerprint: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
 ) {
     val classpath: List<Path> = Collections.unmodifiableList(classpath.toList())
     val sourceRoots: List<Path> = Collections.unmodifiableList(sourceRoots.distinct())
+    internal val configuredSourceRoots: List<Path> = Collections.unmodifiableList(configuredSourceRoots.distinct())
+    internal val unscannedRoots: Set<Path> = Collections.unmodifiableSet(unscannedRoots.toSet())
     val sources: List<Path> = Collections.unmodifiableList(sources.toList())
+
+    /** The workspace compiler only consumes these model fields; target evidence is resolved per document. */
+    internal fun hasSameWorkspaceCompileInputs(other: WorkspaceModel): Boolean =
+        root == other.root &&
+            classpath == other.classpath &&
+            sourceRoots == other.sourceRoots &&
+            sources == other.sources
+
+    /** Source discovery can change the listed layout even when configured roots and dependencies are unchanged. */
+    internal fun hasSameSourceLayout(other: WorkspaceModel): Boolean =
+        root == other.root &&
+            sourceRoots == other.sourceRoots &&
+            sources == other.sources &&
+            unscannedRoots == other.unscannedRoots
 
     /** The configuration fingerprint of this model's classpath and source roots (Issue #743), computed once. */
     val fingerprint: String by lazy { computeFingerprint(this.classpath, this.sourceRoots) }

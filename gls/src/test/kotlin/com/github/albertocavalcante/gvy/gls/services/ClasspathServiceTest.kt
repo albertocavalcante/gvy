@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceModelTransitionGate
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -24,6 +25,41 @@ class ClasspathServiceTest {
     @BeforeEach
     fun setUp() {
         classpathService = ClasspathService(defaultIndex())
+    }
+
+    @Test
+    fun `classpath query discards a result when a no op transition crosses it`() {
+        val gate = WorkspaceModelTransitionGate()
+        val reflection = object : ClasspathReflection {
+            override fun getMethods(className: String): List<ReflectedMethod> = emptyList()
+            override fun getFields(className: String): List<ReflectedField> = emptyList()
+            override fun loadClass(className: String): Class<*> {
+                gate.transition(action = { false }, shouldAdvanceGeneration = { it })
+                return String::class.java
+            }
+        }
+        val service = ClasspathService(defaultIndex(), reflection).apply {
+            isReady = gate::isReady
+            readPermit = gate::readPermit
+        }
+        assertThat(service.loadClass("java.lang.String")).isNull()
+    }
+
+    @Test
+    fun `retained solver and lease fail closed while unavailable`() {
+        val solver = classpathService.getTypeSolver()
+        val lease = classpathService.acquireClasspath()
+        try {
+            classpathService.isReady = { false }
+            assertThat(classpathService.loadClass("java.lang.String")).isNull()
+            assertThat(classpathService.getMethods("java.lang.String")).isEmpty()
+            assertThat(solver.tryToSolveType("java.lang.String").isSolved).isFalse()
+            assertThat(lease.isCurrent()).isFalse()
+            assertThat(lease.reflection.loadClass("java.lang.String")).isNull()
+            assertThat(lease.solver.tryToSolveType("java.lang.String").isSolved).isFalse()
+        } finally {
+            lease.close()
+        }
     }
 
     @Test

@@ -139,7 +139,10 @@ class WatchedFilesRetireCostTest {
         open = uris.first()
         documents.put(open, "class Open {}")
         compilation.compile(open, "class Open {}")
-        sample = uris.indices.filter { it != 0 && it % SAMPLE_STRIDE == 0 }.map { uris[it] }
+        // Keep representative cached entries near the start and across the 5,000-event batch. Every event still
+        // runs through the notification; fewer cold preparations keep this benchmark focused on that measured work.
+        sample = uris.indices.filter { it == FIRST_CLOSED_FILE || (it != 0 && it % SAMPLE_STRIDE == 0) }
+            .map { uris[it] }
         return assertNotNull(compilation.getParseResult(open))
     }
 
@@ -181,7 +184,8 @@ class WatchedFilesRetireCostTest {
     private companion object {
         const val LARGE = 5_000
         const val SMALL = 500
-        const val SAMPLE_STRIDE = 100
+        const val FIRST_CLOSED_FILE = 1
+        const val SAMPLE_STRIDE = 500
         const val RUNS = 6
         const val NANOS_PER_MILLI = 1_000_000.0
 

@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.indexing
 
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceModelTransitionGate
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.Range
@@ -37,6 +38,34 @@ class WorkspaceSymbolIndexTest {
     fun setup() {
         semanticDb = GroovySemanticDB()
         index = WorkspaceSymbolIndex(semanticDb)
+    }
+
+    @Test
+    fun `index discards a result when a no op transition crosses its query`() {
+        val gate = WorkspaceModelTransitionGate()
+        val racing = WorkspaceSymbolIndex(semanticDb) {
+            gate.transition(action = { false }, shouldAdvanceGeneration = { it })
+            emptySet()
+        }.apply {
+            isReady = gate::isReady
+            readPermit = gate::readPermit
+        }
+        val symbol = SymbolInfo("com/example/MyClass#", SymbolKind.CLASS, Range(0, 0, 1, 1), "MyClass", null)
+        racing.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList()))
+        assertNull(racing.findSymbol("com/example/MyClass#"))
+    }
+
+    @Test
+    fun `retained index and member snapshot fail closed while unavailable`() {
+        val symbol = SymbolInfo("com/example/MyClass#", SymbolKind.CLASS, Range(0, 0, 1, 1), "MyClass", null)
+        index.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList()))
+        val members = index.captureMembers(emptySet())
+        index.isReady = { false }
+
+        assertNull(index.getDocument(testUri1))
+        assertNull(index.findSymbol("com/example/MyClass#"))
+        assertTrue(index.implementationSnapshot.isEmpty())
+        assertTrue(members.getAllMembers("com/example/MyClass", false).isEmpty())
     }
 
     @Nested

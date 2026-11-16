@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
@@ -31,6 +32,7 @@ class CompilationPublicationTest {
         dispatcher: CoroutineDispatcher,
         invalidateDuringParse: Boolean,
         emitAst: Boolean = true,
+        afterParse: () -> Unit = {},
     ) {
         val path = workspace.resolve("Example.groovy")
         val uri = path.toUri()
@@ -47,7 +49,10 @@ class CompilationPublicationTest {
             every { worker.parse(any()) } answers {
                 parser.parse(firstArg())
                     .let { if (emitAst) it else it.copy(ast = null) }
-                    .also { if (invalidateDuringParse) indexer.remove(uri) }
+                    .also {
+                        if (invalidateDuringParse) indexer.remove(uri)
+                        afterParse()
+                    }
             }
             orchestrator = CompilationOrchestrator(
                 CompilationOrchestratorDependencies(
@@ -63,6 +68,56 @@ class CompilationPublicationTest {
                 ),
             )
         }
+    }
+
+    @Test
+    fun `ordinary parse cannot publish after a model transition`() = runTest {
+        val gate = WorkspaceModelTransitionGate()
+        val fixture = Fixture(StandardTestDispatcher(testScheduler), false, afterParse = { gate.transition { Unit } })
+        fixture.orchestrator.transitionGate = gate
+
+        assertFailsWith<org.eclipse.lsp4j.jsonrpc.ResponseErrorException> {
+            fixture.orchestrator.compile(fixture.uri, fixture.content)
+        }
+        assertNull(fixture.index.getDocument(fixture.uri))
+    }
+
+    @Test
+    fun `ordinary parse cannot publish after a failed model transition`() = runTest {
+        val gate = WorkspaceModelTransitionGate()
+        val fixture = Fixture(StandardTestDispatcher(testScheduler), false, afterParse = {
+            assertFailsWith<IllegalStateException> { gate.transition { error("partial update") } }
+        })
+        fixture.orchestrator.transitionGate = gate
+
+        assertFailsWith<org.eclipse.lsp4j.jsonrpc.ResponseErrorException> {
+            fixture.orchestrator.compile(fixture.uri, fixture.content)
+        }
+        assertNull(fixture.index.getDocument(fixture.uri))
+    }
+
+    @Test
+    fun `disk ensure retries a parse retired by a transition`() = runTest {
+        val gate = WorkspaceModelTransitionGate()
+        var transitions = 0
+        val fixture = Fixture(StandardTestDispatcher(testScheduler), false, afterParse = {
+            if (transitions++ == 0) gate.transition { Unit }
+        })
+        fixture.orchestrator.transitionGate = gate
+
+        assertNotNull(fixture.orchestrator.ensureCompiled(fixture.uri))
+        assertNotNull(fixture.index.getDocument(fixture.uri))
+    }
+
+    @Test
+    fun `ordinary compile fails closed after transition failure`() = runTest {
+        val gate = WorkspaceModelTransitionGate()
+        val fixture = Fixture(StandardTestDispatcher(testScheduler), false)
+        fixture.orchestrator.transitionGate = gate
+        assertFailsWith<IllegalStateException> { gate.transition { error("partial update") } }
+
+        assertFailsWith<IllegalStateException> { fixture.orchestrator.compile(fixture.uri, fixture.content) }
+        assertNull(fixture.index.getDocument(fixture.uri))
     }
 
     @Test

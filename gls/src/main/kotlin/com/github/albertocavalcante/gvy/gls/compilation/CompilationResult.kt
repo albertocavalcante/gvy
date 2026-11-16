@@ -51,6 +51,8 @@ data class CompilationResult(
     val sourceMembershipKnown: Boolean? = null,
     /** Source dependency reachability captured with this compilation; null means inapplicable. */
     val sourceVisibilityKnown: Boolean? = null,
+    /** Producer receipt, including uncached failures. Null never certifies admission-compatible reuse. */
+    internal val admissionFingerprint: String? = null,
 ) {
     companion object {
         /**

@@ -13,7 +13,9 @@ import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.net.URI
+import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -30,6 +32,17 @@ class GroovyCompilationServiceTest {
     @BeforeEach
     fun setup() {
         compilationService = GroovyCompilationService()
+    }
+
+    @Test
+    fun `workspace initialization retires existing compilation cache`(@TempDir root: Path): Unit = runBlocking {
+        val uri = URI.create("file:///test/BeforeInitialization.groovy")
+        compilationService.compile(uri, "class BeforeInitialization {}")
+        assertNotNull(compilationService.getAst(uri))
+
+        compilationService.initializeWorkspace(root)
+
+        assertNull(compilationService.getAst(uri))
     }
 
     @Test

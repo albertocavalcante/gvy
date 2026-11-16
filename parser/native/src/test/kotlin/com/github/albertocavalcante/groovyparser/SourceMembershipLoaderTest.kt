@@ -3,22 +3,108 @@
 
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.SourcePathAdmissionPolicy
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.messages.SimpleMessage
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class SourceMembershipLoaderTest {
     @TempDir
     lateinit var root: Path
+
+    @Test
+    fun `trailing lambda remains the workspace class locator`() {
+        val request = ParseRequest(root.resolve("Uses.groovy").toUri(), "") { listOf(root.resolve(it)) }
+        assertEquals(listOf(root.resolve("Dependency")), request.workspaceClassLocator?.invoke("Dependency"))
+    }
+
+    @Test
+    fun `legacy positional workspace locator remains source compatible`() {
+        val locator: (String) -> List<Path> = { listOf(root.resolve(it)) }
+        val request = ParseRequest(
+            root.resolve("Uses.groovy").toUri(),
+            "",
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyMap(),
+            emptySet(),
+            emptySet(),
+            Phases.CONVERSION,
+            ParseMode.WORKSPACE,
+            {},
+            locator,
+        )
+
+        assertSame(locator, request.workspaceClassLocator)
+        assertNull(request.sourcePathAdmission)
+    }
+
+    @Test
+    fun `locator buffer retains annotation source identity`() {
+        val disk = Files.writeString(root.resolve("Different.groovy"), "class Placeholder {}")
+        val alias = Files.createSymbolicLink(root.resolve("Open.groovy"), disk)
+        val result = GroovyParserFacade().parseWithSourceFilter(
+            ParseRequest(
+                uri = root.resolve("Uses.groovy").toUri(),
+                content = "@Mark class Uses {}",
+                parseMode = ParseMode.MINIMAL,
+                compilePhase = Phases.CANONICALIZATION,
+                workspaceClassLocator = { if (it == "Mark") listOf(disk) else emptyList() },
+            ),
+            sourceFilter = { true },
+            locatorBuffers = mapOf(alias.toUri() to "@interface Mark {}"),
+        )
+        assertEquals(alias.toUri(), result.sourceAnnotations.sourceUri(alias.toUri().path))
+        assertNotNull(result.sourceAnnotations.foreignDeclaration(alias.toUri().path, "Mark"))
+    }
+
+    @Test
+    fun `local jar admission receives unnormalized localhost path and fails closed on invalid path`() {
+        val seen = mutableListOf<Path>()
+        fun parse(url: URL) = GroovyParserFacade(
+            GroovyParserFacade::class.java.classLoader,
+            { parent ->
+                SdkFallbackGroovyClassLoader(parent).apply {
+                    resourceLoader = groovy.lang.GroovyResourceLoader { name ->
+                        if (name == "Dependency") url else null
+                    }
+                }
+            },
+            null,
+        ).parse(
+            ParseRequest(
+                uri = root.resolve("Uses.groovy").toUri(),
+                content = "class Uses { Dependency value }",
+                compilePhase = Phases.CANONICALIZATION,
+                sourcePathAdmission = SourcePathAdmissionPolicy { path ->
+                    seen.add(path)
+                    false
+                },
+            ),
+        )
+        val rawPath = root.resolve("missing/../sources.jar")
+        val result = parse(URL("jar:file://localhost${rawPath.toUri().rawPath}!/Dependency.groovy"))
+        assertTrue(seen.contains(rawPath), "admission must see the path before normalization: $seen")
+        assertTrue(result.compilationUnit.ast.classes.none { it.name == "Dependency" })
+        seen.clear()
+        val invalid = parse(URL("jar:file://remote-host/path.jar!/Dependency.groovy"))
+        assertTrue(seen.isEmpty())
+        assertTrue(invalid.compilationUnit.ast.classes.none { it.name == "Dependency" })
+    }
 
     @Test
     fun `on demand lookup uses unsaved dependency through symlink alias`() {
@@ -67,6 +153,31 @@ class SourceMembershipLoaderTest {
         )
         assertTrue(result.outcome.excludedSources.any { it.source == alias.toUri().toString() })
         assertTrue(result.compilationUnit.ast.classes.none { it.methods.any { method -> method.name == "diskOnly" } })
+    }
+
+    @Test
+    fun `source loader rechecks dynamic path admission`() {
+        val sourceRoot = Files.createDirectories(root.resolve("src"))
+        val dependency = Files.writeString(root.resolve("Dependency.groovy"), "class Dependency {}")
+        val admittedPaths = mutableListOf<Path>()
+        val request = ParseRequest(
+            uri = sourceRoot.resolve("Uses.groovy").toUri(),
+            content = "class Uses { Dependency value }",
+            sourceRoots = listOf(root),
+            sourcePathAdmission = SourcePathAdmissionPolicy { path ->
+                admittedPaths.add(path)
+                false
+            },
+            compilePhase = Phases.CANONICALIZATION,
+        )
+        val result = GroovyParserFacade().parse(request.copy(), setOf(dependency))
+
+        assertTrue(
+            admittedPaths.contains(dependency.toAbsolutePath().normalize()),
+            "the loader checks the discovered path",
+        )
+        assertNull(result.outcome.fallback, "a denied source remains unresolved without retrying")
+        assertTrue(result.compilationUnit.ast.classes.none { it.name == "Dependency" })
     }
 
     @Test
@@ -192,6 +303,36 @@ class SourceMembershipLoaderTest {
         )
         assertTrue(result.diagnostics.isEmpty(), "dependency source must resolve: ${result.diagnostics}")
         assertNull(result.outcome.fallback)
+    }
+
+    @Test
+    fun `source admission checks the local jar containing a Groovy source`() {
+        val sourceRoot = Files.createDirectories(root.resolve("src"))
+        val managedRoot = Files.createDirectories(root.resolve("managed"))
+        val jar = managedRoot.resolve("sources.jar")
+        ZipOutputStream(jar.toFile().outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("Dependency.groovy"))
+            zip.write("class Dependency {}".toByteArray())
+            zip.closeEntry()
+        }
+        val admittedPaths = mutableListOf<Path>()
+        val result = GroovyParserFacade().parse(
+            ParseRequest(
+                uri = sourceRoot.resolve("Uses.groovy").toUri(),
+                content = "class Uses { Dependency value }",
+                classpath = listOf(jar),
+                sourceRoots = listOf(sourceRoot),
+                sourcePathAdmission = SourcePathAdmissionPolicy { path ->
+                    admittedPaths.add(path)
+                    !path.startsWith(managedRoot)
+                },
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+            emptySet(),
+        )
+
+        assertTrue(admittedPaths.contains(jar.toAbsolutePath().normalize()), "admission checks the JAR path")
+        assertTrue(result.compilationUnit.ast.classes.none { it.name == "Dependency" })
     }
 
     @Test
