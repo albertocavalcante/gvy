@@ -277,7 +277,11 @@ object RuleRangeCalculator {
             val c = sourceLine[index]
             when {
                 quote != null -> {
-                    if (c == '\\') index++ else if (c == quote) quote = null
+                    if (c == '\\') {
+                        index++
+                    } else if (c == quote) {
+                        quote = null
+                    }
                 }
                 c == '\'' || c == '"' -> quote = c
                 c == '(' -> depth++
