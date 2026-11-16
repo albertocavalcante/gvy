@@ -81,6 +81,7 @@ class ClassReferenceHoverTest {
 
             val hover = assertNotNull(provider.provideHover(useUri.toString(), Position(line, character)))
 
+            assertContains(hover.contents.right.value, "label")
             assertFalse(hover.contents.right.value.contains("Caller documentation"), hover.contents.right.value)
         } finally {
             compilation.shutdown()
