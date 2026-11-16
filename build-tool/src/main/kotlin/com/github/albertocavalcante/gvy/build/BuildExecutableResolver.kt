@@ -91,20 +91,20 @@ object BuildExecutableResolver {
         useWindows: Boolean,
     ): String {
         // ProcessBuilder on Windows does not apply PATHEXT: Maven/Gradle ship only .cmd/.bat launchers.
-        val systemCommand = if (useWindows) windowsSystemCommand else systemCommand
+        val effectiveSystemCommand = if (useWindows) windowsSystemCommand else systemCommand
         val wrapper = if (useWindows) windowsWrapperName else wrapperName
         val wrapperPath = workspaceRoot.resolve(wrapper)
 
-        if (!wrapperPath.exists()) return systemCommand
+        if (!wrapperPath.exists()) return effectiveSystemCommand
 
         // On Unix, verify executable permission
         if (!useWindows && !Files.isExecutable(wrapperPath)) {
             logger.warn {
                 "Build wrapper exists but is not executable: $wrapperPath. " +
                     "Fix with 'chmod +x $wrapperName' or 'git update-index --chmod=+x $wrapperName'. " +
-                    "Falling back to system $systemCommand."
+                    "Falling back to system $effectiveSystemCommand."
             }
-            return systemCommand
+            return effectiveSystemCommand
         }
 
         return wrapperPath.toAbsolutePath().toString()

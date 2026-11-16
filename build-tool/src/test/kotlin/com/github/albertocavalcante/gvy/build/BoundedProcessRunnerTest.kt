@@ -11,7 +11,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class BoundedProcessRunnerTest {
@@ -45,7 +44,7 @@ class BoundedProcessRunnerTest {
     fun `timeout kills the process and its descendants`() {
         val started = System.nanoTime()
         val command = listOf("sh", "-c", "sleep 60 & echo \$!; wait")
-        val result = BoundedProcessRunner.run(command, tempDir, 700.milliseconds)
+        val result = BoundedProcessRunner.run(command, tempDir, 2.seconds)
         val elapsedSeconds = (System.nanoTime() - started) / 1_000_000_000
 
         assertTrue(result.timedOut)
