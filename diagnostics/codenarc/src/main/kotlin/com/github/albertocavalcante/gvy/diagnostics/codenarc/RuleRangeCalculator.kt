@@ -250,13 +250,17 @@ object RuleRangeCalculator {
         }
     }
 
+    /** Prefers the match whose text the violation message names; otherwise the first match. */
+    private fun pickMatch(matches: List<MatchResult>, message: String): MatchResult? =
+        matches.firstOrNull { message.contains(it.value) } ?: matches.firstOrNull()
+
     /**
      * Range of the first zero-argument getter call, e.g. `getName()`, so the quick fix sees the whole call.
      */
     private fun calculateUnnecessaryGetterRange(sourceLine: String, message: String): Pair<Int, Int> {
         // Several getters can share a line; prefer the one the message names (e.g. "getName() can ...").
         val matches = GETTER_CALL.findAll(sourceLine).toList()
-        val match = (matches.firstOrNull { message.contains(it.value) } ?: matches.firstOrNull()) ?: return calculateDefaultRange(sourceLine)
+        val match = pickMatch(matches, message) ?: return calculateDefaultRange(sourceLine)
         return Pair(match.range.first, match.range.last + 1)
     }
 
@@ -265,7 +269,7 @@ object RuleRangeCalculator {
      */
     private fun calculateUnnecessarySetterRange(sourceLine: String, message: String): Pair<Int, Int> {
         val matches = SETTER_CALL_START.findAll(sourceLine).toList()
-        val match = (matches.firstOrNull { message.contains(it.value) } ?: matches.firstOrNull()) ?: return calculateDefaultRange(sourceLine)
+        val match = pickMatch(matches, message) ?: return calculateDefaultRange(sourceLine)
         var depth = 0
         var quote: Char? = null
         var index = match.range.last // the opening parenthesis
