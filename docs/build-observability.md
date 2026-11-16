@@ -62,9 +62,11 @@ node --test tools/ci/source-stamp.test.mjs
 build-slot -- bazel --nohome_rc test //tools/build-info:resource_test
 ```
 
-The resource test also supports dirty and unknown states. A passing resource test proves consistent packaging, while the
-strict cold replay separately requires a clean, identified artifact. Native Windows status-launcher validation must be
-recorded separately from Linux/macOS results.
+The resource test supports dirty and unknown states locally. CI passes its verified checkout SHA explicitly as
+`GVY_EXPECTED_SOURCE_SHA` through Bazel's `--test_env`: qualification then requires that exact source, a clean state and
+an empty dirty fingerprint. This also binds the loaded runtime fields and deploy-JAR bytes. The strict cold replay still
+needs its own passing run. Native Windows status-launcher validation must be recorded separately from Linux/macOS
+results.
 
 ### Invocation capture
 

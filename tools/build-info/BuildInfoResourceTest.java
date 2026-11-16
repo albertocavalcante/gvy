@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.build;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
@@ -57,6 +58,10 @@ public final class BuildInfoResourceTest {
         assertTrue(source.equals("unknown") || source.matches("[a-f0-9]{40}"));
         assertTrue(List.of("true", "false", "unknown").contains(dirty));
         assertEquals(source.equals("unknown"), dirty.equals("unknown"));
+        String qualifiedSource = System.getenv("GVY_EXPECTED_SOURCE_SHA");
+        if (qualifiedSource != null) {
+            requireQualifiedSource(expected, qualifiedSource);
+        }
         Class<?> version = Class.forName("com.github.albertocavalcante.gvy.gls.Version");
         Object singleton = version.getField("INSTANCE").get(null);
         Object actual = version.getMethod("getInfo").invoke(singleton);
@@ -67,6 +72,42 @@ public final class BuildInfoResourceTest {
         assertEquals(
                 expected.getProperty("displayVersion"),
                 actual.getClass().getMethod("getDisplayVersion").invoke(actual));
+    }
+
+    @Test
+    public void qualificationRejectsMismatchedUnknownAndDirtySources() {
+        String source = "a".repeat(40);
+        requireQualifiedSource(stamp(source, "false", ""), source);
+        assertThrows(
+                AssertionError.class,
+                () -> requireQualifiedSource(stamp("b".repeat(40), "false", ""), source));
+        assertThrows(
+                AssertionError.class,
+                () -> requireQualifiedSource(stamp("unknown", "unknown", ""), source));
+        assertThrows(
+                AssertionError.class,
+                () -> requireQualifiedSource(stamp(source, "true", "123456789abc"), source));
+        assertThrows(
+                AssertionError.class,
+                () -> requireQualifiedSource(stamp(source, "false", "123456789abc"), source));
+        assertThrows(
+                AssertionError.class,
+                () -> requireQualifiedSource(stamp(source, "false", ""), "unknown"));
+    }
+
+    private static Properties stamp(String source, String dirty, String dirtyHash) {
+        Properties properties = new Properties();
+        properties.setProperty("gitSha", source);
+        properties.setProperty("gitDirty", dirty);
+        properties.setProperty("gitDirtyHash", dirtyHash);
+        return properties;
+    }
+
+    private static void requireQualifiedSource(Properties properties, String qualifiedSource) {
+        assertTrue(qualifiedSource.matches("[a-f0-9]{40}"), "Qualification needs a canonical source SHA");
+        assertEquals(qualifiedSource, properties.getProperty("gitSha"), "Qualified checkout identity");
+        assertEquals("false", properties.getProperty("gitDirty"), "Qualification needs a clean tree");
+        assertEquals("", properties.getProperty("gitDirtyHash"), "Clean metadata has no dirty hash");
     }
 
     private static byte[] readMetadata(InputStream input) throws Exception {
