@@ -45,6 +45,52 @@ class ClassReferenceHoverTest {
         }
     }
 
+    @Test
+    fun `inherited property does not borrow a comment from the caller buffer`(): Unit = runTest {
+        DocumentationProvider.reset()
+        val documents = DocumentProvider()
+        val compilation = GroovyCompilationService(documentProvider = documents)
+        try {
+            val baseUri = URI.create("file:///hover/demo/base/Base.groovy")
+            val useUri = URI.create("file:///hover/demo/Use.groovy")
+            // `String label` is on line 5 in both files; in Use that line follows an unrelated comment.
+            val baseSource = """
+                package demo.base
+
+                class Base {
+                    /** Base label documentation. */
+                    String label
+                }
+            """.trimIndent()
+            val useSource = """
+                package demo
+
+                import demo.base.Base
+                /** Caller documentation must not leak. */
+                class Use extends Base {
+                    Object run() { label }
+                }
+            """.trimIndent()
+            documents.put(baseUri, baseSource)
+            documents.put(useUri, useSource)
+            assertTrue(compilation.compile(useUri, useSource).isSuccess)
+            val resolver = SemanticTypeResolver(compilation.classpathService.getTypeSolver())
+            val provider = HoverProvider(compilation, documents, HoverContentGenerator(resolver))
+            val line = useSource.lines().indexOfFirst { it.contains("run()") }
+            val character = useSource.lines()[line].indexOf("label")
+
+            val hover = assertNotNull(provider.provideHover(useUri.toString(), Position(line, character)))
+
+            val content = hover.contents.right.value
+            // Only the declaring class can supply this text, so the hover resolved to the inherited property.
+            assertContains(content, "Base label documentation")
+            assertFalse(content.contains("Caller documentation"), content)
+        } finally {
+            compilation.shutdown()
+            DocumentationProvider.reset()
+        }
+    }
+
     private suspend fun classHover(use: String, importPosition: Boolean = false, checkContent: (String) -> Unit) {
         DocumentationProvider.reset()
         val documents = DocumentProvider()
