@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertFailsWith
 
 class ColdRecoveryAssertionsTest {
-    private val fixture = ColdRecoveryFixture("Current", "", "\n")
+    private val fixture = ColdRecoveryFixture("Current", malformed = true, "\n")
     private val name = fixture.before
     private val span = fixture.nameRange(name)
     private val token = DecodedSemanticToken(name, span, "class", setOf("declaration"))

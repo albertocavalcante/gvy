@@ -20,7 +20,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** Authored source and positions, independent of the parser under evaluation. */
-internal class ColdRecoveryFixture(tag: String, member: String, newline: String) {
+internal class ColdRecoveryFixture(tag: String, val malformed: Boolean, newline: String) {
+    private val member = if (malformed) "" else "NEW"
     val before = "Before$tag"
     val after = "After$tag"
     val text = listOf(

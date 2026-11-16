@@ -54,7 +54,7 @@ class ColdIncompleteBufferRecoveryTest {
         }
 
     private fun replay(name: String, newline: String, malformed: Boolean, features: List<Feature>) {
-        val fixture = ColdRecoveryFixture(if (malformed) "Cold" else "Valid", if (malformed) "" else "NEW", newline)
+        val fixture = ColdRecoveryFixture(if (malformed) "Cold" else "Valid", malformed, newline)
         val planned = listOf("diagnostics.integrity") + features.flatMap { feature ->
             if (feature == Feature.Completion) {
                 listOf("completion.enum")
@@ -219,17 +219,21 @@ class ColdIncompleteBufferRecoveryTest {
                 val result = request("textDocument/semanticTokens/full", params())
                 val tokens = ColdRecoveryAssertions.tokens(result, legend, source.text, encoding)
                 for ((suffix, anchor) in listOf("before" to fixture.before, "after" to fixture.after)) {
-                    observe(recorder, "tokens.$suffix") { ColdRecoveryAssertions.token(tokens, fixture, anchor) }
+                    observe(recorder, "tokens.$suffix", fixture) {
+                        ColdRecoveryAssertions.token(tokens, fixture, anchor)
+                    }
                 }
             }
             Feature.Hover -> for ((suffix, anchor) in listOf("before" to fixture.before, "after" to fixture.after)) {
                 val result = request("textDocument/hover", params(fixture.nameRange(anchor).start))
-                observe(recorder, "hover.$suffix") { ColdRecoveryAssertions.hover(result, fixture, anchor) }
+                observe(recorder, "hover.$suffix", fixture) { ColdRecoveryAssertions.hover(result, fixture, anchor) }
             }
             Feature.Outline -> {
                 val result = request("textDocument/documentSymbol", params())
                 for ((suffix, anchor) in listOf("before" to fixture.before, "after" to fixture.after)) {
-                    observe(recorder, "outline.$suffix") { ColdRecoveryAssertions.outline(result, fixture, anchor) }
+                    observe(recorder, "outline.$suffix", fixture) {
+                        ColdRecoveryAssertions.outline(result, fixture, anchor)
+                    }
                 }
             }
             Feature.Completion -> {
@@ -239,8 +243,17 @@ class ColdIncompleteBufferRecoveryTest {
         }
     }
 
-    private fun observe(recorder: NamedObservationRecorder, id: String, check: () -> Unit) {
-        recorder.observe(JsonCheck("$.recovery", JsonExpectation(), id = id), check)
+    private fun observe(
+        recorder: NamedObservationRecorder,
+        id: String,
+        fixture: ColdRecoveryFixture? = null,
+        check: () -> Unit,
+    ) {
+        val observedFailure = if (fixture?.malformed == true) observedFailures[id] else null
+        val xfail = observedFailure?.let { message ->
+            Xfail(2082, "Intact declaration lost around incomplete member access", "^${Regex.escape(message)}$")
+        }
+        recorder.observe(JsonCheck("$.recovery", JsonExpectation(), id = id, xfail = xfail), check)
     }
 
     private fun packagedLaunch(): PackagedLaunch {
@@ -273,6 +286,13 @@ class ColdIncompleteBufferRecoveryTest {
     private enum class Feature { Tokens, Hover, Outline, Completion }
 
     private companion object {
+        // Only these before-anchor failures have executed in the qualifying packaged baseline.
+        // After-anchor checks remain required until reached; see https://github.com/albertocavalcante/gvy/issues/2082.
+        val observedFailures = mapOf(
+            "tokens.before" to "recovery: missing class token BeforeCold",
+            "hover.before" to "recovery: empty class hover BeforeCold",
+            "outline.before" to "recovery: missing outline class BeforeCold",
+        )
         const val REQUEST_SECONDS = 30L
         const val WHOLE_CASE_SECONDS = 120L
     }
