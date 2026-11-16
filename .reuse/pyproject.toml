@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = ["reuse[charset-normalizer]==6.3.0"]
 
 [dependency-groups]
-dev = ["ruff==0.14.14", "basedpyright==1.38.2", "ty==0.0.14"]
+dev = ["ruff==0.17.5", "basedpyright==1.38.2", "ty==0.0.14"]
 
 [tool.ruff]
 line-length = 120
