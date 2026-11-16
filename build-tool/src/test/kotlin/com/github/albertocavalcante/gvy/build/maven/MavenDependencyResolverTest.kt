@@ -142,6 +142,8 @@ class MavenDependencyResolverTest {
         assertEquals("pinned", managed.artifact.artifactId)
         assertEquals("2.0", managed.artifact.version)
         assertEquals(listOf("x"), managed.exclusions.map { it.groupId })
+        assertEquals("", managed.scope, "managed entries must not force a scope")
+        assertEquals(null, managed.optional, "managed entries must not force optional")
     }
 
     @Test

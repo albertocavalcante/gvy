@@ -84,7 +84,7 @@ class MavenDependencyResolver : DependencyResolver {
             // Pin transitive versions/exclusions the way Maven does (BOMs, dependencyManagement)
             model.dependencyManagement?.dependencies
                 ?.filterNot { it.version.isNullOrBlank() }
-                ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it)) }
+                ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it, managed = true)) }
 
             // Resolve dependencies
             val dependencyRequest = DependencyRequest(collectRequest, null)
@@ -112,13 +112,14 @@ class MavenDependencyResolver : DependencyResolver {
         val artifactResults = e.result?.artifactResults.orEmpty()
         val resolved = artifactResults.filter { it.isResolved }.mapNotNull { it.artifact?.file?.toPath() }
         val unresolved = artifactResults.filterNot { it.isResolved }
-            .map { it.request?.artifact?.toString() ?: "unknown artifact" }
-            .ifEmpty { listOf(e.message ?: "dependency resolution failed") }
-        logger.info { "Maven Resolver kept ${resolved.size} dependencies; ${unresolved.size} unresolved" }
-        return MavenResolutionResult(resolved, unresolved)
+            .map { it.request?.artifact?.toString() ?: "unknown artifact" } +
+            e.result?.collectExceptions.orEmpty().map { "collection failed: ${it.message}" }
+        val reported = unresolved.ifEmpty { listOf(e.message ?: "dependency resolution failed") }
+        logger.info { "Maven Resolver kept ${resolved.size} dependencies; ${reported.size} unresolved" }
+        return MavenResolutionResult(resolved, reported)
     }
 
-    private fun toAetherDependency(dep: org.apache.maven.model.Dependency): Dependency {
+    private fun toAetherDependency(dep: org.apache.maven.model.Dependency, managed: Boolean = false): Dependency {
         var artifact: Artifact = DefaultArtifact(
             dep.groupId,
             dep.artifactId,
@@ -132,7 +133,12 @@ class MavenDependencyResolver : DependencyResolver {
         val exclusions = dep.exclusions.map {
             Exclusion(it.groupId, it.artifactId, "*", "*")
         }
-        return Dependency(artifact, dep.scope ?: "compile", dep.isOptional, exclusions)
+        // Managed entries must not force defaults: an unset scope/optional means "not managed" (as in Maven).
+        return if (managed) {
+            Dependency(artifact, dep.scope.orEmpty(), dep.optional?.toBoolean(), exclusions)
+        } else {
+            Dependency(artifact, dep.scope ?: "compile", dep.isOptional, exclusions)
+        }
     }
 
     /**

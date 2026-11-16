@@ -28,6 +28,7 @@ class MavenBuildTool : BuildTool {
 
     private companion object {
         private val CLI_TIMEOUT = 5.minutes
+        private const val MAX_REPORTED_UNRESOLVED = 5
     }
 
     override val name: String = "Maven"
@@ -55,12 +56,26 @@ class MavenBuildTool : BuildTool {
         // Try embedded resolver first (faster, no subprocess)
         val embedded = tryEmbeddedResolution(pomPath)
         val embeddedDeps = embedded.dependencies
-        val dependencies = if (embeddedDeps.isNotEmpty()) {
-            embeddedDeps
-        } else {
-            // Fallback to CLI-based resolution
-            logger.info { "Embedded resolution returned no results, falling back to CLI" }
-            resolveViaCli(workspaceRoot)
+        var partialWarning: ResolutionStatus? = null
+        val dependencies = when {
+            embeddedDeps.isEmpty() -> {
+                // Fallback to CLI-based resolution
+                logger.info { "Embedded resolution returned no results, falling back to CLI" }
+                resolveViaCli(workspaceRoot)
+            }
+            embedded.isPartial -> {
+                // The embedded session ignores settings.xml mirrors/credentials/proxies; real Maven may resolve
+                // what it could not. Prefer the CLI result when it is at least as complete.
+                logger.info { "Embedded resolution was partial, trying CLI for a complete classpath" }
+                val cliDeps = resolveViaCli(workspaceRoot)
+                if (cliDeps.size >= embeddedDeps.size) {
+                    cliDeps
+                } else {
+                    partialWarning = partialStatus(embedded)
+                    embeddedDeps
+                }
+            }
+            else -> embeddedDeps
         }
 
         // Standard Maven layout assumption for now
@@ -81,15 +96,17 @@ class MavenBuildTool : BuildTool {
         }
 
         logger.info { "Resolved ${finalDependencies.size} Maven dependencies" }
-        val status = if (embeddedDeps.isNotEmpty() && embedded.isPartial) {
-            ResolutionStatus.Warning(
-                ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
-                "Partial Maven classpath; unresolved: ${embedded.unresolved.joinToString()}",
-            )
-        } else {
-            ResolutionStatus.Success
-        }
+        val status = partialWarning ?: ResolutionStatus.Success
         return WorkspaceResolution(finalDependencies, sourceDirs, status)
+    }
+
+    private fun partialStatus(embedded: MavenResolutionResult): ResolutionStatus {
+        val shown = embedded.unresolved.take(MAX_REPORTED_UNRESOLVED).joinToString()
+        val more = embedded.unresolved.size - MAX_REPORTED_UNRESOLVED
+        return ResolutionStatus.Warning(
+            ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
+            "Partial Maven classpath; unresolved: $shown" + if (more > 0) " (and $more more)" else "",
+        )
     }
 
     private fun ensureJenkinsCore(dependencies: List<Path>, pomPath: Path): List<Path> {
