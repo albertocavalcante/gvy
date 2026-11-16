@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.Version
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -122,6 +123,17 @@ class ColdIncompleteBufferRecoveryTest {
                 val wire = checkNotNull(session.snapshotWireEvidence())
                 evidence["rawWire"] = JsonBridge.toJsonElement(wire)
                 evidence["stderr"] = JsonBridge.toJsonElement(session.snapshotStderrEvidence())
+                evidence["decodedRequests"] = buildJsonArray {
+                    requests.forEach { request ->
+                        add(
+                            buildJsonObject {
+                                put("method", request.method)
+                                put("params", request.params)
+                                put("result", request.result)
+                            },
+                        )
+                    }
+                }
                 evidence["bindings"] = ColdRecoveryWire.bind(wire, source, requests)
             }.use {
                 AutoCloseable { recorder.closeSession(session::close) }.use {
@@ -161,7 +173,7 @@ class ColdIncompleteBufferRecoveryTest {
                         DidOpenTextDocumentParams(TextDocumentItem(source.uri, "groovy", source.version, source.text)),
                     )
                     fun request(method: String, params: JsonObject): JsonElement {
-                        val result = JsonBridge.wrapJavaObject(
+                        val result = SdkResponseProjection.unwrappedValue(
                             await(session.endpoint.request(method, RawJsonRpcParams(params))),
                         )
                         requests += ColdRecoveryRequest(method, params, result)

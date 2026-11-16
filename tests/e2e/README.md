@@ -41,18 +41,18 @@ exception; they cannot be reclassified as a known product defect. Reports from a
 historical evidence. These outcome files do not supply server artifact or source-snapshot provenance on their own;
 packaged recovery replays must capture and bind that evidence separately.
 
-`SemanticTokenDecoder` is a test-only oracle for full-document token responses. Supply the initialized legend and
-the exact authored source for that request. It validates UTF-16 tuples, bounds, surrogate boundaries and non-overlap,
+`SemanticTokenDecoder` is a test-only oracle for full-document token responses. Supply the initialized legend and the
+exact authored source for that request. It validates UTF-16 tuples, bounds, surrogate boundaries and non-overlap,
 including LF, CRLF and CR input. Omitted position encoding uses the LSP UTF-16 default; other encodings are rejected.
 Its pure mutation tests establish decoding behavior, not product recovery or request/source provenance. The packaged
 recovery workload must still bind request identities and assert current names, kinds and spans.
 
 `ColdIncompleteBufferRecoveryTest` launches a fresh packaged stdio process and empty workspace for each cold first
-feature, using unsaved handwritten source. Valid controls and malformed LF/CRLF cases exercise exact class tokens,
-hover ranges, outline ranges and declared enum members. The sealed named report includes launch/runtime facts,
-initialized capabilities, original bounded wire and request/source bindings. Missing or inconsistent evidence fails
-the test; these requests do not provide response document versions where LSP omits them. Dirty packaged sources are
-rejected by the existing launch verifier, so commit the test source before a qualifying packaged run.
+feature, using unsaved handwritten source. Valid controls and malformed LF/CRLF cases exercise exact class tokens, hover
+ranges, outline ranges and declared enum members. The sealed named report includes launch/runtime facts, initialized
+capabilities, original bounded wire and request/source bindings. Missing or inconsistent evidence fails the test; these
+requests do not provide response document versions where LSP omits them. Dirty packaged sources are rejected by the
+existing launch verifier, so commit the test source before a qualifying packaged run.
 
 This is the cold replay slice of M0.1a. Warm edits, reused-version reopen, actual supplementary-character coordinates
 and shadowed/unknown completion receivers still require their own packaged controls. Pure decoder tests do not close
