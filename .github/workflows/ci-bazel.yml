@@ -55,7 +55,15 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
-          repository-cache: true
+          # Key the repository cache on every input that decides which checksummed
+          # downloads are needed, not only MODULE.bazel, so a changed pin gets a fresh entry.
+          repository-cache: |
+            - MODULE.bazel
+            - MODULE.bazel.lock
+            - tools/build_defs/*.bzl
+          # Only main (push, schedule, dispatch) writes caches. PRs restore main's entries;
+          # entries written from a PR ref cannot be restored by other PRs (see #2171).
+          cache-save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Self-test diagnostic and evidence gates
         run: node --test tools/ci/*.test.mjs
@@ -124,7 +132,10 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}-lint
-          repository-cache: true
+          # Lint must not race the build job for the shared repository-cache key (a small
+          # lint-only entry would block the full one), so it neither restores nor saves it.
+          repository-cache: false
+          cache-save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check BUILD files formatting
         run: bazel run @buildifier_prebuilt//:buildifier -- -mode=check -lint=warn -r .
