@@ -169,7 +169,12 @@ class HoverProvider(
         return if (node == null || !node.isHoverable()) {
             null
         } else {
-            createHoverContent(node, documentUri, compiled)?.apply {
+            createHoverContent(
+                node,
+                documentUri,
+                compiled,
+                parseResult?.isSuccessful == true && !parseResult.outcome.isDegraded,
+            )?.apply {
                 range = range?.let { index.utf16Range(it) } ?: hoverIdentifierRange(index, position)
             }
         }
@@ -336,6 +341,7 @@ class HoverProvider(
         node: ASTNode,
         documentUri: URI,
         snapshot: CompiledDocumentSnapshot?,
+        reliableSource: Boolean,
     ): Hover? {
         val module = module(documentUri, snapshot)
         val context = HoverContext(
@@ -343,6 +349,7 @@ class HoverProvider(
             contentGenerator = contentGenerator,
             documentUri = documentUri,
             astModel = snapshot?.parseResult?.astModel ?: compilationService.getAstModel(documentUri),
+            reliableSource = reliableSource,
         )
 
         // Use strategy pattern to generate base hover

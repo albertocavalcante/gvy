@@ -7,6 +7,8 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completion
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
+import com.github.albertocavalcante.gvy.gls.providers.jenkins.CredentialBindingSite
+import com.github.albertocavalcante.gvy.gls.providers.jenkins.credentialBindingSite
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsBlockMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
@@ -170,28 +172,37 @@ internal object JenkinsCompletionProvider {
         // Never edit the inside of a string literal (e.g. `sh 'ls|'`).
         if (CompletionContextDetector.isInsideStringLiteral(ctx.content, ctx.line, ctx.character)) return
 
-        // Collect already specified argument map keys if present
-        val existingKeys = mutableSetOf<String>()
-        val args = methodCall.arguments
-        if (args is ArgumentListExpression) {
-            args.expressions.filterIsInstance<MapExpression>().forEach { mapExpr ->
-                mapExpr.mapEntryExpressions.forEach { entry ->
-                    val key = entry.keyExpression.text.removeSuffix(":")
-                    existingKeys.add(key)
-                }
-            }
-        }
+        val existingKeys = existingArgumentKeys(methodCall)
+
+        val bindingSite = astModel.credentialBindingSite(
+            methodCall,
+            ctx.uri,
+            metadata,
+            ctx.compilationService.workspaceManager.getJenkinsCapabilities(),
+            ctx.reliableSource,
+        )
+        if (bindingSite == CredentialBindingSite.UNKNOWN) return
 
         val isCommand = CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, callName)
-        val bundledParamCompletions = JenkinsStepCompletionProvider.getParameterCompletions(
-            callName,
-            existingKeys,
-            metadata,
-            isCommand,
-            // Only a statement directly in the directive block is one of its entries; a nested call such as
-            // `string(defaultValue: string(|))` keeps the step's own keys.
-            directive?.takeIf { isDirectiveStatement(methodCall, it, astModel) },
-        )
+        // Only a statement directly in the directive block is one of its entries; a nested call such as
+        // `string(defaultValue: string(|))` keeps the step's own keys.
+        val directDirective = directive?.takeIf { isDirectiveStatement(methodCall, it, astModel) }
+        val bundledParamCompletions = if (bindingSite == CredentialBindingSite.BINDING) {
+            JenkinsStepCompletionProvider.getNestedBindingParameterCompletions(
+                callName,
+                existingKeys,
+                metadata,
+                isCommand,
+            )
+        } else {
+            JenkinsStepCompletionProvider.getParameterCompletions(
+                callName,
+                existingKeys,
+                metadata,
+                isCommand,
+                directDirective,
+            )
+        }
         val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
         bundledParamCompletions.forEach { item ->
             // A partially typed option (`sh 'ls' ret|`) must be replaced together with the `, ` separator.
@@ -240,4 +251,15 @@ internal object JenkinsCompletionProvider {
         val receiver = (node as? PropertyExpression)?.objectExpression as? MethodCallExpression
         return receiver?.takeIf(acceptReceiver)
     }
+}
+
+private fun existingArgumentKeys(call: MethodCallExpression): Set<String> {
+    val keys = mutableSetOf<String>()
+    val args = call.arguments
+    if (args is ArgumentListExpression) {
+        args.expressions.filterIsInstance<MapExpression>().forEach { map ->
+            map.mapEntryExpressions.forEach { entry -> keys.add(entry.keyExpression.text.removeSuffix(":")) }
+        }
+    }
+    return keys
 }

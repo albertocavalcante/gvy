@@ -3,14 +3,17 @@
 
 package com.github.albertocavalcante.gvy.jenkins.gdsl
 
+import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
 import com.github.albertocavalcante.gvy.gdsl.model.GdslParseResult
 import com.github.albertocavalcante.gvy.gdsl.model.MethodDescriptor
 import com.github.albertocavalcante.gvy.gdsl.model.NamedParameterDescriptor
 import com.github.albertocavalcante.gvy.gdsl.model.ParameterDescriptor
 import com.github.albertocavalcante.gvy.gdsl.model.PropertyDescriptor
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import kotlin.test.assertNotNull
 
 /**
  * TDD tests for JenkinsGdslAdapter.
@@ -93,6 +96,45 @@ class JenkinsGdslAdapterTest {
             // Named params have more metadata, should be preferred
             assertThat(step.parameters["script"]!!.documentation).isEqualTo("Script to run")
             assertThat(step.parameters["script"]!!.required).isTrue()
+        }
+
+        @Test
+        fun `retains both binding forms return type and three requiredness states`() {
+            val method = MethodDescriptor(
+                name = "custom",
+                returnType = "example.Result",
+                parameters = listOf(ParameterDescriptor("first", "String")),
+                namedParameters = listOf(
+                    NamedParameterDescriptor("unknown", "String"),
+                    NamedParameterDescriptor("optional", "String", required = false),
+                    NamedParameterDescriptor("required", "String", required = true),
+                ),
+            )
+            val step = adapter.convertMethod(method)
+            assertThat(step.positionalParams).containsExactly("first")
+            assertThat(step.returnType).isEqualTo("example.Result")
+            assertThat(step.parameters.getValue("unknown").required).isNull()
+            assertThat(step.parameters.getValue("optional").required).isFalse()
+            assertThat(step.parameters.getValue("required").required).isTrue()
+        }
+
+        @Test
+        fun `reader and adapter retain omitted false and true requiredness`() {
+            val script = """
+                contributor([context()]) {
+                    method(name: 'sample', namedParams: [
+                        parameter(name: 'unknown'),
+                        parameter(name: 'optional', required: false),
+                        parameter(name: 'required', required: true),
+                    ])
+                }
+            """.trimIndent()
+            val parsed = GdslExecutor().executeAndCapture(script, "test.gdsl")
+            assertThat(parsed.success).isTrue()
+            val parameters = adapter.convert(parsed).steps.getValue("sample").parameters
+            assertThat(parameters.getValue("unknown").required).isNull()
+            assertThat(parameters.getValue("optional").required).isFalse()
+            assertThat(parameters.getValue("required").required).isTrue()
         }
 
         @Test
@@ -190,7 +232,24 @@ class JenkinsGdslAdapterTest {
         }
 
         @Test
-        fun `handles duplicate step names by keeping last`() {
+        fun `same named method and property retain distinct namespace identities`() {
+            val result = GdslParseResult(
+                methods = listOf(MethodDescriptor("echo", "void")),
+                properties = listOf(PropertyDescriptor("echo", "String")),
+            )
+            val metadata = adapter.convert(result)
+            val catalogue = assertNotNull(metadata.typedCatalogue)
+
+            assertThat(catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "echo").map { it.id })
+                .containsExactly("gdsl:method:0:echo")
+            assertThat(catalogue.candidates(SymbolKind.GLOBAL, "echo").map { it.id })
+                .containsExactly("gdsl:property:0:echo")
+            assertThat(metadata.steps).containsKey("echo")
+            assertThat(metadata.globalVariables).containsKey("echo")
+        }
+
+        @Test
+        fun `duplicate step names preserve distinct typed candidates without a singular projection`() {
             val result = GdslParseResult(
                 methods = listOf(
                     MethodDescriptor("echo", "void", documentation = "First"),
@@ -201,8 +260,10 @@ class JenkinsGdslAdapterTest {
 
             val metadata = adapter.convert(result)
 
-            assertThat(metadata.steps).hasSize(1)
-            assertThat(metadata.steps["echo"]!!.documentation).isEqualTo("Second")
+            assertThat(metadata.steps).isEmpty()
+            val candidates = assertNotNull(metadata.typedCatalogue).candidates(SymbolKind.EXECUTABLE_STEP, "echo")
+            assertThat(candidates.map { it.id }).containsExactly("gdsl:method:0:echo", "gdsl:method:1:echo")
+            assertThat(candidates.map { it.documentation }).containsExactly("First", "Second")
         }
     }
 

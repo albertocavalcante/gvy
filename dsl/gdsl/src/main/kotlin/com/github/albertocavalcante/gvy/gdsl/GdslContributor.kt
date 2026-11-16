@@ -90,6 +90,7 @@ class GdslContributor(val context: GdslContext) {
     fun parameter(args: Map<String, Any?>): NamedParameterDescriptor = NamedParameterDescriptor(
         name = args["name"]?.toString() ?: "",
         type = stringifyType(args["type"]),
+        required = args["required"] as? Boolean,
         documentation = args["doc"]?.toString(),
     )
 

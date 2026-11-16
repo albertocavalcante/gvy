@@ -24,23 +24,23 @@ class StableStepDefinitionsTest {
         assertEquals("sh", metadata.name)
         assertEquals("workflow-durable-task-step", metadata.plugin)
         assertTrue(metadata.parameters.containsKey("script"))
-        assertTrue(metadata.parameters["script"]!!.required)
+        assertTrue(metadata.parameters["script"]!!.required == true)
         assertEquals("String", metadata.parameters["script"]!!.type)
 
         // Optional parameters
         assertTrue(metadata.parameters.containsKey("returnStdout"))
-        assertFalse(metadata.parameters["returnStdout"]!!.required)
+        assertTrue(metadata.parameters["returnStdout"]!!.required == false)
         assertEquals("boolean", metadata.parameters["returnStdout"]!!.type)
         assertEquals("false", metadata.parameters["returnStdout"]!!.default)
 
         assertTrue(metadata.parameters.containsKey("returnStatus"))
-        assertFalse(metadata.parameters["returnStatus"]!!.required)
+        assertTrue(metadata.parameters["returnStatus"]!!.required == false)
 
         assertTrue(metadata.parameters.containsKey("encoding"))
-        assertFalse(metadata.parameters["encoding"]!!.required)
+        assertTrue(metadata.parameters["encoding"]!!.required == false)
 
         assertTrue(metadata.parameters.containsKey("label"))
-        assertFalse(metadata.parameters["label"]!!.required)
+        assertTrue(metadata.parameters["label"]!!.required == false)
     }
 
     @Test
@@ -51,7 +51,7 @@ class StableStepDefinitionsTest {
         assertEquals("bat", metadata.name)
         assertEquals("workflow-durable-task-step", metadata.plugin)
         assertTrue(metadata.parameters.containsKey("script"))
-        assertTrue(metadata.parameters["script"]!!.required)
+        assertTrue(metadata.parameters["script"]!!.required == true)
     }
 
     @Test
@@ -72,7 +72,7 @@ class StableStepDefinitionsTest {
         assertEquals("echo", metadata.name)
         assertEquals("workflow-basic-steps", metadata.plugin)
         assertTrue(metadata.parameters.containsKey("message"))
-        assertTrue(metadata.parameters["message"]!!.required)
+        assertTrue(metadata.parameters["message"]!!.required == true)
         assertEquals("String", metadata.parameters["message"]!!.type)
     }
 
@@ -83,7 +83,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("error", metadata.name)
         assertTrue(metadata.parameters.containsKey("message"))
-        assertTrue(metadata.parameters["message"]!!.required)
+        assertTrue(metadata.parameters["message"]!!.required == true)
     }
 
     @Test
@@ -94,15 +94,15 @@ class StableStepDefinitionsTest {
         assertEquals("timeout", metadata.name)
         assertEquals("workflow-basic-steps", metadata.plugin)
         assertTrue(metadata.parameters.containsKey("time"))
-        assertTrue(metadata.parameters["time"]!!.required)
+        assertTrue(metadata.parameters["time"]!!.required == true)
         assertEquals("int", metadata.parameters["time"]!!.type)
 
         assertTrue(metadata.parameters.containsKey("unit"))
-        assertFalse(metadata.parameters["unit"]!!.required)
+        assertTrue(metadata.parameters["unit"]!!.required == false)
         assertEquals("MINUTES", metadata.parameters["unit"]!!.default)
 
         assertTrue(metadata.parameters.containsKey("activity"))
-        assertFalse(metadata.parameters["activity"]!!.required)
+        assertTrue(metadata.parameters["activity"]!!.required == false)
     }
 
     @Test
@@ -112,7 +112,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("retry", metadata.name)
         assertTrue(metadata.parameters.containsKey("count"))
-        assertTrue(metadata.parameters["count"]!!.required)
+        assertTrue(metadata.parameters["count"]!!.required == true)
         assertEquals("int", metadata.parameters["count"]!!.type)
     }
 
@@ -123,10 +123,10 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("sleep", metadata.name)
         assertTrue(metadata.parameters.containsKey("time"))
-        assertTrue(metadata.parameters["time"]!!.required)
+        assertTrue(metadata.parameters["time"]!!.required == true)
 
         assertTrue(metadata.parameters.containsKey("unit"))
-        assertFalse(metadata.parameters["unit"]!!.required)
+        assertTrue(metadata.parameters["unit"]!!.required == false)
         assertEquals("SECONDS", metadata.parameters["unit"]!!.default)
     }
 
@@ -139,12 +139,12 @@ class StableStepDefinitionsTest {
         assertEquals("workflow-basic-steps", metadata.plugin)
 
         assertTrue(metadata.parameters.containsKey("initialRecurrencePeriod"))
-        assertFalse(metadata.parameters["initialRecurrencePeriod"]!!.required)
+        assertTrue(metadata.parameters["initialRecurrencePeriod"]!!.required == false)
         assertEquals("250", metadata.parameters["initialRecurrencePeriod"]!!.default)
         assertEquals("long", metadata.parameters["initialRecurrencePeriod"]!!.type)
 
         assertTrue(metadata.parameters.containsKey("quiet"))
-        assertFalse(metadata.parameters["quiet"]!!.required)
+        assertTrue(metadata.parameters["quiet"]!!.required == false)
         assertEquals("false", metadata.parameters["quiet"]!!.default)
     }
 
@@ -155,7 +155,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("dir", metadata.name)
         assertTrue(metadata.parameters.containsKey("path"))
-        assertTrue(metadata.parameters["path"]!!.required)
+        assertTrue(metadata.parameters["path"]!!.required == true)
     }
 
     @Test
@@ -165,7 +165,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("deleteDir", metadata.name)
         // deleteDir has no required parameters
-        assertTrue(metadata.parameters.isEmpty() || metadata.parameters.values.none { it.required })
+        assertTrue(metadata.parameters.isEmpty() || metadata.parameters.values.none { it.required == true })
     }
 
     @Test
@@ -175,7 +175,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("pwd", metadata.name)
         assertTrue(metadata.parameters.containsKey("tmp"))
-        assertFalse(metadata.parameters["tmp"]!!.required)
+        assertTrue(metadata.parameters["tmp"]!!.required == false)
     }
 
     @Test
@@ -185,11 +185,11 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("writeFile", metadata.name)
         assertTrue(metadata.parameters.containsKey("file"))
-        assertTrue(metadata.parameters["file"]!!.required)
+        assertTrue(metadata.parameters["file"]!!.required == true)
         assertTrue(metadata.parameters.containsKey("text"))
-        assertTrue(metadata.parameters["text"]!!.required)
+        assertTrue(metadata.parameters["text"]!!.required == true)
         assertTrue(metadata.parameters.containsKey("encoding"))
-        assertFalse(metadata.parameters["encoding"]!!.required)
+        assertTrue(metadata.parameters["encoding"]!!.required == false)
     }
 
     @Test
@@ -199,7 +199,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("readFile", metadata.name)
         assertTrue(metadata.parameters.containsKey("file"))
-        assertTrue(metadata.parameters["file"]!!.required)
+        assertTrue(metadata.parameters["file"]!!.required == true)
     }
 
     @Test
@@ -209,7 +209,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("fileExists", metadata.name)
         assertTrue(metadata.parameters.containsKey("file"))
-        assertTrue(metadata.parameters["file"]!!.required)
+        assertTrue(metadata.parameters["file"]!!.required == true)
     }
 
     @Test
@@ -228,7 +228,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("node", metadata.name)
         assertTrue(metadata.parameters.containsKey("label"))
-        assertFalse(metadata.parameters["label"]!!.required) // label is optional
+        assertTrue(metadata.parameters["label"]!!.required == false) // label is optional
     }
 
     @Test
@@ -239,7 +239,7 @@ class StableStepDefinitionsTest {
         assertEquals("stage", metadata.name)
         assertEquals("pipeline-stage-step", metadata.plugin)
         assertTrue(metadata.parameters.containsKey("name"))
-        assertTrue(metadata.parameters["name"]!!.required)
+        assertTrue(metadata.parameters["name"]!!.required == true)
     }
 
     @Test
@@ -249,7 +249,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("withEnv", metadata.name)
         assertTrue(metadata.parameters.containsKey("overrides"))
-        assertTrue(metadata.parameters["overrides"]!!.required)
+        assertTrue(metadata.parameters["overrides"]!!.required == true)
     }
 
     @Test
@@ -259,9 +259,9 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("catchError", metadata.name)
         assertTrue(metadata.parameters.containsKey("buildResult"))
-        assertFalse(metadata.parameters["buildResult"]!!.required)
+        assertTrue(metadata.parameters["buildResult"]!!.required == false)
         assertTrue(metadata.parameters.containsKey("stageResult"))
-        assertFalse(metadata.parameters["stageResult"]!!.required)
+        assertTrue(metadata.parameters["stageResult"]!!.required == false)
     }
 
     @Test
@@ -271,9 +271,9 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("archiveArtifacts", metadata.name)
         assertTrue(metadata.parameters.containsKey("artifacts"))
-        assertTrue(metadata.parameters["artifacts"]!!.required)
+        assertTrue(metadata.parameters["artifacts"]!!.required == true)
         assertTrue(metadata.parameters.containsKey("allowEmptyArchive"))
-        assertFalse(metadata.parameters["allowEmptyArchive"]!!.required)
+        assertTrue(metadata.parameters["allowEmptyArchive"]!!.required == false)
     }
 
     @Test
@@ -283,9 +283,9 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("stash", metadata.name)
         assertTrue(metadata.parameters.containsKey("name"))
-        assertTrue(metadata.parameters["name"]!!.required)
+        assertTrue(metadata.parameters["name"]!!.required == true)
         assertTrue(metadata.parameters.containsKey("includes"))
-        assertFalse(metadata.parameters["includes"]!!.required)
+        assertTrue(metadata.parameters["includes"]!!.required == false)
     }
 
     @Test
@@ -295,7 +295,7 @@ class StableStepDefinitionsTest {
         assertNotNull(metadata)
         assertEquals("unstash", metadata.name)
         assertTrue(metadata.parameters.containsKey("name"))
-        assertTrue(metadata.parameters["name"]!!.required)
+        assertTrue(metadata.parameters["name"]!!.required == true)
     }
 
     @Test
@@ -306,9 +306,9 @@ class StableStepDefinitionsTest {
         assertEquals("input", metadata.name)
         assertEquals("pipeline-input-step", metadata.plugin)
         assertTrue(metadata.parameters.containsKey("message"))
-        assertTrue(metadata.parameters["message"]!!.required)
+        assertTrue(metadata.parameters["message"]!!.required == true)
         assertTrue(metadata.parameters.containsKey("ok"))
-        assertFalse(metadata.parameters["ok"]!!.required)
+        assertTrue(metadata.parameters["ok"]!!.required == false)
     }
 
     @Test

@@ -252,9 +252,9 @@
       }
     },
     "archiveArtifacts": {
-      "plugin": "workflow-basic-steps",
+      "plugin": "core",
       "description": "Archive the artifacts from the build.",
-      "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#archiveartifacts-archive-the-artifacts",
+      "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts",
       "category": "build",
       "examples": [
         "archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true"

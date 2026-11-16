@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.jenkins.config
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadataLoader
 import com.github.albertocavalcante.gvy.jenkins.metadata.MetadataMerger
 import com.github.albertocavalcante.gvy.jenkins.metadata.StableStepDefinitions
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
+import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -57,7 +59,11 @@ class UserMetadataLoaderTest {
         val metadata = loader.load()
 
         assertNotNull(metadata)
-        assertTrue(metadata.steps.containsKey("myCustomStep"))
+        val step = assertNotNull(metadata.getStep("myCustomStep"))
+        assertEquals("user-gdsl", step.plugin)
+        val symbol = assertNotNull(metadata.typedCatalogue).unique(SymbolKind.EXECUTABLE_STEP, "myCustomStep")
+        assertEquals(jenkinsDir.resolve("pipeline.gdsl").toString(), assertNotNull(symbol).provenance.origin)
+        assertNull(symbol.ownerPlugin)
     }
 
     @Test
@@ -100,7 +106,7 @@ class UserMetadataLoaderTest {
         assertEquals("internal-plugin", step.plugin)
         assertEquals("Our internal deployment step", step.documentation)
         assertTrue(step.parameters.containsKey("environment"))
-        assertTrue(step.parameters["environment"]!!.required)
+        assertTrue(step.parameters["environment"]!!.required == true)
     }
 
     @Test
@@ -139,8 +145,15 @@ class UserMetadataLoaderTest {
 
         val sh = merged.steps["sh"]
         assertNotNull(sh)
-        assertEquals("user-override", sh.plugin)
+        assertEquals("workflow-durable-task-step", sh.plugin)
         assertEquals("User overridden sh step", sh.documentation)
+        val candidate = assertNotNull(
+            merged.typedCatalogue?.unique(
+                com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind.EXECUTABLE_STEP,
+                "sh",
+            ),
+        )
+        assertTrue(candidate.contributors.any { it.legacyPlugin == "user-override" })
     }
 
     @Test
@@ -239,5 +252,172 @@ class UserMetadataLoaderTest {
         }
 
         assertNull(UserMetadataLoader(tempDir).load())
+    }
+
+    @Test
+    fun `legacy partial override retains target fields and records raw plugin contribution`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(
+            configDir.resolve("jenkins.json"),
+            """{"metadataOverrides":{"sh":{"plugin":"user-override",""" +
+                """"parameters":{"customParam":{"type":"String","required":false}}}}}""",
+        )
+        val override = assertNotNull(UserMetadataLoader(tempDir).load()).steps
+        val bundled = VersionedMetadataLoader().load()
+        val merged = MetadataMerger.mergeWithEnrichment(
+            MetadataMerger.mergeWithPriority(bundled, emptyMap(), override),
+            com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.JenkinsEnrichment(),
+        )
+        val sh = assertNotNull(merged.getStep("sh"))
+        assertTrue("script" in sh.namedParams)
+        assertEquals(false, sh.namedParams.getValue("customParam").required)
+        val canonical = assertNotNull(
+            merged.catalogue.unique(
+                com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind.EXECUTABLE_STEP,
+                "sh",
+            ),
+        )
+        assertEquals(sh.plugin, canonical.ownerPlugin)
+        assertTrue(canonical.contributors.any { it.legacyPlugin == "user-override" })
+    }
+
+    @Test
+    fun `legacy override distinguishes absent false and null requiredness`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(
+            configDir.resolve("jenkins.json"),
+            """{"metadataOverrides":{"sample":{"plugin":"input-label","parameters":{
+                "preserved":{"type":"String"},
+                "optional":{"type":"String","required":false},
+                "unknown":{"type":"String","required":null}
+            }}}}""",
+        )
+        val overrides = assertNotNull(UserMetadataLoader(tempDir).load()).steps
+        val params = listOf("preserved", "optional", "unknown").associateWith {
+            com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter(it, "String", required = true)
+        }
+        val source = com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata(
+            name = "sample",
+            plugin = "owner",
+            parameters = params,
+            ownerPlugin = "owner",
+            ownerEvidence = com.github.albertocavalcante.gvy.jenkins.metadata.OwnerEvidence.CURATED,
+        )
+        val bundled = com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata(
+            steps = mapOf("sample" to source),
+            globalVariables = emptyMap(),
+        )
+        val result = MetadataMerger.mergeWithEnrichment(
+            MetadataMerger.mergeWithPriority(bundled, emptyMap(), overrides),
+            com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.JenkinsEnrichment(),
+        )
+        val merged = assertNotNull(result.getStep("sample")).namedParams
+        assertEquals(true, merged.getValue("preserved").required)
+        assertEquals(false, merged.getValue("optional").required)
+        assertEquals(null, merged.getValue("unknown").required)
+        assertEquals("owner", result.getStep("sample")?.plugin)
+    }
+
+    @Test
+    fun `an overload-only GDSL file preserves both candidates`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(configDir.resolve("jenkins.json"), """{"gdslFile":"overloads.gdsl"}""")
+        Files.writeString(
+            tempDir.resolve("overloads.gdsl"),
+            """
+            contributor(context()) {
+                method(name: 'deploy', type: 'String', params: [name: 'String'])
+                method(name: 'deploy', type: 'Integer', params: [id: 'int'])
+            }
+            """.trimIndent(),
+        )
+        val metadata = assertNotNull(UserMetadataLoader(tempDir).load())
+        assertNull(metadata.steps["deploy"])
+        val candidates = assertNotNull(metadata.typedCatalogue)
+            .candidates(com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind.EXECUTABLE_STEP, "deploy")
+        assertEquals(2, candidates.size)
+        assertEquals(setOf("String", "Integer"), candidates.map { it.returnType }.toSet())
+    }
+
+    @Test
+    fun `one GDSL method remains one candidate through loader merge and context`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(configDir.resolve("jenkins.json"), """{"gdslFile":"one.gdsl"}""")
+        Files.writeString(
+            tempDir.resolve("one.gdsl"),
+            "contributor(context()) { method(name: 'deploy', type: 'String', params: [name: 'String']) }",
+        )
+        val loaded = assertNotNull(UserMetadataLoader(tempDir).load())
+        val merged = MetadataMerger.mergeWithEnrichment(
+            loaded,
+            com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.JenkinsEnrichment(),
+        )
+        val context = com.github.albertocavalcante.gvy.jenkins.JenkinsContext(
+            configuration = com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration(),
+            workspaceRoot = tempDir,
+            pluginManager = com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager(),
+            bundledMetadataLoader = { merged },
+            classpathScanner = {
+                com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata(
+                    steps = emptyMap(),
+                    globalVariables = emptyMap(),
+                )
+            },
+        )
+        val actual = context.getAllMetadata(null)
+        val candidates = actual.catalogue.candidates(
+            com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind.EXECUTABLE_STEP,
+            "deploy",
+        )
+        assertEquals(1, candidates.size)
+        assertNotNull(actual.getStep("deploy"))
+        assertEquals("String", candidates.single().returnType)
+    }
+
+    @Test
+    fun `legacy override patches a single GDSL method without duplicating it`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(
+            configDir.resolve("jenkins.json"),
+            """{"gdslFile":"one.gdsl","metadataOverrides":{"deploy":{"plugin":"user-label",""" +
+                """"documentation":"override"}}}""",
+        )
+        Files.writeString(
+            tempDir.resolve("one.gdsl"),
+            "contributor(context()) { method(name: 'deploy', type: 'String', params: [name: 'String']) }",
+        )
+        val loaded = assertNotNull(UserMetadataLoader(tempDir).load())
+        val merged = MetadataMerger.mergeWithEnrichment(
+            loaded,
+            com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.JenkinsEnrichment(),
+        )
+        val candidates = merged.catalogue.candidates(
+            com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind.EXECUTABLE_STEP,
+            "deploy",
+        )
+        assertEquals(1, candidates.size)
+        assertEquals("override", candidates.single().documentation)
+        assertTrue(candidates.single().contributors.any { it.legacyPlugin == "user-label" })
+        assertEquals("override", merged.getStep("deploy")?.documentation)
+    }
+
+    @Test
+    fun `GDSL plus stable metadata retains enrichment for other step names`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(configDir.resolve("jenkins.json"), """{"gdslFile":"one.gdsl"}""")
+        Files.writeString(tempDir.resolve("one.gdsl"), "contributor(context()) { method(name: 'deploy') }")
+        val loaded = assertNotNull(UserMetadataLoader(tempDir).load())
+        val merged = MetadataMerger.mergeWithEnrichment(
+            MetadataMerger.mergeAll(loaded, stable = StableStepDefinitions.all()),
+            com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.EnrichmentMetadataLoader().load(),
+        )
+        val timeout = assertNotNull(merged.getStep("timeout"))
+        assertTrue(timeout.namedParams.getValue("unit").validValues.orEmpty().contains("MINUTES"))
     }
 }

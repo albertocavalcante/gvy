@@ -40,7 +40,41 @@ data class JenkinsStepMetadata(
      * Documentation for this step
      */
     val documentation: String? = null,
+    val kind: SymbolKind = SymbolKind.EXECUTABLE_STEP,
+    val returnType: String? = null,
+    val provenance: MetadataProvenance = MetadataProvenance(SourceKind.UNKNOWN),
+    val ownerPlugin: String? = null,
+    val ownerEvidence: OwnerEvidence = OwnerEvidence.UNKNOWN,
+    val aliases: List<String> = emptyList(),
+    val contexts: List<String>? = null,
+    val namedBinding: Knowledge = Knowledge.UNKNOWN,
+    val block: Knowledge = Knowledge.UNKNOWN,
+    val valueDomain: List<String>? = null,
+    /** Presence markers are used only for legacy partial overrides. */
+    val documentationSpecified: Boolean = documentation != null,
+    /** Canonical origin when this value is a compatibility projection. */
+    val canonicalProjection: StepProjection? = null,
 )
+
+/** Origin and detached compatibility facts used to detect edits to a projected step. */
+class StepProjection internal constructor(
+    internal val symbol: TypedSymbol,
+    private val original: JenkinsStepMetadata,
+) {
+    internal fun matches(value: JenkinsStepMetadata): Boolean = value.copy(canonicalProjection = null) == original
+}
+
+internal fun JenkinsStepMetadata.withCanonicalProjection(symbol: TypedSymbol): JenkinsStepMetadata {
+    val original = copy(
+        positionalParams = positionalParams.toList(),
+        parameters = parameters.toMap(),
+        aliases = aliases.toList(),
+        contexts = contexts?.toList(),
+        valueDomain = valueDomain?.toList(),
+        canonicalProjection = null,
+    )
+    return copy(canonicalProjection = StepProjection(symbol, original))
+}
 
 /**
  * Metadata for a single step parameter.
@@ -57,9 +91,9 @@ data class StepParameter(
     val type: String,
 
     /**
-     * Whether this parameter is required
+     * Whether this parameter is required; null means the source did not establish requiredness.
      */
-    val required: Boolean = false,
+    val required: Boolean? = null,
 
     /**
      * Default value if parameter is optional
@@ -70,6 +104,9 @@ data class StepParameter(
      * Documentation for this parameter
      */
     val documentation: String? = null,
+    val requiredSpecified: Boolean = required != null,
+    val defaultSpecified: Boolean = default != null,
+    val documentationSpecified: Boolean = documentation != null,
 )
 
 /**
@@ -92,7 +129,20 @@ data class GlobalVariableMetadata(
      * Documentation for this global variable
      */
     val documentation: String? = null,
+    /** Canonical origin when this value is a compatibility projection. */
+    val canonicalProjection: GlobalProjection? = null,
 )
+
+/** Origin and detached compatibility facts used to detect edits to a projected global. */
+class GlobalProjection internal constructor(
+    internal val symbol: TypedSymbol,
+    private val original: GlobalVariableMetadata,
+) {
+    internal fun matches(value: GlobalVariableMetadata): Boolean = value.copy(canonicalProjection = null) == original
+}
+
+internal fun GlobalVariableMetadata.withCanonicalProjection(symbol: TypedSymbol): GlobalVariableMetadata =
+    copy(canonicalProjection = GlobalProjection(symbol, copy(canonicalProjection = null)))
 
 /**
  * Post build condition (e.g., `always`, `success`, `failure`).
@@ -217,6 +267,12 @@ data class BundledJenkinsMetadata(
      * syntax documents (maven, jdk, gradle); a real `tools {}` accepts any configured tool type.
      */
     val directiveEntries: Map<String, Map<String, DeclarativeOptionMetadata>> = emptyMap(),
+    val nestedDescribables: Map<String, JenkinsStepMetadata> = emptyMap(),
+    val typedCatalogue: TypedCatalogue? = null,
+    /** Presence-aware user patches are applied after curated enrichment. */
+    val legacyOverrides: Map<String, JenkinsStepMetadata> = emptyMap(),
+    /** Unpatched legacy records retained until enrichment has been applied. */
+    val legacyBaseSteps: Map<String, JenkinsStepMetadata> = emptyMap(),
 ) {
     /**
      * Query for a step by name.

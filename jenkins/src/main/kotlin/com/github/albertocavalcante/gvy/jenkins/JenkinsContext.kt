@@ -16,12 +16,15 @@ import com.github.albertocavalcante.gvy.jenkins.gdsl.JenkinsGdslAdapter
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
-import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
-import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedCatalogue
+import com.github.albertocavalcante.gvy.jenkins.metadata.TypedSymbol
 import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
-import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
+import com.github.albertocavalcante.gvy.jenkins.metadata.projectGlobals
+import com.github.albertocavalcante.gvy.jenkins.metadata.projectOptions
+import com.github.albertocavalcante.gvy.jenkins.metadata.projectSteps
+import com.github.albertocavalcante.gvy.jenkins.metadata.toTypedSymbol
 import com.github.albertocavalcante.gvy.jenkins.plugins.PluginDiscoveryService
 import com.github.albertocavalcante.gvy.jenkins.scanning.JenkinsClasspathScanner
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubGenerator
@@ -347,24 +350,39 @@ class JenkinsContext internal constructor(
         return results
     }
 
-    /** Contributions of every readable file; a later file's step or global replaces an earlier one's. */
+    /** Contributions of every readable file retain their namespace, context and source identity. */
     private fun readGdsl(results: GdslLoadResults): BundledJenkinsMetadata {
         val steps = mutableMapOf<String, JenkinsStepMetadata>()
         val globals = mutableMapOf<String, GlobalVariableMetadata>()
-        results.successful.forEach { result ->
-            val content = result.content ?: return@forEach
+        var catalogue = TypedCatalogue()
+        results.successful.forEachIndexed { fileIndex, result ->
+            val content = result.content ?: return@forEachIndexed
             val parsed = gdslExecutor.executeAndCapture(content, result.path)
             if (!parsed.success) {
                 logger.warn { "Could not read Jenkins GDSL ${result.path}: ${parsed.error}" }
-                return@forEach
+                return@forEachIndexed
             }
             parsed.warnings.forEach { logger.warn { "Jenkins GDSL ${result.path}: $it" } }
-            val metadata = gdslAdapter.convert(parsed)
+            val metadata = gdslAdapter.convert(
+                parsed,
+                result.path,
+                sourceOrigin = result.path,
+                sourceNamespace = java.nio.file.Path.of(result.path).toAbsolutePath().normalize().toUri().toString(),
+            )
             steps += metadata.steps
             globals += metadata.globalVariables
+            catalogue = catalogue.withLegacyContributions(
+                metadata.typedCatalogue.orEmptySymbols().map {
+                    it.copy(id = "gdsl:$fileIndex:${it.id}", sourceId = it.sourceId ?: it.id)
+                },
+            )
             logger.info { "Loaded Jenkins GDSL ${result.path}: ${metadata.steps.size} steps" }
         }
-        return BundledJenkinsMetadata(steps = steps, globalVariables = globals)
+        return BundledJenkinsMetadata(
+            steps = steps,
+            globalVariables = globals,
+            typedCatalogue = catalogue,
+        )
     }
 
     /**
@@ -468,10 +486,17 @@ class JenkinsContext internal constructor(
         val versionedMerged = bundledMetadata
 
         val finalMetadata = if (dynamicMetadata != null) {
-            val combinedSteps = versionedMerged.steps + dynamicMetadata.steps.mapValues { (name, step) ->
-                step.toMerged(backup = versionedMerged.steps[name])
-            }
-            versionedMerged.copy(steps = combinedSteps)
+            val scanned = dynamicMetadata.steps.values.map { it.toTypedSymbol() }
+            val catalogue = versionedMerged.catalogue.withLegacyContributions(scanned)
+            versionedMerged.copy(
+                steps = catalogue.projectSteps(
+                    SymbolKind.EXECUTABLE_STEP,
+                    versionedMerged.steps,
+                    versionedMerged.catalogue.symbols.map { it.id }.toSet(),
+                    versionedMerged.catalogue,
+                ),
+                catalogue = catalogue,
+            )
         } else {
             versionedMerged
         }
@@ -485,13 +510,30 @@ class JenkinsContext internal constructor(
         // Filter metadata to only installed plugins (including defaults if enabled)
         val installedPlugins = pluginDiscovery.getInstalledPluginNames()
         logger.debug { "Filtering metadata to ${installedPlugins.size} installed plugins" }
-        return finalMetadata.copy(
-            steps = finalMetadata.steps.filterValues { step ->
-                step.plugin?.let { it in installedPlugins } ?: false
+        val catalogue = finalMetadata.catalogue.copy(
+            symbols = finalMetadata.catalogue.symbols.filter { symbol ->
+                val owner = symbol.ownerPlugin
+                owner == null || owner == JENKINS_CORE_PLUGIN || owner == "core" || owner in installedPlugins
             },
-            // Core entries (cron, string, maven, ...) are always available; plugin ones (gradle) need the plugin.
-            directiveEntries = finalMetadata.directiveEntries.mapValues { (_, entries) ->
-                entries.filterValues { it.plugin == JENKINS_CORE_PLUGIN || it.plugin in installedPlugins }
+        )
+        val previousIds = finalMetadata.catalogue.symbols.map { it.id }.toSet()
+        return finalMetadata.copy(
+            steps = catalogue.projectSteps(SymbolKind.EXECUTABLE_STEP, finalMetadata.steps, previousIds),
+            nestedDescribables = catalogue.projectSteps(
+                SymbolKind.NESTED_DESCRIBABLE,
+                finalMetadata.nestedDescribables,
+                previousIds,
+            ),
+            catalogue = catalogue,
+            globalVariables = catalogue.projectGlobals(finalMetadata.globalVariables, previousIds),
+            declarativeOptions = catalogue.projectOptions(SymbolKind.OPTION, "options"),
+            directiveEntries = finalMetadata.directiveEntries.keys.associateWith { context ->
+                val kind = when (context) {
+                    "tools" -> SymbolKind.TOOL
+                    "triggers" -> SymbolKind.TRIGGER
+                    else -> SymbolKind.DIRECTIVE_ENTRY
+                }
+                catalogue.projectOptions(kind, context)
             },
         )
     }
@@ -697,6 +739,8 @@ internal class ScopedClasspath(val entries: List<Path>, val scanKey: List<Path>)
 /** Publishes a classpath's plugin stub set (returning its directory) and evicts unused sets under a stubs dir. */
 private class PluginStubs(val publish: (Path) -> Path?, val evict: (Path, Path?) -> Unit)
 
+private fun TypedCatalogue?.orEmptySymbols(): List<TypedSymbol> = this?.symbols.orEmpty()
+
 /** Subdirectory of the stubs directory holding the content-keyed plugin stub sets (#1367). */
 private const val STUB_SETS_DIR = "sets"
 
@@ -704,60 +748,24 @@ private const val STUB_SETS_DIR = "sets"
 private const val IMPLICIT_STUBS_DIR = "implicit"
 
 /**
- * Adds GDSL steps and globals whose names the other sources do not know, as either a step or a global, so
- * completion never offers a name twice. Bundled and scanned metadata are richer (enrichment, parameters,
- * plugins), so GDSL never replaces them; a GDSL name declared as both a step and a global stays a step.
- * GDSL entries are the user's own configuration, so plugin filtering does not apply to them.
+ * Keep every raw contribution. Singular projections retain descriptor precedence and defer scoped
+ * or ambiguous GDSL names to contextual resolution.
  */
 private fun withGdsl(metadata: MergedJenkinsMetadata, gdsl: BundledJenkinsMetadata?): MergedJenkinsMetadata {
     if (gdsl == null) return metadata
-    val known = metadata.steps.keys + metadata.globalVariables.keys
-    val newSteps = gdsl.steps.filterKeys { it !in known }.mapValues { (_, step) -> step.toMerged() }
-    val newGlobals = gdsl.globalVariables.filterKeys { it !in known && it !in gdsl.steps }
-        .mapValues { (_, global) -> global.toMerged() }
-    if (newSteps.isEmpty() && newGlobals.isEmpty()) return metadata
-    return metadata.copy(steps = metadata.steps + newSteps, globalVariables = metadata.globalVariables + newGlobals)
+    val candidates = gdsl.typedCatalogue.orEmptySymbols()
+    if (candidates.isEmpty()) return metadata
+    val catalogue = metadata.catalogue.withLegacyContributions(candidates)
+    val previousIds = metadata.catalogue.symbols.map { it.id }.toSet()
+    val steps = catalogue.projectSteps(SymbolKind.EXECUTABLE_STEP, metadata.steps, previousIds)
+    val globals = catalogue.projectGlobals(metadata.globalVariables, previousIds)
+    // Legacy completion presents each spelling once, while raw namespaces remain separate.
+    val existingNames = metadata.steps.keys + metadata.globalVariables.keys
+    return metadata.copy(
+        steps = steps.filterKeys { it in metadata.steps || it !in existingNames },
+        globalVariables = globals.filterKeys {
+            it in metadata.globalVariables || (it !in existingNames && it !in steps)
+        },
+        catalogue = catalogue,
+    )
 }
-
-private fun GlobalVariableMetadata.toMerged(): MergedGlobalVariable = MergedGlobalVariable(
-    name = name,
-    type = type,
-    extractedDocumentation = documentation,
-    enrichedDescription = null,
-    documentationUrl = null,
-    properties = emptyMap(),
-)
-
-private fun JenkinsStepMetadata.toMerged(backup: MergedStepMetadata? = null): MergedStepMetadata = MergedStepMetadata(
-    name = this.name,
-    scope = StepScope.GLOBAL,
-    positionalParams = this.positionalParams,
-    namedParams = run
-    {
-        val dynamicParams = this.parameters.mapValues { (pName, param) ->
-            MergedParameter(
-                name = pName,
-                type = param.type,
-                defaultValue = param.default,
-                description = param.documentation,
-                required = param.required,
-                validValues = null,
-                examples = emptyList(),
-            )
-        }
-        if (backup != null) {
-            backup.namedParams + dynamicParams
-        } else {
-            dynamicParams
-        }
-    },
-    extractedDocumentation = this.documentation,
-    returnType = null,
-    plugin = this.plugin,
-    // Preserve enrichment from backup if available
-    enrichedDescription = backup?.enrichedDescription,
-    documentationUrl = backup?.documentationUrl,
-    category = backup?.category,
-    examples = backup?.examples ?: emptyList(),
-    deprecation = backup?.deprecation,
-)

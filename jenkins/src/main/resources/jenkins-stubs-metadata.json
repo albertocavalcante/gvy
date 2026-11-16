@@ -294,7 +294,7 @@
       "documentation": "Checkout from a Git repository. Simplified syntax for the checkout step with Git SCM."
     },
     "archiveArtifacts": {
-      "plugin": "workflow-basic-steps",
+      "plugin": "core",
       "parameters": {
         "artifacts": {
           "type": "String",
@@ -542,6 +542,7 @@
     },
     "usernamePassword": {
       "plugin": "credentials-binding",
+      "kind": "NESTED_DESCRIBABLE",
       "parameters": {
         "credentialsId": {
           "type": "String",
@@ -563,6 +564,7 @@
     },
     "string": {
       "plugin": "credentials-binding",
+      "kind": "NESTED_DESCRIBABLE",
       "parameters": {
         "credentialsId": {
           "type": "String",
@@ -579,6 +581,7 @@
     },
     "file": {
       "plugin": "credentials-binding",
+      "kind": "NESTED_DESCRIBABLE",
       "parameters": {
         "credentialsId": {
           "type": "String",
@@ -595,6 +598,7 @@
     },
     "sshUserPrivateKey": {
       "plugin": "credentials-binding",
+      "kind": "NESTED_DESCRIBABLE",
       "parameters": {
         "credentialsId": {
           "type": "String",

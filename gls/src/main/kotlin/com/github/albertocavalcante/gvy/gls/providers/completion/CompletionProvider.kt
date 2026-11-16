@@ -57,6 +57,7 @@ data class CompletionContext(
     val semanticResolver: SemanticTypeResolver,
     val moduleNode: ModuleNode?,
     val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
+    val reliableSource: Boolean = false,
 )
 
 /**
@@ -139,6 +140,7 @@ object CompletionProvider {
                             semanticResolver = semanticResolver,
                             moduleNode = ast2,
                             workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
+                            reliableSource = result2.isSuccessful && !result2.outcome.isDegraded,
                         ),
                     )
                 }
@@ -167,6 +169,7 @@ object CompletionProvider {
                         semanticResolver = semanticResolver,
                         moduleNode = ast1,
                         workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
+                        reliableSource = result1.isSuccessful && !result1.outcome.isDegraded,
                     ),
                 )
             }

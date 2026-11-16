@@ -63,6 +63,9 @@ data class ExtractedStep(
  */
 @Serializable
 enum class StepScope {
+    @SerialName("unknown")
+    UNKNOWN,
+
     @SerialName("global")
     GLOBAL, // Can be used anywhere
 
