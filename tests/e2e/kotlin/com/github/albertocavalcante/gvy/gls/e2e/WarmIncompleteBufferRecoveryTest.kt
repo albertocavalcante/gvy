@@ -230,12 +230,13 @@ class WarmIncompleteBufferRecoveryTest {
     )
 
     private companion object {
-        // Source-qualified LF/CRLF baselines: tokens a174/7eb; hover eed91a8. Later checks were blocked.
+        // Source-qualified LF/CRLF baselines: tokens a174/7eb; hover eed91a8/7c54. Later checks were blocked.
         // See https://github.com/albertocavalcante/gvy/issues/2082; remove metadata when the check passes.
         val observedFailures = mapOf(
             "hole.tokens.before" to "recovery: missing class token BeforeWarmV2",
             "hole.tokens.after" to "recovery: missing class token AfterWarmV2",
             "hole.hover.before" to "recovery: empty class hover BeforeWarmV2",
+            "hole.hover.after" to "recovery: empty class hover AfterWarmV2",
         )
         val checks = listOf(
             "diagnostics.integrity",
