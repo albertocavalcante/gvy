@@ -58,11 +58,7 @@ class MavenWorkspaceScanner {
         return modelToModuleInfo(model, pomPath)
     }
 
-    private fun scanRecursive(
-        pomPath: Path,
-        modules: MutableList<MavenModuleInfo>,
-        visited: MutableSet<Path>,
-    ) {
+    private fun scanRecursive(pomPath: Path, modules: MutableList<MavenModuleInfo>, visited: MutableSet<Path>) {
         // Maven rejects reactor cycles; here a repeated POM is skipped instead of recursing. `../sibling` modules
         // outside the aggregator directory remain valid.
         if (!visited.add(pomPath.toRealPath())) {
