@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import org.gradle.process.CommandLineArgumentProvider
+import java.util.UUID
 
 plugins {
     kotlin("jvm")
@@ -11,6 +12,15 @@ plugins {
 
 repositories {
     mavenCentral()
+}
+
+tasks.withType<Test>().configureEach {
+    val outcomeRoot = layout.buildDirectory.dir("test-results/$name/scenario-outcomes")
+    doFirst {
+        val invocationDirectory = outcomeRoot.get().asFile.resolve(UUID.randomUUID().toString())
+        systemProperty("groovy.lsp.e2e.outcomeDir", invocationDirectory.absolutePath)
+        logger.lifecycle("Named scenario outcomes: {}", invocationDirectory)
+    }
 }
 
 // Ensure gls is evaluated so we can access its tasks
@@ -255,6 +265,7 @@ val harnessTest =
             "NamedObservationRecorderTest",
             "PrivateStderrCaptureTest",
             "ScenarioOutcomeJUnitTest",
+            "ScenarioOutcomeReportTest",
             "NamedScenarioRunnerTest",
             "PackagedLaunchTest",
             "PackagedSessionFactoryTest",

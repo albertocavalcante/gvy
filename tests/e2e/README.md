@@ -24,6 +24,23 @@ compilation and thin library JAR dependencies still run as needed. It does not p
 behavior. `e2eTest` continues to run the full suite, including these controls and the artifact-dependent tests. Use
 `make harness-test` for the same focused command.
 
+## Named scenario outcomes
+
+Named checks produce a versioned JSON outcome before JUnit reports a pass, failure or known-failure abort. The report
+retains every planned, observed and blocked check, issue-linked statuses, counts, execution and cleanup outcomes.
+`isSuccessful` is false for known failures, unexpected passes, blocked checks and incomplete cleanup. A skipped JUnit
+test therefore does not establish successful product behavior.
+
+Gradle logs a fresh invocation directory under `tests/build/test-results/<task>/scenario-outcomes/`; each execution
+publishes a separate UUID-named JSON file there. The existing E2E result upload includes this directory. Bazel uses
+`TEST_UNDECLARED_OUTPUTS_DIR/scenario-outcomes`. For direct test-runner invocation, configure the JVM property
+`groovy.lsp.e2e.outcomeDir`. Synthetic runner controls must override it to a private test directory.
+
+Only completed `.json` files are outcomes. Publication failures fail the run and retain the unpublished outcome in the
+exception; they cannot be reclassified as a known product defect. Reports from a cached or earlier invocation are
+historical evidence. These outcome files do not supply server artifact or source-snapshot provenance on their own;
+packaged recovery replays must capture and bind that evidence separately.
+
 The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
 still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 
