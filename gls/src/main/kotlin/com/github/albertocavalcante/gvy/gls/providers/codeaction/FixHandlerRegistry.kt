@@ -232,87 +232,101 @@ private fun fixUnnecessarySemicolon(context: FixContext): TextEdit? {
  * @return A TextEdit that removes extra blank lines, or null if the fix cannot be applied
  */
 private fun fixConsecutiveBlankLines(context: FixContext): TextEdit? {
-    val startLine = context.diagnostic.range.start.line
+    val lines = context.lines
+    val diagnosticLine = context.diagnostic.range.start.line
 
     // Validate line number is within bounds
-    if (startLine < 0 || startLine >= context.lines.size) {
+    if (diagnosticLine < 0 || diagnosticLine >= lines.size) {
         return null
     }
 
-    // Count consecutive blank lines starting from the diagnostic line
-    var blankLineCount = 0
-    var currentLine = startLine
-    while (currentLine < context.lines.size && context.lines[currentLine].isBlank()) {
-        blankLineCount++
-        currentLine++
-    }
+    // CodeNarc reports a raw 0-based index that the diagnostic provider may treat as 1-based, so the
+    // diagnostic can sit on the blank run or on the line just above it. Accept both conventions.
+    val run = blankRunAt(lines, diagnosticLine) ?: blankRunAt(lines, diagnosticLine + 1) ?: return null
 
-    // If there's only 1 or 0 blank lines, nothing to fix
-    if (blankLineCount <= 1) {
+    // Nothing to fix for a single blank line
+    if (run.last - run.first + 1 <= 1) {
         return null
     }
 
-    // We want to keep 1 blank line and remove the rest
-    // So we remove from (startLine + 1) to (startLine + blankLineCount)
-    // The range should start at the beginning of the second blank line
-    // and end at the beginning of the line after the last blank line
-    val removeStartLine = startLine + 1
-    val removeEndLine = startLine + blankLineCount
+    // Keep the first blank line; remove from the start of the second through the end of the run
+    return TextEdit(Range(Position(run.first + 1, 0), Position(run.last + 1, 0)), "")
+}
 
-    // Create TextEdit to remove the extra blank lines
-    val range = Range(
-        Position(removeStartLine, 0),
-        Position(removeEndLine, 0),
-    )
+/** Returns the maximal run of blank lines containing [line], or null when [line] is out of range or not blank. */
+private fun blankRunAt(lines: List<String>, line: Int): IntRange? {
+    if (line < 0 || line >= lines.size || !lines[line].isBlank()) return null
+    var first = line
+    while (first > 0 && lines[first - 1].isBlank()) first--
+    var last = line
+    while (last + 1 < lines.size && lines[last + 1].isBlank()) last++
+    return first..last
+}
 
-    return TextEdit(range, "")
+/**
+ * Returns the index of the `package` declaration, skipping blank lines, line comments, and block comments,
+ * or null when the first code line is not a package declaration.
+ */
+private fun findPackageLine(lines: List<String>): Int? {
+    var inBlockComment = false
+    for ((index, raw) in lines.withIndex()) {
+        var text = raw.trim()
+        if (inBlockComment) {
+            val close = text.indexOf("*/")
+            if (close < 0) continue
+            inBlockComment = false
+            text = text.substring(close + 2).trim()
+        }
+        while (text.startsWith("/*")) {
+            val close = text.indexOf("*/", 2)
+            if (close < 0) {
+                inBlockComment = true
+                text = ""
+                break
+            }
+            text = text.substring(close + 2).trim()
+        }
+        if (inBlockComment || text.isEmpty() || text.startsWith("//") || text.startsWith("#!")) continue
+        return if (text.startsWith("package ") || text.startsWith("package\t")) index else null
+    }
+    return null
 }
 
 /**
  * Fix handler for BlankLineBeforePackage rule.
- * Removes blank lines before the package statement.
+ * Removes the run of blank lines before the package statement that the diagnostic points at.
  *
- * **Feature: codenarc-lint-fixes**
- * **Validates: Requirements 2.4**
+ * CodeNarc reports a raw 0-based index, so the diagnostic may sit on a blank line, on the line above it, or
+ * (as older tests assumed) on the package line itself. The package line is located by scanning the text.
  *
  * @param context The fix context containing diagnostic and source information
- * @return A TextEdit that removes blank lines before package, or null if the fix cannot be applied
+ * @return A TextEdit that removes the blank lines, or null if the fix cannot be applied
  */
 @Suppress("ReturnCount") // Multiple validation checks require early returns
 private fun fixBlankLineBeforePackage(context: FixContext): TextEdit? {
-    val packageLine = context.diagnostic.range.start.line
-
-    // Validate line number is within bounds
-    if (packageLine < 0 || packageLine >= context.lines.size) {
+    val lines = context.lines
+    val diagnosticLine = context.diagnostic.range.start.line
+    if (diagnosticLine < 0 || diagnosticLine >= lines.size) {
         return null
     }
 
-    // If package is at line 0, there are no blank lines before it
+    val packageLine = findPackageLine(lines) ?: return null
     if (packageLine == 0) {
         return null
     }
 
-    // Count consecutive blank lines before the package statement
-    var firstBlankLine = packageLine - 1
-    while (firstBlankLine >= 0 && context.lines[firstBlankLine].isBlank()) {
-        firstBlankLine--
-    }
-    // firstBlankLine is now the last non-blank line before the blank lines, or -1 if all lines before package are blank
-    val blankLinesStartLine = firstBlankLine + 1
+    val run = if (diagnosticLine >= packageLine) {
+        blankRunAt(lines, packageLine - 1)
+    } else {
+        blankRunAt(lines, diagnosticLine) ?: blankRunAt(lines, diagnosticLine + 1)
+    } ?: return null
 
-    // If there are no blank lines before package (the line before package is not blank)
-    if (blankLinesStartLine == packageLine) {
+    // Only runs that precede the package statement
+    if (run.last >= packageLine) {
         return null
     }
 
-    // Create TextEdit to remove all blank lines before package
-    // Range from start of first blank line to start of package line
-    val range = Range(
-        Position(blankLinesStartLine, 0),
-        Position(packageLine, 0),
-    )
-
-    return TextEdit(range, "")
+    return TextEdit(Range(Position(run.first, 0), Position(run.last + 1, 0)), "")
 }
 
 /**

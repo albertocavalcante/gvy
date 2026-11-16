@@ -798,6 +798,26 @@ class RuleRangeCalculatorTest {
         assertRangeHighlights(finallyLine, finallyRange, "finally")
     }
 
+    @Test
+    fun `UnnecessaryGetter - should cover the whole getter call`() {
+        val sourceLine = "    def n = person.getName() + other"
+        val violation = createViolation("UnnecessaryGetter", "getName() can probably be rewritten as name", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRangeInSource(violation, sourceLine)
+
+        assertRangeHighlights(sourceLine, range, "getName()")
+    }
+
+    @Test
+    fun `UnnecessarySetter - should cover the whole setter call with nested parentheses`() {
+        val sourceLine = "    person.setName(compute(a, \")\")) // done"
+        val violation = createViolation("UnnecessarySetter", "setName(..) can probably be rewritten", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRangeInSource(violation, sourceLine)
+
+        assertRangeHighlights(sourceLine, range, "setName(compute(a, \")\"))")
+    }
+
     // ==========================================
     // Helper Methods
     // ==========================================

@@ -19,6 +19,9 @@ import org.codenarc.rule.Violation
  */
 object RuleRangeCalculator {
 
+    private val GETTER_CALL = Regex("""\bget[A-Z]\w*\(\)""")
+    private val SETTER_CALL_START = Regex("""\bset[A-Z]\w*\(""")
+
     /**
      * Calculate the range (start and end columns) for a violation.
      *
@@ -107,6 +110,8 @@ object RuleRangeCalculator {
             "GStringExpressionWithinString" -> calculateGStringRange(sourceLine, message)
             "ExplicitCallToEqualsMethod" -> calculateMethodCallRange(sourceLine, "equals")
             "ExplicitCallToCompareToMethod" -> calculateMethodCallRange(sourceLine, "compareTo")
+            "UnnecessaryGetter" -> calculateUnnecessaryGetterRange(sourceLine)
+            "UnnecessarySetter" -> calculateUnnecessarySetterRange(sourceLine)
             "GetterMethodCouldBeProperty" -> calculateGetterNameRange(sourceLine, message)
 
             // Exception rules
@@ -243,6 +248,40 @@ object RuleRangeCalculator {
         } else {
             calculateDefaultRange(sourceLine)
         }
+    }
+
+    /**
+     * Range of the first zero-argument getter call, e.g. `getName()`, so the quick fix sees the whole call.
+     */
+    private fun calculateUnnecessaryGetterRange(sourceLine: String): Pair<Int, Int> {
+        val match = GETTER_CALL.find(sourceLine) ?: return calculateDefaultRange(sourceLine)
+        return Pair(match.range.first, match.range.last + 1)
+    }
+
+    /**
+     * Range of the first setter call, from `setXxx(` through its balanced closing parenthesis.
+     */
+    private fun calculateUnnecessarySetterRange(sourceLine: String): Pair<Int, Int> {
+        val match = SETTER_CALL_START.find(sourceLine) ?: return calculateDefaultRange(sourceLine)
+        var depth = 0
+        var quote: Char? = null
+        var index = match.range.last // the opening parenthesis
+        while (index < sourceLine.length) {
+            val c = sourceLine[index]
+            when {
+                quote != null -> {
+                    if (c == '\\') index++ else if (c == quote) quote = null
+                }
+                c == '\'' || c == '"' -> quote = c
+                c == '(' -> depth++
+                c == ')' -> {
+                    depth--
+                    if (depth == 0) return Pair(match.range.first, index + 1)
+                }
+            }
+            index++
+        }
+        return calculateDefaultRange(sourceLine)
     }
 
     /**
