@@ -558,3 +558,23 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Exact compatibility inputs and handwritten oracle data.
+[[annotations]]
+path = [
+  "tools/jenkins-extractor/oracle/controls.json",
+  "tools/jenkins-extractor/oracle/roots.json",
+  "tools/jenkins-extractor/oracle/locks/current.json",
+  "tools/jenkins-extractor/oracle/locks/legacy.json",
+  "tools/jenkins-extractor/oracle/fixtures/minimal.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/docker.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/kubernetes.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/missing-agent.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/unknown-section.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/malformed.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/scripted.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/never-execute.Jenkinsfile",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
