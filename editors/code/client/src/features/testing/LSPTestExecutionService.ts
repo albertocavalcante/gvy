@@ -257,14 +257,28 @@ export class LSPTestExecutionService implements ITestExecutionService {
       for (const item of this.collectAllTestItems(testsToRun)) {
         consumer.registerTestItem(item.id, item);
       }
+      // A suite expanded into its remaining features is not itself a target,
+      // but events for unrolled rows name it as their parent. Register the
+      // ancestors as event context only; they are not enqueued or executed.
+      const contextSeen = new Set<vscode.TestItem>();
+      for (const item of testsToRun) {
+        for (
+          let ancestor = item.parent;
+          ancestor && !contextSeen.has(ancestor);
+          ancestor = ancestor.parent
+        ) {
+          contextSeen.add(ancestor);
+          consumer.registerTestItem(ancestor.id, ancestor);
+        }
+      }
       for (const item of testsToRun) run.enqueued(item);
 
       // Get workspace URI for LSP requests
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       const workspaceUri = workspaceFolder?.uri.toString() || "";
 
-      const healthyMavenItems: vscode.TestItem[] = [];
       const affectedByLoss = new Set<vscode.TestItem>();
+      const excluded = new Set(this.collectAllTestItems(request.exclude ?? []));
 
       for (const { item, command, invocation } of prepared) {
         if (isCancelled()) break;
@@ -281,23 +295,24 @@ export class LSPTestExecutionService implements ITestExecutionService {
             affectedByLoss.add(affected);
         }
         // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
-        if (isMaven && outcome.spawned && !outcome.incomplete) {
-          healthyMavenItems.push(item);
+        // Apply right after each command: consecutive runs of one suite
+        // rewrite the same Surefire report file, so a later command would
+        // otherwise replace the earlier command's results before they are read.
+        if (
+          isMaven &&
+          outcome.spawned &&
+          !outcome.incomplete &&
+          !isCancelled()
+        ) {
+          await this.applyTestResults(
+            workspaceUri,
+            run,
+            [item],
+            consumer,
+            affectedByLoss,
+            excluded,
+          );
         }
-      }
-
-      const excluded = new Set(this.collectAllTestItems(request.exclude ?? []));
-
-      // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
-      if (healthyMavenItems.length > 0 && !isCancelled()) {
-        await this.applyTestResults(
-          workspaceUri,
-          run,
-          healthyMavenItems,
-          consumer,
-          affectedByLoss,
-          excluded,
-        );
       }
 
       if (!isCancelled()) {

@@ -2045,4 +2045,154 @@ describe("LSPTestExecutionService", () => {
       assert.ok(run.end.calledOnce);
     });
   });
+
+  describe("suites expanded into remaining features", () => {
+    const uri = { toString: () => "file:///w/a" };
+    const leaf = (id: string, label: string) => ({
+      id,
+      label,
+      uri,
+      children: { forEach: () => {} },
+    });
+    function setup(executable: string, featureNames: string[]) {
+      const features = featureNames.map((name) => leaf(`suite.${name}`, name));
+      const created: unknown[] = [];
+      const suite = {
+        id: "suite",
+        label: "suite",
+        uri,
+        children: {
+          forEach: (f: (item: unknown) => void) => features.forEach(f),
+          add: (child: unknown) => created.push(child),
+        },
+      };
+      const token = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+      const run = {
+        enqueued: sandbox.stub(),
+        started: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token,
+      };
+      const controller = {
+        createTestRun: () => run,
+        createTestItem: (id: string, label: string) => leaf(id, label),
+        items: { forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable,
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      const newProc = () =>
+        Object.assign(new EventEmitter(), {
+          pid: 123 as number | undefined,
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          kill: sandbox.stub(),
+        });
+      const finish = async (proc: ReturnType<typeof newProc>) => {
+        proc.stdout.end();
+        proc.stderr.end();
+        await Promise.all([
+          new Promise((resolve) => proc.stdout.on("close", resolve)),
+          new Promise((resolve) => proc.stderr.on("close", resolve)),
+        ]);
+        proc.emit("close", 0);
+      };
+      return {
+        features,
+        suite,
+        created,
+        token,
+        run,
+        controller,
+        newProc,
+        finish,
+      };
+    }
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+    it("keeps the suite as event context for unrolled rows", async () => {
+      const {
+        features,
+        suite,
+        created,
+        token,
+        run,
+        controller,
+        newProc,
+        finish,
+      } = setup("/w/gradlew", ["a", "b"]);
+      const proc = newProc();
+      cpMock.spawn.returns(proc);
+      const done = service.runTests(
+        { include: [suite], exclude: [features[1]] },
+        token,
+        controller,
+      );
+      await tick();
+      proc.stdout.write(
+        JSON.stringify({
+          event: "testFinished",
+          id: "suite.row #0",
+          name: "row #0",
+          parent: "suite",
+          result: "SUCCESS",
+          duration: 1,
+        }) + "\n",
+      );
+      await finish(proc);
+      await done;
+      assert.strictEqual(created.length, 1, "row attached under the suite");
+      assert.ok(run.passed.calledWith(created[0]));
+      assert.ok(!run.enqueued.calledWith(suite), "suite is context only");
+    });
+
+    it("applies each Maven command's report before the next rewrites it", async () => {
+      const { features, suite, token, run, controller, newProc, finish } =
+        setup("/w/mvnw", ["a", "b", "c"]);
+      const first = newProc();
+      const second = newProc();
+      cpMock.spawn.onFirstCall().returns(first);
+      cpMock.spawn.onSecondCall().returns(second);
+      const report = (item: { id: string; label: string }) => ({
+        results: [
+          {
+            testId: item.id,
+            name: item.label,
+            status: "SUCCESS",
+            durationMs: 1,
+          },
+        ],
+      });
+      // Both commands write the same report file, so each read sees only its own.
+      testServiceMock.getTestResults
+        .onFirstCall()
+        .resolves(report(features[0]));
+      testServiceMock.getTestResults
+        .onSecondCall()
+        .resolves(report(features[1]));
+      const done = service.runTests(
+        { include: [suite], exclude: [features[2]] },
+        token,
+        controller,
+      );
+      await tick();
+      await finish(first);
+      await tick();
+      await finish(second);
+      await done;
+      assert.ok(run.passed.calledWith(features[0]));
+      assert.ok(run.passed.calledWith(features[1]));
+    });
+  });
 });
