@@ -20,12 +20,18 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** Authored source and positions, independent of the parser under evaluation. */
-internal class ColdRecoveryFixture(tag: String, val malformed: Boolean, newline: String) {
-    private val member = if (malformed) "" else "NEW"
+internal class ColdRecoveryFixture(
+    tag: String,
+    val malformed: Boolean,
+    newline: String,
+    member: String = if (malformed) "" else "NEW",
+    extraConstant: String? = null,
+) {
+    private val extra = extraConstant?.let { ", $it" }.orEmpty()
     val before = "Before$tag"
     val after = "After$tag"
     val text = listOf(
-        "enum OrderStatus { NEW, PAID, SHIPPED, CANCELLED }",
+        "enum OrderStatus { NEW, PAID, SHIPPED, CANCELLED$extra }",
         "class Order {}",
         "class OrderBuilder {",
         "    OrderBuilder status(OrderStatus value) { this }",

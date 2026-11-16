@@ -3,25 +3,17 @@
 
 package com.github.albertocavalcante.gvy.gls.e2e
 
-import com.github.albertocavalcante.gvy.gls.Version
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
-import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
-import org.eclipse.lsp4j.InitializeParams
-import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.SemanticTokensLegend
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
-import org.eclipse.lsp4j.WorkspaceFolder
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.TestFactory
@@ -29,12 +21,6 @@ import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
-import java.time.Duration
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Real stdio sessions. Pure assertion mutations live in separate harness tests. */
@@ -65,37 +51,9 @@ class ColdIncompleteBufferRecoveryTest {
                 )
             }
         }
-        val definition = ScenarioDefinition(Scenario(name, steps = emptyList()), "ColdIncompleteBufferRecoveryTest.kt")
-        val recorder = NamedObservationRecorder(planned, definition.source)
-        val evidence = ConcurrentHashMap<String, JsonElement>()
-        val execution = ScenarioExecution(Duration.ofSeconds(WHOLE_CASE_SECONDS))
-        val failure = try {
-            execution.run(name, recorder::executorClosed) {
-                try {
-                    execute(name, fixture, features, recorder, evidence)
-                } finally {
-                    recorder.workerFinished()
-                }
-            }
-            null
-        } catch (failure: AssertionError) {
-            failure
-        } catch (failure: Error) {
-            throw failure
-        } catch (failure: InterruptedException) {
-            Thread.currentThread().interrupt()
-            failure
-        } catch (failure: Exception) {
-            failure
+        RecoveryReplay.run(name, "ColdIncompleteBufferRecoveryTest.kt", planned) { recorder, evidence ->
+            execute(name, fixture, features, recorder, evidence)
         }
-        val outcome = recorder.finish(failure)
-        val snapshot = evidence.toMutableMap()
-        snapshot["complete"] = JsonPrimitive(
-            outcome.cleanup == CleanupOutcome.Succeeded && outcome.completion == ScenarioCompletion.Completed &&
-                snapshot.containsKey("bindings"),
-        )
-        ScenarioOutcomeReport.write(definition, outcome, JsonObject(snapshot))
-        ScenarioOutcomeJUnit.report(outcome)
     }
 
     private fun execute(
@@ -110,7 +68,7 @@ class ColdIncompleteBufferRecoveryTest {
             val source = ColdRecoverySource(workspace.resolveUri("OrderService.groovy"), 1, fixture.text)
             evidence["source"] = JsonBridge.toJsonElement(source)
             assertTrue(!Files.exists(workspace.rootDir.resolve("OrderService.groovy")), "No valid disk seed")
-            val launch = packagedLaunch()
+            val launch = RecoveryReplay.launch()
             val session = LanguageServerSessionFactory(
                 packagedLaunch = launch,
                 evidencePolicy = SessionEvidencePolicy.Private,
@@ -137,44 +95,16 @@ class ColdIncompleteBufferRecoveryTest {
                 evidence["bindings"] = ColdRecoveryWire.bind(wire, source, requests)
             }.use {
                 AutoCloseable { recorder.closeSession(session::close) }.use {
-                    evidence["launch"] = JsonBridge.toJsonElement(session.runtimeEvidence)
-                    val initialized = await(
-                        session.server.initialize(
-                            InitializeParams().apply {
-                                capabilities = ClientCapabilities()
-                                workspaceFolders = listOf(WorkspaceFolder(workspace.rootUri, "cold-recovery"))
-                            },
-                        ),
-                    )
-                    evidence["initialize"] = JsonBridge.toJsonElement(initialized)
-                    val runtime = JsonBridge.toJsonElement(await(session.groovyServer.runtimeFacts())).jsonObject
-                    evidence["runtimeFacts"] = runtime
-                    val build = runtime.getValue("build").jsonObject
-                    val process = runtime.getValue("runtime").jsonObject
-                    assertEquals(
-                        launch.expectedSource.commit,
-                        build.getValue("commit").jsonPrimitive.content,
-                    )
-                    assertEquals(
-                        checkNotNull(session.process).pid().toString(),
-                        process.getValue("processId").jsonPrimitive.content,
-                    )
-                    assertEquals("false", build.getValue("dirty").jsonPrimitive.content)
-                    assertEquals("known", process.getValue("javaState").jsonPrimitive.content)
-                    assertEquals("known", process.getValue("heapState").jsonPrimitive.content)
-                    assertTrue(process.getValue("maxHeapBytes").jsonPrimitive.long in 1..256L * 1024 * 1024)
+                    val initialized = RecoveryReplay.initialize(session, workspace, launch, evidence)
                     val legend = checkNotNull(initialized.capabilities.semanticTokensProvider).legend
                     val encoding = initialized.capabilities.positionEncoding
-                    require(encoding == null || encoding == "utf-16") { "Unsupported negotiated encoding" }
-                    session.server.initialized(InitializedParams())
-                    await(session.client.readyFuture)
                     recorder.executionStarted()
                     session.server.textDocumentService.didOpen(
                         DidOpenTextDocumentParams(TextDocumentItem(source.uri, "groovy", source.version, source.text)),
                     )
                     fun request(method: String, params: JsonObject): JsonElement {
                         val result = SdkResponseProjection.unwrappedValue(
-                            await(session.endpoint.request(method, RawJsonRpcParams(params))),
+                            RecoveryReplay.await(session.endpoint.request(method, RawJsonRpcParams(params))),
                         )
                         requests += ColdRecoveryRequest(method, params, result)
                         return result
@@ -193,7 +123,7 @@ class ColdIncompleteBufferRecoveryTest {
                     session.server.textDocumentService.didClose(
                         DidCloseTextDocumentParams(TextDocumentIdentifier(source.uri)),
                     )
-                    await(session.server.shutdown())
+                    RecoveryReplay.await(session.server.shutdown())
                     session.exit()
                 }
             }
@@ -256,33 +186,6 @@ class ColdIncompleteBufferRecoveryTest {
         recorder.observe(JsonCheck("$.recovery", JsonExpectation(), id = id, xfail = xfail), check)
     }
 
-    private fun packagedLaunch(): PackagedLaunch {
-        val jar = resolveColdRecoveryArtifact(checkNotNull(System.getProperty("groovy.lsp.e2e.execJar")))
-        val digest = MessageDigest.getInstance("SHA-256")
-        Files.newInputStream(jar).use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-        }
-        val javaName = if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java"
-        return PackagedLaunch(
-            javaExecutable = Path.of(System.getProperty("java.home"), "bin", javaName),
-            jar = jar,
-            expectedSha256 = digest.digest().joinToString("") { "%02x".format(it) },
-            expectedSource = SourceStamp(Version.info.gitSha, Version.info.gitDirty != false),
-            jvmSettings = JvmSettings(maxHeapMiB = 256, initialHeapMiB = 32),
-        )
-    }
-
-    private fun <T> await(future: CompletableFuture<T>): T = try {
-        future.get(REQUEST_SECONDS, TimeUnit.SECONDS)
-    } finally {
-        if (!future.isDone) future.cancel(true)
-    }
-
     private enum class Feature { Tokens, Hover, Outline, Completion }
 
     private companion object {
@@ -296,8 +199,6 @@ class ColdIncompleteBufferRecoveryTest {
             "outline.before" to "recovery: missing outline class BeforeCold",
             "outline.after" to "recovery: missing outline class AfterCold",
         )
-        const val REQUEST_SECONDS = 30L
-        const val WHOLE_CASE_SECONDS = 120L
     }
 }
 

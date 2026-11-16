@@ -268,6 +268,8 @@ val harnessTest =
             "ScenarioOutcomeReportTest",
             "SemanticTokenDecoderTest",
             "ColdRecoveryWireTest",
+            "WarmRecoveryWireTest",
+            "WarmRecoveryAssertionsTest",
             "ColdRecoveryAssertionsTest",
             "NamedScenarioRunnerTest",
             "PackagedLaunchTest",
