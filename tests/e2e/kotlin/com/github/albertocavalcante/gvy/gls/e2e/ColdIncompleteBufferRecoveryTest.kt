@@ -257,7 +257,7 @@ class ColdIncompleteBufferRecoveryTest {
     }
 
     private fun packagedLaunch(): PackagedLaunch {
-        val jar = checkNotNull(BazelRunfiles.resolve(checkNotNull(System.getProperty("groovy.lsp.e2e.execJar"))))
+        val jar = resolveColdRecoveryArtifact(checkNotNull(System.getProperty("groovy.lsp.e2e.execJar")))
         val digest = MessageDigest.getInstance("SHA-256")
         Files.newInputStream(jar).use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -300,3 +300,6 @@ class ColdIncompleteBufferRecoveryTest {
         const val WHOLE_CASE_SECONDS = 120L
     }
 }
+
+internal fun resolveColdRecoveryArtifact(configuredPath: String): Path =
+    checkNotNull(BazelRunfiles.resolve(configuredPath)).toRealPath()
