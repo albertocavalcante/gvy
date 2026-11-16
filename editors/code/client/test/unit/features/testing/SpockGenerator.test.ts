@@ -3,7 +3,10 @@
 
 import * as assert from "assert";
 import * as path from "path";
-import { SpockGenerator } from "../../../../src/features/testing/SpockGenerator";
+import {
+  SpockGenerator,
+  isInsideDirectory,
+} from "../../../../src/features/testing/SpockGenerator";
 
 describe("SpockGenerator", () => {
   const generator = new SpockGenerator();
@@ -87,6 +90,33 @@ describe("SpockGenerator", () => {
     const result = generator.resolveTestPath(inputPath);
     assert.ok(result?.endsWith("UserServiceSpec.groovy"));
     assert.ok(result?.includes("test"));
+  });
+
+  it("resolveTestPath: root-level file stays inside the workspace", () => {
+    const root = path.resolve(path.sep, "work", "proj");
+    const result = generator.resolveTestPath(
+      path.join(root, "Foo.groovy"),
+      root,
+    );
+    assert.strictEqual(result, path.join(root, "test", "FooSpec.groovy"));
+    assert.ok(isInsideDirectory(root, result));
+  });
+
+  it("resolveTestPath: nested flat file keeps the sibling test folder", () => {
+    const root = path.resolve(path.sep, "work", "proj");
+    const result = generator.resolveTestPath(
+      path.join(root, "lib", "Foo.groovy"),
+      root,
+    );
+    assert.strictEqual(result, path.join(root, "test", "FooSpec.groovy"));
+  });
+
+  it("isInsideDirectory: rejects escapes and accepts dotted names", () => {
+    const root = path.resolve(path.sep, "work", "proj");
+    assert.ok(isInsideDirectory(root, path.join(root, "a", "b")));
+    assert.ok(isInsideDirectory(root, path.join(root, "..foo", "b")));
+    assert.ok(!isInsideDirectory(root, path.join(root, "..", "test")));
+    assert.ok(!isInsideDirectory(root, path.resolve(root, "..", "proj2")));
   });
 
   it("generateSpec: generates correct Spock structure", () => {
