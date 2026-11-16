@@ -23,7 +23,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # Only the large-file comment step uses the token (see below); no PR-controlled step receives it.
+      # Only the large-file comment step is given the token explicitly (see below). Earlier steps run PR
+      # code in the same job, so this is job-level write access, as the old check-file-size job had.
       pull-requests: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0

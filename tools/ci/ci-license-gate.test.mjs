@@ -59,3 +59,9 @@ test('contract rejects removed dependencies and guards that permit a bypass', ()
     assert.equal(hasLicenseGate(ungrouped, name), false, `${name}: ungrouped dispatch`);
   }
 });
+
+test('check-paths declares the provisioning output that the main jobs and readiness read', () => {
+  const block = jobBlock(workflow, 'check-paths');
+  assert.match(block, /^      provisioning_triggered: \$\{\{ steps\.exit-early\.outputs\.provisioning_triggered \}\}$/m);
+  assert.match(block, /^        id: exit-early$/m);
+});
