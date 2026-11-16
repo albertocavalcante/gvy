@@ -29,14 +29,24 @@ internal object ScenarioOutcomeReport {
                 System.getenv("TEST_UNDECLARED_OUTPUTS_DIR"),
             )
             publish(directory, executionId, payload)
-        } catch (failure: Exception) {
-            failure.addSuppressed(IllegalStateException("Unpublished named outcome: $payload"))
-            val completion = outcome.completion
-            if (completion is ScenarioCompletion.Cancelled) {
-                throw CancellationException(completion.detail).apply { addSuppressed(failure) }
-            }
-            throw failure
+        } catch (failure: IOException) {
+            publicationFailed(failure, payload, outcome)
+        } catch (failure: IllegalArgumentException) {
+            publicationFailed(failure, payload, outcome)
+        } catch (failure: IllegalStateException) {
+            publicationFailed(failure, payload, outcome)
+        } catch (failure: SecurityException) {
+            publicationFailed(failure, payload, outcome)
         }
+    }
+
+    private fun publicationFailed(failure: Exception, payload: String, outcome: ScenarioOutcome): Nothing {
+        failure.addSuppressed(IllegalStateException("Unpublished named outcome: $payload"))
+        val completion = outcome.completion
+        if (completion is ScenarioCompletion.Cancelled) {
+            throw CancellationException(completion.detail).apply { addSuppressed(failure) }
+        }
+        throw failure
     }
 
     internal fun outputDirectory(configured: String?, bazelOutputs: String?): Path {
