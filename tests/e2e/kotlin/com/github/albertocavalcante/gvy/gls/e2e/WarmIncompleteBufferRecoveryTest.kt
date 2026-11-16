@@ -195,8 +195,11 @@ class WarmIncompleteBufferRecoveryTest {
     }
 
     private fun observe(recorder: NamedObservationRecorder, state: State, id: String, check: () -> Unit) {
-        // No expected-failure metadata is assigned before this editing history is measured.
-        recorder.observe(JsonCheck("$.recovery", JsonExpectation(), id = "${state.label}.$id"), check)
+        val checkId = "${state.label}.$id"
+        val xfail = observedFailures[checkId]?.let { message ->
+            Xfail(2082, "Intact declaration lost after an incomplete edit", "^${Regex.escape(message)}$")
+        }
+        recorder.observe(JsonCheck("$.recovery", JsonExpectation(), id = checkId, xfail = xfail), check)
     }
 
     private fun states(newline: String): List<State> = listOf(
@@ -227,6 +230,11 @@ class WarmIncompleteBufferRecoveryTest {
     )
 
     private companion object {
+        // Measured in the source-qualified a174 baseline for LF and CRLF. Later checks were blocked.
+        // See https://github.com/albertocavalcante/gvy/issues/2082; remove metadata when the check passes.
+        val observedFailures = mapOf(
+            "hole.tokens.before" to "recovery: missing class token BeforeWarmV2",
+        )
         val checks = listOf(
             "diagnostics.integrity",
             "tokens.before",
