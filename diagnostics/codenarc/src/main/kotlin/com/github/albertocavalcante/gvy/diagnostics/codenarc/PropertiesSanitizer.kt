@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
+import groovy.lang.GroovySystem
+import groovy.lang.MetaBeanProperty
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -76,9 +78,7 @@ internal object PropertiesSanitizer {
         val (rule, property) = match.destructured
         if (isRegexProperty(property)) return false
         val ruleClass = runCatching { Class.forName(requireRule(rule)) }.getOrNull() ?: return false
-        val setterName = "set" + property.replaceFirstChar { it.uppercase() }
-        val type = ruleClass.methods.singleOrNull { it.name == setterName && it.parameterCount == 1 }
-            ?.parameterTypes?.single() ?: return false
+        val type = settablePropertyType(ruleClass, property) ?: return false
         return when (type) {
             // Only primitives: CodeNarc converts strings for int/long/boolean and would mis-assign boxed types.
             Boolean::class.javaPrimitiveType -> value == "true" || value == "false"
@@ -87,5 +87,15 @@ internal object PropertiesSanitizer {
             String::class.java -> NAME_LIST.matches(value)
             else -> false
         }
+    }
+
+    /**
+     * The property type as CodeNarc's `PropertyUtil` sees it (Groovy metaclass), or null when the property is missing
+     * or has no setter. Groovy-generated and hand-written setters both show up here.
+     */
+    private fun settablePropertyType(ruleClass: Class<*>, property: String): Class<*>? {
+        val meta = GroovySystem.getMetaClassRegistry().getMetaClass(ruleClass)
+        val metaProperty = meta.getMetaProperty(property) as? MetaBeanProperty ?: return null
+        return metaProperty.type.takeIf { metaProperty.setter != null }
     }
 }
