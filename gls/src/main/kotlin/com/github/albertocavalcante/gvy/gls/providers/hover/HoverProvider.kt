@@ -43,9 +43,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -393,11 +397,26 @@ class HoverProvider(
             if (classDeclaration.module !== module(uri, snapshot)) return Documentation.EMPTY
         }
         val declaration = classDeclaration ?: node
+        if (classDeclaration == null && declaration is AnnotatedNode) {
+            val attached = DocExtractor.extractAttachedDocumentation(declaration)
+            if (!attached.isEmpty()) return attached
+            // A member inherited from another file carries that file's line numbers.
+            val owner = declaration.declaringClassOrNull()
+            val current = module(uri, snapshot)
+            if (owner?.module != null && current != null && owner.module !== current) return Documentation.EMPTY
+        }
         return if (snapshot != null) {
             DocExtractor.extractDocumentation(snapshot.sourceText, declaration)
         } else {
             documentationProvider.getDocumentation(declaration, uri)
         }
+    }
+
+    private fun AnnotatedNode.declaringClassOrNull(): ClassNode? = when (this) {
+        is FieldNode -> declaringClass
+        is PropertyNode -> declaringClass
+        is MethodNode -> declaringClass
+        else -> null
     }
 
     private suspend fun sourceDocumentation(node: ASTNode): Documentation? {
