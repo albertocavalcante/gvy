@@ -333,7 +333,9 @@ class RenameProvider private constructor(
     private fun isJavaIdentifier(name: String): Boolean {
         val first = name.codePointAt(0)
         return Character.isJavaIdentifierStart(first) &&
-            name.codePoints().skip(1).allMatch(Character::isJavaIdentifierPart)
+            name.codePoints().skip(1).allMatch {
+                Character.isJavaIdentifierPart(it) && !Character.isIdentifierIgnorable(it)
+            }
     }
 
     /**

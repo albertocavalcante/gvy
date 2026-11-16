@@ -303,6 +303,20 @@ class RenameProviderTest {
     }
 
     @Test
+    fun `rename rejects control characters in names`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("test.groovy").toUri().toString()
+        val javaUri = java.net.URI.create(uri)
+        val content = "def myVar = 42\nprintln myVar"
+        documentProvider.put(javaUri, content)
+        compilationService.compile(javaUri, content)
+
+        val exception = assertThrows<ResponseErrorException> {
+            renameProvider.provideRename(uri, Position(0, 8), "a\u0000")
+        }
+        assertTrue(exception.responseError.message.contains("not a valid identifier"))
+    }
+
+    @Test
     fun `rename works in a workspace folder other than the first`(): Unit = runBlocking {
         val second = Files.createTempDirectory("groovy-lsp-rename-second")
         val file = second.resolve("Other.groovy")
