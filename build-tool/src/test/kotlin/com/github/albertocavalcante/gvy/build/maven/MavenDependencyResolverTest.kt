@@ -173,7 +173,7 @@ class MavenDependencyResolverTest {
     }
 
     @Test
-    fun `resolveDetailed reports collection failures alongside resolved artifacts`() {
+    fun `resolveDetailed reports collection failures as unresolved`() {
         val system = mockk<RepositorySystem>()
         stubAether(system)
         every { system.resolveDependencies(any(), any()) } answers {
