@@ -134,7 +134,7 @@ class AstProvider {
 
   /** Remembers `editor` if it shows a Groovy file; returns whether it did. */
   private trackEditor(editor: vscode.TextEditor | undefined): boolean {
-    if (!isAstLanguage(editor?.document.languageId)) {
+    if (!editor || !isAstLanguage(editor.document.languageId)) {
       return false;
     }
     this._documentUri = editor.document.uri.toString();
