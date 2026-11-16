@@ -95,12 +95,16 @@ private fun StepParameter.toTypedParameter(): TypedParameter = TypedParameter(
 
 /** Adapt legacy bundled records without inventing descriptor or controller facts. */
 internal fun BundledJenkinsMetadata.toTypedCatalogue(): TypedCatalogue {
+    validateStepPlacement(steps, SymbolKind.EXECUTABLE_STEP)
+    validateStepPlacement(nestedDescribables, SymbolKind.NESTED_DESCRIBABLE)
     val symbols = mutableListOf<TypedSymbol>()
+    fun <T> ordered(values: Map<String, T>): Collection<T> =
+        if (typedCatalogue == null) values.toSortedMap().values else values.values
     // User overrides are patches, not independent discovered callables.
-    symbols += steps.filterKeys { it !in legacyOverrides }.values.map { it.toTypedSymbol() }
-    symbols += nestedDescribables.values.map { it.toTypedSymbol() }
+    symbols += ordered(steps.filterKeys { it !in legacyOverrides }).map { it.toTypedSymbol() }
+    symbols += ordered(nestedDescribables).map { it.toTypedSymbol() }
     fun addEntries(entries: Map<String, DeclarativeOptionMetadata>, kind: SymbolKind, context: String? = null) {
-        symbols += entries.values.map { entry ->
+        symbols += ordered(entries).map { entry ->
             TypedSymbol(
                 id = legacyId(kind, entry.name, entry.plugin) + ":" + (context ?: ""),
                 name = entry.name,
@@ -116,7 +120,8 @@ internal fun BundledJenkinsMetadata.toTypedCatalogue(): TypedCatalogue {
         }
     }
     addEntries(declarativeOptions, SymbolKind.OPTION, "options")
-    directiveEntries.forEach { (context, entries) ->
+    val directives = if (typedCatalogue == null) directiveEntries.toSortedMap() else directiveEntries
+    directives.forEach { (context, entries) ->
         val kind = when (context) {
             "tools" -> SymbolKind.TOOL
             "triggers" -> SymbolKind.TRIGGER
@@ -124,7 +129,7 @@ internal fun BundledJenkinsMetadata.toTypedCatalogue(): TypedCatalogue {
         }
         addEntries(entries, kind, context)
     }
-    symbols += agentTypes.values.map { agent ->
+    symbols += ordered(agentTypes).map { agent ->
         TypedSymbol(
             id = legacyId(SymbolKind.AGENT, agent.name, null),
             name = agent.name,
@@ -135,7 +140,7 @@ internal fun BundledJenkinsMetadata.toTypedCatalogue(): TypedCatalogue {
             documentation = agent.documentation,
         )
     }
-    symbols += postConditions.values.map { condition ->
+    symbols += ordered(postConditions).map { condition ->
         TypedSymbol(
             id = legacyId(SymbolKind.CONDITION, condition.name, null),
             name = condition.name,
@@ -146,7 +151,7 @@ internal fun BundledJenkinsMetadata.toTypedCatalogue(): TypedCatalogue {
             documentation = condition.description,
         )
     }
-    symbols += globalVariables.values.map { global ->
+    symbols += ordered(globalVariables).map { global ->
         global.canonicalProjection?.takeIf { it.matches(global) }?.symbol ?: TypedSymbol(
             id = legacyId(SymbolKind.GLOBAL, global.name, null),
             name = global.name,
@@ -157,7 +162,18 @@ internal fun BundledJenkinsMetadata.toTypedCatalogue(): TypedCatalogue {
             documentation = global.documentation,
         )
     }
-    return typedCatalogue?.withLegacyFallbacks(symbols) ?: TypedCatalogue(symbols = symbols)
+    return typedCatalogue?.withLegacyFallbacks(symbols) ?: TypedCatalogue().withLegacyMapEntries(symbols)
+}
+
+/** Reject contradictory map placement at adaptation; do not alter a canonical symbol's kind. */
+private fun validateStepPlacement(values: Map<String, JenkinsStepMetadata>, expected: SymbolKind) {
+    values.forEach { (key, view) ->
+        require(view.kind == expected) { "Legacy entry '$key' has kind ${view.kind}; expected $expected" }
+        val projection = view.canonicalProjection?.takeIf { it.matches(view) }
+        require(projection == null || projection.symbol.kind == expected) {
+            "Legacy entry '$key' projects kind ${projection?.symbol?.kind}; expected $expected"
+        }
+    }
 }
 
 internal fun MergedStepMetadata.toTypedSymbol(
@@ -194,7 +210,7 @@ internal fun legacyMergedCatalogue(
 ): TypedCatalogue {
     val symbols = mutableListOf<TypedSymbol>()
     fun addSteps(values: Map<String, MergedStepMetadata>, kind: SymbolKind) {
-        symbols += values.values.map { step ->
+        symbols += values.toSortedMap().values.map { step ->
             step.toTypedSymbol(MetadataProvenance(SourceKind.UNKNOWN, plugin = step.plugin), kind)
                 .copy(legacyDerived = true)
         }
@@ -203,7 +219,7 @@ internal fun legacyMergedCatalogue(
     addSteps(nested, SymbolKind.NESTED_DESCRIBABLE)
 
     fun addEntries(values: Map<String, MergedDeclarativeOption>, kind: SymbolKind, context: String) {
-        symbols += values.values.map { entry ->
+        symbols += values.toSortedMap().values.map { entry ->
             TypedSymbol(
                 id = legacyId(kind, entry.name, entry.plugin, SourceKind.UNKNOWN) + ":" + context,
                 name = entry.name,
@@ -218,7 +234,7 @@ internal fun legacyMergedCatalogue(
         }
     }
     addEntries(options, SymbolKind.OPTION, "options")
-    entries.forEach { (context, values) ->
+    entries.toSortedMap().forEach { (context, values) ->
         val kind = when (context) {
             "tools" -> SymbolKind.TOOL
             "triggers" -> SymbolKind.TRIGGER
@@ -226,7 +242,7 @@ internal fun legacyMergedCatalogue(
         }
         addEntries(values, kind, context)
     }
-    symbols += globals.values.map { global ->
+    symbols += globals.toSortedMap().values.map { global ->
         TypedSymbol(
             id = legacyId(SymbolKind.GLOBAL, global.name, null, SourceKind.UNKNOWN),
             name = global.name,
@@ -237,7 +253,7 @@ internal fun legacyMergedCatalogue(
             documentation = global.documentation,
         )
     }
-    return TypedCatalogue(symbols = symbols)
+    return TypedCatalogue().withLegacyMapEntries(symbols)
 }
 
 private fun MergedParameter.toTypedParameter(): TypedParameter = TypedParameter(

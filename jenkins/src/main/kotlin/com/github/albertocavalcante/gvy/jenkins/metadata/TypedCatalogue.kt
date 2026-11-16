@@ -63,6 +63,19 @@ class TypedCatalogue(
 
     fun unique(kind: SymbolKind, name: String): TypedSymbol? = candidates(kind, name).singleOrNull()
 
+    /**
+     * Ingest separately keyed legacy map entries in caller-provided stable order. Allocation IDs are
+     * local to this set: adding or removing an anonymous entry can change a collision suffix.
+     */
+    internal fun withLegacyMapEntries(entries: List<TypedSymbol>): TypedCatalogue =
+        entries.fold(this) { current, entry ->
+            if (current.symbols.any { it.sameCanonicalFacts(entry) }) {
+                current
+            } else {
+                current.copy(symbols = current.symbols + current.disambiguate(entry))
+            }
+        }
+
     /** Apply fallback authority only to the accompanying legacy view, not independent contributions. */
     fun withLegacyFallbacks(fallbacks: List<TypedSymbol>): TypedCatalogue = fallbacks.fold(this) { current, fallback ->
         val owner = fallback.ownerPlugin
