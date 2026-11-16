@@ -49,7 +49,9 @@ internal object ScenarioOutcomeJUnit {
 internal object ScenarioRunnerExecution {
     fun run(definition: ScenarioDefinition, executor: ScenarioExecutor) {
         if (hasNamedCheckMetadata(definition)) {
-            ScenarioOutcomeJUnit.report(executor.executeWithOutcome(definition))
+            val outcome = executor.executeWithOutcome(definition)
+            ScenarioOutcomeReport.write(definition, outcome)
+            ScenarioOutcomeJUnit.report(outcome)
             return
         }
         val xfail = definition.scenario.xfail

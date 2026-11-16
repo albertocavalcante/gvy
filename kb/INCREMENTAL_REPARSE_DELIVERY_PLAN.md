@@ -716,6 +716,10 @@ families; they are not a promise that exactly 33 PRs suffice or that all should 
 
 **Depends on:** none.
 
+Delivery is split into M0.1a (packaged incomplete-buffer controls) and M0.1b (executable shared-target contradiction
+controls). M0.1a first supplies durable named-result reporting, followed by the actual recovery workload; report
+plumbing alone does not close it. Parent M0.1 remains incomplete until both slices have their acceptance evidence.
+
 **Owner and goal:** parser/session test owner. Make the reported failure reproducible through public LSP requests and
 retain exact source/package identity. This is the next concrete PR:
 `test(lsp): capture incomplete-buffer recovery controls`.
@@ -808,7 +812,7 @@ source snapshot work coordinates with #1834/#1856 and #1852 rather than duplicat
 
 #### M4.1 — Establish the independent syntax comparison corpus and runner
 
-**Depends on:** M0.1, M3.1.
+**Depends on:** M0.1a recovery workload, M3.1.
 
 **Owner and goal:** parser validation owner. Make the frontend decision falsifiable using the same source, queries and
 workload boundary for every candidate.
