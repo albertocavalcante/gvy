@@ -58,32 +58,19 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         // One snapshot supplies text, AST and symbols, so a concurrent recompile cannot mix generations.
         val snapshot = compilationService.getCompiledSnapshot(documentUri) ?: return emptyList()
         val index = TextIndex(snapshot.sourceText)
-        val groovyPosition = index.codePointPosition(position)?.toGroovyPosition() ?: return emptyList()
+        val groovyPosition = index.codePointPosition(position)?.toGroovyPosition()
 
         val astModel = snapshot.parseResult.astModel
         val symbolTable = snapshot.parseResult.symbolTable
-        val targetNode = astModel.getNodeAt(documentUri, groovyPosition)
-
-        val resolved = when {
-            targetNode == null || !targetNode.isHighlightableSymbol() -> {
-                logger.debug { "No highlightable symbol at position" }
-                null
-            }
-
-            else -> {
-                val definition = targetNode.resolveToDefinition(astModel, symbolTable, strict = false)
-                if (definition == null) {
-                    logger.debug { "Could not resolve definition for node" }
-                    null
-                } else {
-                    Triple(definition, astModel, symbolTable)
-                }
-            }
+        val definition = groovyPosition
+            ?.let { astModel.getNodeAt(documentUri, it) }
+            ?.takeIf { it.isHighlightableSymbol() }
+            ?.resolveToDefinition(astModel, symbolTable, strict = false)
+        if (definition == null) {
+            logger.debug { "No highlightable symbol with a definition at position" }
+            return emptyList()
         }
-
-        if (resolved == null) return emptyList()
-        val (definition, model, table) = resolved
-        return findHighlights(definition, model, table, documentUri, index)
+        return findHighlights(definition, astModel, symbolTable, documentUri, index)
     }
 
     /**
