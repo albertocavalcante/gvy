@@ -53,8 +53,9 @@ class GradleDependencyMetadataDaemonPolicyTest {
         assertEquals(1, acquired)
         assertEquals(1, released, "the lease must be released after the fetch")
         verify { modelBuilder.setJavaHome(javaHome.toFile()) }
-        verify { modelBuilder.withArguments(*anyVararg()) }
-        verify { modelBuilder.setJvmArguments("-Xmx1g", "-XX:+UseG1GC") }
+        verify { modelBuilder.withArguments(*GradleOperationArguments.buildArguments(GradleDaemonSettings())) }
+        verify { modelBuilder.setJvmArguments(*GradleOperationArguments.JVM_ARGUMENTS) }
         verify { modelBuilder.withCancellationToken(any()) }
+        verify(exactly = 1) { modelBuilder.get() }
     }
 }

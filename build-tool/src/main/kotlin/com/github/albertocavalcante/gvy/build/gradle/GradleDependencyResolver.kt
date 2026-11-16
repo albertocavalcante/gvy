@@ -249,10 +249,10 @@ class GradleDependencyResolver(
         projectDir: Path,
         cancellation: ResolutionCancellation = ResolutionCancellation(),
     ): IdeaProject = connectionFactory.acquire(projectDir, null).use { lease ->
-        lease.connection.model(IdeaProject::class.java)
-            .also { it.applyDaemonArguments() }
-            .also { builder -> javaHome?.let { builder.setJavaHome(it.toFile()) } }
-            .getCancellable(cancellation)
+        val modelBuilder = lease.connection.model(IdeaProject::class.java)
+        modelBuilder.applyDaemonArguments()
+        if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
+        modelBuilder.getCancellable(cancellation)
     }
 
     private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
