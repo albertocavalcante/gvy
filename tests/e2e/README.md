@@ -41,6 +41,12 @@ exception; they cannot be reclassified as a known product defect. Reports from a
 historical evidence. These outcome files do not supply server artifact or source-snapshot provenance on their own;
 packaged recovery replays must capture and bind that evidence separately.
 
+`SemanticTokenDecoder` is a test-only oracle for full-document token responses. Supply the initialized legend and
+the exact authored source for that request. It validates UTF-16 tuples, bounds, surrogate boundaries and non-overlap,
+including LF, CRLF and CR input. Omitted position encoding uses the LSP UTF-16 default; other encodings are rejected.
+Its pure mutation tests establish decoding behavior, not product recovery or request/source provenance. The packaged
+recovery workload must still bind request identities and assert current names, kinds and spans.
+
 The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
 still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 

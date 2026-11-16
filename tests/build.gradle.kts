@@ -266,6 +266,7 @@ val harnessTest =
             "PrivateStderrCaptureTest",
             "ScenarioOutcomeJUnitTest",
             "ScenarioOutcomeReportTest",
+            "SemanticTokenDecoderTest",
             "NamedScenarioRunnerTest",
             "PackagedLaunchTest",
             "PackagedSessionFactoryTest",
