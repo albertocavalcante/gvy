@@ -47,10 +47,6 @@ class DefinitionProvider(
 
     private val logger = KotlinLogging.logger {}
 
-    /** The Groovy (code-point) position of the protocol [position] in the compiled text of [documentUri]. */
-    private fun groovyPosition(documentUri: URI, position: Position) =
-        position.toGroovyPosition(compilationService.getCompiledSnapshot(documentUri)?.sourceText)
-
     /**
      * Provide definitions for the symbol at the given position using Flow pattern.
      * Returns a Flow of Location objects.
@@ -67,7 +63,7 @@ class DefinitionProvider(
         }
         val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
-        emitDefinitions(uri, documentUri, groovyPosition(documentUri, position), context)
+        emitDefinitions(uri, documentUri, compilationService.groovyAt(documentUri, position), context)
     }
 
     /**
@@ -92,7 +88,7 @@ class DefinitionProvider(
         )
 
         // Find the origin node at the position
-        val originNode = context.visitor.getNodeAt(documentUri, groovyPosition(documentUri, position))
+        val originNode = context.visitor.getNodeAt(documentUri, compilationService.groovyAt(documentUri, position))
         if (originNode == null) {
             logger.debug { "No origin node found at position" }
             return@flow
@@ -116,7 +112,7 @@ class DefinitionProvider(
         originNode: ASTNode,
         visitor: GroovyAstModel,
     ): LocationLink? = try {
-        val result = resolver.findDefinitionAt(documentUri, groovyPosition(documentUri, position))
+        val result = resolver.findDefinitionAt(documentUri, compilationService.groovyAt(documentUri, position))
         result?.let { createLocationLink(it, originNode, visitor) }
     } catch (e: Exception) {
         when (e) {
@@ -338,7 +334,8 @@ class DefinitionProvider(
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
         )
-        val targets = resolver.findTargetsAt(documentUri, groovyPosition(documentUri, position), targetKinds)
+        val groovyPosition = compilationService.groovyAt(documentUri, position)
+        val targets = resolver.findTargetsAt(documentUri, groovyPosition, targetKinds)
 
         // Convert each target to Location and emit
         targets.forEach { targetNode ->
@@ -532,6 +529,10 @@ class DefinitionProvider(
         null
     }
 }
+
+/** The Groovy (code-point) position of the protocol [position] in the compiled text of [uri]. */
+private fun GroovyCompilationService.groovyAt(uri: URI, position: Position) =
+    position.toGroovyPosition(getCompiledSnapshot(uri)?.sourceText)
 
 private fun spockDefinition(service: GroovyCompilationService, uri: URI, position: Position): Location? {
     val snapshot = service.getCompiledSnapshot(uri) ?: return null
