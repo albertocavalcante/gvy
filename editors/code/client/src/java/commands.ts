@@ -15,6 +15,10 @@
  */
 
 import * as vscode from "vscode";
+import {
+  escapeGroovySingleQuoted,
+  planFoojayInsertion,
+} from "./settingsGradle";
 import { getRuntime } from "jdk-utils";
 import {
   findAllJdks,
@@ -25,12 +29,6 @@ import {
 // Foojay resolver plugin constants
 const FOOJAY_PLUGIN_ID = "org.gradle.toolchains.foojay-resolver-convention";
 const FOOJAY_PLUGIN_VERSION = "1.0.0";
-
-// Pre-compiled regex patterns for detecting foojay plugin in settings files
-const GROOVY_PLUGIN_PATTERN =
-  /plugins\s*\{[\s\S]*?id\s+['"]org\.gradle\.toolchains\.foojay-resolver-convention['"]/;
-const KOTLIN_PLUGIN_PATTERN =
-  /plugins\s*\{[\s\S]*?id\s*\(\s*["']org\.gradle\.toolchains\.foojay-resolver-convention["']\s*\)/;
 
 /**
  * Command: groovy.configureJava
@@ -627,7 +625,7 @@ async function createSettingsGradleWithFoojay(
     id '${FOOJAY_PLUGIN_ID}' version '${FOOJAY_PLUGIN_VERSION}'
 }
 
-rootProject.name = '${rootProjectName}'
+rootProject.name = '${escapeGroovySingleQuoted(rootProjectName)}'
 `;
 
   const edit = new vscode.WorkspaceEdit();
@@ -657,8 +655,8 @@ async function insertFoojayPlugin(settingsUri: vscode.Uri): Promise<boolean> {
   const text = document.getText();
   const isKotlin = settingsUri.path.endsWith(".kts");
 
-  // Check if foojay resolver plugin is already declared in a plugins block
-  if (GROOVY_PLUGIN_PATTERN.test(text) || KOTLIN_PLUGIN_PATTERN.test(text)) {
+  const plan = planFoojayInsertion(text);
+  if (plan.kind === "configured") {
     vscode.window.showInformationMessage(
       "The foojay-resolver plugin is already configured in this file.",
     );
@@ -671,21 +669,13 @@ async function insertFoojayPlugin(settingsUri: vscode.Uri): Promise<boolean> {
     : `    id '${FOOJAY_PLUGIN_ID}' version '${FOOJAY_PLUGIN_VERSION}'`;
 
   const edit = new vscode.WorkspaceEdit();
-
-  // Check if there's an existing plugins block
-  const pluginsBlockMatch = text.match(/plugins\s*\{/);
-
-  if (pluginsBlockMatch && pluginsBlockMatch.index !== undefined) {
-    // Insert into existing plugins block
-    const insertPos = pluginsBlockMatch.index + pluginsBlockMatch[0].length;
-    const position = document.positionAt(insertPos);
+  const position = document.positionAt(plan.offset);
+  if (plan.kind === "intoPlugins") {
+    // Insert into the top-level plugins block
     edit.insert(settingsUri, position, `\n${pluginLine}`);
   } else {
-    // Add new plugins block at the beginning
-    const pluginsBlock = isKotlin
-      ? `plugins {\n${pluginLine}\n}\n\n`
-      : `plugins {\n${pluginLine}\n}\n\n`;
-    edit.insert(settingsUri, new vscode.Position(0, 0), pluginsBlock);
+    // New plugins block after any pluginManagement/buildscript block
+    edit.insert(settingsUri, position, `plugins {\n${pluginLine}\n}\n\n`);
   }
 
   const success = await vscode.workspace.applyEdit(edit);
