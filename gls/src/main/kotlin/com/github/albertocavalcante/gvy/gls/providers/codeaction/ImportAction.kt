@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.utils.ImportUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
@@ -84,16 +85,20 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
         content: String,
         diagnostic: Diagnostic,
     ): CodeAction {
-        // Find where to insert the import
+        val eol = if (content.contains("\r\n")) "\r\n" else "\n"
         val insertPosition = findImportInsertionPoint(content)
+        val lineCount = content.lines().size
 
-        // Create the import statement
-        val importStatement = "import $fullyQualifiedName\n"
-
-        val edit = TextEdit(
-            Range(insertPosition, insertPosition),
-            importStatement,
-        )
+        // The insertion line can be one past the last line (e.g. a file that is only `package foo` with no
+        // trailing newline). Clients clamp such positions inconsistently, so append after the last line instead.
+        val edit = if (insertPosition.line >= lineCount) {
+            val lastLine = content.lines().last()
+            val end = Position(lineCount - 1, lastLine.length)
+            TextEdit(Range(end, end), "${eol}import $fullyQualifiedName")
+        } else {
+            val importStatement = "import $fullyQualifiedName$eol"
+            TextEdit(Range(insertPosition, insertPosition), importStatement)
+        }
 
         val workspaceEdit = WorkspaceEdit().apply {
             changes = mapOf(uriString to listOf(edit))
@@ -107,27 +112,13 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
     }
 
     /**
-     * Finds the position where a new import should be inserted.
-     * Returns the position after the package declaration or at the beginning.
+     * Finds the position where a new import should be inserted: after the last import, else after the
+     * `package` declaration, else at the top but below a `#!` shebang line (a shebang must stay on line 1).
+     * Reuses the shared heuristic so license headers before `package` are handled.
      */
     private fun findImportInsertionPoint(content: String): Position {
-        val lines = content.lines()
-        var insertLine = 0
-
-        // Find the last import or package declaration
-        for ((index, line) in lines.withIndex()) {
-            val trimmed = line.trim()
-            if (trimmed.startsWith("package ")) {
-                insertLine = index + 1
-            } else if (trimmed.startsWith("import ")) {
-                insertLine = index + 1
-            } else if (trimmed.isNotEmpty() && !trimmed.startsWith("//") && !trimmed.startsWith("/*")) {
-                // First non-comment, non-import line
-                break
-            }
-        }
-
-        return Position(insertLine, 0)
+        val position = ImportUtils.findImportInsertPosition(content)
+        return if (position.line == 0 && content.startsWith("#!")) Position(1, 0) else position
     }
 
     /**
