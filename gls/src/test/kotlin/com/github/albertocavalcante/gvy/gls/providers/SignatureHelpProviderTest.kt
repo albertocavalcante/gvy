@@ -508,4 +508,26 @@ class SignatureHelpProviderTest {
         }
         error("Snippet '$snippet' not found in source")
     }
+
+    @Test
+    fun `active parameter is found after supplementary characters on the line`(): Unit = runTest {
+        val uri = URI.create("file:///SignatureHelpEmoji.groovy")
+        val source = """
+            class Calculator {
+                def sum(int left, int right) {}
+                def run() {
+                    def s = '\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00'; sum(1, 2)
+                }
+            }
+        """.trimIndent()
+        compile(uri, source)
+
+        val lineInfo = lineContaining(source, "sum(1, 2)")
+        val position = Position(lineInfo.first, lineInfo.second.indexOf("2)"))
+
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+
+        assertEquals(1, result.signatures.size)
+        assertEquals(1, result.activeParameter)
+    }
 }
