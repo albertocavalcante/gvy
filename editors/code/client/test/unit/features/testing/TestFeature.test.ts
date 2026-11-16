@@ -18,6 +18,7 @@ interface MockVscode {
       writeFile: sinon.SinonStub;
     };
     openTextDocument: sinon.SinonStub;
+    getWorkspaceFolder: sinon.SinonStub;
   };
   window: {
     showErrorMessage: sinon.SinonStub;
@@ -111,6 +112,9 @@ describe("TestFeature", () => {
           writeFile: fsWriteFileStub,
         },
         openTextDocument: openTextDocumentStub,
+        getWorkspaceFolder: sinon
+          .stub()
+          .returns({ uri: { fsPath: "/project" } }),
       },
       window: {
         showErrorMessage: showErrorMessageStub,
@@ -218,6 +222,25 @@ describe("TestFeature", () => {
       assert.strictEqual(destinationContent, userContent);
       assert.strictEqual(showTextDocumentStub.called, false);
       assert.strictEqual(openTextDocumentStub.calledOnce, true);
+    });
+
+    it("refuses a target outside the workspace folder", async () => {
+      const sourceUri = {
+        scheme: "file",
+        fsPath: "/project/src/main/groovy/MyClass.groovy",
+      };
+      mockVscode.workspace.getWorkspaceFolder.returns({
+        uri: { fsPath: "/project/src/main/groovy" },
+      });
+      openTextDocumentStub.resolves({ getText: () => "class MyClass {}" });
+      executeCommandStub.resolves([{ kind: 4, name: "MyClass", children: [] }]);
+      new TestFeatureModule.TestFeature();
+
+      await registerCommandStub.firstCall.args[1](sourceUri);
+
+      assert.strictEqual(fsCreateDirectoryStub.called, false);
+      assert.strictEqual(exclusiveWriteFileStub.called, false);
+      assert.strictEqual(showErrorMessageStub.calledOnce, true);
     });
 
     it("should register the groovy.test.generate command", () => {
