@@ -1,15 +1,29 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary")
+load("//tools/build_defs:build_info.bzl", "gvy_build_info")
 load("//tools/build_defs:kotlin.bzl", "kt_library")
+
+gvy_build_info(
+    name = "version_properties",
+    version_source = "//:build.gradle.kts",
+    visibility = ["//tools/build-info:__pkg__"],
+)
+
+java_library(
+    name = "build_info_resources",
+    resource_strip_prefix = "gls/version_properties",
+    resources = [":version_properties"],
+)
 
 kt_library(
     name = "gls-lib",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
+    runtime_deps = [":build_info_resources"],
     deps = [
         "@maven//:com_github_ajalt_clikt_clikt_core_jvm",
         "@maven//:com_github_ajalt_mordant_mordant_core_jvm",
