@@ -651,9 +651,9 @@ establish an independent grammar. The reviewed worker factory shares one bundled
 version detection/descriptor selection does not load the target's compiler. The existing Go frontend is independent
 syntax work, but complete version coverage, immutable host snapshots, bridge packaging and incremental reuse need proof.
 See the
-[Core parse path](https://github.com/albertocavalcante/gvy/blob/47f55c7749ba0fc179984882e301e02b8881948f/parser/core/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParser.kt)
+[Core parse path](https://github.com/albertocavalcante/gvy/blob/47f55c7749ba0fc179984882e301e02b8881948f/parser/core/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParser.kt#L84-L116)
 and
-[bundled factory](https://github.com/albertocavalcante/gvy/blob/71c7241e6ca89b3399c8ad107b256558ebb3ac58/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/GroovyCompilationService.kt).
+[bundled factory](https://github.com/albertocavalcante/gvy/blob/71c7241e6ca89b3399c8ad107b256558ebb3ac58/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/GroovyCompilationService.kt#L83-L87).
 These are pinned source observations, not claims about every future revision.
 
 ### Required invariants and open design choices
@@ -678,10 +678,10 @@ Metals offers per-build-target presentation compilers, so one server need not me
 and fallback behavior are bounded. Java/Kotlin analyzers also distinguish target language/API modes from their host
 runtime, rather than promising every historical compiler's behavior. This is a design precedent, not proof of Groovy
 compatibility. Sources:
-[Metals compiler ownership](https://github.com/scalameta/metals/blob/49625bab0b32e533158d00c80e69230d9e6d1fe1/metals/src/main/scala/scala/meta/internal/metals/Compilers.scala),
-[JDT LS target/runtime setup](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/af3be304735d76d42fae8edf471944d2d6fbc744/README.md).
+[Metals compiler ownership](https://github.com/scalameta/metals/blob/49625bab0b32e533158d00c80e69230d9e6d1fe1/metals/src/main/scala/scala/meta/internal/metals/Compilers.scala#L160-L173),
+[JDT LS target/runtime setup](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/af3be304735d76d42fae8edf471944d2d6fbc744/README.md#L14-L45).
 A pinned Jenkins release still declares Groovy 2.4.21; CPS, libraries and plugins add separate profile semantics.
-[Release-specific Jenkins BOM](https://github.com/jenkinsci/jenkins/blob/c82499bc18e254051ec6a1c88a409293b97c5200/bom/pom.xml).
+[Release-specific Jenkins BOM](https://github.com/jenkinsci/jenkins/blob/c82499bc18e254051ec6a1c88a409293b97c5200/bom/pom.xml#L40-L42).
 A hypothetical newer Groovy application does not establish that a particular Grails/Groovy pairing is released.
 
 ### PR review and completion gates
