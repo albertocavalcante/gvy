@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.build.BoundedProcessRunner
 import com.github.albertocavalcante.gvy.build.BuildExecutableResolver
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.DependencyMetadata
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.TestCommand
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -51,7 +53,8 @@ class MavenBuildTool : BuildTool {
         val pomPath = workspaceRoot.resolve("pom.xml")
 
         // Try embedded resolver first (faster, no subprocess)
-        val embeddedDeps = tryEmbeddedResolution(pomPath)
+        val embedded = tryEmbeddedResolution(pomPath)
+        val embeddedDeps = embedded.dependencies
         val dependencies = if (embeddedDeps.isNotEmpty()) {
             embeddedDeps
         } else {
@@ -78,7 +81,15 @@ class MavenBuildTool : BuildTool {
         }
 
         logger.info { "Resolved ${finalDependencies.size} Maven dependencies" }
-        return WorkspaceResolution(finalDependencies, sourceDirs)
+        val status = if (embeddedDeps.isNotEmpty() && embedded.isPartial) {
+            ResolutionStatus.Warning(
+                ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
+                "Partial Maven classpath; unresolved: ${embedded.unresolved.joinToString()}",
+            )
+        } else {
+            ResolutionStatus.Success
+        }
+        return WorkspaceResolution(finalDependencies, sourceDirs, status)
     }
 
     private fun ensureJenkinsCore(dependencies: List<Path>, pomPath: Path): List<Path> {
@@ -139,13 +150,13 @@ class MavenBuildTool : BuildTool {
         }
     }
 
-    private fun tryEmbeddedResolution(pomPath: Path): List<Path> =
-        runCatching { dependencyResolver.resolveDependencies(pomPath) }
+    private fun tryEmbeddedResolution(pomPath: Path): MavenResolutionResult =
+        runCatching { dependencyResolver.resolveDetailed(pomPath) }
             .onFailure { throwable ->
                 if (throwable is Error) throw throwable
                 logger.warn(throwable) { "Embedded Maven resolution failed, will try CLI fallback" }
             }
-            .getOrDefault(emptyList())
+            .getOrDefault(MavenResolutionResult.EMPTY)
 
     private fun resolveViaCli(workspaceRoot: Path): List<Path> {
         val cpFile = Files.createTempFile("mvn-classpath", ".txt")
