@@ -33,6 +33,7 @@ private const val CLIENT_VERSION = "1.0.0"
 private const val INIT_TIMEOUT_SEC = 60L
 private const val REQUEST_TIMEOUT_SEC = 120L
 private const val SHUTDOWN_TIMEOUT_SEC = 10L
+private const val EXIT_GRACE_MILLIS = 3_000L
 
 /**
  * BSP client for communicating with build servers (bazel-bsp, sbt, Mill).
@@ -85,13 +86,20 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
     }
 
     override fun close() {
+        // Snapshot descendants first: a wrapper script may fork the real server.
+        val descendants = process?.descendants()?.toList().orEmpty()
+        val sentExit = initialized
         runCatching {
             if (initialized) {
                 server?.buildShutdown()?.get(SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS)
                 server?.onBuildExit()
             }
-        }.onFailure { logger.warn { "Error during BSP shutdown: ${it.message}" } }
-        process?.destroyForcibly()
+        }.onFailure {
+            if (it is InterruptedException) Thread.currentThread().interrupt()
+            logger.warn { "Error during BSP shutdown: ${it.message}" }
+        }
+        // No build/exit was sent when initialization never completed, so waiting for a voluntary exit is pointless.
+        process?.let { terminateProcessTree(it, descendants, if (sentExit) EXIT_GRACE_MILLIS else 0L) }
         process = null
         server = null
         initialized = false
@@ -175,4 +183,21 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
             logger.debug { "[BSP] Task finished: ${params.message ?: params.taskId.id}" }
         }
     }
+}
+
+/**
+ * Gives [process] up to [graceMillis] to exit on its own after `build/exit`, then force-kills it and
+ * every still-alive process in [descendants].
+ */
+internal fun terminateProcessTree(process: Process, descendants: List<ProcessHandle>, graceMillis: Long) {
+    val exited = try {
+        process.waitFor(graceMillis, TimeUnit.MILLISECONDS)
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        false
+    }
+    // Union with a fresh snapshot: a wrapper may have forked after the early one (empty once the parent is gone).
+    val tree = (descendants + process.descendants().toList()).distinct()
+    if (!exited) process.destroyForcibly()
+    tree.filter { it.isAlive }.forEach { it.destroyForcibly() }
 }
