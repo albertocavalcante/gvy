@@ -10,6 +10,8 @@ import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.results.Results
 import org.codenarc.rule.Violation
+import org.codenarc.rule.formatting.BlankLineBeforePackageRule
+import org.codenarc.rule.formatting.ConsecutiveBlankLinesRule
 import org.codenarc.rule.formatting.FileEndsWithoutNewlineRule
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticRelatedInformation
@@ -288,9 +290,11 @@ class CodeNarcDiagnosticProvider(
         val reportedLine = violation.lineNumber
         // Kotlin retains a trailing empty row after CR/LF; CodeNarc's readLines omits that row.
         val finalCodeNarcLine = sourceLines.lastIndex - if (sourceLines.last().isEmpty()) 1 else 0
-        // CodeNarc 3.7 reports this rule's final line with a zero-based index. Other rules remain one-based.
+        // CodeNarc 3.7 reports these rules with a zero-based index. Other rules remain one-based.
         val groovyLineNumber = when {
             reportedLine == null -> 1
+            violation.rule is ConsecutiveBlankLinesRule || violation.rule is BlankLineBeforePackageRule ->
+                reportedLine + 1
             reportedLine == finalCodeNarcLine && violation.rule is FileEndsWithoutNewlineRule -> reportedLine + 1
             else -> reportedLine
         }
