@@ -187,3 +187,21 @@ test('ignored e2e and lsp-client inputs prevent a clean stamp', () => fixture((r
     rmSync(path);
   }
 }));
+
+test('ignores only Jenkins extractor Detekt reports', () => fixture((root) => {
+  writeFileSync(join(root, '.gitignore'), '*.kt\n*.md\n');
+  git(root, 'add', '.gitignore');
+  git(root, 'commit', '-qm', 'ignore fixtures');
+  const report = join(root, 'tools/jenkins-extractor/build/reports/detekt/detekt.md');
+  mkdirSync(join(report, '..'), { recursive: true });
+  writeFileSync(report, 'generated report');
+  assert.equal(collectStatus(root, {}).DIRTY, 'false');
+  const source = join(root, 'tools/jenkins-extractor/src/main/kotlin/gvy/build/Probe.kt');
+  mkdirSync(join(source, '..'), { recursive: true });
+  writeFileSync(source, 'ignored source');
+  assert.equal(collectStatus(root, {}).DIRTY, 'unknown');
+  rmSync(source);
+  const otherOutput = join(root, 'tools/jenkins-extractor/build/Unexpected.kt');
+  writeFileSync(otherOutput, 'unclassified output');
+  assert.equal(collectStatus(root, {}).DIRTY, 'unknown');
+}));
