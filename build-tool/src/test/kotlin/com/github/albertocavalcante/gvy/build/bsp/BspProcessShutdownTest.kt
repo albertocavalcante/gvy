@@ -20,16 +20,22 @@ class BspProcessShutdownTest {
     @Test
     fun `descendants of a wrapper script are killed after the grace period`() {
         val process = ProcessBuilder("sh", "-c", "sleep 60 & echo \$!; wait").start()
-        val childPid = process.inputStream.bufferedReader().readLine().toLong()
-        val child = ProcessHandle.of(childPid).orElseThrow()
-        assertTrue(child.isAlive)
+        var child: ProcessHandle? = null
+        try {
+            val childPid = process.inputStream.bufferedReader().readLine().toLong()
+            child = ProcessHandle.of(childPid).orElseThrow()
+            assertTrue(child.isAlive)
 
-        terminateProcessTree(process, process.descendants().toList(), graceMillis = 200)
+            terminateProcessTree(process, process.descendants().toList(), graceMillis = 200)
 
-        process.waitFor()
-        val deadline = System.nanoTime() + 5_000_000_000L
-        while (child.isAlive && System.nanoTime() < deadline) Thread.sleep(50)
-        assertFalse(child.isAlive, "forked server must not outlive the client")
+            process.waitFor()
+            val deadline = System.nanoTime() + 5_000_000_000L
+            while (child.isAlive && System.nanoTime() < deadline) Thread.sleep(50)
+            assertFalse(child.isAlive, "forked server must not outlive the client")
+        } finally {
+            child?.destroyForcibly()
+            process.destroyForcibly()
+        }
     }
 
     @Test

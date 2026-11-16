@@ -88,13 +88,18 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
     override fun close() {
         // Snapshot descendants first: a wrapper script may fork the real server.
         val descendants = process?.descendants()?.toList().orEmpty()
+        val sentExit = initialized
         runCatching {
             if (initialized) {
                 server?.buildShutdown()?.get(SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS)
                 server?.onBuildExit()
             }
-        }.onFailure { logger.warn { "Error during BSP shutdown: ${it.message}" } }
-        process?.let { terminateProcessTree(it, descendants, EXIT_GRACE_MILLIS) }
+        }.onFailure {
+            if (it is InterruptedException) Thread.currentThread().interrupt()
+            logger.warn { "Error during BSP shutdown: ${it.message}" }
+        }
+        // No build/exit was sent when initialization never completed, so waiting for a voluntary exit is pointless.
+        process?.let { terminateProcessTree(it, descendants, if (sentExit) EXIT_GRACE_MILLIS else 0L) }
         process = null
         server = null
         initialized = false
@@ -191,6 +196,8 @@ internal fun terminateProcessTree(process: Process, descendants: List<ProcessHan
         Thread.currentThread().interrupt()
         false
     }
+    // Union with a fresh snapshot: a wrapper may have forked after the early one (empty once the parent is gone).
+    val tree = (descendants + process.descendants().toList()).distinct()
     if (!exited) process.destroyForcibly()
-    descendants.filter { it.isAlive }.forEach { it.destroyForcibly() }
+    tree.filter { it.isAlive }.forEach { it.destroyForcibly() }
 }
