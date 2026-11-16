@@ -33,8 +33,7 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "gradlew",
         windowsWrapperName = "gradlew.bat",
-        systemCommand = "gradle",
-        windowsSystemCommand = "gradle.bat",
+        systemCommand = windowsAware("gradle", "gradle.bat", isWindows),
         useWindows = isWindows,
     )
 
@@ -49,8 +48,7 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "mvnw",
         windowsWrapperName = "mvnw.cmd",
-        systemCommand = "mvn",
-        windowsSystemCommand = "mvn.cmd",
+        systemCommand = windowsAware("mvn", "mvn.cmd", isWindows),
         useWindows = isWindows,
     )
 
@@ -61,8 +59,7 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "gradlew",
         windowsWrapperName = "gradlew.bat",
-        systemCommand = "gradle",
-        windowsSystemCommand = "gradle.bat",
+        systemCommand = windowsAware("gradle", "gradle.bat", forceWindows),
         useWindows = forceWindows,
     )
 
@@ -73,10 +70,13 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "mvnw",
         windowsWrapperName = "mvnw.cmd",
-        systemCommand = "mvn",
-        windowsSystemCommand = "mvn.cmd",
+        systemCommand = windowsAware("mvn", "mvn.cmd", forceWindows),
         useWindows = forceWindows,
     )
+
+    /** ProcessBuilder on Windows does not apply PATHEXT: Maven/Gradle ship only .cmd/.bat launchers. */
+    private fun windowsAware(command: String, windowsCommand: String, useWindows: Boolean): String =
+        if (useWindows) windowsCommand else command
 
     /**
      * Generic helper to resolve a build executable.
@@ -87,24 +87,21 @@ object BuildExecutableResolver {
         wrapperName: String,
         windowsWrapperName: String,
         systemCommand: String,
-        windowsSystemCommand: String,
         useWindows: Boolean,
     ): String {
-        // ProcessBuilder on Windows does not apply PATHEXT: Maven/Gradle ship only .cmd/.bat launchers.
-        val effectiveSystemCommand = if (useWindows) windowsSystemCommand else systemCommand
         val wrapper = if (useWindows) windowsWrapperName else wrapperName
         val wrapperPath = workspaceRoot.resolve(wrapper)
 
-        if (!wrapperPath.exists()) return effectiveSystemCommand
+        if (!wrapperPath.exists()) return systemCommand
 
         // On Unix, verify executable permission
         if (!useWindows && !Files.isExecutable(wrapperPath)) {
             logger.warn {
                 "Build wrapper exists but is not executable: $wrapperPath. " +
                     "Fix with 'chmod +x $wrapperName' or 'git update-index --chmod=+x $wrapperName'. " +
-                    "Falling back to system $effectiveSystemCommand."
+                    "Falling back to system $systemCommand."
             }
-            return effectiveSystemCommand
+            return systemCommand
         }
 
         return wrapperPath.toAbsolutePath().toString()
