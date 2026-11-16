@@ -23,6 +23,7 @@ import java.net.URI
 class TypeDefinitionProvider(
     private val semanticResolver: SemanticTypeResolver,
     private val contextProvider: (URI) -> CompilationContext?,
+    private val sourceProvider: (URI) -> String? = { null },
 ) {
 
     private val logger = KotlinLogging.logger {}
@@ -55,7 +56,7 @@ class TypeDefinitionProvider(
         semanticResolver.semantics.inject(context.moduleNode)
 
         // Find the AST node at the given position
-        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {
+        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition(sourceProvider(uri))) ?: run {
             logger.debug { "No AST node found at position $position" }
             return null
         }

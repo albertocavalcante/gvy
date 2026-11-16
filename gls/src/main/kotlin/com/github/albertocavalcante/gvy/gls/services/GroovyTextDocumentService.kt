@@ -268,6 +268,7 @@ class GroovyTextDocumentService(
         TypeDefinitionProvider(
             semanticResolver = semanticTypeResolver,
             contextProvider = { uri -> compilationService.createContext(uri) },
+            sourceProvider = { uri -> compilationService.getCompiledSnapshot(uri)?.sourceText },
         )
     }
 

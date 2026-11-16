@@ -552,4 +552,17 @@ class DefinitionProviderTest {
         }
         // If line is 0, getNodeAt returned ClassNode - this is a known limitation, not a test failure
     }
+
+    @Test
+    fun `definition resolves after a supplementary character on the line`(): Unit = runBlocking {
+        val content = "def x = 1\ndef s = '\uD83D\uDE00\uD83D\uDE00'; println x"
+        val uri = URI.create("file:///emoji.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
+
+        // LSP columns count UTF-16 units; each emoji is two of them but one Groovy column.
+        val column = content.lines()[1].lastIndexOf('x')
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(1, column)).toList()
+
+        assertEquals(listOf(0), definitions.map { it.range.start.line })
+    }
 }
