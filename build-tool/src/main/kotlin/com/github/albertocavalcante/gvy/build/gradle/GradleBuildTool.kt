@@ -123,7 +123,9 @@ class GradleBuildTool(
 
     override fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String?): TestCommand {
         val testFilter = if (test != null) "$suite.$test" else suite
-        val args = listOf("test", "--tests", testFilter, "jacocoTestReport")
+        // The report is a separate, optional step (see getCoverageReportCommand): a project without the jacoco
+        // plugin rejects the unknown task name and would run no tests at all.
+        val args = listOf("test", "--tests", testFilter)
 
         return TestCommand(
             executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
@@ -131,6 +133,12 @@ class GradleBuildTool(
             cwd = workspaceRoot.toString(),
         )
     }
+
+    override fun getCoverageReportCommand(workspaceRoot: Path): TestCommand = TestCommand(
+        executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
+        args = listOf("jacocoTestReport"),
+        cwd = workspaceRoot.toString(),
+    )
 
     /**
      * Retrieves rich dependency metadata for all dependencies in the workspace.
