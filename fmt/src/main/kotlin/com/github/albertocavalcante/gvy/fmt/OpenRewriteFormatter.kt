@@ -9,7 +9,6 @@ import org.openrewrite.SourceFile
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.marker.MultiVariable
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.Statement
 import org.openrewrite.java.tree.Space
 import org.openrewrite.tree.ParseError
 import org.slf4j.LoggerFactory
