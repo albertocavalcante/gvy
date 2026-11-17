@@ -148,14 +148,21 @@ class OpenRewriteFormatter internal constructor(
         val hidden = mutableListOf<String>()
         object : GroovyIsoVisitor<Unit>() {
             override fun visitSpace(space: Space?, loc: Space.Location, p: Unit): Space {
-                if (space != null && space.whitespace.any { !it.isWhitespace() }) hidden.add(space.whitespace)
+                if (space != null) {
+                    space.whitespace.takeIf { text -> text.any { !Character.isWhitespace(it) } }?.let(hidden::add)
+                    space.comments.map { it.suffix }.filter { text -> text.any { !Character.isWhitespace(it) } }
+                        .forEach(hidden::add)
+                }
                 return super.visitSpace(space, loc, p)
             }
         }.visit(source, Unit)
         return hidden
     }
 
-    private fun String.preview(): String = if (length <= PREVIEW_LENGTH) this else take(PREVIEW_LENGTH) + "..."
+    private fun String.preview(): String {
+        val flat = replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+        return if (flat.length <= PREVIEW_LENGTH) flat else flat.take(PREVIEW_LENGTH) + "..."
+    }
 
     private fun ParseError.isExpectedSourceRefusal(): Boolean {
         val kind = markers.findFirst(ParseExceptionResult::class.java).orElse(null)?.exceptionType

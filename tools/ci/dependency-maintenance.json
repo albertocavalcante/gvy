@@ -425,11 +425,11 @@
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "6d74b92a962b712f142c3b91aef7a5e204f41b85c4c74fdf4c6900e1e70d525e"
+          "sha256": "585a42a8fe535cde91f71d25ada1738c30ff18f8333f48e0c7e34c736eddd2d1"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "6d74b92a962b712f142c3b91aef7a5e204f41b85c4c74fdf4c6900e1e70d525e"
+          "sha256": "585a42a8fe535cde91f71d25ada1738c30ff18f8333f48e0c7e34c736eddd2d1"
         }
       ]
     },
@@ -454,7 +454,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "6d74b92a962b712f142c3b91aef7a5e204f41b85c4c74fdf4c6900e1e70d525e"
+          "sha256": "585a42a8fe535cde91f71d25ada1738c30ff18f8333f48e0c7e34c736eddd2d1"
         }
       ]
     },
@@ -481,7 +481,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-literals",
-          "sha256": "6d74b92a962b712f142c3b91aef7a5e204f41b85c4c74fdf4c6900e1e70d525e"
+          "sha256": "585a42a8fe535cde91f71d25ada1738c30ff18f8333f48e0c7e34c736eddd2d1"
         }
       ]
     },
@@ -505,7 +505,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-enum-closing-brace",
-          "sha256": "6d74b92a962b712f142c3b91aef7a5e204f41b85c4c74fdf4c6900e1e70d525e"
+          "sha256": "585a42a8fe535cde91f71d25ada1738c30ff18f8333f48e0c7e34c736eddd2d1"
         }
       ]
     },

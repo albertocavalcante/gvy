@@ -77,9 +77,23 @@ class OpenRewriteFormatterTest {
             assertThat((outcome as FormatOutcome.Refused).reason).contains("stored as whitespace")
         }
 
-        @Test
-        fun `still formats ordinary unary operators and exponent-free numbers`() {
-            assertFormatsTo("def a = -x\ndef b = !y\ndef c = 1.5\n", "def a = -x\ndef b = !y\ndef c = 1.5\n")
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def a = -x\n",
+                "def a = +x\n",
+                "def a = -(x + 1)\n",
+                "def a = -foo()\n",
+                "def a = !x\n",
+                "def a = 1.5\n",
+            ],
+        )
+        fun `still formats ordinary unary operators and numbers`(statement: String) {
+            val outcome = formatter.formatChecked("class A {\n      def f() {\n$statement      }\n}\n")
+
+            assertThat(outcome)
+                .withFailMessage { "Expected <$statement> to format but got $outcome" }
+                .isInstanceOf(FormatOutcome.Formatted::class.java)
         }
     }
 
