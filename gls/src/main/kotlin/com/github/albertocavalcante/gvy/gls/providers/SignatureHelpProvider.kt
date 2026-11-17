@@ -94,9 +94,10 @@ class SignatureHelpProvider(
 
     private suspend fun provideFromCachedDocument(documentUri: URI, position: Position): SignatureHelp {
         ensureAstPrepared(documentUri)
-        val cached = compilationService.getParseResult(documentUri) ?: return emptySignatureHelp()
-        val groovyPos = position.toGroovyPosition(compilationService.getCompiledSnapshot(documentUri)?.sourceText)
-        val context = resolveSignatureContext(documentUri, groovyPos, cached) ?: return emptySignatureHelp()
+        // One snapshot supplies text and parse result, so a concurrent recompile cannot mix generations.
+        val cached = compilationService.getCompiledSnapshot(documentUri) ?: return emptySignatureHelp()
+        val groovyPos = position.toGroovyPosition(cached.sourceText)
+        val context = resolveSignatureContext(documentUri, groovyPos, cached.parseResult) ?: return emptySignatureHelp()
         return buildSignatureHelp(context, groovyPos)
     }
 
