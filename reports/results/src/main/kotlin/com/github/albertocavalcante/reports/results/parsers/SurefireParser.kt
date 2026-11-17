@@ -30,6 +30,7 @@ import kotlin.math.roundToLong
  */
 object SurefireParser : TestResultParser {
     private val logger = KotlinLogging.logger {}
+    private const val MILLIS_PER_SECOND = 1000L
 
     /**
      * Parse all Surefire reports in a workspace.
@@ -37,15 +38,25 @@ object SurefireParser : TestResultParser {
      * @param workspaceRoot Root directory of the workspace
      * @return Aggregated test results from all modules
      */
-    override fun parseWorkspace(workspaceRoot: File): TestResultsResponse {
+    override fun parseWorkspace(workspaceRoot: File): TestResultsResponse = parseWorkspace(workspaceRoot, null)
+
+    /**
+     * Like [parseWorkspace], but reads only reports last modified at or after [modifiedSinceMillis] (epoch
+     * milliseconds, compared at whole-second precision because some file systems store coarse times). A report
+     * from an earlier run is ignored instead of being reported as the current outcome. Null reads every report.
+     */
+    fun parseWorkspace(workspaceRoot: File, modifiedSinceMillis: Long?): TestResultsResponse {
+        val threshold = modifiedSinceMillis?.let { it / MILLIS_PER_SECOND * MILLIS_PER_SECOND }
         val reportDirs = discoverSurefireReportDirs(workspaceRoot)
         logger.info { "Found ${reportDirs.size} surefire-reports directories" }
 
         val allResults = mutableListOf<TestResultItem>()
 
         for (reportDir in reportDirs) {
-            val xmlFiles = reportDir.listFiles { file -> file.name.startsWith("TEST-") && file.extension == "xml" }
-                ?: continue
+            val xmlFiles = reportDir.listFiles { file ->
+                file.name.startsWith("TEST-") && file.extension == "xml" &&
+                    (threshold == null || file.lastModified() >= threshold)
+            } ?: continue
 
             for (xmlFile in xmlFiles) {
                 try {

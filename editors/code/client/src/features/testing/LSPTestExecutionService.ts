@@ -323,6 +323,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
             consumer,
             affectedByLoss,
             excluded,
+            outcome.startedAt,
           );
         }
       }
@@ -473,9 +474,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
     consumer: TestEventConsumer,
     affectedByLoss: ReadonlySet<vscode.TestItem>,
     excluded: ReadonlySet<vscode.TestItem>,
+    runStartedAt: number,
   ): Promise<void> {
     try {
-      const results = await this.testService.getTestResults(workspaceUri);
+      // Only reports this command wrote count; an older matching report must not decide an outcome.
+      const results = await this.testService.getTestResults(
+        workspaceUri,
+        runStartedAt,
+      );
       if (results.results.length === 0) {
         this.logger.appendLine(
           "[LSP] No test results found in Surefire reports",
@@ -754,7 +760,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     spawned: boolean;
     incomplete: boolean;
     failedExit: boolean;
+    startedAt: number;
   }> {
+    const startedAt = Date.now();
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
@@ -907,6 +915,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
           spawned,
           incomplete: incomplete || (isMaven && code !== 0),
           failedExit: code !== 0,
+          startedAt,
         });
       });
 

@@ -739,6 +739,37 @@ describe("LSPTestExecutionService", () => {
       );
     });
 
+    it("asks for Surefire results written no earlier than the Maven command start", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/usr/bin/mvn",
+        args: ["test", "-Dtest=com.example.MySpec"],
+        cwd: "/workspace",
+        env: {},
+      });
+      testServiceMock.getTestResults.resolves({ results: [] });
+
+      const before = Date.now();
+      await service.runTests(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+      );
+      const after = Date.now();
+
+      assert.ok(testServiceMock.getTestResults.calledOnce);
+      const since = testServiceMock.getTestResults.firstCall.args[1];
+      assert.strictEqual(typeof since, "number");
+      assert.ok(
+        since >= before && since <= after,
+        "an older report must not be read as this run's result",
+      );
+    });
+
     it("should not append coverage tasks when running without coverage", async () => {
       const testItem = {
         id: "com.example.MySpec",

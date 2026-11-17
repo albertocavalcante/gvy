@@ -79,6 +79,29 @@ class SurefireParserTest {
     }
 
     @Test
+    fun `a report older than the run start is ignored`(@TempDir tempDir: Path) {
+        val surefireDir = File(tempDir.toFile(), "target/surefire-reports").apply { mkdirs() }
+        val report = File(surefireDir, "TEST-com.example.MySpec.xml")
+        report.writeText(
+            javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
+                ?.readText() ?: error("Test resource not found"),
+        )
+        val runStart = System.currentTimeMillis()
+        report.setLastModified(runStart - STALE_AGE_MILLIS)
+
+        val stale = SurefireParser.parseWorkspace(tempDir.toFile(), runStart)
+        assertEquals(0, stale.results.size)
+
+        report.setLastModified(runStart + FRESH_OFFSET_MILLIS)
+        val fresh = SurefireParser.parseWorkspace(tempDir.toFile(), runStart)
+        assertTrue(fresh.results.isNotEmpty())
+
+        report.setLastModified(runStart - STALE_AGE_MILLIS)
+        assertTrue(SurefireParser.parseWorkspace(tempDir.toFile()).results.isNotEmpty())
+        assertTrue(SurefireParser.parseWorkspace(tempDir.toFile(), null).results.isNotEmpty())
+    }
+
+    @Test
     fun `should compute correct summary`(@TempDir tempDir: Path) {
         val testXmlContent = javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
             ?.readText() ?: error("Test resource not found")
@@ -229,5 +252,10 @@ class SurefireParserTest {
 
         // Should only parse TEST-*.xml files
         assertEquals(4, response.results.size)
+    }
+
+    private companion object {
+        const val STALE_AGE_MILLIS = 60_000L
+        const val FRESH_OFFSET_MILLIS = 5_000L
     }
 }
