@@ -1583,11 +1583,10 @@ describe("LSPTestExecutionService", () => {
         stderr: new PassThrough(),
         kill: sandbox.stub(),
       });
-      cpMock.spawn.returns(proc);
-      // Each run spawns the test step, then the report step.
-      cpMock.spawn
-        .onCall(cpMock.spawn.callCount + 1)
-        .callsFake(() => reportProc(0));
+      // The report step is a separate process that finishes cleanly.
+      cpMock.spawn.callsFake((_executable: string, args: string[]) =>
+        unquoted(args).includes("jacocoTestReport") ? reportProc(0) : proc,
+      );
       testServiceMock.getTestCommand.resolves({
         executable: "/w/gradlew",
         args: ["test"],
