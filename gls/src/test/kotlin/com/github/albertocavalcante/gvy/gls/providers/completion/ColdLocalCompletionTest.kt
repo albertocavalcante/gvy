@@ -412,10 +412,11 @@ class ColdLocalCompletionTest {
     fun `a held class extending a JDK collection offers the GDK methods of that collection`(): Unit = runBlocking {
         val source = "class N extends ArrayList<Integer> {}\nnew N().s"
 
-        val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }
+        val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }.toSet()
 
-        assertTrue("sum" in labels, "found $labels")
-        assertTrue("sort" in labels, "found $labels")
+        // `sort` is also a reflected ArrayList method, so only the GDK-only names prove the fix.
+        assertTrue("first" in labels, "GDK first(Iterable) missing from ${labels.size} labels")
+        assertTrue("sum" in labels, "GDK sum(Iterable) missing from ${labels.size} labels: ${labels.sorted()}")
     }
 
     @Test
