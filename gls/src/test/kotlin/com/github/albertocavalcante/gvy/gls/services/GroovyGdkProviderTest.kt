@@ -119,6 +119,14 @@ class GroovyGdkProviderTest {
     }
 
     @Test
+    fun `should include Iterable extensions for a class reaching Iterable only through super-interfaces`() {
+        // ArrayList lists Iterable nowhere directly: it is reached through List/Collection.
+        val methods = gdkProvider.getMethodsForType("java.util.ArrayList")
+
+        assertThat(methods.map { it.name }).contains("sum")
+    }
+
+    @Test
     fun `should deduplicate methods by signature`() {
         val methods = gdkProvider.getMethodsForType("java.util.List")
 
