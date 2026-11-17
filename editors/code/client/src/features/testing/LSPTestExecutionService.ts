@@ -306,7 +306,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
             if (this.isLeaf(affected)) failedExitLeaves.add(affected);
           }
         }
-        // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
+        // The time filter proves a report is fresh, not that the run passed;
+        // do not apply reports to failed or incomplete executions.
         // Apply right after each command: consecutive runs of one suite
         // rewrite the same Surefire report file, so a later command would
         // otherwise replace the earlier command's results before they are read.

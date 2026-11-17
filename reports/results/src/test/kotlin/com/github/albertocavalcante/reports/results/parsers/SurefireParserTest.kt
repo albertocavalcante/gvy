@@ -102,6 +102,26 @@ class SurefireParserTest {
     }
 
     @Test
+    fun `a sub-second report earlier in the start second is ignored but a whole-second time is trusted`(
+        @TempDir tempDir: Path,
+    ) {
+        val surefireDir = File(tempDir.toFile(), "target/surefire-reports").apply { mkdirs() }
+        val report = File(surefireDir, "TEST-com.example.MySpec.xml")
+        report.writeText(
+            javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
+                ?.readText() ?: error("Test resource not found"),
+        )
+        val runStart = BOUNDARY_START_MILLIS
+
+        report.setLastModified(runStart - 200)
+        assertEquals(0, SurefireParser.parseWorkspace(tempDir.toFile(), runStart).results.size)
+
+        // 1_700_000_000_000 is a whole second: possibly a truncated time from inside the start second.
+        report.setLastModified(runStart - 700)
+        assertTrue(SurefireParser.parseWorkspace(tempDir.toFile(), runStart).results.isNotEmpty())
+    }
+
+    @Test
     fun `should compute correct summary`(@TempDir tempDir: Path) {
         val testXmlContent = javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
             ?.readText() ?: error("Test resource not found")
@@ -257,5 +277,6 @@ class SurefireParserTest {
     private companion object {
         const val STALE_AGE_MILLIS = 60_000L
         const val FRESH_OFFSET_MILLIS = 5_000L
+        const val BOUNDARY_START_MILLIS = 1_700_000_000_700L
     }
 }

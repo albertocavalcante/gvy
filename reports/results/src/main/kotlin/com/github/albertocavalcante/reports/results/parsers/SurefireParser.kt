@@ -42,11 +42,12 @@ object SurefireParser : TestResultParser {
 
     /**
      * Like [parseWorkspace], but reads only reports last modified at or after [modifiedSinceMillis] (epoch
-     * milliseconds, compared at whole-second precision because some file systems store coarse times). A report
+     * milliseconds; a time that is a whole second is treated as coarse and compared at second precision, because
+     * some file systems store whole seconds). A report
      * from an earlier run is ignored instead of being reported as the current outcome. Null reads every report.
      */
     fun parseWorkspace(workspaceRoot: File, modifiedSinceMillis: Long?): TestResultsResponse {
-        val threshold = modifiedSinceMillis?.let { it / MILLIS_PER_SECOND * MILLIS_PER_SECOND }
+        val coarseThreshold = modifiedSinceMillis?.let { it / MILLIS_PER_SECOND * MILLIS_PER_SECOND }
         val reportDirs = discoverSurefireReportDirs(workspaceRoot)
         logger.info { "Found ${reportDirs.size} surefire-reports directories" }
 
@@ -55,7 +56,7 @@ object SurefireParser : TestResultParser {
         for (reportDir in reportDirs) {
             val xmlFiles = reportDir.listFiles { file ->
                 file.name.startsWith("TEST-") && file.extension == "xml" &&
-                    (threshold == null || file.lastModified() >= threshold)
+                    isFreshEnough(file.lastModified(), modifiedSinceMillis, coarseThreshold)
             } ?: continue
 
             for (xmlFile in xmlFiles) {
@@ -72,6 +73,13 @@ object SurefireParser : TestResultParser {
             results = allResults,
             summary = computeSummary(allResults),
         )
+    }
+
+    private fun isFreshEnough(modified: Long, since: Long?, coarseSince: Long?): Boolean = when {
+        since == null || coarseSince == null -> true
+        modified >= since -> true
+        // A whole-second time may be a truncated sub-second one, so compare it at second precision.
+        else -> modified % MILLIS_PER_SECOND == 0L && modified >= coarseSince
     }
 
     /**
