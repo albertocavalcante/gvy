@@ -77,6 +77,13 @@ interface BuildTool {
     fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String? = null): TestCommand? = null
 
     /**
+     * Returns the optional second step that produces the coverage report after [getCoverageCommand] ran the tests.
+     * Run it separately: when the coverage plugin is not applied it fails without affecting the test results.
+     * Returns null when the tool has no separate report step (its coverage command already includes the report).
+     */
+    fun getCoverageReportCommand(workspaceRoot: Path): TestCommand? = null
+
+    /**
      * Returns detailed dependency metadata for UI display purposes.
      *
      * This provides richer information than [resolve] which only returns JAR paths.

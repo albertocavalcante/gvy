@@ -24,6 +24,14 @@ import {
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 import { CoverageService } from "./CoverageService";
+import {
+  COVERAGE_REPORT_UNAVAILABLE,
+  coverageReportCommand,
+  isJacocoPluginMissing,
+} from "./coverageReport";
+
+/** How much of a report command's output is kept for diagnostics. */
+const REPORT_OUTPUT_LIMIT = 8192;
 
 interface TestRunOptions {
   withCoverage?: boolean;
@@ -231,13 +239,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
           this.reportPlanningFailure(run, message);
           return;
         }
-        const args = [...command.args];
-        if (options.withCoverage) {
-          const tool = buildToolOf(command.executable);
-          if (tool === "gradle") args.push("jacocoTestReport");
-          else if (tool === "maven") args.push("jacoco:report");
-        }
-        const executableCommand = { ...command, args };
+        // Coverage runs the tests alone; the report is a separate step below.
+        const executableCommand = { ...command, args: [...command.args] };
         try {
           prepared.push({
             item,
@@ -365,7 +368,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
       // report on disk is the last successful run's when this one failed.
       if (options.withCoverage && options.coverageService && !isCancelled()) {
         if (allCommandsSucceeded) {
-          await options.coverageService.addCoverageToRun(run, workspaceUri);
+          const reported = await this.runCoverageReports(
+            prepared.map(({ command }) => command),
+            tokens,
+            run,
+          );
+          if (reported && !isCancelled()) {
+            await options.coverageService.addCoverageToRun(run, workspaceUri);
+          }
         } else {
           const note =
             "[COVERAGE] Skipped: the build failed or was incomplete, so the coverage report on disk would not belong to this run.";
@@ -712,6 +722,121 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
   }
 
+  /** The process environment for a build command, with the configured project JDK applied. */
+  private resolveEnvironment(
+    env: Record<string, string> | undefined,
+  ): NodeJS.ProcessEnv {
+    // Get project build JDK from settings
+    const projectJavaHome = this.getProjectJavaHome();
+
+    // Build environment with explicit JAVA_HOME if configured
+    let resolvedEnv = { ...process.env, ...env };
+    if (projectJavaHome) {
+      // Validate JAVA_HOME for security
+      if (this.isValidJavaHome(projectJavaHome)) {
+        resolvedEnv = withJavaHome(resolvedEnv, projectJavaHome);
+        this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
+      } else {
+        this.logger.appendLine(
+          `[Test] Ignoring invalid JAVA_HOME configuration: ${projectJavaHome}`,
+        );
+      }
+    }
+    return resolvedEnv;
+  }
+
+  /**
+   * Runs the coverage report as its own step after the tests succeeded, once per
+   * distinct build command. Returns true when coverage data can be read. A
+   * missing JaCoCo plugin yields one clear message; any other failure is
+   * reported as a failure of this step only. Test results are never affected.
+   */
+  private async runCoverageReports(
+    testCommands: readonly TestCommand[],
+    tokens: readonly vscode.CancellationToken[],
+    run: vscode.TestRun,
+  ): Promise<boolean> {
+    const seen = new Set<string>();
+    let ok = true;
+    let reportedUnavailable = false;
+    const isCancelled = () =>
+      tokens.some((token) => token.isCancellationRequested);
+    for (const testCommand of testCommands) {
+      if (isCancelled()) return false;
+      const command = coverageReportCommand(testCommand);
+      if (!command) continue;
+      const key = `${command.executable}\0${command.cwd}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const outcome = await this.executeReportCommand(command, tokens);
+      if (outcome.exitCode === 0) continue;
+      // A cancelled run kills the report process; that is not a report failure.
+      if (isCancelled()) return false;
+      ok = false;
+      if (isJacocoPluginMissing(command.executable, outcome.output)) {
+        if (!reportedUnavailable) {
+          reportedUnavailable = true;
+          this.logger.appendLine(COVERAGE_REPORT_UNAVAILABLE);
+          run.appendOutput(`${COVERAGE_REPORT_UNAVAILABLE}\r\n`);
+        }
+      } else {
+        const note = `[COVERAGE] Coverage report step failed (${outcome.failure ?? `exit code ${outcome.exitCode}`}). Test results are unaffected.`;
+        this.logger.appendLine(note);
+        run.appendOutput(`${note}\r\n`);
+        if (outcome.output) {
+          run.appendOutput(`${outcome.output.replace(/\r?\n/gu, "\r\n")}\r\n`);
+        }
+      }
+    }
+    return ok;
+  }
+
+  /** Runs one report command, keeping only the tail of its output. */
+  private async executeReportCommand(
+    command: TestCommand,
+    tokens: readonly vscode.CancellationToken[],
+  ): Promise<{ exitCode: number | null; output: string; failure?: string }> {
+    let invocation: ProcessInvocation;
+    try {
+      invocation = this.prepareInvocation(command);
+    } catch (error) {
+      if (!(error instanceof UnrunnableCommandError)) throw error;
+      return { exitCode: null, output: "", failure: error.message };
+    }
+    this.logger.appendLine(
+      `[LSP] Executing: ${command.executable} ${command.args.join(" ")} (in ${command.cwd})`,
+    );
+    return new Promise((resolve) => {
+      const proc = cp.spawn(invocation.executable, invocation.args, {
+        cwd: command.cwd,
+        env: this.resolveEnvironment(command.env),
+        shell: invocation.shell,
+      });
+      const subscriptions = tokens.map((token) =>
+        token.onCancellationRequested(() => killProcessTree(proc)),
+      );
+      let output = "";
+      const keepTail = (chunk: Buffer | string) => {
+        output = (output + chunk.toString()).slice(-REPORT_OUTPUT_LIMIT);
+      };
+      proc.stdout.on("data", keepTail);
+      proc.stderr.on("data", keepTail);
+      let failure: string | undefined;
+      let settled = false;
+      const settle = (code: number | null) => {
+        if (settled) return;
+        settled = true;
+        subscriptions.forEach((subscription) => subscription.dispose());
+        resolve({ exitCode: failure ? code || 1 : code, output, failure });
+      };
+      proc.on("error", (error: Error) => {
+        failure = `could not start: ${error.message}`;
+        settle(null);
+      });
+      proc.on("close", settle);
+    });
+  }
+
   private prepareInvocation(cmd: TestCommand): ProcessInvocation {
     const { executable, args } = cmd;
     const tool = buildToolOf(executable);
@@ -769,22 +894,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
     );
 
-    // Get project build JDK from settings
-    const projectJavaHome = this.getProjectJavaHome();
-
-    // Build environment with explicit JAVA_HOME if configured
-    let resolvedEnv = { ...process.env, ...env };
-    if (projectJavaHome) {
-      // Validate JAVA_HOME for security
-      if (this.isValidJavaHome(projectJavaHome)) {
-        resolvedEnv = withJavaHome(resolvedEnv, projectJavaHome);
-        this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
-      } else {
-        this.logger.appendLine(
-          `[Test] Ignoring invalid JAVA_HOME configuration: ${projectJavaHome}`,
-        );
-      }
-    }
+    const resolvedEnv = this.resolveEnvironment(env);
 
     // Detect Build Tool by executable name
     const tool = buildToolOf(executable);

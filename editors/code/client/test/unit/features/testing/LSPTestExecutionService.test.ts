@@ -87,6 +87,26 @@ interface PathMock {
 const unquoted = (args: string[]) =>
   args.map((arg) => arg.replace(/^"|"$/gu, ""));
 
+/** A finished build process for the separate coverage report step. */
+const reportProc = (code: number, output = "") => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  return {
+    pid: 456,
+    stdout,
+    stderr,
+    on: (event: string, callback: (code: number) => void) => {
+      if (event === "close") {
+        setTimeout(() => {
+          if (output) stderr.write(output);
+          setTimeout(() => callback(code), 10);
+        }, 0);
+      }
+    },
+    kill: () => {},
+  };
+};
+
 interface FixtureItem {
   id: string;
   parent?: FixtureItem;
@@ -395,14 +415,141 @@ describe("LSPTestExecutionService", () => {
         coverageServiceMock,
       );
 
-      // Verify spawn was called with jacocoTestReport appended
-      assert.ok(cpMock.spawn.calledOnce);
-      const spawnArgs = cpMock.spawn.getCall(0).args;
-      const args = spawnArgs[1];
+      // Tests run first without the report; the report is its own step.
+      assert.strictEqual(cpMock.spawn.callCount, 2);
       assert.ok(
-        unquoted(args).includes("jacocoTestReport"),
-        "Should append jacocoTestReport for Gradle",
+        !unquoted(cpMock.spawn.getCall(0).args[1]).includes("jacocoTestReport"),
+        "The test step must not include the report task",
       );
+      const reportArgs = unquoted(cpMock.spawn.getCall(1).args[1]);
+      assert.ok(
+        reportArgs.includes("jacocoTestReport"),
+        "Should run jacocoTestReport as a second step for Gradle",
+      );
+      assert.ok(!reportArgs.includes("--tests"));
+      const at = reportArgs.indexOf("jacocoTestReport");
+      assert.deepStrictEqual(reportArgs.slice(at, at + 3), [
+        "jacocoTestReport",
+        "-x",
+        "test",
+      ]);
+      assert.ok(coverageServiceMock.addCoverageToRun.calledOnce);
+    });
+
+    it("keeps the test results and shows one message when the jacoco plugin is not applied", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/gradlew",
+        args: ["test", "--tests", "com.example.MySpec"],
+        cwd: "/workspace",
+        env: {},
+      });
+      cpMock.spawn
+        .onCall(1)
+        .returns(
+          reportProc(
+            1,
+            "* What went wrong:\nTask 'jacocoTestReport' not found in root project 'app'.\n",
+          ),
+        );
+
+      await service.runTestsWithCoverage(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+        coverageServiceMock,
+      );
+
+      assert.strictEqual(cpMock.spawn.callCount, 2, "tests ran, then report");
+      const output = testRunMock.appendOutput
+        .getCalls()
+        .map((call) => String(call.args[0]));
+      const unavailable = output.filter((line) =>
+        line.includes("the jacoco plugin is not applied"),
+      );
+      assert.strictEqual(unavailable.length, 1);
+      assert.ok(!output.some((line) => line.includes("step failed")));
+      assert.ok(coverageServiceMock.addCoverageToRun.notCalled);
+      assert.ok(testRunMock.errored.notCalled, "not an error state");
+    });
+
+    it("reports another report-step failure as a coverage failure only", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/gradlew",
+        args: ["test", "--tests", "com.example.MySpec"],
+        cwd: "/workspace",
+        env: {},
+      });
+      cpMock.spawn
+        .onCall(1)
+        .returns(
+          reportProc(1, "Execution failed for task ':jacocoTestReport'."),
+        );
+
+      await service.runTestsWithCoverage(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+        coverageServiceMock,
+      );
+
+      const output = testRunMock.appendOutput
+        .getCalls()
+        .map((call) => String(call.args[0]));
+      assert.ok(
+        output.some((line) => line.includes("Coverage report step failed")),
+      );
+      assert.ok(!output.some((line) => line.includes("plugin is not applied")));
+      assert.ok(coverageServiceMock.addCoverageToRun.notCalled);
+      assert.ok(testRunMock.errored.notCalled, "test results are unaffected");
+    });
+
+    it("shows the unavailable message when Maven has no jacoco plugin", async () => {
+      const testItem = {
+        id: "com.example.MyTest",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/mvnw",
+        args: ["test", "-Dtest=com.example.MyTest"],
+        cwd: "/workspace",
+        env: {},
+      });
+      testServiceMock.getTestResults.resolves({ results: [] });
+      cpMock.spawn
+        .onCall(1)
+        .returns(
+          reportProc(
+            1,
+            "No plugin found for prefix 'jacoco' in the current project",
+          ),
+        );
+
+      await service.runTestsWithCoverage(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+        coverageServiceMock,
+      );
+
+      assert.ok(
+        testRunMock.appendOutput
+          .getCalls()
+          .some((call) =>
+            String(call.args[0]).includes("plugin is not applied"),
+          ),
+      );
+      assert.ok(coverageServiceMock.addCoverageToRun.notCalled);
     });
 
     it("should append jacoco:report for Maven projects", async () => {
@@ -430,10 +577,9 @@ describe("LSPTestExecutionService", () => {
         coverageServiceMock,
       );
 
-      // Verify spawn was called with jacoco:report appended
-      assert.ok(cpMock.spawn.calledOnce);
-      const spawnArgs = cpMock.spawn.getCall(0).args;
-      const args = spawnArgs[1];
+      // Verify the report runs as a second step after the tests
+      assert.strictEqual(cpMock.spawn.callCount, 2);
+      const args = cpMock.spawn.getCall(1).args[1];
       assert.ok(
         args.some(
           (arg: string) => arg.replace(/^"|"$/gu, "") === "jacoco:report",
@@ -620,7 +766,7 @@ describe("LSPTestExecutionService", () => {
           coverageServiceMock,
         );
 
-        const spawnArgs = cpMock.spawn.getCall(0).args;
+        const spawnArgs = cpMock.spawn.getCall(1).args;
         const args = spawnArgs[1];
 
         if (testCase.expectGradle) {
@@ -2270,7 +2416,10 @@ describe("LSPTestExecutionService", () => {
         stderr: new PassThrough(),
         kill: sandbox.stub(),
       });
-      cpMock.spawn.returns(proc);
+      // The report step is a separate process that finishes cleanly.
+      cpMock.spawn.callsFake((_executable: string, args: string[]) =>
+        unquoted(args).includes("jacocoTestReport") ? reportProc(0) : proc,
+      );
       testServiceMock.getTestCommand.resolves({
         executable: "/w/gradlew",
         args: ["test"],
