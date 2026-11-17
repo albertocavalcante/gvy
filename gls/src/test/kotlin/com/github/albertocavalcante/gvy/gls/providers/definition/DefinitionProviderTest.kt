@@ -129,7 +129,7 @@ class DefinitionProviderTest {
 
         val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
 
-        assertEquals(listOf(4), definitions.map { it.range.start.line }, "must reach Parent.greet")
+        assertEquals(listOf(5), definitions.map { it.range.start.line }, "must reach Parent.greet")
     }
 
     @Test

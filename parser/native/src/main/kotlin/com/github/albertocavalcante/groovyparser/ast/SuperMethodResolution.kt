@@ -28,7 +28,10 @@ internal fun resolveSuperMethod(
         .filterIsInstance<ClassNode>()
         .firstOrNull() ?: return null
     val arity = (call.arguments as? TupleExpression)?.expressions?.size
+    // A cyclic hierarchy (`class A extends B`, `class B extends A`) must end the walk, not loop.
+    val visited = mutableSetOf<String>()
     return generateSequence(enclosing.superClass) { it.superClass }
+        .takeWhile { visited.add(it.name) }
         .firstNotNullOfOrNull { type ->
             candidates.filter { it.declaringClass?.name == type.name }.takeIf { it.isNotEmpty() }
         }
