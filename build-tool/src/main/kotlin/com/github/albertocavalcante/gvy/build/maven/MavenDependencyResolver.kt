@@ -9,9 +9,11 @@ import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.ArtifactProperties
+import org.eclipse.aether.artifact.ArtifactTypeRegistry
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.collection.CollectRequest
 import org.eclipse.aether.graph.Dependency
@@ -35,6 +37,10 @@ class MavenDependencyResolver : DependencyResolver {
     private val logger = KotlinLogging.logger {}
 
     override val name: String = "Maven Resolver"
+
+    private val artifactTypes: ArtifactTypeRegistry by lazy {
+        MavenRepositorySystemUtils.newSession().artifactTypeRegistry
+    }
 
     /**
      * Resolves all dependencies from a Maven project, including test scope.
@@ -85,8 +91,8 @@ class MavenDependencyResolver : DependencyResolver {
         }
 
         // Pin transitive versions/exclusions the way Maven does (inline dependencyManagement)
+        // Versionless entries are kept: Maven allows them to manage only exclusions/scope.
         model.dependencyManagement?.dependencies
-            ?.filterNot { it.version.isNullOrBlank() }
             ?.forEach { collectRequest.addManagedDependency(toAetherDependency(it, managed = true)) }
         return collectRequest
     }
@@ -120,15 +126,20 @@ class MavenDependencyResolver : DependencyResolver {
     }
 
     private fun toAetherDependency(dep: org.apache.maven.model.Dependency, managed: Boolean = false): Dependency {
+        // Map the POM type through the registry (e.g. test-jar -> jar + "tests" classifier), as Maven does.
+        val stereotype = artifactTypes.get(dep.type ?: "jar")
+        val classifier = dep.classifier?.takeIf { it.isNotBlank() } ?: stereotype?.classifier.orEmpty()
         var artifact: Artifact = DefaultArtifact(
             dep.groupId,
             dep.artifactId,
-            dep.classifier ?: "",
-            dep.type ?: "jar",
-            dep.version,
+            classifier,
+            stereotype?.extension ?: dep.type ?: "jar",
+            dep.version.orEmpty(),
+            stereotype?.properties.orEmpty(),
+            null as java.io.File?,
         )
         if (dep.scope == "system" && !dep.systemPath.isNullOrBlank()) {
-            artifact = artifact.setProperties(mapOf(ArtifactProperties.LOCAL_PATH to dep.systemPath))
+            artifact = artifact.setProperties(artifact.properties + (ArtifactProperties.LOCAL_PATH to dep.systemPath))
         }
         val exclusions = dep.exclusions.map {
             Exclusion(it.groupId, it.artifactId, "*", "*")
