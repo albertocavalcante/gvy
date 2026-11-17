@@ -389,14 +389,9 @@ class ProjectStartupManager(
 
                     val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
                     if (context.client != null) {
-                        val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
-                        logger.info { "Sending completion notification to client: $msg" }
-                        context.client.showMessage(
-                            MessageParams().apply {
-                                type = MessageType.Info
-                                message = msg
-                            },
-                        )
+                        val notice = dependencyLoadNotice(resolution, toolName)
+                        logger.info { "Sending completion notification to client: ${notice.message}" }
+                        context.client.showMessage(notice)
                     } else {
                         logger.warn { "Cannot send completion showMessage - client is null" }
                     }
@@ -601,5 +596,23 @@ class ProjectStartupManager(
     fun shutdown() {
         dependencyManager?.cancel()
         strategyRegistry.shutdown()
+    }
+}
+
+/**
+ * The completion message for a usable resolution. A partial resolution ([ResolutionStatus.Warning]) is a
+ * warning that carries the build tool's detail about what is missing, never the plain "loaded" notice.
+ */
+internal fun dependencyLoadNotice(resolution: WorkspaceResolution, toolName: String): MessageParams {
+    val count = resolution.dependencies.size
+    val status = resolution.status
+    return MessageParams().apply {
+        if (status is ResolutionStatus.Warning) {
+            type = MessageType.Warning
+            message = "Dependencies partially loaded: $count JARs from $toolName. ${status.message}"
+        } else {
+            type = MessageType.Info
+            message = "Dependencies loaded: $count JARs from $toolName"
+        }
     }
 }
