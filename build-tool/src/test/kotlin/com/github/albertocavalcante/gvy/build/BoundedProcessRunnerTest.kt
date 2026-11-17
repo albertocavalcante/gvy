@@ -92,18 +92,20 @@ class BoundedProcessRunnerTest {
     fun `interrupt waits for a bounded drain when a descendant escaped the kill and holds the pipe`() {
         val pidFile = tempDir.resolve("pid")
         val holderFile = tempDir.resolve("holder")
+        val secondFile = tempDir.resolve("second")
         // The subshell exits at once, so the holder is reparented and is no longer a descendant to kill,
         // yet it keeps the merged output pipe open. Without the bounded drain, run() rethrows immediately.
-        val script = "echo \$\$ > '$pidFile'; (sleep 120 & echo \$! > '$holderFile'); sleep 120"
+        val script = "echo \$\$ > '$pidFile'; (sleep 120 & echo \$! > '$holderFile'); sleep 120 & echo \$! > '$secondFile'; wait"
         try {
-            val outcome = interruptRun(script, pidFile, holderFile)
+            val outcome = interruptRun(script, pidFile, holderFile, secondFile)
 
             assertTrue(outcome.failure is InterruptedException)
+            // BoundedProcessRunner joins its reader for up to 5s (READER_JOIN_TIMEOUT) before giving up.
             assertTrue(outcome.elapsedMillis >= 3_000, "run() returned after only ${outcome.elapsedMillis}ms")
             assertTrue(outcome.elapsedMillis < 40_000, "the drain must stay bounded: ${outcome.elapsedMillis}ms")
         } finally {
-            if (holderFile.exists()) {
-                holderFile.readText().trim().toLongOrNull()?.let { pid ->
+            listOf(holderFile, secondFile).filter { it.exists() }.forEach { file ->
+                file.readText().trim().toLongOrNull()?.let { pid ->
                     ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
                 }
             }
@@ -131,6 +133,7 @@ class BoundedProcessRunnerTest {
         while (ready.any { !it.exists() || it.readText().isBlank() } && System.nanoTime() < deadline) {
             Thread.sleep(50)
         }
+        assertTrue(ready.all { it.exists() && it.readText().isNotBlank() }, "the script did not start in time")
         interruptedAt.set(System.nanoTime())
         runner.interrupt()
         runner.join(60_000)

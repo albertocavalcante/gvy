@@ -336,7 +336,9 @@ class MavenDependencyResolverTest {
     fun `an unresolvable BOM yields an empty result without resolving dependencies`() {
         val system = mockk<RepositorySystem>()
         stubAether(system)
+        val requested = mutableListOf<String>()
         every { system.resolveArtifact(any(), any<ArtifactRequest>()) } answers {
+            requested.add(secondArg<ArtifactRequest>().artifact.toString())
             throw ArtifactResolutionException(listOf(ArtifactResult(secondArg<ArtifactRequest>())))
         }
         val pomFile = tempDir.resolve("pom.xml").also {
@@ -363,6 +365,7 @@ class MavenDependencyResolverTest {
         val result = MavenDependencyResolver().resolveDetailed(pomFile)
 
         assertEquals(MavenResolutionResult.EMPTY, result)
+        assertEquals(listOf("org.example:missing-bom:pom:9"), requested)
         verify(exactly = 0) { system.resolveDependencies(any(), any()) }
     }
 }
