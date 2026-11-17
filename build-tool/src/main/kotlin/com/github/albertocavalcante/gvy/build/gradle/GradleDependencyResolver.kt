@@ -251,36 +251,33 @@ class GradleDependencyResolver(
         cancellation: ResolutionCancellation = ResolutionCancellation(),
     ): IdeaProject {
         cancellation.throwIfCancelled()
-        try {
-            return fetchIdeaProjectFrom(projectDir, null, cancellation)
-        } catch (e: Exception) {
-            // A cancelled operation fails with the Tooling API's cancellation error; report cancellation instead.
-            if (cancellation.isCancelled) throw cancelledBy(e)
-            if (!failureAnalyzer.isInitScriptError(e)) throw e
-            logger.warn(e) {
-                "Gradle model fetch failed; retrying with isolated Gradle user home to avoid incompatible " +
-                    "user init scripts"
+        val fetch = { gradleUserHomeDir: File? ->
+            connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
+                val modelBuilder = lease.connection.model(IdeaProject::class.java)
+                modelBuilder.applyDaemonArguments()
+                if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
+                modelBuilder.getCancellable(cancellation)
             }
+        }
+        val firstFailure = try {
+            return fetch(null)
+        } catch (e: Exception) {
+            e
+        }
+        // A cancelled operation fails with the Tooling API's cancellation error; report cancellation instead.
+        if (cancellation.isCancelled || !failureAnalyzer.isInitScriptError(firstFailure)) {
+            throw if (cancellation.isCancelled) cancelledBy(firstFailure) else firstFailure
+        }
+        logger.warn(firstFailure) {
+            "Gradle model fetch failed; retrying with isolated Gradle user home to avoid incompatible user init scripts"
         }
         // Same fallback as resolve(): a broken user init script must not leave the dependency view empty.
         cancellation.throwIfCancelled()
-        try {
-            return fetchIdeaProjectFrom(projectDir, isolatedGradleUserHomeDir().toFile(), cancellation)
+        return try {
+            fetch(isolatedGradleUserHomeDir().toFile())
         } catch (e: Exception) {
-            if (cancellation.isCancelled) throw cancelledBy(e)
-            throw e
+            throw if (cancellation.isCancelled) cancelledBy(e) else e
         }
-    }
-
-    private fun fetchIdeaProjectFrom(
-        projectDir: Path,
-        gradleUserHomeDir: File?,
-        cancellation: ResolutionCancellation,
-    ): IdeaProject = connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
-        val modelBuilder = lease.connection.model(IdeaProject::class.java)
-        modelBuilder.applyDaemonArguments()
-        if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
-        modelBuilder.getCancellable(cancellation)
     }
 
     private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
