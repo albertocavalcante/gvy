@@ -425,11 +425,11 @@
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "9f5e1d991115f3a7af1565b07ff41a1625ad3c29965081232c07ef7cd62ca95c"
+          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "9f5e1d991115f3a7af1565b07ff41a1625ad3c29965081232c07ef7cd62ca95c"
+          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
         }
       ]
     },
@@ -454,7 +454,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "9f5e1d991115f3a7af1565b07ff41a1625ad3c29965081232c07ef7cd62ca95c"
+          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
         }
       ]
     },
@@ -481,7 +481,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-literals",
-          "sha256": "9f5e1d991115f3a7af1565b07ff41a1625ad3c29965081232c07ef7cd62ca95c"
+          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
         }
       ]
     },
@@ -492,9 +492,9 @@
       "lastVerified": "2026-11-17",
       "reviewDue": "2026-11-24",
       "reason": "AutoFormat adds a line break and indentation before the closing brace of a semicolon-less enum on every pass, so repeated formatting never settles. EnumClosingBraceSpacing merges that whitespace into the body end.",
-      "upstreamStatus": "Observed with the adopted rewrite-groovy 8.84.1; raw upstream attribution of which visitor adds the whitespace is not established (static reading only).",
+      "upstreamStatus": "Reported in #1639 against the adopted rewrite-groovy 8.84.1; raw upstream attribution of which visitor adds the whitespace is not established.",
       "upstreamTrigger": "A released rewrite-groovy formats a semicolon-less enum idempotently without this visitor.",
-      "verification": "2026-11-17 added in the PR for #1639; regression tests assert format(format(x)) == format(x) for plain, single-constant, trailing-comma, constructor, member and nested enums. Validated in CI only; no raw-upstream probe was run.",
+      "verification": "2026-11-17 added in the PR for #1639; regression tests assert format(format(x)) == format(x) for plain, single-constant, trailing-comma, constructor, member and nested enums. Regression tests ran in CI only; no raw-upstream probe was run.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1639",
         "https://github.com/albertocavalcante/gvy/issues/1598"
@@ -504,7 +504,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-enum-closing-brace",
-          "sha256": "9f5e1d991115f3a7af1565b07ff41a1625ad3c29965081232c07ef7cd62ca95c"
+          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
         }
       ]
     },

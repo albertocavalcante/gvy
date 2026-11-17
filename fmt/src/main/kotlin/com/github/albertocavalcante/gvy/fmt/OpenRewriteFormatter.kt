@@ -324,15 +324,18 @@ class OpenRewriteFormatter internal constructor(
     private class EnumClosingBraceSpacing : GroovyIsoVisitor<Unit>() {
         override fun visitClassDeclaration(classDecl: J.ClassDeclaration, p: Unit): J.ClassDeclaration {
             val declaration = super.visitClassDeclaration(classDecl, p)
-            if (declaration.kind != J.ClassDeclaration.Kind.Type.Enum) return declaration
+            return if (declaration.kind == J.ClassDeclaration.Kind.Type.Enum) tidied(declaration) else declaration
+        }
 
+        private fun tidied(declaration: J.ClassDeclaration): J.ClassDeclaration {
             val body = declaration.body
-            val statements = body.padding.statements
-            val statement = statements.singleOrNull() ?: return declaration
-            val constants = statement.element as? J.EnumValueSet ?: return declaration
-            if (constants.isTerminatedWithSemicolon) return declaration
-            val enumValues = constants.padding.enums
-            val last = enumValues.lastOrNull() ?: return declaration
+            val statement = body.padding.statements.singleOrNull()
+            val constants = statement?.element as? J.EnumValueSet
+            val enumValues = constants?.padding?.enums.orEmpty()
+            val last = enumValues.lastOrNull()
+            if (statement == null || constants == null || last == null || constants.isTerminatedWithSemicolon) {
+                return declaration
+            }
 
             val trailingComma = last.markers.findFirst(TrailingComma::class.java).orElse(null)
             val spaces = listOfNotNull(last.after, statement.after, body.end, trailingComma?.suffix)

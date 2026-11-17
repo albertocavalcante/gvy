@@ -34,7 +34,7 @@ class OpenRewriteFormatterTest {
                 "enum E {\n    A, B,\n}\n",
                 "enum E {\n    A\n}\n",
                 "enum E { A, B }\n",
-                "enum E {\n    A(1), B(2)\n\n    E(int n) {}\n}\n",
+                "enum E {\n    A(1), B(2);\n\n    E(int n) {}\n}\n",
                 "enum E {\n    A, B;\n\n    int size() { 1 }\n}\n",
                 "enum E {\n    A, B;\n}\n",
                 "class C {\n    enum E {\n        A, B\n    }\n}\n",
