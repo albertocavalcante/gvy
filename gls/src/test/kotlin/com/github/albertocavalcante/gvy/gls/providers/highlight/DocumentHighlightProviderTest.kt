@@ -617,9 +617,8 @@ println x"""
         val uri = URI.create("file:///annotated.groovy")
         assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
 
-        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, content.indexOf("value()") + 1))
-
         val declaration = content.indexOf("value()")
+        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, declaration + 1))
         assertTrue(
             highlights.any { it.range == Range(Position(0, declaration), Position(0, declaration + 5)) },
             "Highlights should include the method name: ${highlights.map { it.range }}",
