@@ -97,6 +97,11 @@ reusable Bazel workflow must succeed. Missing applicability output, a failed pat
 cancellation, a failed runner check or pending runner provisioning fails readiness. Provisioning does not validate the
 original revision: rerun that revision when the runner is available.
 
+On pull requests, `check-paths` also runs the Lint job's Gradle invocation as a fast gate when main CI applies, so a
+detekt or Spotless failure stops the build, E2E, Bazel, launcher and plugin fan-out. It then reports
+`lint_verified=true` and the separate Lint job is skipped; readiness accepts that skip only with that exact output from
+a successful `check-paths`. Pushes to `main` and manual runs keep the parallel Lint job.
+
 The applicability job also enforces temporary dependency ownership and expiry on every invocation, including
 documentation-only changes. A dependency-maintenance failure therefore fails required readiness and is included in the
 completed-job Actions observation; the separate maintenance workflow remains a daily and stacked-PR backstop.

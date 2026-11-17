@@ -24,6 +24,10 @@ concurrency:
 
 jobs:
   accountability:
+    # A pull request into main already runs both steps in CI's check-paths job (the CI policy self-test
+    # covers dependency-maintenance.test.mjs), which Validation Check requires. This job stays the backstop
+    # for stacked pull requests, main pushes, the daily expiry check and manual runs.
+    if: github.event_name != 'pull_request' || github.base_ref != 'main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

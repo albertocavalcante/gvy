@@ -30,9 +30,19 @@ export function evaluateReadiness(needs) {
   if (paths?.outputs?.provisioning_triggered === 'true') {
     errors.push('Runner provisioning is pending; rerun this revision after the runner is available.');
   }
+  // On pull requests check-paths runs lint itself as a fast gate and the Lint job is skipped. Only an
+  // exact 'true' from a successful check-paths, for a revision where main CI applies, excuses the job.
+  const lintVerified = paths?.outputs?.lint_verified;
+  if (lintVerified !== undefined && lintVerified !== '' && lintVerified !== 'true') {
+    errors.push('Invalid lint_verified applicability output.');
+  }
+  if (lintVerified === 'true' && applicability.run_main_ci !== 'true') {
+    errors.push('lint_verified is only valid when main CI applies.');
+  }
+  const lintJobApplies = lintVerified === 'true' ? 'false' : applicability.run_main_ci;
   const requirements = {
     license: 'true',
-    lint: applicability.run_main_ci,
+    lint: lintJobApplies,
     build: applicability.run_main_ci,
     launcher: applicability.run_main_ci,
     'e2e-test': applicability.run_main_ci,
