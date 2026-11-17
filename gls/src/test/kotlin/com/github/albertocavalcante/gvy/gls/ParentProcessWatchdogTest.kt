@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -112,23 +113,25 @@ class ParentProcessWatchdogTest {
     @Test
     fun `a client cancelling its shutdown does not let the watchdog exit before cleanup`() {
         val liveness = FakeLiveness()
-        val (code, exit) = exitCodes()
+        val cleanupStarted = AtomicBoolean(false)
+        val cleanupStartedAtExit = CompletableFuture<Boolean>()
         val queued = ArrayDeque<Runnable>()
         val server = GroovyLanguageServer(
             processLiveness = liveness,
-            exitProcess = exit,
+            exitProcess = { cleanupStartedAtExit.complete(cleanupStarted.get()) },
             shutdownExecutor = { queued.addLast(it) },
         )
         server.initialize(InitializeParams().apply { processId = 1234 }).get()
 
         server.shutdown().cancel(true)
         liveness.future.complete(null)
-        // The watchdog's own request is waiting on the still-queued cleanup.
-        assertFalse(code.isDone, "exit must wait for cleanup")
 
-        queued.removeFirst().run()
+        // The watchdog's own request waits on the still-queued cleanup: it can only exit after this task runs.
+        val task = queued.removeFirst()
+        cleanupStarted.set(true)
+        task.run()
 
-        assertEquals(0, code.get(30, TimeUnit.SECONDS))
+        assertTrue(cleanupStartedAtExit.get(30, TimeUnit.SECONDS), "exit must not precede cleanup")
         assertTrue(queued.isEmpty(), "cleanup ran once")
     }
 
