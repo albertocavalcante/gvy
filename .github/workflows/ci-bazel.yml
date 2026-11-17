@@ -83,24 +83,47 @@ jobs:
       # job summary (not as an annotation, which the runner-diagnostics gate would count
       # as a new warning). Limit: warnings emitted only while fetching now appear in this
       # step's output instead of the build console log the diagnostics gate reads.
-      - name: Prefetch dependencies with bounded retry
+      # TEMPORARY EXPERIMENT (#2187): find where the Coursier resolution stalls.
+      - name: Diagnose Coursier stall
         run: |
           set -u
-          attempts=3
-          for attempt in $(seq 1 "$attempts"); do
+          echo "== resolver"; cat /etc/resolv.conf; resolvectl status 2>&1 | head -15 || true
+          probe() {
+            echo "-- $1"
+            getent hosts "$2" || echo "getent: no answer for $2"
+            curl -sS -L -m 20 -o /dev/null \
+              -w 'dns=%{time_namelookup}s connect=%{time_connect}s tls=%{time_appconnect}s total=%{time_total}s code=%{http_code} ip=%{remote_ip}\n' "$1" 2>&1 || true
+          }
+          probe https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.pom repo1.maven.org
+          probe https://plugins.gradle.org/m2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.pom plugins.gradle.org
+          probe https://repo.gradle.org/gradle/libs-releases/ repo.gradle.org
+          probe https://maven.pkg.jetbrains.space/public/p/compose/dev/ maven.pkg.jetbrains.space
+          probe https://maven.google.com/androidx/annotation/annotation/1.7.0/annotation-1.7.0.pom maven.google.com
+          probe https://maven-central.storage-download.googleapis.com/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.pom maven-central.storage-download.googleapis.com
+          probe https://packages.jetbrains.team/maven/p/cmp/dev/ packages.jetbrains.team
+          snapshot() {
+            echo "== snapshot at +$1s"
+            pgrep -af coursier | cut -c1-160 || true
+            for pid in $(pgrep -f coursier || true); do jstack "$pid" 2>&1 | head -60; done
+            echo "-- syn-sent"; ss -tn state syn-sent 2>&1 | head -20
+            echo "-- established"; ss -tn state established 2>&1 | head -30
+          }
+          run_fetch() {
+            echo "== fetch $1 start $(date -u +%T)"
+            ( sleep 100; snapshot 100 ) &
+            watcher=$!
             status=0
-            timeout 240 bazel --nohome_rc fetch --config=ci //... || status=$?
-            if [ "$status" -eq 0 ]; then
-              echo "Prefetch succeeded on attempt ${attempt}/${attempts}." >>"$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            echo "Bazel dependency prefetch attempt ${attempt}/${attempts} failed (exit ${status})."
-            echo "- Bazel dependency prefetch attempt ${attempt}/${attempts} failed (exit ${status})." >>"$GITHUB_STEP_SUMMARY"
-            timeout 60 bazel --nohome_rc shutdown || true
-            if [ "$attempt" -lt "$attempts" ]; then sleep $((attempt * 30)); fi
-          done
-          echo "Bazel dependency prefetch failed after ${attempts} attempts; the build step decides the outcome."
-          echo "- Bazel dependency prefetch failed after ${attempts} attempts." >>"$GITHUB_STEP_SUMMARY"
+            timeout 240 bazel --nohome_rc fetch --config=ci --repo_env=RJE_VERBOSE=1 "${@:2}" //... 2>&1 | tail -n 80 || true
+            kill "$watcher" 2>/dev/null || true
+            echo "== fetch $1 end $(date -u +%T)"
+          }
+          run_fetch A-as-committed
+          timeout 60 bazel --nohome_rc shutdown || true
+          # Variant B: same fetch with the dead-looking JetBrains Space repository removed (workspace edit only, never committed).
+          sed -i '/maven.pkg.jetbrains.space\/public\/p\/compose\/dev",/d' MODULE.bazel
+          git diff --stat MODULE.bazel
+          run_fetch B-without-jetbrains-space --lockfile_mode=off
+          git checkout -- MODULE.bazel
           exit 0
 
       - name: Build all targets and capture evidence
