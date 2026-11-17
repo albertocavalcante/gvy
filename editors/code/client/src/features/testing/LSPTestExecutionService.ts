@@ -278,6 +278,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const workspaceUri = workspaceFolder?.uri.toString() || "";
 
       const affectedByLoss = new Set<vscode.TestItem>();
+      // Leaves of commands that exited non-zero with a readable stream: tests
+      // that reported nothing (compile error, bad filter) get an error below.
+      const failedExitLeaves = new Set<vscode.TestItem>();
+      // Coverage is only meaningful when every command ran to a clean exit.
+      let allCommandsSucceeded = true;
       const excluded = new Set(this.collectAllTestItems(request.exclude ?? []));
 
       for (const { item, command, invocation } of prepared) {
@@ -290,9 +295,16 @@ export class LSPTestExecutionService implements ITestExecutionService {
           consumer,
           tokens,
         );
+        if (outcome.incomplete || outcome.failedExit || !outcome.spawned) {
+          allCommandsSucceeded = false;
+        }
         if (outcome.incomplete) {
           for (const affected of this.collectAllTestItems([item]))
             affectedByLoss.add(affected);
+        } else if (outcome.failedExit) {
+          for (const affected of this.collectAllTestItems([item])) {
+            if (this.isLeaf(affected)) failedExitLeaves.add(affected);
+          }
         }
         // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
         // Apply right after each command: consecutive runs of one suite
@@ -334,9 +346,30 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
       }
 
-      // After all tests complete, fetch and add coverage if requested
+      if (!isCancelled()) {
+        for (const item of failedExitLeaves) {
+          if (consumer.isTerminal(item) || excluded.has(item)) continue;
+          consumer.markTerminal(item);
+          run.errored(
+            item,
+            new vscode.TestMessage(
+              "The build exited with a non-zero status before reporting a result for this test. See the output for the cause.",
+            ),
+          );
+        }
+      }
+
+      // After all tests complete, fetch and add coverage if requested. The
+      // report on disk is the last successful run's when this one failed.
       if (options.withCoverage && options.coverageService && !isCancelled()) {
-        await options.coverageService.addCoverageToRun(run, workspaceUri);
+        if (allCommandsSucceeded) {
+          await options.coverageService.addCoverageToRun(run, workspaceUri);
+        } else {
+          const note =
+            "[COVERAGE] Skipped: the build failed or was incomplete, so the coverage report on disk would not belong to this run.";
+          this.logger.appendLine(note);
+          run.appendOutput(`${note}\r\n`);
+        }
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
@@ -399,6 +432,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
           `Could not show test selection warning: ${error}`,
         );
       });
+  }
+
+  private isLeaf(item: vscode.TestItem): boolean {
+    let children = 0;
+    item.children.forEach(() => children++);
+    return children === 0;
   }
 
   /**
@@ -711,7 +750,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
     invocation: ProcessInvocation,
     consumer: TestEventConsumer,
     tokens: readonly vscode.CancellationToken[],
-  ): Promise<{ spawned: boolean; incomplete: boolean }> {
+  ): Promise<{
+    spawned: boolean;
+    incomplete: boolean;
+    failedExit: boolean;
+  }> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
@@ -860,7 +903,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
             `Test execution process exited with code ${code}`,
           );
         }
-        resolve({ spawned, incomplete: incomplete || (isMaven && code !== 0) });
+        resolve({
+          spawned,
+          incomplete: incomplete || (isMaven && code !== 0),
+          failedExit: code !== 0,
+        });
       });
 
       proc.on("error", (err) => {
