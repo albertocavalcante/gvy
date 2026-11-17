@@ -25,7 +25,9 @@ function hasLicenseGate(block, name) {
   if (!expression.startsWith(prefix)) return false;
   const rest = expression.slice(prefix.length);
   if (mainJobs.includes(name)) {
-    return rest === "needs.check-paths.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' && needs.check-paths.outputs.provisioning_triggered != 'true'";
+    const main = "needs.check-paths.result == 'success' && needs.check-paths.outputs.run_main_ci == 'true' && needs.check-paths.outputs.provisioning_triggered != 'true'";
+    // Lint alone may be skipped after check-paths ran it as the pull-request fast gate.
+    return rest === (name === 'lint' ? `${main} && needs.check-paths.outputs.lint_verified != 'true'` : main);
   }
   if (name === 'launcher' || name === 'zed') {
     const output = name === 'launcher' ? 'run_main_ci' : 'run_zed_ci';
@@ -64,4 +66,21 @@ test('check-paths declares the provisioning output that the main jobs and readin
   const block = jobBlock(workflow, 'check-paths');
   assert.match(block, /^      provisioning_triggered: \$\{\{ steps\.exit-early\.outputs\.provisioning_triggered \}\}$/m);
   assert.match(block, /^        id: exit-early$/m);
+});
+
+test('the pull-request lint gate runs the Lint job invocation and only then reports it verified', () => {
+  const paths = jobBlock(workflow, 'check-paths');
+  const lint = jobBlock(workflow, 'lint');
+  const invocation = lint.match(/^        run: (node tools\/ci\/run-gradle\.mjs .*--producer lint lint .*)$/m)?.[1];
+  assert.ok(invocation, 'Lint job invocation');
+  assert.match(paths, /^      lint_verified: \$\{\{ steps\.lint-gate\.outputs\.verified \}\}$/m);
+  const gate = paths.match(/^      - name: Run Lint \(pull-request lint gate\)\n([\s\S]*?)(?=^      - )/m)?.[1];
+  assert.ok(gate, 'lint gate step');
+  assert.match(gate, /^        id: lint-gate$/m);
+  // Pull requests only: pushes and manual runs keep the parallel Lint job.
+  assert.match(gate, /^        if: github\.event_name == 'pull_request' && steps\.filter\.outputs\.run_main_ci == 'true'$/m);
+  assert.doesNotMatch(gate, /continue-on-error/);
+  const script = gate.split(/^        run: \|\n/m)[1];
+  const lines = script.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  assert.deepEqual(lines, [invocation, 'echo "verified=true" >> "$GITHUB_OUTPUT"']);
 });

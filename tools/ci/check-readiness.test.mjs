@@ -105,6 +105,39 @@ test('Zed-only readiness requires its typed producer while main and Bazel remain
   assert.equal(evaluateReadiness(missing).ok, false);
 });
 
+test('a pull-request lint gate in check-paths excuses only a skipped Lint job', () => {
+  const gated = successful();
+  gated['check-paths'].outputs.lint_verified = 'true';
+  gated.lint.result = 'skipped';
+  assert.equal(evaluateReadiness(gated).ok, true);
+  for (const result of ['success', 'failure', 'cancelled', undefined]) {
+    const jobs = structuredClone(gated);
+    jobs.lint.result = result;
+    assert.equal(evaluateReadiness(jobs).ok, false, `gated lint job: ${result}`);
+  }
+  // Without the gate, or with any other value, a skipped Lint job still fails readiness.
+  for (const value of [undefined, '', 'false', 'True', '1', true]) {
+    const jobs = structuredClone(gated);
+    jobs['check-paths'].outputs.lint_verified = value;
+    assert.equal(evaluateReadiness(jobs).ok, false, `lint_verified=${value}`);
+  }
+  // The gate cannot stand in for a failed check-paths, and is not valid when main CI does not apply.
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    const jobs = structuredClone(gated);
+    jobs['check-paths'].result = result;
+    assert.equal(evaluateReadiness(jobs).ok, false, `check-paths: ${result}`);
+  }
+  const docsOnly = successful(false, false, false);
+  docsOnly['check-paths'].outputs.lint_verified = 'true';
+  assert.equal(evaluateReadiness(docsOnly).ok, false);
+  // Every other producer is still required when the lint gate passed.
+  for (const name of ['build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
+    const jobs = structuredClone(gated);
+    jobs[name].result = 'skipped';
+    assert.equal(evaluateReadiness(jobs).ok, false, name);
+  }
+});
+
 test('malformed needs fails closed with a report', () => {
   for (const value of [null, undefined, [], {}, 'success']) assert.equal(evaluateReadiness(value).ok, false);
 });
