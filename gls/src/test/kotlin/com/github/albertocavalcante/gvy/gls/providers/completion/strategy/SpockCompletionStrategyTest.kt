@@ -225,6 +225,33 @@ class SpockCompletionStrategyTest {
     }
 
     @Test
+    fun `bare CR line separators map the cursor to the right token offset`() {
+        val content = "import spock.lang.Specification\r" +
+            "// \uD83D\uDE00 note\r" +
+            "class MySpec extends Specification {\r" +
+            "    def \"test method\"() {\r" +
+            "        \r" +
+            "    }\r" +
+            "}"
+        val expected = content.indexOf("        \r") + 4
+        val tokenIndex = mockk<com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex>()
+        every { tokenIndex.isInCommentOrString(any()) } answers { firstArg<Int>() == expected }
+
+        val suppressed = runBlocking {
+            strategy.complete(createSpockContext(content, line = 4, character = 4, tokenIndex = tokenIndex))
+        }
+        assertThat(suppressed.isLeft()).isTrue()
+
+        val elsewhere = runBlocking {
+            strategy.complete(createSpockContext(content, line = 4, character = 5, tokenIndex = tokenIndex))
+        }
+        elsewhere.fold(
+            ifLeft = { throw AssertionError("Expected block labels away from the suppressed offset: $it") },
+            ifRight = { items -> assertThat(items.map { it.label }).contains("given:") },
+        )
+    }
+
+    @Test
     fun `no completions when cursor is in comment`() {
         val content = """
             import spock.lang.Specification
