@@ -3,12 +3,18 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.dependencies
 
+import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.DependencyMetadata
+import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.future.future
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URI
@@ -57,7 +63,7 @@ class DependencyRequestHandler(
                 logger.info { "Detected build tool: $buildToolName" }
 
                 // Delegate to BuildTool for metadata extraction
-                val metadata = buildTool.getDependencyMetadata(workspaceRoot)
+                val metadata = getMetadataCancellable(buildTool, workspaceRoot)
 
                 if (metadata == null) {
                     logger.warn { "Build tool '$buildToolName' does not support dependency metadata extraction" }
@@ -80,6 +86,25 @@ class DependencyRequestHandler(
                     buildTool = buildToolName,
                 )
             }
+        }
+    }
+
+    /**
+     * Runs the blocking metadata fetch, signalling the build tool as soon as the request's job starts cancelling
+     * (for example an LSP `$/cancelRequest`), so it stops the in-flight operation and releases its lease instead of
+     * running to completion.
+     */
+    @OptIn(InternalCoroutinesApi::class)
+    private suspend fun getMetadataCancellable(buildTool: BuildTool, workspaceRoot: Path): List<DependencyMetadata>? {
+        val cancellation = ResolutionCancellation()
+        val registration = currentCoroutineContext().job.invokeOnCompletion(
+            onCancelling = true,
+            invokeImmediately = true,
+        ) { cause -> if (cause != null) cancellation.cancel() }
+        try {
+            return buildTool.getDependencyMetadata(workspaceRoot, cancellation)
+        } finally {
+            registration.dispose()
         }
     }
 

@@ -245,14 +245,39 @@ class GradleDependencyResolver(
      * whole fetch, the daemon arguments and configured Java home are applied (so no second, differently-configured
      * daemon starts), and the fetch is cancellable through [cancellation].
      */
+    @Suppress("TooGenericExceptionCaught") // Tooling API failures arrive as arbitrary exceptions.
     internal fun fetchIdeaProject(
         projectDir: Path,
         cancellation: ResolutionCancellation = ResolutionCancellation(),
-    ): IdeaProject = connectionFactory.acquire(projectDir, null).use { lease ->
-        val modelBuilder = lease.connection.model(IdeaProject::class.java)
-        modelBuilder.applyDaemonArguments()
-        if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
-        modelBuilder.getCancellable(cancellation)
+    ): IdeaProject {
+        cancellation.throwIfCancelled()
+        val fetch = { gradleUserHomeDir: File? ->
+            connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
+                val modelBuilder = lease.connection.model(IdeaProject::class.java)
+                modelBuilder.applyDaemonArguments()
+                if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
+                modelBuilder.getCancellable(cancellation)
+            }
+        }
+        val firstFailure = try {
+            return fetch(null)
+        } catch (e: Exception) {
+            e
+        }
+        // A cancelled operation fails with the Tooling API's cancellation error; report cancellation instead.
+        if (cancellation.isCancelled || !failureAnalyzer.isInitScriptError(firstFailure)) {
+            throw if (cancellation.isCancelled) cancelledBy(firstFailure) else firstFailure
+        }
+        logger.warn(firstFailure) {
+            "Gradle model fetch failed; retrying with isolated Gradle user home to avoid incompatible user init scripts"
+        }
+        // Same fallback as resolve(): a broken user init script must not leave the dependency view empty.
+        cancellation.throwIfCancelled()
+        return try {
+            fetch(isolatedGradleUserHomeDir().toFile())
+        } catch (e: Exception) {
+            throw if (cancellation.isCancelled) cancelledBy(e) else e
+        }
     }
 
     private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
