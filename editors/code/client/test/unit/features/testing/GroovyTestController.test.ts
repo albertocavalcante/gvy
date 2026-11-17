@@ -324,6 +324,28 @@ describe("GroovyTestController", () => {
       await testControllerMock.refreshHandler();
     }
 
+    it("registers a suite extending a base spec without a complete feature snapshot", async () => {
+      testServiceMock.discoverTestsInWorkspace.resolves([
+        {
+          suite,
+          uri,
+          line: 1,
+          tests: [{ test: feature, line: 2 }],
+          inheritsTests: true,
+        },
+      ]);
+      assert.ok(testControllerMock.refreshHandler);
+      await testControllerMock.refreshHandler();
+      const suiteItem = testControllerMock.items.get(suite);
+      assert.ok(
+        itemRegistry.registerSuite.calledOnceWithExactly(
+          suiteItem,
+          suite,
+          undefined,
+        ),
+      );
+    });
+
     it("records raw discovery names and an explicit complete feature snapshot", async () => {
       await discoverTests();
       const suiteItem = testControllerMock.items.get(suite);

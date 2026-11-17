@@ -13,6 +13,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -146,6 +147,29 @@ class TestDiscoveryProviderTest {
         )
 
         assertTrue(suites.none { it.suite == "Rule" }, "Rule must not be discovered: $suites")
+    }
+
+    @Test
+    fun `a spec extending a base spec is flagged as inheriting features`(): Unit = runBlocking {
+        val suites = discover(
+            """
+            import spock.lang.Specification
+            abstract class BaseSpec extends Specification {
+                def "shared"() {
+                    expect: true
+                }
+            }
+            class ChildSpec extends BaseSpec {
+                def "own"() {
+                    expect: true
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val child = suites.single { it.suite == "ChildSpec" }
+        assertTrue(child.inheritsTests, "ChildSpec inherits features: $suites")
+        assertFalse(suites.single { it.suite == "BaseSpec" }.inheritsTests, "BaseSpec is complete: $suites")
     }
 
     @Test

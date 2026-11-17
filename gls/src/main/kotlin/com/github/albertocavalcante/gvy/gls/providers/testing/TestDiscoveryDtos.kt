@@ -15,8 +15,16 @@ data class DiscoverTestsParams(val workspaceUri: String)
  * @property suite Fully qualified class name (e.g., "com.example.MySpec")
  * @property line 1-indexed line number where the test class is declared
  * @property tests List of test methods in this suite
+ * @property inheritsTests True when the class extends a base other than `Specification`/`Object`, so features it
+ *   inherits are not in [tests] and the list is not a complete child snapshot
  */
-data class TestSuite(val uri: String, val suite: String, val line: Int, val tests: List<Test>)
+data class TestSuite(
+    val uri: String,
+    val suite: String,
+    val line: Int,
+    val tests: List<Test>,
+    val inheritsTests: Boolean = false,
+)
 
 /**
  * Represents a single test method.
