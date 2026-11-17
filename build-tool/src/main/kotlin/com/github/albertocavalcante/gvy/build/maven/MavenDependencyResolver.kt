@@ -10,6 +10,7 @@ import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
+import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.ArtifactProperties
@@ -64,7 +65,7 @@ class MavenDependencyResolver : DependencyResolver {
 
         @Suppress("TooGenericExceptionCaught") // Catch-all for resolution errors
         return try {
-            val model = parsePom(projectFile)
+            val model = parsePom(projectFile, AetherSessionFactory.repositorySystem, newRepositorySystemSession())
             if (model == null) {
                 logger.error { "Failed to parse pom.xml" }
                 MavenResolutionResult.EMPTY
@@ -216,7 +217,7 @@ class MavenDependencyResolver : DependencyResolver {
     override fun resolveLocalRepository(): Path? = AetherSessionFactory.resolveLocalRepository()
 
     @Suppress("TooGenericExceptionCaught") // Catch-all for POM parsing errors
-    private fun parsePom(pomPath: Path): Model? = try {
+    private fun parsePom(pomPath: Path, system: RepositorySystem, session: RepositorySystemSession): Model? = try {
         val factory = DefaultModelBuilderFactory()
         val builder = factory.newInstance()
 
@@ -226,6 +227,12 @@ class MavenDependencyResolver : DependencyResolver {
         request.isProcessPlugins = false
         request.isTwoPhaseBuilding = false
         request.systemProperties = System.getProperties()
+        // Without a resolver, import-scope BOMs and non-relative parents make the build fail.
+        request.modelResolver = AetherModelResolver(
+            system,
+            session,
+            listOf(RemoteRepository.Builder("central", "default", AetherSessionFactory.MAVEN_CENTRAL_URL).build()),
+        )
 
         val result = builder.build(request)
         result.effectiveModel
