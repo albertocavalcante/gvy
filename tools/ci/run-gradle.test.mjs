@@ -381,7 +381,7 @@ test('Nightly keeps lint and server tasks in separate measured jobs and requires
     assert.match(job, /--max-workers=2/);
   }
   assert.match(jobs.get('lint'), /--daemon lint --stacktrace --max-workers=2/);
-  assert.match(jobs.get('build'), /--daemon test :tests:e2eTest :gls:stageEditorServer --stacktrace --max-workers=2/);
+  assert.match(jobs.get('build'), /--daemon test :tests:e2eTest :gls:stageEditorServer stageFileExecutionRuntime --stacktrace --max-workers=2/);
   assert.doesNotMatch(jobs.get('build'), /--daemon lint/);
   assert.match(jobs.get('publish'), /needs: \[lint, build\]/);
   assert.match(jobs.get('publish'), /needs\.lint\.result == 'success' && needs\.build\.result == 'success'/);
