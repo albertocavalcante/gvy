@@ -110,6 +110,7 @@ class OpenRewriteFormatter internal constructor(
 
     private fun printFormatted(sources: List<SourceFile>, original: String, operation: RewriteOperation): String {
         val literalSpelling = literalSpellingRestorer(sources)
+        val hiddenText = HiddenSpaceTextRestorer.recording(sources)
         val formattedSource = operations.rewrite(sources, operation.context)
         operation.throwIfFailed()
         if (formattedSource == null) return original
@@ -118,7 +119,9 @@ class OpenRewriteFormatter internal constructor(
         val literalsFixed = literalSpelling.visit(formattedSource, Unit) as SourceFile
         val declarationsFixed = DeclarationSpacing().visit(literalsFixed, Unit) as SourceFile
         val enumsFixed = EnumClosingBraceSpacing().visit(declarationsFixed, Unit) as SourceFile
-        val normalizedSource = PostFormatWhitespaceCollapser().visit(enumsFixed, Unit) as SourceFile
+        val collapsedSource = PostFormatWhitespaceCollapser().visit(enumsFixed, Unit) as SourceFile
+        // Last, so no later pass can drop the text again; TokenStreamGuard still judges the printed result.
+        val normalizedSource = hiddenText.restore(collapsedSource)
         val printed = operations.print(normalizedSource).normalizeLineEndings()
         operation.throwIfFailed()
         return printed

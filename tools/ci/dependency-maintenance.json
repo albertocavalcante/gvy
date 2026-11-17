@@ -21,6 +21,11 @@
       "anchor": "private class EnumClosingBraceSpacing"
     },
     {
+      "id": "openrewrite-hidden-space-text",
+      "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/HiddenSpaceTextRestorer.kt",
+      "anchor": "internal class HiddenSpaceTextRestorer"
+    },
+    {
       "id": "openrewrite-literals",
       "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/OpenRewriteFormatter.kt",
       "anchor": "private fun literalSpellingRestorer"
@@ -425,11 +430,11 @@
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
+          "sha256": "3933b57a94e7025dc591a3c93f81e6ba10a56f8e799c930ad50423764670f15d"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
+          "sha256": "3933b57a94e7025dc591a3c93f81e6ba10a56f8e799c930ad50423764670f15d"
         }
       ]
     },
@@ -454,7 +459,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
+          "sha256": "3933b57a94e7025dc591a3c93f81e6ba10a56f8e799c930ad50423764670f15d"
         }
       ]
     },
@@ -481,7 +486,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-literals",
-          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
+          "sha256": "3933b57a94e7025dc591a3c93f81e6ba10a56f8e799c930ad50423764670f15d"
         }
       ]
     },
@@ -505,7 +510,30 @@
       "sources": [
         {
           "id": "manual:openrewrite-enum-closing-brace",
-          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
+          "sha256": "3933b57a94e7025dc591a3c93f81e6ba10a56f8e799c930ad50423764670f15d"
+        }
+      ]
+    },
+    {
+      "id": "openrewrite-hidden-space-text",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1609",
+      "responsibleScope": "gvy formatter maintainers",
+      "lastVerified": "2026-11-17",
+      "reviewDue": "2026-11-24",
+      "reason": "rewrite-groovy has no node for unary minus, unary plus, `~` or the spread-map operator and keeps their text (also the `+23` of `3.303e+23`) in a whitespace Space, which AutoFormat discards. HiddenSpaceTextRestorer records that text by node identity before formatting and puts it back where it was dropped; TokenStreamGuard still judges the result.",
+      "upstreamStatus": "Cause confirmed by a CI probe (see #1609); no upstream report filed, and none is to be filed without the owner's approval.",
+      "upstreamTrigger": "A released rewrite-groovy parses these operators into nodes or keeps their text when AutoFormat runs.",
+      "verification": "2026-11-17 added in the PR for #1609; regression tests assert Formatted, preserved tokens and idempotence for `~a`, `-x as int` and `3.303e+23`, unchanged tokens for `-x`, `+x`, `-(x + 1)`, `-foo()`, `!x` and `1.5`, and a refusal when node identity is lost. Tests ran in CI only; no raw-upstream probe was run.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/issues/1609",
+        "https://github.com/albertocavalcante/gvy/issues/2238"
+      ],
+      "nextAction": "Run the adopted and the latest released AutoFormat on the inputs without the restorer and record which Spaces lose their text. Cover the spread-map operator and the other refusals listed in #2238.",
+      "removalCriteria": "Raw upstream output keeps `~a`, `-x as int`, `3.303e+23` and the spread-map operator, idempotently; then delete the restorer and keep the regression tests.",
+      "sources": [
+        {
+          "id": "manual:openrewrite-hidden-space-text",
+          "sha256": "7b90fdb43ce1942bd188457ffd7779618c3129f5f3be7bff598be987a19c994a"
         }
       ]
     },
