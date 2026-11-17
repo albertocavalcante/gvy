@@ -421,6 +421,34 @@ class ColdLocalCompletionTest {
     }
 
     @Test
+    fun `a held class implementing Map offers its GDK methods once each`(): Unit = runBlocking {
+        val source = "abstract class Registry implements Map<String, Integer> {}\nnew Registry().sub"
+
+        val items = complete(source).filter { it.kind == CompletionItemKind.Method }
+
+        // `subMap(Map, Collection)` exists only as a GDK extension of Map, reached through the interface.
+        val gdkOnly = items.filter { it.label == "subMap" }
+        assertTrue(gdkOnly.isNotEmpty(), "GDK subMap(Map, Collection) missing from ${items.map { it.label }}")
+        assertEquals(gdkOnly.size, gdkOnly.map { it.detail }.distinct().size, "duplicated: $gdkOnly")
+        // Object extensions are shared by the receiver and every ancestor: one `toString()`, not one per type.
+        val toStrings = complete("abstract class Registry implements Map<String, Integer> {}\nnew Registry().toStr")
+            .filter { it.label == "toString" && it.kind == CompletionItemKind.Method }
+        assertEquals(1, toStrings.size, "found $toStrings")
+    }
+
+    @Test
+    fun `the GDK documentation wins over the JDK one for toString on binary ancestors`(): Unit = runBlocking {
+        val toStrings = complete("class N extends ArrayList<Integer> {}\nnew N().toStr")
+            .filter { it.label == "toString" && it.kind == CompletionItemKind.Method }
+
+        assertEquals(1, toStrings.size, "found $toStrings")
+        assertTrue(
+            toStrings.single().documentation.toString().contains("Groovy GDK method"),
+            "GDK documentation is the documented winner: ${toStrings.single().documentation}",
+        )
+    }
+
+    @Test
     fun `an indexed parent's generic override hides the erased interface method`(): Unit = runBlocking {
         indexParents("class B implements Comparable<B> { int compareTo(B o) { 0 } }")
 
