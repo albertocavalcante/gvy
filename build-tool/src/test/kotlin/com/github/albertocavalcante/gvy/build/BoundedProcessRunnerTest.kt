@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.seconds
 
 class BoundedProcessRunnerTest {
@@ -55,5 +56,39 @@ class BoundedProcessRunnerTest {
             Thread.sleep(50)
         }
         assertFalse(ProcessHandle.of(childPid).map { it.isAlive }.orElse(false), "descendant must be killed")
+    }
+
+    @Test
+    fun `output beyond the cap is truncated keeping head and tail`() {
+        val script = "i=0; while [ \$i -lt 20000 ]; do echo line-\$i-xxxxxxxxxxxx; i=\$((i+1)); done"
+        val result = BoundedProcessRunner.run(listOf("sh", "-c", script), tempDir, 30.seconds)
+
+        assertEquals(0, result.exitCode)
+        val limit = BoundedProcessRunner.HEAD_CHARS + BoundedProcessRunner.TAIL_CHARS
+        assertTrue(result.output.length < limit + 200, "captured ${result.output.length} chars")
+        assertTrue(result.output.startsWith("line-0-"))
+        assertTrue(result.output.contains("characters of output truncated"))
+        assertTrue(result.output.trimEnd().endsWith("line-19999-xxxxxxxxxxxx"))
+    }
+
+    @Test
+    fun `interrupt kills the process and leaves no reader thread`() {
+        val failure = AtomicReference<Throwable>()
+        val runner = Thread {
+            try {
+                BoundedProcessRunner.run(listOf("sh", "-c", "echo started; sleep 60"), tempDir, 60.seconds)
+            } catch (e: InterruptedException) {
+                failure.set(e)
+            }
+        }
+        runner.start()
+        Thread.sleep(1_000)
+        runner.interrupt()
+        runner.join(30_000)
+
+        assertFalse(runner.isAlive)
+        assertTrue(failure.get() is InterruptedException)
+        val liveReaders = Thread.getAllStackTraces().keys.count { it.name == "bounded-process-reader" && it.isAlive }
+        assertEquals(0, liveReaders, "reader thread must be joined before run() rethrows")
     }
 }
