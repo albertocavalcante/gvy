@@ -201,7 +201,7 @@ class CallHierarchyProviderTest {
             val offset = source.indexOf(target)
             val expectedRange = Range(index.positionOf(offset), index.positionOf(offset + target.length))
             assertEquals(expectedRange, outgoing.to.range)
-            val nameOffset = source.indexOf("target")
+            val nameOffset = source.lastIndexOf("target")
             assertEquals(
                 Range(index.positionOf(nameOffset), index.positionOf(nameOffset + "target".length)),
                 outgoing.to.selectionRange,
