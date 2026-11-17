@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import org.apache.maven.model.Repository
 import org.apache.maven.model.resolution.InvalidRepositoryException
+import org.apache.maven.model.resolution.ModelResolver
 import org.apache.maven.model.resolution.UnresolvableModelException
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
@@ -49,7 +50,7 @@ class AetherModelResolverTest {
     }
 
     /** Resolves one model and reports the repositories the request carried. */
-    private fun AetherModelResolver.repositoriesUsed(): List<RemoteRepository> {
+    private fun ModelResolver.repositoriesUsed(): List<RemoteRepository> {
         resolveModel("g", "a", "1")
         return seen.last()
     }
