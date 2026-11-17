@@ -278,11 +278,19 @@ async function setLspJavaHomeAndRestart(
   version: number,
 ): Promise<boolean> {
   const config = vscode.workspace.getConfiguration("groovy");
+  const unchanged = config.get<string>("languageServer.javaHome") === jdkPath;
   await config.update(
     "languageServer.javaHome",
     jdkPath,
     vscode.ConfigurationTarget.Global,
   );
+
+  // A changed value makes the configuration watcher prompt for a restart; a
+  // second prompt here would ask twice for one action. An unchanged value fires
+  // no change event, so only then does the command prompt itself.
+  if (!unchanged) {
+    return true;
+  }
 
   const restartAction = "Restart Server";
   const result = await vscode.window.showInformationMessage(
