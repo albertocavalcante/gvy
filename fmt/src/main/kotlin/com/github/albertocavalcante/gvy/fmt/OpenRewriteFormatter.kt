@@ -95,18 +95,7 @@ class OpenRewriteFormatter internal constructor(
             if (unknown != null) throw unknown.toException()
             return FormatOutcome.Refused(original, "the formatter cannot safely parse this source")
         }
-        if (sourceFiles.size != 1 || sourceFiles.single().printAll() != content) {
-            return FormatOutcome.Refused(original, "the formatter cannot reproduce this source before formatting")
-        }
-
-        val hidden = hiddenSourceText(sourceFiles.single())
-        if (hidden.isNotEmpty()) {
-            return FormatOutcome.Refused(
-                original,
-                "the formatter would rewrite source text that the parser stored as whitespace: " +
-                    hidden.take(MAX_REPORTED_HIDDEN_TEXT).joinToString { "'${it.preview()}'" },
-            )
-        }
+        preFormatRefusal(original, content, sourceFiles)?.let { return it }
 
         val formattedText = printFormatted(sourceFiles, content, operation)
 
@@ -131,6 +120,21 @@ class OpenRewriteFormatter internal constructor(
         val printed = operations.print(normalizedSource).normalizeLineEndings()
         operation.throwIfFailed()
         return printed
+    }
+
+    /** A refusal when the parsed tree cannot be trusted to format without changing more than layout. */
+    private fun preFormatRefusal(original: String, content: String, sources: List<SourceFile>): FormatOutcome.Refused? {
+        val source = sources.singleOrNull()
+        if (source == null || source.printAll() != content) {
+            return FormatOutcome.Refused(original, "the formatter cannot reproduce this source before formatting")
+        }
+        val hidden = hiddenSourceText(source)
+        if (hidden.isEmpty()) return null
+        return FormatOutcome.Refused(
+            original,
+            "the formatter would rewrite source text that the parser stored as whitespace: " +
+                hidden.take(MAX_REPORTED_HIDDEN_TEXT).joinToString { "'${it.preview()}'" },
+        )
     }
 
     /**
