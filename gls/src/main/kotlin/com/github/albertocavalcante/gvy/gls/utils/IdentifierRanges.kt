@@ -124,14 +124,18 @@ class TextIndex(val text: String) {
  * The first whole-word occurrence of [name] inside [range] of the indexed text, as an LSP range;
  * null if there is none. Identifier characters are Java's, which covers Groovy identifiers. A range
  * that runs past the end of the text is clamped to it. Occurrences inside string literals and
- * comments are skipped, so a declaration range that starts at its annotations (`@Json("id") Long id`)
- * resolves to the declared name, not to the annotation's text.
+ * comments are skipped, and so are annotation argument lists, so a declaration range that starts at
+ * its annotations (`@Json("id") Long id`, `@SuppressWarnings(value = 'x') def value()`) resolves to
+ * the declared name, not to the annotation's text. Each skip is a preference: if the name occurs only
+ * in skipped text, the later passes still find it.
  */
 fun firstNameOccurrence(index: TextIndex, range: Range, name: String): Range? {
     if (name.isEmpty()) return null
     // Slashy strings (/…/, $/…/$) are not recognised, so a quote inside one can hide the rest of the
     // line; fall back to a plain search rather than lose a declaration that is really there.
-    return findName(index, range, name, skipLiterals = true) ?: findName(index, range, name, skipLiterals = false)
+    return findName(index, range, name, skipLiterals = true, skipAnnotationArguments = true)
+        ?: findName(index, range, name, skipLiterals = true)
+        ?: findName(index, range, name, skipLiterals = false)
 }
 
 /** Last whole identifier, ignoring comments and quoted strings without a plain-text fallback. */
@@ -144,15 +148,22 @@ private fun findName(
     name: String,
     skipLiterals: Boolean,
     last: Boolean = false,
+    skipAnnotationArguments: Boolean = false,
 ): Range? {
     val text = index.text
     val end = index.offsetOf(range.end)
     var at = index.offsetOf(range.start)
     var found: Range? = null
+    var annotationArguments = -1
     while (at < end) {
         val skipTo = if (skipLiterals) skipLiteralOrComment(text, at) else at
         if (skipTo > at) {
             at = skipTo
+        } else if (skipAnnotationArguments && at == annotationArguments) {
+            at = skipParentheses(text, at)
+        } else if (skipAnnotationArguments && text[at] == '@') {
+            annotationArguments = annotationNameEnd(text, at + 1)
+            at++
         } else if (text.startsWith(name, at) && at + name.length <= end &&
             isWordBoundary(text, at - 1) && isWordBoundary(text, at + name.length)
         ) {
@@ -164,6 +175,33 @@ private fun findName(
         }
     }
     return found
+}
+
+/** The offset just past the qualified name at [from], where an argument list opens if one follows. */
+private fun annotationNameEnd(text: String, from: Int): Int {
+    var i = from
+    while (i < text.length && (Character.isJavaIdentifierPart(text[i]) || text[i] == '.')) i++
+    return if (text.getOrNull(i) == '(') i else -1
+}
+
+/** The offset just past the parenthesis group that opens at [open], or the end of the text if unbalanced. */
+private fun skipParentheses(text: String, open: Int): Int {
+    var depth = 0
+    var i = open
+    while (i < text.length) {
+        val skipTo = skipLiteralOrComment(text, i)
+        if (skipTo > i) {
+            i = skipTo
+            continue
+        }
+        when (text[i]) {
+            '(' -> depth++
+            ')' -> depth--
+        }
+        i++
+        if (depth == 0) return i
+    }
+    return text.length
 }
 
 /** If a string literal or comment starts at [at], the offset just past it; otherwise [at]. */
