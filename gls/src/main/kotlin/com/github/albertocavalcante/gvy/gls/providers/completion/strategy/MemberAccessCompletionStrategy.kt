@@ -138,14 +138,12 @@ internal class MemberAccessCompletionStrategy(
         local.methods.forEach { addCandidate(it) }
         addWorkspaceMembers(local.fields)
         val walk = addInheritedMembers(local, held, workspaceSymbolIndex)
-        addQualifiedGdkMethods(rawType)
+        // GDK extensions apply to the binary ancestors too (`class N extends ArrayList` gets `sum`);
+        // one lookup for the whole walk builds the Object extensions once.
+        addQualifiedGdkMethods(listOf(rawType) + walk.binaryTypes)
         // Facts are built only when a generic binary ancestor could need them (never for Object alone).
         val genericOverrides by lazy { walk.genericOverrides.flatMapTo(mutableSetOf()) { it.value } }
-        walk.binaryTypes.forEach { type ->
-            // GDK extensions apply to the binary ancestors too (`class N extends ArrayList` gets `sum`).
-            addQualifiedGdkMethods(type)
-            addQualifiedClasspathMethods(type) { genericOverrides }
-        }
+        walk.binaryTypes.forEach { type -> addQualifiedClasspathMethods(type) { genericOverrides } }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
@@ -199,9 +197,9 @@ internal class MemberAccessCompletionStrategy(
         return InheritedWalk(binary, overrides)
     }
 
-    private fun CompletionsBuilder.addQualifiedGdkMethods(className: String) {
-        val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
-        types.flatMap { compilationService.gdkProvider.getQualifiedMethodsForType(it) }.forEach { gdk ->
+    private fun CompletionsBuilder.addQualifiedGdkMethods(classNames: List<String>) {
+        val types = classNames.flatMap { name -> resolveDataTypes(name, compilationService).ifEmpty { listOf(name) } }
+        compilationService.gdkProvider.getQualifiedMethodsForTypes(types).forEach { gdk ->
             val method = gdk.display
             addCandidate(
                 MethodCandidate(

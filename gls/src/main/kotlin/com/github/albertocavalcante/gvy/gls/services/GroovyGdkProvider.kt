@@ -120,10 +120,31 @@ class GroovyGdkProvider(
     internal fun getQualifiedMethodsForType(className: String): List<QualifiedGdkMethod> =
         collectMethodsForType(className).distinctBy { it.display.name to it.qualifiedParameters }
 
+    /**
+     * Qualified GDK methods for several types at once (a receiver and its binary ancestors), de-duplicated
+     * by name and erased parameters. The Object extensions are appended once, not once per type.
+     */
+    internal fun getQualifiedMethodsForTypes(classNames: List<String>): List<QualifiedGdkMethod> {
+        ensureInitialized()
+        val results = mutableListOf<QualifiedGdkMethod>()
+        classNames.distinct().forEach { collectTypeMethods(results, it) }
+        appendCachedMethods(results, JAVA_LANG_OBJECT)
+        return results.distinctBy { it.display.name to it.qualifiedParameters }
+    }
+
     private fun collectMethodsForType(className: String): List<QualifiedGdkMethod> {
         ensureInitialized()
 
         val results = mutableListOf<QualifiedGdkMethod>()
+        collectTypeMethods(results, className)
+
+        // Always include Object methods (every Groovy object is an Object).
+        appendCachedMethods(results, JAVA_LANG_OBJECT)
+
+        return results
+    }
+
+    private fun collectTypeMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
         appendCachedMethods(results, className)
 
         val clazz = classpathService.loadClass(className)
@@ -132,11 +153,6 @@ class GroovyGdkProvider(
         } else {
             appendFallbackMethods(results, className)
         }
-
-        // Always include Object methods (every Groovy object is an Object).
-        appendCachedMethods(results, JAVA_LANG_OBJECT)
-
-        return results
     }
 
     private fun ensureInitialized() {
