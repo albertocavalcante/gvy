@@ -188,4 +188,40 @@ class MavenDependencyResolverTest {
         assertTrue(outcome.isPartial)
         assertEquals(listOf("collection failed: bad version range"), outcome.unresolved)
     }
+
+    @Test
+    fun `versionless managed entries keep their exclusions and managed types map through the registry`() {
+        val system = mockk<RepositorySystem>()
+        stubAether(system)
+        val request = slot<DependencyRequest>()
+        every { system.resolveDependencies(any(), capture(request)) } answers {
+            DependencyResult(request.captured)
+        }
+        val pomFile = tempDir.resolve("pom.xml").also {
+            it.writeText(
+                """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>t</groupId><artifactId>t</artifactId><version>1</version>
+                  <dependencyManagement><dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>noversion</artifactId>
+                      <exclusions><exclusion><groupId>x</groupId><artifactId>y</artifactId></exclusion></exclusions>
+                    </dependency>
+                    <dependency><groupId>org.example</groupId><artifactId>tests</artifactId><version>3.0</version>
+                      <type>test-jar</type>
+                    </dependency>
+                  </dependencies></dependencyManagement>
+                </project>
+                """.trimIndent(),
+            )
+        }
+
+        MavenDependencyResolver().resolveDependencies(pomFile)
+
+        val managed = request.captured.collectRequest.managedDependencies.associateBy { it.artifact.artifactId }
+        assertEquals(listOf("x"), managed.getValue("noversion").exclusions.map { it.groupId })
+        val testJar = managed.getValue("tests").artifact
+        assertEquals("jar", testJar.extension)
+        assertEquals("tests", testJar.classifier)
+    }
 }

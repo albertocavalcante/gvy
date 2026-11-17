@@ -175,10 +175,15 @@ class MavenBuildTool : BuildTool {
             }
             .getOrDefault(MavenResolutionResult.EMPTY)
 
-    private fun resolveViaCli(workspaceRoot: Path): List<Path> {
-        val cpFile = Files.createTempFile("mvn-classpath", ".txt")
+    internal fun resolveViaCli(
+        workspaceRoot: Path,
+        createTempFile: () -> Path = { Files.createTempFile("mvn-classpath", ".txt") },
+        deleteFile: (Path) -> Unit = { Files.deleteIfExists(it) },
+    ): List<Path> {
+        var cpFile: Path? = null
         var result: List<Path> = emptyList()
         try {
+            cpFile = createTempFile()
             val mvnCommand = BuildExecutableResolver.resolveMaven(workspaceRoot)
             val command = listOf(
                 mvnCommand,
@@ -196,14 +201,7 @@ class MavenBuildTool : BuildTool {
             } else if (outcome.exitCode != 0) {
                 logger.error { "Maven CLI dependency resolution failed. Output:\n${outcome.output}" }
             } else {
-                val classpathString = Files.readString(cpFile)
-                result = classpathString
-                    .split(File.pathSeparator)
-                    .mapNotNull { entry ->
-                        runCatching { Paths.get(entry.trim()) }
-                            .getOrNull()
-                            ?.takeIf { it.exists() }
-                    }
+                result = parseClasspath(Files.readString(cpFile))
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -213,11 +211,27 @@ class MavenBuildTool : BuildTool {
         } catch (e: SecurityException) {
             logger.error(e) { "Failed to resolve Maven dependencies via CLI" }
         } finally {
-            Files.deleteIfExists(cpFile)
+            cpFile?.let { file ->
+                // Cleanup must never discard the result (or the caller's embedded partial classpath).
+                try {
+                    deleteFile(file)
+                } catch (e: java.io.IOException) {
+                    logger.debug(e) { "Could not delete temporary classpath file $file" }
+                } catch (e: SecurityException) {
+                    logger.debug(e) { "Could not delete temporary classpath file $file" }
+                }
+            }
         }
 
         return result
     }
+
+    /** Parses `mdep.outputFile` content; blank entries (e.g. an empty file) must not become the working directory. */
+    internal fun parseClasspath(content: String): List<Path> = content
+        .split(File.pathSeparator)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .mapNotNull { entry -> runCatching { Paths.get(entry) }.getOrNull()?.takeIf { it.exists() } }
 
     override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {
         val testArg = if (test != null) "$suite#$test" else suite
