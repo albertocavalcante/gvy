@@ -610,4 +610,19 @@ println x"""
         assertEquals(listOf(declaration, content.lastIndexOf('x')), columns)
         assertTrue(highlights.all { it.range.end.character - it.range.start.character == 1 })
     }
+
+    @Test
+    fun `method highlight targets the name, not an annotation argument`(): Unit = runTest {
+        val content = "@SuppressWarnings(value = 'unused') def value() { 1 }\n\nvalue()\ndef r = value()"
+        val uri = URI.create("file:///annotated.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
+
+        val declaration = content.indexOf("value()")
+        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, declaration + 1))
+        assertTrue(
+            highlights.any { it.range == Range(Position(0, declaration), Position(0, declaration + 5)) },
+            "Highlights should include the method name: ${highlights.map { it.range }}",
+        )
+        assertFalse(highlights.any { it.range.start.line == 0 && it.range.start.character < declaration })
+    }
 }
