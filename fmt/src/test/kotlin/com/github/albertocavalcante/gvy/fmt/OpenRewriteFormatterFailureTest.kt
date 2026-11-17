@@ -20,7 +20,7 @@ class OpenRewriteFormatterFailureTest {
         LinkageError("checker unavailable"),
         IOException("checker failed"),
     ).map { failure ->
-        dynamicTest(failure.javaClass.simpleName) {
+        dynamicTest("checker failures preserve: ${failure.javaClass.simpleName}") {
             val formatter = OpenRewriteFormatter { _, _ -> throw failure }
 
             assertThatThrownBy { formatter.formatChecked("def x=1\n") }.isSameAs(failure)
@@ -32,7 +32,7 @@ class OpenRewriteFormatterFailureTest {
         CancellationException("recipe cancelled"),
         LinkageError("recipe unavailable"),
     ).map { failure ->
-        dynamicTest(failure.javaClass.simpleName) {
+        dynamicTest("execution context does: ${failure.javaClass.simpleName}") {
             assertThatThrownBy { RewriteOperation().context.onError.accept(failure) }
                 .isSameAs(failure)
         }

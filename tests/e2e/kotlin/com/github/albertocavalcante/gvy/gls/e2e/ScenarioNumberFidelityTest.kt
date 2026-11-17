@@ -21,7 +21,7 @@ import java.math.BigInteger
 class ScenarioNumberFidelityTest {
     @TestFactory
     fun `YAML JSON bindings retain exact numeric values`(): List<DynamicTest> = numericLiterals.map { literal ->
-        dynamicTest(literal) {
+        dynamicTest("YAML JSON bindings: $literal") {
             val scenario = parser.parseScenarioDefinition(
                 """
                 name: numeric-bindings
@@ -52,7 +52,7 @@ class ScenarioNumberFidelityTest {
 
     @TestFactory
     fun `JSON bridge retains exact Java numeric values`(): List<DynamicTest> = numericLiterals.map { literal ->
-        dynamicTest(literal) {
+        dynamicTest("JSON bridge retains: $literal") {
             val value = Json.parseToJsonElement(literal).toJavaObject()
 
             assertThat(value).isInstanceOf(Number::class.java)
@@ -82,10 +82,18 @@ class ScenarioNumberFidelityTest {
         "0.123456789012345678901234567889" to "0.123456789012345678901234567890",
     ).flatMap { (smaller, larger) ->
         listOf(
-            dynamicTest("$smaller GTE $larger") { assertThat(matches(smaller, larger, ExpectationType.GTE)).isFalse() },
-            dynamicTest("$larger LTE $smaller") { assertThat(matches(larger, smaller, ExpectationType.LTE)).isFalse() },
-            dynamicTest("$larger GTE $smaller") { assertThat(matches(larger, smaller, ExpectationType.GTE)).isTrue() },
-            dynamicTest("$smaller LTE $larger") { assertThat(matches(smaller, larger, ExpectationType.LTE)).isTrue() },
+            dynamicTest("adjacent: $smaller GTE $larger") {
+                assertThat(matches(smaller, larger, ExpectationType.GTE)).isFalse()
+            },
+            dynamicTest("adjacent: $larger LTE $smaller") {
+                assertThat(matches(larger, smaller, ExpectationType.LTE)).isFalse()
+            },
+            dynamicTest("adjacent: $larger GTE $smaller") {
+                assertThat(matches(larger, smaller, ExpectationType.GTE)).isTrue()
+            },
+            dynamicTest("adjacent: $smaller LTE $larger") {
+                assertThat(matches(smaller, larger, ExpectationType.LTE)).isTrue()
+            },
         )
     }
 
@@ -93,16 +101,16 @@ class ScenarioNumberFidelityTest {
     fun `ordering accepts equivalent numeric values and rejects numeric strings`(): List<DynamicTest> =
         listOf(ExpectationType.GTE, ExpectationType.LTE).flatMap { type ->
             listOf(
-                dynamicTest("$type exponent") { assertThat(matches("1e2", "100.0", type)).isTrue() },
-                dynamicTest("$type signed zero") { assertThat(matches("-0.0", "0", type)).isTrue() },
-                dynamicTest("$type actual string") { assertThat(matches("\"7\"", "7", type)).isFalse() },
-                dynamicTest("$type expected string") { assertThat(matches("7", "\"7\"", type)).isFalse() },
+                dynamicTest("equivalent: $type exponent") { assertThat(matches("1e2", "100.0", type)).isTrue() },
+                dynamicTest("equivalent: $type signed zero") { assertThat(matches("-0.0", "0", type)).isTrue() },
+                dynamicTest("equivalent: $type actual string") { assertThat(matches("\"7\"", "7", type)).isFalse() },
+                dynamicTest("equivalent: $type expected string") { assertThat(matches("7", "\"7\"", type)).isFalse() },
             )
         }
 
     @TestFactory
     fun `nonfinite YAML numbers are rejected explicitly`(): List<DynamicTest> = listOf(".nan", ".inf", "-.inf").map {
-        dynamicTest(it) {
+        dynamicTest("nonfinite YAML numbers: $it") {
             assertThatThrownBy {
                 parser.parseScenarioDefinition(
                     "name: nonfinite\nsteps:\n  - request: {method: test/numeric, params: $it}",
