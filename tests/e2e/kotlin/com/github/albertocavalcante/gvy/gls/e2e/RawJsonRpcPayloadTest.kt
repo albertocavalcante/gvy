@@ -43,7 +43,7 @@ class RawJsonRpcPayloadTest {
     @TestFactory
     fun `generic requests send the authored JSON value without coercion`(): List<DynamicTest> =
         payloads().map { payload ->
-            dynamicTest("generic requests send: ${payload.toString()}") {
+            dynamicTest("generic requests send: $payload") {
                 val wire = RawPayloadCapture(root)
 
                 SendRequestStepExecutor().execute(ScenarioStep.SendRequest("initialize", payload), wire.context)
@@ -56,7 +56,7 @@ class RawJsonRpcPayloadTest {
     @TestFactory
     fun `generic notifications send the authored JSON value without coercion`(): List<DynamicTest> =
         payloads().map { payload ->
-            dynamicTest("generic notifications send: ${payload.toString()}") {
+            dynamicTest("generic notifications send: $payload") {
                 val wire = RawPayloadCapture(root)
 
                 SendNotificationStepExecutor().execute(
