@@ -99,6 +99,15 @@ class OpenRewriteFormatter internal constructor(
             return FormatOutcome.Refused(original, "the formatter cannot reproduce this source before formatting")
         }
 
+        val hidden = hiddenSourceText(sourceFiles.single())
+        if (hidden.isNotEmpty()) {
+            return FormatOutcome.Refused(
+                original,
+                "the formatter would rewrite source text that the parser stored as whitespace: " +
+                    hidden.take(MAX_REPORTED_HIDDEN_TEXT).joinToString { "'${it.preview()}'" },
+            )
+        }
+
         val formattedText = printFormatted(sourceFiles, content, operation)
 
         // Restore shebang with normalized spacing (always one blank line)
@@ -123,6 +132,26 @@ class OpenRewriteFormatter internal constructor(
         operation.throwIfFailed()
         return printed
     }
+
+    /**
+     * The whitespace runs of [source] that hold something other than whitespace (#1609).
+     *
+     * rewrite-groovy has no node for some constructs (the `~` of `~a`, the `-` before `as`, ...), so it keeps their
+     * text in the surrounding [Space]. The tree still prints the original, but `AutoFormat` treats that text as
+     * layout and drops it. Declining to format is safer than repairing it.
+     */
+    private fun hiddenSourceText(source: SourceFile): List<String> {
+        val hidden = mutableListOf<String>()
+        object : GroovyIsoVisitor<Unit>() {
+            override fun visitSpace(space: Space?, loc: Space.Location, p: Unit): Space {
+                if (space != null && space.whitespace.any { !it.isWhitespace() }) hidden.add(space.whitespace)
+                return super.visitSpace(space, loc, p)
+            }
+        }.visit(source, Unit)
+        return hidden
+    }
+
+    private fun String.preview(): String = if (length <= PREVIEW_LENGTH) this else take(PREVIEW_LENGTH) + "..."
 
     private fun ParseError.isExpectedSourceRefusal(): Boolean {
         val kind = markers.findFirst(ParseExceptionResult::class.java).orElse(null)?.exceptionType
@@ -363,6 +392,8 @@ class OpenRewriteFormatter internal constructor(
     }
 
     companion object {
+        private const val MAX_REPORTED_HIDDEN_TEXT = 3
+        private const val PREVIEW_LENGTH = 40
         private val logger = LoggerFactory.getLogger(OpenRewriteFormatter::class.java)
     }
 }

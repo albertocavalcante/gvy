@@ -63,6 +63,27 @@ class OpenRewriteFormatterTest {
     }
 
     @Nested
+    inner class `Source text hidden in whitespace (#1609)` {
+
+        @ParameterizedTest
+        @ValueSource(strings = ["def b = ~a\n", "def y = -x as int\n", "def x = 3.303e+23\n"])
+        fun `declines to format source whose operators or literal parts sit in whitespace`(input: String) {
+            val outcome = formatter.formatChecked(input)
+
+            assertThat(outcome)
+                .withFailMessage { "Expected a refusal for <$input> but got $outcome" }
+                .isInstanceOf(FormatOutcome.Refused::class.java)
+            assertThat(outcome.text).isEqualTo(input)
+            assertThat((outcome as FormatOutcome.Refused).reason).contains("stored as whitespace")
+        }
+
+        @Test
+        fun `still formats ordinary unary operators and exponent-free numbers`() {
+            assertFormatsTo("def a = -x\ndef b = !y\ndef c = 1.5\n", "def a = -x\ndef b = !y\ndef c = 1.5\n")
+        }
+    }
+
+    @Nested
     inner class `General formatting` {
 
         @Test
