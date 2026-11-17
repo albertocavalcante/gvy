@@ -752,7 +752,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
     const seen = new Set<string>();
     let ok = true;
     let reportedUnavailable = false;
+    const isCancelled = () =>
+      tokens.some((token) => token.isCancellationRequested);
     for (const testCommand of testCommands) {
+      if (isCancelled()) return false;
       const command = coverageReportCommand(testCommand);
       if (!command) continue;
       const key = `${command.executable}\0${command.cwd}`;
@@ -760,6 +763,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
       seen.add(key);
       const outcome = await this.executeReportCommand(command, tokens);
       if (outcome.exitCode === 0) continue;
+      // A cancelled run kills the report process; that is not a report failure.
+      if (isCancelled()) return false;
       ok = false;
       if (isJacocoPluginMissing(command.executable, outcome.output)) {
         if (!reportedUnavailable) {
@@ -811,15 +816,17 @@ export class LSPTestExecutionService implements ITestExecutionService {
       proc.stderr.on("data", keepTail);
       let failure: string | undefined;
       let settled = false;
-      proc.on("error", (error: Error) => {
-        failure = `could not start: ${error.message}`;
-      });
-      proc.on("close", (code: number | null) => {
+      const settle = (code: number | null) => {
         if (settled) return;
         settled = true;
         subscriptions.forEach((subscription) => subscription.dispose());
-        resolve({ exitCode: failure ? (code ?? 1) : code, output, failure });
+        resolve({ exitCode: failure ? code || 1 : code, output, failure });
+      };
+      proc.on("error", (error: Error) => {
+        failure = `could not start: ${error.message}`;
+        settle(null);
       });
+      proc.on("close", settle);
     });
   }
 

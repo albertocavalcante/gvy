@@ -136,7 +136,8 @@ class GradleBuildTool(
 
     override fun getCoverageReportCommand(workspaceRoot: Path): TestCommand = TestCommand(
         executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
-        args = listOf("jacocoTestReport"),
+        // "-x test": the report task usually depends on test; do not re-run the suite and replace this run's data.
+        args = listOf("jacocoTestReport", "-x", "test"),
         cwd = workspaceRoot.toString(),
     )
 

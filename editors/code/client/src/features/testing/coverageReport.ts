@@ -20,7 +20,10 @@ export function coverageReportCommand(
   testCommand: TestCommand,
 ): TestCommand | undefined {
   const tool = buildToolOf(testCommand.executable);
-  if (tool === "gradle") return { ...testCommand, args: ["jacocoTestReport"] };
+  // `-x test`: the report task usually depends on `test`, and re-running it
+  // without the test filter would redo the suite and replace this run's data.
+  if (tool === "gradle")
+    return { ...testCommand, args: ["jacocoTestReport", "-x", "test"] };
   if (tool === "maven") return { ...testCommand, args: ["jacoco:report"] };
   return undefined;
 }

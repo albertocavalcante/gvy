@@ -100,7 +100,7 @@ class GradleBuildToolTest {
     fun `coverage report is a separate jacocoTestReport command`() {
         val report = GradleBuildTool().getCoverageReportCommand(Paths.get("."))
 
-        assertEquals(listOf("jacocoTestReport"), report.args)
+        assertEquals(listOf("jacocoTestReport", "-x", "test"), report.args)
     }
 
     @Test

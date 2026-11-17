@@ -427,6 +427,12 @@ describe("LSPTestExecutionService", () => {
         "Should run jacocoTestReport as a second step for Gradle",
       );
       assert.ok(!reportArgs.includes("--tests"));
+      const at = reportArgs.indexOf("jacocoTestReport");
+      assert.deepStrictEqual(reportArgs.slice(at, at + 3), [
+        "jacocoTestReport",
+        "-x",
+        "test",
+      ]);
       assert.ok(coverageServiceMock.addCoverageToRun.calledOnce);
     });
 
