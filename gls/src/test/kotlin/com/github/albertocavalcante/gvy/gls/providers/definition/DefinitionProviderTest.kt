@@ -96,6 +96,62 @@ class DefinitionProviderTest {
     }
 
     @Test
+    fun `super call resolves to the parent method even when the parent is declared first`(): Unit = runBlocking {
+        val content = """
+            class Parent { String greet() { 'p' } }
+            class Child extends Parent {
+                String greet() {
+                    super.greet()
+                }
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///super.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+
+        // `greet` after `super.` on line 3.
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(3, 14)).toList()
+
+        assertEquals(listOf(0), definitions.map { it.range.start.line }, "must reach Parent.greet, not the override")
+    }
+
+    @Test
+    fun `super call resolves to the parent method when the child is declared first`(): Unit = runBlocking {
+        val content = """
+            class Child extends Parent {
+                String greet() {
+                    super.greet()
+                }
+            }
+            class Parent { String greet() { 'p' } }
+        """.trimIndent()
+        val uri = URI.create("file:///superChildFirst.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
+
+        assertEquals(listOf(5), definitions.map { it.range.start.line }, "must reach Parent.greet")
+    }
+
+    @Test
+    fun `super call does not resolve to the enclosing override when the parent is in another file`(): Unit =
+        runBlocking {
+            val content = """
+                class Child extends MissingParent {
+                    String greet() {
+                        super.greet()
+                    }
+                }
+            """.trimIndent()
+            val uri = URI.create("file:///superOther.groovy")
+            assertNotNull(compilationService.compile(uri, content))
+            assertNotNull(compilationService.getAst(uri), "the AST must exist so the assertion below is not vacuous")
+
+            val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
+
+            assertTrue(definitions.none { it.range.start.line == 1 }, "the override must not be reported")
+        }
+
+    @Test
     fun `test method name navigation specifically`(): Unit = runBlocking {
         // Feedback from Cursor/PR: String literal check breaks method name navigation
         // In foo.bar(), 'bar' is a ConstantExpression with string "bar"
