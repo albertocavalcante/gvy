@@ -738,6 +738,69 @@ describe("GroovyTestController", () => {
       });
     }
 
+    for (const command of ["runAll", "runCurrentFile"] as const) {
+      it(`runs ${command} when a refresh supersedes its in-flight discovery`, async () => {
+        const uri = "file:///workspace/ExampleSpec.groovy";
+        const suite = "example.ExampleSpec";
+        const suites = [
+          { suite, uri, line: 1, tests: [{ test: "works", line: 2 }] },
+        ];
+        let complete!: (suites: unknown[]) => void;
+        testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+        );
+        testServiceMock.discoverTestsInWorkspace
+          .onSecondCall()
+          .resolves(suites);
+        vscodeMock.window.activeTextEditor = {
+          document: { uri: vscodeMock.Uri.parse(uri) },
+        };
+        createController();
+        const registration = vscodeMock.commands.registerCommand
+          .getCalls()
+          .find((call) => call.args[0] === `groovy.test.${command}`);
+        assert.ok(registration);
+
+        const run = registration.args[1]();
+        sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+        // A file event refreshes the tree while the request is in flight.
+        controller.refreshTests();
+        complete(suites);
+        await run;
+
+        sinon.assert.calledTwice(testServiceMock.discoverTestsInWorkspace);
+        sinon.assert.calledOnce(executionServiceMock.runTests);
+        const request = executionServiceMock.runTests.firstCall.args[0];
+        assert.deepStrictEqual(
+          request.include.map((item: { id: string }) => item.id),
+          [suite],
+        );
+        sinon.assert.notCalled(vscodeMock.window.showWarningMessage);
+      });
+    }
+
+    it("does not retry a disposed discovery for a command", async () => {
+      let complete!: (suites: unknown[]) => void;
+      testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      createController();
+      const registration = vscodeMock.commands.registerCommand
+        .getCalls()
+        .find((call) => call.args[0] === "groovy.test.runAll");
+      assert.ok(registration);
+      const run = registration.args[1]();
+      controller.dispose();
+      complete([]);
+      await run;
+      sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+      sinon.assert.notCalled(executionServiceMock.runTests);
+    });
+
     it("cancels queued discovery and rejects new refreshes after disposal", async () => {
       createController().refreshTests();
       controller.dispose();
