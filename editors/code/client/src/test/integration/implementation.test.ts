@@ -668,7 +668,11 @@ suite("Implementation navigation with the current server", () => {
     );
     const targetRange = [targetOffset, targetOffset + targetDeclaration.length];
     assert.deepStrictEqual(offsets(prepared[0].range), targetRange);
-    assert.deepStrictEqual(offsets(prepared[0].selectionRange), targetRange);
+    const targetNameOffset = targetOffset + "def ".length;
+    assert.deepStrictEqual(offsets(prepared[0].selectionRange), [
+      targetNameOffset,
+      targetNameOffset + "target".length,
+    ]);
     const incoming = await vscode.commands.executeCommand<
       vscode.CallHierarchyIncomingCall[]
     >("vscode.provideIncomingCalls", prepared[0]);
