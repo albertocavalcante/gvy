@@ -74,6 +74,32 @@ jobs:
           bazel --version
           echo 'BAZELISK_GITHUB_TOKEN=' >> "$GITHUB_ENV"
 
+      # Only the dependency-fetch phase is retried. The Coursier resolution for @maven
+      # intermittently stalls until its 10 minute timeout (#2171, #2187); a fresh Bazel server
+      # usually resolves it in about a minute. This step records no evidence and is not
+      # counted as an invocation: the evidence-capturing build below still runs in full,
+      # so a fetch that really fails keeps failing there, and three failed attempts fail
+      # this step. Each failed attempt is logged in the job summary (not as an
+      # annotation, which the runner-diagnostics gate would count as a new warning).
+      - name: Prefetch dependencies with bounded retry
+        run: |
+          set -u
+          attempts=3
+          for attempt in $(seq 1 "$attempts"); do
+            status=0
+            timeout 300 bazel --nohome_rc fetch --config=ci //... || status=$?
+            if [ "$status" -eq 0 ]; then
+              echo "Prefetch succeeded on attempt ${attempt}/${attempts}." >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Bazel dependency prefetch attempt ${attempt}/${attempts} failed (exit ${status})."
+            echo "- Bazel dependency prefetch attempt ${attempt}/${attempts} failed (exit ${status})." >>"$GITHUB_STEP_SUMMARY"
+            bazel --nohome_rc shutdown || true
+            if [ "$attempt" -lt "$attempts" ]; then sleep $((attempt * 30)); fi
+          done
+          echo "::error::Bazel dependency prefetch failed after ${attempts} attempts."
+          exit 1
+
       - name: Build all targets and capture evidence
         run: >-
           node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence"
