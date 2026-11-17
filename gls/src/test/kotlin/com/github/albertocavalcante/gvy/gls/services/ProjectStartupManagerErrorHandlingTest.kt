@@ -137,6 +137,19 @@ class ProjectStartupManagerErrorHandlingTest {
         assertEquals("Dependencies loaded: 1 JARs from Maven", notice.message)
     }
 
+    @Test
+    fun `a partial resolution does not complete progress as a clean load`() {
+        val partial = WorkspaceResolution(
+            dependencies = listOf(java.nio.file.Path.of("a.jar")),
+            sourceDirectories = emptyList(),
+            status = ResolutionStatus.Warning("DEPENDENCY_RESOLUTION_FAILED", "Unresolved: org.acme:missing:1.0"),
+        )
+        val complete = WorkspaceResolution(listOf(java.nio.file.Path.of("a.jar")), emptyList())
+
+        assertEquals("⚠️ Ready with partial dependencies: 1 loaded", dependencyProgressText(partial))
+        assertEquals("✅ Ready: 1 dependencies loaded", dependencyProgressText(complete))
+    }
+
     private fun createManager(): ProjectStartupManager {
         val compilationService = mockk<GroovyCompilationService>(relaxed = true)
         return ProjectStartupManager(
