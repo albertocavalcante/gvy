@@ -149,6 +149,29 @@ class TestDiscoveryProviderTest {
     }
 
     @Test
+    fun `a spec extending a base spec is flagged as inheriting features`(): Unit = runBlocking {
+        val suites = discover(
+            """
+            import spock.lang.Specification
+            abstract class BaseSpec extends Specification {
+                def "shared"() {
+                    expect: true
+                }
+            }
+            class ChildSpec extends BaseSpec {
+                def "own"() {
+                    expect: true
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val child = suites.single { it.suite == "ChildSpec" }
+        assertTrue(child.inheritsTests, "ChildSpec inherits features: $suites")
+        assertTrue(suites.single { it.suite == "BaseSpec" }.inheritsTests.not(), "BaseSpec is complete: $suites")
+    }
+
+    @Test
     fun `an uncertain external base keeps the previous detector`(): Unit = runBlocking {
         val suites = discover(
             """

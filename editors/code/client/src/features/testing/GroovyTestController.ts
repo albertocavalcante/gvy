@@ -418,7 +418,12 @@ export class GroovyTestController {
       suiteItem.children.add(testItem);
       features.push(testItem);
     }
-    this.itemRegistry.registerSuite(suiteItem, suite.suite, features);
+    // Inherited features are not reported by discovery, so the list is not a complete snapshot.
+    this.itemRegistry.registerSuite(
+      suiteItem,
+      suite.suite,
+      suite.inheritsTests ? undefined : features,
+    );
 
     // Set suite range using the actual class line from the LSP
     // suite.line is 1-indexed, VS Code positions are 0-indexed

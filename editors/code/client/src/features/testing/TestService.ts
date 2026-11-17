@@ -15,6 +15,8 @@ export interface TestSuite {
   /** 1-indexed line number where the test class is declared */
   line: number;
   tests: Test[];
+  /** True when the class extends a base spec, so inherited features are missing from `tests` */
+  inheritsTests?: boolean;
 }
 
 /**
