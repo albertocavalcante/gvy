@@ -1,10 +1,26 @@
 <!-- SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# JetBrains plugin foundation
+# JetBrains GVY client
 
-This standalone build is an inert foundation for the future opt-in GVY client. It does not start or download a server.
-It targets IntelliJ IDEA builds 253.29346.138 through 262.* and requires the IDE's LSP module.
+The client is disabled per project by default. It targets IntelliJ IDEA builds 253.29346.138 through 262.* and requires
+the IDE's LSP module. It supports local `.groovy` files. GVY does not download a server automatically.
+
+## Connect a project
+
+1. Trust the project using IntelliJ IDEA's project security controls.
+2. Open **Settings > Languages & Frameworks > GVY**.
+3. Select an absolute path to a local Java executable and a runnable GVY server JAR. The server requires Java 17 or
+   newer; this is separate from the IDE's own Java runtime.
+4. Enter one complete JVM argument per line, for example `-Xmx1g`. Paths and arguments containing spaces or Unicode are
+   preserved as individual arguments. Do not add shell quotes or a main class, `-jar`, module selector or argument file.
+5. Optionally supply a JSON object with canonical server settings, for example `{"groovy.codenarc.enabled": false}`.
+6. Select **Enable GVY in this trusted project** and apply. Open a `.groovy` file.
+
+Paths and settings are saved in this project's local workspace settings. Applying settings restarts GVY for this
+project. The IDE LSP client owns process startup, shutdown, project-close cleanup and plugin unloading.
+
+## Contributor validation
 
 From the repository root, run `./gradlew -p editors/jetbrains spotlessCheck test testIde20262 buildPlugin verifyPlugin`
 with JDK 21. This uses the repository's wrapper without including the plugin in the root Gradle build. Verification

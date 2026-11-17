@@ -173,3 +173,17 @@ test('JetBrains inputs and wrapper require the standalone producer', () => {
   assert.equal(classifyPaths(['editors/zed/src/lib.rs']).runJetbrains, false);
   assert.equal(classifyPaths([]).runJetbrains, true);
 });
+
+
+test('server inputs require real JetBrains integration, including executable Markdown fixtures', () => {
+  for (const path of ['gls/src/main/kotlin/Server.kt', 'parser/native/src/main/kotlin/Parser.kt', 'settings.gradle.kts', 'gradle/libs.versions.toml', 'new-server-dependency/build.gradle.kts', 'gls/src/test/resources/request.md']) {
+    const report = classifyPaths([path]);
+    assert.equal(report.runMain, true, path);
+    assert.equal(report.runJetbrains, true, path);
+  }
+});
+
+test('JetBrains narrative README does not require IDE or server runtime checks', () => {
+  const report = classifyPaths(['editors/jetbrains/README.md']);
+  assert.deepEqual([report.runMain, report.runBazel, report.runZed, report.runJetbrains], [false, false, false, false]);
+});

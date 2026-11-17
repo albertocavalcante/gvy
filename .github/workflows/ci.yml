@@ -845,17 +845,83 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+      - name: Build server for real IDE tests
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/jetbrains-gradle-evidence"
+          --producer jetbrains-server :gls:stageEditorServer --no-daemon --no-parallel --max-workers=2
+          '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+      - name: Record tested server identity
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+          import { resolve } from 'node:path';
+          import { execFileSync } from 'node:child_process';
+          const jar = resolve('gls/build/editor-server/gls.jar');
+          const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          const sha256 = createHash('sha256').update(readFileSync(jar)).digest('hex');
+          if (commit !== process.env.GITHUB_SHA) throw new Error('Server checkout identity changed');
+          writeFileSync(`${process.env.RUNNER_TEMP}/jetbrains-server-pair.json`,
+            JSON.stringify({ schemaVersion: 1, pluginCommit: commit, serverCommit: commit, serverSha256: sha256 }) + '\n');
+          appendFileSync(process.env.GITHUB_ENV,
+            `GVY_TEST_SERVER_JAR=${jar}\nGVY_TEST_SERVER_SHA256=${sha256}\nGVY_TEST_SERVER_COMMIT=${commit}\n`);
+          NODE
+      # TODO(#2043): Qualify multiline Plugin Verifier layout warnings before release.
+      # See: https://github.com/albertocavalcante/gvy/issues/2043
       - name: Test, package and verify plugin
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/jetbrains-gradle-evidence"
-          --producer jetbrains -p editors/jetbrains spotlessCheck test testIde20262 buildPlugin verifyPlugin --stacktrace
+          --producer jetbrains -p editors/jetbrains
+          "-PgvyTestServerJar=$GVY_TEST_SERVER_JAR" "-PgvyTestServerSha256=$GVY_TEST_SERVER_SHA256"
+          "-PgvyTestServerCommit=$GVY_TEST_SERVER_COMMIT"
+          spotlessCheck test testIde20262 testNativeUnload253 testNativeUnload262 buildPlugin verifyPlugin --stacktrace
       - name: Require plugin and test evidence
         shell: bash
         run: |
           set -euo pipefail
           find editors/jetbrains/build/distributions -name '*.zip' -print -quit | grep -q .
-          find editors/jetbrains/build/test-results/test -name 'TEST-*.xml' -print -quit | grep -q .
-          find editors/jetbrains/build/test-results/testIde20262 -name 'TEST-*.xml' -print -quit | grep -q .
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          real_suite = "org.gvy.jetbrains.GvyRealServerTest"
+          real_case = "test pinned server initializes and shuts down through IDE manager"
+          unload_suite = "org.gvy.jetbrains.qa.GvyDynamicUnloadTest"
+          unload_case = "test dynamic unload stops real server and reload restarts already open file"
+          required = (
+              ("test", real_suite, real_case),
+              ("testIde20262", real_suite, real_case),
+              ("testNativeUnload253", unload_suite, unload_case),
+              ("testNativeUnload262", unload_suite, unload_case),
+          )
+          for task, suite_name, case_name in required:
+              report = Path("editors/jetbrains/build/test-results") / task / f"TEST-{suite_name}.xml"
+              try:
+                  if any(path.is_symlink() for path in (report, *report.parents)):
+                      raise ValueError("Symbolic report path")
+                  if not report.is_file() or report.stat().st_size > 2 * 1024 * 1024:
+                      raise ValueError("Missing or oversized report")
+                  raw = report.read_bytes().decode("utf-8")
+                  if "<!DOCTYPE" in raw.upper():
+                      raise ValueError("Document types are not permitted")
+                  suite = ET.fromstring(raw)
+                  cases = suite.findall("testcase")
+                  valid = (
+                      suite.tag == "testsuite" and suite.get("name") == suite_name
+                      and suite.get("tests") == "1" and len(cases) == 1
+                      and all(suite.get(key) == "0" for key in ("skipped", "failures", "errors"))
+                      and cases[0].get("name") == case_name
+                      and cases[0].get("classname") == suite_name
+                      and not any(cases[0].find(tag) is not None for tag in ("skipped", "failure", "error"))
+                  )
+                  if not valid:
+                      raise ValueError("Required real-server test did not execute successfully")
+              except (OSError, ET.ParseError, ValueError):
+                  raise SystemExit(f"::error::{task} requires its named real-server test with zero skips, failures or errors")
+              print(f"{task}: paired real-server test executed successfully")
+          PYTHON
           find editors/jetbrains/build/reports/pluginVerifier -type f -print -quit | grep -q .
       - name: Upload plugin and verification evidence
         if: ${{ !cancelled() }}
@@ -867,6 +933,7 @@ jobs:
             editors/jetbrains/build/reports/
             editors/jetbrains/build/test-results/
             ${{ runner.temp }}/jetbrains-gradle-evidence/
+            ${{ runner.temp }}/jetbrains-server-pair.json
           if-no-files-found: error
           retention-days: 14
 
