@@ -31,6 +31,7 @@ class OpenRewriteFormatterTest {
         @ValueSource(
             strings = [
                 "enum E {\n    A, B\n}\n",
+                "enum E {\n    A, B,\n}\n",
                 "enum E {\n    A\n}\n",
                 "enum E { A, B }\n",
                 "enum E {\n    A(1), B(2)\n\n    E(int n) {}\n}\n",
@@ -40,8 +41,11 @@ class OpenRewriteFormatterTest {
             ],
         )
         fun `formatting twice gives the same result as once`(input: String) {
-            val once = formatter.format(input)
-            assertThat(formatter.format(once)).isEqualTo(once)
+            val first = formatter.formatChecked(input)
+            assertThat(first).isNotInstanceOf(FormatOutcome.Refused::class.java)
+            val second = formatter.formatChecked(first.text)
+            assertThat(second).isNotInstanceOf(FormatOutcome.Refused::class.java)
+            assertThat(second.text).isEqualTo(first.text)
         }
 
         @Test

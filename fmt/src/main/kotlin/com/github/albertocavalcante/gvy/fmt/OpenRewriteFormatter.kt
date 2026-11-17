@@ -8,6 +8,7 @@ import org.openrewrite.ParseExceptionResult
 import org.openrewrite.SourceFile
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.marker.MultiVariable
+import org.openrewrite.java.marker.TrailingComma
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
 import org.openrewrite.tree.ParseError
@@ -318,11 +319,12 @@ class OpenRewriteFormatter internal constructor(
      * with comments in that whitespace, are left to `AutoFormat`.
      *
      * TODO(#1639): drop this visitor once rewrite-groovy formats `;`-less enums idempotently.
+     *   See: https://github.com/albertocavalcante/gvy/issues/1639
      */
     private class EnumClosingBraceSpacing : GroovyIsoVisitor<Unit>() {
         override fun visitClassDeclaration(classDecl: J.ClassDeclaration, p: Unit): J.ClassDeclaration {
             val declaration = super.visitClassDeclaration(classDecl, p)
-            if (declaration.kind.type != J.ClassDeclaration.Kind.Type.Enum) return declaration
+            if (declaration.kind != J.ClassDeclaration.Kind.Type.Enum) return declaration
 
             val body = declaration.body
             val statements = body.padding.statements
@@ -332,21 +334,30 @@ class OpenRewriteFormatter internal constructor(
             val enumValues = constants.padding.enums
             val last = enumValues.lastOrNull() ?: return declaration
 
-            val spaces = listOf(last.after, statement.after, body.end)
+            val trailingComma = last.markers.findFirst(TrailingComma::class.java).orElse(null)
+            val spaces = listOfNotNull(last.after, statement.after, body.end, trailingComma?.suffix)
             val hasLineBreak = spaces.any { '\n' in it.whitespace }
             if (!hasLineBreak || spaces.any { it.comments.isNotEmpty() }) return declaration
 
             val closing = Space.EMPTY.withWhitespace("\n" + declaration.indentation())
-            val tidyConstants = constants.padding.withEnums(enumValues.dropLast(1) + last.withAfter(Space.EMPTY))
+            // A trailing comma keeps the whitespace after it in its marker, which prints before `after`.
+            val tidyLast = last.withAfter(Space.EMPTY).let { padded ->
+                if (trailingComma == null) {
+                    padded
+                } else {
+                    padded.withMarkers(padded.markers.setByType(trailingComma.withSuffix(Space.EMPTY)))
+                }
+            }
+            val tidyConstants = constants.padding.withEnums(enumValues.dropLast(1) + tidyLast)
             val tidyStatement = statement.withElement(tidyConstants).withAfter(Space.EMPTY)
             return declaration.withBody(body.padding.withStatements(listOf(tidyStatement)).withEnd(closing))
         }
 
         /** The indentation of the line the declaration starts on, or none when it follows other code. */
         private fun J.ClassDeclaration.indentation(): String {
-            val lastComment = prefix.comments.lastOrNull()
-            val text = lastComment?.suffix ?: prefix.whitespace
-            return if ('\n' in text) text.substringAfterLast('\n') else ""
+            val afterBreaks = prefix.comments.map { it.suffix }.asReversed() + prefix.whitespace
+            val lineStart = afterBreaks.firstOrNull { '\n' in it } ?: return ""
+            return lineStart.substringAfterLast('\n')
         }
     }
 
