@@ -48,7 +48,7 @@ class ScenarioNumberWireTest {
         "1.0",
         "2147483648",
     ).map { literal ->
-        dynamicTest(literal) {
+        dynamicTest("YAML numbers round: ${literal}") {
             val definition = JacksonScenarioParser().parseScenarioDefinition(
                 """
                 name: numeric-wire
@@ -117,7 +117,7 @@ class ScenarioNumberWireTest {
         "1e400" to "1E+400",
         "1e2147483649" to "1e2147483649",
     ).map { (literal, rendered) ->
-        dynamicTest(literal) {
+        dynamicTest("numeric assertion failures: ${literal}") {
             val wire =
                 NumericWireCapture(root, ScenarioDefinition(Scenario(name = "numeric-mismatch", steps = emptyList())))
             val response = Json.parseToJsonElement("""{"number":$literal}""")

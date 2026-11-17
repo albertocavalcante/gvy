@@ -27,7 +27,7 @@ class NavigationScenarioAssertionsTest {
     @TestFactory
     fun `navigation assertions accept the target URI and full declaration range`(): List<DynamicTest> =
         cases.map { case ->
-            dynamicTest(case.file) {
+            dynamicTest("navigation assertions accept: ${case.file}") {
                 val fixture = ScenarioAssertionFixture(case.file, workspaceRoot)
                 fixture.accepts(response(listOf(declaration(fixture, case))))
             }
@@ -37,7 +37,7 @@ class NavigationScenarioAssertionsTest {
     fun `navigation assertions reject missing duplicate wrong file and wrong span targets`(): List<DynamicTest> =
         cases.flatMap { case ->
             listOf("missing", "duplicate", "wrong URI", "wrong span").map { mutant ->
-                dynamicTest("${case.file}: $mutant") {
+                dynamicTest("navigation assertions reject: ${case.file}: $mutant") {
                     val fixture = ScenarioAssertionFixture(case.file, workspaceRoot)
                     val target = declaration(fixture, case)
                     val locations = when (mutant) {
@@ -56,7 +56,7 @@ class NavigationScenarioAssertionsTest {
 
     @TestFactory
     fun `known navigation failures still match their declared xfail`(): List<DynamicTest> = cases.map { case ->
-        dynamicTest(case.file) {
+        dynamicTest("known navigation failures: ${case.file}") {
             val fixture = ScenarioAssertionFixture(case.file, workspaceRoot)
             val locations = if (case.file in wrongFileFailures) {
                 listOf(Location(fixture.context.cursors.getValue("use").uri, declaration(fixture, case).range))
