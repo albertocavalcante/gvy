@@ -50,7 +50,7 @@ class TypeDefinitionProviderTest {
     fun `typeDefinitions returns a UTF-16 range after supplementary characters on the class line`(): Unit =
         runBlocking {
             // The emoji pair and "abcd" occupy the same UTF-16 columns, but Groovy counts the emoji as two columns.
-            fun rangeFor(name: String, filler: String): Range {
+            suspend fun rangeFor(name: String, filler: String): Range {
                 val compilationService = GroovyCompilationService()
                 val uri = URI.create("file:///$name.groovy")
                 val source = "def s = '$filler'; class Foo {}\nFoo f = new Foo(); println f"
@@ -61,7 +61,7 @@ class TypeDefinitionProviderTest {
                 )
                 val position = Position(1, source.lines()[1].lastIndexOf('f'))
                 val params = TypeDefinitionParams(TextDocumentIdentifier(uri.toString()), position)
-                return runBlocking { provider.typeDefinitions(params) }.single().range
+                return provider.typeDefinitions(params).single().range
             }
 
             assertEquals(rangeFor("ascii", "abcd"), rangeFor("emoji", "\uD83D\uDE00\uD83D\uDE00"))
