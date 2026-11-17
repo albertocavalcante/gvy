@@ -13,6 +13,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -168,7 +169,7 @@ class TestDiscoveryProviderTest {
 
         val child = suites.single { it.suite == "ChildSpec" }
         assertTrue(child.inheritsTests, "ChildSpec inherits features: $suites")
-        assertTrue(suites.single { it.suite == "BaseSpec" }.inheritsTests.not(), "BaseSpec is complete: $suites")
+        assertFalse(suites.single { it.suite == "BaseSpec" }.inheritsTests, "BaseSpec is complete: $suites")
     }
 
     @Test

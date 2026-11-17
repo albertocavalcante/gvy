@@ -137,7 +137,12 @@ class TestDiscoveryProvider(
 
     companion object {
         /** Superclasses that contribute no features of their own. */
-        private val NON_INHERITING_SUPERCLASSES = setOf("spock.lang.Specification", "java.lang.Object")
+        private val NON_INHERITING_SUPERCLASSES = setOf(
+            "spock.lang.Specification",
+            // Unresolved (below the resolution phase) the base keeps its source spelling.
+            "Specification",
+            "java.lang.Object",
+        )
 
         /**
          * Parse a workspace URI string to a URI object.
