@@ -21,8 +21,9 @@ import java.util.UUID
  *
  * A slot is the tree node that owns the [Space], the [Space.Location] and the position among the owner's
  * slots of that location. A slot that cannot be matched after formatting is left alone, and so is a slot that
- * still holds any text: nothing is added twice. Only text recorded from the input is ever written. This class
- * is not consulted by [TokenStreamGuard], which stays the final check of the result.
+ * still holds any text. Only text recorded from the input is ever written. If a formatter pass moved the text
+ * to another slot and this one was emptied, the text could appear twice; [TokenStreamGuard], which this class
+ * does not consult, then refuses the result.
  *
  * TODO(#1609): drop this class once rewrite-groovy parses these operators into nodes or keeps their text.
  *   See: https://github.com/albertocavalcante/gvy/issues/1609
@@ -44,7 +45,7 @@ internal class HiddenSpaceTextRestorer private constructor(private val hidden: M
 
     internal data class SlotKey(val owner: UUID, val location: Space.Location, val ordinal: Int)
 
-    /** Numbers the slots of each owner and location in visiting order, which is the same before and after formatting. */
+    /** Numbers the slots of each owner and location in visiting order, the same before and after formatting. */
     private abstract class SlotVisitor : GroovyIsoVisitor<Unit>() {
         private val counts = mutableMapOf<Pair<UUID, Space.Location>, Int>()
 
