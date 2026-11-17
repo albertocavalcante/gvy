@@ -414,9 +414,9 @@ class ColdLocalCompletionTest {
 
         val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }.toSet()
 
-        // `sort` is also a reflected ArrayList method, so only the GDK-only names prove the fix.
+        // GDK-only names: ArrayList itself declares neither, so only the GDK of the binary ancestors adds them.
         assertTrue("first" in labels, "GDK first(Iterable) missing from ${labels.size} labels")
-        assertTrue("sum" in labels, "GDK sum(Iterable) missing from ${labels.size} labels: ${labels.sorted()}")
+        assertTrue("asImmutable" in labels, "GDK asImmutable(List) missing from ${labels.size} labels")
     }
 
     @Test
