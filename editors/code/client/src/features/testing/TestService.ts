@@ -167,7 +167,7 @@ const RunTestRequest = new RequestType<
 >("groovy/runTest");
 
 const GetTestResultsRequest = new RequestType<
-  { workspaceUri: string },
+  { workspaceUri: string; modifiedSinceMillis?: number },
   TestResultsResponse | null,
   void
 >("groovy/getTestResults");
@@ -230,10 +230,16 @@ export class TestService {
   /**
    * Get parsed test results from Surefire/Failsafe XML reports.
    * Call this after test execution to retrieve results with output.
+   * `modifiedSinceMillis` (epoch milliseconds) limits results to reports written
+   * at or after that moment, so a report left by an earlier run is ignored.
    */
-  async getTestResults(workspaceUri: string): Promise<TestResultsResponse> {
+  async getTestResults(
+    workspaceUri: string,
+    modifiedSinceMillis?: number,
+  ): Promise<TestResultsResponse> {
     const response = await this.client.sendRequest(GetTestResultsRequest, {
       workspaceUri,
+      modifiedSinceMillis,
     });
     return (
       response || {

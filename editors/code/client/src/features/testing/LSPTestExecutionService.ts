@@ -306,7 +306,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
             if (this.isLeaf(affected)) failedExitLeaves.add(affected);
           }
         }
-        // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
+        // The time filter proves a report is fresh, not that the run passed;
+        // do not apply reports to failed or incomplete executions.
         // Apply right after each command: consecutive runs of one suite
         // rewrite the same Surefire report file, so a later command would
         // otherwise replace the earlier command's results before they are read.
@@ -323,6 +324,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
             consumer,
             affectedByLoss,
             excluded,
+            outcome.startedAt,
           );
         }
       }
@@ -473,9 +475,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
     consumer: TestEventConsumer,
     affectedByLoss: ReadonlySet<vscode.TestItem>,
     excluded: ReadonlySet<vscode.TestItem>,
+    runStartedAt: number,
   ): Promise<void> {
     try {
-      const results = await this.testService.getTestResults(workspaceUri);
+      // Only reports this command wrote count; an older matching report must not decide an outcome.
+      const results = await this.testService.getTestResults(
+        workspaceUri,
+        runStartedAt,
+      );
       if (results.results.length === 0) {
         this.logger.appendLine(
           "[LSP] No test results found in Surefire reports",
@@ -754,7 +761,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     spawned: boolean;
     incomplete: boolean;
     failedExit: boolean;
+    startedAt: number;
   }> {
+    const startedAt = Date.now();
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
@@ -907,6 +916,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
           spawned,
           incomplete: incomplete || (isMaven && code !== 0),
           failedExit: code !== 0,
+          startedAt,
         });
       });
 
