@@ -803,6 +803,40 @@ describe("GroovyTestController", () => {
       });
     }
 
+    for (const command of ["runAll", "runCurrentFile"] as const) {
+      it(`gives up ${command} after three consecutive supersessions`, async () => {
+        const uri = "file:///workspace/ExampleSpec.groovy";
+        const suite = "example.StaleSpec";
+        // Every attempt is superseded by a refresh while its request is in flight.
+        testServiceMock.discoverTestsInWorkspace.callsFake(async () => {
+          controller.refreshTests();
+          return [{ suite, uri, line: 1, tests: [{ test: "works", line: 2 }] }];
+        });
+        vscodeMock.window.activeTextEditor = {
+          document: { uri: vscodeMock.Uri.parse(uri) },
+        };
+        createController();
+        const registration = vscodeMock.commands.registerCommand
+          .getCalls()
+          .find((call) => call.args[0] === `groovy.test.${command}`);
+        assert.ok(registration);
+
+        await registration.args[1]();
+
+        sinon.assert.calledThrice(testServiceMock.discoverTestsInWorkspace);
+        sinon.assert.calledOnceWithExactly(
+          vscodeMock.window.showWarningMessage,
+          "Test discovery was interrupted by repeated refreshes. Try running the tests again.",
+        );
+        sinon.assert.notCalled(executionServiceMock.runTests);
+        assert.strictEqual(
+          testControllerMock.items.get(suite),
+          undefined,
+          "a superseded snapshot must not be applied",
+        );
+      });
+    }
+
     it("does not retry a disposed discovery for a command", async () => {
       let complete!: (suites: unknown[]) => void;
       testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
