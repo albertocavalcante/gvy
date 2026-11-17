@@ -359,14 +359,24 @@ class GroovyLanguageServer(
         )
     }
 
+    /**
+     * Every caller gets its own dependent view of the one shutdown run, so a caller that cancels or fails
+     * its future cannot cancel the run or disturb another caller (including the parent watchdog).
+     */
     override fun shutdown(): CompletableFuture<Any?> {
         shutdownRequested = true
-        return shutdownFuture
+        return shutdownRun.copy()
     }
 
-    // Created at most once, so repeated shutdown requests (client plus watchdog) share one run.
-    private val shutdownFuture: CompletableFuture<Any?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        CompletableFuture.supplyAsync({ doShutdown() }, shutdownExecutor)
+    // Created at most once, so repeated shutdown requests (client plus watchdog) share one run. It is never
+    // handed out, so no caller can cancel it, and it completes (normally or not) even if the executor refuses
+    // the task.
+    private val shutdownRun: CompletableFuture<Any?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val run = CompletableFuture<Any?>()
+        runCatching {
+            shutdownExecutor.execute { runCatching { doShutdown() }.fold(run::complete, run::completeExceptionally) }
+        }.onFailure(run::completeExceptionally)
+        run
     }
 
     private fun doShutdown(): Any? {
