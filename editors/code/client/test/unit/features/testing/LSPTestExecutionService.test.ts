@@ -1583,10 +1583,7 @@ describe("LSPTestExecutionService", () => {
         stderr: new PassThrough(),
         kill: sandbox.stub(),
       });
-      // The report step is a separate process that finishes cleanly.
-      cpMock.spawn.callsFake((_executable: string, args: string[]) =>
-        unquoted(args).includes("jacocoTestReport") ? reportProc(0) : proc,
-      );
+      cpMock.spawn.returns(proc);
       testServiceMock.getTestCommand.resolves({
         executable: "/w/gradlew",
         args: ["test"],
@@ -2388,7 +2385,10 @@ describe("LSPTestExecutionService", () => {
         stderr: new PassThrough(),
         kill: sandbox.stub(),
       });
-      cpMock.spawn.returns(proc);
+      // The report step is a separate process that finishes cleanly.
+      cpMock.spawn.callsFake((_executable: string, args: string[]) =>
+        unquoted(args).includes("jacocoTestReport") ? reportProc(0) : proc,
+      );
       testServiceMock.getTestCommand.resolves({
         executable: "/w/gradlew",
         args: ["test"],
