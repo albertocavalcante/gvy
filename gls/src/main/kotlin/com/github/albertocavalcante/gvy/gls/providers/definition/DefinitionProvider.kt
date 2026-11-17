@@ -7,6 +7,7 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
@@ -56,14 +57,16 @@ class DefinitionProvider(
         logger.debug { "Providing definitions for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
-        spockDefinition(compilationService, documentUri, position)?.let {
+        // One snapshot supplies text, AST and symbols, so a concurrent recompile cannot mix generations.
+        val snapshot = compilationService.getCompiledSnapshot(documentUri)
+        spockDefinition(documentUri, position, snapshot)?.let {
             telemetrySink.report(DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS))
             emit(it)
             return@flow
         }
-        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
+        val context = obtainDefinitionContext(snapshot, uri) ?: return@flow
 
-        emitDefinitions(uri, documentUri, compilationService.groovyAt(documentUri, position), context)
+        emitDefinitions(uri, documentUri, position.toGroovyPosition(context.sourceText), context)
     }
 
     /**
@@ -73,11 +76,13 @@ class DefinitionProvider(
         logger.debug { "Providing definition links for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
-        spockDefinition(compilationService, documentUri, position)?.let {
+        val snapshot = compilationService.getCompiledSnapshot(documentUri)
+        spockDefinition(documentUri, position, snapshot)?.let {
             emit(LocationLink(it.uri, it.range, it.range))
             return@flow
         }
-        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
+        val context = obtainDefinitionContext(snapshot, uri) ?: return@flow
+        val groovyPosition = position.toGroovyPosition(context.sourceText)
 
         val resolver = DefinitionResolver(
             context.visitor,
@@ -88,7 +93,7 @@ class DefinitionProvider(
         )
 
         // Find the origin node at the position
-        val originNode = context.visitor.getNodeAt(documentUri, compilationService.groovyAt(documentUri, position))
+        val originNode = context.visitor.getNodeAt(documentUri, groovyPosition)
         if (originNode == null) {
             logger.debug { "No origin node found at position" }
             return@flow
@@ -98,7 +103,7 @@ class DefinitionProvider(
                 "${originNode.lineNumber}:${originNode.columnNumber}"
         }
 
-        val locationLink = resolveDefinitionLink(resolver, documentUri, position, originNode, context.visitor)
+        val locationLink = resolveDefinitionLink(resolver, documentUri, groovyPosition, originNode, context.visitor)
         if (locationLink != null) {
             emit(locationLink)
         }
@@ -108,11 +113,11 @@ class DefinitionProvider(
     private suspend fun resolveDefinitionLink(
         resolver: DefinitionResolver,
         documentUri: URI,
-        position: Position,
+        groovyPosition: com.github.albertocavalcante.groovyparser.ast.types.Position,
         originNode: ASTNode,
         visitor: GroovyAstModel,
     ): LocationLink? = try {
-        val result = resolver.findDefinitionAt(documentUri, compilationService.groovyAt(documentUri, position))
+        val result = resolver.findDefinitionAt(documentUri, groovyPosition)
         result?.let { createLocationLink(it, originNode, visitor) }
     } catch (e: Exception) {
         when (e) {
@@ -323,9 +328,10 @@ class DefinitionProvider(
             return@flow
         }
 
-        val ast = compilationService.getAst(documentUri) ?: return@flow
-        val visitor = compilationService.getAstModel(documentUri) ?: return@flow
-        val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
+        val snapshot = compilationService.getCompiledSnapshot(documentUri) ?: return@flow
+        if (snapshot.parseResult.ast == null) return@flow
+        val visitor = snapshot.parseResult.astModel
+        val symbolTable = snapshot.parseResult.symbolTable
 
         val resolver = DefinitionResolver(
             visitor,
@@ -334,7 +340,7 @@ class DefinitionProvider(
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
         )
-        val groovyPosition = compilationService.groovyAt(documentUri, position)
+        val groovyPosition = position.toGroovyPosition(snapshot.sourceText)
         val targets = resolver.findTargetsAt(documentUri, groovyPosition, targetKinds)
 
         // Convert each target to Location and emit
@@ -358,32 +364,19 @@ class DefinitionProvider(
     fun findReferencesOnly(uri: String, position: Position): Flow<Location> =
         findTargetsAt(uri, position, setOf(TargetKind.REFERENCE))
 
-    private data class DefinitionContext(val visitor: GroovyAstModel, val symbolTable: SymbolTable)
+    private data class DefinitionContext(
+        val visitor: GroovyAstModel,
+        val symbolTable: SymbolTable,
+        val sourceText: String,
+    )
 
-    @Suppress("ReturnCount")
-    private fun obtainDefinitionContext(documentUri: URI, originalUri: String): DefinitionContext? {
-        val ast = compilationService.getAst(documentUri)
-        if (ast == null) {
+    private fun obtainDefinitionContext(snapshot: CompiledDocumentSnapshot?, originalUri: String): DefinitionContext? {
+        if (snapshot == null || snapshot.parseResult.ast == null) {
             logger.warn { "No AST available for $originalUri - this might indicate compilation service cache issue" }
             telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.AST_MISSING))
             return null
         }
-
-        val visitor = compilationService.getAstModel(documentUri)
-        if (visitor == null) {
-            logger.warn { "No AST visitor available for $originalUri - this might indicate visitor cache issue" }
-            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.VISITOR_MISSING))
-            return null
-        }
-
-        val symbolTable = compilationService.getSymbolTable(documentUri)
-        if (symbolTable == null) {
-            logger.warn { "No symbol table available for $originalUri - this might indicate symbol table cache issue" }
-            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.SYMBOL_TABLE_MISSING))
-            return null
-        }
-
-        return DefinitionContext(visitor = visitor, symbolTable = symbolTable)
+        return DefinitionContext(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, snapshot.sourceText)
     }
 
     @Suppress("LongMethod", "TooGenericExceptionCaught")
@@ -530,12 +523,8 @@ class DefinitionProvider(
     }
 }
 
-/** The Groovy (code-point) position of the protocol [position] in the compiled text of [uri]. */
-private fun GroovyCompilationService.groovyAt(uri: URI, position: Position) =
-    position.toGroovyPosition(getCompiledSnapshot(uri)?.sourceText)
-
-private fun spockDefinition(service: GroovyCompilationService, uri: URI, position: Position): Location? {
-    val snapshot = service.getCompiledSnapshot(uri) ?: return null
+private fun spockDefinition(uri: URI, position: Position, snapshot: CompiledDocumentSnapshot?): Location? {
+    snapshot ?: return null
     val module = snapshot.parseResult.ast ?: return null
     val origin = snapshot.parseResult.astModel.getNodeAt(uri, position.toGroovyPosition(snapshot.sourceText))
     val isPartial = !snapshot.parseResult.isSuccessful
