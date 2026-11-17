@@ -80,6 +80,19 @@ class FormattingActionTest {
         assertEquals("def x = 1\ndef y = 2\n", edits?.first()?.newText)
     }
 
+    @Test
+    fun `full document range ends after a bare CR line break`() {
+        val action = FormattingAction(TestFormatter { "X" })
+
+        val bareCr = action.createFormattingAction(testUri, "a\nb\rc")?.edit?.changes?.get(testUri)?.single()
+        assertEquals(2, bareCr?.range?.end?.line)
+        assertEquals(1, bareCr?.range?.end?.character)
+
+        val trailingCr = action.createFormattingAction(testUri, "a\rb")?.edit?.changes?.get(testUri)?.single()
+        assertEquals(1, trailingCr?.range?.end?.line)
+        assertEquals(1, trailingCr?.range?.end?.character)
+    }
+
     private class TestFormatter(private val formatFn: (String) -> String) : Formatter {
         override fun format(text: String): String = formatFn(text)
     }

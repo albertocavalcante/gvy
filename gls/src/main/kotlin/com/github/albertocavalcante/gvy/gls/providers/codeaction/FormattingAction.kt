@@ -5,15 +5,13 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.gvy.gls.services.toFullDocumentRange
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
 import java.util.concurrent.CancellationException
-import kotlin.math.max
 
 /**
  * Provides formatting code actions using the existing formatter.
@@ -61,26 +59,4 @@ class FormattingAction(private val formatter: Formatter) {
             this.edit = workspaceEdit
         }
     }
-}
-
-/**
- * Convert a string to a full document range.
- */
-private fun String.toFullDocumentRange(): Range {
-    var line = 0
-    var lastLineStart = 0
-    this.indices.forEach { index ->
-        if (this[index] == '\n') {
-            line++
-            lastLineStart = index + 1
-        }
-    }
-
-    var column = length - lastLineStart
-    column = max(column, 0)
-
-    return Range(
-        Position(0, 0),
-        Position(line, column),
-    )
 }
