@@ -153,14 +153,23 @@ class GroovyGdkProvider(
         }
     }
 
+    /** Every superclass and every interface reachable through any chain (`ArrayList` -> `Collection` -> `Iterable`). */
     private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequence {
-        yieldAll(clazz.interfaces.asSequence())
-
-        var superClass = clazz.superclass
-        while (superClass != null) {
-            yield(superClass)
-            yieldAll(superClass.interfaces.asSequence())
-            superClass = superClass.superclass
+        val seen = mutableSetOf<Class<*>>()
+        val pending = ArrayDeque<Class<*>>()
+        pending.addLast(clazz)
+        while (pending.isNotEmpty()) {
+            val current = pending.removeFirst()
+            for (parent in current.interfaces) {
+                if (seen.add(parent)) {
+                    yield(parent)
+                    pending.addLast(parent)
+                }
+            }
+            current.superclass?.let { superClass ->
+                if (seen.add(superClass)) yield(superClass)
+                pending.addLast(superClass)
+            }
         }
     }
 
