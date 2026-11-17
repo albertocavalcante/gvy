@@ -14,7 +14,7 @@ gradleVersions = "0.53.0"
 wire = "5.5.1"
 compose = "1.10.0"
 # Preserve the dependency versions supplied by the Compose 1.10.0 plugin's deprecated aliases.
-composeMaterial3 = "1.9.0-beta03"
+composeMaterial3 = "1.9.0"
 composeMaterialIcons = "1.7.3"
 
 groovy = "4.0.33"
