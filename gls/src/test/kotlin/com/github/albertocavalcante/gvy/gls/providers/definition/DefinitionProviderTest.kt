@@ -115,6 +115,24 @@ class DefinitionProviderTest {
     }
 
     @Test
+    fun `super call resolves to the parent method when the child is declared first`(): Unit = runBlocking {
+        val content = """
+            class Child extends Parent {
+                String greet() {
+                    super.greet()
+                }
+            }
+            class Parent { String greet() { 'p' } }
+        """.trimIndent()
+        val uri = URI.create("file:///superChildFirst.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
+
+        assertEquals(listOf(4), definitions.map { it.range.start.line }, "must reach Parent.greet")
+    }
+
+    @Test
     fun `super call does not resolve to the enclosing override when the parent is in another file`(): Unit =
         runBlocking {
             val content = """
@@ -125,7 +143,8 @@ class DefinitionProviderTest {
                 }
             """.trimIndent()
             val uri = URI.create("file:///superOther.groovy")
-            compilationService.compile(uri, content)
+            assertNotNull(compilationService.compile(uri, content))
+            assertNotNull(compilationService.getAst(uri), "the AST must exist so the assertion below is not vacuous")
 
             val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
 
