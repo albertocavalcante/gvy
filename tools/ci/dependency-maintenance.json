@@ -425,11 +425,11 @@
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
+          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
+          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
         }
       ]
     },
@@ -454,7 +454,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
+          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
         }
       ]
     },
@@ -481,7 +481,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-literals",
-          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
+          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
         }
       ]
     },
@@ -494,17 +494,18 @@
       "reason": "AutoFormat adds a line break and indentation before the closing brace of a semicolon-less enum on every pass, so repeated formatting never settles. EnumClosingBraceSpacing merges that whitespace into the body end.",
       "upstreamStatus": "Reported in #1639 against the adopted rewrite-groovy 8.84.1; raw upstream attribution of which visitor adds the whitespace is not established.",
       "upstreamTrigger": "A released rewrite-groovy formats a semicolon-less enum idempotently without this visitor.",
-      "verification": "2026-11-17 added in the PR for #1639; regression tests assert format(format(x)) == format(x) for plain, single-constant, trailing-comma, constructor, member and nested enums. Regression tests ran in CI only; no raw-upstream probe was run.",
+      "verification": "2026-11-17 added in the PR for #1639; regression tests assert format(format(x)) == format(x) for plain, single-constant, trailing-comma, constructor-after-`;`, member and nested enums. Regression tests ran in CI only; no raw-upstream probe was run.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1639",
-        "https://github.com/albertocavalcante/gvy/issues/1598"
+        "https://github.com/albertocavalcante/gvy/issues/1598",
+        "https://github.com/albertocavalcante/gvy/issues/2222"
       ],
-      "nextAction": "Run the adopted and the latest released AutoFormat on the enum inputs without the visitor and record which visitor adds the whitespace.",
-      "removalCriteria": "Raw upstream output is idempotent for semicolon-less enums, including trailing comma, comments and nested enums; then delete the visitor and keep the regression tests.",
+      "nextAction": "Run the adopted and the latest released AutoFormat on the enum inputs without the visitor and record which visitor adds the whitespace. Also cover the two shapes still unfixed in #2222: a comment before the closing brace, and members after a `;`-less constant list.",
+      "removalCriteria": "Raw upstream output is idempotent for semicolon-less enums, including trailing comma, comments and nested enums; then delete the visitor and keep the regression tests. The shapes in #2222 must also be idempotent.",
       "sources": [
         {
           "id": "manual:openrewrite-enum-closing-brace",
-          "sha256": "a10846445a823f9b43e9b0626ab24c77045c530ce753bc69cee1e1e5a066793a"
+          "sha256": "a6ec19cadcd9348ca146962a9d684a6af4cf5ae0eeb4ed2dd4f5ca9e418324a7"
         }
       ]
     },

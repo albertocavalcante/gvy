@@ -330,12 +330,10 @@ class OpenRewriteFormatter internal constructor(
         private fun tidied(declaration: J.ClassDeclaration): J.ClassDeclaration {
             val body = declaration.body
             val statement = body.padding.statements.singleOrNull()
-            val constants = statement?.element as? J.EnumValueSet
+            val constants = (statement?.element as? J.EnumValueSet)?.takeUnless { it.isTerminatedWithSemicolon }
             val enumValues = constants?.padding?.enums.orEmpty()
             val last = enumValues.lastOrNull()
-            if (statement == null || constants == null || last == null || constants.isTerminatedWithSemicolon) {
-                return declaration
-            }
+            if (statement == null || constants == null || last == null) return declaration
 
             val trailingComma = last.markers.findFirst(TrailingComma::class.java).orElse(null)
             val spaces = listOfNotNull(last.after, statement.after, body.end, trailingComma?.suffix)
