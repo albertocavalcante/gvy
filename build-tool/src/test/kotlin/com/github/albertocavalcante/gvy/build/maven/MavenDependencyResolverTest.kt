@@ -244,8 +244,10 @@ class MavenDependencyResolverTest {
                 """.trimIndent(),
             )
         }
+        val requestedPoms = mutableListOf<String>()
         every { system.resolveArtifact(any(), any<ArtifactRequest>()) } answers {
             val req = secondArg<ArtifactRequest>()
+            requestedPoms.add(req.artifact.toString())
             ArtifactResult(req).setArtifact(req.artifact.setFile(bom.toFile()))
         }
         val request = slot<DependencyRequest>()
@@ -275,5 +277,6 @@ class MavenDependencyResolverTest {
 
         val collect = request.captured.collectRequest
         assertEquals("7.1", collect.dependencies.single().artifact.version)
+        assertEquals(listOf("org.example:bom:pom:9"), requestedPoms)
     }
 }

@@ -37,9 +37,8 @@ internal class AetherModelResolver(
         } catch (e: ArtifactResolutionException) {
             throw UnresolvableModelException(e.message, groupId, artifactId, version, e)
         }
-        return FileModelSource(
-            file ?: throw UnresolvableModelException("No POM file for $artifact", groupId, artifactId, version),
-        )
+        if (file == null) throw UnresolvableModelException("No POM file for $artifact", groupId, artifactId, version)
+        return FileModelSource(file)
     }
 
     override fun resolveModel(parent: Parent): ModelSource2 =
