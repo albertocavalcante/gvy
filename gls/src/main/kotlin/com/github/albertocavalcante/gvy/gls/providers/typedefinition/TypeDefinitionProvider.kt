@@ -22,8 +22,7 @@ import java.net.URI
  */
 class TypeDefinitionProvider(
     private val semanticResolver: SemanticTypeResolver,
-    private val contextProvider: (URI) -> CompilationContext?,
-    private val sourceProvider: (URI) -> String? = { null },
+    private val contextProvider: (URI) -> Pair<CompilationContext, String?>?,
 ) {
 
     private val logger = KotlinLogging.logger {}
@@ -50,13 +49,14 @@ class TypeDefinitionProvider(
     }
 
     private suspend fun findTypeDefinition(uri: URI, position: Position): Location? {
-        val context = contextProvider(uri) ?: return null
+        // One read supplies the AST context and the text its columns index into, so they share a generation.
+        val (context, sourceText) = contextProvider(uri) ?: return null
 
         // Inject module node for semantic analysis
         semanticResolver.semantics.inject(context.moduleNode)
 
         // Find the AST node at the given position
-        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition(sourceProvider(uri))) ?: run {
+        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition(sourceText)) ?: run {
             logger.debug { "No AST node found at position $position" }
             return null
         }

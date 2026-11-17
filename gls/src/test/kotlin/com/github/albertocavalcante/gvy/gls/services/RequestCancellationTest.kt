@@ -132,7 +132,7 @@ class RequestCancellationTest {
 
     @Test
     fun `a cancelled type definition ends cancelled instead of empty`(): Unit = runBlocking {
-        every { compilation.createContext(uri) } throws CancellationException("lookup cancelled")
+        every { compilation.createContextWithSource(uri) } throws CancellationException("lookup cancelled")
         val service =
             GroovyTextDocumentService(
                 scope,

@@ -37,8 +37,7 @@ class TypeDefinitionProviderTest {
         assertTrue(compilationService.compile(uri, source).isSuccess)
         val provider = TypeDefinitionProvider(
             semanticResolver = SemanticTypeResolver(compilationService.classpathService.getTypeSolver()),
-            contextProvider = { compilationService.createContext(it) },
-            sourceProvider = { compilationService.getCompiledSnapshot(it)?.sourceText },
+            contextProvider = { compilationService.createContextWithSource(it) },
         )
         val position = Position(1, source.lines()[1].lastIndexOf('f'))
         val params = TypeDefinitionParams(TextDocumentIdentifier(uri.toString()), position)
