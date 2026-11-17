@@ -160,8 +160,12 @@ class GroovyGdkProvider(
         pending.addLast(clazz)
         while (pending.isNotEmpty()) {
             val current = pending.removeFirst()
-            current.interfaces.forEach { if (seen.add(it)) yield(it) }
-            current.interfaces.forEach(pending::addLast)
+            for (parent in current.interfaces) {
+                if (seen.add(parent)) {
+                    yield(parent)
+                    pending.addLast(parent)
+                }
+            }
             current.superclass?.let { superClass ->
                 if (seen.add(superClass)) yield(superClass)
                 pending.addLast(superClass)
