@@ -100,12 +100,19 @@ class GradleDependencyMetadataCancellationTest {
             mockk<IdeaProject>(relaxed = true)
         }
 
-        GradleBuildTool(connectionFactory = fixture.factory).getDependencyMetadata(dir)
+        // Keep the isolated home inside the test's temp dir instead of the real user home.
+        val originalHome = System.getProperty("user.home")
+        System.setProperty("user.home", dir.toString())
+        try {
+            GradleBuildTool(connectionFactory = fixture.factory).getDependencyMetadata(dir)
+        } finally {
+            System.setProperty("user.home", originalHome)
+        }
 
         assertEquals(2, fixture.homes.size)
         assertNull(fixture.homes[0], "first attempt uses the default Gradle user home")
         val isolated = assertNotNull(fixture.homes[1], "retry must use an isolated Gradle user home")
-        assertEquals("gradle-user-home", isolated.name)
+        assertEquals(dir.resolve(".groovy-lsp").resolve("gradle-user-home").toFile(), isolated)
         assertEquals(2, fixture.released.get(), "both leases must be released")
     }
 

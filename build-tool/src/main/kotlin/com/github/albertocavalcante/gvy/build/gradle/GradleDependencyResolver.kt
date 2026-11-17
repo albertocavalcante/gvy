@@ -263,6 +263,7 @@ class GradleDependencyResolver(
             }
         }
         // Same fallback as resolve(): a broken user init script must not leave the dependency view empty.
+        cancellation.throwIfCancelled()
         try {
             return fetchIdeaProjectFrom(projectDir, isolatedGradleUserHomeDir().toFile(), cancellation)
         } catch (e: Exception) {

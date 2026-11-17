@@ -13,8 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.job
 import kotlinx.coroutines.future.future
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URI

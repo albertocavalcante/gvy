@@ -13,6 +13,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gradle.tooling.model.idea.IdeaProject
 import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 import kotlin.io.path.exists
 
 /**
@@ -161,7 +162,7 @@ class GradleBuildTool(
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
 
             deduplicateDependencies(dependencies)
-        } catch (e: java.util.concurrent.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logger.error(e) { "Failed to extract Gradle dependency metadata: ${e.message}" }
