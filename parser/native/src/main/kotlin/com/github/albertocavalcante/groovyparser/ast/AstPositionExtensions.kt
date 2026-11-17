@@ -163,7 +163,42 @@ private fun resolveMethodDefinition(
     symbolTable: SymbolTable,
     visitor: GroovyAstModel,
 ): ASTNode? = visitor.getUri(call)?.let { uri ->
-    symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull { call.mayCall(it) }
+    val candidates = symbolTable.registry.findMethodDeclarations(uri, call.method.text)
+    if (call.isSuperCall()) {
+        resolveSuperMethod(call, candidates, visitor)
+    } else {
+        candidates.firstOrNull { call.mayCall(it) }
+    }
+}
+
+private fun MethodCallExpression.isSuperCall(): Boolean {
+    val receiver = objectExpression
+    return receiver is VariableExpression && receiver.isSuperExpression
+}
+
+/**
+ * `super.m()` reaches the nearest superclass declaring `m`, never the overriding method that contains
+ * the call. Only declarations of this file are visible here; when the superclass lives elsewhere the
+ * answer is null so cross-file resolution can take over (returning the override would be wrong).
+ */
+private fun resolveSuperMethod(
+    call: MethodCallExpression,
+    candidates: List<MethodNode>,
+    visitor: GroovyAstModel,
+): MethodNode? {
+    val enclosing = generateSequence(visitor.getParent(call)) { visitor.getParent(it) }
+        .filterIsInstance<ClassNode>()
+        .firstOrNull() ?: return null
+    val arity = (call.arguments as? TupleExpression)?.expressions?.size
+    var type: ClassNode? = enclosing.superClass
+    while (type != null) {
+        val declared = candidates.filter { it.declaringClass?.name == type?.name }
+        if (declared.isNotEmpty()) {
+            return declared.firstOrNull { it.parameters.size == arity } ?: declared.first()
+        }
+        type = type.superClass
+    }
+    return null
 }
 
 /**
