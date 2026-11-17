@@ -24,11 +24,13 @@ class CompilationContextSnapshotTest {
         assertTrue(service.compile(uri, content).isSuccess, "Compilation should succeed")
         val snapshot = assertNotNull(service.getCompiledSnapshot(uri))
 
-        // Another generation of the same document, returned by the separate accessor a recompile could change.
+        // A recompile lands after the first cache read: any later read would see another generation.
         val otherUri = URI.create("file:///other-generation.groovy")
         val other = GroovyCompilationService()
-        assertTrue(other.compile(otherUri, "\n\n\nclass Foo {}").isSuccess)
-        every { service.getParseResult(uri) } returns other.getParseResult(otherUri)
+        val otherSource = "\n\n\nclass Foo {}"
+        assertTrue(other.compile(otherUri, otherSource).isSuccess)
+        val recompiled = CompiledDocumentSnapshot(otherSource, assertNotNull(other.getParseResult(otherUri)))
+        every { service.getCompiledSnapshot(uri) } returnsMany listOf(snapshot, recompiled)
 
         val (context, text) = assertNotNull(service.createContextWithSource(uri))
 
