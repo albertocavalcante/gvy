@@ -223,8 +223,17 @@ class DefinitionResolver(
             targetNode is MethodCallExpression -> targetNode
             trackedNode is ConstantExpression -> findMethodCallWhereNodeIsMethodExpression(trackedNode)
             targetNode is ConstantExpression -> findMethodCallWhereNodeIsMethodExpression(targetNode)
+            // An implicit-this call (`deploy(...)`) tracks its synthetic `this` receiver at the call's start
+            // column, so the first characters of the name hit it instead of the method name.
+            targetNode is VariableExpression && targetNode.isThisExpression -> implicitThisCall(targetNode)
             else -> null
         }
+
+    private fun implicitThisCall(receiver: VariableExpression): MethodCallExpression? {
+        if (!receiver.isThisExpression) return null
+        val call = astVisitor.getParent(receiver) as? MethodCallExpression ?: return null
+        return call.takeIf { it.isImplicitThis && it.objectExpression === receiver }
+    }
 
     private fun isBroadContainer(node: ASTNode): Boolean = node is ClassNode ||
         node is MethodNode ||
