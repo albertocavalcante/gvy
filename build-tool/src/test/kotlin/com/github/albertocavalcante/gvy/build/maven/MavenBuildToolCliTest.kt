@@ -51,7 +51,15 @@ class MavenBuildToolCliTest {
         assumeFalse(System.getProperty("os.name", "").lowercase().contains("windows"), "needs a POSIX mvnw")
         val jar = tempDir.resolve("b.jar").also { it.writeText("x") }
         // Fake mvn: write the classpath into the -Dmdep.outputFile argument.
-        wrapper.writeText("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in -Dmdep.outputFile=*) echo \"$jar\" > \"${'$'}{a#*=}\";; esac; done\n")
+        val script = """
+            #!/bin/sh
+            for a in "${'$'}@"; do
+              case "${'$'}a" in
+                -Dmdep.outputFile=*) echo "$jar" > "${'$'}{a#*=}" ;;
+              esac
+            done
+        """.trimIndent()
+        wrapper.writeText(script + "\n")
         assertTrue(wrapper.toFile().setExecutable(true))
 
         val result = tool.resolveViaCli(tempDir, deleteFile = { throw IOException("locked") })
