@@ -74,8 +74,24 @@ class MavenBuildServer(
     private var modules: List<MavenModuleInfo> = emptyList()
     private var client: BuildClient? = null
 
+    @Volatile
+    private var exitListener: (() -> Unit)? = null
+
+    /** True once `build/shutdown` was received; the standalone launcher maps it to the process exit code. */
+    @Volatile
+    var shutdownRequested: Boolean = false
+        private set
+
     fun connect(client: BuildClient) {
         this.client = client
+    }
+
+    /**
+     * Registers the owner's reaction to `build/exit`. The server never terminates the process itself:
+     * the executable decides how and when to stop. A later call replaces the earlier listener.
+     */
+    fun onExit(listener: () -> Unit) {
+        exitListener = listener
     }
 
     // === BSP Lifecycle ===
@@ -102,12 +118,13 @@ class MavenBuildServer(
 
     override fun buildShutdown(): CompletableFuture<Any> {
         logger.info { "Shutting down Maven BSP server" }
+        shutdownRequested = true
         return CompletableFuture.completedFuture(null)
     }
 
     override fun onBuildExit() {
-        // TODO(#1838): Give the standalone launcher an owned, bounded process-exit policy.
         logger.info { "Maven BSP server exiting" }
+        exitListener?.invoke()
     }
 
     // === Workspace Operations ===
