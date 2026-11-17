@@ -68,19 +68,31 @@ test('check-paths declares the provisioning output that the main jobs and readin
   assert.match(block, /^        id: exit-early$/m);
 });
 
-test('the pull-request lint gate runs the Lint job invocation and only then reports it verified', () => {
+test('the pull-request lint gate runs the Lint job setup and invocation, then reports it verified', () => {
   const paths = jobBlock(workflow, 'check-paths');
   const lint = jobBlock(workflow, 'lint');
+  const step = (block, name) => block.match(new RegExp(`^      - name: ${name}\\n([\\s\\S]*?)(?=^      - |(?![\\s\\S]))`, 'm'))?.[1];
+  const gateIf = "github.event_name == 'pull_request' && steps.filter.outputs.run_main_ci == 'true'";
   const invocation = lint.match(/^        run: (node tools\/ci\/run-gradle\.mjs .*--producer lint lint .*)$/m)?.[1];
   assert.ok(invocation, 'Lint job invocation');
   assert.match(paths, /^      lint_verified: \$\{\{ steps\.lint-gate\.outputs\.verified \}\}$/m);
-  const gate = paths.match(/^      - name: Run Lint \(pull-request lint gate\)\n([\s\S]*?)(?=^      - )/m)?.[1];
-  assert.ok(gate, 'lint gate step');
-  assert.match(gate, /^        id: lint-gate$/m);
   // Pull requests only: pushes and manual runs keep the parallel Lint job.
-  assert.match(gate, /^        if: github\.event_name == 'pull_request' && steps\.filter\.outputs\.run_main_ci == 'true'$/m);
-  assert.doesNotMatch(gate, /continue-on-error/);
-  const script = gate.split(/^        run: \|\n/m)[1];
-  const lines = script.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
-  assert.deepEqual(lines, [invocation, 'echo "verified=true" >> "$GITHUB_OUTPUT"']);
+  const run = step(paths, 'Run Lint \\(pull-request lint gate\\)');
+  assert.ok(run, 'lint gate step');
+  assert.match(run, /^        id: lint-run$/m);
+  assert.ok(run.includes(`        if: ${gateIf}\n`));
+  assert.ok(run.includes(`        run: ${invocation}\n`));
+  assert.doesNotMatch(run, /continue-on-error|^        shell:/m);
+  const record = step(paths, 'Record verified pull-request lint gate');
+  assert.ok(record, 'verification step');
+  assert.match(record, /^        id: lint-gate$/m);
+  assert.ok(record.includes(`        if: ${gateIf} && steps.lint-run.outcome == 'success'\n`));
+  assert.match(record, /^        run: echo "verified=true" >> "\$GITHUB_OUTPUT"$/m);
+  // Same toolchain and cache as the Lint job.
+  const uses = block => [...block.matchAll(/^\s+uses: (\S+)/gm)].map(match => match[1]);
+  const lintSetup = uses(lint).filter(action => !action.startsWith('actions/checkout@') && !action.startsWith('actions/upload-artifact@'));
+  for (const action of lintSetup) assert.ok(uses(paths).includes(action), action);
+  assert.match(lint, /java-version: 17$/m);
+  assert.match(step(paths, 'Set up JDK 17 \\(pull-request lint gate\\)') ?? '', /java-version: 17$/m);
+  assert.match(step(paths, 'Setup Gradle \\(pull-request lint gate\\)') ?? '', /^          GRADLE_BUILD_ACTION_CACHE_KEY_JOB: lint$/m);
 });
