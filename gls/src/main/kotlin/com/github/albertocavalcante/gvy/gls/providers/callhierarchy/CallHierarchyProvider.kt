@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
@@ -199,6 +200,12 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     }
 
     companion object {
+        private fun declaredName(node: ASTNode): String? = when (node) {
+            is MethodNode -> if (node.name == "<init>") node.declaringClass?.nameWithoutPackage else node.name
+            is ClassNode -> node.nameWithoutPackage.substringAfterLast('$')
+            else -> null
+        }
+
         private fun createCallHierarchyItem(node: ASTNode, uri: URI, index: TextIndex): CallHierarchyItem? {
             val raw = node.toLspRange() ?: return null
             val nodeRange = index.utf16Range(raw) ?: return null
@@ -206,7 +213,9 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             item.uri = uri.toString()
             // Set proper range from AST node
             item.range = nodeRange
-            item.selectionRange = nodeRange
+            // LSP: selectionRange is the name. Resolving from the declaration's first token would hit
+            // its return type (`Order place()`), not the method.
+            item.selectionRange = declaredName(node)?.let { firstNameOccurrence(index, nodeRange, it) } ?: nodeRange
 
             when (node) {
                 is MethodNode -> {
