@@ -12,10 +12,10 @@ import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import org.eclipse.lsp4j.MessageType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.eclipse.lsp4j.MessageType
 import org.junit.jupiter.api.Test
 
 class ProjectStartupManagerErrorHandlingTest {
