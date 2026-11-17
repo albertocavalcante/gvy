@@ -10,9 +10,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ShutdownWaitersTest {
@@ -72,7 +72,7 @@ class ShutdownWaitersTest {
 
         for (future in listOf(first, second, server.shutdown())) {
             val e = assertFailsWith<ExecutionException> { future.get(30, TimeUnit.SECONDS) }
-            assertIs<IllegalStateException>(e.cause)
+            assertSame(failure, e.cause)
         }
         assertTrue(server.shutdownRequested)
     }

@@ -365,7 +365,7 @@ class GroovyLanguageServer(
      */
     override fun shutdown(): CompletableFuture<Any?> {
         shutdownRequested = true
-        return shutdownRun.thenApply { it }
+        return shutdownRun.copy()
     }
 
     // Created at most once, so repeated shutdown requests (client plus watchdog) share one run. It is never

@@ -94,7 +94,10 @@ class ParentProcessWatchdogTest {
         val server = GroovyLanguageServer(
             processLiveness = liveness,
             exitProcess = exit,
-            shutdownExecutor = { task -> runs++; task.run() },
+            shutdownExecutor = { task ->
+                runs++
+                task.run()
+            },
         )
         server.initialize(InitializeParams().apply { processId = 1234 }).get()
 
@@ -104,6 +107,29 @@ class ParentProcessWatchdogTest {
         assertEquals(0, code.get(30, TimeUnit.SECONDS))
         server.shutdown().get(30, TimeUnit.SECONDS)
         assertEquals(1, runs, "shutdown must not run a second time")
+    }
+
+    @Test
+    fun `a client cancelling its shutdown does not let the watchdog exit before cleanup`() {
+        val liveness = FakeLiveness()
+        val (code, exit) = exitCodes()
+        val queued = ArrayDeque<Runnable>()
+        val server = GroovyLanguageServer(
+            processLiveness = liveness,
+            exitProcess = exit,
+            shutdownExecutor = { queued.addLast(it) },
+        )
+        server.initialize(InitializeParams().apply { processId = 1234 }).get()
+
+        server.shutdown().cancel(true)
+        liveness.future.complete(null)
+        // The watchdog's own request is waiting on the still-queued cleanup.
+        assertFalse(code.isDone, "exit must wait for cleanup")
+
+        queued.removeFirst().run()
+
+        assertEquals(0, code.get(30, TimeUnit.SECONDS))
+        assertTrue(queued.isEmpty(), "cleanup ran once")
     }
 
     @Test
