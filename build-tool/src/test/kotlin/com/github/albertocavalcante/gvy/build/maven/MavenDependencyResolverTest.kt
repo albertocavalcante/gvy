@@ -14,6 +14,7 @@ import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.resolution.ArtifactRequest
+import org.eclipse.aether.resolution.ArtifactResolutionException
 import org.eclipse.aether.resolution.ArtifactResult
 import org.eclipse.aether.resolution.DependencyRequest
 import org.eclipse.aether.resolution.DependencyResolutionException
@@ -278,5 +279,90 @@ class MavenDependencyResolverTest {
         val collect = request.captured.collectRequest
         assertEquals("7.1", collect.dependencies.single().artifact.version)
         assertEquals(listOf("org.example:bom:pom:9"), requestedPoms)
+    }
+
+    @Test
+    fun `a remote parent POM supplies managed versions through the model resolver`() {
+        val system = mockk<RepositorySystem>()
+        stubAether(system)
+        val parent = tempDir.resolve("parent.pom").also {
+            it.writeText(
+                """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId><artifactId>parent</artifactId><version>3</version>
+                  <packaging>pom</packaging>
+                  <dependencyManagement><dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>lib</artifactId><version>5.0</version>
+                    </dependency>
+                  </dependencies></dependencyManagement>
+                </project>
+                """.trimIndent(),
+            )
+        }
+        val requestedPoms = mutableListOf<String>()
+        every { system.resolveArtifact(any(), any<ArtifactRequest>()) } answers {
+            val req = secondArg<ArtifactRequest>()
+            requestedPoms.add(req.artifact.toString())
+            ArtifactResult(req).setArtifact(req.artifact.setFile(parent.toFile()))
+        }
+        val request = slot<DependencyRequest>()
+        every { system.resolveDependencies(any(), capture(request)) } answers { DependencyResult(request.captured) }
+        val pomFile = tempDir.resolve("pom.xml").also {
+            it.writeText(
+                """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent>
+                    <groupId>org.example</groupId><artifactId>parent</artifactId><version>3</version>
+                    <relativePath/>
+                  </parent>
+                  <artifactId>child</artifactId>
+                  <dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency>
+                  </dependencies>
+                </project>
+                """.trimIndent(),
+            )
+        }
+
+        MavenDependencyResolver().resolveDependencies(pomFile)
+
+        assertEquals("5.0", request.captured.collectRequest.dependencies.single().artifact.version)
+        assertEquals(listOf("org.example:parent:pom:3"), requestedPoms)
+    }
+
+    @Test
+    fun `an unresolvable BOM yields an empty result without resolving dependencies`() {
+        val system = mockk<RepositorySystem>()
+        stubAether(system)
+        every { system.resolveArtifact(any(), any<ArtifactRequest>()) } answers {
+            throw ArtifactResolutionException(listOf(ArtifactResult(secondArg<ArtifactRequest>())))
+        }
+        val pomFile = tempDir.resolve("pom.xml").also {
+            it.writeText(
+                """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>t</groupId><artifactId>t</artifactId><version>1</version>
+                  <dependencyManagement><dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>missing-bom</artifactId><version>9</version>
+                      <type>pom</type><scope>import</scope>
+                    </dependency>
+                  </dependencies></dependencyManagement>
+                  <dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>lib</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """.trimIndent(),
+            )
+        }
+
+        val result = MavenDependencyResolver().resolveDetailed(pomFile)
+
+        assertEquals(MavenResolutionResult.EMPTY, result)
+        verify(exactly = 0) { system.resolveDependencies(any(), any()) }
     }
 }
