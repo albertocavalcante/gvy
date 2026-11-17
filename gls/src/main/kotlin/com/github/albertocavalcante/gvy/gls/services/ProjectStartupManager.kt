@@ -385,7 +385,7 @@ class ProjectStartupManager(
                     }
                     context.textDocumentServiceRefresh()
 
-                    context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
+                    context.progressReporter.complete(dependencyProgressText(resolution))
 
                     val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
                     if (context.client != null) {
@@ -596,6 +596,16 @@ class ProjectStartupManager(
     fun shutdown() {
         dependencyManager?.cancel()
         strategyRegistry.shutdown()
+    }
+}
+
+/** The final progress text: a partial resolution never claims a clean load. */
+internal fun dependencyProgressText(resolution: WorkspaceResolution): String {
+    val count = resolution.dependencies.size
+    return if (resolution.status is ResolutionStatus.Warning) {
+        "⚠️ Ready with partial dependencies: $count loaded"
+    } else {
+        "✅ Ready: $count dependencies loaded"
     }
 }
 
