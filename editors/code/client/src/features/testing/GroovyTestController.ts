@@ -207,7 +207,7 @@ export class GroovyTestController {
     if (!this.canRunTests()) {
       return;
     }
-    if (!(await this.discoverTests())) {
+    if (!(await this.discoverForRun())) {
       return;
     }
     const items: vscode.TestItem[] = [];
@@ -240,7 +240,7 @@ export class GroovyTestController {
     }
 
     // Ensure tests are discovered for this file
-    if (!(await this.discoverTests())) {
+    if (!(await this.discoverForRun())) {
       return;
     }
 
@@ -331,13 +331,36 @@ export class GroovyTestController {
    * Discover tests from the LSP and populate the TestItem tree.
    */
   private async discoverTests(): Promise<boolean> {
+    return (await this.discoverOnce()) === "ok";
+  }
+
+  /**
+   * Discovery for a command that needs the tree. A refresh that arrives while
+   * the request is in flight supersedes it; that is not a failure, so look
+   * again (a bounded number of times) instead of silently running nothing.
+   */
+  private async discoverForRun(): Promise<boolean> {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const outcome = await this.discoverOnce();
+      if (outcome !== "superseded") {
+        return outcome === "ok";
+      }
+    }
+    vscode.window.showWarningMessage(
+      "Test discovery was interrupted by repeated refreshes. Try running the tests again.",
+    );
+    return false;
+  }
+
+  private async discoverOnce(): Promise<"ok" | "superseded" | "failed"> {
     if (this.disposed || !this.testService?.isReady()) {
-      return false;
+      return "failed";
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      return false;
+      return "failed";
     }
 
     // Immediate discovery supersedes a queued refresh, which would invalidate it.
@@ -350,12 +373,11 @@ export class GroovyTestController {
       const suites = await this.testService.discoverTestsInWorkspace(
         workspaceFolder.uri.toString(),
       );
-      if (
-        this.disposed ||
-        discoveryVersion !== this.discoveryVersion ||
-        !this.testService.isReady()
-      ) {
-        return false;
+      if (this.disposed || !this.testService.isReady()) {
+        return "failed";
+      }
+      if (discoveryVersion !== this.discoveryVersion) {
+        return "superseded";
       }
 
       // Clear existing items
@@ -366,10 +388,10 @@ export class GroovyTestController {
         const suiteItem = this.createSuiteItem(suite);
         this.ctrl.items.add(suiteItem);
       }
-      return true;
+      return "ok";
     } catch (error) {
       console.error("Failed to discover tests:", error);
-      return false;
+      return "failed";
     }
   }
 
@@ -523,7 +545,7 @@ export class GroovyTestController {
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
       // Try discovery first.
-      if (!(await this.discoverTests())) {
+      if (!(await this.discoverForRun())) {
         return;
       }
 
