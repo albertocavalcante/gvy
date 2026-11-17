@@ -262,7 +262,7 @@ maven.install(
         # ==========================================================================
         # Requires GMM (Gradle Module Metadata) for correct variant selection.
         # See: https://github.com/JetBrains/compose-multiplatform
-        # Maven: https://maven.pkg.jetbrains.space/public/p/compose/dev
+        # Maven: Maven Central (the former JetBrains Space dev repository no longer accepts connections; see #2187)
         #
         # These artifacts use -desktop or -jvm suffixes for the JVM Desktop variant.
         # GMM + variant attributes select correct platform (vs Android/JS/Native).
@@ -304,7 +304,6 @@ maven.install(
         "https://repo1.maven.org/maven2",
         "https://plugins.gradle.org/m2/",
         "https://repo.gradle.org/gradle/libs-releases/",  # For gradle-tooling-api
-        "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
         "https://maven.google.com",  # Google Maven for AndroidX
     ],
     # Maven lock remains disabled after historical GMM cross-environment checksum mismatches.
