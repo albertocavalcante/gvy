@@ -133,23 +133,26 @@ fun firstNameOccurrence(index: TextIndex, range: Range, name: String): Range? {
     if (name.isEmpty()) return null
     // Slashy strings (/…/, $/…/$) are not recognised, so a quote inside one can hide the rest of the
     // line; fall back to a plain search rather than lose a declaration that is really there.
-    return findName(index, range, name, skipLiterals = true, skipAnnotationArguments = true)
-        ?: findName(index, range, name, skipLiterals = true)
-        ?: findName(index, range, name, skipLiterals = false)
+    return findName(index, range, name, NameScan(skipLiterals = true, skipAnnotationArguments = true))
+        ?: findName(index, range, name, NameScan(skipLiterals = true))
+        ?: findName(index, range, name, NameScan(skipLiterals = false))
 }
 
 /** Last whole identifier, ignoring comments and quoted strings without a plain-text fallback. */
 internal fun lastNameOccurrence(index: TextIndex, range: Range, name: String): Range? =
-    if (name.isEmpty()) null else findName(index, range, name, skipLiterals = true, last = true)
+    if (name.isEmpty()) null else findName(index, range, name, NameScan(skipLiterals = true, last = true))
 
-private fun findName(
-    index: TextIndex,
-    range: Range,
-    name: String,
-    skipLiterals: Boolean,
-    last: Boolean = false,
-    skipAnnotationArguments: Boolean = false,
-): Range? {
+/** What a name search ignores ([skipLiterals], [skipAnnotationArguments]) and whether it keeps the [last] match. */
+private class NameScan(
+    val skipLiterals: Boolean,
+    val last: Boolean = false,
+    val skipAnnotationArguments: Boolean = false,
+)
+
+private fun findName(index: TextIndex, range: Range, name: String, scan: NameScan): Range? {
+    val skipLiterals = scan.skipLiterals
+    val last = scan.last
+    val skipAnnotationArguments = scan.skipAnnotationArguments
     val text = index.text
     val end = index.offsetOf(range.end)
     var at = index.offsetOf(range.start)

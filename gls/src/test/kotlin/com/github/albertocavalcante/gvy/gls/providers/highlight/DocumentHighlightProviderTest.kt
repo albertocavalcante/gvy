@@ -613,11 +613,11 @@ println x"""
 
     @Test
     fun `method highlight targets the name, not an annotation argument`(): Unit = runTest {
-        val content = "@SuppressWarnings(value = 'unused') def value() { 1 }\nvalue()"
+        val content = "@SuppressWarnings(value = 'unused') def value() { 1 }\n\nvalue()\ndef r = value()"
         val uri = URI.create("file:///annotated.groovy")
         assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
 
-        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(1, 1))
+        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, content.indexOf("value()") + 1))
 
         val declaration = content.indexOf("value()")
         assertTrue(
