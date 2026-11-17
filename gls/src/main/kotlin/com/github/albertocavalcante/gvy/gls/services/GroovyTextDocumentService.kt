@@ -267,8 +267,7 @@ class GroovyTextDocumentService(
     private val typeDefinitionProvider by lazy {
         TypeDefinitionProvider(
             semanticResolver = semanticTypeResolver,
-            contextProvider = { uri -> compilationService.createContext(uri) },
-            sourceProvider = { uri -> compilationService.getCompiledSnapshot(uri)?.sourceText },
+            contextProvider = { uri -> compilationService.createContextWithSource(uri) },
         )
     }
 
