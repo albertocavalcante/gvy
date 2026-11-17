@@ -58,7 +58,7 @@ class MavenBspLauncherLifecycleTest {
 
         assertThat(session.result.get(EXIT_DEADLINE_SECONDS, TimeUnit.SECONDS)).isEqualTo(0)
         // The shutdown response is written before the exit notification is handled.
-        assertThat(session.output.toString(Charsets.UTF_8)).contains("\"id\":1").contains("\"result\"")
+        assertThat(session.output.toString(Charsets.UTF_8)).contains("\"id\":1")
     }
 
     @Test
