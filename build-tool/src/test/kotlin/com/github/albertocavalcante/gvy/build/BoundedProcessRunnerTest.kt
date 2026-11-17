@@ -95,7 +95,8 @@ class BoundedProcessRunnerTest {
         val secondFile = tempDir.resolve("second")
         // The subshell exits at once, so the holder is reparented and is no longer a descendant to kill,
         // yet it keeps the merged output pipe open. Without the bounded drain, run() rethrows immediately.
-        val script = "echo \$\$ > '$pidFile'; (sleep 120 & echo \$! > '$holderFile'); sleep 120 & echo \$! > '$secondFile'; wait"
+        val script = "echo \$\$ > '$pidFile'; (sleep 120 & echo \$! > '$holderFile'); " +
+            "sleep 120 & echo \$! > '$secondFile'; wait"
         try {
             val outcome = interruptRun(script, pidFile, holderFile, secondFile)
 
