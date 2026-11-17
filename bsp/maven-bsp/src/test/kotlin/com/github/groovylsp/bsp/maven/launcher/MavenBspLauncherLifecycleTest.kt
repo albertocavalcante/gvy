@@ -23,7 +23,11 @@ class MavenBspLauncherLifecycleTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private class Session(val toServer: PipedOutputStream, val result: CompletableFuture<Int>) {
+    private class Session(
+        val toServer: PipedOutputStream,
+        val output: ByteArrayOutputStream,
+        val result: CompletableFuture<Int>,
+    ) {
         fun send(json: String) {
             val body = json.toByteArray(Charsets.UTF_8)
             toServer.write("Content-Length: ${body.size}\r\n\r\n".toByteArray(Charsets.US_ASCII))
@@ -37,10 +41,11 @@ class MavenBspLauncherLifecycleTest {
         val toServer = PipedOutputStream()
         val input = PipedInputStream(toServer, PIPE_SIZE)
         val server = MavenBspLauncher.createServer(tempDir)
+        val output = ByteArrayOutputStream()
         val result = CompletableFuture.supplyAsync {
-            MavenBspLauncher.serve(server, input, ByteArrayOutputStream())
+            MavenBspLauncher.serve(server, input, output)
         }
-        return Session(toServer, result)
+        return Session(toServer, output, result)
     }
 
     @Test
@@ -52,6 +57,8 @@ class MavenBspLauncherLifecycleTest {
         session.send("""{"jsonrpc":"2.0","method":"build/exit"}""")
 
         assertThat(session.result.get(EXIT_DEADLINE_SECONDS, TimeUnit.SECONDS)).isEqualTo(0)
+        // The shutdown response is written before the exit notification is handled.
+        assertThat(session.output.toString(Charsets.UTF_8)).contains("\"id\":1").contains("\"result\"")
     }
 
     @Test

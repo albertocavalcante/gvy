@@ -88,7 +88,7 @@ class MavenBuildServer(
 
     /**
      * Registers the owner's reaction to `build/exit`. The server never terminates the process itself:
-     * the executable decides how and when to stop.
+     * the executable decides how and when to stop. A later call replaces the earlier listener.
      */
     fun onExit(listener: () -> Unit) {
         exitListener = listener

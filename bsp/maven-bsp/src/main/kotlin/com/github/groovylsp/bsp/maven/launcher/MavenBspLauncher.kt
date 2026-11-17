@@ -22,6 +22,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 
 /**
@@ -134,12 +135,13 @@ object MavenBspLauncher {
 
     /**
      * Serves BSP over [input]/[output] until the client sends `build/exit` or closes [input], then stops the
-     * listener threads and returns the process exit code: 0 after a prior `build/shutdown`, 1 otherwise
-     * (exit before shutdown, or end of input). Requests still in flight at that point are abandoned.
+     * listener threads and returns the process exit code: 0 if `build/shutdown` was received first, 1 otherwise
+     * (exit before shutdown, or end of input without shutdown). Requests still in flight at that point are abandoned.
      */
     internal fun serve(server: MavenBuildServer, input: InputStream, output: OutputStream): Int {
+        val threadCount = AtomicInteger()
         val executor = Executors.newCachedThreadPool { task ->
-            Thread(task, "maven-bsp-rpc").apply { isDaemon = true }
+            Thread(task, "maven-bsp-rpc-${threadCount.incrementAndGet()}").apply { isDaemon = true }
         }
         val exitRequested = CompletableFuture<Unit>()
         server.onExit { exitRequested.complete(Unit) }
@@ -154,7 +156,13 @@ object MavenBspLauncher {
             server.connect(launcher.remoteProxy)
 
             logger.info { "Maven BSP server started, listening on stdin/stdout" }
-            CompletableFuture.anyOf(launcher.startListening(), exitRequested).get()
+            // startListening() returns a plain Future, so a waiter bridges end of input into the same signal.
+            val listening = launcher.startListening()
+            executor.execute {
+                runCatching { listening.get() }
+                exitRequested.complete(Unit)
+            }
+            exitRequested.get()
         } finally {
             executor.shutdownNow()
         }
