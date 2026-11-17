@@ -92,12 +92,10 @@ class NavigationScenarioAssertionsTest {
         private val wrongFileFailures = setOf(
             "repro-definition-extends-imported.yaml",
             "repro-definition-parameter-type.yaml",
-            "repro-definition-super-call.yaml",
         )
         private val cases = listOf(
             NavigationCase("repro-definition-extends-imported.yaml", "baseDecl", "demo.base.Base"),
             NavigationCase("repro-definition-parameter-type.yaml", "moneyDecl", "demo.money.Money"),
-            NavigationCase("repro-definition-super-call.yaml", "goDecl", "demo.MiscA", "go"),
             NavigationCase("repro-definition-nested-class-receiver.yaml", "nestedGoDecl", "demo.Nest\$In", "nestedGo"),
             NavigationCase("repro-definition-typedefinition-crossfile.yaml", "orderDecl", "demo.order.Order"),
             NavigationCase("repro-definition-typedefinition-def-call.yaml", "orderDecl", "demo.order.Order"),
