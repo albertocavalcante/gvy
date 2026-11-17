@@ -63,6 +63,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
+          # Never cache Gradle artifact transforms: the entry is ~4.5 GB, restored by every job and
+          # rewritten on main; it rebuilds from the dependency cache. See #2166.
+          gradle-home-cache-excludes: |
+            caches/transforms-*
+            caches/*/transforms
           cache-read-only: false
 
       - name: Build and test
@@ -107,6 +112,12 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          # Never cache Gradle artifact transforms: the entry is ~4.5 GB, restored by every job and
+          # rewritten on main; it rebuilds from the dependency cache. See #2166.
+          gradle-home-cache-excludes: |
+            caches/transforms-*
+            caches/*/transforms
 
       - name: Publish to GitHub Packages
         run: |
