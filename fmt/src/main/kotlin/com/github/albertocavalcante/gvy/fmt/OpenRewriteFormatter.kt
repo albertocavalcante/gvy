@@ -9,6 +9,7 @@ import org.openrewrite.SourceFile
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.marker.MultiVariable
 import org.openrewrite.java.tree.J
+import org.openrewrite.java.tree.Statement
 import org.openrewrite.java.tree.Space
 import org.openrewrite.tree.ParseError
 import org.slf4j.LoggerFactory
@@ -116,7 +117,8 @@ class OpenRewriteFormatter internal constructor(
         // Change the LST only: a text-level pass would also rewrite string literals and comments (#1524).
         val literalsFixed = literalSpelling.visit(formattedSource, Unit) as SourceFile
         val declarationsFixed = DeclarationSpacing().visit(literalsFixed, Unit) as SourceFile
-        val normalizedSource = PostFormatWhitespaceCollapser().visit(declarationsFixed, Unit) as SourceFile
+        val enumsFixed = EnumClosingBraceSpacing().visit(declarationsFixed, Unit) as SourceFile
+        val normalizedSource = PostFormatWhitespaceCollapser().visit(enumsFixed, Unit) as SourceFile
         val printed = operations.print(normalizedSource).normalizeLineEndings()
         operation.throwIfFailed()
         return printed
@@ -305,6 +307,48 @@ class OpenRewriteFormatter internal constructor(
 
         private fun Space.isInlineWhitespace(): Boolean =
             comments.isEmpty() && '\n' !in whitespace && '\r' !in whitespace
+    }
+
+    /**
+     * Keeps the whitespace between the last constant of a `;`-less enum and its closing `}` in one place (#1639).
+     *
+     * `AutoFormat` spreads that whitespace over the last constant's trailing space, the constant list's
+     * trailing space and the body's end, and adds a line break and indentation on every pass, so each format
+     * left one more blank line before the `}`. This visitor sums the three into the body's end: a line break and
+     * the enum declaration's own indentation, or nothing when the enum stays on one line. Enums with a `;`, or
+     * with comments in that whitespace, are left to `AutoFormat`.
+     *
+     * TODO(#1639): drop this visitor once rewrite-groovy formats `;`-less enums idempotently.
+     */
+    private class EnumClosingBraceSpacing : GroovyIsoVisitor<Unit>() {
+        override fun visitClassDeclaration(classDecl: J.ClassDeclaration, p: Unit): J.ClassDeclaration {
+            val declaration = super.visitClassDeclaration(classDecl, p)
+            if (declaration.kind.type != J.ClassDeclaration.Kind.Type.Enum) return declaration
+
+            val body = declaration.body
+            val statements = body.padding.statements
+            val statement = statements.singleOrNull() ?: return declaration
+            val constants = statement.element as? J.EnumValueSet ?: return declaration
+            if (constants.isTerminatedWithSemicolon) return declaration
+            val enumValues = constants.padding.enums
+            val last = enumValues.lastOrNull() ?: return declaration
+
+            val spaces = listOf(last.after, statement.after, body.end)
+            val hasLineBreak = spaces.any { '\n' in it.whitespace }
+            if (!hasLineBreak || spaces.any { it.comments.isNotEmpty() }) return declaration
+
+            val closing = Space.EMPTY.withWhitespace("\n" + declaration.indentation())
+            val tidyConstants = constants.padding.withEnums(enumValues.dropLast(1) + last.withAfter(Space.EMPTY))
+            val tidyStatement = statement.withElement(tidyConstants).withAfter(Space.EMPTY)
+            return declaration.withBody(body.padding.withStatements(listOf(tidyStatement)).withEnd(closing))
+        }
+
+        /** The indentation of the line the declaration starts on, or none when it follows other code. */
+        private fun J.ClassDeclaration.indentation(): String {
+            val lastComment = prefix.comments.lastOrNull()
+            val text = lastComment?.suffix ?: prefix.whitespace
+            return if ('\n' in text) text.substringAfterLast('\n') else ""
+        }
     }
 
     companion object {
