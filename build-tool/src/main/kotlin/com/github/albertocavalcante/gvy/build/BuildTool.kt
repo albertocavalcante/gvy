@@ -87,6 +87,14 @@ interface BuildTool {
      * @return List of dependency metadata, or null if not supported by this build tool
      */
     fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata>? = null
+
+    /**
+     * Like [getDependencyMetadata], stopping early when [cancellation] is requested (see [ResolutionCancellation]
+     * for when to cancel). A tool that supports cancellation throws [java.util.concurrent.CancellationException]
+     * once it stops. The default ignores [cancellation], so a tool without support runs to completion.
+     */
+    fun getDependencyMetadata(workspaceRoot: Path, cancellation: ResolutionCancellation): List<DependencyMetadata>? =
+        getDependencyMetadata(workspaceRoot)
 }
 
 /**

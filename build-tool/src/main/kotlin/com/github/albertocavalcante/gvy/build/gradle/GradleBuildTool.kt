@@ -139,18 +139,30 @@ class GradleBuildTool(
      * @param workspaceRoot The root directory of the Gradle project
      * @return List of dependency metadata, or empty list on failure
      */
-    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata> {
+    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata> =
+        getDependencyMetadata(workspaceRoot, ResolutionCancellation())
+
+    /**
+     * Like [getDependencyMetadata]; [cancellation] cancels the in-flight Tooling API operation and releases the
+     * connection lease, then this throws [java.util.concurrent.CancellationException].
+     */
+    override fun getDependencyMetadata(
+        workspaceRoot: Path,
+        cancellation: ResolutionCancellation,
+    ): List<DependencyMetadata> {
         logger.info { "Extracting dependency metadata from Gradle project: $workspaceRoot" }
 
         return try {
             // Same lease, daemon arguments, Java home and cancellation as resolve(): a bare connection.model(...)
             // would start a second, differently configured daemon.
-            val ideaProject = dependencyResolver.fetchIdeaProject(workspaceRoot)
+            val ideaProject = dependencyResolver.fetchIdeaProject(workspaceRoot, cancellation)
 
             val dependencies = extractDependenciesFromModules(ideaProject)
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
 
             deduplicateDependencies(dependencies)
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error(e) { "Failed to extract Gradle dependency metadata: ${e.message}" }
             emptyList()

@@ -6,15 +6,23 @@ package com.github.albertocavalcante.gvy.gls.providers.dependencies
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.build.DependencyMetadata
+import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DependencyRequestHandlerTest {
 
@@ -98,7 +106,7 @@ class DependencyRequestHandlerTest {
             val params = GetDependenciesParams("file://$tempDir")
             val mockBuildTool = mockk<BuildTool>()
             every { mockBuildTool.name } returns "Maven"
-            every { mockBuildTool.getDependencyMetadata(any()) } returns null
+            every { mockBuildTool.getDependencyMetadata(any(), any()) } returns null
 
             val mockBuildToolManager = mockk<BuildToolManager>()
             every { mockBuildToolManager.detectBuildTool(any<Path>()) } returns mockBuildTool
@@ -160,7 +168,7 @@ class DependencyRequestHandlerTest {
 
         val mockBuildTool = mockk<BuildTool>()
         every { mockBuildTool.name } returns "Gradle"
-        every { mockBuildTool.getDependencyMetadata(any()) } returns mockMetadata
+        every { mockBuildTool.getDependencyMetadata(any(), any()) } returns mockMetadata
 
         val mockBuildToolManager = mockk<BuildToolManager>()
         every { mockBuildToolManager.detectBuildTool(any<Path>()) } returns mockBuildTool
@@ -192,5 +200,38 @@ class DependencyRequestHandlerTest {
         assertEquals("test", dep2.scope)
         assertEquals("file:///path/to/junit-4.13.2.jar", dep2.path)
         assertEquals(true, dep2.isTransitive)
+    }
+
+    @Test
+    fun `cancelling the request cancels the build tool metadata fetch`() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val started = CountDownLatch(1)
+            val observed = CountDownLatch(1)
+            val mockBuildTool = mockk<BuildTool>()
+            every { mockBuildTool.name } returns "Gradle"
+            every { mockBuildTool.getDependencyMetadata(any(), any()) } answers {
+                val cancellation = secondArg<ResolutionCancellation>()
+                started.countDown()
+                if (cancellation.awaitCancellation(10_000)) observed.countDown()
+                null
+            }
+            val mockBuildToolManager = mockk<BuildToolManager>()
+            every { mockBuildToolManager.detectBuildTool(any<Path>()) } returns mockBuildTool
+            val handler = DependencyRequestHandler(
+                coroutineScope = scope,
+                buildToolManagerProvider = { mockBuildToolManager },
+                workspaceRootProvider = { tempDir },
+                ioDispatcher = Dispatchers.IO,
+            )
+
+            val future = handler.getDependencies(GetDependenciesParams("file://$tempDir"))
+            assertTrue(started.await(10, TimeUnit.SECONDS), "metadata fetch never started")
+            future.cancel(true)
+
+            assertTrue(observed.await(10, TimeUnit.SECONDS), "build tool was not told the request was cancelled")
+        } finally {
+            scope.cancel()
+        }
     }
 }

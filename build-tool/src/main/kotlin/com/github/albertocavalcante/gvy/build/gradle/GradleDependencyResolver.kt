@@ -245,10 +245,37 @@ class GradleDependencyResolver(
      * whole fetch, the daemon arguments and configured Java home are applied (so no second, differently-configured
      * daemon starts), and the fetch is cancellable through [cancellation].
      */
+    @Suppress("TooGenericExceptionCaught") // Tooling API failures arrive as arbitrary exceptions.
     internal fun fetchIdeaProject(
         projectDir: Path,
         cancellation: ResolutionCancellation = ResolutionCancellation(),
-    ): IdeaProject = connectionFactory.acquire(projectDir, null).use { lease ->
+    ): IdeaProject {
+        cancellation.throwIfCancelled()
+        try {
+            return fetchIdeaProjectFrom(projectDir, null, cancellation)
+        } catch (e: Exception) {
+            // A cancelled operation fails with the Tooling API's cancellation error; report cancellation instead.
+            if (cancellation.isCancelled) throw cancelledBy(e)
+            if (!failureAnalyzer.isInitScriptError(e)) throw e
+            logger.warn(e) {
+                "Gradle model fetch failed; retrying with isolated Gradle user home to avoid incompatible " +
+                    "user init scripts"
+            }
+        }
+        // Same fallback as resolve(): a broken user init script must not leave the dependency view empty.
+        try {
+            return fetchIdeaProjectFrom(projectDir, isolatedGradleUserHomeDir().toFile(), cancellation)
+        } catch (e: Exception) {
+            if (cancellation.isCancelled) throw cancelledBy(e)
+            throw e
+        }
+    }
+
+    private fun fetchIdeaProjectFrom(
+        projectDir: Path,
+        gradleUserHomeDir: File?,
+        cancellation: ResolutionCancellation,
+    ): IdeaProject = connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
         val modelBuilder = lease.connection.model(IdeaProject::class.java)
         modelBuilder.applyDaemonArguments()
         if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
