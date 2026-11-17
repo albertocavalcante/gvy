@@ -141,7 +141,11 @@ internal class MemberAccessCompletionStrategy(
         addQualifiedGdkMethods(rawType)
         // Facts are built only when a generic binary ancestor could need them (never for Object alone).
         val genericOverrides by lazy { walk.genericOverrides.flatMapTo(mutableSetOf()) { it.value } }
-        walk.binaryTypes.forEach { type -> addQualifiedClasspathMethods(type) { genericOverrides } }
+        walk.binaryTypes.forEach { type ->
+            // GDK extensions apply to the binary ancestors too (`class N extends ArrayList` gets `sum`).
+            addQualifiedGdkMethods(type)
+            addQualifiedClasspathMethods(type) { genericOverrides }
+        }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
