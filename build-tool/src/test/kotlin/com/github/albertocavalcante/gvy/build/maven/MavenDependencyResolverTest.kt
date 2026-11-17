@@ -224,4 +224,59 @@ class MavenDependencyResolverTest {
         assertEquals("jar", testJar.extension)
         assertEquals("tests", testJar.classifier)
     }
+
+    @Test
+    fun `import scope BOM supplies the version of a versionless dependency`() {
+        val system = mockk<RepositorySystem>()
+        stubAether(system)
+        val bom = tempDir.resolve("bom.pom").also {
+            it.writeText(
+                """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId><artifactId>bom</artifactId><version>9</version>
+                  <packaging>pom</packaging>
+                  <dependencyManagement><dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>lib</artifactId><version>7.1</version>
+                    </dependency>
+                  </dependencies></dependencyManagement>
+                </project>
+                """.trimIndent(),
+            )
+        }
+        val requestedPoms = mutableListOf<String>()
+        every { system.resolveArtifact(any(), any<ArtifactRequest>()) } answers {
+            val req = secondArg<ArtifactRequest>()
+            requestedPoms.add(req.artifact.toString())
+            ArtifactResult(req).setArtifact(req.artifact.setFile(bom.toFile()))
+        }
+        val request = slot<DependencyRequest>()
+        every { system.resolveDependencies(any(), capture(request)) } answers {
+            DependencyResult(request.captured)
+        }
+        val pomFile = tempDir.resolve("pom.xml").also {
+            it.writeText(
+                """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>t</groupId><artifactId>t</artifactId><version>1</version>
+                  <dependencyManagement><dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>bom</artifactId><version>9</version>
+                      <type>pom</type><scope>import</scope>
+                    </dependency>
+                  </dependencies></dependencyManagement>
+                  <dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency>
+                  </dependencies>
+                </project>
+                """.trimIndent(),
+            )
+        }
+
+        MavenDependencyResolver().resolveDependencies(pomFile)
+
+        val collect = request.captured.collectRequest
+        assertEquals("7.1", collect.dependencies.single().artifact.version)
+        assertEquals(listOf("org.example:bom:pom:9"), requestedPoms)
+    }
 }
