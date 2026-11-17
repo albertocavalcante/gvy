@@ -35,7 +35,7 @@ class ExactJsonRenderingTest {
     @TestFactory
     fun `embedded structured interpolation preserves nested numeric text`(): List<DynamicTest> =
         numericLiterals.map { literal ->
-            dynamicTest("embedded structured interpolation: ${literal}") {
+            dynamicTest("embedded structured interpolation: $literal") {
                 val context = context()
                 context.setVariable("payload", Json.parseToJsonElement("""{"number":$literal,"nested":[$literal]}"""))
 
@@ -55,7 +55,7 @@ class ExactJsonRenderingTest {
     @TestFactory
     fun `snapshots preserve numeric text with sorted keys and normalized workspace strings`(): List<DynamicTest> =
         numericLiterals.map { literal ->
-            dynamicTest("snapshots preserve numeric: ${literal}") {
+            dynamicTest("snapshots preserve numeric: $literal") {
                 val node = Json.parseToJsonElement("""{"z":[$literal],"a":"file:///fixture/ws/A.groovy"}""")
 
                 assertThat(Snapshots.render(node, forms)).isEqualTo(
@@ -75,7 +75,7 @@ class ExactJsonRenderingTest {
     @TestFactory
     fun `numeric snapshots compare update and recover the exact expected file`(): List<DynamicTest> =
         numericLiterals.mapIndexed { index, literal ->
-            dynamicTest("numeric snapshots compare: ${literal}") {
+            dynamicTest("numeric snapshots compare: $literal") {
                 val name = "numeric-$index.json"
                 val file = root.resolve(name)
                 val node = Json.parseToJsonElement("""{"number":$literal}""")
