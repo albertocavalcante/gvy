@@ -24,7 +24,7 @@ dependencies = [
 [[package]]
 name = "dekobon-tree-sitter-groovy"
 version = "0.6.0"
-source = "git+https://github.com/dekobon/tree-sitter-groovy?rev=c725d888bda7d8222db95b463c5a3d9771a2420f#c725d888bda7d8222db95b463c5a3d9771a2420f"
+source = "git+https://github.com/dekobon/tree-sitter-groovy?rev=a75d9eb7151b3b8198d1c8583962feab386c6fa5#a75d9eb7151b3b8198d1c8583962feab386c6fa5"
 dependencies = [
  "cc",
  "tree-sitter-language",
