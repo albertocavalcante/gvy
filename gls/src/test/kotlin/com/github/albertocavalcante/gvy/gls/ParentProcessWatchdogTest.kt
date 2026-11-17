@@ -90,15 +90,20 @@ class ParentProcessWatchdogTest {
     fun `parent death after shutdown exits 0 and shares the one shutdown run`() {
         val liveness = FakeLiveness()
         val (code, exit) = exitCodes()
-        val server = GroovyLanguageServer(processLiveness = liveness, exitProcess = exit)
+        var runs = 0
+        val server = GroovyLanguageServer(
+            processLiveness = liveness,
+            exitProcess = exit,
+            shutdownExecutor = { task -> runs++; task.run() },
+        )
         server.initialize(InitializeParams().apply { processId = 1234 }).get()
 
-        val first = server.shutdown()
-        first.get(30, TimeUnit.SECONDS)
+        server.shutdown().get(30, TimeUnit.SECONDS)
         liveness.future.complete(null)
 
         assertEquals(0, code.get(30, TimeUnit.SECONDS))
-        assertTrue(first === server.shutdown(), "shutdown must not run a second time")
+        server.shutdown().get(30, TimeUnit.SECONDS)
+        assertEquals(1, runs, "shutdown must not run a second time")
     }
 
     @Test
