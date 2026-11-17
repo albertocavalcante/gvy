@@ -13,7 +13,8 @@ The following settings take effect without restarting the server:
 - `groovy.server.maxNumberOfProblems` caps each diagnostic publication and `diagnose` result. Parser diagnostics precede
   additional provider diagnostics. Zero disables reported problems; negative values are treated as zero.
 - `groovy.mode` selects `groovy`, `jenkins`, or `auto` for shared completion and Native Jenkins hover strategies.
-  Explicit mode overrides file detection. Core hover does not currently provide Jenkins step metadata.
+  Explicit mode overrides file detection. Hover always uses the Native engine; the retired Core hover engine never
+  provided Jenkins step metadata.
 - `groovy.compilation.cacheMaxEntries` resizes the compilation cache.
 
 Diagnostic settings refresh open documents and cancel pending work under the previous configuration. Results from
