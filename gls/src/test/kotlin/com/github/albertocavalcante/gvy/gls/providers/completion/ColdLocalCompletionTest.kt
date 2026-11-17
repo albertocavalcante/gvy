@@ -409,6 +409,17 @@ class ColdLocalCompletionTest {
     }
 
     @Test
+    fun `a held class extending a JDK collection offers the GDK methods of that collection`(): Unit = runBlocking {
+        val source = "class N extends ArrayList<Integer> {}\nnew N().s"
+
+        val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }.toSet()
+
+        // GDK-only names: ArrayList itself declares neither, so only the GDK of the binary ancestors adds them.
+        assertTrue("first" in labels, "GDK first(Iterable) missing from ${labels.size} labels")
+        assertTrue("asImmutable" in labels, "GDK asImmutable(List) missing from ${labels.size} labels")
+    }
+
+    @Test
     fun `an indexed parent's generic override hides the erased interface method`(): Unit = runBlocking {
         indexParents("class B implements Comparable<B> { int compareTo(B o) { 0 } }")
 
