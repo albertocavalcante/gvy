@@ -95,6 +95,8 @@ jobs:
       JAVA_OPTS: -Xmx2g
       GVY_GRADLE_MEMORY_PROBE: 'true'
       GVY_GRADLE_MEMORY_PROFILE: nightly
+      # Pinned file-execution runtime staged by Gradle; the extension tests and packaging need it (#2183).
+      GVY_RUNTIME_SOURCE: ${{ github.workspace }}/gls/build/editor-server/runtime
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -140,7 +142,7 @@ jobs:
       - name: Test and build current server
         run: >-
           node tools/ci/run-gradle.mjs --report-root "${RUNNER_TEMP}/nightly-gradle-evidence" --producer nightly-server
-          --daemon test :tests:e2eTest :gls:stageEditorServer --stacktrace --max-workers=2
+          --daemon test :tests:e2eTest :gls:stageEditorServer stageFileExecutionRuntime --stacktrace --max-workers=2
 
       - name: Upload Gradle diagnostic evidence
         if: ${{ !cancelled() }}
@@ -162,6 +164,7 @@ jobs:
       - name: Build and test extension with current server
         working-directory: editors/code
         run: |
+          pnpm run prepare-runtime
           pnpm run compile
           xvfb-run -a pnpm run test:all
         env:
