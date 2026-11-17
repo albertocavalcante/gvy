@@ -93,7 +93,7 @@ class GradleDependencyMetadataCancellationTest {
     fun `an init script failure retries the dependency tree in an isolated Gradle user home`(@TempDir dir: Path) {
         val fixture = Fixture(dir) { call ->
             if (call == 1) {
-                throw IllegalStateException(
+                error(
                     "Could not open cp_init generic class cache for initialization script '~/.gradle/init.d/x.gradle'",
                 )
             }
