@@ -93,7 +93,7 @@ jobs:
       - name: Record resolved Maven artifact sources
         if: ${{ !cancelled() }}
         run: |
-          root=$(find "$HOME"/.cache/bazel/_bazel_runner/*/external -maxdepth 1 -name 'rules_jvm_external++maven+maven' 2>/dev/null | head -n 1)
+          root=$(find "$HOME"/.cache/bazel/_bazel_runner/*/external -maxdepth 1 -name 'rules_jvm_external++maven+maven' 2>/dev/null | head -n 1 || true)
           if [ -z "$root" ] || [ ! -d "$root/v1/https" ]; then
             echo "No resolved Maven repository directory found." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
