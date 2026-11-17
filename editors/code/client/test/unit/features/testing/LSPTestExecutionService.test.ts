@@ -1583,10 +1583,11 @@ describe("LSPTestExecutionService", () => {
         stderr: new PassThrough(),
         kill: sandbox.stub(),
       });
-      // Each setup starts a fresh call sequence: test step, then report step.
-      cpMock.spawn.reset();
       cpMock.spawn.returns(proc);
-      cpMock.spawn.onCall(1).callsFake(() => reportProc(0));
+      // Each run spawns the test step, then the report step.
+      cpMock.spawn
+        .onCall(cpMock.spawn.callCount + 1)
+        .callsFake(() => reportProc(0));
       testServiceMock.getTestCommand.resolves({
         executable: "/w/gradlew",
         args: ["test"],
