@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Location
+import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -621,4 +623,28 @@ class DefinitionProviderTest {
 
         assertEquals(listOf(0), definitions.map { it.range.start.line })
     }
+
+    @Test
+    fun `definition results use UTF-16 columns after supplementary characters on the target line`(): Unit =
+        runBlocking {
+            // The emoji pair and "abcd" occupy the same UTF-16 columns, but Groovy counts the emoji as two columns.
+            fun source(filler: String) = "def s = '$filler'; def x = 1; println x"
+
+            suspend fun resolve(name: String, filler: String): Pair<Location, LocationLink> {
+                val uri = URI.create("file:///$name.groovy")
+                val content = source(filler)
+                assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
+                val position = Position(0, content.lastIndexOf('x'))
+                val location = definitionProvider.provideDefinitions(uri.toString(), position).toList().single()
+                val link = definitionProvider.provideDefinitionLinks(uri.toString(), position).toList().single()
+                return location to link
+            }
+
+            val (expectedLocation, expectedLink) = resolve("ascii", "abcd")
+            val (location, link) = resolve("emoji", "\uD83D\uDE00\uD83D\uDE00")
+
+            assertEquals(expectedLocation.range, location.range)
+            assertEquals(expectedLink.targetRange, link.targetRange)
+            assertEquals(expectedLink.originSelectionRange, link.originSelectionRange)
+        }
 }

@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.engine.adapters.UnifiedSymbol
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
@@ -39,5 +40,23 @@ class NativeDefinitionServiceColumnsTest {
         val definitions = runBlocking { service.findDefinition(null, unit, Position(1, column)) }
 
         assertEquals(listOf(0), definitions.map { it.range.start.line })
+    }
+
+    @Test
+    fun `definition ranges use UTF-16 columns after supplementary characters on the target line`() {
+        // The emoji pair and "abcd" occupy the same UTF-16 columns, but Groovy counts the emoji as two columns.
+        fun rangeFor(name: String, filler: String): Range {
+            val fileUri = URI.create("file:///$name.groovy")
+            val content = "def s = '$filler'; def x = 1; println x"
+            assertTrue(runBlocking { compilation.compile(fileUri, content) }.isSuccess, "Compilation should succeed")
+            val parseUnit = object : ParseUnit by unit {
+                override val uri: String = fileUri.toString()
+            }
+            val service = NativeDefinitionService(compilation, null)
+            val position = Position(0, content.lastIndexOf('x'))
+            return runBlocking { service.findDefinition(null, parseUnit, position) }.single().range
+        }
+
+        assertEquals(rangeFor("ascii", "abcd"), rangeFor("emoji", "\uD83D\uDE00\uD83D\uDE00"))
     }
 }

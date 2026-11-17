@@ -5,9 +5,10 @@ package com.github.albertocavalcante.gvy.gls.engine.impl.native.features
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.converters.compiledTextOf
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
-import com.github.albertocavalcante.gvy.gls.converters.toLspRange
+import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit
 import com.github.albertocavalcante.gvy.gls.engine.adapters.UnifiedNode
 import com.github.albertocavalcante.gvy.gls.engine.api.DefinitionKind
@@ -44,7 +45,9 @@ class NativeDefinitionService(
         )
         // The request position carries UTF-16 columns; the engine's Groovy positions count code points.
         val groovyPosition = position.toGroovyPosition(snapshot.sourceText)
-        return resolver.findDefinitionAt(uri, groovyPosition)?.toUnifiedDefinition(visitor) ?: emptyList()
+        return resolver.findDefinitionAt(uri, groovyPosition)
+            ?.toUnifiedDefinition(visitor) { compilationService.compiledTextOf(it, uri, snapshot.sourceText) }
+            ?: emptyList()
     }
 
     private fun parseUri(uriStr: String): URI? = try {
@@ -56,10 +59,11 @@ class NativeDefinitionService(
 
     private fun DefinitionResolver.DefinitionResult.toUnifiedDefinition(
         visitor: GroovyAstModel,
+        sourceOf: (String) -> String?,
     ): List<UnifiedDefinition> = when (this) {
         is DefinitionResolver.DefinitionResult.Source -> {
             val targetUri = this.node.toLspLocation(visitor)?.uri ?: this.uri.toString()
-            val targetRange = this.node.toLspRange() ?: return emptyList()
+            val targetRange = this.node.toProtocolRange(sourceOf(targetUri)) ?: return emptyList()
 
             listOf(
                 UnifiedDefinition(
