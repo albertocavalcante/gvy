@@ -256,7 +256,7 @@ maven.install(
         "org.zeromq:jeromq:0.6.0",
 
         # CLI - JVM variants for Kotlin Multiplatform artifacts
-        "com.github.ajalt.clikt:clikt-jvm:5.0.3",
+        "com.github.ajalt.clikt:clikt-jvm:5.2.1",
         "com.github.ajalt.mordant:mordant-jvm:3.0.2",
 
         # ==========================================================================
