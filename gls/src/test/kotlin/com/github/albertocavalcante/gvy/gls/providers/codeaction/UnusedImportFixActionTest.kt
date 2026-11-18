@@ -137,7 +137,7 @@ class UnusedImportFixActionTest {
     }
 
     @Test
-    fun `offers nothing for imports that are used, starred or annotated`() {
+    fun `the detector reports nothing for used, starred or annotated imports, so no fix is offered`() {
         val content = """
             @Grab('g:a:1')
             import x.Directive

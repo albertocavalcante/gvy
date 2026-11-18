@@ -56,7 +56,11 @@ internal object UnusedImportRemoval {
         val runs = mutableListOf<IntRange>()
         for (line in sortedLines) {
             val last = runs.lastOrNull()
-            if (last != null && last.last + 1 == line) runs[runs.lastIndex] = last.first..line else runs += line..line
+            if (last != null && last.last + 1 == line) {
+                runs[runs.lastIndex] = last.first..line
+            } else {
+                runs += line..line
+            }
         }
         return runs
     }
@@ -82,7 +86,8 @@ internal object UnusedImportRemoval {
     /** Groovy resolves a bare `foo` to a statically imported `getFoo`, `isFoo` or `setFoo`. */
     private fun propertyNameOf(member: String): Set<String> {
         val accessor = ACCESSOR.matchEntire(member) ?: return emptySet()
-        return setOf(accessor.groupValues[1].replaceFirstChar { it.lowercaseChar() })
+        val property = accessor.groupValues[1]
+        return setOf(property, property.replaceFirstChar { it.lowercaseChar() })
     }
 
     private val ACCESSOR = Regex("(?:get|is|set)(\\p{Lu}.*)")

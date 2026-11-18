@@ -23,8 +23,9 @@ class ImportOrganizerTest {
 
     /** Organizes [text]; asserts that organizing the result again changes nothing. */
     private fun organize(text: String, vararg unusedLines: Int): String {
-        val result = edits(text, *unusedLines).sortedByDescending { it.start }.fold(text) { acc, edit ->
-            acc.substring(0, edit.start) + edit.newText + acc.substring(edit.end)
+        var result = text
+        for (edit in edits(text, *unusedLines).sortedByDescending { it.start }) {
+            result = result.substring(0, edit.start) + edit.newText + result.substring(edit.end)
         }
         assertEquals(emptyList(), ImportOrganizer.organize(result, emptyList()), "not idempotent: $result")
         return result

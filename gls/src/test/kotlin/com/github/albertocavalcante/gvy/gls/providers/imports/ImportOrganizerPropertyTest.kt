@@ -45,10 +45,13 @@ internal class ImportOrganizerPropertyTest {
         }
     }
 
-    private fun apply(text: String, edits: List<TextReplacement>): String =
-        edits.sortedByDescending { it.start }.fold(text) { acc, edit ->
-            acc.substring(0, edit.start) + edit.newText + acc.substring(edit.end)
+    private fun apply(text: String, edits: List<TextReplacement>): String {
+        var result = text
+        for (edit in edits.sortedByDescending { it.start }) {
+            result = result.substring(0, edit.start) + edit.newText + result.substring(edit.end)
         }
+        return result
+    }
 
     private fun targetsOf(text: String): List<ImportTarget> =
         text.split("\r\n", "\n", "\r").mapNotNull { ImportLineParser.parse(it)?.target }

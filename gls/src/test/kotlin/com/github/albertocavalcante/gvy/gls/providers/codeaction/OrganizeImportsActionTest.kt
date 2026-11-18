@@ -61,9 +61,12 @@ class OrganizeImportsActionTest {
     private fun apply(text: String, edits: List<TextEdit>): String {
         val index = Utf16LineIndex(text)
         fun offset(position: Position) = index.offsetOf(position.line, position.character)
-        return edits.sortedByDescending { offset(it.range.start) }.fold(text) { acc, edit ->
-            acc.substring(0, offset(edit.range.start)) + edit.newText + acc.substring(offset(edit.range.end))
+        var result = text
+        for (edit in edits.sortedByDescending { offset(it.range.start) }) {
+            result = result.substring(0, offset(edit.range.start)) + edit.newText +
+                result.substring(offset(edit.range.end))
         }
+        return result
     }
 
     private val unorganized = listOf(
