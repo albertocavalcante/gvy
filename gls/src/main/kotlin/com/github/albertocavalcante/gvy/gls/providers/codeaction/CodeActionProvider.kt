@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.Formatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
+import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
 import java.net.URI
 import java.nio.file.Files
@@ -19,7 +20,7 @@ import java.nio.file.Path
  * Supports:
  * - Missing import resolution (unambiguous only)
  * - Formatting actions
- * - Removal of unused imports reported by gvy
+ * - Removal of unused imports reported by gvy, and Organize Imports
  * - Deterministic lint fixes from CodeNarc
  */
 class CodeActionProvider(
@@ -34,6 +35,7 @@ class CodeActionProvider(
     private val formattingAction = FormattingAction(formatter)
     private val importAction = ImportAction(compilationService)
     private val unusedImportFixAction = UnusedImportFixAction(compilationService)
+    private val organizeImportsAction = OrganizeImportsAction(compilationService)
     private val verdictMemory = SpockVerdictMemory()
 
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
@@ -126,12 +128,14 @@ class CodeActionProvider(
                 ),
             )
 
-            // Quick fixes for gvy's own unused-import diagnostic
-            addAll(
-                unusedImportFixAction.createActions(
-                    ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics),
-                ),
-            )
+            // Import hygiene: quick fixes for gvy's own unused-import diagnostic, and Organize Imports
+            val importRequest = ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics)
+            if (allowsKind(CodeActionKind.QuickFix, params.context.only)) {
+                addAll(unusedImportFixAction.createActions(importRequest))
+            }
+            if (allowsKind(CodeActionKind.SourceOrganizeImports, params.context.only)) {
+                organizeImportsAction.createAction(importRequest)?.let(::add)
+            }
 
             // Add lint fix actions for deterministic CodeNarc fixes
             addAll(

@@ -22,10 +22,23 @@ internal data class TextReplacement(val start: Int, val end: Int, val newText: S
  */
 internal object UnusedImportRemoval {
 
-    /** The lines of [unused] imports that can safely be removed, by the rules above. */
-    fun removableLines(text: String, unused: Collection<UnusedImport>): Set<Int> {
+    /**
+     * The lines of [unused] imports that can safely be removed, by the rules above. Lines that go anyway
+     * ([alreadyGone], and the removable lines themselves) do not count as mentions, so two imports that only
+     * mention each other are removed together and a second pass has nothing left to remove.
+     */
+    fun removableLines(text: String, unused: Collection<UnusedImport>, alreadyGone: Set<Int> = emptySet()): Set<Int> {
         val source = SourceLines(text)
-        return unused.filter { candidate -> isSafeToRemove(source, candidate) }.map { it.line }.toSet()
+        var removable = emptySet<Int>()
+        do {
+            val previous = removable
+            val ignored = alreadyGone + previous
+            removable = unused
+                .filter { candidate -> isSafeToRemove(source, candidate, ignored) }
+                .map { it.line }
+                .toSet()
+        } while (removable != previous)
+        return removable
     }
 
     /**
@@ -33,9 +46,13 @@ internal object UnusedImportRemoval {
      * lines become one edit. Each deletes whole lines with their line breaks; when that would leave a blank line at
      * the top of the file or two in a row, the blank line that follows goes too.
      */
-    fun plan(text: String, unused: Collection<UnusedImport>): List<TextReplacement> {
+    fun plan(
+        text: String,
+        unused: Collection<UnusedImport>,
+        alreadyGone: Set<Int> = emptySet(),
+    ): List<TextReplacement> {
         val source = SourceLines(text)
-        val removable = unused.filter { candidate -> isSafeToRemove(source, candidate) }.map { it.line }.toSortedSet()
+        val removable = removableLines(text, unused, alreadyGone).toSortedSet()
         val gone = removable.toMutableSet()
         for (line in removable) {
             if (shouldDropFollowingBlank(source, gone, line)) gone += line + 1
@@ -56,18 +73,22 @@ internal object UnusedImportRemoval {
         val runs = mutableListOf<IntRange>()
         for (line in sortedLines) {
             val last = runs.lastOrNull()
-            if (last != null && last.last + 1 == line) runs[runs.lastIndex] = last.first..line else runs += line..line
+            if (last != null && last.last + 1 == line) {
+                runs[runs.lastIndex] = last.first..line
+            } else {
+                runs += line..line
+            }
         }
         return runs
     }
 
-    private fun isSafeToRemove(source: SourceLines, candidate: UnusedImport): Boolean {
+    private fun isSafeToRemove(source: SourceLines, candidate: UnusedImport, ignoredLines: Set<Int>): Boolean {
         val parsed = source.lineText(candidate.line)?.let(ImportLineParser::parse) ?: return false
         val names = bindingNames(candidate.target, parsed) ?: return false
         return parsed.target == candidate.target &&
             parsed.trailing.isEmpty() &&
             !source.hasCommentAbove(candidate.line) &&
-            names.none { name -> source.isMentionedOutsideLine(name, candidate.line) }
+            names.none { name -> source.isMentionedOutsideLine(name, candidate.line, ignoredLines) }
     }
 
     /** The names code may use to refer to the import; null for imports that are never removed. */
@@ -82,7 +103,8 @@ internal object UnusedImportRemoval {
     /** Groovy resolves a bare `foo` to a statically imported `getFoo`, `isFoo` or `setFoo`. */
     private fun propertyNameOf(member: String): Set<String> {
         val accessor = ACCESSOR.matchEntire(member) ?: return emptySet()
-        return setOf(accessor.groupValues[1].replaceFirstChar { it.lowercaseChar() })
+        val property = accessor.groupValues[1]
+        return setOf(property, property.replaceFirstChar { it.lowercaseChar() })
     }
 
     private val ACCESSOR = Regex("(?:get|is|set)(\\p{Lu}.*)")
@@ -110,13 +132,17 @@ private class SourceLines(private val text: String) {
 
     fun hasCommentAbove(line: Int): Boolean {
         val above = lineText(line - 1)?.trim() ?: return false
-        return above.startsWith("//") || above.startsWith("/*") || above.startsWith("*")
+        val endsBlockComment = above.endsWith("*/") && ImportLineParser.parse(above) == null
+        return above.startsWith("//") || above.startsWith("/*") || above.startsWith("*") || endsBlockComment
     }
 
-    fun isMentionedOutsideLine(name: String, line: Int): Boolean {
+    fun isMentionedOutsideLine(name: String, line: Int, ignoredLines: Set<Int>): Boolean {
         val lineStart = index.lineStart(line)
         val lineEnd = lineStart + (index.lineLength(line) ?: 0)
-        return identifiers[name].orEmpty().any { offset -> offset < lineStart || offset >= lineEnd }
+        return identifiers[name].orEmpty().any { offset ->
+            val outsideOwnLine = offset < lineStart || offset >= lineEnd
+            outsideOwnLine && index.lineAt(offset) !in ignoredLines
+        }
     }
 
     /** Deletes lines [first]..[last] with their line breaks. */

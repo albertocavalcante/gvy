@@ -35,7 +35,7 @@ internal object ImportLineParser {
 
     private fun isBlankOrOneComment(trailing: String): Boolean = trailing.isEmpty() ||
         trailing.startsWith("//") ||
-        (trailing.startsWith("/*") && trailing.indexOf("*/") == trailing.length - 2)
+        (trailing.startsWith("/*") && trailing.indexOf("*/", startIndex = 2) == trailing.length - 2)
 
     private fun writtenNames(dottedName: String): Set<String> {
         val last = dottedName.replace(WHITESPACE, "").substringAfterLast('.')

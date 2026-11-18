@@ -196,8 +196,9 @@ class UnusedImportRemovalTest {
         val get = "import static a.M.getFoo\nprintln foo\n"
         val set = "import static a.M.setFoo\nfoo = 1\n"
         val flag = "import static a.M.isReady\nprintln ready\n"
+        val acronym = "import static a.M.getURL\nprintln URL\n"
 
-        listOf(get, set, flag).forEach { text ->
+        listOf(get, set, flag, acronym).forEach { text ->
             assertEquals(emptyList(), UnusedImportRemoval.plan(text, unusedOn(text, 0)), text)
         }
     }

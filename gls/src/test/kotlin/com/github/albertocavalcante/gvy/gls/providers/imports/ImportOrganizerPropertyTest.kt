@@ -1,0 +1,122 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package com.github.albertocavalcante.gvy.gls.providers.imports
+
+import net.jqwik.api.Arbitraries
+import net.jqwik.api.Arbitrary
+import net.jqwik.api.Combinators
+import net.jqwik.api.ForAll
+import net.jqwik.api.Property
+import net.jqwik.api.Provide
+
+/** Properties of [ImportOrganizer] over generated import blocks, in every line-ending style. */
+internal class ImportOrganizerPropertyTest {
+
+    data class Case(val text: String, val unused: List<UnusedImport>)
+
+    private val statements = listOf(
+        "import a.Alpha",
+        "import a.Alpha as AL",
+        "import b.c.Beta",
+        "import java.util.List",
+        "import java.util.*",
+        "import javax.swing.JFrame",
+        "import java.io.File as F",
+        "import static a.Util.helper",
+        "import static a.Util.*",
+        "import static java.lang.Math.max;",
+        "import b.c.Beta // keep me",
+        "// why\nimport a.Gamma",
+        "/* keep: loaded\n\n   reflectively */\nimport a.Delta",
+        "import java.util.Map\$Entry",
+        "import java.util.Map.Entry",
+    )
+
+    @Provide
+    fun cases(): Arbitrary<Case> {
+        val picks = Arbitraries.integers().between(0, statements.lastIndex).list().ofMinSize(1).ofMaxSize(MAX_IMPORTS)
+        // One line break per line, so files mix LF, CRLF and bare CR.
+        val breaks = Arbitraries.of("\n", "\r\n", "\r").list().ofSize(MAX_LINES + 3)
+        val unusedFlags = Arbitraries.of(true, false).list().ofSize(MAX_LINES)
+        return Combinators.combine(picks, breaks, unusedFlags).`as` { picked, newlines, flags ->
+            val lines = picked.flatMap { statements[it].split("\n") } + listOf("", "class Body {}", "")
+            val text = join(lines, newlines)
+            val unused = lines.indices.filter { flags.getOrElse(it) { false } }.mapNotNull { line ->
+                ImportLineParser.parse(lines[line])?.let { UnusedImport(it.target, line) }
+            }
+            Case(text, unused)
+        }
+    }
+
+    /**
+     * Joins [lines] with one break after each. A bare CR before an empty line that ends in LF would read as a single
+     * CRLF and shift the line numbers the case was built with, so that LF is replaced by a bare CR.
+     */
+    private fun join(lines: List<String>, newlines: List<String>): String {
+        val breaks = newlines.toMutableList()
+        for (index in 0 until lines.lastIndex - 1) {
+            if (breaks[index] == "\r" && lines[index + 1].isEmpty() && breaks[index + 1].startsWith("\n")) {
+                breaks[index + 1] = "\r"
+            }
+        }
+        return lines.indices.joinToString("") { lines[it] + if (it == lines.lastIndex) "" else breaks[it] }
+    }
+
+    private fun apply(text: String, edits: List<TextReplacement>): String {
+        var result = text
+        for (edit in edits.sortedByDescending { it.start }) {
+            result = result.substring(0, edit.start) + edit.newText + result.substring(edit.end)
+        }
+        return result
+    }
+
+    private fun lineOf(text: String, line: Int): String = text.split("\r\n", "\n", "\r")[line]
+
+    /** A binding as the organizer sees it: the target and how its name is written. */
+    private fun bindingOf(line: String): Pair<ImportTarget, Set<String>>? =
+        ImportLineParser.parse(line)?.let { it.target to it.writtenNames }
+
+    private fun targetsOf(text: String): List<ImportTarget> =
+        text.split("\r\n", "\n", "\r").mapNotNull { ImportLineParser.parse(it)?.target }
+
+    @Property(tries = 300)
+    fun organizingTwiceYieldsNoFurtherEdits(@ForAll("cases") case: Case): Boolean {
+        val once = apply(case.text, ImportOrganizer.organize(case.text, case.unused))
+
+        // The detector would flag the same bindings wherever they now sit.
+        val flagged = case.unused.map { bindingOf(lineOf(case.text, it.line)) }.toSet()
+        val again = once.split("\r\n", "\n", "\r").mapIndexedNotNull { line, content ->
+            val parsed = ImportLineParser.parse(content)
+            parsed?.takeIf { bindingOf(content) in flagged }?.let { UnusedImport(it.target, line) }
+        }
+        return ImportOrganizer.organize(once, again).isEmpty()
+    }
+
+    @Property(tries = 300)
+    fun organizingNeverDropsAnImportTheDetectorDidNotFlag(@ForAll("cases") case: Case): Boolean {
+        val edits = ImportOrganizer.organize(case.text, case.unused)
+        val before = targetsOf(case.text)
+        val after = targetsOf(apply(case.text, edits)).toSet()
+        val flagged = case.unused.map { it.target }.toSet()
+
+        val neverInvents = after.all { it in before }
+        val keepsUnflagged = before.filter { it !in flagged }.all { it in after }
+        return neverInvents && keepsUnflagged
+    }
+
+    @Property(tries = 300)
+    fun editsAreOrderedDisjointAndInsideTheText(@ForAll("cases") case: Case): Boolean {
+        val edits = ImportOrganizer.organize(case.text, case.unused)
+
+        val inside = edits.all { it.start in 0..it.end && it.end <= case.text.length }
+        return inside && edits.zipWithNext().all { (a, b) -> a.end <= b.start }
+    }
+
+    private companion object {
+        const val MAX_IMPORTS = 12
+
+        /** Every import is at most four lines (a three-line comment and the statement). */
+        const val MAX_LINES = MAX_IMPORTS * 4
+    }
+}

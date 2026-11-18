@@ -61,6 +61,10 @@ class UnusedImportFixActionTest {
         provider.provideCodeActions(params)
     }
 
+    /** Only the quick fixes: Organize Imports may be offered next to them and is covered by its own test. */
+    private fun quickFixes(diagnostics: List<Diagnostic>, only: List<String>? = null): List<CodeAction> =
+        actions(diagnostics, only).filter { it.kind == CodeActionKind.QuickFix }
+
     private fun CodeAction.textEdits(): List<TextEdit> = edit.documentChanges.single().left.edits
 
     private fun apply(text: String, edits: List<TextEdit>): String {
@@ -79,7 +83,7 @@ class UnusedImportFixActionTest {
         val content = "import java.util.ArrayList\nimport java.util.HashMap\n\nArrayList list = new ArrayList()\n"
         val diagnostics = open(content, version = 7)
 
-        val action = actions(diagnostics).single()
+        val action = quickFixes(diagnostics).single()
 
         assertEquals("Remove unused import", action.title)
         assertEquals(CodeActionKind.QuickFix, action.kind)
@@ -103,7 +107,7 @@ class UnusedImportFixActionTest {
         ).joinToString("\n")
         val diagnostics = open(content)
 
-        val actions = actions(diagnostics)
+        val actions = quickFixes(diagnostics)
 
         assertEquals(
             listOf("Remove unused import", "Remove unused import", "Remove all unused imports"),
@@ -119,7 +123,7 @@ class UnusedImportFixActionTest {
         for (eol in listOf("\r\n", "\r")) {
             val content = listOf("import java.util.ArrayList", "import java.util.HashMap", "", "HashMap m = null", "")
                 .joinToString(eol)
-            val action = actions(open(content)).single()
+            val action = quickFixes(open(content)).single()
 
             val expected = listOf("import java.util.HashMap", "", "HashMap m = null", "").joinToString(eol)
             assertEquals(expected, apply(content, action.textEdits()), "eol=${eol.replace("\r", "CR")}")
@@ -130,14 +134,14 @@ class UnusedImportFixActionTest {
     fun `is only offered for quickfix requests`() {
         val diagnostics = open("import java.util.ArrayList\nint x = 1\n")
 
-        assertEquals(1, actions(diagnostics, only = listOf(CodeActionKind.QuickFix)).size)
-        assertEquals(1, actions(diagnostics, only = null).size)
+        assertEquals(1, quickFixes(diagnostics, only = listOf(CodeActionKind.QuickFix)).size)
+        assertEquals(1, quickFixes(diagnostics, only = null).size)
         assertTrue(actions(diagnostics, only = listOf(CodeActionKind.Refactor)).isEmpty())
-        assertTrue(actions(diagnostics, only = listOf(CodeActionKind.SourceOrganizeImports)).isEmpty())
+        assertTrue(quickFixes(diagnostics, only = listOf(CodeActionKind.SourceOrganizeImports)).isEmpty())
     }
 
     @Test
-    fun `offers nothing for imports that are used, starred or annotated`() {
+    fun `the detector reports nothing for used, starred or annotated imports, so no fix is offered`() {
         val content = """
             @Grab('g:a:1')
             import x.Directive
@@ -150,7 +154,7 @@ class UnusedImportFixActionTest {
         val diagnostics = open(content)
 
         assertEquals(emptyList(), diagnostics.map { it.message })
-        assertTrue(actions(diagnostics).isEmpty())
+        assertTrue(quickFixes(diagnostics).isEmpty())
     }
 
     @Test
@@ -159,7 +163,7 @@ class UnusedImportFixActionTest {
         val diagnostics = open(content)
 
         assertEquals(1, diagnostics.size)
-        assertTrue(actions(diagnostics).isEmpty())
+        assertTrue(quickFixes(diagnostics).isEmpty())
     }
 
     @Test
@@ -168,7 +172,7 @@ class UnusedImportFixActionTest {
         val diagnostics = open(content)
 
         assertEquals(1, diagnostics.size, "gvy still reports the import")
-        assertTrue(actions(diagnostics).isEmpty())
+        assertTrue(quickFixes(diagnostics).isEmpty())
     }
 
     @Test
@@ -186,7 +190,7 @@ class UnusedImportFixActionTest {
         val diagnostics = open(content)
 
         assertEquals(2, diagnostics.size, diagnostics.joinToString { it.message })
-        val all = actions(diagnostics).single { it.title == "Remove all unused imports" }
+        val all = quickFixes(diagnostics).single { it.title == "Remove all unused imports" }
         val expected = "import java.util.Map.Entry\nimport static java.lang.Math.max\n\n" +
             "Entry e = null\ndef x = max(1, 2)\n"
         assertEquals(expected, apply(content, all.textEdits()))
@@ -197,7 +201,7 @@ class UnusedImportFixActionTest {
         val content = "import java.util.ArrayList\nimport java.util.HashMap\n\nint x = 1\n"
         val diagnostics = open(content)
 
-        val all = actions(diagnostics).single { it.title == "Remove all unused imports" }
+        val all = quickFixes(diagnostics).single { it.title == "Remove all unused imports" }
 
         assertEquals("int x = 1\n", apply(content, all.textEdits()))
     }
@@ -208,7 +212,7 @@ class UnusedImportFixActionTest {
         val diagnostics = open(content)
         assertNotNull(documents.update(uri, "int y = 2\n$content", 4))
 
-        assertTrue(actions(diagnostics).isEmpty())
+        assertTrue(quickFixes(diagnostics).isEmpty())
     }
 
     @Test
@@ -220,7 +224,7 @@ class UnusedImportFixActionTest {
             source = "Groovy"
         }
 
-        assertTrue(actions(listOf(stale)).isEmpty())
+        assertTrue(quickFixes(listOf(stale)).isEmpty())
     }
 
     @Test
@@ -231,6 +235,6 @@ class UnusedImportFixActionTest {
             code = Either.forLeft("some-other-code")
         }
 
-        assertTrue(actions(listOf(other)).isEmpty())
+        assertTrue(quickFixes(listOf(other)).isEmpty())
     }
 }
