@@ -113,12 +113,11 @@ private fun Symbol.Method.displaySignature(): String = buildString {
 }
 
 /** The enum compiler prepends `__str` and `__int` to every enum constructor; the source never wrote them. */
-private fun Symbol.Method.writtenParameters(): List<Parameter> =
-    if (node.isConstructor && owner?.isEnum == true) {
-        parameters.filterNot { it.name in ENUM_HIDDEN_PARAMETERS }
-    } else {
-        parameters
-    }
+private fun Symbol.Method.writtenParameters(): List<Parameter> = if (node.isConstructor && owner?.isEnum == true) {
+    parameters.filterNot { it.name in ENUM_HIDDEN_PARAMETERS }
+} else {
+    parameters
+}
 
 /** The type as written in source: nested types without `$`, arrays as `T[]` (never the JVM's `T;`). */
 internal fun ClassNode.displayTypeName(): String =

@@ -43,8 +43,7 @@ private fun ASTNode.isWrittenInSource(): Boolean {
 private fun ClassNode.isWrittenClass(): Boolean = !isAnonymousClass() && !name.contains(TRAIT_HELPER_MARKER)
 
 // A script class takes its position from its first statement, so a script of only methods has none.
-private fun ClassNode?.isWrittenOwner(): Boolean =
-    this == null || isScript || (isWrittenClass() && lineNumber >= 1)
+private fun ClassNode?.isWrittenOwner(): Boolean = this == null || isScript || (isWrittenClass() && lineNumber >= 1)
 
 private fun Symbol.Method.isScriptBoilerplate(): Boolean = owner?.isScript == true && name in SCRIPT_BOILERPLATE_METHODS
 
