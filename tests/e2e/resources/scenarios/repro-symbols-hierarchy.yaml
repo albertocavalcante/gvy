@@ -1,9 +1,5 @@
 name: repro-symbols-hierarchy
 description: Document symbols nest the members of a class under it as children
-xfail:
-  issue: 1538
-  reason: documentSymbol returns a flat list, so a class has no children
-  match: 'children.*Actual: \[\]'
 workspace:
   fixture: empty-workspace
   files:

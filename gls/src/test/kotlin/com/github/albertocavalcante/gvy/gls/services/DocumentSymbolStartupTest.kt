@@ -51,6 +51,7 @@ class DocumentSymbolStartupTest {
             compilation,
             GroovyTextDocumentServiceOptions(documentProvider = documents),
         )
+        service.updateHierarchicalDocumentSymbolSupport(true)
         try {
             compilation.onDocumentOpened(uri)
             documents.put(uri, "class AfterGdsl { String hello() { 'hello' } }", 1)
@@ -82,6 +83,7 @@ class DocumentSymbolStartupTest {
             compilation,
             GroovyTextDocumentServiceOptions(documentProvider = documents),
         )
+        service.updateHierarchicalDocumentSymbolSupport(true)
         try {
             compilation.onDocumentOpened(uri)
             documents.put(uri, "class Before {}", 1)
