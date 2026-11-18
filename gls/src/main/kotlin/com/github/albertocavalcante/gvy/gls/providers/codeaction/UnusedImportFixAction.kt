@@ -8,26 +8,9 @@ import com.github.albertocavalcante.gvy.gls.providers.imports.TextReplacement
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImport
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImportFacts
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImportRemoval
-import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.Diagnostic
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
-import org.eclipse.lsp4j.TextDocumentEdit
-import org.eclipse.lsp4j.TextEdit
-import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
-import org.eclipse.lsp4j.WorkspaceEdit
-import org.eclipse.lsp4j.jsonrpc.messages.Either
-import java.net.URI
-
-/** What the code action request is about: one document at one version, with the diagnostics the client sent. */
-internal data class ImportActionRequest(
-    val uri: URI,
-    val version: Int?,
-    val content: String,
-    val diagnostics: List<Diagnostic>,
-)
 
 /**
  * Quick fixes for gvy's own `unused-import` diagnostic: "Remove unused import" per diagnostic, and
@@ -81,19 +64,11 @@ internal class UnusedImportFixAction(private val compilationService: GroovyCompi
         diagnostics: List<Diagnostic>,
     ): CodeAction? {
         if (edits.isEmpty()) return null
-        val index = Utf16LineIndex(request.content)
-        val textEdits = edits.map { TextEdit(Range(position(index, it.start), position(index, it.end)), it.newText) }
-        val document = VersionedTextDocumentIdentifier(request.uri.toString(), request.version)
         return CodeAction(title).apply {
             kind = CodeActionKind.QuickFix
             this.diagnostics = diagnostics
-            edit = WorkspaceEdit(listOf(Either.forLeft(TextDocumentEdit(document, textEdits))))
+            edit = request.versionedEdit(edits)
         }
-    }
-
-    private fun position(index: Utf16LineIndex, offset: Int): Position {
-        val line = index.lineAt(offset)
-        return Position(line, offset - index.lineStart(line))
     }
 
     private companion object {

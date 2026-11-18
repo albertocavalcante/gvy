@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.gls.config
 import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.JenkinsSemanticTokenProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyWorkspaceService
+import org.eclipse.lsp4j.CodeActionKind
+import org.eclipse.lsp4j.CodeActionOptions
 import org.eclipse.lsp4j.CodeLensOptions
 import org.eclipse.lsp4j.CompletionOptions
 import org.eclipse.lsp4j.ExecuteCommandOptions
@@ -81,8 +83,17 @@ object ServerCapabilitiesFactory {
                 Either.forLeft(true)
             }
 
-            // Code actions
-            codeActionProvider = Either.forLeft(true)
+            // Code actions: advertise the kinds so clients know Organize Imports exists
+            codeActionProvider = Either.forRight(
+                CodeActionOptions(
+                    listOf(
+                        CodeActionKind.QuickFix,
+                        CodeActionKind.RefactorRewrite,
+                        CodeActionKind.SourceOrganizeImports,
+                        CodeActionKind.SourceFixAll,
+                    ),
+                ),
+            )
 
             // Semantic tokens support
             semanticTokensProvider = createSemanticTokensOptions()
