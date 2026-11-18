@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.flexmark.html2md)
 
     implementation(project(":parser:api"))
+    implementation(project(":source"))
     api(project(":common"))
     api(project(":dsl:gdsl"))
     api(project(":build-tool"))
@@ -55,6 +56,9 @@ dependencies {
 }
 
 tasks.processTestResources {
+    from(rootProject.file("examples/jenkins-offline")) {
+        into("examples/jenkins-offline")
+    }
     from(rootProject.file("editors/code/client/src/test/fixtures/gdsl-snippet-defaults.gdsl")) {
         into("editors/code/client/src/test/fixtures")
     }

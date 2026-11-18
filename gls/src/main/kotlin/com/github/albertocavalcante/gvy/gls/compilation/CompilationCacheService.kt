@@ -56,6 +56,9 @@ class CompilationCacheService(
     fun getCachedWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? =
         cache.getWithContent(uri, configFingerprint)
 
+    internal fun getSourceView(uri: URI, configFingerprint: String): CompiledSourceView? =
+        cache.getSourceView(uri, configFingerprint)
+
     /**
      * Stores a ParseResult (and [alongside], the other artifacts of the same compile) only while [ticket] is
      * current, atomically with respect to invalidation. Returns whether it was stored.

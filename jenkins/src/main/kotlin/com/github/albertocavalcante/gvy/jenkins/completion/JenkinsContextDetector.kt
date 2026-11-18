@@ -3,7 +3,6 @@
 
 package com.github.albertocavalcante.gvy.jenkins.completion
 
-import com.github.albertocavalcante.gvy.common.text.GroovyCodeCleaner
 import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 
 /**
@@ -137,46 +136,23 @@ object JenkinsContextDetector {
             return JenkinsCompletionContext(isTopLevel = true)
         }
 
-        val blockStack = analyzeBlockStructure(lines, lineNumber, column)
-        val lineContext = detectCurrentLineContext(lines, lineNumber, column)
-
-        return buildContext(blockStack, lineContext)
-    }
-
-    /**
-     * Analyze block structure up to the cursor. Text after the cursor on its own line is ignored, so
-     * `allOf { | }` (auto-closed by the editor) or a one-line `when { ...; | } }` keeps its blocks.
-     *
-     * Every `{` gets one stack slot: its block name when a tracked pattern opens it, `null` for
-     * untracked braces (`if (...) {`, `timeout(...) {`). Each `}` then pops
-     * exactly the brace it closes, so a child that closes inside an untracked block cannot leave a
-     * stale entry behind (#1290).
-     */
-    private fun analyzeBlockStructure(lines: List<String>, lineNumber: Int, column: Int): List<String> {
-        val braceStack = mutableListOf<String?>()
-        val prefix = (0 until minOf(lineNumber + 1, lines.size)).joinToString("\n") { i ->
-            if (i == lineNumber) lines[i].take(column.coerceAtLeast(0)) else lines[i]
+        val effectiveLine = lineNumber.coerceIn(0, lines.lastIndex)
+        val effectiveColumn = when {
+            lineNumber < 0 -> 0
+            lineNumber > lines.lastIndex -> lines.last().length
+            else -> column.coerceIn(0, lines[effectiveLine].length)
         }
-        // Strings and comments can contain `always {` or unbalanced braces (`echo '}'`), also across lines
-        // (`sh '''...'''`, `/* ... */`, #1281): the whole prefix is cleaned once, keeping its lines.
-        GroovyCodeCleaner.blankCommentsAndStrings(prefix).lineSequence().forEach { cleanLine ->
-            val openers = blockOpeningsByBrace(cleanLine)
-            cleanLine.forEachIndexed { index, char ->
-                when (char) {
-                    '{' -> braceStack.add(openers[index])
-                    '}' -> braceStack.removeLastOrNull()
-                }
-            }
-        }
+        val sourceContext = JenkinsSourceContext(lines.joinToString("\n")).at(effectiveLine, effectiveColumn)
+        val lineContext = detectCurrentLineContext(lines, lineNumber, effectiveColumn)
 
-        return braceStack.filterNotNull()
+        return buildContext(sourceContext.enclosingBlocks, lineContext, sourceContext)
     }
 
     /**
      * Tracked block names (including post conditions) keyed by the index of the `{` that opens them.
      * Every pattern ends with `\{`, so a match's last index is its brace.
      */
-    private fun blockOpeningsByBrace(line: String): Map<Int, String> = buildMap {
+    internal fun blockOpeningsByBrace(line: String): Map<Int, String> = buildMap {
         for ((blockName, pattern) in BLOCK_PATTERNS) {
             pattern.findAll(line).forEach { match -> put(match.range.last, blockName) }
         }
@@ -197,9 +173,10 @@ object JenkinsContextDetector {
     private fun buildContext(
         blockStack: List<String>,
         lineContext: JenkinsCompletionContext,
+        sourceContext: JenkinsPositionContext,
     ): JenkinsCompletionContext {
         val isDeclarative = "pipeline" in blockStack
-        val isScripted = !isDeclarative && "node" in blockStack
+        val isScripted = !isDeclarative
         val postCondition = blockStack.lastOrNull { it in POST_CONDITIONS }
         val currentBlock = determineCurrentBlock(blockStack)
 
@@ -237,6 +214,8 @@ object JenkinsContextDetector {
             // Step context
             isStepParameterContext = lineContext.isStepParameterContext,
             currentStepName = lineContext.currentStepName,
+            region = sourceContext.region,
+            allowsGroovyStatements = sourceContext.allowsGroovyStatements,
         )
     }
 
@@ -284,4 +263,6 @@ data class JenkinsCompletionContext(
     val postCondition: String? = null,
     val enclosingBlocks: List<String> = emptyList(),
     val currentBlock: String? = null,
+    val region: JenkinsRegion = JenkinsRegion.UNCERTAIN,
+    val allowsGroovyStatements: Boolean = false,
 )

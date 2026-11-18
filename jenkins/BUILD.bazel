@@ -13,6 +13,7 @@ kt_library(
         "//common",
         "//dsl/gdsl",
         "//parser/api",
+        "//source",
         "@maven//:com_vladsch_flexmark_flexmark_html2md_converter",
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:io_github_classgraph_classgraph",
@@ -40,10 +41,12 @@ kt_test(
     jvm_flags = ["-Dgroovy.lsp.jenkins.stubsCacheRoot=${TEST_TMPDIR}/jenkins-stubs-cache"],
     resources = glob(["src/test/resources/**/*"]) + [
         "//editors/code/client/src/test/fixtures:gdsl-snippet-defaults.gdsl",
+        "//examples/jenkins-offline:project",
     ],
     test_packages = ["com.github.albertocavalcante.gvy.jenkins"],
     deps = [
         "//dsl/gdsl",
+        "//parser/api",
         "@maven//:io_ktor_ktor_client_core_jvm",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_ktor_ktor_http_jvm",

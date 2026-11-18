@@ -10,7 +10,9 @@ import java.net.URI
  * Cache entry storing content, parse result, and configuration fingerprint.
  * The fingerprint ensures cache coherency when workspace configuration changes (Issue #743).
  */
-private data class CacheEntry(val content: String, val parseResult: ParseResult, val configFingerprint: String)
+private data class CacheEntry(val content: String, val parseResult: ParseResult, val configFingerprint: String) {
+    val sourceView = CompiledSourceView(content, parseResult)
+}
 
 /**
  * In-memory cache of compilation results, bounded by an LRU policy.
@@ -54,6 +56,10 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
      */
     fun getWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? = synchronized(lock) {
         entries[uri]?.takeIf { it.configFingerprint == configFingerprint }?.let { it.content to it.parseResult }
+    }
+
+    internal fun getSourceView(uri: URI, configFingerprint: String): CompiledSourceView? = synchronized(lock) {
+        entries[uri]?.takeIf { it.configFingerprint == configFingerprint }?.sourceView
     }
 
     /**

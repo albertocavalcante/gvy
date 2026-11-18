@@ -77,6 +77,16 @@ class JenkinsContextDetectorTest {
     }
 
     @Test
+    fun `column beyond the line still detects the enclosing block`() {
+        val lines = listOf("pipeline {", "    options {", "        ")
+
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 2, column = 100)
+
+        assertTrue(context.isOptionsContext)
+        assertEquals("options", context.currentBlock)
+    }
+
+    @Test
     fun `detects agent block context`() {
         val lines = listOf(
             "pipeline {",
