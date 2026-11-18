@@ -22,62 +22,110 @@ internal data class TextReplacement(val start: Int, val end: Int, val newText: S
  */
 internal object UnusedImportRemoval {
 
-    /** Non-overlapping edits in ascending offset order; empty when nothing can safely be removed. */
-    fun plan(text: String, unused: Collection<UnusedImport>): List<TextReplacement> {
-        val index = Utf16LineIndex(text)
-        return unused
-            .sortedBy { it.line }
-            .distinctBy { it.line }
-            .filter { candidate -> isSafeToRemove(text, index, candidate) }
-            .map { candidate -> removalOf(text, index, candidate.line) }
+    /** The lines of [unused] imports that can safely be removed, by the rules above. */
+    fun removableLines(text: String, unused: Collection<UnusedImport>): Set<Int> {
+        val source = SourceLines(text)
+        return unused.filter { candidate -> isSafeToRemove(source, candidate) }.map { it.line }.toSet()
     }
 
-    private fun isSafeToRemove(text: String, index: Utf16LineIndex, candidate: UnusedImport): Boolean {
-        val names = bindingNames(candidate.target) ?: return false
-        val parsed = lineText(text, index, candidate.line)?.let(ImportLineParser::parse) ?: return false
+    /**
+     * Non-overlapping edits in ascending offset order; empty when nothing can safely be removed. Consecutive removed
+     * lines become one edit. Each deletes whole lines with their line breaks; when that would leave a blank line at
+     * the top of the file or two in a row, the blank line that follows goes too.
+     */
+    fun plan(text: String, unused: Collection<UnusedImport>): List<TextReplacement> {
+        val source = SourceLines(text)
+        val removable = unused.filter { candidate -> isSafeToRemove(source, candidate) }.map { it.line }.toSortedSet()
+        val gone = removable.toMutableSet()
+        for (line in removable) {
+            if (shouldDropFollowingBlank(source, gone, line)) gone += line + 1
+        }
+        return runsOf(gone.sorted()).map { run -> source.deletion(run.first, run.last) }
+    }
+
+    /** A blank line is dropped when the lines around it would leave two blank lines, or one at the top. */
+    private fun shouldDropFollowingBlank(source: SourceLines, gone: Set<Int>, line: Int): Boolean {
+        val endsRun = line + 1 !in gone
+        var above = line - 1
+        while (above in gone) above--
+        val blankOrTopAbove = above < 0 || source.isBlank(above)
+        return endsRun && blankOrTopAbove && source.isBlank(line + 1) && source.exists(line + 2)
+    }
+
+    private fun runsOf(sortedLines: List<Int>): List<IntRange> {
+        val runs = mutableListOf<IntRange>()
+        for (line in sortedLines) {
+            val last = runs.lastOrNull()
+            if (last != null && last.last + 1 == line) runs[runs.lastIndex] = last.first..line else runs += line..line
+        }
+        return runs
+    }
+
+    private fun isSafeToRemove(source: SourceLines, candidate: UnusedImport): Boolean {
+        val parsed = source.lineText(candidate.line)?.let(ImportLineParser::parse) ?: return false
+        val names = bindingNames(candidate.target, parsed) ?: return false
         return parsed.target == candidate.target &&
             parsed.trailing.isEmpty() &&
-            !hasCommentAbove(text, index, candidate.line) &&
-            names.none { name -> isMentionedOutsideLine(text, index, candidate.line, name) }
+            !source.hasCommentAbove(candidate.line) &&
+            names.none { name -> source.isMentionedOutsideLine(name, candidate.line) }
     }
 
     /** The names code may use to refer to the import; null for imports that are never removed. */
-    private fun bindingNames(target: ImportTarget): Set<String>? = when (target) {
-        is ImportTarget.Type -> setOf(target.bindingName, target.qualifiedName.substringAfterLast('.'))
-        is ImportTarget.StaticMember -> setOf(target.bindingName, target.member)
+    private fun bindingNames(target: ImportTarget, parsed: ImportLine): Set<String>? = when (target) {
+        is ImportTarget.Type -> setOf(target.bindingName) + parsed.writtenNames
+        is ImportTarget.StaticMember -> setOf(target.bindingName, target.member) + propertyNameOf(target.member)
         is ImportTarget.Star,
         is ImportTarget.StaticStar,
         -> null
     }
 
-    private fun lineText(text: String, index: Utf16LineIndex, line: Int): String? {
+    /** Groovy resolves a bare `foo` to a statically imported `getFoo`, `isFoo` or `setFoo`. */
+    private fun propertyNameOf(member: String): Set<String> {
+        val accessor = ACCESSOR.matchEntire(member) ?: return emptySet()
+        return setOf(accessor.groupValues[1].replaceFirstChar { it.lowercaseChar() })
+    }
+
+    private val ACCESSOR = Regex("(?:get|is|set)(\\p{Lu}.*)")
+}
+
+/** A text seen line by line, with the questions removal asks of it. */
+private class SourceLines(private val text: String) {
+    private val index = Utf16LineIndex(text)
+
+    /** Where each identifier occurs, so a name is looked up instead of scanning the text again. */
+    private val identifiers: Map<String, List<Int>> by lazy {
+        val found = mutableMapOf<String, MutableList<Int>>()
+        IDENTIFIER.findAll(text).forEach { found.getOrPut(it.value) { mutableListOf() } += it.range.first }
+        found
+    }
+
+    fun exists(line: Int): Boolean = line >= 0 && index.lineLength(line) != null
+
+    fun lineText(line: Int): String? {
         val length = if (line >= 0) index.lineLength(line) else null
         return length?.let { text.substring(index.lineStart(line), index.lineStart(line) + it) }
     }
 
-    private fun hasCommentAbove(text: String, index: Utf16LineIndex, line: Int): Boolean {
-        val above = if (line > 0) lineText(text, index, line - 1)?.trim() else null
-        return above != null && (above.startsWith("//") || above.startsWith("/*") || above.startsWith("*"))
+    fun isBlank(line: Int): Boolean = lineText(line)?.isBlank() == true
+
+    fun hasCommentAbove(line: Int): Boolean {
+        val above = lineText(line - 1)?.trim() ?: return false
+        return above.startsWith("//") || above.startsWith("/*") || above.startsWith("*")
     }
 
-    private fun isMentionedOutsideLine(text: String, index: Utf16LineIndex, line: Int, name: String): Boolean {
+    fun isMentionedOutsideLine(name: String, line: Int): Boolean {
         val lineStart = index.lineStart(line)
         val lineEnd = lineStart + (index.lineLength(line) ?: 0)
-        val word = Regex("(?<![\\p{L}\\p{N}_$])${Regex.escape(name)}(?![\\p{L}\\p{N}_$])")
-        return word.findAll(text).any { match -> match.range.first < lineStart || match.range.first >= lineEnd }
+        return identifiers[name].orEmpty().any { offset -> offset < lineStart || offset >= lineEnd }
     }
 
-    /**
-     * Deletes the whole line with its line break. When that would leave two blank lines in a row, or a blank line
-     * at the top of the file, the blank line that follows goes too.
-     */
-    private fun removalOf(text: String, index: Utf16LineIndex, line: Int): TextReplacement {
-        val start = index.lineStart(line)
-        var lastRemoved = line
-        val followedByBlank = lineText(text, index, line + 1)?.isBlank() == true
-        val precededByBlankOrTop = line == 0 || lineText(text, index, line - 1)?.isBlank() == true
-        if (followedByBlank && precededByBlankOrTop) lastRemoved++
-        val end = if (index.lineLength(lastRemoved + 1) != null) index.lineStart(lastRemoved + 1) else text.length
-        return TextReplacement(start, end, "")
+    /** Deletes lines [first]..[last] with their line breaks. */
+    fun deletion(first: Int, last: Int): TextReplacement {
+        val end = if (exists(last + 1)) index.lineStart(last + 1) else text.length
+        return TextReplacement(index.lineStart(first), end, "")
+    }
+
+    private companion object {
+        val IDENTIFIER = Regex("[\\p{L}_$][\\p{L}\\p{N}_$]*")
     }
 }

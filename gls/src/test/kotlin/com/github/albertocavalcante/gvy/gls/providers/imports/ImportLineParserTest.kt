@@ -5,31 +5,33 @@ package com.github.albertocavalcante.gvy.gls.providers.imports
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 class ImportLineParserTest {
 
     @Test
     fun `reads a plain type import`() {
-        assertEquals(
-            ImportLine(ImportTarget.Type.of("java.util.List", null), ""),
-            ImportLineParser.parse("import java.util.List"),
-        )
+        val line = assertNotNull(ImportLineParser.parse("import java.util.List"))
+
+        assertEquals(ImportTarget.Type.of("java.util.List", null), line.target)
+        assertEquals("", line.trailing)
+        assertEquals(setOf("List"), line.writtenNames)
     }
 
     @Test
     fun `reads indentation, semicolon and spacing around dots`() {
         assertEquals(
-            ImportLine(ImportTarget.Type.of("java.util.List", null), ""),
-            ImportLineParser.parse("  import  java . util.List ;  "),
+            ImportTarget.Type.of("java.util.List", null),
+            ImportLineParser.parse("  import  java . util.List ;  ")?.target,
         )
     }
 
     @Test
     fun `reads an alias`() {
         assertEquals(
-            ImportLine(ImportTarget.Type.of("java.util.ArrayList", "AL"), ""),
-            ImportLineParser.parse("import java.util.ArrayList as AL"),
+            ImportTarget.Type.of("java.util.ArrayList", "AL"),
+            ImportLineParser.parse("import java.util.ArrayList as AL")?.target,
         )
     }
 
@@ -85,8 +87,19 @@ class ImportLineParserTest {
     }
 
     @Test
-    fun `nested class separators are normalized`() {
+    fun `nested class separators are normalized but the written names are kept`() {
         assertEquals(ImportTarget.Type.of("a.Outer.Inner", null), ImportTarget.Type.of("a.Outer\$Inner", null))
+        assertEquals(
+            setOf("Outer\$Inner", "Outer", "Inner"),
+            ImportLineParser.parse("import a.Outer\$Inner")?.writtenNames,
+        )
+    }
+
+    @Test
+    fun `a comment must be one complete comment to count as the end of the statement`() {
+        assertNull(ImportLineParser.parse("import a.B /* c */ foo()"))
+        assertNull(ImportLineParser.parse("import a.B /* unterminated"))
+        assertEquals("/* c */", ImportLineParser.parse("import a.B /* c */")?.trailing)
     }
 
     @Test

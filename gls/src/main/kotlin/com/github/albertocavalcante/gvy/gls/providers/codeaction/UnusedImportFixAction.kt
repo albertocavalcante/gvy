@@ -38,7 +38,7 @@ internal data class ImportActionRequest(
 internal class UnusedImportFixAction(private val compilationService: GroovyCompilationService) {
 
     fun createActions(request: ImportActionRequest): List<CodeAction> {
-        val reported = request.diagnostics.filter { it.code?.left == UNUSED_IMPORT_CODE }
+        val reported = request.diagnostics.filter { it.source == GVY_SOURCE && it.code?.left == UNUSED_IMPORT_CODE }
         if (reported.isEmpty()) return emptyList()
         val unused = unusedImports(request) ?: return emptyList()
 
@@ -68,8 +68,10 @@ internal class UnusedImportFixAction(private val compilationService: GroovyCompi
         unused: List<UnusedImport>,
         reported: List<Diagnostic>,
     ): CodeAction? {
+        val removable = UnusedImportRemoval.removableLines(request.content, unused)
+        if (removable.size < 2) return null
         val edits = UnusedImportRemoval.plan(request.content, unused)
-        return if (edits.size < 2) null else action("Remove all unused imports", request, edits, reported)
+        return action("Remove all unused imports", request, edits, reported)
     }
 
     private fun action(
@@ -96,5 +98,6 @@ internal class UnusedImportFixAction(private val compilationService: GroovyCompi
 
     private companion object {
         const val UNUSED_IMPORT_CODE = "unused-import"
+        const val GVY_SOURCE = "Groovy"
     }
 }

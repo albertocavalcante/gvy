@@ -66,9 +66,12 @@ class UnusedImportFixActionTest {
     private fun apply(text: String, edits: List<TextEdit>): String {
         val index = Utf16LineIndex(text)
         fun offset(position: Position) = index.offsetOf(position.line, position.character)
-        return edits.sortedByDescending { offset(it.range.start) }.fold(text) { acc, edit ->
-            acc.substring(0, offset(edit.range.start)) + edit.newText + acc.substring(offset(edit.range.end))
+        var result = text
+        for (edit in edits.sortedByDescending { offset(it.range.start) }) {
+            result = result.substring(0, offset(edit.range.start)) + edit.newText +
+                result.substring(offset(edit.range.end))
         }
+        return result
     }
 
     @Test
@@ -144,8 +147,19 @@ class UnusedImportFixActionTest {
 
             ArrayList list = new ArrayList()
         """.trimIndent()
+        val diagnostics = open(content)
 
-        assertTrue(actions(open(content)).isEmpty())
+        assertEquals(emptyList(), diagnostics.map { it.message })
+        assertTrue(actions(diagnostics).isEmpty())
+    }
+
+    @Test
+    fun `refuses a fix that the planner cannot prove safe even when gvy reported the import`() {
+        val content = "import java.util.HashMap // used by the build\nint x = 1\n"
+        val diagnostics = open(content)
+
+        assertEquals(1, diagnostics.size)
+        assertTrue(actions(diagnostics).isEmpty())
     }
 
     @Test
@@ -153,7 +167,39 @@ class UnusedImportFixActionTest {
         val content = "import java.util.HashMap\n\n/** See {@link HashMap}. */\nclass A {}\n"
         val diagnostics = open(content)
 
+        assertEquals(1, diagnostics.size, "gvy still reports the import")
         assertTrue(actions(diagnostics).isEmpty())
+    }
+
+    @Test
+    fun `removes unused aliased and static imports, and keeps used nested and static ones`() {
+        val content = listOf(
+            "import java.util.Map.Entry",
+            "import java.util.concurrent.TimeUnit as TU",
+            "import static java.lang.Math.max",
+            "import static java.lang.Math.min",
+            "",
+            "Entry e = null",
+            "def x = max(1, 2)",
+            "",
+        ).joinToString("\n")
+        val diagnostics = open(content)
+
+        assertEquals(2, diagnostics.size, diagnostics.joinToString { it.message })
+        val all = actions(diagnostics).single { it.title == "Remove all unused imports" }
+        val expected = "import java.util.Map.Entry\nimport static java.lang.Math.max\n\n" +
+            "Entry e = null\ndef x = max(1, 2)\n"
+        assertEquals(expected, apply(content, all.textEdits()))
+    }
+
+    @Test
+    fun `offers remove-all for adjacent unused imports and removes them cleanly`() {
+        val content = "import java.util.ArrayList\nimport java.util.HashMap\n\nint x = 1\n"
+        val diagnostics = open(content)
+
+        val all = actions(diagnostics).single { it.title == "Remove all unused imports" }
+
+        assertEquals("int x = 1\n", apply(content, all.textEdits()))
     }
 
     @Test
@@ -171,6 +217,7 @@ class UnusedImportFixActionTest {
         open(content)
         val stale = Diagnostic(Range(Position(0, 0), Position(0, 26)), "Unused import: java.util.ArrayList").apply {
             code = Either.forLeft("unused-import")
+            source = "Groovy"
         }
 
         assertTrue(actions(listOf(stale)).isEmpty())

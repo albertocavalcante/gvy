@@ -6,8 +6,10 @@ package com.github.albertocavalcante.gvy.gls.providers.imports
 /** One physical line read as a single-line import statement. */
 internal data class ImportLine(
     val target: ImportTarget,
-    /** What follows the statement and its optional `;`: blank, or a comment. */
+    /** What follows the statement and its optional `;`: blank, or one complete comment. */
     val trailing: String,
+    /** The last name segment as written, and its `$`-separated parts, which target normalization would lose. */
+    val writtenNames: Set<String>,
 )
 
 /**
@@ -27,9 +29,17 @@ internal object ImportLineParser {
     fun parse(line: String): ImportLine? {
         val match = if (line.length <= MAX_LINE_LENGTH) STATEMENT.matchEntire(line) else null
         val trailing = match?.groupValues?.get(TRAILING)?.trim().orEmpty()
-        val endsCleanly = trailing.isEmpty() || trailing.startsWith("//") || trailing.startsWith("/*")
-        val target = if (match != null && endsCleanly) targetOf(match) else null
-        return target?.let { ImportLine(it, trailing) }
+        val target = if (match != null && isBlankOrOneComment(trailing)) targetOf(match) else null
+        return target?.let { ImportLine(it, trailing, writtenNames(match?.groupValues?.get(NAME).orEmpty())) }
+    }
+
+    private fun isBlankOrOneComment(trailing: String): Boolean = trailing.isEmpty() ||
+        trailing.startsWith("//") ||
+        (trailing.startsWith("/*") && trailing.indexOf("*/") == trailing.length - 2)
+
+    private fun writtenNames(dottedName: String): Set<String> {
+        val last = dottedName.replace(WHITESPACE, "").substringAfterLast('.')
+        return setOf(last) + last.split('$').filter { it.isNotEmpty() }
     }
 
     private fun targetOf(match: MatchResult): ImportTarget? {

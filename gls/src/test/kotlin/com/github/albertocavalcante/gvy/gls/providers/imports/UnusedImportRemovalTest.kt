@@ -18,9 +18,11 @@ class UnusedImportRemovalTest {
     private fun remove(text: String, vararg lines: Int): String {
         val edits = UnusedImportRemoval.plan(text, unusedOn(text, *lines))
         assertTrue(edits.zipWithNext().all { (a, b) -> a.end <= b.start }, "edits overlap or are unordered: $edits")
-        return edits.sortedByDescending { it.start }.fold(text) { acc, edit ->
-            acc.substring(0, edit.start) + edit.newText + acc.substring(edit.end)
+        var result = text
+        for (edit in edits.sortedByDescending { it.start }) {
+            result = result.substring(0, edit.start) + edit.newText + result.substring(edit.end)
         }
+        return result
     }
 
     @Test
@@ -161,7 +163,43 @@ class UnusedImportRemovalTest {
         val once = remove(text, 0)
 
         assertEquals("import a.C\nC c\n", once)
-        assertEquals(emptyList(), UnusedImportRemoval.plan(once, emptyList()))
+        // The stale verdict still names line 0, which no longer holds that import.
+        assertEquals(emptyList(), UnusedImportRemoval.plan(once, unusedOn(text, 0)))
+    }
+
+    @Test
+    fun `consecutive removals leave no stray blank line`() {
+        assertEquals("class X {}\n", remove("import a.A\nimport a.B\n\nclass X {}\n", 0, 1))
+        assertEquals(
+            "package p\n\nclass X {}\n",
+            remove("package p\n\nimport a.A\nimport a.B\n\nclass X {}\n", 2, 3),
+        )
+        assertEquals("package p\nimport a.C\n", remove("package p\nimport a.A\nimport a.B\nimport a.C\n", 1, 2))
+    }
+
+    @Test
+    fun `reports which lines can be removed`() {
+        val text = "import a.A\nimport a.B // keep\nimport a.C\nC c\n"
+
+        assertEquals(setOf(0), UnusedImportRemoval.removableLines(text, unusedOn(text, 0, 1)))
+    }
+
+    @Test
+    fun `keeps a nested-class import when the written name is used`() {
+        val text = "import a.Outer\$Inner\nObject o = Outer\$Inner\n"
+
+        assertEquals(emptyList(), UnusedImportRemoval.plan(text, unusedOn(text, 0)))
+    }
+
+    @Test
+    fun `keeps a static accessor import when the property is used`() {
+        val get = "import static a.M.getFoo\nprintln foo\n"
+        val set = "import static a.M.setFoo\nfoo = 1\n"
+        val flag = "import static a.M.isReady\nprintln ready\n"
+
+        listOf(get, set, flag).forEach { text ->
+            assertEquals(emptyList(), UnusedImportRemoval.plan(text, unusedOn(text, 0)), text)
+        }
     }
 
     @Test
