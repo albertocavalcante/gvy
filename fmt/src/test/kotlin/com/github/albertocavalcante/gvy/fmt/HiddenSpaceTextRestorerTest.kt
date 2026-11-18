@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.fmt
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -57,6 +58,17 @@ class HiddenSpaceTextRestorerTest {
         val input = "class A {\n      def f() {\n$statement      }\n}\n"
 
         assertFormattedKeepingTokens(input)
+    }
+
+    // FIXME(#2248): `-foo()` fails to parse upstream, so it cannot be a formatting control yet.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2248
+    @Test
+    fun `currently throws while parsing a unary minus before a method call`() {
+        val input = "class A {\n      def f() {\n        def a = -foo()\n      }\n}\n"
+
+        // Fails once rewrite-groovy parses it or the formatter refuses it: then add `-foo()` to the controls above.
+        assertThatThrownBy { formatter.formatChecked(input) }
+            .hasStackTraceContaining("Unable to parse method call")
     }
 
     /**
