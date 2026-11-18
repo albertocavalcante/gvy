@@ -272,6 +272,12 @@ class ImportOrganizerTest {
     }
 
     @Test
+    fun `a duplicate group is judged as one, whichever copy the detector flagged`() {
+        assertEquals("class X {}\n", organize("import a.A\nimport a.A\n\nclass X {}\n", 1))
+        assertEquals("class X {}\n", organize("import a.A\nimport a.A\n\nclass X {}\n", 0))
+    }
+
+    @Test
     fun `imports that only mention each other are removed in one pass`() {
         val text = "import p.Helper\nimport p.Helper.Inner\n\nclass X {}\n"
 

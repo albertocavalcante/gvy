@@ -61,7 +61,7 @@ internal class ImportOrganizerPropertyTest {
         text.split("\r\n", "\n", "\r").mapNotNull { ImportLineParser.parse(it)?.target }
 
     @Property(tries = 300)
-    fun `organizing twice yields no further edits`(@ForAll("cases") case: Case): Boolean {
+    fun organizingTwiceYieldsNoFurtherEdits(@ForAll("cases") case: Case): Boolean {
         val once = apply(case.text, ImportOrganizer.organize(case.text, case.unused))
 
         // The detector would flag the same imports wherever they now sit.
@@ -73,7 +73,7 @@ internal class ImportOrganizerPropertyTest {
     }
 
     @Property(tries = 300)
-    fun `organizing never drops an import the detector did not flag`(@ForAll("cases") case: Case): Boolean {
+    fun organizingNeverDropsAnImportTheDetectorDidNotFlag(@ForAll("cases") case: Case): Boolean {
         val edits = ImportOrganizer.organize(case.text, case.unused)
         val before = targetsOf(case.text)
         val after = targetsOf(apply(case.text, edits)).toSet()
@@ -85,7 +85,7 @@ internal class ImportOrganizerPropertyTest {
     }
 
     @Property(tries = 300)
-    fun `edits are ordered, disjoint and inside the text`(@ForAll("cases") case: Case): Boolean {
+    fun editsAreOrderedDisjointAndInsideTheText(@ForAll("cases") case: Case): Boolean {
         val edits = ImportOrganizer.organize(case.text, case.unused)
 
         val inside = edits.all { it.start in 0..it.end && it.end <= case.text.length }
