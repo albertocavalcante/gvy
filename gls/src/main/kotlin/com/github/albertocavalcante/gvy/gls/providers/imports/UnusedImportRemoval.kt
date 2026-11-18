@@ -27,11 +27,7 @@ internal object UnusedImportRemoval {
      * ([alreadyGone], and the removable lines themselves) do not count as mentions, so two imports that only
      * mention each other are removed together and a second pass has nothing left to remove.
      */
-    fun removableLines(
-        text: String,
-        unused: Collection<UnusedImport>,
-        alreadyGone: Set<Int> = emptySet(),
-    ): Set<Int> {
+    fun removableLines(text: String, unused: Collection<UnusedImport>, alreadyGone: Set<Int> = emptySet()): Set<Int> {
         val source = SourceLines(text)
         var removable = emptySet<Int>()
         do {

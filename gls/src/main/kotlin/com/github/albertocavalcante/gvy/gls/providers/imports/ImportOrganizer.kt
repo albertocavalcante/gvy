@@ -33,14 +33,15 @@ internal object ImportOrganizer {
         // Duplicates are syntactic, so they go first; their lines then no longer count as mentions of a name.
         val (survivors, duplicates) = splitDuplicates(sorted(block.entries, layout))
         val goneAnyway = duplicates.map { it.entry.line }.toSet()
-        val removable = UnusedImportRemoval.removableLines(text, unused, alreadyGone = goneAnyway)
+        val flagged = flaggedAsGroups(block.entries, unused)
+        val removable = UnusedImportRemoval.removableLines(text, flagged, alreadyGone = goneAnyway)
         val kept = survivors.filter { it.entry.line !in removable || it.entry.hasComment }
         val sections = sections(kept, layout)
 
         val rewritten = region.rewrite(sections)
         val blockEdit = TextReplacement(region.startOffset, region.endOffset, rewritten)
             .takeIf { edit -> text.substring(edit.start, edit.end) != edit.newText }
-        val laterImports = unused.filter { it.line < region.firstLine || it.line > region.lastLine }
+        val laterImports = flagged.filter { it.line < region.firstLine || it.line > region.lastLine }
         val laterRemovals = UnusedImportRemoval.plan(text, laterImports, alreadyGone = goneAnyway + removable)
         return (listOfNotNull(blockEdit) + laterRemovals).sortedBy { it.start }
     }
@@ -61,6 +62,20 @@ internal object ImportOrganizer {
     private fun sorted(entries: List<ImportEntry>, layout: ImportLayout): List<Placed> = entries
         .map { entry -> Placed(layout.groupIndexOf(entry.target) ?: layout.entries.size, entry, sortKey(entry.target)) }
         .sortedWith(compareBy({ it.group }, { it.key.owner }, { it.key.member }, { it.key.alias }))
+
+    /**
+     * Copies of one import share one verdict: if the detector flagged any copy, every copy is flagged, so the copy
+     * that survives de-duplication is judged like the one it replaced.
+     */
+    private fun flaggedAsGroups(entries: List<ImportEntry>, unused: Collection<UnusedImport>): List<UnusedImport> {
+        val flaggedLines = unused.map { it.line }.toSet()
+        val groups = entries.groupBy { it.target to it.parsed.writtenNames }
+        val spread = groups.values
+            .filter { copies -> copies.any { it.line in flaggedLines } }
+            .flatten()
+            .map { UnusedImport(it.target, it.line) }
+        return (unused + spread).distinctBy { it.line }
+    }
 
     /**
      * Splits off exact duplicates: the same binding, written the same way. A duplicate that carries a comment is
@@ -121,6 +136,9 @@ private data class BlockRegion(
     }
 
     companion object {
+        /** The first line break among those of the region's lines; a lone `\n` when it has none. */
+        private fun firstBreak(breaks: List<String>): String = breaks.firstOrNull { it.isNotEmpty() } ?: "\n"
+
         fun around(text: String, block: ImportBlock): BlockRegion {
             val index = Utf16LineIndex(text)
             fun exists(line: Int) = index.lineLength(line) != null
@@ -140,13 +158,7 @@ private data class BlockRegion(
             val hasContentAfter = exists(next)
             val last = if (hasContentAfter) next - 1 else block.lastLine
 
-            val eol = if (first > 0) {
-                breakAfter(first - 1)
-            } else {
-                (first..last).map(::breakAfter).firstOrNull { it.isNotEmpty() }
-                    ?: (0..block.lastLine).map(::breakAfter).firstOrNull { it.isNotEmpty() }
-                    ?: "\n"
-            }
+            val eol = if (first > 0) breakAfter(first - 1) else firstBreak((first..last).map(::breakAfter))
             return BlockRegion(
                 firstLine = first,
                 lastLine = last,
