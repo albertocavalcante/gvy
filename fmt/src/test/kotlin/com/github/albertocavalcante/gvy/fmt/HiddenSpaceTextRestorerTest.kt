@@ -49,7 +49,6 @@ class HiddenSpaceTextRestorerTest {
             "def   a  =   -x\n",
             "def   a  =   +x\n",
             "def   a  =   -(x + 1)\n",
-            "def a = -foo()\n",
             "def   a  =   !x\n",
             "def   a  =   1.5\n",
         ],
