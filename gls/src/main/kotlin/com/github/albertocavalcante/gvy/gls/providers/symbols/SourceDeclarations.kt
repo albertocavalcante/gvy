@@ -9,9 +9,6 @@ import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.InnerClassNode
 
-/** Parameter names the compiler adds to enum constructors; a constructor that has them is not in the source. */
-private val GENERATED_PARAMETER_NAMES = setOf("__str", "__int", "\$self")
-
 /** Methods the compiler adds to every script class. */
 private val SCRIPT_BOILERPLATE_METHODS = setOf("run", "main")
 
@@ -25,7 +22,7 @@ private const val TRAIT_HELPER_MARKER = "\$Trait\$"
 internal fun Symbol.isSourceDeclaration(): Boolean = when (this) {
     is Symbol.Import, is Symbol.Variable -> false
     is Symbol.Class -> node.isWrittenInSource()
-    is Symbol.Method -> node.isWrittenInSource() && owner.isWrittenOwner() && !hasGeneratedShape()
+    is Symbol.Method -> node.isWrittenInSource() && owner.isWrittenOwner() && !isScriptBoilerplate()
     is Symbol.Field -> node.isWrittenInSource() && owner.isWrittenOwner() && !isPropertyBackingField()
     is Symbol.Property -> node.isWrittenInSource() && owner.isWrittenOwner()
 }
@@ -45,10 +42,10 @@ private fun ASTNode.isWrittenInSource(): Boolean {
 
 private fun ClassNode.isWrittenClass(): Boolean = !isAnonymousClass() && !name.contains(TRAIT_HELPER_MARKER)
 
-private fun ClassNode?.isWrittenOwner(): Boolean = this == null || (isWrittenClass() && lineNumber >= 1)
+// A script class takes its position from its first statement, so a script of only methods has none.
+private fun ClassNode?.isWrittenOwner(): Boolean =
+    this == null || isScript || (isWrittenClass() && lineNumber >= 1)
 
-private fun Symbol.Method.hasGeneratedShape(): Boolean =
-    parameters.any { it.name in GENERATED_PARAMETER_NAMES } ||
-        (owner?.isScript == true && name in SCRIPT_BOILERPLATE_METHODS)
+private fun Symbol.Method.isScriptBoilerplate(): Boolean = owner?.isScript == true && name in SCRIPT_BOILERPLATE_METHODS
 
 private fun Symbol.Field.isPropertyBackingField(): Boolean = owner?.properties.orEmpty().any { it.field === node }

@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.symbols
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import org.eclipse.lsp4j.SymbolInformation
 import java.net.URI
@@ -22,15 +23,21 @@ internal fun searchWorkspaceSymbols(
     limit: Int,
     sourceOf: (URI) -> String?,
 ): List<SymbolInformation> {
-    val sources = HashMap<URI, String?>()
+    val sources = HashMap<URI, TextIndex?>()
     val needle = if (query.isBlank()) "" else query
     return indices.asSequence()
         .flatMap { (uri, index) -> index.getSymbols(uri).asSequence() }
         .filter { it.isSourceDeclaration() && it.searchName().contains(needle, ignoreCase = true) }
-        .mapNotNull { symbol -> symbol.toSymbolInformation(sources.getOrPut(symbol.uri) { sourceOf(symbol.uri) }) }
+        .mapNotNull { symbol -> symbol.toSymbolInformation(textOf(sources, symbol.uri, sourceOf)) }
         .take(limit)
         .toList()
 }
 
 /** What a user types to find this symbol: a class by its source name, anything else by its own name. */
 private fun Symbol.searchName(): String = if (this is Symbol.Class) node.sourceSimpleName() else name
+
+/** One [TextIndex] per file, remembering a file with no text too so it is read once. */
+private fun textOf(cache: HashMap<URI, TextIndex?>, uri: URI, sourceOf: (URI) -> String?): TextIndex? {
+    if (!cache.containsKey(uri)) cache[uri] = sourceOf(uri)?.let(::TextIndex)
+    return cache[uri]
+}

@@ -106,6 +106,7 @@ class DocumentOutlineTest {
         val constructor = color.children.single { it.kind == SymbolKind.Constructor }
         assertEquals("Color", constructor.name)
         assertTrue("__" !in constructor.detail.orEmpty(), "generated enum parameters leak: ${constructor.detail}")
+        assertTrue("(String hex)" in constructor.detail.orEmpty(), "written parameter missing: ${constructor.detail}")
         assertTrue(symbols.none { it.name.contains("Trait") }, "generated trait helper is listed: $symbols")
     }
 
@@ -189,6 +190,14 @@ class DocumentOutlineTest {
         val names = symbols.flatMap { it.all() }.map { it.name }
         assertTrue("greet" in names, "script method missing: $names")
         assertTrue(names.none { it == "run" || it == "main" || it == "who" }, "script plumbing is listed: $names")
+    }
+
+    @Test
+    fun `a script made only of methods still lists them`() {
+        val symbols = outline("def first() { 1 }\ndef second(String who) { who }\n")
+
+        assertEquals(listOf("first", "second"), symbols.map { it.name })
+        assertTrue(symbols.all { it.kind == SymbolKind.Method })
     }
 
     @Test

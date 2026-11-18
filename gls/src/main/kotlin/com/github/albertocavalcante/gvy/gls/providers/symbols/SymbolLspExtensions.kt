@@ -4,12 +4,13 @@
 package com.github.albertocavalcante.gvy.gls.providers.symbols
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
-import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
+import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.Parameter
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
@@ -19,12 +20,14 @@ import org.eclipse.lsp4j.SymbolKind
 
 private val logger = KotlinLogging.logger("SymbolLspExtensions")
 
+private val ENUM_HIDDEN_PARAMETERS = setOf("__str", "__int")
+
 /**
  * Converts a [Symbol] into a [SymbolInformation] for use in LSP responses. Ranges are protocol (UTF-16) ranges
- * when [text] holds the symbol's file; without it the Groovy columns are copied unchanged.
+ * when [text] indexes the symbol's file; without it the Groovy columns are copied unchanged.
  */
 @Suppress("DEPRECATION")
-fun Symbol.toSymbolInformation(text: String? = null): SymbolInformation? {
+fun Symbol.toSymbolInformation(text: TextIndex? = null): SymbolInformation? {
     val range = protocolRange(text) ?: return null
     return SymbolInformation(
         displayName(),
@@ -39,7 +42,7 @@ fun Symbol.toSymbolInformation(text: String? = null): SymbolInformation? {
  * range is the declared name when [text] holds the source, otherwise the whole declaration.
  */
 internal fun Symbol.toDocumentSymbol(text: TextIndex? = null): DocumentSymbol? {
-    val range = protocolRange(text?.text) ?: return null
+    val range = protocolRange(text) ?: return null
     // A constructor's name is its class's, so the display name is also what the declaration spells.
     val selection = text?.let { firstNameOccurrence(it, range, displayName()) } ?: range
     val symbol = DocumentSymbol(displayName(), toSymbolKind(), range, selection)
@@ -47,10 +50,11 @@ internal fun Symbol.toDocumentSymbol(text: TextIndex? = null): DocumentSymbol? {
     return symbol
 }
 
-private fun Symbol.protocolRange(text: String?): Range? {
-    node.toProtocolRange(text)?.let { return it }
-    val start = position.getOrNull()?.let { Position(it.line.value, it.column.value) } ?: return null
-    return Range(start, start).toProtocolRange(text)
+private fun Symbol.protocolRange(text: TextIndex?): Range? {
+    val groovyRange = node.toLspRange() ?: position.getOrNull()?.let {
+        Position(it.line.value, it.column.value).let { start -> Range(start, start) }
+    } ?: return null
+    return text?.utf16Range(groovyRange) ?: groovyRange
 }
 
 private fun Symbol.displayName(): String = when (this) {
@@ -104,9 +108,17 @@ private fun Symbol.Method.displaySignature(): String = buildString {
     append(visibility.keyword).append(" ")
     if (!node.isConstructor) append(returnType?.displayTypeName() ?: "def").append(" ")
     append(displayName()).append("(")
-    append(parameters.joinToString(", ") { "${it.type.displayTypeName()} ${it.name}" })
+    append(writtenParameters().joinToString(", ") { "${it.type.displayTypeName()} ${it.name}" })
     append(")")
 }
+
+/** The enum compiler prepends `__str` and `__int` to every enum constructor; the source never wrote them. */
+private fun Symbol.Method.writtenParameters(): List<Parameter> =
+    if (node.isConstructor && owner?.isEnum == true) {
+        parameters.filterNot { it.name in ENUM_HIDDEN_PARAMETERS }
+    } else {
+        parameters
+    }
 
 /** The type as written in source: nested types without `$`, arrays as `T[]` (never the JVM's `T;`). */
 internal fun ClassNode.displayTypeName(): String =
