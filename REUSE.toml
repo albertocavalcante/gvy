@@ -250,6 +250,7 @@ path = [
   "tests/e2e/resources/scenarios/cli/jenkins-extract-basic.yaml",
   "tests/e2e/resources/scenarios/cli/repro-cli-check-sarif-stdout.yaml",
   "tests/e2e/resources/scenarios/code-action-basic.yaml",
+  "tests/e2e/resources/scenarios/code-action-organize-imports.yaml",
   "tests/e2e/resources/scenarios/codelens-spock.yaml",
   "tests/e2e/resources/scenarios/codenarc-original-source-ranges.yaml",
   "tests/e2e/resources/scenarios/codenarc-plain-generic-dirs-profile.yaml",
