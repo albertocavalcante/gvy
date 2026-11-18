@@ -57,6 +57,12 @@ internal class ImportOrganizerPropertyTest {
         return result
     }
 
+    private fun lineOf(text: String, line: Int): String = text.split("\r\n", "\n", "\r")[line]
+
+    /** A binding as the organizer sees it: the target and how its name is written. */
+    private fun bindingOf(line: String): Pair<ImportTarget, Set<String>>? =
+        ImportLineParser.parse(line)?.let { it.target to it.writtenNames }
+
     private fun targetsOf(text: String): List<ImportTarget> =
         text.split("\r\n", "\n", "\r").mapNotNull { ImportLineParser.parse(it)?.target }
 
@@ -64,10 +70,11 @@ internal class ImportOrganizerPropertyTest {
     fun organizingTwiceYieldsNoFurtherEdits(@ForAll("cases") case: Case): Boolean {
         val once = apply(case.text, ImportOrganizer.organize(case.text, case.unused))
 
-        // The detector would flag the same imports wherever they now sit.
-        val flagged = case.unused.map { it.target }.toSet()
+        // The detector would flag the same bindings wherever they now sit.
+        val flagged = case.unused.map { bindingOf(lineOf(case.text, it.line)) }.toSet()
         val again = once.split("\r\n", "\n", "\r").mapIndexedNotNull { line, content ->
-            ImportLineParser.parse(content)?.target?.takeIf { it in flagged }?.let { UnusedImport(it, line) }
+            val parsed = ImportLineParser.parse(content)
+            parsed?.takeIf { bindingOf(content) in flagged }?.let { UnusedImport(it.target, line) }
         }
         return ImportOrganizer.organize(once, again).isEmpty()
     }

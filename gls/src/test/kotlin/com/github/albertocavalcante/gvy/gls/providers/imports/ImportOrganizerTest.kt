@@ -15,6 +15,10 @@ class ImportOrganizerTest {
         return lines.map { line -> UnusedImport(checkNotNull(ImportLineParser.parse(textLines[line])).target, line) }
     }
 
+    /** A binding as the organizer sees it: the target and how its name is written. */
+    private fun bindingOf(line: String): Pair<ImportTarget, Set<String>>? =
+        ImportLineParser.parse(line)?.let { it.target to it.writtenNames }
+
     private fun edits(text: String, vararg unusedLines: Int): List<TextReplacement> {
         val edits = ImportOrganizer.organize(text, unusedOn(text, unusedLines.toList()))
         assertTrue(edits.zipWithNext().all { (a, b) -> a.end <= b.start }, "edits overlap or are unordered: $edits")
@@ -28,9 +32,11 @@ class ImportOrganizerTest {
             result = result.substring(0, edit.start) + edit.newText + result.substring(edit.end)
         }
         // A second pass, with the detector flagging the same imports wherever they now sit, has nothing to do.
-        val flagged = unusedOn(text, unusedLines.toList()).map { it.target }.toSet()
+        val textLines = text.split("\r\n", "\n", "\r")
+        val flagged = unusedLines.map { bindingOf(textLines[it]) }.toSet()
         val again = result.split("\r\n", "\n", "\r").mapIndexedNotNull { line, content ->
-            ImportLineParser.parse(content)?.target?.takeIf { it in flagged }?.let { UnusedImport(it, line) }
+            val parsed = ImportLineParser.parse(content)
+            parsed?.takeIf { bindingOf(content) in flagged }?.let { UnusedImport(it.target, line) }
         }
         assertEquals(emptyList(), ImportOrganizer.organize(result, again), "not idempotent: $result")
         return result
