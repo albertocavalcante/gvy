@@ -118,6 +118,8 @@ When introducing heuristics or non-obvious code, annotate with tags:
 
 ### TODO Format with Issue Link
 
+A tracked item needs the issue number: `TODO(#n)` or `FIXME(#n)`, as below.
+
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/owner/repo/issues/123
@@ -135,7 +137,7 @@ documentation.
 When work uncovers a bug that you are not fixing in the same change:
 
 1. **File a gvy issue** with reproduction and impact. Dependency bugs follow `docs/dependency-bugs.md`; never file
-   upstream.
+   upstream autonomously.
 2. **Keep the case in the code** as a visible, executable record. Prefer an active test that asserts today's wrong
    behaviour, so it fails when the bug is fixed and forces the assertion to be corrected. Otherwise use a disabled test
    whose reason names the issue: JUnit `@Disabled("... #123")`, the e2e xfail mechanism, or the TypeScript equivalent.
@@ -168,7 +170,7 @@ issue link.
 
 ### Debugging Flaky Tests
 
-1. Add `// FIXME: Flaky test - [reason]` comment
+1. Add `// FIXME(#n): Flaky test - [reason]` comment
 2. Investigate root cause (timing, state, randomness)
 3. Fix or mark with `@RepeatedTest` / `@Disabled` with issue link
 
