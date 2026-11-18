@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.symbols
 
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import org.codehaus.groovy.ast.ClassNode

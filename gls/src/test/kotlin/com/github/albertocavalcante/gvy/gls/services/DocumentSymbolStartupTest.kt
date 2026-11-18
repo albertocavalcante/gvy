@@ -64,7 +64,7 @@ class DocumentSymbolStartupTest {
 
             val symbols = response.get(WAIT_SECONDS, TimeUnit.SECONDS)
             assertTrue(symbols.any { it.isRight && it.right.name == "AfterGdsl" })
-            assertTrue(symbols.any { it.isRight && it.right.name == "hello" })
+            assertTrue(symbols.any { it.isRight && it.right.children.orEmpty().any { child -> child.name == "hello" } })
         } finally {
             release.countDown()
             scope.cancel()
