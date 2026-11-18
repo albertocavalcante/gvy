@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.Formatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
+import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
 import java.net.URI
 import java.nio.file.Files
@@ -129,8 +130,12 @@ class CodeActionProvider(
 
             // Import hygiene: quick fixes for gvy's own unused-import diagnostic, and Organize Imports
             val importRequest = ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics)
-            addAll(unusedImportFixAction.createActions(importRequest))
-            organizeImportsAction.createAction(importRequest)?.let(::add)
+            if (allowsKind(CodeActionKind.QuickFix, params.context.only)) {
+                addAll(unusedImportFixAction.createActions(importRequest))
+            }
+            if (allowsKind(CodeActionKind.SourceOrganizeImports, params.context.only)) {
+                organizeImportsAction.createAction(importRequest)?.let(::add)
+            }
 
             // Add lint fix actions for deterministic CodeNarc fixes
             addAll(

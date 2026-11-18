@@ -94,18 +94,17 @@ private class BlockScanner(private val text: String) {
     }
 
     private fun acceptBlockCommentStart(line: Int, raw: String, trimmed: String): Boolean {
-        val closesHere = trimmed.contains("*/")
+        val closesHere = closesAt(trimmed, 2) >= 0
         // Code after the closing marker shares the line with the comment; that is not an import block line.
-        val endsWithComment = !closesHere || trimmed.endsWith("*/")
-        if (!endsWithComment) return false
+        if (closesHere && !endsAtClose(trimmed, 2)) return false
         acceptComment(line, raw)
         inBlockComment = !closesHere
         return true
     }
 
     private fun acceptInsideBlockComment(line: Int, raw: String, trimmed: String): Boolean {
-        val closesHere = trimmed.contains("*/")
-        if (closesHere && !trimmed.endsWith("*/")) return false
+        val closesHere = closesAt(trimmed, 0) >= 0
+        if (closesHere && !endsAtClose(trimmed, 0)) return false
         acceptComment(line, raw)
         inBlockComment = !closesHere
         return true
@@ -119,6 +118,11 @@ private class BlockScanner(private val text: String) {
         pendingComments.clear()
         return true
     }
+
+    private fun closesAt(trimmed: String, from: Int): Int = trimmed.indexOf("*/", from)
+
+    /** True when the first closing marker at or after [from] is the end of the line. */
+    private fun endsAtClose(trimmed: String, from: Int): Boolean = closesAt(trimmed, from) == trimmed.length - 2
 
     private companion object {
         val PACKAGE = Regex("^package\\s+[\\p{L}\\p{N}_$.\\s]+;?\\s*(//.*)?$")

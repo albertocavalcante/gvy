@@ -27,7 +27,12 @@ class ImportOrganizerTest {
         for (edit in edits(text, *unusedLines).sortedByDescending { it.start }) {
             result = result.substring(0, edit.start) + edit.newText + result.substring(edit.end)
         }
-        assertEquals(emptyList(), ImportOrganizer.organize(result, emptyList()), "not idempotent: $result")
+        // A second pass, with the detector flagging the same imports wherever they now sit, has nothing to do.
+        val flagged = unusedOn(text, unusedLines.toList()).map { it.target }.toSet()
+        val again = result.split("\r\n", "\n", "\r").mapIndexedNotNull { line, content ->
+            ImportLineParser.parse(content)?.target?.takeIf { it in flagged }?.let { UnusedImport(it, line) }
+        }
+        assertEquals(emptyList(), ImportOrganizer.organize(result, again), "not idempotent: $result")
         return result
     }
 
@@ -245,5 +250,47 @@ class ImportOrganizerTest {
         val text = "import b.B\n\nimport a.\nimport a.A\n"
 
         assertEquals(emptyList(), edits(text))
+    }
+
+    @Test
+    fun `a block comment above an unused import keeps the import and the comment`() {
+        val text = "/* keep: loaded\n   reflectively */\nimport a.Gone\nimport b.B\n"
+
+        assertEquals(text, organize(text, 2))
+    }
+
+    @Test
+    fun `Map Entry and Map dollar Entry are different bindings, not duplicates`() {
+        val text = "import java.util.Map\$Entry\nimport java.util.Map.Entry\n"
+
+        assertEquals(emptyList(), edits(text))
+    }
+
+    @Test
+    fun `unused duplicates are removed in one pass`() {
+        assertEquals("class X {}\n", organize("import a.A\nimport a.A\n\nclass X {}\n", 0, 1))
+    }
+
+    @Test
+    fun `imports that only mention each other are removed in one pass`() {
+        val text = "import p.Helper\nimport p.Helper.Inner\n\nclass X {}\n"
+
+        assertEquals("class X {}\n", organize(text, 0, 1))
+    }
+
+    @Test
+    fun `later imports that only the removed block imports mention go in the same pass`() {
+        val text = "import p.Helper\n\nprintln 1\nimport p.Helper.Inner\n"
+
+        assertEquals("println 1\n", organize(text, 0, 3))
+    }
+
+    @Test
+    fun `a file with mixed line endings gets one consistent block and stays stable`() {
+        assertEquals(
+            "package p\r\rimport a.A\rimport b.B\r\rB b\n",
+            organize("package p\rimport b.B\rimport a.A\n\nB b\n"),
+        )
+        assertEquals("import a.A\rimport b.B\n\n", organize("import b.B\rimport a.A\n\n"))
     }
 }

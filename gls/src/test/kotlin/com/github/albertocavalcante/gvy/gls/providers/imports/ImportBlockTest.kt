@@ -54,6 +54,12 @@ class ImportBlockTest {
     }
 
     @Test
+    fun `a slash-star-slash is not a complete comment`() {
+        // "/*/" opens a comment; the import below is inside it, so it must not become a block entry.
+        assertNull(ImportBlock.parse("/*/\nimport a.A\n*/\n"))
+    }
+
+    @Test
     fun `code sharing a line with a comment is not part of the block`() {
         assertNull(ImportBlock.parse("/* c */ import a.A\n"))
         assertEquals(0, block("import a.A\n/* c */ import b.B\n").lastLine)

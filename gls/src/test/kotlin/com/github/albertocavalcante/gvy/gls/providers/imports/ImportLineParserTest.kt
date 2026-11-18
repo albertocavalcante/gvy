@@ -99,6 +99,7 @@ class ImportLineParserTest {
     fun `a comment must be one complete comment to count as the end of the statement`() {
         assertNull(ImportLineParser.parse("import a.B /* c */ foo()"))
         assertNull(ImportLineParser.parse("import a.B /* unterminated"))
+        assertNull(ImportLineParser.parse("import a.B /*/"))
         assertEquals("/* c */", ImportLineParser.parse("import a.B /* c */")?.trailing)
     }
 
