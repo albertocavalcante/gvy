@@ -41,12 +41,26 @@ internal class ImportOrganizerPropertyTest {
         val unusedFlags = Arbitraries.of(true, false).list().ofSize(MAX_LINES)
         return Combinators.combine(picks, breaks, unusedFlags).`as` { picked, newlines, flags ->
             val lines = picked.flatMap { statements[it].split("\n") } + listOf("", "class Body {}", "")
-            val text = lines.indices.joinToString("") { lines[it] + if (it == lines.lastIndex) "" else newlines[it] }
+            val text = join(lines, newlines)
             val unused = lines.indices.filter { flags.getOrElse(it) { false } }.mapNotNull { line ->
                 ImportLineParser.parse(lines[line])?.let { UnusedImport(it.target, line) }
             }
             Case(text, unused)
         }
+    }
+
+    /**
+     * Joins [lines] with one break after each. A bare CR before an empty line that ends in LF would read as a single
+     * CRLF and shift the line numbers the case was built with, so that LF is replaced by a bare CR.
+     */
+    private fun join(lines: List<String>, newlines: List<String>): String {
+        val breaks = newlines.toMutableList()
+        for (index in 0 until lines.lastIndex - 1) {
+            if (breaks[index] == "\r" && lines[index + 1].isEmpty() && breaks[index + 1].startsWith("\n")) {
+                breaks[index + 1] = "\r"
+            }
+        }
+        return lines.indices.joinToString("") { lines[it] + if (it == lines.lastIndex) "" else breaks[it] }
     }
 
     private fun apply(text: String, edits: List<TextReplacement>): String {

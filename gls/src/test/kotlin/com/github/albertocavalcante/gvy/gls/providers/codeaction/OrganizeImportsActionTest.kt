@@ -160,13 +160,21 @@ class OrganizeImportsActionTest {
     }
 
     @Test
-    fun `sorts but removes nothing in a file with syntax errors`() {
-        val content = "import java.util.TreeMap\nimport java.util.ArrayList\n\nclass A { void m( }\n"
+    fun `returns no action when the file only has a degraded compile because of a syntax error`() {
+        // gvy keeps no compiled snapshot for a file it could not parse, so there is nothing to compute from.
+        open("import java.util.TreeMap\nimport java.util.ArrayList\n\nclass A { void m( }\n")
+
+        assertNull(organizeAction())
+    }
+
+    @Test
+    fun `sorts but removes nothing in a file with an unresolved class`() {
+        val content = "import java.util.TreeMap\nimport java.util.ArrayList\n\nMissing m = null\n"
         open(content)
 
         val action = assertNotNull(organizeAction())
 
-        val expected = "import java.util.ArrayList\nimport java.util.TreeMap\n\nclass A { void m( }\n"
+        val expected = "import java.util.ArrayList\nimport java.util.TreeMap\n\nMissing m = null\n"
         assertEquals(expected, apply(content, action.edit.documentChanges.single().left.edits))
     }
 }

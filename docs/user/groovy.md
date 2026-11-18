@@ -30,9 +30,10 @@ Run **Organize Imports** (`Shift+Alt+O` in VS Code), or save with
   single import turns off reordering, and only unused imports are removed.
 
 The action returns nothing when the imports are already organized, when the editor's text is newer than gvy's last
-compile (save again after a moment), or, for removal, when the file has compile errors: such a file is sorted but no
-import is removed. Imports after the first statement of a script stay where they are, and so do the imports after an
-annotated import (`@Grab`), which ends the block.
+compile (save again after a moment), or when the file has a syntax error, because gvy then has no compile to work from.
+A file with other compile errors, such as an unresolved class, is sorted but no import is removed. Imports after the
+first statement of a script stay where they are, and so do the imports after an annotated import (`@Grab`), which ends
+the block.
 
 Every unused import is also dimmed and offers a **Remove unused import** quick fix, plus **Remove all unused imports**
 when there are several.
