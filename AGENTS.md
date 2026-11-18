@@ -60,6 +60,11 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
 9. **Readable Kotlin**: Follow [Kotlin style and readability](docs/kotlin-style.md) for every Kotlin change, including
    tests. Review readability separately from lint: make alternatives and logical groups visible, use meaningful names,
    and prefer clear control flow over dense expressions. Preserve evaluation and failure behavior during style changes.
+10. **Never drop a failing case silently**: Do not delete, comment out, skip, weaken or narrow a test, case, assertion,
+    check or baseline because it fails; an unexpected failure is a finding. If you do not fix the bug in the same
+    change, file a gvy issue, keep the case as an executable record, mark it `FIXME(#n)` and list it under "Known gaps"
+    in the PR body. A commit message alone is not documentation. Procedure:
+    [code-quality rules](.agent/rules/code-quality.md#never-drop-a-failing-case-silently).
 
 ## Recovery and mixed-version architecture requirements
 
@@ -143,9 +148,17 @@ The git workflow rules apply to any branch, commit, or PR work.
 
 ## Deferred Work
 
+Use `TODO(#n)` for planned work and `FIXME(#n)` for a known defect, always with the issue link:
+
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/albertocavalcante/gvy/issues/123
+
+// FIXME(#124): Hover returns the wrong range for X; this test pins today's behaviour.
+//   See: https://github.com/albertocavalcante/gvy/issues/124
+@Disabled("Fails because of #124")
+@Test
+fun `hover on X returns the identifier range`() { ... }
 ```
 
 ## Helper Files

@@ -70,7 +70,6 @@ path = [
   ".spec/markdown-standardization.md",
   "AGENTS.md",
   "CHANGELOG.md",
-  "CLAUDE.md",
   "CODE_QUALITY.md",
   "CONTRIBUTING.md",
   "MODULE.bazel.lock",
