@@ -77,7 +77,11 @@ class RawJsonRpcPayloadTest {
 
         val params = wire.messages.single().getValue("params").jsonObject
         assertThat(params).containsEntry("rootUri", JsonNull)
-        assertThat(params).doesNotContainKeys("capabilities", "initializationOptions")
+        assertThat(params).doesNotContainKeys("initializationOptions")
+        // The only client capability sent: nested document symbols, as VS Code asks for them.
+        val documentSymbol = params.getValue("capabilities").jsonObject.getValue("textDocument").jsonObject
+            .getValue("documentSymbol").jsonObject
+        assertThat(documentSymbol["hierarchicalDocumentSymbolSupport"]).isEqualTo(JsonPrimitive(true))
         assertThat(params["workspaceFolders"]?.jsonArray?.size).isEqualTo(1)
         assertThat(wire.context.state.initializedResult).isNotNull()
     }

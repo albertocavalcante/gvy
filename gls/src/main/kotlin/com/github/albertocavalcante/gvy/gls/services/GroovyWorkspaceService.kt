@@ -3,14 +3,13 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
-import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.providers.symbols.searchWorkspaceSymbols
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -43,6 +42,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
@@ -382,21 +382,19 @@ class GroovyWorkspaceService(
         val query = params.query.orEmpty()
         // The scan covers every index, so it runs off the message thread.
         return coroutineScope.future(Dispatchers.Default) {
-            val results = symbolIndexer.getAllSymbolIndices().asSequence()
-                .flatMap { (uri, storage) ->
-                    if (query.isBlank()) {
-                        // LSP: an empty query asks for all symbols. Skip the noise a picker cannot use.
-                        storage.getSymbols(uri).asSequence().filter { it.isWorkspaceSymbol() }
-                    } else {
-                        storage.findMatching(uri, query).asSequence()
-                    }
-                }
-                .mapNotNull { it.toSymbolInformation() }
-                .take(MAX_WORKSPACE_SYMBOLS)
-                .toList()
+            // An open buffer is indexed by its compile, which can still be running right after didOpen (#431).
+            textDocumentService?.awaitOpenDocumentsIndexed()
+            val results = searchWorkspaceSymbols(
+                symbolIndexer.getAllSymbolIndices(),
+                query,
+                MAX_WORKSPACE_SYMBOLS,
+                ::sourceTextOf,
+            )
             Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(results)
         }
     }
 
-    private fun Symbol.isWorkspaceSymbol(): Boolean = this !is Symbol.Import && this !is Symbol.Variable
+    /** The text a symbol range refers to: the compiled buffer if there is one, else the file on disk. */
+    private fun sourceTextOf(uri: URI): String? = compilationService.getCompiledSnapshot(uri)?.sourceText
+        ?: UriPathConverter.toPath(uri)?.let { path -> runCatching { Files.readString(path) }.getOrNull() }
 }

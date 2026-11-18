@@ -1,9 +1,5 @@
 name: repro-symbols-interface-kind
 description: Document symbols report an interface with kind Interface
-xfail:
-  issue: 1538
-  reason: documentSymbol reports an interface as kind Class
-  match: 'Actual: \[\s*"Class"\s*\]'
 workspace:
   fixture: empty-workspace
   files:

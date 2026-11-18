@@ -295,6 +295,9 @@ class GroovyLanguageServer(
 
         val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
         textDocumentService.updateDefinitionLinkSupport(linkSupport)
+        textDocumentService.updateHierarchicalDocumentSymbolSupport(
+            params.capabilities?.textDocument?.documentSymbol?.hierarchicalDocumentSymbolSupport == true,
+        )
         textDocumentService.updateSnippetSupport(
             params.capabilities?.textDocument?.completion?.completionItem?.snippetSupport == true,
         )

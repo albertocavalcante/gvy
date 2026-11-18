@@ -3,7 +3,6 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
@@ -37,12 +36,13 @@ import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceTextCache
 import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceWalkCache
 import com.github.albertocavalcante.gvy.gls.providers.selection.SelectionRangeProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
-import com.github.albertocavalcante.gvy.gls.providers.symbols.toDocumentSymbol
-import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.providers.symbols.buildDocumentOutline
+import com.github.albertocavalcante.gvy.gls.providers.symbols.flattenOutline
 import com.github.albertocavalcante.gvy.gls.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -161,6 +161,10 @@ class GroovyTextDocumentService(
     @Volatile
     private var snippetSupport: Boolean = false
 
+    // LSP: a client that does not say it renders `DocumentSymbol` trees gets flat `SymbolInformation`.
+    @Volatile
+    private var hierarchicalDocumentSymbolSupport: Boolean = false
+
     private val logger = KotlinLogging.logger {}
 
     /** Providers are built per request; this keeps unchanged workspace files cached across rename checks. */
@@ -185,6 +189,11 @@ class GroovyTextDocumentService(
     /** Whether the client renders `CompletionItem.labelDetails` (LSP 3.17), from its initialize capabilities. */
     fun updateLabelDetailsSupport(supported: Boolean) {
         labelDetailsSupport = supported
+    }
+
+    /** Whether the client renders nested `DocumentSymbol`s, from its initialize capabilities. */
+    fun updateHierarchicalDocumentSymbolSupport(supported: Boolean) {
+        hierarchicalDocumentSymbolSupport = supported
     }
 
     fun updateSnippetSupport(supported: Boolean) {
@@ -579,12 +588,16 @@ class GroovyTextDocumentService(
         val uri = URI.create(params.textDocument.uri)
         // Startup worker selection can retire a compile while this request is waiting. Resolve through
         // the shared ownership policy and retain its model instead of rereading a cache that may be cleared.
-        val model = compilationService.ensureCompiled(uri)?.astModel ?: return@future emptyList()
-        val storage = SymbolIndex().buildFromVisitor(model)
-
-        storage.getSymbols(uri).filter { it.shouldIncludeInDocumentSymbols() }.mapNotNull { symbol ->
-            symbol.toDocumentSymbol()?.let { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
-                ?: symbol.toSymbolInformation()?.let { Either.forLeft<SymbolInformation, DocumentSymbol>(it) }
+        val compiled = compilationService.ensureCompiled(uri) ?: return@future emptyList()
+        val model = compiled.astModel ?: return@future emptyList()
+        val symbols = SymbolIndex().buildFromVisitor(model).getSymbols(uri)
+        val outline = buildDocumentOutline(symbols, compiled.sourceText?.let(::TextIndex))
+        if (hierarchicalDocumentSymbolSupport) {
+            outline.map { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
+        } else {
+            flattenOutline(params.textDocument.uri, outline).map {
+                Either.forLeft<SymbolInformation, DocumentSymbol>(it)
+            }
         }
     }
 
@@ -729,6 +742,16 @@ class GroovyTextDocumentService(
         diagnosticsOrchestrator.awaitDiagnostics(uri)
     }
 
+    /**
+     * Waits until every open buffer has been compiled and indexed, so a workspace-wide query sees the buffers a
+     * client has just opened. A buffer that cannot compile is skipped: its failure belongs to its own requests.
+     */
+    internal suspend fun awaitOpenDocumentsIndexed() {
+        documentProvider.getAllUris().forEach { uri ->
+            runCatching { compilationService.ensureCompiled(uri) }.onFailure(::rethrowIfCancellationOrError)
+        }
+    }
+
     /** Returns the retained terminal analysis for the current buffer, including provider failures. */
     internal suspend fun awaitCurrentDiagnostics(uri: URI, version: Int? = null): DiagnosticsRunResult =
         diagnosticsOrchestrator.awaitCurrentDiagnostics(uri, version)
@@ -757,9 +780,4 @@ class GroovyTextDocumentService(
             }
         }
     }
-}
-
-private fun Symbol.shouldIncludeInDocumentSymbols(): Boolean = when (this) {
-    is Symbol.Variable -> isParameter
-    is Symbol.Method, is Symbol.Field, is Symbol.Property, is Symbol.Class, is Symbol.Import -> true
 }

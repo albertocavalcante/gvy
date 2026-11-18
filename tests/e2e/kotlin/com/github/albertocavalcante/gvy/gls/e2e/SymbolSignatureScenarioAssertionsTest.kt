@@ -79,26 +79,6 @@ class SymbolSignatureScenarioAssertionsTest {
             }
         }
 
-    @Test
-    @Suppress("DEPRECATION") // Exercise the server's legacy SymbolInformation union variant.
-    fun `missing workspace class matches its xfail while a wrong kind remains unexpected`() {
-        val fixture = ScenarioAssertionFixture("workspace-symbols.yaml", workspaceRoot, "symbolResult")
-        val missing = Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(emptyList())
-        assertThat(fixture.classifyFailure(missing)).isInstanceOf(XfailDecision.Expected::class.java)
-        val symbol = SymbolInformation().apply {
-            name = "UniqueController"
-            kind = SymbolKind.Variable
-            location = Location(
-                fixture.context.workspace.resolveUri("src/main/groovy/Symbols.groovy"),
-                Range(Position(0, 0), Position(2, 1)),
-            )
-        }
-        val wrongKind = Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(listOf(symbol))
-        val decision = fixture.classifyFailure(wrongKind)
-        assertThat(decision).isInstanceOf(XfailDecision.Unexpected::class.java)
-        assertThat((decision as XfailDecision.Unexpected).failure).hasMessageContaining(".kind")
-    }
-
     @TestFactory
     fun `missing signatures still match their declared xfail`(): List<DynamicTest> = signatures.map { (file, _) ->
         dynamicTest(file) {

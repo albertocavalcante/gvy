@@ -16,9 +16,11 @@ import kotlinx.serialization.json.put
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.DocumentSymbolCapabilities
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.SemanticTokensLegend
+import org.eclipse.lsp4j.TextDocumentClientCapabilities
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.WorkspaceFolder
@@ -141,7 +143,13 @@ class ColdIncompleteBufferRecoveryTest {
                     val initialized = await(
                         session.server.initialize(
                             InitializeParams().apply {
-                                capabilities = ClientCapabilities()
+                                capabilities = ClientCapabilities().apply {
+                                    textDocument = TextDocumentClientCapabilities().apply {
+                                        documentSymbol = DocumentSymbolCapabilities().apply {
+                                            hierarchicalDocumentSymbolSupport = true
+                                        }
+                                    }
+                                }
                                 workspaceFolders = listOf(WorkspaceFolder(workspace.rootUri, "cold-recovery"))
                             },
                         ),
