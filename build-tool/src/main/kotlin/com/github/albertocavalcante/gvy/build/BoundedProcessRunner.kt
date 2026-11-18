@@ -7,7 +7,6 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toJavaDuration
 
 /**
  * Runs a short-lived build-tool command with a bounded wait.
@@ -28,11 +27,18 @@ internal object BoundedProcessRunner {
     internal const val TAIL_CHARS = 48 * 1024
     private const val READ_BUFFER_CHARS = 8 * 1024
 
-    fun run(command: List<String>, directory: Path, timeout: Duration): Result {
-        val process = ProcessBuilder(command)
-            .directory(directory.toFile())
-            .redirectErrorStream(true)
-            .start()
+    fun run(command: List<String>, directory: Path, timeout: Duration): Result =
+        run(command, directory, timeout, READER_JOIN_TIMEOUT, ::startProcess)
+
+    /** Test seam: [start] supplies the process and [readerJoinTimeout] bounds each wait for the reader. */
+    internal fun run(
+        command: List<String>,
+        directory: Path,
+        timeout: Duration,
+        readerJoinTimeout: Duration,
+        start: (List<String>, Path) -> Process,
+    ): Result {
+        val process = start(command, directory)
         process.outputStream.close()
 
         val output = BoundedOutput(HEAD_CHARS, TAIL_CHARS)
@@ -54,24 +60,24 @@ internal object BoundedProcessRunner {
             val finished = process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
             if (!finished) {
                 killTree(process)
-                stopReader(process, reader)
+                stopReader(process, reader, readerJoinTimeout)
                 return Result(null, output.toString(), timedOut = true)
             }
-            stopReader(process, reader)
+            stopReader(process, reader, readerJoinTimeout)
             return Result(process.exitValue(), output.toString(), timedOut = false)
         } catch (e: InterruptedException) {
             killTree(process)
             // Keep the interrupt for the caller, but do not leave the reader thread or stream behind.
-            stopReader(process, reader)
+            stopReader(process, reader, readerJoinTimeout)
             throw e
         }
     }
 
     /** Gives the reader a bounded time to drain, then closes the stream and interrupts it if it is still blocked. */
-    private fun stopReader(process: Process, reader: Thread) {
+    private fun stopReader(process: Process, reader: Thread, joinTimeout: Duration) {
         var interrupted = false
         try {
-            reader.join(READER_JOIN_TIMEOUT.toJavaDuration().toMillis())
+            reader.join(joinTimeout.inWholeMilliseconds)
         } catch (ignored: InterruptedException) {
             interrupted = true
         }
@@ -79,13 +85,18 @@ internal object BoundedProcessRunner {
             runCatching { process.inputStream.close() }
             reader.interrupt()
             try {
-                reader.join(READER_JOIN_TIMEOUT.toJavaDuration().toMillis())
+                reader.join(joinTimeout.inWholeMilliseconds)
             } catch (ignored: InterruptedException) {
                 interrupted = true
             }
         }
         if (interrupted) Thread.currentThread().interrupt()
     }
+
+    private fun startProcess(command: List<String>, directory: Path): Process = ProcessBuilder(command)
+        .directory(directory.toFile())
+        .redirectErrorStream(true)
+        .start()
 
     private fun killTree(process: Process) {
         // Snapshot descendants before killing the parent, which would reparent them.

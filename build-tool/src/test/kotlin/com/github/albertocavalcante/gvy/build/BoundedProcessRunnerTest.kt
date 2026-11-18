@@ -10,11 +10,18 @@ import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.InputStream
+import java.io.InterruptedIOException
+import java.io.OutputStream
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.stream.Stream
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class BoundedProcessRunnerTest {
@@ -89,28 +96,80 @@ class BoundedProcessRunnerTest {
     }
 
     @Test
-    fun `interrupt waits for a bounded drain when a descendant escaped the kill and holds the pipe`() {
-        val pidFile = tempDir.resolve("pid")
-        val holderFile = tempDir.resolve("holder")
-        val secondFile = tempDir.resolve("second")
-        // The subshell exits at once, so the holder is reparented and is no longer a descendant to kill,
-        // yet it keeps the merged output pipe open. Without the bounded drain, run() rethrows immediately.
-        val script = "echo \$\$ > '$pidFile'; (sleep 120 & echo \$! > '$holderFile'); " +
-            "sleep 120 & echo \$! > '$secondFile'; wait"
-        try {
-            val outcome = interruptRun(script, pidFile, holderFile, secondFile)
-
-            assertTrue(outcome.failure is InterruptedException)
-            // BoundedProcessRunner joins its reader for up to 5s (READER_JOIN_TIMEOUT) before giving up.
-            assertTrue(outcome.elapsedMillis >= 3_000, "run() returned after only ${outcome.elapsedMillis}ms")
-            assertTrue(outcome.elapsedMillis < 40_000, "the drain must stay bounded: ${outcome.elapsedMillis}ms")
-        } finally {
-            listOf(holderFile, secondFile).filter { it.exists() }.forEach { file ->
-                file.readText().trim().toLongOrNull()?.let { pid ->
-                    ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
-                }
+    fun `interrupt closes the stream and interrupts a reader that stays blocked`() {
+        // A process whose pipe never reaches EOF, as when an escaped descendant holds it open. The fake makes
+        // the scenario identical on every OS: real pipes wake a blocked reader on some platforms but not others.
+        val process = StuckProcess()
+        val failure = AtomicReference<Throwable>()
+        val runner = Thread {
+            try {
+                BoundedProcessRunner.run(listOf("stuck"), tempDir, 120.seconds, 200.milliseconds) { _, _ -> process }
+            } catch (e: InterruptedException) {
+                failure.set(e)
             }
         }
+        runner.start()
+        assertTrue(process.readerBlocked.await(20, TimeUnit.SECONDS), "the reader never started reading")
+        runner.interrupt()
+        runner.join(30_000)
+
+        assertFalse(runner.isAlive, "run() must return after an interrupt")
+        assertTrue(failure.get() is InterruptedException)
+        assertTrue(process.destroyed, "the process must be killed")
+        assertTrue(process.streamClosed, "a reader that does not drain must have its stream closed")
+        assertTrue(process.readerInterrupted.await(10, TimeUnit.SECONDS), "a blocked reader must be interrupted")
+    }
+
+    /** A process that never exits and whose output stream blocks until it is interrupted. */
+    private class StuckProcess : Process() {
+        val readerBlocked = CountDownLatch(1)
+        val readerInterrupted = CountDownLatch(1)
+
+        @Volatile var streamClosed = false
+
+        @Volatile var destroyed = false
+
+        private val input = object : InputStream() {
+            override fun read(): Int = block()
+
+            override fun read(b: ByteArray, off: Int, len: Int): Int = block()
+
+            override fun close() {
+                streamClosed = true
+            }
+
+            private fun block(): Int {
+                readerBlocked.countDown()
+                try {
+                    Thread.sleep(Long.MAX_VALUE)
+                } catch (e: InterruptedException) {
+                    readerInterrupted.countDown()
+                    throw InterruptedIOException(e.message)
+                }
+                return -1
+            }
+        }
+
+        override fun getOutputStream(): OutputStream = OutputStream.nullOutputStream()
+
+        override fun getInputStream(): InputStream = input
+
+        override fun getErrorStream(): InputStream = InputStream.nullInputStream()
+
+        override fun waitFor(): Int = throw UnsupportedOperationException()
+
+        override fun waitFor(timeout: Long, unit: TimeUnit): Boolean {
+            Thread.sleep(unit.toMillis(timeout))
+            return false
+        }
+
+        override fun exitValue(): Int = throw IllegalThreadStateException()
+
+        override fun destroy() {
+            destroyed = true
+        }
+
+        override fun descendants(): Stream<ProcessHandle> = Stream.empty()
     }
 
     private class InterruptOutcome(val failure: Throwable?, val elapsedMillis: Long)
