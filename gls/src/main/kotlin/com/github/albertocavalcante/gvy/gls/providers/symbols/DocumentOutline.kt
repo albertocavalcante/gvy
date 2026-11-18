@@ -22,7 +22,7 @@ private val positionOrder = compareBy<DocumentSymbol>({ it.range.start.line }, {
  * shows them at top level like the source does. Positions are protocol (UTF-16) positions over [text].
  */
 internal fun buildDocumentOutline(symbols: List<Symbol>, text: TextIndex?): List<DocumentSymbol> {
-    val declared = symbols.filter { it.isSourceDeclaration() && !(it is Symbol.Class && it.node.isScript) }
+    val declared = symbols.filter { it.isSourceDeclaration() && !(it is Symbol.Class && it.node.isScriptSafe()) }
     val outline = declared.mapNotNull { symbol -> symbol.toDocumentSymbol(text)?.let { symbol to it } }
     val byClass = IdentityHashMap<ClassNode, DocumentSymbol>()
     outline.forEach { (symbol, entry) -> if (symbol is Symbol.Class) byClass[symbol.node] = entry }
