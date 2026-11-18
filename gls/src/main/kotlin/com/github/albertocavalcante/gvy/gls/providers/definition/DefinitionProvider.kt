@@ -9,9 +9,11 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.converters.compiledTextOf
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
+import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -103,7 +105,7 @@ class DefinitionProvider(
                 "${originNode.lineNumber}:${originNode.columnNumber}"
         }
 
-        val locationLink = resolveDefinitionLink(resolver, documentUri, groovyPosition, originNode, context.visitor)
+        val locationLink = resolveDefinitionLink(resolver, documentUri, groovyPosition, originNode, context)
         if (locationLink != null) {
             emit(locationLink)
         }
@@ -115,10 +117,10 @@ class DefinitionProvider(
         documentUri: URI,
         groovyPosition: com.github.albertocavalcante.groovyparser.ast.types.Position,
         originNode: ASTNode,
-        visitor: GroovyAstModel,
+        context: DefinitionContext,
     ): LocationLink? = try {
         val result = resolver.findDefinitionAt(documentUri, groovyPosition)
-        result?.let { createLocationLink(it, originNode, visitor) }
+        result?.let { createLocationLink(it, originNode, context, documentUri) }
     } catch (e: Exception) {
         when (e) {
             is CancellationException -> {
@@ -136,14 +138,18 @@ class DefinitionProvider(
     private fun createLocationLink(
         result: DefinitionResolver.DefinitionResult,
         originNode: ASTNode,
-        visitor: GroovyAstModel,
+        context: DefinitionContext,
+        documentUri: URI,
     ): LocationLink {
-        val originSelectionRange = computeOriginSelectionRange(originNode) ?: EMPTY_RANGE
+        val originSelectionRange = computeOriginSelectionRange(originNode)?.toProtocolRange(context.sourceText)
+            ?: EMPTY_RANGE
 
         return when (result) {
             is DefinitionResolver.DefinitionResult.Source -> {
-                val targetUri = result.node.toLspLocation(visitor)?.uri ?: result.uri.toString()
-                val targetRange = result.node.toLspRange() ?: EMPTY_RANGE
+                val targetUri = result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
+                val targetRange = result.node.toProtocolRange(
+                    compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
+                ) ?: EMPTY_RANGE
                 LocationLink().apply {
                     this.targetUri = targetUri
                     this.targetRange = targetRange
@@ -345,7 +351,9 @@ class DefinitionProvider(
 
         // Convert each target to Location and emit
         targets.forEach { targetNode ->
-            val location = targetNode.toLspLocation(visitor)
+            val location = targetNode.toLspLocation(visitor) {
+                compilationService.compiledTextOf(it, documentUri, snapshot.sourceText)
+            }
             if (location != null) {
                 emit(location)
             }
@@ -404,8 +412,9 @@ class DefinitionProvider(
                         // (e.g., Jenkins vars) that aren't in the visitor's AST.
                         val targetUri = result.node.toLspLocation(context.visitor)?.uri
                             ?: result.uri.toString()
-                        val range = result.node.toLspRange()
-                            ?: EMPTY_RANGE
+                        val range = result.node.toProtocolRange(
+                            compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
+                        ) ?: EMPTY_RANGE
                         val location = Location(targetUri, range)
                         logger.debug {
                             "Found definition at ${location.uri}:${location.range} " +
@@ -529,7 +538,7 @@ private fun spockDefinition(uri: URI, position: Position, snapshot: CompiledDocu
     val origin = snapshot.parseResult.astModel.getNodeAt(uri, position.toGroovyPosition(snapshot.sourceText))
     val isPartial = !snapshot.parseResult.isSuccessful
     val target = SpockDefinitionLookup.find(module, snapshot.sourceText, position, origin, isPartial) ?: return null
-    return target.toLspRange()?.let { Location(uri.toString(), it) }
+    return target.toProtocolRange(snapshot.sourceText)?.let { Location(uri.toString(), it) }
 }
 
 data class DefinitionTelemetryEvent(val uri: String, val status: DefinitionStatus, val reason: String? = null)
