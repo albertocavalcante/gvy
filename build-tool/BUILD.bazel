@@ -58,6 +58,7 @@ kt_test(
         "@maven//:org_apache_groovy_groovy_ant",
         "@maven//:org_apache_groovy_groovy_xml",
         "@maven//:org_apache_maven_maven_model",
+        "@maven//:org_apache_maven_maven_model_builder",
         "@maven//:org_apache_maven_resolver_maven_resolver_api",
         "@maven//:org_apache_maven_resolver_maven_resolver_spi",
         "@maven//:org_gradle_gradle_tooling_api",

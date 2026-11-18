@@ -53,6 +53,9 @@ internal class AetherModelResolver(
 
     @Throws(InvalidRepositoryException::class)
     override fun addRepository(repository: Repository, replace: Boolean) {
+        if (repository.url.isNullOrBlank()) {
+            throw InvalidRepositoryException("Repository '${repository.id}' has no URL", repository)
+        }
         val existing = repositories.indexOfFirst { it.id == repository.id }
         if (existing >= 0 && !replace) return
         val remote = RemoteRepository.Builder(repository.id, repository.layout ?: "default", repository.url).build()

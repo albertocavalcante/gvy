@@ -11,7 +11,10 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.time.Duration.Companion.seconds
 
 class BoundedProcessRunnerTest {
@@ -73,22 +76,73 @@ class BoundedProcessRunnerTest {
 
     @Test
     fun `interrupt kills the process and leaves no reader thread`() {
+        val before = readerThreads()
+        val pidFile = tempDir.resolve("pid")
+        val outcome = interruptRun("echo \$\$ > '$pidFile'; sleep 60", pidFile)
+
+        assertTrue(outcome.failure is InterruptedException)
+        val pid = pidFile.readText().trim().toLong()
+        assertFalse(ProcessHandle.of(pid).map { it.isAlive }.orElse(false), "the process must be killed")
+        // Only readers started by this run count: other tests in the JVM may have their own.
+        val leaked = readerThreads() - before
+        assertEquals(emptySet<Thread>(), leaked.filter { it.isAlive }.toSet(), "reader must be joined")
+    }
+
+    @Test
+    fun `interrupt waits for a bounded drain when a descendant escaped the kill and holds the pipe`() {
+        val pidFile = tempDir.resolve("pid")
+        val holderFile = tempDir.resolve("holder")
+        val secondFile = tempDir.resolve("second")
+        // The subshell exits at once, so the holder is reparented and is no longer a descendant to kill,
+        // yet it keeps the merged output pipe open. Without the bounded drain, run() rethrows immediately.
+        val script = "echo \$\$ > '$pidFile'; (sleep 120 & echo \$! > '$holderFile'); " +
+            "sleep 120 & echo \$! > '$secondFile'; wait"
+        try {
+            val outcome = interruptRun(script, pidFile, holderFile, secondFile)
+
+            assertTrue(outcome.failure is InterruptedException)
+            // BoundedProcessRunner joins its reader for up to 5s (READER_JOIN_TIMEOUT) before giving up.
+            assertTrue(outcome.elapsedMillis >= 3_000, "run() returned after only ${outcome.elapsedMillis}ms")
+            assertTrue(outcome.elapsedMillis < 40_000, "the drain must stay bounded: ${outcome.elapsedMillis}ms")
+        } finally {
+            listOf(holderFile, secondFile).filter { it.exists() }.forEach { file ->
+                file.readText().trim().toLongOrNull()?.let { pid ->
+                    ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
+                }
+            }
+        }
+    }
+
+    private class InterruptOutcome(val failure: Throwable?, val elapsedMillis: Long)
+
+    /** Runs [script], interrupts the runner once every file in [ready] exists, and reports how run() ended. */
+    private fun interruptRun(script: String, vararg ready: Path): InterruptOutcome {
         val failure = AtomicReference<Throwable>()
+        val interruptedAt = AtomicLong()
+        val finishedAt = AtomicLong()
         val runner = Thread {
             try {
-                BoundedProcessRunner.run(listOf("sh", "-c", "echo started; sleep 60"), tempDir, 60.seconds)
+                BoundedProcessRunner.run(listOf("sh", "-c", script), tempDir, 120.seconds)
             } catch (e: InterruptedException) {
                 failure.set(e)
+            } finally {
+                finishedAt.set(System.nanoTime())
             }
         }
         runner.start()
-        Thread.sleep(1_000)
+        val deadline = System.nanoTime() + 20_000_000_000L
+        while (ready.any { !it.exists() || it.readText().isBlank() } && System.nanoTime() < deadline) {
+            Thread.sleep(50)
+        }
+        assertTrue(ready.all { it.exists() && it.readText().isNotBlank() }, "the script did not start in time")
+        interruptedAt.set(System.nanoTime())
         runner.interrupt()
-        runner.join(30_000)
+        runner.join(60_000)
 
-        assertFalse(runner.isAlive)
-        assertTrue(failure.get() is InterruptedException)
-        val liveReaders = Thread.getAllStackTraces().keys.count { it.name == "bounded-process-reader" && it.isAlive }
-        assertEquals(0, liveReaders, "reader thread must be joined before run() rethrows")
+        assertFalse(runner.isAlive, "run() must return after an interrupt")
+        return InterruptOutcome(failure.get(), (finishedAt.get() - interruptedAt.get()) / 1_000_000)
     }
+
+    private fun readerThreads(): Set<Thread> =
+        Thread.getAllStackTraces().keys.filter { it.name == "bounded-process-reader" }.toSet()
 }
