@@ -520,20 +520,20 @@
       "responsibleScope": "gvy formatter maintainers",
       "lastVerified": "2026-11-17",
       "reviewDue": "2026-11-24",
-      "reason": "rewrite-groovy has no node for unary minus, unary plus, `~` or the spread-map operator and keeps their text (also the `+23` of `3.303e+23`) in a whitespace Space, which AutoFormat discards. HiddenSpaceTextRestorer records that text by node identity before formatting and puts it back where it was dropped; TokenStreamGuard still judges the result.",
+      "reason": "rewrite-groovy has no node for unary minus, unary plus or `~` and keeps their text in a whitespace Space, which AutoFormat discards. HiddenSpaceTextRestorer records that text by node identity before formatting and puts it back where it was dropped; TokenStreamGuard still judges the result.",
       "upstreamStatus": "Cause confirmed by a CI probe (see #1609); no upstream report filed, and none is to be filed without the owner's approval.",
       "upstreamTrigger": "A released rewrite-groovy parses these operators into nodes or keeps their text when AutoFormat runs.",
-      "verification": "2026-11-17 added in the PR for #1609; regression tests assert Formatted, preserved tokens and idempotence for `~a`, `-x as int` and `3.303e+23`, unchanged tokens for `-x`, `+x`, `-(x + 1)`, `-foo()`, `!x` and `1.5`, and a refusal when node identity is lost. Tests ran in CI only; no raw-upstream probe was run.",
+      "verification": "2026-11-17 added in the PR for #1609; regression tests assert Formatted, preserved tokens and idempotence for `~a` and `-x as int`, unchanged tokens for `-x`, `+x`, `-(x + 1)`, `!x` and `1.5`, a refusal when node identity is lost, and that `3.303e+23` is still refused. `-foo()` throws in the parser before formatting (tracked in #2238). Tests ran in CI only; no raw-upstream probe was run.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1609",
         "https://github.com/albertocavalcante/gvy/issues/2238"
       ],
-      "nextAction": "Run the adopted and the latest released AutoFormat on the inputs without the restorer and record which Spaces lose their text. Cover the spread-map operator and the other refusals listed in #2238.",
-      "removalCriteria": "Raw upstream output keeps `~a`, `-x as int`, `3.303e+23` and the spread-map operator, idempotently; then delete the restorer and keep the regression tests.",
+      "nextAction": "Run the adopted and the latest released AutoFormat on the inputs without the restorer and record which Spaces lose their text. Find where the `+23` of `3.303e+23` is stored, and cover the spread-map operator and `-foo()` (#2238).",
+      "removalCriteria": "Raw upstream output keeps `~a` and `-x as int` idempotently; then delete the restorer and keep the regression tests. `3.303e+23`, the spread-map operator and `-foo()` are tracked in #2238.",
       "sources": [
         {
           "id": "manual:openrewrite-hidden-space-text",
-          "sha256": "8a7e346776449601a707c6f6848f8ec7082239664aa8f7d5b717d21c13cbd0f4"
+          "sha256": "edd52687dc16a2eca3bad25a1cbe035f7af0db6331f46cb14b7c2c205fc8cd46"
         }
       ]
     },

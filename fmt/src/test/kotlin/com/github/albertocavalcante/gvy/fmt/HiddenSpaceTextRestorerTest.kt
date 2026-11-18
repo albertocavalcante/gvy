@@ -71,6 +71,7 @@ class HiddenSpaceTextRestorerTest {
 
         assertThat(outcome).isInstanceOf(FormatOutcome.Refused::class.java)
         assertThat(outcome.text).isEqualTo(input)
+        assertThat((outcome as FormatOutcome.Refused).reason).contains("first difference")
     }
 
     @Test

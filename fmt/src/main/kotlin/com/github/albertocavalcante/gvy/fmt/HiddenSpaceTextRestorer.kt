@@ -12,8 +12,9 @@ import java.util.UUID
 /**
  * Puts back source text that `AutoFormat` dropped from a [Space] (#1609).
  *
- * rewrite-groovy has no node for unary minus, unary plus, `~` or the spread-map operator, and keeps their
- * text (also the `+23` of `3.303e+23`) inside a whitespace [Space]. The tree still prints the original, but
+ * rewrite-groovy has no node for unary minus, unary plus or `~`, and keeps their text inside a whitespace
+ * [Space]. (The `+23` of `3.303e+23` is not in a slot this class reaches; see #2238.)
+ * The tree still prints the original, but
  * `AutoFormat` treats that text as layout and discards it. Before formatting, [recording] notes the exact text of
  * every [Space] whose whitespace holds something other than whitespace. After formatting, [restore] puts the
  * text back in the slot it came from when that slot's whitespace holds no text any more, and keeps the
