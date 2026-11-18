@@ -19,6 +19,7 @@ import java.nio.file.Path
  * Supports:
  * - Missing import resolution (unambiguous only)
  * - Formatting actions
+ * - Removal of unused imports reported by gvy
  * - Deterministic lint fixes from CodeNarc
  */
 class CodeActionProvider(
@@ -32,6 +33,7 @@ class CodeActionProvider(
     // Reuse action provider instances to reduce object allocation
     private val formattingAction = FormattingAction(formatter)
     private val importAction = ImportAction(compilationService)
+    private val unusedImportFixAction = UnusedImportFixAction(compilationService)
     private val verdictMemory = SpockVerdictMemory()
 
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
@@ -121,6 +123,13 @@ class CodeActionProvider(
                     params.textDocument.uri,
                     params.context.diagnostics,
                     content,
+                ),
+            )
+
+            // Quick fixes for gvy's own unused-import diagnostic
+            addAll(
+                unusedImportFixAction.createActions(
+                    ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics),
                 ),
             )
 
