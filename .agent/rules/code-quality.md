@@ -125,6 +125,38 @@ When introducing heuristics or non-obvious code, annotate with tags:
 
 ---
 
+## Never Drop a Failing Case Silently
+
+Never delete, comment out, skip, weaken or narrow a test, case, assertion, check or baseline because it fails. A
+failure you did not expect is a finding, whether the cause is gvy or a dependency (for example a dependency's parser
+rejecting a test input). Removing the case to get a green run hides the defect, and a commit message alone is not
+documentation.
+
+When work uncovers a bug that you are not fixing in the same change:
+
+1. **File a gvy issue** with reproduction and impact. Dependency bugs follow `docs/dependency-bugs.md`; never file
+   upstream.
+2. **Keep the case in the code** as a visible, executable record. Prefer an active test that asserts today's wrong
+   behaviour, so it fails when the bug is fixed and forces the assertion to be corrected. Otherwise use a disabled test
+   whose reason names the issue: JUnit `@Disabled("... #123")`, the e2e xfail mechanism, or the TypeScript equivalent.
+3. **Mark it** with `FIXME(#123)` (known defect) or `TODO(#123)` (planned work) directly above, with the `See:` URL
+   line.
+4. **List it** in the PR body under "Known gaps".
+
+```kotlin
+// FIXME(#124): Parser rejects `foo` (dependency bug); this test pins the wrong result.
+//   See: https://github.com/albertocavalcante/gvy/issues/124
+@Test
+fun `parsing foo currently fails because of #124`() {
+    assertThat(parse("foo").errors).isNotEmpty() // flip to isEmpty() when #124 is fixed
+}
+```
+
+The same applies to production code: a workaround or early return that hides a defect carries a `FIXME(#n)` with the
+issue link.
+
+---
+
 ## Test Debugging
 
 ### Viewing Test Output
