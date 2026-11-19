@@ -16,6 +16,10 @@ java -version  # Verify Java is available
 
 > [!NOTE] Each new worktree requires `direnv allow` to be run once.
 
+Non-interactive agent shells do not run the direnv hook. Load the profile explicitly with
+`eval "$(direnv export bash)"`, or set `JAVA_HOME` as described in
+[CONTRIBUTING.md](CONTRIBUTING.md#set-up-the-jvm-build).
+
 ## Commands
 
 ```bash
