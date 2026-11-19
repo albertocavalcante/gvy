@@ -151,6 +151,21 @@ verify the actual remote state instead of assuming the setting deleted it.
 
 ---
 
+## PR Lifetime
+
+An open PR is a commitment. Nothing stays open without an owner moving it.
+
+- **24 hours**: within 24 hours of opening, a PR merges or gets a comment naming its blocker (failing check, awaited
+  review, linked issue, "blocked on #PR1" for a stacked PR). Refresh the comment when the blocker changes.
+- **Merge promptly**: squash-merge the moment all applicable checks (rule 8 in `AGENTS.md`) are green and the head SHA
+  equals the reviewed SHA. Do not wait to merge several PRs together.
+- **Three open PRs per agent**: a stacked PR counts. Finish or close one before opening a fourth.
+- **Draft means CI in progress**: use draft only while CI runs. Parked work becomes an issue that names the branch, and
+  the draft PR is closed.
+- **After every merge**: check the resulting main CI run. If the merge broke it, fix or revert before other work, then
+  complete Post-Merge Cleanup.
+- **Stopping work**: close the PR with a comment linking the issue that carries the remaining work.
+
 ## Stacked PRs
 
 When PR2 depends on PR1's code (not yet merged):
