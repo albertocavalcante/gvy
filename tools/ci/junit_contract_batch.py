@@ -8,10 +8,10 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from pathlib import Path
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Literal, TypeGuard, TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, TypedDict, TypeGuard
 
 if TYPE_CHECKING:
     from tools.ci.junit_contract import CaseExpectation, Outcome

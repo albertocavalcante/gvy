@@ -6,10 +6,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 from tools.ci.junit_contract_batch import compare_batch
 
@@ -144,8 +144,7 @@ class BatchContractTest(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, "-I", "-S", str(script)],
                 input=data,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 check=False,
                 timeout=5,
             )
