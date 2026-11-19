@@ -16,6 +16,8 @@ plugins {
 group = "org.gvy"
 version = "0.1.0-SNAPSHOT"
 
+// TODO(#2276): standalone build; its IntelliJ platform repositories come from the plugin; move to settings when possible.
+// See: https://github.com/albertocavalcante/gvy/issues/2276
 repositories {
     maven {
         name = "MavenCentralMirror"
