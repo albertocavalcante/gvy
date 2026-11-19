@@ -3,6 +3,11 @@
 
 pluginManagement {
     repositories {
+        // Maven Central mirror first, Gradle Plugin Portal (which proxies Maven Central) as fallback. See #1908.
+        maven {
+            name = "MavenCentralMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+        }
         gradlePluginPortal()
     }
 }
@@ -13,6 +18,11 @@ plugins {
 
 dependencyResolutionManagement {
     repositories {
+        // Mirror first, Maven Central as fallback: Central rate-limits CI bursts (HTTP 429). See #1908.
+        maven {
+            name = "MavenCentralMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+        }
         mavenCentral()
         mavenLocal()
         // Google Maven repository for androidx dependencies (required by Compose)
