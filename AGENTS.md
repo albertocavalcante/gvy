@@ -65,11 +65,11 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
     change, file a gvy issue, keep the case as an executable record, mark it `FIXME(#n)` and list it under "Known gaps"
     in the PR body. A commit message alone is not documentation. Procedure:
     [code-quality rules](.agent/rules/code-quality.md#never-drop-a-failing-case-silently).
-11. **PR lifetime**: A PR merges or carries a named blocker comment within 24 hours of opening. Merge as soon as the
-    required checks are green and the head matches the reviewed head; never hold a PR for a batch. At most three PRs
-    open per agent. Draft means CI in progress only; parked work becomes an issue naming the branch, and the draft is
-    closed. Check the main CI run after every merge. A PR you stop working on is closed with a comment linking the issue
-    that carries the remaining work. Details: [PR lifetime](.agent/rules/git-workflow.md#pr-lifetime).
+11. **PR lifetime**: A PR merges or carries a named blocker comment within 24 hours of opening. Merge as soon as all
+    applicable checks (rule 8) are green and the head SHA equals the reviewed SHA; never hold a PR for a batch. At most
+    three PRs open per agent. Draft means CI in progress only; parked work becomes an issue naming the branch, and the
+    draft is closed. Check the main CI run after every merge. A PR you stop working on is closed with a comment linking
+    the issue that carries the remaining work. Details: [PR lifetime](.agent/rules/git-workflow.md#pr-lifetime).
 
 ## Recovery and mixed-version architecture requirements
 
