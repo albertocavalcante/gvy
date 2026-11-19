@@ -12,12 +12,86 @@ export type TestEventType =
 export interface TestEvent {
   event: TestEventType;
   id: string;
-  name: string;
-  parent?: string;
+  name?: string;
+  parent?: string | null;
   result?: "SUCCESS" | "FAILURE" | "SKIPPED";
   duration?: number;
   message?: string;
   stackTrace?: string;
+  testCount?: number;
+  successfulCount?: number;
+  failedCount?: number;
+  skippedCount?: number;
+}
+
+/** Only consume objects matching the event envelope emitted by the init script. */
+function isTestEvent(value: unknown): value is TestEvent {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  const event = value as Record<string, unknown>;
+  if (typeof event.id !== "string") return false;
+  // Reject invalid types for any recognized field, including optional fields.
+  for (const key of ["name", "message", "stackTrace"]) {
+    if (event[key] !== undefined && typeof event[key] !== "string")
+      return false;
+  }
+  if (
+    event.parent !== undefined &&
+    event.parent !== null &&
+    typeof event.parent !== "string"
+  )
+    return false;
+  if (
+    event.duration !== undefined &&
+    (typeof event.duration !== "number" || !Number.isFinite(event.duration))
+  )
+    return false;
+  for (const key of [
+    "testCount",
+    "successfulCount",
+    "failedCount",
+    "skippedCount",
+  ]) {
+    const count = event[key];
+    if (
+      count !== undefined &&
+      (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+    )
+      return false;
+  }
+  const validResult =
+    event.result === "SUCCESS" ||
+    event.result === "FAILURE" ||
+    event.result === "SKIPPED";
+  if (event.result !== undefined && !validResult) return false;
+  switch (event.event) {
+    case "suiteStarted":
+      return typeof event.name === "string";
+    case "testStarted":
+      return (
+        typeof event.name === "string" &&
+        (typeof event.parent === "string" || event.parent === null)
+      );
+    case "testFinished":
+      return (
+        typeof event.name === "string" &&
+        validResult &&
+        typeof event.duration === "number"
+      );
+    case "suiteFinished":
+      return (
+        validResult &&
+        typeof event.duration === "number" &&
+        [
+          event.testCount,
+          event.successfulCount,
+          event.failedCount,
+          event.skippedCount,
+        ].every((count) => typeof count === "number")
+      );
+    default:
+      return false;
+  }
 }
 
 /**
@@ -102,17 +176,21 @@ export class TestEventConsumer {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) {
       // Not JSON, could be regular Gradle output
-      this.logger.appendLine(trimmed);
+      this.logger.appendLine(line);
       return false;
     }
 
     try {
-      const event = JSON.parse(trimmed) as TestEvent;
-      this.handleEvent(event);
-      return true;
+      const event: unknown = JSON.parse(trimmed);
+      if (isTestEvent(event)) {
+        this.handleEvent(event);
+        return true;
+      }
+      this.logger.appendLine(line);
+      return false;
     } catch {
       // Not valid JSON, log as regular output
-      this.logger.appendLine(trimmed);
+      this.logger.appendLine(line);
       return false;
     }
   }
@@ -122,7 +200,7 @@ export class TestEventConsumer {
 
     // Fallback: try to find by name if exact ID match fails
     if (!item && event.name) {
-      item = this.findItemByName(event.name, event.parent);
+      item = this.findItemByName(event.name, event.parent ?? undefined);
     }
 
     // For Spock @Unroll: dynamically create subtest if not found
@@ -137,25 +215,46 @@ export class TestEventConsumer {
           this.started.add(item);
           this.run.started(item);
         }
-        this.logger.appendLine(`[TEST] Started: ${event.name}`);
         break;
 
       case "testFinished":
         if (item) {
           this.reportTestResult(item, event);
         }
-        this.logger.appendLine(
-          `[TEST] Finished: ${event.name} - ${event.result} (${event.duration}ms)`,
-        );
+        if (event.result !== "SUCCESS" && event.result !== "SKIPPED") {
+          this.logger.appendLine(
+            `[TEST] Finished: ${event.name} - ${event.result} (${event.duration}ms)`,
+          );
+        }
         break;
 
       case "suiteStarted":
-        this.logger.appendLine(`[SUITE] Started: ${event.name}`);
         break;
 
-      case "suiteFinished":
-        this.logger.appendLine(`[SUITE] Finished: ${event.name}`);
+      case "suiteFinished": {
+        const counts = [
+          event.testCount,
+          event.successfulCount,
+          event.failedCount,
+          event.skippedCount,
+        ];
+        const suite = event.name ?? event.id;
+        if (
+          counts.every(
+            (count) =>
+              typeof count === "number" &&
+              Number.isSafeInteger(count) &&
+              count >= 0,
+          )
+        ) {
+          this.logger.appendLine(
+            `[SUITE] ${suite}: ${event.testCount} total, ${event.successfulCount} passed, ${event.failedCount} failed, ${event.skippedCount} skipped`,
+          );
+        } else {
+          this.logger.appendLine(`[SUITE] Finished: ${suite}`);
+        }
         break;
+      }
     }
   }
 
@@ -180,7 +279,7 @@ export class TestEventConsumer {
     // Create child TestItem under the parent
     const childItem = this.testController.createTestItem(
       event.id,
-      event.name,
+      event.name ?? event.id,
       parentItem.uri,
     );
 
@@ -189,10 +288,6 @@ export class TestEventConsumer {
 
     // Register for future lookups
     this.testItems.set(event.id, childItem);
-
-    this.logger.appendLine(
-      `[DYNAMIC] Created subtest: ${event.name} under ${event.parent}`,
-    );
 
     // Mark as enqueued then started
     this.run.enqueued(childItem);
