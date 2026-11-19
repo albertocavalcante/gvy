@@ -176,6 +176,22 @@ class JunitContractTest(unittest.TestCase):
             "limit_exceeded",
         )
 
+    def test_counts_tail_text_that_spans_parser_chunks(self) -> None:
+        tail = b"x" * 600_000
+        report = (
+            b'<testsuite><testcase classname="C" name="x"/>'
+            + tail
+            + b"<a/></testsuite>"
+        )
+        self.assertEqual(
+            inspect_junit(
+                report,
+                [CaseExpectation("C", "x", "passed", 1)],
+                report_id="report",
+            ).reason,
+            "limit_exceeded",
+        )
+
 
 class TaskObservationTest(unittest.TestCase):
     def test_task_header_is_observation_not_execution_proof(self) -> None:

@@ -135,7 +135,7 @@ def inspect_junit(
     depth = elements = chars = 0
     root: ET.Element | None = None
     try:
-        parser = ET.XMLPullParser(events=("start", "end"))
+        parser: ET.XMLPullParser[ET.Element] = ET.XMLPullParser(events=("start", "end"))
         for offset in range(0, len(text), _PARSE_CHUNK):
             parser.feed(text[offset : offset + _PARSE_CHUNK])
             for parsed in parser.read_events():
@@ -161,6 +161,12 @@ def inspect_junit(
         return result("invalid_xml")
     if root is None or root.tag != "testsuite":
         return result("invalid_report")
+    # Tail text is only complete once the next tag arrives, so total it after the parse as well.
+    if (
+        sum(len(node.text or "") + len(node.tail or "") for node in root.iter())
+        > MAX_TEXT
+    ):
+        return result("limit_exceeded")
     cases = root.findall("testcase")
     if len(cases) > MAX_CASES:
         return result("limit_exceeded")
