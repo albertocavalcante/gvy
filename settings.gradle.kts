@@ -18,6 +18,8 @@ plugins {
 }
 
 dependencyResolutionManagement {
+    // The only place Gradle repositories are declared (see AGENTS.md): a project-level block fails the build.
+    repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     repositories {
         // Mirror first, Maven Central as fallback: Central rate-limits CI bursts (HTTP 429). See #1908.
         maven {

@@ -74,6 +74,9 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
     three PRs open per agent. Draft means CI in progress only; parked work becomes an issue naming the branch, and the
     draft is closed. Check the main CI run after every merge. A PR you stop working on is closed with a comment linking
     the issue that carries the remaining work. Details: [PR lifetime](.agent/rules/git-workflow.md#pr-lifetime).
+12. **Gradle repositories**: Declare them only in `settings.gradle.kts` (`pluginManagement` and
+    `dependencyResolutionManagement`, which uses `FAIL_ON_PROJECT_REPOS`); never in a `build.gradle(.kts)` or convention
+    plugin. Exceptions are tracked in #2276.
 
 ## Recovery and mixed-version architecture requirements
 
