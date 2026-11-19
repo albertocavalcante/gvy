@@ -15,6 +15,9 @@ interface BuildToolFileWatcher {
      */
     fun startWatching(projectDir: Path)
 
+    /** Submits a client-reported change to the same coalescing path as native events. */
+    fun onFileChanged(path: Path) = Unit
+
     /**
      * Stops watching for changes.
      */

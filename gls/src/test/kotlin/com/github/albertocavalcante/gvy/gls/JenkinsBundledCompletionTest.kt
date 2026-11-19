@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls
 
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.CompletionParams
@@ -12,6 +13,7 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
+import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -34,6 +36,7 @@ class JenkinsBundledCompletionTest {
 
         // Initialize the server with a workspace folder so Jenkins file detection works
         val initParams = InitializeParams().apply {
+            capabilities = ClientCapabilities()
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/jenkins-test", "jenkins-test"))
             initializationOptions = mapOf("groovy.languageServer.engine" to "native")
         }
@@ -95,6 +98,8 @@ class JenkinsBundledCompletionTest {
         val returnStdout = items.find { it.label == "returnStdout:" }
         assertNotNull(returnStdout, "Should suggest returnStdout map key for sh")
         assertEquals(CompletionItemKind.Property, returnStdout.kind)
+        assertEquals(InsertTextFormat.PlainText, returnStdout.insertTextFormat)
+        assertEquals("returnStdout: true", returnStdout.insertText)
     }
 
     @Test
@@ -120,8 +125,9 @@ class JenkinsBundledCompletionTest {
         assertNotNull(abortPrevious, "Should suggest abortPrevious map key for disableConcurrentBuilds")
         assertEquals(CompletionItemKind.Property, abortPrevious.kind)
         assertEquals("boolean", abortPrevious.detail)
-        assertTrue(abortPrevious.insertText?.contains("abortPrevious:") == true)
-        assertTrue(abortPrevious.insertText?.contains("true,false") == true)
+        // This client omits snippet support, so it receives a complete boolean literal.
+        assertEquals(InsertTextFormat.PlainText, abortPrevious.insertTextFormat)
+        assertEquals("abortPrevious: true", abortPrevious.insertText)
     }
 
     @Test

@@ -9,17 +9,15 @@ export class LSPToolService implements ILSPToolService {
   constructor(
     private readonly vscode: typeof vscodeType,
     private readonly getClient: () => LanguageClient | undefined,
+    private readonly requestInitialStart: () => Promise<boolean> = async () =>
+      true,
   ) {}
 
   /**
    * Finds symbols in the workspace matching the query.
    */
   public async findWorkspaceSymbol(query: string): Promise<AISymbolInfo[]> {
-    // Check if LSP client is available for better error messaging
-    const client = this.getClient();
-    if (!client) {
-      throw new Error("Language Server client is not available");
-    }
+    await this.requireClient();
 
     // Use VS Code's commands which route to the LSP
     const symbols = await this.vscode.commands.executeCommand<
@@ -43,11 +41,7 @@ export class LSPToolService implements ILSPToolService {
     line: number,
     character: number,
   ): Promise<AILocation[]> {
-    // Check if LSP client is available for better error messaging
-    const client = this.getClient();
-    if (!client) {
-      throw new Error("Language Server client is not available");
-    }
+    await this.requireClient();
 
     const uri = this.toUri(uriStr);
     const position = new this.vscode.Position(line, character);
@@ -71,11 +65,7 @@ export class LSPToolService implements ILSPToolService {
     line: number,
     character: number,
   ): Promise<AILocation | null> {
-    // Check if LSP client is available for better error messaging
-    const client = this.getClient();
-    if (!client) {
-      throw new Error("Language Server client is not available");
-    }
+    await this.requireClient();
 
     const uri = this.toUri(uriStr);
     const position = new this.vscode.Position(line, character);
@@ -105,6 +95,12 @@ export class LSPToolService implements ILSPToolService {
   }
 
   // --- Helpers ---
+
+  private async requireClient(): Promise<void> {
+    if (!(await this.requestInitialStart()) || !this.getClient()) {
+      throw new Error("Language Server client is not available");
+    }
+  }
 
   private toAISymbolInfo(symbol: vscodeType.SymbolInformation): AISymbolInfo {
     return {

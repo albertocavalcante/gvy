@@ -8,13 +8,25 @@ import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.DefaultProjectTypeDetector
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.ProjectTypeDetector
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import io.mockk.Runs
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.PublishDiagnosticsParams
+import org.eclipse.lsp4j.TextDocumentItem
+import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -58,6 +70,89 @@ class CodeNarcRulesetReloadTest {
 
         assertEquals(1, beforeReload)
         assertEquals(2, detections.get())
+    }
+
+    @Test
+    fun `two open sources report one rejected configuration each and recover without popup`(): Unit = runTest {
+        val ruleset = root.resolve(".codenarc")
+        Files.writeString(ruleset, "ruleset { ruleset('rulesets/empty.xml') }")
+        val compilation = mockk<GroovyCompilationService>(relaxed = true)
+        every { compilation.workspaceManager.getWorkspaceRoot() } returns root
+        coEvery { compilation.compile(any(), any(), any()) } returns CompilationResult.failure(emptyList())
+        val client = mockk<LanguageClient>(relaxed = true)
+        val documents = DocumentProvider()
+        val service = GroovyTextDocumentService(
+            coroutineScope = backgroundScope,
+            compilationService = compilation,
+            options = GroovyTextDocumentServiceOptions(documentProvider = documents, client = { client }),
+        )
+        val sources = listOf("First", "Second").map { name ->
+            root.resolve("$name.groovy").toUri() to "class $name {}\n"
+        }
+        sources.forEach { (uri, content) -> documents.put(uri, content) }
+        sources.forEach { (uri, content) ->
+            val notices = service.diagnose(uri, content).filter { it.code?.left == "gvy.providerFailure" }
+            assertEquals(1, notices.size)
+            assertEquals(ruleset.toUri().toString(), notices.single().relatedInformation.single().location.uri)
+        }
+        verify(exactly = 0) { client.showMessage(any()) }
+
+        Files.writeString(ruleset, "ruleset { ruleset('rulesets/basic.xml') }")
+        service.reloadCodeNarcRulesets()
+        sources.forEach { (uri, content) ->
+            assertEquals(0, service.diagnose(uri, content).count { it.code?.left == "gvy.providerFailure" })
+        }
+        verify(exactly = 0) { client.showMessage(any()) }
+    }
+
+    @Test
+    fun `published notices clear for both open sources after ruleset correction`(): Unit = runTest {
+        val ruleset = root.resolve(".codenarc")
+        Files.writeString(ruleset, "ruleset { ruleset('rulesets/empty.xml') }")
+        val compilation = mockk<GroovyCompilationService>(relaxed = true)
+        every { compilation.workspaceManager.getWorkspaceRoot() } returns root
+        coEvery { compilation.compileAsync(any(), any(), any()) } answers {
+            val content = thirdArg<String>()
+            CompletableDeferred(
+                CompilationResult(false, null, emptyList(), sourceText = content, parseCompleted = true),
+            )
+        }
+        val publications = CopyOnWriteArrayList<PublishDiagnosticsParams>()
+        val client = mockk<LanguageClient>(relaxed = true)
+        every { client.publishDiagnostics(capture(publications)) } just Runs
+        val service = GroovyTextDocumentService(
+            coroutineScope = backgroundScope,
+            compilationService = compilation,
+            options = GroovyTextDocumentServiceOptions(client = { client }),
+        )
+        val sources = listOf("First", "Second").map { name ->
+            root.resolve("$name.groovy").toUri() to "class $name {}\n"
+        }
+        sources.forEach { (uri, text) ->
+            service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(uri.toString(), "groovy", 1, text)))
+        }
+        sources.forEach { (uri, _) -> service.awaitCurrentDiagnostics(uri, 1) }
+        sources.forEach { (uri, _) ->
+            val notice = publications.last { it.uri == uri.toString() }.diagnostics
+                .filter { it.code?.left == "gvy.providerFailure" }
+            assertEquals(1, notice.size)
+            assertEquals(ruleset.toUri().toString(), notice.single().relatedInformation.single().location.uri)
+        }
+        verify(exactly = 0) { client.showMessage(any()) }
+        Files.writeString(ruleset, "ruleset { ruleset('rulesets/basic.xml') }")
+        service.reloadCodeNarcRulesets()
+        service.rerunDiagnosticsOnOpenFiles()
+        sources.forEach { (uri, _) -> service.awaitCurrentDiagnostics(uri, 1) }
+        sources.forEach { (uri, _) ->
+            assertEquals(
+                0,
+                publications.last { it.uri == uri.toString() }.diagnostics.count {
+                    it.code?.left ==
+                        "gvy.providerFailure"
+                },
+            )
+        }
+        verify(exactly = 0) { client.showMessage(any()) }
     }
 
     private fun countingDetector(detections: AtomicInteger): ProjectTypeDetector = object : ProjectTypeDetector {

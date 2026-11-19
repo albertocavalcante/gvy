@@ -3,14 +3,13 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
-import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.providers.symbols.searchWorkspaceSymbols
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -27,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.onClosed
+import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
@@ -42,6 +42,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
@@ -60,6 +61,7 @@ class GroovyWorkspaceService(
     private val classpathRestamper: ClasspathRestamper? = null,
     /** Shared with startup so a saved legacy setting produces one migration notice per server. */
     private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
+    private val onBuildFilesChanged: (List<Path>) -> Unit = {},
 ) : WorkspaceService {
 
     private val logger = KotlinLogging.logger {}
@@ -92,6 +94,12 @@ class GroovyWorkspaceService(
 
     companion object {
         const val COMMAND_VERSION = "groovy.version"
+
+        /**
+         * Upper bound on `workspace/symbol` results, so one request cannot flood the client. Results are
+         * ordered by file URI, so a capped answer omits symbols from the last files.
+         */
+        internal const val MAX_WORKSPACE_SYMBOLS = 1000
 
         /** Commands handled by [executeCommand]; advertised via `executeCommandProvider`. */
         val SUPPORTED_COMMANDS: List<String> = listOf(COMMAND_VERSION)
@@ -140,6 +148,11 @@ class GroovyWorkspaceService(
 
     override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
         logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
+        onBuildFilesChanged(
+            params.changes.orEmpty().mapNotNull { change ->
+                uriOf(change.uri)?.let(UriPathConverter::toPath)
+            },
+        )
         classpathRestamper?.onWatchedPaths(
             params.changes.orEmpty().mapNotNull { change -> uriOf(change.uri)?.let(UriPathConverter::toPath) },
         )
@@ -190,7 +203,7 @@ class GroovyWorkspaceService(
         } + changes[FileType.OTHER].orEmpty().filter { it.type != FileChangeType.Changed }
         if (queued.isNotEmpty()) enqueue(queued)
 
-        // Build file changes are handled by BuildToolFileWatcher in DependencyManager
+        // Build file notifications were forwarded to DependencyManager before source filtering.
     }
 
     /**
@@ -366,18 +379,22 @@ class GroovyWorkspaceService(
     override fun symbol(
         params: WorkspaceSymbolParams,
     ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> {
-        val query = params.query
-        if (query.isNullOrBlank()) {
-            logger.debug { "Workspace symbol query blank; returning empty result" }
-            return CompletableFuture.completedFuture(Either.forLeft(emptyList()))
+        val query = params.query.orEmpty()
+        // The scan covers every index, so it runs off the message thread.
+        return coroutineScope.future(Dispatchers.Default) {
+            // An open buffer is indexed by its compile, which can still be running right after didOpen (#431).
+            textDocumentService?.awaitOpenDocumentsIndexed()
+            val results = searchWorkspaceSymbols(
+                symbolIndexer.getAllSymbolIndices(),
+                query,
+                MAX_WORKSPACE_SYMBOLS,
+                ::sourceTextOf,
+            )
+            Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(results)
         }
-        val storages = symbolIndexer.getAllSymbolIndices()
-        val results = storages.flatMap { (uri, storage) ->
-            val symbols: List<Symbol> = storage.findMatching(uri, query)
-
-            symbols.mapNotNull { it.toSymbolInformation() }
-        }
-
-        return CompletableFuture.completedFuture(Either.forLeft(results))
     }
+
+    /** The text a symbol range refers to: the compiled buffer if there is one, else the file on disk. */
+    private fun sourceTextOf(uri: URI): String? = compilationService.getCompiledSnapshot(uri)?.sourceText
+        ?: UriPathConverter.toPath(uri)?.let { path -> runCatching { Files.readString(path) }.getOrNull() }
 }

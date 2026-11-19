@@ -5,6 +5,7 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.jenkins.SharedLibraryConfigurationDiagnostic.Code
 import com.github.albertocavalcante.gvy.jenkins.plugins.PluginConfiguration
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -46,9 +47,17 @@ data class JenkinsConfiguration(
          */
         @Suppress("TooGenericExceptionCaught", "UNCHECKED_CAST")
         fun fromMap(map: Map<String, Any>): JenkinsConfiguration = try {
+            val filePatterns = parseFilePatterns(map)
+            val sharedLibraries = parseSharedLibraryConfiguration(map["jenkins.sharedLibraries"])
+            sharedLibraries.diagnostics.forEach { diagnostic ->
+                logger.warn {
+                    "${diagnostic.settingPath} [${diagnostic.code}]: ${diagnostic.message}"
+                }
+            }
+
             JenkinsConfiguration(
-                filePatterns = parseFilePatterns(map),
-                sharedLibraries = parseSharedLibraries(map),
+                filePatterns = filePatterns,
+                sharedLibraries = sharedLibraries.libraries,
                 gdslPaths = parseGdslPaths(map),
                 gdslExecutionEnabled = parseGdslExecutionEnabled(map),
                 pluginConfig = PluginConfiguration.fromMap(map),
@@ -66,23 +75,38 @@ data class JenkinsConfiguration(
             return patterns?.mapNotNull { it as? String } ?: DEFAULT_FILE_PATTERNS
         }
 
-        @Suppress("UNCHECKED_CAST")
-        private fun parseSharedLibraries(map: Map<String, Any>): List<SharedLibrary> {
-            val libraries = map["jenkins.sharedLibraries"] as? List<*> ?: return emptyList()
+        internal fun parseSharedLibraryConfiguration(value: Any?): SharedLibraryConfigurationParseResult {
+            val entries = value as? List<*>
+                ?: return SharedLibraryConfigurationParseResult(emptyList(), emptyList())
+            val libraries = mutableListOf<SharedLibrary>()
+            val diagnostics = mutableListOf<SharedLibraryConfigurationDiagnostic>()
 
-            return libraries.mapNotNull { lib ->
+            entries.forEachIndexed { entryIndex, entry ->
                 try {
-                    val libMap = lib as? Map<String, Any> ?: return@mapNotNull null
-                    SharedLibrary(
-                        name = libMap["name"] as? String ?: return@mapNotNull null,
-                        jar = libMap["jar"] as? String ?: return@mapNotNull null,
-                        sourcesJar = libMap["sourcesJar"] as? String,
-                    )
-                } catch (e: Exception) {
-                    logger.warn(e) { "Failed to parse shared library entry: $lib" }
-                    null
+                    val library = entry as? Map<*, *> ?: return@forEachIndexed
+                    // Presence, including null or malformed values, prevents legacy JAR fallback.
+                    if (library.containsKey("source")) {
+                        val code = if (library.containsKey("jar") || library.containsKey("sourcesJar")) {
+                            Code.CONFLICTING_FORMATS
+                        } else {
+                            Code.TYPED_SOURCE_DISABLED
+                        }
+                        diagnostics.add(SharedLibraryConfigurationDiagnostic(entryIndex, code))
+                    } else {
+                        parseLegacySharedLibrary(library)?.let(libraries::add)
+                    }
+                } catch (_: Exception) {
+                    // Exception messages and entries can contain private configuration values.
+                    diagnostics.add(SharedLibraryConfigurationDiagnostic(entryIndex, Code.UNREADABLE_ENTRY))
                 }
             }
+            return SharedLibraryConfigurationParseResult(libraries, diagnostics)
+        }
+
+        private fun parseLegacySharedLibrary(library: Map<*, *>): SharedLibrary? {
+            val name = library["name"] as? String ?: return null
+            val jar = library["jar"] as? String ?: return null
+            return SharedLibrary(name, jar, library["sourcesJar"] as? String)
         }
 
         @Suppress("UNCHECKED_CAST")

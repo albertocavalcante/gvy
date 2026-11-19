@@ -3,12 +3,15 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.AbstractDiagnosticRule
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
+import com.github.albertocavalcante.nativeapi.AnnotationCoverage
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -28,6 +31,7 @@ import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -108,13 +112,27 @@ class DiagnosticSnapshotContextTest {
         val compilation = compilation()
         every { compilation.getAst(uri) } throws IOException("URI cache evicted")
         val service = DiagnosticsService(listOf(UnusedImportDiagnosticProvider(compilation)))
+        val parsed = GroovyParserFacade().parse(ParseRequest(uri, SOURCE))
+        parsed.compilationUnit.classLoader.use {
+            assertTrue(parsed.isSuccessful)
+            assertEquals(AnnotationCoverage.Complete, parsed.sourceAnnotations.coverage)
+            val held = CompilationResult(
+                true,
+                assertNotNull(parsed.ast),
+                emptyList(),
+                SOURCE,
+                parseCompleted = true,
+                sourceAnnotations = parsed.sourceAnnotations,
+            )
 
-        val result = service.collectDiagnostics(uri, SOURCE, analysis())
+            val result = service.collectDiagnostics(uri, SOURCE, held)
 
-        assertTrue(result.isSuccessful)
-        assertEquals(1, result.diagnostics.size)
-        assertTrue(result.diagnostics.single().message.contains("java.util.List"))
-        verify(exactly = 0) { compilation.getAst(any()) }
+            assertTrue(result.isSuccessful)
+            assertEquals(1, result.diagnostics.size)
+            assertTrue(result.diagnostics.single().message.contains("java.util.List"))
+            verify(exactly = 0) { compilation.getAst(any()) }
+            verify(exactly = 0) { compilation.getCompiledSnapshot(any()) }
+        }
     }
 
     @Test

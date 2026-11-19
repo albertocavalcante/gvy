@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "policyId": "b01-stock-secondary-rejected-v1",
+  "identities": {
+    "primary": {
+      "grammar": {
+        "repository": "https://github.com/dekobon/tree-sitter-groovy",
+        "revision": "be0e3922cfcea075f37bdc1abd5463b953c5cd68",
+        "files": [
+          {
+            "path": "bindings/rust/build.rs",
+            "sha256": "9da779eae9ac60afb058b4eaa6f3ccf3980ca613de0634a9057163d4f819a4ca",
+            "bytes": 852
+          },
+          {
+            "path": "bindings/rust/lib.rs",
+            "sha256": "6439221c88891a8d74ef545eeb420a0c59b07d5ad61680cbb542d03b0767d39e",
+            "bytes": 1877
+          },
+          {
+            "path": "bindings/rust/tests/parse_stress.rs",
+            "sha256": "f5f16d91ce3be38821e7f98ae0a96d03724e5cdfdc35b4bdb963835ddcd5cf05",
+            "bytes": 3020
+          },
+          {
+            "path": "Cargo.toml",
+            "sha256": "a16e03b9c2b30fae89000155e3a8eb4fdb788c5dcf7a1149460f6522664eaeb9",
+            "bytes": 1060
+          },
+          {
+            "path": "LICENSE-APACHE",
+            "sha256": "c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c",
+            "bytes": 11358
+          },
+          {
+            "path": "LICENSE-MIT",
+            "sha256": "7846ff7803888ebb32f936a8a858eb9d5d73560401d92a2f358d562642205263",
+            "bytes": 1072
+          },
+          {
+            "path": "queries/groovy/folds.scm",
+            "sha256": "704099810d810b276f2ef73a5ea2264e85d31a1f157a93902c0288ebca655586",
+            "bytes": 502
+          },
+          {
+            "path": "queries/groovy/highlights.scm",
+            "sha256": "c622e7c37d50c80c8cb37858b6d0f3b9a05853855cab17270d35f122f6fcb051",
+            "bytes": 5663
+          },
+          {
+            "path": "queries/groovy/indents.scm",
+            "sha256": "6de0701656a964e00b80b28b2ae32d47487048debe85eafbd30e37e2e4427bed",
+            "bytes": 695
+          },
+          {
+            "path": "queries/groovy/injections.scm",
+            "sha256": "dfe59997dd82420cebadd2cbae585e7bbc37cef26c33be5ef53e75b00ab05196",
+            "bytes": 1558
+          },
+          {
+            "path": "queries/groovy/locals.scm",
+            "sha256": "c4e5fde987fc92d9e4e1c9d065ab6c10f20ec1525a9b1e574838b5a7f53c735f",
+            "bytes": 1167
+          },
+          {
+            "path": "queries/groovy/tags.scm",
+            "sha256": "4f7f6d5816fe9b809f18502a11eaf39e1ebf45b1905ad1861af47a6e0f474509",
+            "bytes": 2009
+          },
+          {
+            "path": "src/grammar.json",
+            "sha256": "2aa965e20a402f97b43c9539b6334b2bb0b0f75a3ba85a33f7557ae8e5045bdf",
+            "bytes": 161781
+          },
+          {
+            "path": "src/node-types.json",
+            "sha256": "017efa19729035a47f05a444f7dac73f3bab230bc8ee88ea7f8330ed78081be7",
+            "bytes": 367088
+          },
+          {
+            "path": "src/parser.c",
+            "sha256": "ec560396e00fc0871ecb9e959449bde46d6910912d8b8eed196b0609df05bd68",
+            "bytes": 6021185
+          },
+          {
+            "path": "src/scanner.c",
+            "sha256": "d2062f777298bdb4742ecffe4d3df7f87e8de2a8bf4f8edb34ca66e42a4f422d",
+            "bytes": 12196
+          },
+          {
+            "path": "src/tree_sitter/alloc.h",
+            "sha256": "b29c1c9fb7cc82f58c84b376df1297d6e2737a1d655fd356db0859e3c29c2fea",
+            "bytes": 985
+          },
+          {
+            "path": "src/tree_sitter/array.h",
+            "sha256": "20e6ba85abb9d5b7e2e6dedf675c9424a057a06feee03aa3e2dd48a1cb4bf8a2",
+            "bytes": 13453
+          },
+          {
+            "path": "src/tree_sitter/parser.h",
+            "sha256": "180b893c8734778fd32f372dfbc27bd6ad1cd2221f26150b31256ff6716320d2",
+            "bytes": 7624
+          }
+        ]
+      },
+      "runtime": [
+        {
+          "package": "tree-sitter",
+          "version": "0.27.2",
+          "revision": "3fb7be49145acfb07e33b61ed5689e2b6771b2e9"
+        },
+        {
+          "package": "tree-sitter-highlight",
+          "version": "0.27.2",
+          "revision": "3fb7be49145acfb07e33b61ed5689e2b6771b2e9"
+        }
+      ],
+      "queryDigests": {
+        "highlights": {
+          "rawSha256": "c622e7c37d50c80c8cb37858b6d0f3b9a05853855cab17270d35f122f6fcb051",
+          "effectiveSha256": "c622e7c37d50c80c8cb37858b6d0f3b9a05853855cab17270d35f122f6fcb051",
+          "policy": "upstream-unchanged"
+        },
+        "locals": {
+          "rawSha256": "c4e5fde987fc92d9e4e1c9d065ab6c10f20ec1525a9b1e574838b5a7f53c735f",
+          "effectiveSha256": "c4e5fde987fc92d9e4e1c9d065ab6c10f20ec1525a9b1e574838b5a7f53c735f",
+          "policy": "upstream-unchanged"
+        },
+        "injections": {
+          "rawSha256": "dfe59997dd82420cebadd2cbae585e7bbc37cef26c33be5ef53e75b00ab05196",
+          "effectiveSha256": "dfe59997dd82420cebadd2cbae585e7bbc37cef26c33be5ef53e75b00ab05196",
+          "policy": "upstream-unchanged"
+        }
+      },
+      "cargoLockSha256": "dbaeec0549b2c48b01d5d55179092c96d5018f5e8d7cbcf4c915c52675708a95",
+      "manifestSha256": "182afd7bdb45306a0b4fad18f5ea4dbd6cc0d65f6fcd36e8e84a29340253210d",
+      "fixtureDigests": {
+        "valid": "e0e52a70c076f8920f49a43dca1364b80dd5687bc9f7e1e9773fa4376c8b2ffe",
+        "malformed": "5490850f02c0e424e4d41508a5bebf9c7fc34e7c73597329e5614895b9739051"
+      },
+      "probeSourceDigests": {
+        "contract.rs": "66bf5ca2fe8221c347060ad4322287ed2db0f65de0dbc71baae4d9f1577e91b6",
+        "run.mjs": "fe78becc90b0d71ef68b65e5216f7f812b3722581a6887ef8b4e53e58d818aa8",
+        "command.mjs": "940b36c58b357f14e7bae2571054be62b6960c79aaf5c186fc9e47c0c9d3da3f",
+        "diagnostics.mjs": "650c5f41fe989dc2659c89c7943d5df35eda1b2c86cb375f66d14e9ec34f7899",
+        "source-files.mjs": "54284955ef8afb01b95c53087c081f0fee30c79ddb1e5aab81e28c06c8ce4316",
+        "attempt.mjs": "9ce07c7c78e69a780f081ef48f35dcb1cd208cb8b6b1fd5d0e9bc33952d8e3d0",
+        "feasibility-policy.mjs": "fc4354a9a6e46e2f31599df7e1d0e48cdf1adf3ecf66c5cdab3b1c816e83362b",
+        "feasibility.mjs": "ef8b02eaa9bd4d7a7637dca521b9faaa1f9e3081b2f38c1d0dbf1e8793abd731",
+        "primary-result.mjs": "dbd4a5351b9dbbd7bf44a38cb0d092b29a37bca127a54699283dc4708b9f0813",
+        "probe-sources.mjs": "9bdb2e52372fb03f39ad81e05aa604c66f693fd4c4dd268cade75ffc56162497",
+        "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
+        "primary/src/main.rs": "ce7beb0e92b1f4ad59f92e8c83cf94611cc0e7c8e04ae9053507b602deaa12a1",
+        "tools/ci/check-rust-diagnostics.mjs": "e7b9132fcc61559e87bea053500adae41bf35a2c8c1b09c78ec072551918ca13",
+        "tools/ci/read-evidence.mjs": "0bc943ee1a25ef803812e4444912049f9706999a546782779a035c9765dedb9a",
+        "tools/ci/windows-evidence.mjs": "8b7ead14b76f6440817c4388a5b0300bda016f6d0893ade9f2ac5e40e3a5d56c",
+        "tools/ci/windows-evidence-reader.c": "18f75680e3aed03461879733aef2835f76f103386e63757d43418e02e3ce04df"
+      }
+    },
+    "secondary": {
+      "grammar": {
+        "repository": "https://github.com/murtaza64/tree-sitter-groovy",
+        "revision": "2a6ddd558b6aa39c5b77d8db9fe9baf817486b2c",
+        "files": [
+          {
+            "path": "bindings/rust/build.rs",
+            "sha256": "18a254a378ce4f7d865ab805e91c128f685eb80e12d68c7eff0018798128a101",
+            "bytes": 1381
+          },
+          {
+            "path": "bindings/rust/lib.rs",
+            "sha256": "9e434bde8e2290e114ae85d3ba0763c1384d3d2ba23bd3e8eafced7c245f9bac",
+            "bytes": 1949
+          },
+          {
+            "path": "Cargo.toml",
+            "sha256": "3d9dd18e24160613e6c73b0030c3d752041f53b421b4d0242474bf8532dc56f3",
+            "bytes": 529
+          },
+          {
+            "path": "LICENSE",
+            "sha256": "5f10fff4ea3c4892af1e2f1af0b9ba7fa79843598808a1dbbbbc8231ca81d1ad",
+            "bytes": 1071
+          },
+          {
+            "path": "queries/folds.scm",
+            "sha256": "8eef1e49d145c91a37670810ee136a597c249f9327ad655e07fa150deaa7c8bd",
+            "bytes": 57
+          },
+          {
+            "path": "queries/highlights.scm",
+            "sha256": "b8d5ea6907596102477a96c68dfbe7aed4fb93a6e807055c40a9f84da2fe609b",
+            "bytes": 3791
+          },
+          {
+            "path": "queries/indents.scm",
+            "sha256": "6ffebd4c6fe1294a3aad8de6fc3fa02aeb8388cb02dbd6c20386ee24c87b6779",
+            "bytes": 449
+          },
+          {
+            "path": "queries/injections.scm",
+            "sha256": "a8c71750d30b2d4449bb0bbca7f3a5f69e11ff1c4c3339f6afa7c3b135f9bbee",
+            "bytes": 181
+          },
+          {
+            "path": "queries/locals.scm",
+            "sha256": "fab40aa423f68e110e31446c4ae0880f847f327b8adf05b918d47d038c1bc58c",
+            "bytes": 168
+          },
+          {
+            "path": "src/.clangd",
+            "sha256": "691e9f203d9a6ca8e0ad5ce582218b1e36162747cb67c8838b07eb55f7af89d2",
+            "bytes": 64
+          },
+          {
+            "path": "src/grammar.json",
+            "sha256": "668c2746aecfbb550e5c45cea6a1a7f50ec4944acc9727c74293d82d52035d09",
+            "bytes": 112561
+          },
+          {
+            "path": "src/node-types.json",
+            "sha256": "df0a4ec791c57e71e92befe53479b45a2fac1362cd67a506c464abee0e3fc893",
+            "bytes": 98249
+          },
+          {
+            "path": "src/parser.c",
+            "sha256": "5ec80af680626dbe87cac861678f8bd102bdf6be474eeb8e3d321ef73df9b33e",
+            "bytes": 6266907
+          },
+          {
+            "path": "src/tree_sitter/alloc.h",
+            "sha256": "b29c1c9fb7cc82f58c84b376df1297d6e2737a1d655fd356db0859e3c29c2fea",
+            "bytes": 985
+          },
+          {
+            "path": "src/tree_sitter/array.h",
+            "sha256": "5bdf6ed1a78e3409fd443e085ca967a64c188a5d082aaf7f819bccd53a471c94",
+            "bytes": 10431
+          },
+          {
+            "path": "src/tree_sitter/parser.h",
+            "sha256": "180b893c8734778fd32f372dfbc27bd6ad1cd2221f26150b31256ff6716320d2",
+            "bytes": 7624
+          }
+        ]
+      },
+      "runtime": [
+        {
+          "package": "tree-sitter",
+          "version": "0.26.8",
+          "revision": "cd5b087cd9f45ca6d93ab1954f6b7c8534f324d2"
+        },
+        {
+          "package": "tree-sitter-highlight",
+          "version": "0.26.8",
+          "revision": "cd5b087cd9f45ca6d93ab1954f6b7c8534f324d2"
+        }
+      ],
+      "queryDigests": {
+        "highlights": {
+          "rawSha256": "b8d5ea6907596102477a96c68dfbe7aed4fb93a6e807055c40a9f84da2fe609b",
+          "effectiveSha256": "b8d5ea6907596102477a96c68dfbe7aed4fb93a6e807055c40a9f84da2fe609b",
+          "policy": "upstream-unchanged"
+        },
+        "locals": {
+          "rawSha256": "fab40aa423f68e110e31446c4ae0880f847f327b8adf05b918d47d038c1bc58c",
+          "effectiveSha256": "fab40aa423f68e110e31446c4ae0880f847f327b8adf05b918d47d038c1bc58c",
+          "policy": "upstream-unchanged"
+        },
+        "injections": {
+          "rawSha256": "a8c71750d30b2d4449bb0bbca7f3a5f69e11ff1c4c3339f6afa7c3b135f9bbee",
+          "effectiveSha256": "a8c71750d30b2d4449bb0bbca7f3a5f69e11ff1c4c3339f6afa7c3b135f9bbee",
+          "policy": "upstream-unchanged"
+        }
+      },
+      "cargoLockSha256": "e5ca675b92ca9775714aa0f137653f73efc1a1816d23bb4dda481640a3beacc8",
+      "manifestSha256": "58a6bcd250dcb7a4bb6e1d5dffe1cae456c46244d48f21ab3d8d467cf5bbada7",
+      "fixtureDigests": {
+        "valid": "e0e52a70c076f8920f49a43dca1364b80dd5687bc9f7e1e9773fa4376c8b2ffe",
+        "malformed": "5490850f02c0e424e4d41508a5bebf9c7fc34e7c73597329e5614895b9739051"
+      },
+      "probeSourceDigests": {
+        "contract.rs": "66bf5ca2fe8221c347060ad4322287ed2db0f65de0dbc71baae4d9f1577e91b6",
+        "run.mjs": "fe78becc90b0d71ef68b65e5216f7f812b3722581a6887ef8b4e53e58d818aa8",
+        "command.mjs": "940b36c58b357f14e7bae2571054be62b6960c79aaf5c186fc9e47c0c9d3da3f",
+        "diagnostics.mjs": "650c5f41fe989dc2659c89c7943d5df35eda1b2c86cb375f66d14e9ec34f7899",
+        "source-files.mjs": "54284955ef8afb01b95c53087c081f0fee30c79ddb1e5aab81e28c06c8ce4316",
+        "attempt.mjs": "9ce07c7c78e69a780f081ef48f35dcb1cd208cb8b6b1fd5d0e9bc33952d8e3d0",
+        "feasibility-policy.mjs": "fc4354a9a6e46e2f31599df7e1d0e48cdf1adf3ecf66c5cdab3b1c816e83362b",
+        "feasibility.mjs": "ef8b02eaa9bd4d7a7637dca521b9faaa1f9e3081b2f38c1d0dbf1e8793abd731",
+        "primary-result.mjs": "dbd4a5351b9dbbd7bf44a38cb0d092b29a37bca127a54699283dc4708b9f0813",
+        "probe-sources.mjs": "9bdb2e52372fb03f39ad81e05aa604c66f693fd4c4dd268cade75ffc56162497",
+        "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
+        "secondary/src/main.rs": "08d3208a03cc4e7e6599ac3f559eade1785141b94a9cd5bde556ed3667748c41",
+        "tools/ci/check-rust-diagnostics.mjs": "e7b9132fcc61559e87bea053500adae41bf35a2c8c1b09c78ec072551918ca13",
+        "tools/ci/read-evidence.mjs": "0bc943ee1a25ef803812e4444912049f9706999a546782779a035c9765dedb9a",
+        "tools/ci/windows-evidence.mjs": "8b7ead14b76f6440817c4388a5b0300bda016f6d0893ade9f2ac5e40e3a5d56c",
+        "tools/ci/windows-evidence-reader.c": "18f75680e3aed03461879733aef2835f76f103386e63757d43418e02e3ce04df"
+      }
+    }
+  },
+  "nativeExpectations": {
+    "fixtures": {
+      "valid": "int value = 1\nString label = '🙂'\ndef MAX_VALUE = 2\ndef Max_Value = MAX_VALUE\n",
+      "malformed": "def broken = (\n"
+    },
+    "primary": {
+      "grammarAbi": 15,
+      "limitations": {
+        "embeddedLanguages": "unsupported-rejected",
+        "incrementalHighlighting": "not-tested",
+        "performance": "not-measured",
+        "prebuiltTreeHighlighting": "unavailable-in-official-api",
+        "unrecognizedLocalDefinitionCaptures": [
+          "local.definition.parameter",
+          "local.definition.var",
+          "local.definition.field"
+        ],
+        "upstreamLocalBindingParity": "not-established"
+      }
+    }
+  }
+}

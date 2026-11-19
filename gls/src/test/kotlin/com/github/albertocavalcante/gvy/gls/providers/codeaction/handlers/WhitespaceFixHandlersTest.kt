@@ -952,4 +952,112 @@ class WhitespaceFixHandlersTest {
 
         assertNull(textEdit, "Handler should return null when no blank lines before package")
     }
+
+    // ========================================================================
+    // Line-convention robustness: CodeNarc reports a raw 0-based index that the diagnostic provider may
+    // treat as 1-based, so diagnostics can land one line early. Both conventions must produce the same edit.
+    // ========================================================================
+
+    private fun runHandler(rule: String, content: String, line: Int): org.eclipse.lsp4j.TextEdit? {
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = rule,
+            message = "msg",
+            line = line,
+            startChar = 0,
+            endChar = 0,
+        )
+        val handler = assertNotNull(FixHandlerRegistry.getHandler(rule))
+        return handler(FixContext(diagnostic, content, content.lines(), "file:///test.groovy"))
+    }
+
+    @Test
+    fun `consecutive blank lines fix is identical for every diagnostic in a run of three`() {
+        val content = "def x = 1\n\n\n\n\ndef y = 2" // blank lines 1..4
+        val edits = (0..4).map { assertNotNull(runHandler("ConsecutiveBlankLines", content, it), "line $it") }
+
+        edits.forEach {
+            assertEquals(2, it.range.start.line)
+            assertEquals(5, it.range.end.line)
+        }
+    }
+
+    @Test
+    fun `consecutive blank lines fix works when diagnostic is on the line above the run`() {
+        val content = "def x = 1\n\n\ndef y = 2"
+        val edit = assertNotNull(runHandler("ConsecutiveBlankLines", content, 0))
+
+        assertEquals(2, edit.range.start.line)
+        assertEquals(3, edit.range.end.line)
+    }
+
+    @Test
+    fun `blank line before package fix works with diagnostic on blank line or the line above it`() {
+        val content = "// header\n\n\npackage foo"
+        for (line in 0..2) {
+            val edit = assertNotNull(runHandler("BlankLineBeforePackage", content, line), "line $line")
+            assertEquals(1, edit.range.start.line)
+            assertEquals(3, edit.range.end.line)
+        }
+    }
+
+    @Test
+    fun `blank line before package skips block comments when locating package`() {
+        val content = "/*\n\n license\n*/\n\npackage foo"
+        val edit = assertNotNull(runHandler("BlankLineBeforePackage", content, 3))
+
+        assertEquals(4, edit.range.start.line)
+        assertEquals(5, edit.range.end.line)
+    }
+
+    @Test
+    fun `blank line before package returns null when first code line is not package`() {
+        assertNull(runHandler("BlankLineBeforePackage", "\n\nimport a.B\npackage foo", 0))
+    }
+
+    // ========================================================================
+    // UnnecessaryGetter / UnnecessarySetter with ranges as RuleRangeCalculator produces them
+    // ========================================================================
+
+    private fun runOnRange(rule: String, line: String, call: String): org.eclipse.lsp4j.TextEdit? {
+        val start = line.indexOf(call)
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = rule,
+            message = "msg",
+            line = 0,
+            startChar = start,
+            endChar = start + call.length,
+        )
+        val handler = assertNotNull(FixHandlerRegistry.getHandler(rule))
+        return handler(FixContext(diagnostic, line, listOf(line), "file:///test.groovy"))
+    }
+
+    @Test
+    fun `unnecessary getter and setter fixes apply to the full call range`() {
+        val getter = assertNotNull(runOnRange("UnnecessaryGetter", "def n = p.getName()", "getName()"))
+        assertEquals("name", getter.newText)
+
+        val setter = assertNotNull(runOnRange("UnnecessarySetter", "p.setName(f(1, 2))", "setName(f(1, 2))"))
+        assertEquals("name = f(1, 2)", setter.newText)
+    }
+
+    @Test
+    fun `consecutive blank lines fix for exactly two blanks works on first or second blank line`() {
+        val content = "def x = 1\n\n\ndef y = 2" // blank lines 1 and 2
+        // 0 = line above (0-based index read as 1-based), 1 = first blank, 2 = second blank (+1 convention)
+        for (line in 0..2) {
+            val edit = assertNotNull(runHandler("ConsecutiveBlankLines", content, line), "line $line")
+            assertEquals(2, edit.range.start.line, "line $line")
+            assertEquals(3, edit.range.end.line, "line $line")
+        }
+    }
+
+    @Test
+    fun `blank line before package single blank works on blank line, line above and package line`() {
+        val content = "// header\n\npackage foo" // blank at 1, package at 2
+        for (line in 0..2) {
+            val edit = assertNotNull(runHandler("BlankLineBeforePackage", content, line), "line $line")
+            assertEquals(1, edit.range.start.line, "line $line")
+            assertEquals(2, edit.range.end.line, "line $line")
+        }
+    }
 }

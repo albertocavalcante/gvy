@@ -5,12 +5,14 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import org.eclipse.lsp4j.MessageType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -108,6 +110,44 @@ class ProjectStartupManagerErrorHandlingTest {
         val genericError = manager.convertToErrorDetails(genericStatus)
         assertTrue(genericError is GenericError)
         assertEquals("UNKNOWN", (genericError as GenericError).errorCode)
+    }
+
+    @Test
+    fun `a partial resolution is announced as a warning that names what is missing`() {
+        val resolution = WorkspaceResolution(
+            dependencies = listOf(java.nio.file.Path.of("a.jar")),
+            sourceDirectories = emptyList(),
+            status = ResolutionStatus.Warning("DEPENDENCY_RESOLUTION_FAILED", "Unresolved: org.acme:missing:1.0"),
+        )
+
+        val notice = dependencyLoadNotice(resolution, "Maven")
+
+        assertEquals(MessageType.Warning, notice.type)
+        assertTrue(notice.message.contains("org.acme:missing:1.0"), notice.message)
+        assertTrue(notice.message.contains("partially"), notice.message)
+    }
+
+    @Test
+    fun `a complete resolution is announced as plain information`() {
+        val resolution = WorkspaceResolution(listOf(java.nio.file.Path.of("a.jar")), emptyList())
+
+        val notice = dependencyLoadNotice(resolution, "Maven")
+
+        assertEquals(MessageType.Info, notice.type)
+        assertEquals("Dependencies loaded: 1 JARs from Maven", notice.message)
+    }
+
+    @Test
+    fun `a partial resolution does not complete progress as a clean load`() {
+        val partial = WorkspaceResolution(
+            dependencies = listOf(java.nio.file.Path.of("a.jar")),
+            sourceDirectories = emptyList(),
+            status = ResolutionStatus.Warning("DEPENDENCY_RESOLUTION_FAILED", "Unresolved: org.acme:missing:1.0"),
+        )
+        val complete = WorkspaceResolution(listOf(java.nio.file.Path.of("a.jar")), emptyList())
+
+        assertEquals("⚠️ Ready with partial dependencies: 1 loaded", dependencyProgressText(partial))
+        assertEquals("✅ Ready: 1 dependencies loaded", dependencyProgressText(complete))
     }
 
     private fun createManager(): ProjectStartupManager {

@@ -437,17 +437,21 @@ class GroovyCompilationService internal constructor(
         return published
     }
 
-    fun createContext(uri: URI): CompilationContext? {
-        val parseResult = parseAccessor.getParseResult(uri) ?: return null
-        val ast = parseResult.ast ?: return null
+    fun createContext(uri: URI): CompilationContext? = createContextWithSource(uri)?.first
 
-        return CompilationContext(
+    /** The context for [uri] with the source text it was compiled from, both taken from one cache entry. */
+    internal fun createContextWithSource(uri: URI): Pair<CompilationContext, String>? {
+        val snapshot = getCompiledSnapshot(uri) ?: return null
+        val ast = snapshot.parseResult.ast ?: return null
+
+        val context = CompilationContext(
             uri = uri,
             moduleNode = ast,
-            astModel = parseResult.astModel,
+            astModel = snapshot.parseResult.astModel,
             workspaceRoot = workspaceManager.getWorkspaceRoot(),
             classpath = workspaceManager.getDependencyClasspath(),
         )
+        return context to snapshot.sourceText
     }
 
     // ==========================================================================

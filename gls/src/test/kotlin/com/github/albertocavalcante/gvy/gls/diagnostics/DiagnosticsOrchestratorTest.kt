@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -68,6 +69,9 @@ class DiagnosticsOrchestratorTest {
         val result = mockk<CompilationResult>()
         every { result.diagnostics } returns parser
         every { result.parseCompleted } returns true
+        every { result.outcome } returns null
+        every { result.sourceMembershipKnown } returns null
+        every { result.sourceVisibilityKnown } returns null
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
         coEvery { diagnostics.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(extra, emptyList(), emptyList())
@@ -100,6 +104,9 @@ class DiagnosticsOrchestratorTest {
         val result = mockk<CompilationResult>()
         every { result.diagnostics } returns emptyList()
         every { result.parseCompleted } returns true
+        every { result.outcome } returns null
+        every { result.sourceMembershipKnown } returns null
+        every { result.sourceVisibilityKnown } returns null
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
         val release = CompletableDeferred<Unit>()
         coEvery { oldService.collectDiagnostics(any(), any(), any()) } coAnswers {
@@ -264,6 +271,41 @@ class DiagnosticsOrchestratorTest {
         assertEquals("Parser error", firstPublication.diagnostics[0].message)
 
         // Cleanup
+        scope.cancel()
+    }
+
+    @Test
+    fun `provider failure is published and retained for the same run`(): Unit = runTest {
+        val scope = CoroutineScope(SupervisorJob())
+        val compilation = mockk<GroovyCompilationService>()
+        val diagnostics = mockk<DiagnosticsService>()
+        val client = mockk<LanguageClient>(relaxed = true)
+        val publications = mutableListOf<PublishDiagnosticsParams>()
+        every { client.publishDiagnostics(capture(publications)) } just Runs
+        coEvery { compilation.compileAsync(any(), any(), any()) } returns
+            CompletableDeferred(createMockCompilationResult(emptyList()))
+        coEvery { diagnostics.collectDiagnostics(any(), any(), any()) } returns DiagnosticsCollectionResult(
+            emptyList(),
+            listOf("codenarc"),
+            listOf(DiagnosticProviderFailure("codenarc", "Failure", "bad ruleset")),
+        )
+        val orchestrator = DiagnosticsOrchestrator(
+            scope,
+            compilation,
+            diagnostics,
+            openDocuments(),
+            ServerConfiguration(),
+            { client },
+        )
+
+        orchestrator.trigger(testUri, testContent)
+        orchestrator.awaitDiagnostics(testUri)
+
+        val diagnostic = publications.last().diagnostics.single()
+        assertEquals("gvy.providerFailure", diagnostic.code.left)
+        assertEquals(DiagnosticSeverity.Information, diagnostic.severity)
+        assertTrue(diagnostic.message.contains("bad ruleset"))
+        assertEquals(1, orchestrator.awaitCurrentDiagnostics(testUri).failures.size)
         scope.cancel()
     }
 
@@ -651,5 +693,8 @@ class DiagnosticsOrchestratorTest {
         mockk<CompilationResult> {
             every { this@mockk.diagnostics } returns diagnostics
             every { parseCompleted } returns true
+            every { outcome } returns null
+            every { sourceMembershipKnown } returns null
+            every { sourceVisibilityKnown } returns null
         }
 }

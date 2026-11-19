@@ -7,6 +7,8 @@ version = 1
 # Exact paths make new files require an explicit licensing decision.
 [[annotations]]
 path = [
+  "build-tool/src/test/resources/network-policy/conformance.json",
+  "kb/network-policy-contract.md",
   ".agent/rules/code-quality.md",
   ".agent/rules/git-workflow.md",
   ".agent/workflows/bughunt.md",
@@ -30,6 +32,7 @@ path = [
   ".agent/workflows/solve.md",
   ".agent/workflows/stale-pr.md",
   ".agent/workflows/tests-tests-tests.md",
+  ".agents/skills/gvy-install/SKILL.md",
   ".bazelignore",
   ".bazelversion",
   ".buckversion",
@@ -62,12 +65,8 @@ path = [
   ".gitignore",
   ".java-version",
   ".sdkmanrc",
-  ".spec/JENKINSFILE_FIRST_CLASS_SUPPORT_SPECIFICATION.md",
-  ".spec/README.md",
-  ".spec/markdown-standardization.md",
   "AGENTS.md",
   "CHANGELOG.md",
-  "CLAUDE.md",
   "CODE_QUALITY.md",
   "CONTRIBUTING.md",
   "MODULE.bazel.lock",
@@ -135,6 +134,8 @@ path = [
   "dsl/gdsl/src/test/resources/gdsl-golden/jenkins-sample.gdsl",
   "dsl/gdsl/src/test/resources/gdsl-golden/jenkins-sample.golden.txt",
   "dsl/gdsl/src/test/resources/gdsl-golden/spock.golden.txt",
+  "editors/code/client/src/test/fixtures/gdsl-snippet-defaults.gdsl",
+  "editors/code/client/src/test/fixtures/jenkins-descriptor.gdsl",
   "editors/zed/.gitignore",
   "editors/zed/Cargo.lock",
   "editors/zed/README.md",
@@ -195,6 +196,9 @@ path = [
   "kb/PHASE_2_GROOVY_OPERATORS_PLAN.md",
   "kb/PHASE_3_PERFORMANCE_PLAN.md",
   "kb/README.md",
+  "kb/FILE_EXECUTION.md",
+  "docs/file-execution.md",
+  "editors/code/tools/runtime-manifest.json",
   "kb/RECURSIVE_VISITOR_PARITY.md",
   "kb/SDK_EXTRACTION_DELIVERY_PLAN.md",
   "kb/SPOCK_AST_SUPPORT.md",
@@ -246,6 +250,7 @@ path = [
   "tests/e2e/resources/scenarios/cli/jenkins-extract-basic.yaml",
   "tests/e2e/resources/scenarios/cli/repro-cli-check-sarif-stdout.yaml",
   "tests/e2e/resources/scenarios/code-action-basic.yaml",
+  "tests/e2e/resources/scenarios/code-action-organize-imports.yaml",
   "tests/e2e/resources/scenarios/codelens-spock.yaml",
   "tests/e2e/resources/scenarios/codenarc-original-source-ranges.yaml",
   "tests/e2e/resources/scenarios/codenarc-plain-generic-dirs-profile.yaml",
@@ -390,6 +395,7 @@ path = [
   "tools/ci/fixtures/native-windows-x64.txt",
   "tools/ci/fixtures/native-windows-x64.events.json",
   "tools/ci/gradle-diagnostics.json",
+  "tools/ci/gradle-jetbrains-diagnostics.json",
   "tools/ci/native-provisioning-diagnostics.json",
   "tools/ci/run-gradle.schema.json",
   "tools/ci/runner-diagnostics.json",
@@ -504,6 +510,68 @@ SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = ["tools/perf/bench/corpus/authored.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# These exact owned files keep fixture, lock and declaration bytes unchanged.
+[[annotations]]
+path = [
+    "tools/perf/bench/native-contract/.gitignore",
+    "tools/perf/bench/native-contract/README.md",
+    "tools/perf/bench/native-contract/feasibility-policy.json",
+    "tools/perf/bench/native-contract/source-lock.json",
+    "tools/perf/bench/native-contract/syntax-contract.json",
+    "tools/perf/bench/native-contract/primary/Cargo.lock",
+    "tools/perf/bench/native-contract/secondary/Cargo.lock",
+    "tools/perf/bench/native-contract/fixtures/valid.groovy",
+    "tools/perf/bench/native-contract/fixtures/malformed.groovy",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Canonical user documentation, site declarations and the verified stable manifest.
+[[annotations]]
+path = [
+  "docs/user/contributing.md",
+  "docs/user/diagnostics-formatting.md",
+  "docs/user/gradle.md",
+  "docs/user/groovy.md",
+  "docs/user/java.md",
+  "docs/user/jenkins.md",
+  "docs/user/private-environments.md",
+  "docs/user/quickstart.md",
+  "docs/user/semanticdb.md",
+  "docs/user/spock.md",
+  "docs/user/troubleshooting.md",
+  "docs/website/README.md",
+  "docs/website/dprint.json",
+  "docs/website/route-inventory.json",
+  "docs/website/stable-v0.5.4-package.json",
+  "kb/DOCUMENTATION_WEBSITE_REVAMP.md",
+  "kb/DOCUMENTATION_WEBSITE_VALIDATION.md",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Exact compatibility inputs and handwritten oracle data.
+[[annotations]]
+path = [
+  "tools/jenkins-extractor/oracle/controls.json",
+  "tools/jenkins-extractor/oracle/roots.json",
+  "tools/jenkins-extractor/oracle/locks/current.json",
+  "tools/jenkins-extractor/oracle/locks/legacy.json",
+  "tools/jenkins-extractor/oracle/fixtures/minimal.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/docker.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/kubernetes.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/missing-agent.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/unknown-section.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/malformed.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/scripted.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/never-execute.Jenkinsfile",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"

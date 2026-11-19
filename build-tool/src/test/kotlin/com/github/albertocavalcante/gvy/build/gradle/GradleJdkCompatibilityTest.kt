@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GradleJdkCompatibilityTest {
@@ -44,15 +43,17 @@ class GradleJdkCompatibilityTest {
     }
 
     @Test
-    fun `isSupported returns true for any Gradle with JDK 16`() {
-        // JDK 16 and below have no strict minimum requirement in our matrix
-        assertTrue(GradleJdkCompatibility.isSupported("5.0", 16))
+    fun `isSupported respects the documented JDK 16 range`() {
+        assertFalse(GradleJdkCompatibility.isSupported("5.0", 16))
         assertTrue(GradleJdkCompatibility.isSupported("7.0", 16))
+        assertFalse(GradleJdkCompatibility.isSupported("9.0", 16))
     }
 
     @Test
     fun `isSupported handles invalid Gradle version gracefully`() {
         assertFalse(GradleJdkCompatibility.isSupported("not-a-version", 21))
+        assertFalse(GradleJdkCompatibility.isSupported("9.8", 28))
+        assertEquals(GradleRuntimeSupport.UNKNOWN, GradleJdkCompatibility.checkCompatibility("9.8", 28))
     }
 
     @Test
@@ -61,13 +62,13 @@ class GradleJdkCompatibilityTest {
     }
 
     @Test
-    fun `getMinimumGradleVersion returns 7_2 for JDK 17`() {
-        assertEquals("7.2", GradleJdkCompatibility.getMinimumGradleVersion(17))
+    fun `getMinimumGradleVersion returns 7_3 for JDK 17`() {
+        assertEquals("7.3", GradleJdkCompatibility.getMinimumGradleVersion(17))
     }
 
     @Test
-    fun `getMinimumGradleVersion returns null for JDK 16`() {
-        assertNull(GradleJdkCompatibility.getMinimumGradleVersion(16))
+    fun `getMinimumGradleVersion returns 7_0 for JDK 16`() {
+        assertEquals("7.0", GradleJdkCompatibility.getMinimumGradleVersion(16))
     }
 
     @Test
@@ -77,10 +78,7 @@ class GradleJdkCompatibilityTest {
         assertTrue(suggestion.contains("8.0.2"))
         assertTrue(suggestion.contains("21"))
         assertTrue(suggestion.contains("8.5"))
-        assertTrue(suggestion.contains("Upgrade"))
-        assertTrue(suggestion.contains("wrapper"))
-        // Validates the dynamic max JDK suggestion (Gradle 8.0.2 supports up to JDK 19)
-        assertTrue(suggestion.contains("19 for Gradle 8.0.2"))
+        assertTrue(suggestion.contains("Gradle JVM"))
     }
 
     @Test

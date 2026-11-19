@@ -300,12 +300,12 @@ async function handleActionClick(
   // Check for settings-related actions
   if (
     lowerAction.includes("settings") ||
-    lowerAction.includes("groovy.gradle.javaHome")
+    lowerAction.includes("groovy.project.javahome")
   ) {
-    // Open settings to groovy.gradle.javaHome
+    // Open settings to groovy.project.javaHome (declared in package.json)
     vscode.commands.executeCommand(
       "workbench.action.openSettings",
-      "groovy.gradle.javaHome",
+      "groovy.project.javaHome",
     );
     return;
   }

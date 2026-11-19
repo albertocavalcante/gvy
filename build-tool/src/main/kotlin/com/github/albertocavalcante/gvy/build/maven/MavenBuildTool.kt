@@ -3,9 +3,12 @@
 
 package com.github.albertocavalcante.gvy.build.maven
 
+import com.github.albertocavalcante.gvy.build.BoundedProcessRunner
 import com.github.albertocavalcante.gvy.build.BuildExecutableResolver
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.DependencyMetadata
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.TestCommand
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -13,16 +16,20 @@ import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.exists
+import kotlin.time.Duration.Companion.minutes
 
 class MavenBuildTool : BuildTool {
     private val logger = KotlinLogging.logger {}
+
+    private companion object {
+        private val CLI_TIMEOUT = 5.minutes
+        private const val MAX_REPORTED_UNRESOLVED = 5
+    }
 
     override val name: String = "Maven"
 
@@ -47,13 +54,28 @@ class MavenBuildTool : BuildTool {
         val pomPath = workspaceRoot.resolve("pom.xml")
 
         // Try embedded resolver first (faster, no subprocess)
-        val embeddedDeps = tryEmbeddedResolution(pomPath)
-        val dependencies = if (embeddedDeps.isNotEmpty()) {
-            embeddedDeps
-        } else {
-            // Fallback to CLI-based resolution
-            logger.info { "Embedded resolution returned no results, falling back to CLI" }
-            resolveViaCli(workspaceRoot)
+        val embedded = tryEmbeddedResolution(pomPath)
+        val embeddedDeps = embedded.dependencies
+        var partialWarning: ResolutionStatus? = null
+        val dependencies = when {
+            embeddedDeps.isEmpty() -> {
+                // Fallback to CLI-based resolution
+                logger.info { "Embedded resolution returned no results, falling back to CLI" }
+                resolveViaCli(workspaceRoot)
+            }
+            embedded.isPartial -> {
+                // The embedded session ignores settings.xml mirrors/credentials/proxies; real Maven may resolve
+                // what it could not. A non-empty CLI result means mvn exited 0, i.e. the classpath is complete.
+                logger.info { "Embedded resolution was partial, trying CLI for a complete classpath" }
+                val cliDeps = resolveViaCli(workspaceRoot)
+                if (cliDeps.isNotEmpty()) {
+                    cliDeps
+                } else {
+                    partialWarning = partialStatus(embedded)
+                    embeddedDeps
+                }
+            }
+            else -> embeddedDeps
         }
 
         // Standard Maven layout assumption for now
@@ -74,7 +96,17 @@ class MavenBuildTool : BuildTool {
         }
 
         logger.info { "Resolved ${finalDependencies.size} Maven dependencies" }
-        return WorkspaceResolution(finalDependencies, sourceDirs)
+        val status = partialWarning ?: ResolutionStatus.Success
+        return WorkspaceResolution(finalDependencies, sourceDirs, status)
+    }
+
+    private fun partialStatus(embedded: MavenResolutionResult): ResolutionStatus {
+        val shown = embedded.unresolved.take(MAX_REPORTED_UNRESOLVED).joinToString()
+        val more = embedded.unresolved.size - MAX_REPORTED_UNRESOLVED
+        return ResolutionStatus.Warning(
+            ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
+            "Partial Maven classpath; unresolved: $shown" + if (more > 0) " (and $more more)" else "",
+        )
     }
 
     private fun ensureJenkinsCore(dependencies: List<Path>, pomPath: Path): List<Path> {
@@ -135,55 +167,41 @@ class MavenBuildTool : BuildTool {
         }
     }
 
-    private fun tryEmbeddedResolution(pomPath: Path): List<Path> =
-        runCatching { dependencyResolver.resolveDependencies(pomPath) }
+    private fun tryEmbeddedResolution(pomPath: Path): MavenResolutionResult =
+        runCatching { dependencyResolver.resolveDetailed(pomPath) }
             .onFailure { throwable ->
                 if (throwable is Error) throw throwable
                 logger.warn(throwable) { "Embedded Maven resolution failed, will try CLI fallback" }
             }
-            .getOrDefault(emptyList())
+            .getOrDefault(MavenResolutionResult.EMPTY)
 
-    private fun resolveViaCli(workspaceRoot: Path): List<Path> {
-        val cpFile = Files.createTempFile("mvn-classpath", ".txt")
+    internal fun resolveViaCli(
+        workspaceRoot: Path,
+        createTempFile: () -> Path = { Files.createTempFile("mvn-classpath", ".txt") },
+        deleteFile: (Path) -> Unit = { Files.deleteIfExists(it) },
+    ): List<Path> {
+        var cpFile: Path? = null
         var result: List<Path> = emptyList()
         try {
+            cpFile = createTempFile()
             val mvnCommand = BuildExecutableResolver.resolveMaven(workspaceRoot)
             val command = listOf(
                 mvnCommand,
+                "-B",
                 "dependency:build-classpath",
                 "-DincludeScope=test",
                 "-Dmdep.outputFile=${cpFile.toAbsolutePath()}",
             )
 
             logger.debug { "Running Maven command: $command" }
-            val processBuilder = ProcessBuilder(command)
-            processBuilder.directory(workspaceRoot.toFile())
-            processBuilder.redirectErrorStream(true)
+            val outcome = BoundedProcessRunner.run(command, workspaceRoot, CLI_TIMEOUT)
 
-            val process = processBuilder.start()
-
-            try {
-                // Read output to log it (and avoid blocking if buffer fills)
-                val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                    reader.readText()
-                }
-
-                val exitCode = process.waitFor()
-
-                if (exitCode != 0) {
-                    logger.error { "Maven CLI dependency resolution failed. Output:\n$output" }
-                } else {
-                    val classpathString = Files.readString(cpFile)
-                    result = classpathString
-                        .split(File.pathSeparator)
-                        .mapNotNull { entry ->
-                            runCatching { Paths.get(entry.trim()) }
-                                .getOrNull()
-                                ?.takeIf { it.exists() }
-                        }
-                }
-            } finally {
-                process.destroyForcibly()
+            if (outcome.timedOut) {
+                logger.error { "Maven CLI timed out after $CLI_TIMEOUT. Output:\n${outcome.output}" }
+            } else if (outcome.exitCode != 0) {
+                logger.error { "Maven CLI dependency resolution failed. Output:\n${outcome.output}" }
+            } else {
+                result = parseClasspath(Files.readString(cpFile))
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -193,11 +211,27 @@ class MavenBuildTool : BuildTool {
         } catch (e: SecurityException) {
             logger.error(e) { "Failed to resolve Maven dependencies via CLI" }
         } finally {
-            Files.deleteIfExists(cpFile)
+            cpFile?.let { file ->
+                // Cleanup must never discard the result (or the caller's embedded partial classpath).
+                try {
+                    deleteFile(file)
+                } catch (e: java.io.IOException) {
+                    logger.debug(e) { "Could not delete temporary classpath file $file" }
+                } catch (e: SecurityException) {
+                    logger.debug(e) { "Could not delete temporary classpath file $file" }
+                }
+            }
         }
 
         return result
     }
+
+    /** Parses `mdep.outputFile` content; blank entries (e.g. an empty file) must not become the working directory. */
+    internal fun parseClasspath(content: String): List<Path> = content
+        .split(File.pathSeparator)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .mapNotNull { entry -> runCatching { Paths.get(entry) }.getOrNull()?.takeIf { it.exists() } }
 
     override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {
         val testArg = if (test != null) "$suite#$test" else suite

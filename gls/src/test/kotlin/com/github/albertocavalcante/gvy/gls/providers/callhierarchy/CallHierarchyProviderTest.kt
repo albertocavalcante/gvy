@@ -147,7 +147,11 @@ class CallHierarchyProviderTest {
             val offset = source.indexOf(target)
             val expectedRange = Range(index.positionOf(offset), index.positionOf(offset + target.length))
             assertEquals(expectedRange, prepared.range)
-            assertEquals(expectedRange, prepared.selectionRange)
+            val nameOffset = source.indexOf("target")
+            assertEquals(
+                Range(index.positionOf(nameOffset), index.positionOf(nameOffset + "target".length)),
+                prepared.selectionRange,
+            )
             val incoming = callHierarchyProvider.incomingCalls(CallHierarchyIncomingCallsParams(prepared))
             assertEquals(listOf("caller"), incoming.map { it.from.name })
             val callOffset = source.lastIndexOf("target")
@@ -197,7 +201,11 @@ class CallHierarchyProviderTest {
             val offset = source.indexOf(target)
             val expectedRange = Range(index.positionOf(offset), index.positionOf(offset + target.length))
             assertEquals(expectedRange, outgoing.to.range)
-            assertEquals(expectedRange, outgoing.to.selectionRange)
+            val nameOffset = source.lastIndexOf("target")
+            assertEquals(
+                Range(index.positionOf(nameOffset), index.positionOf(nameOffset + "target".length)),
+                outgoing.to.selectionRange,
+            )
         }
     }
 
@@ -304,6 +312,48 @@ class CallHierarchyProviderTest {
         // Assert
         assertEquals(1, outgoingCalls.size)
         assertEquals("target", outgoingCalls[0].to.name)
+    }
+
+    @Test
+    fun `typed declarations expose the name as selectionRange and resolve calls from it`(): Unit = runTest {
+        val content = """
+            class OrderService {
+                String place(String customer) {
+                    helper()
+                }
+
+                String helper() {
+                    'x'
+                }
+
+                static void main(String[] args) {
+                    new OrderService().place('ada')
+                }
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///OrderService.groovy")
+        compilationService.compile(uri, content)
+        val index = TextIndex(content)
+
+        val prepared = callHierarchyProvider.prepareCallHierarchy(
+            CallHierarchyPrepareParams(
+                TextDocumentIdentifier(uri.toString()),
+                index.positionOf(content.indexOf("place")),
+            ),
+        ).single()
+
+        val nameOffset = content.indexOf("place")
+        assertEquals(
+            Range(index.positionOf(nameOffset), index.positionOf(nameOffset + "place".length)),
+            prepared.selectionRange,
+        )
+        assertEquals(Position(1, 4), prepared.range.start, "range still covers the whole declaration")
+
+        val incoming = callHierarchyProvider.incomingCalls(CallHierarchyIncomingCallsParams(prepared))
+        assertEquals(listOf("main"), incoming.map { it.from.name })
+
+        val outgoing = callHierarchyProvider.outgoingCalls(CallHierarchyOutgoingCallsParams(prepared))
+        assertEquals(listOf("helper"), outgoing.map { it.to.name })
     }
 
     private fun createItem(name: String, uri: URI, rangeStart: Position): CallHierarchyItem =

@@ -44,6 +44,6 @@ steps:
         - jsonPath: $.diagnostics[0].message
           expect:
             type: CONTAINS
-            value: "Unexpected input"
+            value: "Expected an expression after '='."
   - shutdown: {}
   - exit: {}

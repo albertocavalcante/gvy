@@ -267,6 +267,17 @@ pnpm test
 pnpm run test:integration
 ```
 
+On macOS, long checkout paths can exceed the editor's IPC socket path limit before tests start. Choose a short,
+test-owned profile directory with `GVY_TEST_USER_DATA_DIR`:
+
+```bash
+GVY_TEST_USER_DATA_DIR="$HOME/.local/state/gvy/vscode-test" pnpm run test:integration
+```
+
+Use a separate directory for test settings. The
+[shared Jenkins authoring fixtures](../../gls/src/test/resources/fixtures/jenkins-declarative/README.md) describe the
+protocol, provider, widget-acceptance and private screenshot evidence paths.
+
 **Debugging Tests** You can debug tests directly in VS Code:
 
 1. Open the Debug view (`Cmd+Shift+D` / `Ctrl+Shift+D`).
@@ -397,6 +408,63 @@ snapshot, use the
 An automatic nightly update channel in the extension remains follow-up work in
 [#1736](https://github.com/albertocavalcante/gvy/issues/1736).
 
+## Install an exact main commit from CI
+
+For a current `main` snapshot, reuse its source-built server and VSIX without a local Gradle or extension build:
+
+```sh
+node editors/code/tools/gvy-install.js --ref main --wait 600 --json
+# Equivalent direct entrypoint:
+node editors/code/tools/install-extension.js --from-ci --ref main --wait 600 --json
+```
+
+This mode needs Node 24+, authenticated `gh`, Java 21+, and a compatible VS Code `code` command. It supports macOS and
+Linux. Unlike a local source build, it does not need Gradle, pnpm dependencies, or a separate build checkout.
+
+`--ref` accepts `main` or a lowercase, full 40-character commit SHA. The installer resolves `main` once. It selects both
+artifacts from the same successful main-push Extension CI run for that SHA, verifies GitHub's artifact digests, verifies
+the bundled server and its clean source identity, checks editor compatibility, and smoke-checks the server before
+installation. It then verifies the actual installed server and client hashes and extension manifest. A cached no-op
+rechecks the installed files and current editor compatibility. A matching package version alone does not make an
+installation current.
+
+The fixed wait limit bounds polling. If the selected run is pending, missing, canceled, or failed, the JSON result
+records that state and the receipt needed to resume. Resume that receipt to keep the selected SHA; rerunning a fresh
+`--ref main` selects a new snapshot. Use `--from-ci --resume <receipt> --wait 600 --json`, preserving a custom
+`--state-root` and local configuration. An explicit `--ref <full-40-character-SHA>` also selects that exact commit. The
+command never substitutes a release or an older green commit. Extension CI success does not establish that the broader
+project CI has passed.
+
+Resume keeps the original CI run attempt as well as the SHA. A failed or canceled run does not become successful by
+waiting. If that run is rerun, start a fresh invocation with `--ref <saved-full-SHA>` to verify the new attempt without
+following a newer `main` commit.
+
+Use `--java-home` to select an installed JDK, `--installer code` to select VS Code, `--state-root` for artifact and
+receipt storage, and `--bin-dir` for the standalone `gvy` command. The command preserves unrelated files and reports a
+conflicting or shadowed command. `--package-only` downloads, verifies, and smoke-checks the pair without changing the
+editor or standalone command. To install a previously verified package-only selection, resume its receipt without
+`--package-only`. Capture stderr in a local log when using `--json`; normal stdout contains the result.
+
+The installer keeps the verified runtime, paired VSIX, and receipt for resuming or recovery. The standalone command's
+symlink changes atomically; the editor CLI's installation is a separate operation. Selecting another valid JDK for the
+same commit creates a separate launcher before changing the active link. A partial failure must be resumed or recovered
+before reporting success. A failure during final receipt or cleanup work does not imply rollback. After an update, run
+**Developer: Reload Window** in an existing VS Code window; file verification does not establish which server that
+window has loaded.
+
+JSON failures report the primary error and, when available, stage and receipt path. `installed: true` means activation
+was verified before a later failure; it does not turn `success: false` into success. `receiptError` and `cleanupError`,
+when present, identify additional finalization failures. Preserve that evidence and inspect any retained lock before
+retrying.
+
+The macOS state root defaults to `~/Library/Application Support/gvy/source-installs`; Linux uses
+`${XDG_STATE_HOME:-~/.local/state}/gvy/source-installs`. CI receipts and commit directories live in its `ci-v1`
+subdirectory. Older manual installations are preserved and are not automatically adopted as tool-owned commands.
+
+This CI path is for supported POSIX installations using VS Code. For a requested local checkout or local changes, use
+the source-build command below. For a policy that chooses the newest fully green commit, use
+[the green-main workflow](#run-the-latest-green-main).
+
 ## Build and install this checkout
 
 From the repository root:
@@ -445,3 +513,66 @@ node editors/code/tools/install-extension.js --vsix /path/to/gvy-source.vsix --i
 This uses VS Code's normal extension replacement operation. Keep a previous VSIX if you need to roll back; build and
 verification failures do not invoke the editor installer. The source command retains its build/cache for fast repeat
 runs.
+
+## Verify the stable release in an isolated editor
+
+The release probe checks the published v0.5.4 VSIX in VS Code 1.146.0 on macOS or Linux with Java 17. It verifies the
+installed client/server bytes and the running Java process, then requests the quickstart hover through the editor API.
+It does not replace the exact-main installer or test Gradle, restricted repositories, Jenkins, Spock, or visual UI
+behavior. The stable bundle still reports `0.4.8-SNAPSHOT`; keep
+[#1751](https://github.com/albertocavalcante/gvy/issues/1751) visible.
+
+Run from `editors/code`, with `JAVA_HOME` explicitly selecting Java 17 and a compatible `code` command on `PATH`:
+
+```bash
+export GVY_VERIFY_ROOT="$(mktemp -d /tmp/gvy-j17.XXXXXX)"
+export GVY_VERIFY_JAVA_HOME="$JAVA_HOME"
+export GVY_VERIFY_VSIX="$GVY_VERIFY_ROOT/gvy-0.5.4.vsix"
+export GVY_VERIFY_RECEIPT="$GVY_VERIFY_ROOT/receipt.json"
+export GVY_VERIFY_TOOL="$PWD/tools/verify-release-editor.js"
+gh release download v0.5.4 --repo albertocavalcante/gvy \
+  --pattern gvy-0.5.4.vsix --dir "$GVY_VERIFY_ROOT"
+node <<'JS'
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.env.GVY_VERIFY_ROOT;
+for (const dir of ['profile/User', 'extensions', 'driver', 'project', 'tmp']) {
+  fs.mkdirSync(path.join(root, dir), { recursive: true });
+}
+fs.writeFileSync(path.join(root, 'driver/package.json'), JSON.stringify({
+  name: 'gvy-release-proof', publisher: 'local', version: '0.0.0',
+  engines: { vscode: '^1.146.0' }
+}));
+fs.writeFileSync(path.join(root, 'project/Hello.groovy'), require(process.env.GVY_VERIFY_TOOL).fixture);
+fs.writeFileSync(path.join(root, 'profile/User/settings.json'), JSON.stringify({
+  'groovy.languageServer.javaHome': process.env.GVY_VERIFY_JAVA_HOME,
+  'groovy.server.vmargs': ['-Xmx512m'], 'groovy.update.checkOnStartup': false,
+  'update.mode': 'none', 'extensions.autoUpdate': false, 'extensions.autoCheckUpdates': false,
+  'telemetry.telemetryLevel': 'off', 'security.workspace.trust.enabled': false,
+  'workbench.startupEditor': 'none'
+}));
+JS
+TMPDIR="$GVY_VERIFY_ROOT/tmp/" code --user-data-dir "$GVY_VERIFY_ROOT/profile" --extensions-dir "$GVY_VERIFY_ROOT/extensions" \
+  --install-extension "$GVY_VERIFY_VSIX" --force
+TMPDIR="$GVY_VERIFY_ROOT/tmp/" code --new-window --wait --disable-gpu --skip-welcome --skip-release-notes --disable-workspace-trust \
+  --user-data-dir "$GVY_VERIFY_ROOT/profile" --extensions-dir "$GVY_VERIFY_ROOT/extensions" \
+  --extensionDevelopmentPath="$GVY_VERIFY_ROOT/driver" \
+  --extensionTestsPath="$GVY_VERIFY_TOOL" "$GVY_VERIFY_ROOT/project"
+```
+
+Run this procedure interactively. The internal editor operations have deadlines, but `code --wait` has no outer
+startup/shutdown deadline. If the run has not completed after two minutes, stop it and close only its isolated window
+and server. Do not treat a timeout or missing receipt as success.
+
+Require both a zero editor exit and `success: true` in the receipt. Keep logs and the receipt privately: they contain
+local paths and process details. This synthetic project disables workspace trust only inside its disposable profile.
+Record `code --version`, the probe source revision, and complete diagnostics beside the receipt. The VSIX tag does not
+establish the bundled server's source revision; report that limit rather than assigning the tag's commit to its JAR.
+
+The released extension can leave its JVM running after the editor exits. After the test, verify that processes
+referencing `GVY_VERIFY_ROOT` have stopped. Close any remaining owned test window and server before removing the
+profile. Preserve the receipt and relevant logs outside the temporary directory, then remove only that owned directory.
+Do not change the normal editor profile, standalone command, or extension directory.
+
+When refreshing these pins, verify the release assets, editor compatibility, actual server version and quickstart
+fixture together. Never turn the historical mismatch into an expected result for a newer release.

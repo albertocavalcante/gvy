@@ -161,8 +161,8 @@ class JenkinsPerFileMetadataTest {
             compileB().let { b -> compileA() to b }
         }
 
-        assertTrue("def aStep(" in cpsScriptOn(classpathA) && "bStep" !in cpsScriptOn(classpathA))
-        assertTrue("def bStep(" in cpsScriptOn(classpathB) && "aStep" !in cpsScriptOn(classpathB))
+        assertTrue("def 'aStep'(" in cpsScriptOn(classpathA) && "bStep" !in cpsScriptOn(classpathA))
+        assertTrue("def 'bStep'(" in cpsScriptOn(classpathB) && "aStep" !in cpsScriptOn(classpathB))
     }
 
     @Test

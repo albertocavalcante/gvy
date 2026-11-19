@@ -1,0 +1,13 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Small illustrative GDSL contribution. Real Pipeline Syntax output varies by controller and installed plugins.
+def ctx = context(scope: scriptScope())
+contributor(ctx) {
+    method(
+        name: 'publishArtifact',
+        type: 'java.lang.Object',
+        params: [artifact: 'java.lang.String'],
+        doc: 'Publish an artifact to the internal repository'
+    )
+}

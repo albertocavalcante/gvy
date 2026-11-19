@@ -8,6 +8,8 @@ import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserRange
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -228,6 +230,27 @@ class WorkspaceCompilerTest {
         // At least one error should be for the invalid file
         val invalidFileErrors = result.errors.filter { it.uri == invalidFile.toUri() }
         assertTrue(invalidFileErrors.isNotEmpty(), "Should have errors for invalid file")
+    }
+
+    @Test
+    fun `workspace reports semantic errors even when an AST was produced`(): Unit = runTest {
+        val source = Files.createDirectories(tempDir.resolve("src")).resolve("Invalid.groovy")
+        source.writeText("class Invalid {}")
+        workspaceManager.initializeWorkspace(tempDir)
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            parser.parse(firstArg()).copy(
+                diagnostics = listOf(ParserDiagnostic(range = ParserRange.point(0, 0), message = "semantic error")),
+            )
+        }
+        val compiler =
+            WorkspaceCompiler(worker, workspaceManager, SemanticIndexer(WorkspaceSymbolIndex(GroovySemanticDB())))
+
+        val result = compiler.compileWorkspace()
+
+        assertTrue(source.toUri() in result.modules, "the recovered AST should remain available")
+        assertFalse(result.success)
+        assertTrue(result.errors.any { it.uri == source.toUri() && "semantic error" in it.message })
     }
 
     @Test

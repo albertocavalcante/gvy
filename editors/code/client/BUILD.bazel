@@ -23,6 +23,8 @@ ts_project(
     tsconfig = ":tsconfig.json",
     visibility = ["//visibility:public"],
     deps = [
+        "//editors/code:network_policy",
+
         # VS Code API types
         "//editors/code:node_modules/@types/vscode",
 

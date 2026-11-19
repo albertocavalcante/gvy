@@ -35,7 +35,7 @@ steps:
         - jsonPath: $.diagnostics[0].message
           expect:
             type: CONTAINS
-            value: "Unexpected input"
+            value: "Unclosed '{': expected '}' before end of file."
         # LSP4J Gson serializes DiagnosticSeverity as string: "Error", "Warning", "Information", "Hint"
         - jsonPath: $.diagnostics[0].severity
           expect:
@@ -44,7 +44,7 @@ steps:
         - jsonPath: $.diagnostics[0].range.start.line
           expect:
             type: EQUALS
-            value: 4
+            value: 0
   - changeDocument:
       path: src/Problem.groovy
       version: 2

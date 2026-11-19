@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.Nested
@@ -62,6 +63,9 @@ class DiagnosticsOrchestratorFenceTest {
         init {
             every { parsed.diagnostics } returns emptyList()
             every { parsed.parseCompleted } returns true
+            every { parsed.outcome } returns null
+            every { parsed.sourceMembershipKnown } returns null
+            every { parsed.sourceVisibilityKnown } returns null
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(parsed)
             coEvery { providers.collectDiagnostics(uri, any(), any()) } returns healthyResult()
             every { client.publishDiagnostics(capture(publications)) } just Runs
@@ -145,7 +149,12 @@ class DiagnosticsOrchestratorFenceTest {
         advanceUntilIdle()
 
         val result = fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
-        assertEquals(listOf(partial), result.diagnostics)
+        assertEquals(partial, result.diagnostics.first())
+        val notice = result.diagnostics.single { it.code?.left == "gvy.providerFailure" }
+        assertEquals(2, result.diagnostics.size)
+        assertEquals(DiagnosticSeverity.Information, notice.severity)
+        assertEquals("test-provider analysis failed: unavailable", notice.message)
+        assertEquals(mapOf("provider" to PROVIDER_ID), notice.data)
         assertEquals(listOf(failure), result.failures)
         assertEquals(fixture.publications.last().diagnostics, result.diagnostics)
     }

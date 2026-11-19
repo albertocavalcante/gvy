@@ -30,6 +30,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -83,6 +84,7 @@ class GradleScopedDependencyProducerIntegrationTest {
         fixture(root, mode)
         val provenance = DependencyProvenance("offline-integration-observation", 7)
         val result = assertIs<TargetDependencyEvidence.Scoped>(runBlocking { producer.resolve(root, provenance) })
+        assertTrue(result.enumerationComplete)
         val main = result.target(root, "main")
         val test = result.target(root, "test")
         val integration = result.target(root.resolve("sub"), "integrationTest")
@@ -125,6 +127,339 @@ class GradleScopedDependencyProducerIntegrationTest {
         assertEquals(TargetDependencyState.UNRESOLVED, badRoots.state)
         assertTrue(badRoots.sourceRoots.isEmpty())
         assertFalse(Files.exists(root.resolve("build/classes")), "The query must not compile the fixture")
+    }
+
+    @Test
+    fun `observes included files and Gradle exclusions`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("membership")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'membership'")
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            sourceSets.main.groovy.exclude 'excluded/**'
+            sourceSets.main.resources.srcDir 'src/main/groovy'
+            sourceSets.main.resources.srcDir 'resourceOnly'
+            tasks.named('compileGroovy') { exclude 'taskExcluded/**' }
+            """.trimIndent(),
+        )
+        val sources = Files.createDirectories(root.resolve("src/main/groovy"))
+        val included = Files.writeString(sources.resolve("Included.groovy"), "class Included {}")
+        val excludedDir = Files.createDirectories(sources.resolve("excluded"))
+        val excluded = Files.writeString(excludedDir.resolve("Broken.groovy"), "class Broken {}")
+        val taskExcludedDir = Files.createDirectories(sources.resolve("taskExcluded"))
+        val taskExcluded = Files.writeString(taskExcludedDir.resolve("TaskExcluded.groovy"), "class TaskExcluded {}")
+
+        val result = assertIs<TargetDependencyEvidence.Scoped>(
+            runBlocking { producer().resolve(root, DependencyProvenance("membership-test", 1)) },
+        )
+        val files = requireNotNull(result.target(root, "main").sourceFiles)
+        assertTrue(included in files)
+        assertFalse(excluded in files)
+        assertFalse(taskExcluded in files)
+        assertFalse(root.resolve("resourceOnly") in result.target(root, "main").sourceRoots)
+
+        val added = Files.writeString(sources.resolve("Added.groovy"), "class Added {}")
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            sourceSets.main.groovy.exclude 'excluded/**', 'Included.groovy'
+            sourceSets.main.resources.srcDir 'src/main/groovy'
+            sourceSets.main.resources.srcDir 'resourceOnly'
+            tasks.named('compileGroovy') { exclude 'taskExcluded/**' }
+            """.trimIndent(),
+        )
+        val refreshed = assertIs<TargetDependencyEvidence.Scoped>(
+            runBlocking { producer().resolve(root, DependencyProvenance("membership-test", 2)) },
+        )
+        val updatedFiles = requireNotNull(refreshed.target(root, "main").sourceFiles)
+        assertTrue(added in updatedFiles)
+        assertFalse(included in updatedFiles)
+        assertFalse(excluded in updatedFiles)
+        assertFalse(taskExcluded in updatedFiles)
+    }
+
+    @Test
+    fun `mixed Java and Groovy projects retain authoritative source membership`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("mixed-projects")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'mixed'; include 'javaLib'")
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            sourceSets.main.groovy.exclude 'Broken.groovy'
+            """.trimIndent(),
+        )
+        val groovy = Files.createDirectories(root.resolve("src/main/groovy"))
+        val included = Files.writeString(groovy.resolve("Included.groovy"), "class Included {}")
+        val excluded = Files.writeString(groovy.resolve("Broken.groovy"), "class Broken {}")
+        val javaRoot = Files.createDirectories(root.resolve("javaLib"))
+        Files.writeString(javaRoot.resolve("build.gradle"), "plugins { id 'java' }")
+        val javaDir = Files.createDirectories(javaRoot.resolve("src/main/java"))
+        val javaFile = Files.writeString(javaDir.resolve("Library.java"), "class Library {}")
+
+        val result = assertIs<TargetDependencyEvidence.Scoped>(
+            runBlocking { producer().resolve(root, DependencyProvenance("mixed-test", 1)) },
+        )
+        assertTrue(result.enumerationComplete)
+        val groovyFiles = requireNotNull(result.target(root, "main").sourceFiles)
+        assertTrue(included in groovyFiles)
+        assertFalse(excluded in groovyFiles)
+        assertTrue(javaFile in requireNotNull(result.target(javaRoot, "main").sourceFiles))
+    }
+
+    @Test
+    fun `unmodeled Groovy compile task makes source set enumeration incomplete`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("extra-compiler")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'extra-compiler'")
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            tasks.register('customCompile', GroovyCompile) { source 'extra' }
+            """.trimIndent(),
+        )
+        Files.createDirectories(root.resolve("src/main/groovy"))
+        val extraDir = Files.createDirectories(root.resolve("extra"))
+        Files.writeString(extraDir.resolve("Extra.groovy"), "class Extra {}")
+
+        val result = assertIs<TargetDependencyEvidence.Scoped>(
+            runBlocking { producer().resolve(root, DependencyProvenance("extra-task-test", 1)) },
+        )
+        assertFalse(result.enumerationComplete)
+        assertNotNull(result.target(root, "main").sourceFiles)
+    }
+
+    @Test
+    fun `unmodeled Java compile task makes source set enumeration incomplete`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("extra-java-compiler")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'extra-java-compiler'")
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            sourceSets.main.java.exclude 'Extra.java'
+            tasks.register('customJavaCompile', JavaCompile) { source 'src/main/java/Extra.java' }
+            """.trimIndent(),
+        )
+        val javaDir = Files.createDirectories(root.resolve("src/main/java"))
+        val extra = Files.writeString(javaDir.resolve("Extra.java"), "class Extra {}")
+
+        val result = assertIs<TargetDependencyEvidence.Scoped>(
+            runBlocking { producer().resolve(root, DependencyProvenance("extra-java-task-test", 1)) },
+        )
+        assertFalse(result.enumerationComplete)
+        assertFalse(extra in requireNotNull(result.target(root, "main").sourceFiles))
+    }
+
+    @Test
+    fun `task sources outside source set roots are reported`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("extra-membership")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'extra-membership'")
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            tasks.named('compileGroovy') { source 'extra' }
+            """.trimIndent(),
+        )
+        val extra = Files.createDirectories(root.resolve("extra"))
+        val file = Files.writeString(extra.resolve("Extra.groovy"), "class Extra {}")
+        val result = assertIs<TargetDependencyEvidence.Scoped>(
+            runBlocking { producer().resolve(root, DependencyProvenance("extra-test", 1)) },
+        )
+        assertTrue(file in requireNotNull(result.target(root, "main").sourceFiles))
+    }
+
+    @Test
+    fun `execution observation uses exact membership and ordered runtime paths for each source set`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("execution")).toRealPath()
+        Files.createDirectories(root.resolve("app/custom"))
+        Files.createDirectories(root.resolve("app/extra"))
+        Files.createDirectories(root.resolve("app/src/custom/resources"))
+        Files.createDirectories(root.resolve("lib/src/main/groovy"))
+        Files.writeString(
+            root.resolve("settings.gradle"),
+            "gradle.startParameter.offline = true\ninclude 'app', 'lib'\n",
+        )
+        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(root.resolve("build.gradle"), "")
+        Files.writeString(root.resolve("lib/build.gradle"), "plugins { id 'groovy' }\n")
+        Files.writeString(
+            root.resolve("app/build.gradle"),
+            """
+            plugins { id 'groovy' }
+            sourceSets { custom }
+            sourceSets.custom.groovy.srcDirs = ['custom']
+            sourceSets.custom.groovy.exclude '**/Excluded.groovy'
+            tasks.named('compileCustomGroovy') { exclude '**/TaskExcluded.groovy'; source 'extra' }
+            sourceSets.custom.compileClasspath = files('compile-first', 'compile-last')
+            sourceSets.custom.runtimeClasspath = files('runtime-first', 'runtime-only')
+            """.trimIndent(),
+        )
+        val resource = Files.writeString(root.resolve("app/src/custom/resources/message.txt"), "hello")
+        val taskExcluded = Files.writeString(root.resolve("app/custom/TaskExcluded.groovy"), "class TaskExcluded {}")
+        val outsideRoot = Files.writeString(root.resolve("app/extra/Extra.groovy"), "class Extra {}")
+        val included = Files.writeString(root.resolve("app/custom/Included.groovy"), "class Included {}")
+        val excluded = Files.writeString(root.resolve("app/custom/Excluded.groovy"), "class Excluded {}")
+        val lib = Files.writeString(root.resolve("lib/src/main/groovy/Lib.groovy"), "class Lib {}")
+
+        val contexts = requireNotNull(runBlocking { producer().resolveExecutionContexts(root) })
+        val custom = contexts.single { it.projectDirectory == root.resolve("app") && it.sourceSet == "custom" }
+        assertEquals(":app", custom.projectPath)
+        assertTrue(included in custom.sourceFiles)
+        assertTrue(resource in custom.inputFiles)
+        assertFalse(resource in custom.sourceFiles)
+        assertFalse(taskExcluded in custom.sourceFiles)
+        assertTrue(outsideRoot in custom.sourceFiles)
+        assertTrue(outsideRoot in custom.inputFiles)
+        assertFalse(excluded in custom.sourceFiles)
+        assertFalse(lib in custom.sourceFiles)
+        assertEquals(
+            listOf(root.resolve("app/compile-first"), root.resolve("app/compile-last")),
+            custom.compileClasspath,
+        )
+        assertEquals(
+            listOf(root.resolve("app/runtime-first"), root.resolve("app/runtime-only")),
+            custom.runtimeClasspath,
+        )
+        assertEquals(":app:customClasses", custom.preparationTask)
+        assertTrue(root.resolve("app/build/classes/groovy/custom") in custom.outputDirectories)
+        assertTrue(root.resolve("app/build/resources/custom") in custom.outputDirectories)
+        assertEquals(GradleExecutionRuntime.Unknown, custom.runtime)
+        assertTrue(contexts.any { lib in it.sourceFiles && it.projectDirectory == root.resolve("lib") })
+    }
+
+    @Test
+    fun `unmodeled compiler tasks make execution membership unavailable`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("execution-extra-compiler")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "gradle.startParameter.offline = true\n")
+        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(
+            root.resolve("build.gradle"),
+            "plugins { id 'groovy' }\ntasks.register('extraCompile', GroovyCompile) { source 'extra' }\n",
+        )
+
+        assertNull(runBlocking { producer().resolveExecutionContexts(root) })
+    }
+
+    @Test
+    fun `an unresolved test classpath does not erase main or its own membership`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("execution-partial")).toRealPath()
+        Files.createDirectories(root.resolve("src/main/groovy"))
+        Files.createDirectories(root.resolve("src/test/groovy"))
+        Files.writeString(root.resolve("settings.gradle"), "gradle.startParameter.offline = true\n")
+        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(
+            root.resolve("build.gradle"),
+            "plugins { id 'groovy' }\n" +
+                "repositories { maven { url = file('repo') } }\n" +
+                "dependencies { testImplementation 'org.example:missing:1' }\n",
+        )
+        val mainFile = Files.writeString(root.resolve("src/main/groovy/Main.groovy"), "class Main {}")
+        val testFile = Files.writeString(root.resolve("src/test/groovy/Spec.groovy"), "class Spec {}")
+
+        val contexts = requireNotNull(runBlocking { producer().resolveExecutionContexts(root) })
+        val main = contexts.single { it.sourceSet == "main" }
+        val test = contexts.single { it.sourceSet == "test" }
+        assertTrue(main.complete)
+        assertTrue(mainFile in main.sourceFiles)
+        assertFalse(test.complete)
+        assertTrue(testFile in test.sourceFiles)
+        assertEquals(GradleExecutionRuntime.Unknown, test.runtime)
+    }
+
+    @Test
+    fun `runtime identity includes only resolved Groovy modules and preserves runtime-only dependencies`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("execution-runtime")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "gradle.startParameter.offline = true\n")
+        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            repositories { maven { url = file('repo') } }
+            dependencies {
+                implementation 'org.apache.groovy:groovy:4.0.33'
+                runtimeOnly 'org.example:extra:1'
+            }
+            """.trimIndent(),
+        )
+        val groovy = executionModule(root, "org.apache.groovy", "groovy", "4.0.33", true)
+        val extra = executionModule(root, "org.example", "extra", "1", false)
+
+        val contexts = requireNotNull(runBlocking { producer().resolveExecutionContexts(root) })
+        val main = contexts.single { it.sourceSet == "main" }
+        val runtime = assertIs<GradleExecutionRuntime.Established>(main.runtime)
+        assertEquals("4.0.33", runtime.version)
+        assertEquals(listOf(groovy), runtime.jars)
+        assertTrue(extra in main.runtimeClasspath)
+        assertFalse(extra in main.compileClasspath)
+    }
+
+    @Test
+    fun `conflicting Groovy cores do not select a runtime`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("execution-conflict")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "gradle.startParameter.offline = true\n")
+        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            repositories { maven { url = file('repo') } }
+            dependencies {
+                implementation 'org.apache.groovy:groovy:4.0.33'
+                implementation 'org.codehaus.groovy:groovy:2.4.21'
+            }
+            """.trimIndent(),
+        )
+        executionModule(root, "org.apache.groovy", "groovy", "4.0.33", true)
+        executionModule(root, "org.codehaus.groovy", "groovy", "2.4.21", true)
+
+        val contexts = requireNotNull(runBlocking { producer().resolveExecutionContexts(root) })
+        assertEquals(GradleExecutionRuntime.Conflict, contexts.single { it.sourceSet == "main" }.runtime)
+    }
+
+    @Test
+    fun `different compile and runtime Groovy cores are rejected`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("execution-classpath-conflict")).toRealPath()
+        Files.writeString(root.resolve("settings.gradle"), "gradle.startParameter.offline = true\n")
+        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(
+            root.resolve("build.gradle"),
+            """
+            plugins { id 'groovy' }
+            repositories { maven { url = file('repo') } }
+            dependencies {
+                compileOnly 'org.codehaus.groovy:groovy:2.4.21'
+                runtimeOnly 'org.apache.groovy:groovy:4.0.33'
+            }
+            """.trimIndent(),
+        )
+        executionModule(root, "org.apache.groovy", "groovy", "4.0.33", true)
+        executionModule(root, "org.codehaus.groovy", "groovy", "2.4.21", true)
+
+        val contexts = requireNotNull(runBlocking { producer().resolveExecutionContexts(root) })
+        assertEquals(GradleExecutionRuntime.Conflict, contexts.single { it.sourceSet == "main" }.runtime)
+    }
+
+    private fun executionModule(root: Path, group: String, name: String, version: String, core: Boolean): Path {
+        val directory = Files.createDirectories(root.resolve("repo/${group.replace('.', '/')}/$name/$version"))
+        val jar = directory.resolve("$name-$version.jar")
+        ZipOutputStream(Files.newOutputStream(jar)).use { output ->
+            if (core) {
+                output.putNextEntry(ZipEntry("groovy/lang/GroovySystem.class"))
+                output.write(byteArrayOf(0))
+                output.closeEntry()
+            }
+        }
+        Files.writeString(
+            directory.resolve("$name-$version.pom"),
+            "<project><modelVersion>4.0.0</modelVersion><groupId>$group</groupId>" +
+                "<artifactId>$name</artifactId><version>$version</version></project>",
+        )
+        return jar
     }
 
     @ParameterizedTest(name = "[{index}] {0}")

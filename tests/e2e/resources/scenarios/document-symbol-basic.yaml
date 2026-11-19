@@ -44,29 +44,26 @@ steps:
   - assert:
       source: documentSymbols
       checks:
+        # One top-level class; its constructor, method and property are children, not siblings.
         - jsonPath: $.length()
           expect:
             type: EQUALS
-            value: 7
-        - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Class')]"
+            value: 1
+        - jsonPath: "$[?(@.right.name == 'Widget' && @.right.kind == 'Class')]"
           expect:
             type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Constructor')]"
+        - jsonPath: $[0].right.children.length()
+          expect:
+            type: EQUALS
+            value: 3
+        - jsonPath: "$[0].right.children[?(@.name == 'Widget' && @.kind == 'Constructor')]"
           expect:
             type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'compute' && @.right.kind == 'Method')]"
+        - jsonPath: "$[0].right.children[?(@.name == 'compute' && @.kind == 'Method')]"
           expect:
             type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'name' && @.right.kind == 'Property')]"
-          expect:
-            type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'name' && @.right.kind == 'Field')]"
-          expect:
-            type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'name' && @.right.kind == 'Variable')]"
-          expect:
-            type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'value' && @.right.kind == 'Variable')]"
+        # The property is listed once: not again as its backing field, and parameters are not symbols.
+        - jsonPath: "$[0].right.children[?(@.name == 'name' && @.kind == 'Property')]"
           expect:
             type: NOT_EMPTY
   - shutdown: {}

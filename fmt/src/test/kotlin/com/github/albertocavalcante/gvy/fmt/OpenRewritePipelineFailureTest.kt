@@ -35,7 +35,7 @@ class OpenRewritePipelineFailureTest {
                 LinkageError("$phase fatal"),
             )
                 .map { failure ->
-                    dynamicTest("$phase ${failure.javaClass.simpleName}") {
+                    dynamicTest("each engine phase: $phase ${failure.javaClass.simpleName}") {
                         assertThatThrownBy { formatter(failingOperations(phase, failure)).formatChecked(SOURCE) }
                             .isSameAs(failure)
                     }
@@ -46,7 +46,7 @@ class OpenRewritePipelineFailureTest {
     fun `known engine wrappers cannot hide a phase failure`(): List<DynamicTest> = Phase.entries.flatMap { phase ->
         listOf(IOException("$phase failed"), CancellationException("$phase cancelled"), LinkageError("$phase fatal"))
             .map { failure ->
-                dynamicTest("$phase ${failure.javaClass.simpleName}") {
+                dynamicTest("known engine wrappers: $phase ${failure.javaClass.simpleName}") {
                     val wrapped = RecipeRunException(failure, Cursor(null, "failure-control"))
 
                     assertThatThrownBy { formatter(failingOperations(phase, wrapped)).formatChecked(SOURCE) }
@@ -61,7 +61,7 @@ class OpenRewritePipelineFailureTest {
         CancellationException("recipe reported cancellation"),
         LinkageError("recipe reported fatal error"),
     ).map { failure ->
-        dynamicTest(failure.javaClass.simpleName) {
+        dynamicTest("reported recipe failures: ${failure.javaClass.simpleName}") {
             val operations = object : RewriteOperations() {
                 override fun rewrite(sources: List<SourceFile>, context: ExecutionContext): SourceFile? {
                     context.onError.accept(failure)
@@ -79,7 +79,7 @@ class OpenRewritePipelineFailureTest {
         CancellationException("real recipe cancelled"),
         LinkageError("real recipe fatal"),
     ).map { failure ->
-        dynamicTest(failure.javaClass.simpleName) {
+        dynamicTest("real recipe engine: ${failure.javaClass.simpleName}") {
             val recipe = object : Recipe() {
                 override fun getDisplayName(): String = "Failing formatting recipe"
                 override fun getDescription(): String = "Exercises the real recipe engine failure boundary."
@@ -163,7 +163,7 @@ class OpenRewritePipelineFailureTest {
         CancellationException("parser cleanup cancelled"),
         LinkageError("parser cleanup fatal"),
     ).map { cleanup ->
-        dynamicTest(cleanup.javaClass.simpleName) {
+        dynamicTest("syntax failures cannot: ${cleanup.javaClass.simpleName}") {
             val operations = object : RewriteOperations() {
                 override fun parse(text: String, context: ExecutionContext): List<SourceFile> = super.parse(
                     "def x = ",
@@ -200,7 +200,7 @@ class OpenRewritePipelineFailureTest {
         IOException("parser worker failed"),
         UnsupportedOperationException("parser service unavailable"),
     ).map { failure ->
-        dynamicTest(failure.javaClass.simpleName) {
+        dynamicTest("an engine error: ${failure.javaClass.simpleName}") {
             val operations = object : RewriteOperations() {
                 override fun parse(text: String, context: ExecutionContext): List<SourceFile> {
                     val parsed = super.parse("def x = ", context)
@@ -218,7 +218,7 @@ class OpenRewritePipelineFailureTest {
         listOf(false, true).flatMap { syntaxError ->
             listOf(CancellationException("cancelled"), LinkageError("fatal"), AssertionError("engine assertion"))
                 .map { failure ->
-                    dynamicTest("syntaxError=$syntaxError ${failure.javaClass.simpleName}") {
+                    dynamicTest("critical callbacks win: syntaxError=$syntaxError ${failure.javaClass.simpleName}") {
                         val operations = object : RewriteOperations() {
                             override fun parse(text: String, context: ExecutionContext): List<SourceFile> {
                                 val source = if (syntaxError) "def x = " else text.replace("healthy", "altered")

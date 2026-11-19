@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { SpockGenerator } from "./SpockGenerator";
+import { SpockGenerator, isInsideDirectory } from "./SpockGenerator";
 import * as path from "path";
 import { writeFile } from "node:fs/promises";
 
@@ -78,7 +78,23 @@ export class TestFeature implements vscode.Disposable {
       );
 
       // 4. Resolve Path & Write
-      const testPath = this.generator.resolveTestPath(sourceUri.fsPath);
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(sourceUri);
+      if (!workspaceFolder) {
+        vscode.window.showErrorMessage(
+          "Test generation requires a file inside an open workspace folder.",
+        );
+        return;
+      }
+      const testPath = this.generator.resolveTestPath(
+        sourceUri.fsPath,
+        workspaceFolder.uri.fsPath,
+      );
+      if (!isInsideDirectory(workspaceFolder.uri.fsPath, testPath)) {
+        vscode.window.showErrorMessage(
+          "Refusing to generate a test outside the workspace folder.",
+        );
+        return;
+      }
       const testUri = vscode.Uri.file(testPath);
 
       // Check if file already exists using async API

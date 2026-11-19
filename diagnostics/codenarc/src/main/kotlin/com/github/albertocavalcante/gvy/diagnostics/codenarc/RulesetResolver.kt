@@ -27,6 +27,27 @@ data class RulesetConfiguration(
     val ignoredWorkspaceRulesets: List<String> = emptyList(),
 )
 
+/** A resolved configuration and its safely interpreted workspace rejection details. */
+data class RulesetResolution(
+    val configuration: RulesetConfiguration,
+    val rejectionReasons: Map<String, String>,
+    val invalidReferences: List<InvalidRulesetReference> = emptyList(),
+)
+
+interface DetailedRulesetResolver : RulesetResolver {
+    fun resolveDetailed(context: WorkspaceContext, file: URI?): RulesetResolution
+}
+
+/** A missing bundled ruleset and the literal that requested it. Positions are Groovy's one-based coordinates. */
+data class RulesetReferenceLocation(val line: Int, val column: Int, val endLine: Int, val endColumn: Int)
+
+data class InvalidRulesetReference(
+    val uri: URI,
+    val reason: String,
+    val location: RulesetReferenceLocation?,
+    val contentHash: String?,
+)
+
 /**
  * Interface for resolving rulesets based on workspace configuration.
  */
@@ -84,7 +105,7 @@ class HierarchicalRulesetResolver(
     /** True for Jenkins pipeline files (the server passes its configured `jenkins.filePatterns`). */
     private val isJenkinsPipelineFile: (URI) -> Boolean = ::hasDefaultJenkinsFileName,
     private val openWorkspaceRuleset: (Path) -> InputStream = { Files.newInputStream(it) },
-) : RulesetResolver {
+) : DetailedRulesetResolver {
 
     /**
      * Clears cached project detection and default rulesets, forcing re-resolution on the next call. Workspace
@@ -173,17 +194,23 @@ class HierarchicalRulesetResolver(
      * build-type profile otherwise, even when a root `Jenkinsfile` makes the workspace look like a Jenkins one
      * (#1236). Without a [file], the workspace's profile.
      */
-    override fun resolve(context: WorkspaceContext, file: URI?): RulesetConfiguration {
+    override fun resolve(context: WorkspaceContext, file: URI?): RulesetConfiguration =
+        resolveDetailed(context, file).configuration
+
+    override fun resolveDetailed(context: WorkspaceContext, file: URI?): RulesetResolution {
         logger.debug { "Resolving ruleset configuration for $file in context: $context" }
 
         // Find properties file first
         val propertiesFile = resolvePropertiesFile(context)
 
         // Workspace rulesets are interpreted (never evaluated); fall back to the project defaults
-        val (workspaceRuleset, ignored) = context.root?.let(::interpretWorkspaceRulesets) ?: (null to emptyList())
+        val interpreted = context.root?.let(::interpretWorkspaceRulesets)
+        val workspaceRuleset = interpreted?.first
+        val rejected = interpreted?.second.orEmpty()
+        val ignored = rejected.map { it.first }
         val rulesetContent = workspaceRuleset ?: loadProjectTypeDefault(context, file)
 
-        return RulesetConfiguration(
+        val configuration = RulesetConfiguration(
             rulesetContent = rulesetContent.content,
             propertiesFile = propertiesFile,
             source = rulesetContent.source,
@@ -191,6 +218,16 @@ class HierarchicalRulesetResolver(
         ).also {
             logger.info { "Resolved ruleset: source=${it.source}, properties=${it.propertiesFile}" }
         }
+        val references = rejected.mapNotNull { (name, rejection) ->
+            val location = referenceLocation(rejection)
+            InvalidRulesetReference(
+                context.root!!.resolve(name).toUri(),
+                rejection.reason,
+                location,
+                rejection.contentHash,
+            )
+        }
+        return RulesetResolution(configuration, rejected.associate { it.first to it.second.reason }, references)
     }
 
     /**
@@ -269,10 +306,13 @@ class HierarchicalRulesetResolver(
      * Workspace Groovy-DSL ruleset files are never handed to CodeNarc as Groovy (it would evaluate them, including
      * `evaluate`, `ruleset('file:x.groovy')` and `rule('file:x.groovy')`). [WorkspaceRulesetInterpreter] reads the
      * declarative subset and produces an equivalent XML ruleset instead; a file outside that subset is ignored.
+     * The first accepted workspace file wins; project defaults apply only when none is accepted.
      */
-    private fun interpretWorkspaceRulesets(workspaceRoot: Path): Pair<ResolvedRuleset?, List<String>> {
+    private fun interpretWorkspaceRulesets(
+        workspaceRoot: Path,
+    ): Pair<ResolvedRuleset?, List<Pair<String, Result.Rejected>>> {
         var accepted: ResolvedRuleset? = null
-        val ignored = mutableListOf<String>()
+        val ignored = mutableListOf<Pair<String, Result.Rejected>>()
         for (name in WORKSPACE_CONFIG_FILES) {
             val file = workspaceRoot.resolve(name)
             if (!file.isRegularFile()) continue
@@ -282,7 +322,7 @@ class HierarchicalRulesetResolver(
                     if (accepted == null) accepted = ResolvedRuleset(result.xml, "workspace:$name")
                 }
                 is WorkspaceRulesetInterpreter.Result.Rejected -> {
-                    ignored.add(name)
+                    ignored.add(name to result)
                     if (warned.add("$workspaceRoot/$name")) {
                         logger.warn { "Ignoring workspace CodeNarc ruleset $name: ${result.reason}" }
                     }
@@ -310,6 +350,8 @@ class HierarchicalRulesetResolver(
         val key = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
         return synchronized(interpretations) {
             interpretations.getOrPut(key) { WorkspaceRulesetInterpreter.interpret(text) }
+        }.let { result ->
+            if (result is Result.Rejected) result.copy(contentHash = key) else result
         }
     }
 
@@ -459,3 +501,14 @@ internal fun hasDefaultJenkinsFileName(file: URI): Boolean {
 }
 
 private const val JENKINSFILE = "Jenkinsfile"
+
+private fun referenceLocation(rejection: Result.Rejected): RulesetReferenceLocation? {
+    val line = rejection.line ?: return null
+    val column = rejection.column ?: return null
+    val endLine = rejection.endLine ?: return null
+    val endColumn = rejection.endColumn ?: return null
+    if (line <= 0 || column <= 0) return null
+    if (endColumn <= 0 || endLine < line) return null
+    if (endLine == line && endColumn < column) return null
+    return RulesetReferenceLocation(line, column, endLine, endColumn)
+}

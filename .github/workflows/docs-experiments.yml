@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+name: Astro authoring experiment
+on:
+  pull_request:
+    paths:
+      - 'docs/website/experiments/**'
+      - 'docs/user/quickstart.md'
+      - 'docs/user/reference-settings.md'
+      - '.github/workflows/docs-experiments.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  astro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: docs/website/experiments
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.5
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - name: Test static server
+        run: bun run test:server
+      - name: Build and test Astro
+        run: |
+          start=$(date +%s)
+          bun run build:astro
+          end=$(date +%s)
+          node metrics.mjs astro/dist astro-metrics.json "$(( (end - start) * 1000 ))"
+          bun run test
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: renderer-experiment-evidence
+          path: |
+            docs/website/experiments/*-metrics.json
+            docs/website/experiments/playwright-report
+            docs/website/experiments/test-results
+          if-no-files-found: ignore
+          retention-days: 7

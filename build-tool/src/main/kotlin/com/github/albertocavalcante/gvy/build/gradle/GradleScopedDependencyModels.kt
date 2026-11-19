@@ -7,7 +7,10 @@ package com.github.albertocavalcante.gvy.build.gradle
 internal interface GradleScopedDependencyModel {
     val buildDirectory: String?
     val targets: List<GradleSourceSetModel?>?
+    val enumerationComplete: Boolean? get() = null
 }
+
+internal interface GradleExecutionModel : GradleScopedDependencyModel
 
 internal interface GradleSourceSetModel {
     val projectPath: String?
@@ -19,7 +22,14 @@ internal interface GradleSourceSetModel {
     val enrichmentConfiguration: String?
     val state: String?
     val sourceRoots: List<String?>?
+    val sourceFiles: List<String?>? get() = null
     val artifacts: List<GradleClasspathEntryModel?>?
+    val executionState: String? get() = null
+    val inputFiles: List<String?>? get() = null
+    val runtimeClasspath: List<String?>? get() = null
+    val runtimeArtifacts: List<GradleClasspathEntryModel?>? get() = null
+    val outputDirectories: List<String?>? get() = null
+    val preparationTask: String? get() = null
 }
 
 internal interface GradleClasspathEntryModel {

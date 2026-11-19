@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "encoding": "UTF-8",
+  "rangeUnit": "byte",
+  "interval": "half-open",
+  "spanFields": ["startByte", "endByte", "category"],
+  "categories": ["keyword", "comment", "string", "number", "operator", "punctuation"],
+  "scope": "common lexical categories only; semantic classifications remain separate",
+  "sourcePolicy": "preserve original bytes and line endings; never normalize source text"
+}

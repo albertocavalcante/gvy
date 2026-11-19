@@ -13,7 +13,9 @@ import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -84,8 +86,8 @@ class NonBlockingServerTest {
             assertTrue(items.any { it.label == "println" })
 
             // Test shutdown
-            val shutdownResult = server.shutdown().get()
-            assertNotNull(shutdownResult)
+            val shutdownResult = server.shutdown().get(30, TimeUnit.SECONDS)
+            assertNull(shutdownResult)
         }
     }
 }

@@ -11,6 +11,19 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class DocumentProviderTest {
+    @Test
+    fun `analysis session belongs to one document incarnation`() {
+        val documents = DocumentProvider()
+        val uri = URI.create("file:///session.groovy")
+        documents.put(uri, "old", 1, "old-session")
+        val old = documents.getBuffer(uri)!!
+        documents.update(uri, "edited", 2)
+        assertEquals("old-session", documents.getBuffer(uri)!!.incarnation.analysisSessionId)
+        documents.put(uri, "new", 1, "new-session")
+        assertEquals("old-session", old.incarnation.analysisSessionId)
+        assertEquals("new-session", documents.getBuffer(uri)!!.incarnation.analysisSessionId)
+    }
+
     private val uri = URI.create("file:///workspace/Example.groovy")
 
     @Test

@@ -20,7 +20,8 @@ suite("Implementation navigation with the current server", () => {
     if (packagedRoot) {
       assert.strictEqual(
         realpathSync(extension.extensionUri.fsPath),
-        realpathSync(packagedRoot),
+        // VS Code's file URI conversion normalizes Windows drive-letter casing.
+        realpathSync(vscode.Uri.file(packagedRoot).fsPath),
         "Editor must load the unpacked VSIX",
       );
     }
@@ -299,6 +300,7 @@ suite("Implementation navigation with the current server", () => {
     assert.strictEqual(folding.version, version);
   });
 
+  // TODO(#2056): Qualify the native VS Code 1.146 Smart Select UI failure.
   test("Smart selection preserves ordered nested source ranges without edits", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
@@ -666,7 +668,11 @@ suite("Implementation navigation with the current server", () => {
     );
     const targetRange = [targetOffset, targetOffset + targetDeclaration.length];
     assert.deepStrictEqual(offsets(prepared[0].range), targetRange);
-    assert.deepStrictEqual(offsets(prepared[0].selectionRange), targetRange);
+    const targetNameOffset = targetOffset + "def ".length;
+    assert.deepStrictEqual(offsets(prepared[0].selectionRange), [
+      targetNameOffset,
+      targetNameOffset + "target".length,
+    ]);
     const incoming = await vscode.commands.executeCommand<
       vscode.CallHierarchyIncomingCall[]
     >("vscode.provideIncomingCalls", prepared[0]);

@@ -162,5 +162,14 @@ test('CLI includes deleted Zed manifests and both sides of fixtures renamed to n
     'editors/zed/Cargo.toml', 'editors/zed/README.md', 'editors/zed/src/README.md',
   ]);
   assert.deepEqual([receipt.runMain, receipt.runBazel, receipt.runZed], [false, false, true]);
-  assert.equal(readFileSync(output, 'utf8'), 'run_main_ci=false\nrun_bazel_ci=false\nrun_zed_ci=true\n');
+  assert.equal(readFileSync(output, 'utf8'), 'run_main_ci=false\nrun_bazel_ci=false\nrun_zed_ci=true\nrun_jetbrains_ci=false\n');
+});
+
+
+test('JetBrains inputs and wrapper require the standalone producer', () => {
+  for (const path of ['editors/jetbrains/build.gradle.kts', 'editors/jetbrains/src/test/Foo.kt', 'gradlew', 'gradle/wrapper/gradle-wrapper.properties', 'tools/ci/run-gradle.mjs', 'tools/ci/check-gradle-diagnostics.mjs', '.github/workflows/ci.yml']) {
+    assert.equal(classifyPaths([path]).runJetbrains, true, path);
+  }
+  assert.equal(classifyPaths(['editors/zed/src/lib.rs']).runJetbrains, false);
+  assert.equal(classifyPaths([]).runJetbrains, true);
 });

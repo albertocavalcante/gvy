@@ -3,8 +3,15 @@
 
 package com.github.albertocavalcante.gvy.build.bsp
 
+import ch.epfl.scala.bsp4j.BuildTarget
+import ch.epfl.scala.bsp4j.BuildTargetCapabilities
+import ch.epfl.scala.bsp4j.BuildTargetIdentifier
+import ch.epfl.scala.bsp4j.DependencyModule
+import ch.epfl.scala.bsp4j.DependencyModulesItem
+import ch.epfl.scala.bsp4j.DependencyModulesResult
 import ch.epfl.scala.bsp4j.WorkspaceBuildTargetsResult
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import com.google.gson.JsonParser
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -132,6 +139,33 @@ class BspBuildToolTest {
         verify(exactly = 0) { client.buildTargetSources(any()) }
         verify(exactly = 0) { client.buildTargetDependencyModules(any()) }
         verify(exactly = 1) { client.close() }
+    }
+
+    @Test
+    fun `dependency modules delivered as gson JsonObject yield jar classpath without classifier artifacts`() {
+        val jar = tempDir.resolve("lib.jar").also { it.writeText("x") }
+        val sources = tempDir.resolve("lib-sources.jar").also { it.writeText("x") }
+        val data = JsonParser.parseString(
+            """{"organization":"o","name":"lib","version":"1","artifacts":[
+              {"uri":"${jar.toUri()}"},
+              {"uri":"${sources.toUri()}","classifier":"sources"}]}""",
+        )
+        val module = DependencyModule("lib", "1").apply {
+            dataKind = "maven"
+            this.data = data
+        }
+        val target = BuildTargetIdentifier("//t")
+        val client = mockk<BspClient>(relaxed = true)
+        every { client.connect(any()) } returns true
+        every { client.workspaceBuildTargets() } returns WorkspaceBuildTargetsResult(
+            listOf(BuildTarget(target, emptyList(), emptyList(), emptyList(), BuildTargetCapabilities())),
+        )
+        every { client.buildTargetDependencyModules(any()) } returns
+            DependencyModulesResult(listOf(DependencyModulesItem(target, listOf(module))))
+
+        val resolution = toolWithClient(client).resolve(tempDir)
+
+        assertEquals(listOf(jar), resolution.dependencies)
     }
 
     private fun toolWithClient(client: BspClient): BspBuildTool {

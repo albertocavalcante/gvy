@@ -55,7 +55,15 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
-          repository-cache: true
+          # Key the repository cache on every input that decides which checksummed
+          # downloads are needed, not only MODULE.bazel, so a changed pin gets a fresh entry.
+          repository-cache: |
+            - MODULE.bazel
+            - MODULE.bazel.lock
+            - tools/build_defs/*.bzl
+          # Only main (push, schedule, dispatch) writes caches. PRs restore main's entries;
+          # entries written from a PR ref cannot be restored by other PRs (see #2171).
+          cache-save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Self-test diagnostic and evidence gates
         run: node --test tools/ci/*.test.mjs
@@ -72,9 +80,32 @@ jobs:
           --private-report-root "$RUNNER_TEMP/bazel-private" --producer bazel-build build //...
 
       - name: Run tests and capture evidence
+        env:
+          GVY_EXPECTED_SOURCE_SHA: ${{ github.sha }}
         run: >-
           node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence"
           --private-report-root "$RUNNER_TEMP/bazel-private" --producer bazel-test test //...
+          --test_env=GVY_EXPECTED_SOURCE_SHA="$GVY_EXPECTED_SOURCE_SHA"
+
+      # Evidence for the repository list in MODULE.bazel (#2187): which hosts supplied the
+      # resolved Maven artifacts, and a hash of the host-independent artifact list. It reads
+      # files only (no Bazel invocation, no annotation) and always exits 0.
+      - name: Record resolved Maven artifact sources
+        if: ${{ !cancelled() }}
+        run: |
+          root=$(find "$HOME"/.cache/bazel/_bazel_runner/*/external -maxdepth 1 -name 'rules_jvm_external++maven+maven' 2>/dev/null | head -n 1 || true)
+          if [ -z "$root" ] || [ ! -d "$root/v1/https" ]; then
+            echo "No resolved Maven repository directory found." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Resolved Maven artifacts by source host"
+            for dir in "$root"/v1/https/*/; do
+              echo "- $(basename "$dir"): $(find "$dir" -type f | wc -l | tr -d ' ') files"
+            done
+            echo "Artifact list sha256 (host-independent): $(find "$root/v1/https" -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \) | sed -e "s#^$root/v1/https/[^/]*/##" | sort | sha256sum | cut -d' ' -f1)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0
 
       - name: Enforce diagnostic accountability
         if: ${{ !cancelled() }}
@@ -121,7 +152,10 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}-lint
-          repository-cache: true
+          # Lint must not race the build job for the shared repository-cache key (a small
+          # lint-only entry would block the full one), so it neither restores nor saves it.
+          repository-cache: false
+          cache-save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check BUILD files formatting
         run: bazel run @buildifier_prebuilt//:buildifier -- -mode=check -lint=warn -r .

@@ -21,8 +21,10 @@ on:
     - cron: "0 6 * * 1" # Weekly on Monday at 06:00 UTC
 
 concurrency:
-  # Cancel superseded runs on PRs; never cancel runs on main.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  # Cancel superseded runs on PRs; never cancel a run in progress on main. Pushes to main share one group
+  # per branch, so only a superseded pending run is dropped and a burst of merges is batched.
+  # Scheduled runs keep a group of their own.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

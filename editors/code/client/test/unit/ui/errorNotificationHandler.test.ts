@@ -318,7 +318,7 @@ describe("Error Notification Handler", () => {
       assert.ok(
         executeCommandStub.calledWith(
           "workbench.action.openSettings",
-          "groovy.gradle.javaHome",
+          "groovy.project.javaHome",
         ),
       );
     });

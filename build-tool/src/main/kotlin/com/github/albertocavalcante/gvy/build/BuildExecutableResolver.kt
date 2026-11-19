@@ -33,7 +33,7 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "gradlew",
         windowsWrapperName = "gradlew.bat",
-        systemCommand = "gradle",
+        systemCommand = windowsAware("gradle", "gradle.bat", isWindows),
         useWindows = isWindows,
     )
 
@@ -48,7 +48,7 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "mvnw",
         windowsWrapperName = "mvnw.cmd",
-        systemCommand = "mvn",
+        systemCommand = windowsAware("mvn", "mvn.cmd", isWindows),
         useWindows = isWindows,
     )
 
@@ -59,7 +59,7 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "gradlew",
         windowsWrapperName = "gradlew.bat",
-        systemCommand = "gradle",
+        systemCommand = windowsAware("gradle", "gradle.bat", forceWindows),
         useWindows = forceWindows,
     )
 
@@ -70,9 +70,13 @@ object BuildExecutableResolver {
         workspaceRoot = workspaceRoot,
         wrapperName = "mvnw",
         windowsWrapperName = "mvnw.cmd",
-        systemCommand = "mvn",
+        systemCommand = windowsAware("mvn", "mvn.cmd", forceWindows),
         useWindows = forceWindows,
     )
+
+    /** ProcessBuilder on Windows does not apply PATHEXT: Maven/Gradle ship only .cmd/.bat launchers. */
+    private fun windowsAware(command: String, windowsCommand: String, useWindows: Boolean): String =
+        if (useWindows) windowsCommand else command
 
     /**
      * Generic helper to resolve a build executable.

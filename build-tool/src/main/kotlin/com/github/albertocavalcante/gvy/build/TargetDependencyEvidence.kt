@@ -14,7 +14,8 @@ import java.util.Collections
 
 /**
  * Target evidence supplements the legacy flat workspace result; it never replaces its classpath.
- * The Gradle scoped producer supplies it when opted in (#1235). Producers must preserve the identity and
+ * The Gradle scoped producer supplies membership by default; target classpaths remain opt-in (#1235).
+ * Producers must preserve the identity and
  * order they actually resolved instead of reconstructing them from folders or artifact names.
  */
 sealed interface TargetDependencyEvidence {
@@ -22,11 +23,17 @@ sealed interface TargetDependencyEvidence {
     data object Legacy : TargetDependencyEvidence
 
     /**
-     * Producer records, not a claim that every workspace target was enumerated. An empty list or
-     * a missing target remains unknown; neither establishes the absence of an artifact.
+     * Producer records. [enumerationComplete] applies only to source sets of the observed build;
+     * it does not establish artifact absence or enumerate unsupported/included builds. An empty list
+     * or a missing target remains unknown unless a consumer has the specific completeness proof it needs.
      * This container uses reference equality; no cache-key or freshness semantics are implied.
      */
-    class Scoped(snapshots: List<TargetDependencySnapshot>) : TargetDependencyEvidence {
+    class Scoped @JvmOverloads constructor(
+        snapshots: List<TargetDependencySnapshot>,
+        val useTargetClasspaths: Boolean = true,
+        /** Every source set in the observed build was enumerated, without asserting other builds. */
+        val enumerationComplete: Boolean = false,
+    ) : TargetDependencyEvidence {
         val snapshots: List<TargetDependencySnapshot> = immutableCopy(snapshots)
     }
 }
@@ -196,24 +203,24 @@ data class DependencyProvenance(val producer: String, val generation: Long) {
  * No filesystem access, path normalization, dependency execution or test capability inference occurs.
  * This container uses reference equality; equality is not a classpath or freshness comparison.
  */
-class TargetDependencySnapshot(
+class TargetDependencySnapshot
+@Suppress("LongParameterList") // Preserve the existing six-argument JVM constructor when adding optional membership.
+@JvmOverloads
+constructor(
     val target: DependencyTarget,
     val role: DependencyRole,
     val provenance: DependencyProvenance,
     val state: TargetDependencyState,
     artifacts: List<ResolvedDependencyArtifact>,
     sourceRoots: List<Path>,
+    sourceFiles: List<Path>? = null,
 ) {
+    /** Authoritative source membership, or null when the producer cannot establish it. */
+    val sourceFiles: List<Path>? = sourceFiles?.let(::immutableCopy)
+
     val artifacts: List<ResolvedDependencyArtifact> = immutableCopy(artifacts)
 
-    /**
-     * Producer-reported roots, not exclusive document-membership or compilation-coverage proof.
-     * A consumer may attribute a document to this target only when this is the sole COMPLETE
-     * target whose roots contain it (the gls `DocumentTargetSelector`); a document under several
-     * targets' roots stays ambiguous. Include/exclude filters, resource/language roots and unsaved
-     * files outside every root are not modelled, so such an attribution is still a root-based
-     * inference rather than proof that the build compiles the document in this target.
-     */
+    /** Producer-reported roots; [sourceFiles], when present, establishes actual membership. */
     val sourceRoots: List<Path> = immutableCopy(sourceRoots)
 }
 

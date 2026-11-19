@@ -92,6 +92,19 @@ class GroovyGdkProviderTest {
     }
 
     @Test
+    fun `methods for several types are the union with the Object extensions listed once`() {
+        val union = gdkProvider.getQualifiedMethodsForTypes(listOf("java.util.ArrayList", "java.util.Map"))
+        val keys = union.map { it.display.name to it.qualifiedParameters }
+        fun keysOf(type: String) =
+            gdkProvider.getQualifiedMethodsForType(type).map { it.display.name to it.qualifiedParameters }
+
+        assertThat(keys).doesNotHaveDuplicates()
+        assertThat(keys).containsAll(keysOf("java.util.ArrayList"))
+        assertThat(keys).containsAll(keysOf("java.util.Map"))
+        assertThat(union.filter { it.display.name == "toString" && it.qualifiedParameters.isEmpty() }).hasSize(1)
+    }
+
+    @Test
     fun `GDK fixed array display keeps source brackets without inferring varargs`() {
         val printf = assertNotNull(
             gdkProvider.getQualifiedMethodsForType("java.lang.Object").find {
@@ -116,6 +129,14 @@ class GroovyGdkProviderTest {
             "find",
             "plus",
         )
+    }
+
+    @Test
+    fun `should include Iterable extensions for a class reaching Iterable only through super-interfaces`() {
+        // ArrayList lists Iterable nowhere directly: it is reached through List/Collection.
+        val methods = gdkProvider.getMethodsForType("java.util.ArrayList")
+
+        assertThat(methods.map { it.name }).contains("sum")
     }
 
     @Test

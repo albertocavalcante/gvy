@@ -26,7 +26,7 @@ class RulesetFailureOutcomeTest {
 
     @TestFactory
     fun `packaged resource faults cannot select a healthy fallback`(): List<DynamicTest> = failures().map { failure ->
-        DynamicTest.dynamicTest(failure.javaClass.simpleName) {
+        DynamicTest.dynamicTest("packaged resource propagates ${failure.javaClass.simpleName}") {
             val resolver = HierarchicalRulesetResolver(resourceLoader = ResourceLoader { throw failure })
 
             assertSame(failure, assertFails { resolver.resolve(workspace()) })
@@ -36,7 +36,7 @@ class RulesetFailureOutcomeTest {
     @TestFactory
     fun `workspace read faults cannot become a policy rejected ruleset`(): List<DynamicTest> =
         failures().map { failure ->
-            DynamicTest.dynamicTest(failure.javaClass.simpleName) {
+            DynamicTest.dynamicTest("workspace opening propagates ${failure.javaClass.simpleName}") {
                 Files.writeString(root.resolve("codenarc.groovy"), VALID_RULESET)
                 val resolver = HierarchicalRulesetResolver(openWorkspaceRuleset = { throw failure })
 
@@ -107,7 +107,7 @@ class RulesetFailureOutcomeTest {
     @TestFactory
     fun `faults during a workspace read propagate and close the stream`(): List<DynamicTest> =
         failures().map { failure ->
-            DynamicTest.dynamicTest(failure.javaClass.simpleName) {
+            DynamicTest.dynamicTest("workspace reading propagates ${failure.javaClass.simpleName}") {
                 Files.writeString(root.resolve("codenarc.groovy"), VALID_RULESET)
                 var closed = false
                 val stream = object : java.io.InputStream() {

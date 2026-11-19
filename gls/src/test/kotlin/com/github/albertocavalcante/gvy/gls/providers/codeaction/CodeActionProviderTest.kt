@@ -52,6 +52,38 @@ class CodeActionProviderTest {
     }
 
     @Test
+    fun `analysis remedies retain the requested document and respect quick fix filters`(): Unit = runBlocking {
+        documentProvider.put(testUri, "def x = 1\n")
+        provider = CodeActionProvider(compilationService, documentProvider, formatter) { true }
+        val diagnostic = Diagnostic(Range(Position(0, 0), Position(0, 0)), "Type analysis is limited").apply {
+            code = Either.forLeft("gvy.degraded")
+        }
+        val params = createCodeActionParams(listOf(diagnostic)).apply {
+            context.only = listOf(CodeActionKind.QuickFix)
+        }
+
+        val actions = provider.provideCodeActions(params)
+
+        assertEquals(listOf("Show analysis details", "Refresh Dependencies"), actions.map { it.title })
+        assertEquals(listOf(testUri.toString()), actions.first().command.arguments)
+        params.context.only = listOf(CodeActionKind.SourceFixAll)
+        assertTrue(provider.provideCodeActions(params).none { it.command?.command == "groovy.showAnalysisDetails" })
+    }
+
+    @Test
+    fun `standard clients receive no extension analysis commands`(): Unit = runBlocking {
+        documentProvider.put(testUri, "def x = 1\n")
+        val diagnostic = Diagnostic(Range(Position(0, 0), Position(0, 0)), "Type analysis is limited").apply {
+            code = Either.forLeft("gvy.degraded")
+        }
+        val params = createCodeActionParams(listOf(diagnostic)).apply {
+            context.only = listOf(CodeActionKind.QuickFix)
+        }
+
+        assertTrue(provider.provideCodeActions(params).isEmpty())
+    }
+
+    @Test
     fun `provides formatting action when document needs formatting`(): Unit = runBlocking {
         val content = "class Test{def x=1}"
         documentProvider.put(testUri, content)

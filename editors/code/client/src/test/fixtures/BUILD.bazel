@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+exports_files(
+    ["gdsl-snippet-defaults.gdsl"],
+    visibility = ["//jenkins:__pkg__"],
+)

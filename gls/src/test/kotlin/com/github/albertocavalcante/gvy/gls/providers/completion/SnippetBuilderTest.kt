@@ -15,6 +15,32 @@ import kotlin.test.assertEquals
 class SnippetBuilderTest {
 
     @Test
+    fun `plain alternatives retain type and quote choice values`() {
+        fun parameter(type: String, choices: List<String>? = null) = MergedParameter(
+            name = "value",
+            type = type,
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = choices,
+            examples = emptyList(),
+        )
+
+        assertEquals("value: [:]", SnippetBuilder.buildParameterTemplate("value", parameter("Map")).plainText)
+        assertEquals("value: []", SnippetBuilder.buildParameterTemplate("value", parameter("List")).plainText)
+        assertEquals("value: true", SnippetBuilder.buildParameterTemplate("value", parameter("boolean")).plainText)
+        assertEquals(", value: 0", SnippetBuilder.buildParameterTemplate("value", parameter("int"), ", ").plainText)
+        assertEquals(
+            "value: 'can\\'t'",
+            SnippetBuilder.buildParameterTemplate("value", parameter("String", listOf("can't"))).plainText,
+        )
+        assertEquals(
+            "value: 'a\\\\b\\'c\\r\\n\$name'",
+            SnippetBuilder.buildParameterTemplate("value", parameter("String", listOf("a\\b'c\r\n\$name"))).plainText,
+        )
+    }
+
+    @Test
     fun `should build snippet for String parameter with quotes`() {
         val param = MergedParameter(
             name = "message",
@@ -256,4 +282,53 @@ class SnippetBuilderTest {
         // Dollar signs should be escaped
         assertEquals("variable: '\${1|\\\$HOME,\\\$PATH|}'", snippet)
     }
+
+    @Test
+    fun `generic collection types use collection scaffolds`() {
+        val types = listOf(
+            "List<String>",
+            "java.util.List<java.lang.String>",
+            "Map<String, List<java.lang.Integer>>",
+            "java.util.LinkedHashMap<java.lang.String, java.util.List<String>>",
+            "java.lang.String[]",
+            "List<String>[]",
+            "int[]",
+        )
+        for (type in types) {
+            assertEquals("value: [\$1]", snippetFor(type), type)
+        }
+    }
+
+    @Test
+    fun `primitive wrapper raw and unknown types retain their insertion forms`() {
+        val expected = mapOf(
+            "java.lang.Boolean" to "value: \${1|true,false|}",
+            "java.lang.Integer" to "value: \$1",
+            "double" to "value: \$1",
+            "java.util.Map" to "value: [\$1]",
+            "java.util.List" to "value: [\$1]",
+            "example.Unknown<java.lang.String>" to "value: '\$1'",
+        )
+        for ((type, snippet) in expected) {
+            assertEquals(snippet, snippetFor(type), type)
+        }
+    }
+
+    @Test
+    fun `string form for choice parameter remains quoted`() {
+        assertEquals("value: '\$1'", snippetFor("String"))
+    }
+
+    private fun snippetFor(type: String): String = SnippetBuilder.buildParameterSnippet(
+        "value",
+        MergedParameter(
+            name = "value",
+            type = type,
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = null,
+            examples = emptyList(),
+        ),
+    )
 }

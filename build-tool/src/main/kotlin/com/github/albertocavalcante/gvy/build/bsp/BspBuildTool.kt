@@ -4,9 +4,13 @@
 package com.github.albertocavalcante.gvy.build.bsp
 
 import ch.epfl.scala.bsp4j.DependencyModulesResult
+import ch.epfl.scala.bsp4j.MavenDependencyModule
+import ch.epfl.scala.bsp4j.MavenDependencyModuleArtifact
 import ch.epfl.scala.bsp4j.SourcesResult
 import com.github.albertocavalcante.gvy.build.BspCompatibleBuildTool
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
+import com.google.gson.Gson
+import com.google.gson.JsonElement
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
@@ -28,8 +32,7 @@ class BspBuildTool internal constructor(private val clientFactory: (BspConnectio
 
     private companion object {
         private const val MAVEN_DATA_KIND = "maven"
-        private const val ARTIFACTS_FIELD = "artifacts"
-        private const val URI_FIELD = "uri"
+        private val gson = Gson()
     }
 
     override val name: String = "BSP"
@@ -96,7 +99,6 @@ class BspBuildTool internal constructor(private val clientFactory: (BspConnectio
         ?.distinct()
         ?: emptyList()
 
-    @Suppress("UNCHECKED_CAST")
     private fun extractDependencies(result: DependencyModulesResult?): List<Path> = result?.items
         ?.flatMap { it.modules }
         ?.flatMap { module ->
@@ -104,14 +106,23 @@ class BspBuildTool internal constructor(private val clientFactory: (BspConnectio
                 logger.debug { "Skipping dependency module of kind '${module.dataKind}', expected '$MAVEN_DATA_KIND'" }
                 return@flatMap emptyList<String>()
             }
-            val data = module.data as? Map<String, Any> ?: return@flatMap emptyList()
-            val artifacts = data[ARTIFACTS_FIELD] as? List<Map<String, Any>> ?: return@flatMap emptyList()
-            artifacts.mapNotNull { it[URI_FIELD] as? String }
+            mavenArtifacts(module.data)
+                .filter { it.classifier.isNullOrEmpty() }
+                .mapNotNull { it.uri }
         }
         ?.mapNotNull { uri -> uriToPath(uri) }
         ?.filter { it.exists() && it.toString().endsWith(".jar") }
         ?.distinct()
         ?: emptyList()
+
+    /** bsp4j delivers `data` as a gson [JsonElement]; in-process servers may hand over the typed object. */
+    private fun mavenArtifacts(data: Any?): List<MavenDependencyModuleArtifact> = when (data) {
+        is MavenDependencyModule -> data.artifacts.orEmpty()
+        is JsonElement -> runCatching { gson.fromJson(data, MavenDependencyModule::class.java)?.artifacts.orEmpty() }
+            .onFailure { logger.debug(it) { "Could not decode Maven dependency module data" } }
+            .getOrDefault(emptyList())
+        else -> emptyList()
+    }
 
     private fun uriToPath(uri: String): Path? = runCatching {
         Paths.get(URI.create(uri))

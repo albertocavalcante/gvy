@@ -12,7 +12,7 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
-import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
+import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisLanguageClient
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
@@ -179,9 +179,9 @@ class LspCommand : CliktCommand(name = "lsp") {
     private fun startServer(input: InputStream, output: OutputStream, exitJvmOnExit: Boolean = true) {
         // In socket mode one JVM serves many clients, so a client's `exit` must not end the process.
         val server = if (exitJvmOnExit) GroovyLanguageServer() else GroovyLanguageServer(exitProcess = {})
-        val launcher = Launcher.Builder<GroovyLanguageClient>()
+        val launcher = Launcher.Builder<DocumentAnalysisLanguageClient>()
             .setLocalService(server)
-            .setRemoteInterface(GroovyLanguageClient::class.java)
+            .setRemoteInterface(DocumentAnalysisLanguageClient::class.java)
             .setInput(input)
             .setOutput(output)
             .configureGson(::registerStatusNotificationAdapter)

@@ -73,10 +73,17 @@ interface AppState {
     exportBtn.addEventListener("click", () => {
       if (state.ast) {
         const json = JSON.stringify(state.ast, null, 2);
-        navigator.clipboard.writeText(json).then(() => {
-          exportBtn.textContent = "Copied!";
-          setTimeout(() => (exportBtn.textContent = "Export JSON"), 2000);
-        });
+        navigator.clipboard.writeText(json).then(
+          () => {
+            exportBtn.textContent = "Copied!";
+            setTimeout(() => (exportBtn.textContent = "Export JSON"), 2000);
+          },
+          () => {
+            // No focus or clipboard permission: tell the user instead of dropping it.
+            exportBtn.textContent = "Copy failed";
+            setTimeout(() => (exportBtn.textContent = "Export JSON"), 2000);
+          },
+        );
       }
     });
   }

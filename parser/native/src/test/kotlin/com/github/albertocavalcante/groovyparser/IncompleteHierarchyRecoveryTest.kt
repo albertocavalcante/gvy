@@ -47,7 +47,7 @@ class IncompleteHierarchyRecoveryTest {
                     assertEquals(Phases.CANONICALIZATION, result.outcome.requestedPhase)
                     assertEquals(Phases.CONVERSION, result.outcome.achievedPhase)
                     assertEquals(Fallback.COMPILATION_FAILED, result.outcome.fallback)
-                    assertTrue(assertNotNull(result.outcome.fallbackReason).contains("GroovyObject"))
+                    assertTrue(assertNotNull(result.outcome.fallbackReason).contains("RequiredBase"))
 
                     val clean = parser.parse(
                         ParseRequest(
@@ -96,7 +96,8 @@ class IncompleteHierarchyRecoveryTest {
     private fun baseJar(): Path {
         val classes = Files.createDirectories(tempDir.resolve("classes"))
         CompilationUnit(CompilerConfiguration().apply { targetDirectory = classes.toFile() }).apply {
-            addSource("Base.groovy", "package lib\nclass Base {}\n")
+            addSource("RequiredBase.groovy", "package lib\nclass RequiredBase {}\n")
+            addSource("Base.groovy", "package lib\nclass Base extends RequiredBase {}\n")
             compile()
         }
         val jar = tempDir.resolve("lib.jar")

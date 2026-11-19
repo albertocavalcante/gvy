@@ -1,0 +1,190 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import * as assert from "assert";
+import * as vscode from "vscode";
+import * as path from "path";
+import * as fs from "fs";
+
+suite("GDSL authoring", () => {
+  let editor: vscode.TextEditor;
+
+  setup(async () => {
+    const document = await vscode.workspace.openTextDocument(
+      vscode.Uri.parse("untitled:authoring.gdsl"),
+    );
+    editor = await vscode.window.showTextDocument(document);
+  });
+
+  teardown(async () => {
+    await vscode.commands.executeCommand(
+      "workbench.action.revertAndCloseActiveEditor",
+    );
+  });
+
+  test("recognizes .gdsl files without a manual language association", () => {
+    assert.strictEqual(editor.document.languageId, "gdsl");
+  });
+
+  test("recognizes a saved Jenkins descriptor", async () => {
+    const fixture = vscode.Uri.file(
+      path.join(
+        vscode.workspace.workspaceFolders![0].uri.fsPath,
+        "jenkins-descriptor.gdsl",
+      ),
+    );
+    const document = await vscode.workspace.openTextDocument(fixture);
+    assert.strictEqual(document.languageId, "gdsl");
+    assert.ok(
+      document.getText().includes("contributor(context(scope: scriptScope()))"),
+    );
+  });
+
+  for (const [name, eol] of [
+    ["LF", vscode.EndOfLine.LF],
+    ["CRLF", vscode.EndOfLine.CRLF],
+  ] as const) {
+    test(`closes quotes and indents a contributor block with ${name}`, async () => {
+      await editor.edit((edit) => edit.setEndOfLine(eol));
+      await vscode.commands.executeCommand("type", { text: "'" });
+      assert.strictEqual(editor.document.getText(), "''");
+      await vscode.commands.executeCommand("undo");
+      await vscode.commands.executeCommand("type", { text: "contributor {" });
+      await vscode.commands.executeCommand("type", { text: "\n" });
+      assert.strictEqual(editor.document.lineCount, 3);
+      assert.strictEqual(editor.document.lineAt(0).text, "contributor {");
+      assert.match(editor.document.lineAt(1).text, /^[\t ]+$/);
+      assert.strictEqual(editor.document.lineAt(2).text, "}");
+      assert.strictEqual(editor.document.eol, eol);
+    });
+  }
+
+  test("folds an indented contributor body", async () => {
+    await editor.edit((edit) =>
+      edit.insert(
+        new vscode.Position(0, 0),
+        "contributor {\n    method(name: 'deploy')\n}\ndef after = true",
+      ),
+    );
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("editor.fold");
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      2,
+      "body should be hidden while the closing brace stays visible",
+    );
+    await vscode.commands.executeCommand("editor.unfold", {
+      selectionLines: [0],
+    });
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      1,
+      "unfold should reveal the body",
+    );
+  });
+
+  test("folds marker regions and keeps the following line visible", async () => {
+    await editor.edit((edit) =>
+      edit.insert(
+        new vscode.Position(0, 0),
+        "// region methods\nmethod(name: 'deploy')\n// endregion\ndef after = true",
+      ),
+    );
+    await vscode.commands.executeCommand("editor.foldAllMarkerRegions");
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      3,
+      "region contents and end marker should be hidden",
+    );
+    await vscode.commands.executeCommand("editor.unfold", {
+      selectionLines: [0],
+    });
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await vscode.commands.executeCommand("cursorDown");
+    assert.strictEqual(
+      editor.selection.active.line,
+      1,
+      "unfold should reveal the region contents",
+    );
+  });
+
+  test("selects and advances editable method snippet fields", async () => {
+    await vscode.commands.executeCommand("editor.action.insertSnippet", {
+      langId: "gdsl",
+      name: "GDSL method",
+    });
+    assert.strictEqual(editor.document.getText(editor.selection), "myMethod");
+    await vscode.commands.executeCommand("type", { text: "deploy" });
+    await vscode.commands.executeCommand("jumpToNextSnippetPlaceholder");
+    assert.strictEqual(editor.document.getText(editor.selection), "void");
+    assert.ok(editor.document.getText().includes("name: 'deploy'"));
+  });
+
+  test("uses Groovy line comments and bracket pairs", async () => {
+    await vscode.commands.executeCommand("type", { text: "(" });
+    assert.strictEqual(editor.document.getText(), "()");
+    await vscode.commands.executeCommand("editor.action.commentLine");
+    assert.strictEqual(editor.document.getText(), "// ()");
+    await vscode.commands.executeCommand("editor.action.commentLine");
+    assert.strictEqual(editor.document.getText(), "()");
+  });
+
+  for (const [name, expected] of [
+    [
+      "GDSL contributor",
+      "contributor(context(scope: scriptScope())) {\n    \n}",
+    ],
+    ["GDSL context", "def ctx = context(scope: scriptScope())\n"],
+    [
+      "GDSL method",
+      "method(name: 'myMethod', type: 'void', params: [arg: 'java.lang.String'], doc: 'Description')",
+    ],
+    [
+      "GDSL named-parameter method",
+      "method(name: 'myMethod', type: 'void', namedParams: [\n    parameter(name: 'myParam', type: 'java.lang.String', doc: 'Parameter description')\n], doc: 'Description')",
+    ],
+    [
+      "GDSL property",
+      "property(name: 'myProperty', type: 'java.lang.Object', doc: 'Description')",
+    ],
+    [
+      "GDSL parameter",
+      "parameter(name: 'myParam', type: 'java.lang.String', doc: 'Description')",
+    ],
+  ]) {
+    for (const [eolName, eol] of [
+      ["LF", vscode.EndOfLine.LF],
+      ["CRLF", vscode.EndOfLine.CRLF],
+    ] as const) {
+      test(`inserts the contributed ${name} snippet with ${eolName}`, async () => {
+        await editor.edit((edit) => edit.setEndOfLine(eol));
+        await vscode.commands.executeCommand("editor.action.insertSnippet", {
+          langId: "gdsl",
+          name,
+        });
+        const expanded = editor.document.getText().replace(/\t/g, "    ");
+        const expectedEol = eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n";
+        assert.strictEqual(expanded, expected.replace(/\n/g, expectedEol));
+        assert.strictEqual(editor.document.eol, eol);
+        const fixturePath = path.resolve(
+          vscode.workspace.workspaceFolders![0].uri.fsPath,
+          "gdsl-snippet-defaults.gdsl",
+        );
+        const compact = (value: string) => value.replace(/\s+/g, "");
+        const fixture = compact(fs.readFileSync(fixturePath, "utf8"));
+        const fragment =
+          name === "GDSL contributor" ? expanded.split("{")[0] + "{" : expanded;
+        assert.ok(
+          fixture.includes(compact(fragment)),
+          `${name} differs from the consumer fixture`,
+        );
+        assert.ok(!editor.document.getText().includes("${"));
+      });
+    }
+  }
+});

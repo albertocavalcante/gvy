@@ -1,0 +1,14 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<!-- SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<hudson>
+  <numExecutors>0</numExecutors>
+  <noUsageStatistics>true</noUsageStatistics>
+  <mode>EXCLUSIVE</mode>
+  <useSecurity>true</useSecurity>
+  <authorizationStrategy class="hudson.security.FullControlOnceLoggedInAuthorizationStrategy">
+    <denyAnonymousReadAccess>true</denyAnonymousReadAccess>
+  </authorizationStrategy>
+  <securityRealm class="hudson.security.SecurityRealm$None"/>
+  <slaveAgentPort>-1</slaveAgentPort>
+</hudson>

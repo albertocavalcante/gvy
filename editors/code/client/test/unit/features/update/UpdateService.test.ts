@@ -291,6 +291,45 @@ describe("UpdateService", () => {
     });
   });
 
+  describe("pending notification", () => {
+    let clock: sinon.SinonFakeTimers;
+    beforeEach(() => {
+      clock = sinon.useFakeTimers();
+    });
+    afterEach(() => clock.restore());
+
+    it("schedules periodic checks while the first toast is ignored", async () => {
+      const service = createUpdateService({ checkIntervalHours: 1 });
+      checkForUpdateStub.resolves({
+        status: "update-available",
+        currentVersion: "1.0.0",
+        latestRelease: sampleRelease("2.0.0"),
+        checkedAt: Date.now(),
+        source: "network",
+      });
+      mockWindow.showInformationMessage.returns(new Promise(() => {}));
+      await service.activate();
+      checkForUpdateStub.resetHistory();
+      await clock.tickAsync(60 * 60 * 1000);
+      assert.strictEqual(checkForUpdateStub.callCount, 1);
+      service.dispose();
+    });
+
+    it("schedules periodic checks when the first check throws", async () => {
+      const service = createUpdateService({ checkIntervalHours: 1 });
+      checkForUpdateStub.onFirstCall().rejects(new Error("boom"));
+      try {
+        await service.activate();
+      } catch {
+        // activate may reject; scheduling must already be in place
+      }
+      checkForUpdateStub.resetHistory();
+      await clock.tickAsync(60 * 60 * 1000);
+      assert.strictEqual(checkForUpdateStub.callCount, 1);
+      service.dispose();
+    });
+  });
+
   describe("dispose", () => {
     it("clears scheduled timeout without error", () => {
       const updateService = createUpdateService();

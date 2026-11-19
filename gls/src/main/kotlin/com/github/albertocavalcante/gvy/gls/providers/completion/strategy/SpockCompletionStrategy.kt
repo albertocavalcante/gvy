@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
+import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockDataVariables
 import com.github.albertocavalcante.gvy.spock.SpockDetector
@@ -37,7 +38,7 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         if (line == null || context.contextType != null) {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
-        val offset = offsetAt(base.content, base.content.split('\n'), base.line, base.character)
+        val offset = Utf16LineIndex(base.content).offsetOf(base.line, base.character.coerceAtLeast(0))
         val source = base.moduleNode?.let { SpockSourceContext.from(it, isPartial = false) }
         val isSpockSpec = isSpecificationAt(context, source)
         if (!isSpockSpec || base.tokenIndex?.isInCommentOrString(offset) == true) {
@@ -131,17 +132,6 @@ internal class SpockCompletionStrategy : CompletionStrategy {
                 sortText("0-$label")
             }
         }
-    }
-
-    /**
-     * Calculate character offset from line/character position.
-     */
-    private fun offsetAt(content: String, lines: List<String>, line: Int, character: Int): Int {
-        var offset = 0
-        for (i in 0 until line) {
-            offset += lines[i].length + 1 // + '\n'
-        }
-        return (offset + character).coerceIn(0, content.length)
     }
 
     /**

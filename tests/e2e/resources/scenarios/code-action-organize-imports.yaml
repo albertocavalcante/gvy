@@ -1,0 +1,114 @@
+name: code-action-organize-imports
+description: >
+  Organize Imports (source.organizeImports): sorts and groups the import block, removes provably unused imports,
+  keeps star, static and commented imports, and is only returned for the requested kinds.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+
+  - openDocument:
+      path: src/Demo.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        import java.util.TreeMap
+        import static java.lang.Math.max
+        import java.util.ArrayList // list of things
+        import java.util.HashMap
+        import javax.crypto.Cipher
+        import java.util.*
+        import java.util.HashSet as HS
+        class Demo {
+            TreeMap tree
+            ArrayList list
+            Cipher cipher
+            def biggest() { max(1, 2) }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 10000
+
+  - request:
+      method: textDocument/codeAction
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/Demo.groovy"
+        range:
+          start: { line: 0, character: 0 }
+          end: { line: 0, character: 0 }
+        context:
+          diagnostics: []
+          only: ["source.organizeImports"]
+      saveAs: organizeResult
+
+  - assert:
+      source: organizeResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 1
+          message: "Only the organize imports action is returned for only=[source.organizeImports]"
+        - jsonPath: $[0].right.kind
+          expect:
+            type: EQUALS
+            value: "source.organizeImports"
+        - jsonPath: $[0].right.edit.documentChanges[0].textDocument.version
+          expect:
+            type: EQUALS
+            value: 1
+          message: "The edit is versioned, so the client rejects it if the buffer moved on"
+        - jsonPath: $[0].right.edit.documentChanges[0].edits
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $[0].right.edit.documentChanges[0].edits[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - range:
+                  start: { line: 0, character: 0 }
+                  end: { line: 7, character: 0 }
+                newText: "import javax.crypto.Cipher\nimport java.util.*\nimport java.util.ArrayList // list of things\nimport java.util.TreeMap\n\nimport static java.lang.Math.max\n\n"
+          message: "Sorted and grouped; HashMap and the HS alias removed; star, static and commented imports kept"
+
+  # The same file does not get the action for other kinds.
+  - request:
+      method: textDocument/codeAction
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/Demo.groovy"
+        range:
+          start: { line: 0, character: 0 }
+          end: { line: 0, character: 0 }
+        context:
+          diagnostics: []
+          only: ["quickfix"]
+      saveAs: quickfixResult
+
+  - assert:
+      source: quickfixResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 0
+          message: "No organize imports action for only=[quickfix]"
+
+  - shutdown: {}
+  - exit: {}

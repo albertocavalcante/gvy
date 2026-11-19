@@ -19,9 +19,10 @@ work. Coding agents must also read [AGENTS.md](AGENTS.md) and the applicable ins
 - Install **JDK 21** for compilation. gvy targets a Java 17 runtime.
 - Make **JDK 17** available for the default test runtime.
 - Use the checked-in Gradle wrapper (`./gradlew`); a separate Kotlin or Gradle installation is not required.
-- On macOS, Homebrew's `openjdk@17` works as the JDK 17 runtime. It is keg-only, so `/usr/libexec/java_home` does not
-  list it and `java` reports "Unable to locate a Java Runtime". `.envrc` selects it when SDKMAN provides no matching
-  JDK. Without direnv, set `export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"`.
+- On macOS, Homebrew's `openjdk@21` works as the JDK 21 compilation JDK, matching `java=` in `.sdkmanrc`. It is
+  keg-only, so `/usr/libexec/java_home` does not list it and `java` reports "Unable to locate a Java Runtime". `.envrc`
+  selects it when SDKMAN provides no matching JDK. Without direnv, set
+  `export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"`.
 
 Gradle can provision compilation and test toolchains through the configured Foojay resolver. If provisioning is
 unavailable, install the required JDKs locally. The [version catalog](gradle/libs.versions.toml) and
@@ -30,6 +31,36 @@ unavailable, install the required JDKs locally. The [version catalog](gradle/lib
 Run the commands below from the repository root. If you use direnv, review `.envrc` before allowing it in a new
 worktree. On shared machines with `build-slot` installed, wrap Gradle invocations with `build-slot --` to queue
 memory-intensive work. Run one Gradle build at a time per machine.
+
+Common test-task defaults use one fork locally or two on GitHub Actions, with a 1 GiB maximum heap and a 256 MiB initial
+heap per fork. Set `-Pgvy.test.maxParallelForks=1` or `-Pgvy.test.maxHeapSize=768m` to change those common defaults; the
+fork count must be positive and heap sizes use a positive integer followed by `m` or `g`. If the maximum is below 256
+MiB, the common initial heap is reduced to match. A module or task can set its own values after these defaults: in
+particular, `:tests:e2eTest` uses its own heap and `-Pe2eParallelForks` controls its fork count, while
+`:tests:harnessTest` uses its focused limits. Gradle's `--max-workers` and shared-host `build-slot` still apply; a
+per-fork heap is not a limit on total memory, and E2E tests also launch server processes.
+
+To inspect configured task settings, run the source-only diagnostic init script:
+
+```bash
+build-slot -- ./gradlew help --no-configuration-cache -I tools/ci/test-resource-precedence.init.gradle \
+  -Pe2eParallelForks=1 -PtestResourceExpected=:tests:e2eTest=2G/1
+```
+
+The probe prints the settings after project evaluation and checks the supplied expectation. When one of the reported
+test tasks executes, it prints and checks the settings at task execution before the test worker starts. Other task
+actions may still change those settings afterward. Observing actual child JVM arguments and memory needs a separate
+bounded execution.
+
+The repository's `gradle.properties` configures the Gradle daemon JVM. `.envrc` selects tools and extends PATH; it does
+not choose a per-machine heap or garbage collector. Put a persistent local `org.gradle.jvmargs` override in your
+existing Gradle user home's `gradle.properties`, or pass `-Dorg.gradle.jvmargs="-Xmx1536m"` for one invocation. The
+command-line value takes precedence over the user and repository properties. These settings control the daemon; test
+forks and spawned language servers have their own resource settings. Run a real bounded build to verify the selected
+daemon arguments before relying on a profile.
+
+See the [Gradle build-environment guide](https://docs.gradle.org/current/userguide/build_environment.html) for property
+precedence and the distinction between client and daemon JVM options.
 
 ## Build and run the server
 
@@ -70,6 +101,11 @@ Bootstrap the pinned uv version with
 `python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt`, then install the
 locked tools with `uv sync --project .reuse --locked`. Run `make license-check` and `make license-test` offline. The
 equivalent portable check is `uv run --offline --project .reuse --locked --no-dev python .reuse/check.py --root .`.
+
+The checker requires REUSE's exit status and compliance report to agree. A successful, compliant report also requires
+exactly empty stderr: even whitespace or unclassified output fails gvy's diagnostic policy. This policy failure does not
+assert a license violation. The checker reports a fixed message and continues the independent repository checks; it does
+not print raw REUSE stderr for this policy failure.
 
 When updating uv, update the version and all wheel SHA-256 hashes in `.reuse/bootstrap-requirements.txt` from the
 [uv release metadata](https://pypi.org/pypi/uv/0.13.7/json), then validate the Linux, macOS, and Windows tooling jobs.
@@ -154,6 +190,10 @@ also describes the required real-editor checks.
 Keep each procedure in one place and link to it from other entry points. Treat the [Quality Bar](docs/quality-bar.md) as
 the single roadmap; track progress in its linked issues. Label goals and planned work so readers can distinguish them
 from shipped behavior.
+
+Prefer readable, visual explanations in issues, PRs, design notes and Markdown. Lead with the problem and intended
+outcome, then use examples, diagrams or comparison tables where they clarify the work. Follow the
+[visual writing guide](docs/visual-writing.md) for format choices, citations, accessibility and rendering checks.
 
 ## Open a pull request
 

@@ -3,16 +3,22 @@
 
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.groovyparser.annotations.SourceAnnotationCapture
 import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
+import com.github.albertocavalcante.groovyparser.internal.CompilerMessageSource
+import com.github.albertocavalcante.groovyparser.internal.DiagnosticDocument
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
+import com.github.albertocavalcante.groovyparser.internal.SourceSnapshot
+import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.ExcludedSource
 import com.github.albertocavalcante.nativeapi.Fallback
+import com.github.albertocavalcante.nativeapi.NativeClasspathInputs
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
@@ -29,13 +35,15 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
+import org.codehaus.groovy.control.messages.ExceptionMessage
+import org.codehaus.groovy.control.messages.LocatedMessage
+import org.codehaus.groovy.control.messages.Message
+import org.codehaus.groovy.control.messages.SimpleMessage
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Collections
-import java.util.Enumeration
 import java.util.jar.JarFile
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
@@ -44,7 +52,7 @@ import kotlin.io.path.isRegularFile
  * Path to the service provider configuration file for AST transformations.
  * This file is located in META-INF/services/ and lists all global AST transformation classes.
  */
-private const val AST_TRANSFORMATION_SERVICE_FILE =
+internal const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
 
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
@@ -56,43 +64,43 @@ private const val UNATTRIBUTED_ERROR_REASON =
 private const val SCRIPT_FALLBACK_REASON =
     "a class was compiled as a Script because its superclass could not be resolved"
 
-/** The first compile error, naming the file it came from (the error may not be this file's). */
-private fun firstErrorMessage(result: ParseResult): String? {
-    val cause = (result.compilationUnit.errorCollector.errors.orEmpty().firstOrNull() as? SyntaxErrorMessage)?.cause
-    return if (cause != null) {
-        listOfNotNull(cause.sourceLocator?.substringAfterLast('/'), cause.originalMessage).joinToString(": ")
+/** A useful raw cause, before source-location filtering discards unit-wide errors. */
+internal fun firstCompilerCause(messages: List<Message>): String? = messages.asSequence().mapNotNull { message ->
+    val text = when (message) {
+        is SyntaxErrorMessage -> {
+            val cause = message.cause
+            val detail = cause.originalMessage?.let(::firstMeaningfulLine)
+            detail?.let { listOfNotNull(cause.sourceLocator?.substringAfterLast('/'), it).joinToString(": ") }
+        }
+        is LocatedMessage -> message.message
+        is SimpleMessage -> message.message
+        is ExceptionMessage -> message.cause?.message
+        // Unknown compiler messages may execute arbitrary write() logic; never render them for fallback text.
+        else -> null
+    }
+    text?.let(::firstMeaningfulLine)?.let(ParseOutcome::truncate)
+}.firstOrNull()
+
+private fun firstMeaningfulLine(text: String): String? = text.lineSequence()
+    .map { it.trim() }
+    .firstOrNull { it.isNotBlank() && !isCompilerBoilerplate(it) }
+
+private fun isCompilerBoilerplate(text: String): Boolean {
+    val trimmed = text.trim()
+    val withoutPrefix = if (trimmed.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX, ignoreCase = true)) {
+        trimmed.substring(COMPILATION_FAILED_MESSAGE_PREFIX.length)
     } else {
-        result.diagnostics.firstOrNull { it.severity == ParserSeverity.ERROR }?.message
+        trimmed
     }
+    val stripped = withoutPrefix.trim().trimEnd(':').trim()
+    return stripped.equals("startup failed", ignoreCase = true) ||
+        stripped.equals("compilation failed", ignoreCase = true)
 }
 
-/**
- * A GroovyClassLoader that filters out AST transformation service discovery.
- *
- * This prevents NoClassDefFoundError when project classpath contains transformation classes
- * that reference Groovy classes not visible to the isolated classloader. By filtering out
- * the service file discovery, we prevent Groovy's CompilationUnit from attempting to load
- * project-specific transformations that would fail due to classloader isolation.
- *
- * @see GroovyParserFacade for usage context
- */
-private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
-
-    override fun getResources(name: String): Enumeration<URL> {
-        // Filter out AST transformation service discovery from this classloader
-        if (name == AST_TRANSFORMATION_SERVICE_FILE) {
-            return Collections.emptyEnumeration()
-        }
-        return super.getResources(name)
-    }
-
-    override fun getResource(name: String): URL? {
-        if (name == AST_TRANSFORMATION_SERVICE_FILE) {
-            return null
-        }
-        return super.getResource(name)
-    }
-}
+/** The first meaningful raw compiler error, or a filtered diagnostic when none is available. */
+private fun firstErrorMessage(result: ParseResult): String? =
+    firstCompilerCause(result.compilationUnit.errorCollector.errors.orEmpty())
+        ?: result.diagnostics.firstOrNull { it.severity == ParserSeverity.ERROR }?.message
 
 private val compileLogger = KotlinLogging.logger {}
 
@@ -123,10 +131,36 @@ private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequ
  */
 private fun GroovyClassLoader.hasClass(name: String): Boolean = runCatching { loadClass(name, false, true) }.isSuccess
 
+/** A source unit name as a normalized path: a plain path, or a `file:` URL for loader-found sources. */
+private fun locatorPath(locator: String): Any = if (locator.startsWith("file:")) {
+    runCatching { Path.of(URI(locator)).toAbsolutePath().normalize() }.getOrDefault(locator)
+} else {
+    runCatching { Path.of(locator).toAbsolutePath().normalize() }.getOrDefault(locator)
+}
+
+private fun urlPath(url: URL): Path? = if (url.protocol == "file") {
+    runCatching { Path.of(url.toURI()).toAbsolutePath().normalize() }.getOrNull()
+} else {
+    null
+}
+
 /**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
  */
-class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
+class GroovyParserFacade internal constructor(
+    private val parentClassLoader: ClassLoader,
+    private val classLoaderFactory: (ClassLoader) -> SdkFallbackGroovyClassLoader,
+    /** Internal test seam for compiler messages with no source owner; absent in production. */
+    private val observeCompilation: ((CompilationUnit) -> Unit)?,
+) {
+    internal constructor(
+        parentClassLoader: ClassLoader,
+        classLoaderFactory: (ClassLoader) -> SdkFallbackGroovyClassLoader,
+    ) : this(parentClassLoader, classLoaderFactory, null)
+
+    @JvmOverloads
+    constructor(parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) :
+        this(parentClassLoader, ::SdkFallbackGroovyClassLoader)
 
     companion object {
         /**
@@ -167,49 +201,112 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
      *
      * Neither the exclusion of failing sources nor the retry is silent: [ParseResult.outcome] records them.
      */
-    fun parse(request: ParseRequest): ParseResult = parse(request, excluded = emptyList())
+    fun parse(request: ParseRequest): ParseResult = parseWithSourceFilter(request, null)
+
+    /** Restricts source-loader lookup to the authoritative membership when it is known. */
+    fun parse(request: ParseRequest, allowedSources: Set<Path>?): ParseResult {
+        val allowed = allowedSources?.mapTo(HashSet()) { source ->
+            runCatching { source.toRealPath() }.getOrElse { source.toAbsolutePath().normalize() }
+        }
+        return parseWithSourceFilter(request, allowed?.let { paths -> { path -> path in paths } })
+    }
+
+    /** Filters workspace source-loader candidates while retaining dependency resources. */
+    fun parseWithSourceFilter(
+        request: ParseRequest,
+        sourceFilter: ((Path) -> Boolean)?,
+        locatorBuffers: Map<URI, String> = emptyMap(),
+    ): ParseResult {
+        // Structural parses do not bind external symbols. Preserve only immutable input paths;
+        // source navigation must never mistake these unknown observations for a compiled context.
+        val inputs = if (request.compilePhase < Phases.SEMANTIC_ANALYSIS) {
+            NativeClasspathInputs(request.classpath, request.sourceRoots)
+        } else {
+            NativeClasspathInputs.capture(request.classpath, request.sourceRoots, request.checkCancelled)
+        }
+        return parse(
+            request.copy(classpath = inputs.classpath, sourceRoots = inputs.sourceRoots),
+            excluded = emptyList(),
+            inputs = inputs,
+            sourceFilter = sourceFilter,
+            locatorBuffers = locatorBuffers.toMap(),
+        )
+    }
 
     /** [excluded] accumulates the sources set aside by the recursive recompiles so far. */
-    private fun parse(request: ParseRequest, excluded: List<ExcludedSource>): ParseResult {
-        val result = MissingClassStubs.compile(request, ::parseInternal)
-
-        // Other sources in the unit (open buffers mid-edit, or a broken file on disk, e.g. one extending
-        // a class that is not on the classpath) fail the whole compilation unit. That would cost this
-        // file its AST, or its type resolution via the CONVERSION retry below, and show their error
-        // here. Classes that merely cannot be resolved never get here: they are stubbed above. Compile
-        // again without the sources that failed. A failure that cannot be attributed to
-        // a source drops the open buffers (most likely mid-edit) and otherwise falls through.
-        if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty() ||
-            request.workspaceClassLocator != null
-        ) {
-            val failing = failingOtherSources(request, result)
-            val newlyFailing = failing.workspace - request.excludedSources
-            if (failing.open.isNotEmpty() || newlyFailing.isNotEmpty()) {
-                logger.debug { "Sources with errors excluded from compiling ${request.uri}: $failing" }
-                return parse(
-                    request.copy(
-                        openSources = request.openSources.filterKeys { it !in failing.open },
-                        workspaceSources = request.workspaceSources.filterNot { it in newlyFailing },
-                        excludedSources = request.excludedSources + newlyFailing,
-                    ),
-                    excluded + failing.excludedSources(),
+    private fun parse(
+        request: ParseRequest,
+        excluded: List<ExcludedSource>,
+        inputs: NativeClasspathInputs,
+        sourceFilter: ((Path) -> Boolean)?,
+        locatorBuffers: Map<URI, String>,
+    ): ParseResult {
+        var compileFailure: CompileFailure? = null
+        return ParseResultOwner(
+            MissingClassStubs.compile(request) { retryRequest, stubs ->
+                parseInternal(
+                    retryRequest,
+                    inputs,
+                    stubs,
+                    SourceLookup(sourceFilter, locatorBuffers) {
+                        compileFailure =
+                            it
+                    },
                 )
-            }
-            if (failing.unattributed && request.openSources.isNotEmpty()) {
-                logger.debug { "Unattributed compile errors for ${request.uri}; compiling without open buffers" }
-                val dropped = request.openSources.keys.map { ExcludedSource(it.toString(), UNATTRIBUTED_ERROR_REASON) }
-                return parse(request.copy(openSources = emptyMap()), excluded + dropped)
-            }
-        }
+            },
+        ).use { owner ->
+            val result = owner.result
 
-        val final = retryAtEarlierPhaseIfNeeded(request, result)
-        val unlocated = LocatingClassNodeResolver.unlocatedBy(final.compilationUnit)
-        return final.copy(outcome = final.outcome.copy(excludedSources = excluded, unlocatedClasses = unlocated))
+            // Other sources in the unit (open buffers mid-edit, or a broken file on disk, e.g. one extending
+            // a class that is not on the classpath) fail the whole compilation unit. That would cost this
+            // file its AST, or its type resolution via the CONVERSION retry below, and show their error
+            // here. Classes that merely cannot be resolved never get here: they are stubbed above. Compile
+            // again without the sources that failed. A failure that cannot be attributed to
+            // a source drops the open buffers (most likely mid-edit) and otherwise falls through.
+            if (hasOtherSources(request)) {
+                val failing = failingOtherSources(request, result, locatorBuffers)
+                val newlyFailing = failing.workspace - request.excludedSources
+                if (failing.open.isNotEmpty() || newlyFailing.isNotEmpty()) {
+                    logger.debug { "Sources with errors excluded from compiling ${request.uri}: $failing" }
+                    val recovered = owner.replaceWith {
+                        parse(
+                            request.copy(
+                                openSources = request.openSources.filterKeys { it !in failing.open },
+                                workspaceSources = request.workspaceSources.filterNot { it in newlyFailing },
+                                excludedSources = request.excludedSources + newlyFailing,
+                            ),
+                            excluded + failing.excludedSources(),
+                            inputs,
+                            sourceFilter,
+                            locatorBuffers.filterKeys { it !in failing.open },
+                        )
+                    }
+                    return@use owner.publish(recovered)
+                }
+                if (failing.unattributed && (request.openSources.isNotEmpty() || locatorBuffers.isNotEmpty())) {
+                    logger.debug { "Unattributed compile errors for ${request.uri}; compiling without open buffers" }
+                    val (retry, dropped) = dropUnattributedBuffers(request, locatorBuffers)
+                    val recovered = owner.replaceWith {
+                        parse(retry, excluded + dropped, inputs, sourceFilter, emptyMap())
+                    }
+                    return@use owner.publish(recovered)
+                }
+            }
+
+            val finalResult = retryAtEarlierPhaseIfNeeded(
+                request,
+                owner,
+                inputs,
+                SourceLookup(sourceFilter, locatorBuffers),
+                compileFailure,
+            )
+            owner.publish(withSourceEvidence(finalResult, excluded))
+        }
     }
 
     /**
      * Other sources of the compilation unit whose errors failed it, and whether some error could not be
-     * attributed to any source (non-syntax errors, which Groovy does not attribute to a file).
+     * attributed to any source.
      */
     private data class FailingSources(
         val open: Set<URI>,
@@ -226,9 +323,13 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
      * are compared as normalized paths: workspace files are named after their path, and a file the class
      * loader pulled in from a source root is named by its `file:` URL.
      */
-    private fun failingOtherSources(request: ParseRequest, result: ParseResult): FailingSources {
+    private fun failingOtherSources(
+        request: ParseRequest,
+        result: ParseResult,
+        locatorBuffers: Map<URI, String>,
+    ): FailingSources {
         val errors = result.compilationUnit.errorCollector.errors.orEmpty()
-        val openByKey = request.openSources.keys.associateBy { fileKey(it) }
+        val openByKey = (request.openSources.keys + locatorBuffers.keys).associateBy { fileKey(it) }
         val workspaceByKey = request.workspaceSources.associateBy { it.toAbsolutePath().normalize() }
         val locatedPaths = LocatingClassNodeResolver.addedBy(result.compilationUnit)
         val open = mutableSetOf<URI>()
@@ -236,55 +337,56 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val reasons = linkedMapOf<String, String>()
         var unattributed = false
         for (message in errors) {
-            val cause = (message as? SyntaxErrorMessage)?.cause
-            val locator = cause?.sourceLocator
+            val locator = CompilerMessageSource.locator(message)
             when (locator) {
                 null -> unattributed = true
-                request.sourceUnitName -> Unit // this file's own error
                 else -> {
                     val key = locatorPath(locator)
+                    if (key == fileKey(request.uri) || locator == request.sourceUnitName) continue
                     // A buffer and its disk copy are one source: both leave the unit, under one reason.
-                    val buffer = openByKey[key]?.also { open += it }
                     // A file the class locator added (#1425) fails the unit like a workspace source does; a file
                     // Groovy found by its name, or a stub, is not the locator's and is left to the other rules.
-                    val located = (key as? Path)?.takeIf { buffer == null && key in locatedPaths }
-                    val disk = (workspaceByKey[key] ?: located)?.also { workspace.add(it) }
+                    val (buffer, disk) = otherSourceFor(key, openByKey, workspaceByKey, locatedPaths)
+                    if (buffer != null) open.add(buffer)
+                    if (disk != null) workspace.add(disk)
                     val source = buffer?.toString() ?: disk?.toString()
-                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause.originalMessage ?: ""))
+                    val reason = (message as? SyntaxErrorMessage)?.cause?.originalMessage
+                        ?: ParserDiagnosticConverter.textOf(message)
+                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(reason))
                 }
             }
         }
         return FailingSources(open, workspace, unattributed, reasons)
     }
 
-    /** A source unit name as a normalized path: a plain path, or a `file:` URL for loader-found sources. */
-    private fun locatorPath(locator: String): Any = if (locator.startsWith("file:")) {
-        runCatching { Path.of(URI(locator)).toAbsolutePath().normalize() }.getOrDefault(locator)
-    } else {
-        runCatching { Path.of(locator).toAbsolutePath().normalize() }.getOrDefault(locator)
-    }
-
-    private fun urlPath(url: URL): Path? = if (url.protocol ==
-        "file"
-    ) {
-        runCatching { Path.of(url.toURI()).toAbsolutePath().normalize() }.getOrNull()
-    } else {
-        null
-    }
-
-    private fun retryAtEarlierPhaseIfNeeded(request: ParseRequest, result: ParseResult): ParseResult {
+    private fun retryAtEarlierPhaseIfNeeded(
+        request: ParseRequest,
+        owner: ParseResultOwner,
+        inputs: NativeClasspathInputs,
+        lookup: SourceLookup,
+        compileFailure: CompileFailure?,
+    ): ParseResult {
+        val result = owner.result
         val fallback = when {
             shouldRetryAtConversion(request, result) -> Fallback.SCRIPT_FALLBACK
-            shouldRetryOnCompilationFailure(request, result) -> Fallback.COMPILATION_FAILED
+            shouldRetryOnCompilationFailure(request, result, compileFailure) -> Fallback.COMPILATION_FAILED
             else -> return result
         }
         logger.debug {
             "Detected $fallback for ${request.uri.toString().take(LOG_URI_LIMIT)}, retrying at CONVERSION phase"
         }
 
-        val retried = parseInternal(request.copy(compilePhase = Phases.CONVERSION))
         val reason = firstErrorMessage(result) ?: SCRIPT_FALLBACK_REASON
+        val ownExceptions = result.compilationUnit.errorCollector.errors.orEmpty()
+            .filterIsInstance<ExceptionMessage>()
+            .filter { CompilerMessageSource.locator(it) == request.sourceUnitName }
+            .map(ParserDiagnosticConverter::textOf).toSet()
+        val retainedDiagnostics = result.diagnostics.filter { it.message in ownExceptions }
+        val retried = owner.replaceWith {
+            parseInternal(request.copy(compilePhase = Phases.CONVERSION), inputs, lookup = lookup)
+        }
         return retried.copy(
+            diagnostics = (retainedDiagnostics + retried.diagnostics).distinct(),
             outcome = retried.outcome.copy(
                 requestedPhase = request.compilePhase,
                 achievedPhase = Phases.CONVERSION,
@@ -369,7 +471,11 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         return shouldRetry
     }
 
-    private fun shouldRetryOnCompilationFailure(request: ParseRequest, result: ParseResult): Boolean {
+    private fun shouldRetryOnCompilationFailure(
+        request: ParseRequest,
+        result: ParseResult,
+        failure: CompileFailure?,
+    ): Boolean {
         if (request.compilePhase <= Phases.CONVERSION) {
             logger.debug {
                 "shouldRetryOnCompilationFailure: false - already at CONVERSION or earlier " +
@@ -378,39 +484,37 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             return false
         }
 
-        val hasFallbackError = result.diagnostics.any { diagnostic ->
-            diagnostic.severity == ParserSeverity.ERROR &&
-                diagnostic.source == "GroovyParser" &&
-                diagnostic.message.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX)
+        if (failure == null) return false
+        val unexpected = result.compilationUnit.errorCollector.errors.orEmpty().any { it is ExceptionMessage }
+        val hasError = result.diagnostics.any { it.severity == ParserSeverity.ERROR }
+        val explained = result.diagnostics.any { it.code == ParserDiagnosticConverter.PROJECT_TRANSFORM_NOT_RUN }
+        return unexpected || (!hasError && !explained) || result.diagnostics.any {
+            it.source == "GroovyParser" && it.message.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX)
         }
-
-        if (!hasFallbackError) {
-            logger.debug { "shouldRetryOnCompilationFailure: false - no fallback compilation error detected" }
-        }
-
-        return hasFallbackError
     }
 
-    private fun parseInternal(request: ParseRequest, stubs: MissingClassStubs? = null): ParseResult {
-        // Before any work: building the configuration below opens every classpath jar.
-        request.checkCancelled()
-
-        // Collect all classpath entries for transformation scanning
-        val allClasspath = request.classpath + request.sourceRoots
-        val config = createCompilerConfiguration(allClasspath)
-
-        val classLoader = createClassLoader(request)
-
+    private fun createCompilationContext(
+        request: ParseRequest,
+        config: CompilerConfiguration,
+        classLoader: SdkFallbackGroovyClassLoader,
+        stubs: MissingClassStubs?,
+        locatorBuffers: Map<URI, String>,
+    ): Pair<CompilationUnit, SourceUnit> {
         // Use 4-arg constructor with separate transform loader for proper classloader isolation.
         // transformLoader is a singleton (see companion object) to prevent resource leaks.
         val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
-
         val source = StringReaderSource(request.content, config)
-        val sourceUnit = SourceUnit(request.sourceUnitName, source, config, classLoader, compilationUnit.errorCollector)
+        val sourceUnit = SourceUnit(
+            request.sourceUnitName,
+            source,
+            config,
+            classLoader,
+            compilationUnit.errorCollector,
+        )
         compilationUnit.addSource(sourceUnit)
 
         addWorkspaceSources(compilationUnit, request, config, classLoader)
-        LocatingClassNodeResolver.install(compilationUnit, request)
+        LocatingClassNodeResolver.install(compilationUnit, request, locatorBuffers)
         stubs?.addTo(compilationUnit, config, classLoader)
 
         // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
@@ -421,78 +525,133 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         compilationUnit.progressCallback = CompilationUnit.ProgressCallback { context, _ ->
             if (context is CompilationUnit) request.checkCancelled()
         }
+        return compilationUnit to sourceUnit
+    }
 
-        val failure = compileCatching(compilationUnit, request)
-        val compilationFailed = failure != null
-        val failureMessage = failure?.message
+    private fun parseInternal(
+        request: ParseRequest,
+        inputs: NativeClasspathInputs,
+        stubs: MissingClassStubs? = null,
+        lookup: SourceLookup,
+    ): ParseResult {
+        // Before any work: building the configuration below opens every classpath jar.
+        request.checkCancelled()
+        val annotationCapture = SourceAnnotationCapture(request)
+        try {
+            return parseInternalWithCapture(request, inputs, stubs, annotationCapture, lookup)
+        } finally {
+            annotationCapture.discard()
+        }
+    }
 
-        val tokenIndex = GroovyTokenIndex.build(request.content)
+    private fun parseInternalWithCapture(
+        request: ParseRequest,
+        inputs: NativeClasspathInputs,
+        stubs: MissingClassStubs?,
+        annotationCapture: SourceAnnotationCapture,
+        lookup: SourceLookup,
+    ): ParseResult {
+        // Collect all classpath entries for transformation scanning
+        val allClasspath = request.classpath + request.sourceRoots
+        val config = createCompilerConfiguration(allClasspath, annotationCapture)
 
-        val ast = extractAst(compilationUnit, request.sourceUnitName)
-        val diagnostics =
-            ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates) { name ->
-                classLoader.hasClass(name)
-            }.toMutableList()
+        val classLoader = createClassLoader(request, lookup.filter, lookup.buffers)
 
-        // A failure explained only by "this project transform is not run" is already reported; no synthetic error
-        val explained = diagnostics.any { it.code == ParserDiagnosticConverter.PROJECT_TRANSFORM_NOT_RUN }
-        if (compilationFailed && !explained && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
-            // ErrorCollector.getLastError throws when nothing was collected, so read the list instead.
-            val lastCollected = compilationUnit.errorCollector.errors.orEmpty().lastOrNull()?.toString()
-            val errorMessage = failureMessage ?: lastCollected ?: "Unknown error"
-            diagnostics.add(
-                com.github.albertocavalcante.nativeapi.ParserDiagnostic(
-                    range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),
-                    severity = ParserSeverity.ERROR,
-                    message = "$COMPILATION_FAILED_MESSAGE_PREFIX $errorMessage",
-                    source = "GroovyParser",
-                ),
+        return classLoader.closeOnFailure {
+            val (compilationUnit, sourceUnit) = createCompilationContext(
+                request,
+                config,
+                classLoader,
+                stubs,
+                lookup.buffers,
+            )
+
+            val failure = compileCatching(compilationUnit, request)
+            observeCompilation?.invoke(compilationUnit)
+            lookup.onCompileFailure(failure)
+            val compilationFailed = failure != null
+            val failureMessage = failure?.message
+
+            val tokenIndex = GroovyTokenIndex.build(request.content)
+
+            val ast = extractAst(compilationUnit, request.sourceUnitName)
+            val diagnostics =
+                ParserDiagnosticConverter.convert(
+                    compilationUnit.errorCollector,
+                    request.locatorCandidates,
+                    SyntaxSourceContext(SourceSnapshot(request.content), tokenIndex, setOf(request.sourceUnitName)),
+                    document = DiagnosticDocument(request.content, request.sourceUnitName),
+                ) { name ->
+                    classLoader.hasClass(name)
+                }.toMutableList()
+
+            addMissingFailureDiagnostic(diagnostics, compilationUnit, failureMessage, compilationFailed)
+
+            val tracker = NodeRelationshipTracker()
+            val astModel = RecursiveAstVisitor(tracker)
+            ast?.let { astModel.visitModule(it, request.uri) }
+
+            val symbolTable = SymbolTable()
+            symbolTable.buildFromVisitor(astModel)
+
+            logger.debug {
+                "Parsed ${request.uri} -> success=${ast != null && diagnostics.none {
+                    it.severity == ParserSeverity.ERROR
+                }}, diagnostics=${diagnostics.size}"
+            }
+
+            ParseResult(
+                ast = ast,
+                compilationUnit = compilationUnit,
+                sourceUnit = sourceUnit,
+                diagnostics = diagnostics,
+                symbolTable = symbolTable,
+                astModel = astModel,
+                tokenIndex = tokenIndex,
+                outcome = ParseOutcome(requestedPhase = request.compilePhase),
+                sourceAnnotations = annotationCapture.finish(ast, compilationFailed),
+                classpathInputs = inputs.withCompilerSdk(classLoader.compilerSdk),
             )
         }
-
-        val tracker = NodeRelationshipTracker()
-        val astModel = RecursiveAstVisitor(tracker)
-        ast?.let { astModel.visitModule(it, request.uri) }
-
-        val symbolTable = SymbolTable()
-        symbolTable.buildFromVisitor(astModel)
-
-        logger.debug {
-            "Parsed ${request.uri} -> success=${ast != null && diagnostics.none {
-                it.severity == ParserSeverity.ERROR
-            }}, diagnostics=${diagnostics.size}"
-        }
-
-        return ParseResult(
-            ast = ast,
-            compilationUnit = compilationUnit,
-            sourceUnit = sourceUnit,
-            diagnostics = diagnostics,
-            symbolTable = symbolTable,
-            astModel = astModel,
-            tokenIndex = tokenIndex,
-            outcome = ParseOutcome(requestedPhase = request.compilePhase),
-        )
     }
 
     /**
-     * The compile's class loader. TransformFilteringClassLoader prevents discovery of project AST
+     * The compile's class loader. SdkFallbackGroovyClassLoader prevents discovery of project AST
      * transformations, which would cause NoClassDefFoundError due to classloader isolation (it returns
      * empty results for META-INF/services/...ASTTransformation). Sources excluded for failing the
      * compile are hidden from its source lookup, so they are not loaded back from a source root.
      */
-    private fun createClassLoader(request: ParseRequest): GroovyClassLoader {
-        val classLoader = TransformFilteringClassLoader(parentClassLoader)
-        request.classpath.forEach { classLoader.addClasspath(it.toString()) }
-        request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
-        if (request.excludedSources.isNotEmpty()) {
-            val excluded = request.excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
-            val sources = classLoader.resourceLoader
-            classLoader.resourceLoader = groovy.lang.GroovyResourceLoader { name ->
-                sources.loadGroovySource(name)?.takeUnless { url -> urlPath(url) in excluded }
+    private fun createClassLoader(
+        request: ParseRequest,
+        sourceFilter: ((Path) -> Boolean)?,
+        locatorBuffers: Map<URI, String>,
+    ): SdkFallbackGroovyClassLoader {
+        val classLoader = classLoaderFactory(parentClassLoader)
+        return classLoader.closeOnFailure {
+            request.classpath.forEach { classLoader.addClasspath(it.toString()) }
+            request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
+            if (request.compilePhase >= Phases.SEMANTIC_ANALYSIS) classLoader.selectSdkFallback()
+            if (request.excludedSources.isNotEmpty() || sourceFilter != null || locatorBuffers.isNotEmpty()) {
+                val excluded = request.excludedSources.mapTo(HashSet(), ::sourceIdentity)
+                val bufferPaths = locatorBuffers.keys.mapNotNullTo(HashSet()) { uri ->
+                    runCatching { Path.of(uri).toRealPath() }.getOrNull()
+                }
+                val roots = request.sourceRoots.map { root ->
+                    runCatching { root.toRealPath() }.getOrElse { root.toAbsolutePath().normalize() }
+                }
+                val sources = classLoader.resourceLoader
+                classLoader.resourceLoader = groovy.lang.GroovyResourceLoader { name ->
+                    sources.loadGroovySource(name)?.takeIf { url ->
+                        val path = urlPath(url)
+                        val canonical = path?.let { runCatching { it.toRealPath() }.getOrDefault(it) }
+                        val accepted = canonical == null || sourceFilter == null ||
+                            roots.none(canonical::startsWith) || sourceFilter(canonical)
+                        canonical !in excluded && canonical !in bufferPaths && accepted
+                    }
+                }
             }
+            classLoader
         }
-        return classLoader
     }
 
     /**
@@ -504,25 +663,28 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
      *
      * @param classpath The classpath entries to scan for AST transformations
      */
-    private fun createCompilerConfiguration(classpath: List<Path>): CompilerConfiguration =
-        CompilerConfiguration().apply {
-            targetDirectory = null
-            debug = true
-            optimizationOptions = mapOf(
-                CompilerConfiguration.GROOVYDOC to true,
-            )
-            sourceEncoding = "UTF-8"
+    private fun createCompilerConfiguration(
+        classpath: List<Path>,
+        annotationCapture: SourceAnnotationCapture,
+    ): CompilerConfiguration = CompilerConfiguration().apply {
+        targetDirectory = null
+        debug = true
+        optimizationOptions = mapOf(
+            CompilerConfiguration.GROOVYDOC to true,
+        )
+        sourceEncoding = "UTF-8"
 
-            // Scan and disable external AST transformations to prevent classloader conflicts
-            val externalTransforms = scanForAstTransformations(classpath)
-            if (externalTransforms.isNotEmpty()) {
-                logger.info { "Disabled ${externalTransforms.size} AST transformations from project classpath" }
-            }
-            // Policy first (it sets the always-disabled globals and strips code-executing annotations),
-            // then widen the disabled set with transforms found on the project classpath.
-            AnalysisCompilerPolicy.apply(this)
-            disabledGlobalASTTransformations = externalTransforms + disabledGlobalASTTransformations
+        // Scan and disable external AST transformations to prevent classloader conflicts
+        val externalTransforms = scanForAstTransformations(classpath)
+        if (externalTransforms.isNotEmpty()) {
+            logger.info { "Disabled ${externalTransforms.size} AST transformations from project classpath" }
         }
+        // Policy first (it sets the always-disabled globals and strips code-executing annotations),
+        // then widen the disabled set with transforms found on the project classpath.
+        addCompilationCustomizers(annotationCapture)
+        AnalysisCompilerPolicy.apply(this)
+        disabledGlobalASTTransformations = externalTransforms + disabledGlobalASTTransformations
+    }
 
     /**
      * Scans classpath entries for global AST transformation service files and extracts class names.
@@ -631,47 +793,118 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                 }
             }
     }
+}
 
-    /** A `file:` URI as a normalized path (decoded, platform case rules); other URIs unchanged. */
-    private fun fileKey(uri: URI): Any = if (uri.scheme.equals("file", ignoreCase = true)) {
-        runCatching { Path.of(uri).toAbsolutePath().normalize() }.getOrDefault(uri)
-    } else {
-        uri
-    }
-
-    /**
-     * Extracts the AST module for the requested source file.
-     *
-     * When workspace sources are included, multiple modules may exist in the compilation unit.
-     * This method ensures deterministic selection by matching the requested source's name.
-     *
-     * @param compilationUnit The compiled unit containing all modules
-     * @param sourceUnitName The name of the requested source (from ParseRequest.sourceUnitName)
-     * @return The module matching the requested source, or first module as fallback
-     */
-    private fun extractAst(compilationUnit: CompilationUnit, sourceUnitName: String): ModuleNode? = try {
-        // Stubs are not the user's code: they are never the module returned.
-        val modules = compilationUnit.ast?.modules.orEmpty().filterNot { isStubSourceName(it.context?.name) }
-        if (modules.isNotEmpty()) {
-            // Deterministic module selection: find the module matching the requested source
-            modules.find { module ->
-                module.context?.name == sourceUnitName
-            } ?: run {
-                // Fallback to first module if no match (e.g., if source was parsed with different name)
-                logger.debug {
-                    "Requested source '$sourceUnitName' not found in ${modules.size} modules, using first"
-                }
-                modules.first()
+/**
+ * Extracts the AST module for the requested source file.
+ *
+ * When workspace sources are included, multiple modules may exist in the compilation unit.
+ * This method ensures deterministic selection by matching the requested source's name.
+ *
+ * @param compilationUnit The compiled unit containing all modules
+ * @param sourceUnitName The name of the requested source (from ParseRequest.sourceUnitName)
+ * @return The module matching the requested source, or first module as fallback
+ */
+private fun extractAst(compilationUnit: CompilationUnit, sourceUnitName: String): ModuleNode? = try {
+    // Stubs are not the user's code: they are never the module returned.
+    val modules = compilationUnit.ast?.modules.orEmpty().filterNot { isStubSourceName(it.context?.name) }
+    if (modules.isNotEmpty()) {
+        // Deterministic module selection: find the module matching the requested source
+        modules.find { module ->
+            module.context?.name == sourceUnitName
+        } ?: run {
+            // Fallback to first module if no match (e.g., if source was parsed with different name)
+            compileLogger.debug {
+                "Requested source '$sourceUnitName' not found in ${modules.size} modules, using first"
             }
-        } else {
-            logger.debug { "No modules available in compilation unit" }
-            null
+            modules.first()
         }
-    } catch (e: CompilationFailedException) {
-        logger.debug { "Failed to extract AST: ${e.message}" }
+    } else {
+        compileLogger.debug { "No modules available in compilation unit" }
         null
     }
+} catch (e: CompilationFailedException) {
+    compileLogger.debug { "Failed to extract AST: ${e.message}" }
+    null
 }
+
+private fun addMissingFailureDiagnostic(
+    diagnostics: MutableList<com.github.albertocavalcante.nativeapi.ParserDiagnostic>,
+    compilationUnit: CompilationUnit,
+    failureMessage: String?,
+    compilationFailed: Boolean,
+) {
+    // A failure explained only by "this project transform is not run" is already reported; no synthetic error
+    val explained = diagnostics.any { it.code == ParserDiagnosticConverter.PROJECT_TRANSFORM_NOT_RUN }
+    if (compilationFailed && !explained && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
+        // ErrorCollector.getLastError throws when nothing was collected, so read the list instead.
+        val collectedCause = firstCompilerCause(compilationUnit.errorCollector.errors.orEmpty())
+        val errorMessage = collectedCause ?: failureMessage ?: "Unknown error"
+        diagnostics.add(
+            com.github.albertocavalcante.nativeapi.ParserDiagnostic(
+                range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),
+                severity = ParserSeverity.ERROR,
+                message = "$COMPILATION_FAILED_MESSAGE_PREFIX $errorMessage",
+                source = "GroovyParser",
+            ),
+        )
+    }
+}
+
+private data class SourceLookup(
+    val filter: ((Path) -> Boolean)?,
+    val buffers: Map<URI, String>,
+    val onCompileFailure: (CompileFailure?) -> Unit = {},
+)
+
+private fun hasOtherSources(request: ParseRequest): Boolean =
+    request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty() || request.workspaceClassLocator != null
+
+private fun withSourceEvidence(result: ParseResult, excluded: List<ExcludedSource>): ParseResult = result.copy(
+    outcome = result.outcome.copy(
+        excludedSources = excluded,
+        unlocatedClasses = LocatingClassNodeResolver.unlocatedBy(result.compilationUnit),
+    ),
+)
+
+private fun otherSourceFor(
+    key: Any,
+    openByKey: Map<Any, URI>,
+    workspaceByKey: Map<Path, Path>,
+    locatedPaths: Set<Path>,
+): Pair<URI?, Path?> {
+    val buffer = openByKey[key]
+    val located = (key as? Path)?.let { path ->
+        locatedPaths.firstOrNull { sourceIdentity(it) == sourceIdentity(path) }
+    }
+    val bufferPath = (key as? Path)?.takeIf { buffer != null }
+    return buffer to (workspaceByKey[key] ?: located ?: bufferPath)
+}
+
+private fun dropUnattributedBuffers(
+    request: ParseRequest,
+    locatorBuffers: Map<URI, String>,
+): Pair<ParseRequest, List<ExcludedSource>> {
+    val uris = request.openSources.keys + locatorBuffers.keys
+    val dropped = uris.map { ExcludedSource(it.toString(), UNATTRIBUTED_ERROR_REASON) }
+    val paths = uris.mapNotNull { uri -> runCatching { Path.of(uri) }.getOrNull() }
+    val identities = paths.mapTo(HashSet(), ::sourceIdentity)
+    return request.copy(
+        openSources = emptyMap(),
+        workspaceSources = request.workspaceSources.filterNot { sourceIdentity(it) in identities },
+        excludedSources = request.excludedSources + paths,
+    ) to dropped
+}
+
+/** A `file:` URI as a normalized path (decoded, platform case rules); other URIs unchanged. */
+private fun fileKey(uri: URI): Any = if (uri.scheme.equals("file", ignoreCase = true)) {
+    runCatching { Path.of(uri).toAbsolutePath().normalize() }.getOrDefault(uri)
+} else {
+    uri
+}
+
+private fun sourceIdentity(path: Path): Path =
+    runCatching { path.toRealPath() }.getOrElse { path.toAbsolutePath().normalize() }
 
 /**
  * Groovy's class lookup, then the workspace class index (#1425): a name Groovy cannot find on the classpath or as
@@ -691,8 +924,9 @@ internal class LocatingClassNodeResolver(
     excludedSources: Set<Path>,
     private val buffers: Map<Path, Pair<URI, String>>,
 ) : ClassNodeResolver() {
-    private val excluded = excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+    private val excluded = excludedSources.mapTo(HashSet(), ::sourceIdentity)
     private val added = LinkedHashSet<Path>()
+    private val addedIdentities = HashSet<Path>()
     private val unlocated = LinkedHashSet<String>()
 
     override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? =
@@ -701,7 +935,7 @@ internal class LocatingClassNodeResolver(
     private fun located(name: String, unit: CompilationUnit): LookupResult? {
         val topLevel = name.substringBefore('$')
         val path = locator(topLevel).map { it.toAbsolutePath().normalize() }
-            .firstOrNull { it !in excluded && it !in added } ?: return null
+            .firstOrNull { sourceIdentity(it) !in excluded && sourceIdentity(it) !in addedIdentities } ?: return null
         if (added.size >= MAX_LOCATED_SOURCES) {
             // Past the cap the class stays unresolved here and is recorded; MissingClassStubs stubs it by this exact
             // name on its next pass. Answering with a stand-in instead would also answer Groovy's nested-class
@@ -710,7 +944,8 @@ internal class LocatingClassNodeResolver(
             return null
         }
         added.add(path)
-        val buffer = buffers[path]
+        addedIdentities.add(sourceIdentity(path))
+        val buffer = buffers[sourceIdentity(path)]
         val source = if (buffer == null) {
             unit.addSource(path.toUri().toURL())
         } else {
@@ -735,10 +970,10 @@ internal class LocatingClassNodeResolver(
         const val MAX_LOCATED_SOURCES = 32
 
         /** Installs the lookup on [unit] when [request] carries a class locator. */
-        fun install(unit: CompilationUnit, request: ParseRequest) {
+        fun install(unit: CompilationUnit, request: ParseRequest, locatorBuffers: Map<URI, String>) {
             val locator = request.workspaceClassLocator ?: return
-            val buffers = request.openSources.entries.mapNotNull { (uri, text) ->
-                runCatching { Path.of(uri).toAbsolutePath().normalize() to (uri to text) }.getOrNull()
+            val buffers = (locatorBuffers + request.openSources).entries.mapNotNull { (uri, text) ->
+                runCatching { sourceIdentity(Path.of(uri)) to (uri to text) }.getOrNull()
             }.toMap()
             unit.classNodeResolver = LocatingClassNodeResolver(locator, request.excludedSources, buffers)
         }
@@ -751,4 +986,17 @@ internal class LocatingClassNodeResolver(
         fun unlocatedBy(unit: CompilationUnit): List<String> =
             (unit.classNodeResolver as? LocatingClassNodeResolver)?.unlocated?.toList().orEmpty()
     }
+}
+
+/** A parse result takes normal ownership; cancellation/failure before publication must release its loader. */
+@Suppress("TooGenericExceptionCaught") // Cleanup preserves the exact original cancellation, Error or ordinary failure.
+private inline fun <T> GroovyClassLoader.closeOnFailure(operation: () -> T): T = try {
+    operation()
+} catch (failure: Throwable) {
+    try {
+        close()
+    } catch (cleanup: Throwable) {
+        if (cleanup !== failure) failure.addSuppressed(cleanup)
+    }
+    throw failure
 }

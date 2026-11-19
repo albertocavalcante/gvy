@@ -37,7 +37,7 @@ class DependencyRecoveryTest {
     fun `same workspace can retry after a failed attempt`(): Unit = runBlocking {
         val tool = mockk<BuildTool>(relaxed = true)
         every { tool.name } returns "Gradle"
-        every { tool.resolve(any(), any()) } throws IllegalStateException("offline") andThen recovered
+        every { tool.resolve(any(), any(), any()) } throws IllegalStateException("offline") andThen recovered
         withManager(tool) { manager, _ ->
             val failed = CompletableDeferred<WorkspaceResolution>()
             manager.startAsyncResolution(root, onComplete = { failed.complete(it) }, enableFileWatching = false)
@@ -63,7 +63,7 @@ class DependencyRecoveryTest {
             change = secondArg()
             watcher
         }
-        every { tool.resolve(any(), any()) } throws IllegalStateException("offline") andThen recovered
+        every { tool.resolve(any(), any(), any()) } throws IllegalStateException("offline") andThen recovered
         withManager(tool) { manager, _ ->
             val first = CompletableDeferred<WorkspaceResolution>()
             val second = CompletableDeferred<WorkspaceResolution>()
@@ -81,10 +81,10 @@ class DependencyRecoveryTest {
     fun `cancellation is not reported as a failed dependency resolution`(): Unit = runBlocking {
         val tool = mockk<BuildTool>(relaxed = true)
         every { tool.name } returns "Gradle"
-        every { tool.resolve(any(), any()) } throws CancellationException("stopped")
+        every { tool.resolve(any(), any(), any()) } throws CancellationException("stopped")
         withManager(tool) { manager, scope ->
             val detected = CountDownLatch(1)
-            every { tool.resolve(any(), any()) } answers
+            every { tool.resolve(any(), any(), any()) } answers
                 {
                     detected.countDown()
                     throw CancellationException("stopped")
@@ -125,7 +125,7 @@ class DependencyRecoveryTest {
 
             assertEquals(0, callbacks.get())
             assertEquals(DependencyManager.State.NOT_STARTED, manager.getState())
-            verify(exactly = 0) { tool.resolve(any(), any()) }
+            verify(exactly = 0) { tool.resolve(any(), any(), any()) }
         }
     }
 
@@ -134,7 +134,7 @@ class DependencyRecoveryTest {
         val tool = mockk<BuildTool>(relaxed = true)
         val watcher = mockk<BuildToolFileWatcher>(relaxed = true)
         every { tool.name } returns "Gradle"
-        every { tool.resolve(any(), any()) } returns recovered
+        every { tool.resolve(any(), any(), any()) } returns recovered
         every { tool.createWatcher(any(), any()) } answers {
             val onChange = secondArg<(Path) -> Unit>()
             every { watcher.startWatching(any()) } answers { onChange(root) }
@@ -146,7 +146,7 @@ class DependencyRecoveryTest {
             assertEquals(recovered, withTimeout(TIMEOUT) { completed.await() })
             withTimeout(TIMEOUT) { scope.coroutineContext[Job]!!.children.toList().joinAll() }
 
-            verify(exactly = 1) { tool.resolve(any(), any()) }
+            verify(exactly = 1) { tool.resolve(any(), any(), any()) }
             assertEquals(DependencyManager.State.COMPLETED, manager.getState())
         }
     }
@@ -155,7 +155,8 @@ class DependencyRecoveryTest {
     fun `a returned failed resolution remains retryable`(): Unit = runBlocking {
         val tool = mockk<BuildTool>(relaxed = true)
         every { tool.name } returns "Gradle"
-        every { tool.resolve(any(), any()) } returns WorkspaceResolution.failed("OFFLINE", "offline") andThen recovered
+        every { tool.resolve(any(), any(), any()) } returns
+            WorkspaceResolution.failed("OFFLINE", "offline") andThen recovered
         withManager(tool) { manager, _ ->
             val first = CompletableDeferred<WorkspaceResolution>()
             manager.startAsyncResolution(root, onComplete = { first.complete(it) }, enableFileWatching = false)
@@ -176,7 +177,7 @@ class DependencyRecoveryTest {
         val attempts = AtomicInteger()
         val tool = mockk<BuildTool>(relaxed = true)
         every { tool.name } returns "Gradle"
-        every { tool.resolve(any(), any()) } answers {
+        every { tool.resolve(any(), any(), any()) } answers {
             if (attempts.incrementAndGet() == 1) {
                 entered.countDown()
                 check(release.await(5, TimeUnit.SECONDS))

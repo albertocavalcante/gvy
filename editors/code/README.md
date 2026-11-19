@@ -8,6 +8,11 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 > [feature matrix](https://github.com/albertocavalcante/gvy/blob/main/docs/lsp/feature-support.md) for current support
 > and limits.
 
+This README describes the current source checkout. The stable v0.5.4 VSIX bundles the older v0.4.8 server; read the
+[stable release limitation](https://github.com/albertocavalcante/gvy/blob/main/docs/installation.md#stable-release-limitation)
+before comparing its behavior with development features. For a first project, follow the
+[quickstart](https://github.com/albertocavalcante/gvy/blob/main/docs/user/quickstart.md).
+
 ## Features
 
 ### Core Language Support
@@ -36,6 +41,8 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 - [x] Gradle project support
 - [x] Automatic dependency resolution
 - [x] Multi-workspace support
+- [Run and compile Groovy files](https://github.com/albertocavalcante/gvy/blob/main/docs/file-execution.md), with
+  standalone and qualified Gradle contexts. See the guide for platform limits.
 
 ### Jenkins Pipeline
 
@@ -51,6 +58,33 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 | Groovy Scripts   | `.groovy`, `.gvy`, `.gy`, `.gsh` | General Groovy code |
 | Gradle Build     | `.gradle`                        | Build scripts       |
 | Jenkins Pipeline | `Jenkinsfile`, `Jenkinsfile.*`   | CI/CD pipelines     |
+| Groovy DSL       | `.gdsl`                          | DSL contributions   |
+
+### Editing GDSL files
+
+`.gdsl` files open in **Groovy DSL** mode with Groovy syntax highlighting, line and block comments, bracket and quote
+pairing, automatic indentation, and indentation/region folding. These editing features work without Java or a running
+language server.
+
+Type `gdsl-` and select a snippet from suggestions, or use **Insert Snippet** from the Command Palette:
+
+| Prefix              | Inserts                                               |
+| ------------------- | ----------------------------------------------------- |
+| `gdsl-contributor`  | A contributor block for global script scope           |
+| `gdsl-context`      | A reusable global script context                      |
+| `gdsl-method`       | A method with positional parameters and documentation |
+| `gdsl-named-method` | A method with named parameters and documentation      |
+| `gdsl-property`     | A typed property with documentation                   |
+| `gdsl-parameter`    | A parameter for a method's `namedParams` list         |
+
+The snippets use `scriptScope()` for global contributions. When gvy loads GDSL for Jenkins metadata, it flattens
+contributions and does not filter them by context; class, closure, and annotation scopes are therefore not offered by
+these snippets. Other GDSL consumers may handle scopes differently.
+
+Press Tab to move through snippet fields. GDSL authoring currently provides these editing features and snippets;
+GDSL-specific semantic completion, hover, diagnostics, formatting, and navigation are not yet available. Loading a GDSL
+file to contribute Jenkins metadata uses the separate `groovy.jenkins.gdslPaths` and
+`groovy.jenkins.gdslExecution.enabled` user settings described below.
 
 ## Setup
 
@@ -154,6 +188,33 @@ The extension finds Java from your PATH or `JAVA_HOME`.
 }
 ```
 
+### Analysis status and Problems
+
+When connected to a server that supports document analysis, **Groovy: Analysis limited** describes the active document's
+last completed analysis. Open **Groovy: Show Analysis Details** to see its compiler phase and the available recovery
+actions.
+
+- **Type analysis is limited:** Compilation could not reach the requested phase, for example because an annotation
+  transform needs a missing dependency. Check the named dependency, then run **Groovy: Refresh Dependencies**.
+- **Linting failed:** A diagnostic provider failed or its workspace configuration was rejected. Follow the Problems link
+  to the configuration literal and use **Open configuration** when offered.
+- **Source membership or source lookup is inferred:** The build model cannot fully establish which project sources
+  belong to this analysis. Refresh dependencies after build changes and read the source model details before relying on
+  cross-project results.
+
+Problems includes informational analysis notices alongside ordinary compiler and lint findings. Configuration errors
+appear on their configuration file, with related links from affected sources. Successful reanalysis clears obsolete
+notices. Changes to workspace rulesets use Problems and status without repeated popup notifications.
+
+Gradle compiler-source membership is imported by default, including source-set and compiler-task exclusions. An
+explicitly opened excluded file, or a new file awaiting a model refresh, is analyzed independently. The separate
+`groovy.gradle.targetClasspaths.enabled` setting continues to control target-specific dependency classpaths.
+
+Dependency source ownership can remain unknown even after source membership is imported. gvy retains its recovery lookup
+for those unknown dependencies and reports that limitation. Proven exclusions remain filtered. If changes to an external
+source tree do not update analysis, use **Groovy: Refresh Dependencies**; new external roots and filenames containing
+wildcard characters may require this manual refresh.
+
 ### Jenkins Pipeline Support
 
 For Jenkins shared libraries:
@@ -190,12 +251,26 @@ For Jenkins shared libraries:
   // Optional: Jenkins plugin discovery overrides
   "groovy.jenkins.pluginsTxtPath": "/path/to/plugins.txt",
   "groovy.jenkins.plugins": [
+    // Include step and Declarative Pipeline metadata.
     "workflow-basic-steps",
     "pipeline-model-definition"
   ],
   "groovy.jenkins.includeDefaultPlugins": true
 }
 ```
+
+Shared-library entries currently use local, prebuilt JARs. A reference such as `@Library('my-pipeline-lib@main')`
+selects the configured library by name; `main` does not fetch a Git revision or select a different JAR.
+
+| Entry fields                                          | Current behavior                                |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| No `source`: `name`, `jar`, optional `sourcesJar`     | Uses the existing JAR selection rules           |
+| `source`, neither `jar` nor `sourcesJar`              | Inactive; logs an indexed configuration warning |
+| `source` with either `jar` or `sourcesJar`, even null | Inactive; logs a format conflict                |
+
+The presence of `source` prevents fallback to a legacy JAR, including when its value is malformed. These settings do not
+import the controller's library definitions or implicit-loading configuration. Source-based libraries and full Jenkins
+loading context are tracked in the [shared-library design](https://github.com/albertocavalcante/gvy/issues/1953).
 
 ### Compilation Settings
 

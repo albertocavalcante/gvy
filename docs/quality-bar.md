@@ -86,7 +86,8 @@ Work that predates the tracks continues where it serves the Quality Bar. Its des
   [optimization plan](../kb/OPTIMIZATION_PLAN.md), [performance plan](../kb/PHASE_3_PERFORMANCE_PLAN.md).
 - Jenkins pipeline metadata and GDSL: [architecture](../kb/JENKINS_INTELLISENSE_ARCHITECTURE.md),
   [GDSL execution engine](../kb/specs/GDSL_EXECUTION_ENGINE.md),
-  [versioned metadata](../kb/specs/VERSIONED_METADATA.md), [user overrides](../kb/specs/USER_OVERRIDES.md).
+  [versioned metadata](../kb/specs/VERSIONED_METADATA.md), [user overrides](../kb/specs/USER_OVERRIDES.md),
+  [Declarative delivery](../kb/JENKINS_DECLARATIVE_DELIVERY_PLAN.md).
 - Spock: [support notes](../kb/SPOCK_SUPPORT.md), [AST support](../kb/SPOCK_AST_SUPPORT.md).
 - Build-tool integration: [build server research](../kb/GRADLE_BUILD_SERVER_INTEGRATION.md).
 - Workspace-scale accuracy (symbol accuracy, watched-file correctness) and editor polish.

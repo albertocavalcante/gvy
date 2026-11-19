@@ -1,0 +1,8 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Jenkins descriptor
+contributor(context(scope: scriptScope())) {
+    method(name: 'deploy', type: 'void', params: [target: 'java.lang.String'])
+    property(name: 'environment', type: 'java.lang.String')
+}

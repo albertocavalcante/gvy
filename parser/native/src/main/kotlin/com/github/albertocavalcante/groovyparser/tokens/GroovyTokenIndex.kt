@@ -6,7 +6,10 @@ package com.github.albertocavalcante.groovyparser.tokens
 import arrow.core.Option
 import arrow.core.none
 import arrow.core.some
+import groovyjarjarantlr4.v4.runtime.ANTLRErrorListener
 import groovyjarjarantlr4.v4.runtime.CharStreams
+import groovyjarjarantlr4.v4.runtime.RecognitionException
+import groovyjarjarantlr4.v4.runtime.Recognizer
 import groovyjarjarantlr4.v4.runtime.Token
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
@@ -28,7 +31,22 @@ sealed interface TokenContext {
  *
  * Provides O(log N) lookup for token classification at any source offset.
  */
-class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
+class GroovyTokenIndex private constructor(
+    private val spans: List<TokenSpan>,
+    internal val diagnosticTokens: List<DiagnosticToken>,
+    internal val complete: Boolean,
+    internal val delimiterFacts: DelimiterFacts = DelimiterFacts(),
+) {
+    /** Lexer facts use UTF-16 offsets; channel and symbolic name retain statement boundaries. */
+    internal data class DiagnosticToken(
+        val type: Int,
+        val symbolicName: String,
+        val start: Int,
+        val end: Int,
+        val channel: Int,
+        val context: TokenContext,
+    )
+
     /**
      * Represents a token span in the source code.
      *
@@ -39,6 +57,18 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
      * @property context The token classification for this span
      */
     data class TokenSpan(val start: Int, val end: Int, val context: TokenContext)
+
+    /** True only when the lexer reached EOF without reporting an error. */
+    val hasCompleteLexicalCoverage: Boolean get() = complete
+
+    /** Whether a UTF-16 offset is covered by a code token in a complete lexer pass. */
+    fun isCodeAt(offset: Int): Boolean {
+        if (!complete || offset < 0) return false
+        val index = diagnosticTokens.binarySearchBy(offset) { it.start }
+        val candidate = if (index >= 0) index else -index - 2
+        val token = diagnosticTokens.getOrNull(candidate) ?: return false
+        return offset < token.end && token.channel == Token.DEFAULT_CHANNEL && token.context == TokenContext.Code
+    }
 
     /** Query token context at offset. */
     fun contextAt(offset: Int): Option<TokenContext> {
@@ -82,13 +112,29 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
         fun build(source: String): GroovyTokenIndex {
             val collector = SpanCollector()
 
-            val lexer = createLexer(source) ?: return GroovyTokenIndex(emptyList())
+            val lexer = createLexer(source) ?: return GroovyTokenIndex(emptyList(), emptyList(), false)
+            var lexerFailed = false
+            lexer.removeErrorListeners()
+            lexer.addErrorListener(object : ANTLRErrorListener<Int> {
+                override fun <T : Int?> syntaxError(
+                    recognizer: Recognizer<T, *>?,
+                    offendingSymbol: T,
+                    line: Int,
+                    charPositionInLine: Int,
+                    message: String?,
+                    exception: RecognitionException?,
+                ) {
+                    lexerFailed = true
+                }
+            })
             val codePointToUtf16 = codePointToUtf16Offsets(source)
 
             handleShebang(source, collector)
-            processAllTokens(lexer, collector, codePointToUtf16)
+            val tokens = mutableListOf<DiagnosticToken>()
+            val delimiters = DelimiterFacts()
+            val complete = processAllTokens(lexer, collector, codePointToUtf16, tokens, delimiters)
 
-            return GroovyTokenIndex(collector.toSortedList())
+            return GroovyTokenIndex(collector.toSortedList(), tokens, complete && !lexerFailed, delimiters)
         }
 
         private fun createLexer(source: String): GroovyLangLexer? = runCatching {
@@ -122,18 +168,36 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             return offsets
         }
 
-        private fun processAllTokens(lexer: GroovyLangLexer, collector: SpanCollector, codePointToUtf16: IntArray?) {
-            runCatching {
-                var token = fetchNextToken(lexer, collector)
-                while (token != null && token.type != Token.EOF) {
-                    processToken(token, lexer, collector, codePointToUtf16)
-                    token = fetchNextToken(lexer, collector)
-                }
-            }.onFailure { throwable ->
-                if (shouldRethrow(throwable)) throw throwable
-                logger.debug(throwable) { "Ignoring throwable during token indexing for resiliency" }
+        private fun processAllTokens(
+            lexer: GroovyLangLexer,
+            collector: SpanCollector,
+            codePointToUtf16: IntArray?,
+            tokens: MutableList<DiagnosticToken>,
+            delimiters: DelimiterFacts,
+        ): Boolean = runCatching {
+            var token = fetchNextToken(lexer, collector)
+            while (token != null && token.type != Token.EOF) {
+                val symbolicName = lexer.vocabulary.getSymbolicName(token.type) ?: ""
+                val start = codePointToUtf16?.get(token.startIndex) ?: token.startIndex
+                val end = codePointToUtf16?.get(token.stopIndex + 1) ?: token.stopIndex + 1
+                val fact = DiagnosticToken(
+                    token.type,
+                    symbolicName,
+                    start,
+                    end,
+                    token.channel,
+                    mapTokenToContext(symbolicName, token.text ?: ""),
+                )
+                tokens.add(fact)
+                delimiters.accept(fact)
+                processToken(token, lexer, collector, codePointToUtf16)
+                token = fetchNextToken(lexer, collector)
             }
-        }
+            token?.type == Token.EOF
+        }.onFailure { throwable ->
+            if (shouldRethrow(throwable)) throw throwable
+            logger.debug(throwable) { "Ignoring throwable during token indexing for resiliency" }
+        }.getOrDefault(false)
 
         private fun fetchNextToken(lexer: GroovyLangLexer, collector: SpanCollector): Token? = runCatching {
             lexer.nextToken()

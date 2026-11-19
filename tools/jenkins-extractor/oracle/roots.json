@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "tool": {
+    "version": "2.16.0",
+    "file": "jenkins-plugin-manager-2.16.0.jar",
+    "sha256": "b3e9704f8259ec3d0479703039e2ad5a0a15abb97808ad70d5a59ba2fdd73197",
+    "url": "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.16.0/jenkins-plugin-manager-2.16.0.jar",
+    "revision": "6ce35762b30e6fb4c128454fd400a67bb68c6dee"
+  },
+  "profiles": {
+    "current": {
+      "core": {
+        "version": "2.580.2",
+        "sha256": "d98032d2401c540a35613a82ed358921fcf3166d5e6eaaaf60a7941845be3251"
+      },
+      "converterRevision": "6e7193cec599b402ee79ee9afc5b8a417eb43967",
+      "roots": [
+        {
+          "id": "pipeline-model-definition",
+          "version": "2.2293.v6e7193cec599",
+          "sha256": "9f4f62e0a13fefc9c5736a20ad5124af2a324357294fd8ea8d8f848b7c497f92"
+        },
+        {
+          "id": "docker-workflow",
+          "version": "653.v2f2c08eff0ec",
+          "sha256": "a1b594133aa231c51b3be673a994687660a39d558007f6d941ff0f91ed547742"
+        },
+        {
+          "id": "kubernetes",
+          "version": "4560.vc25b_83890c34",
+          "sha256": "ccdd91a3062d8d2259a38f2033bc49d9df6b69c3ad1399c42e2f764f7888719f"
+        }
+      ],
+      "latest": true,
+      "overrides": []
+    },
+    "legacy": {
+      "core": {
+        "version": "2.479.3",
+        "sha256": "304c8592860d5b03dec27c96b5e89ec58fc744f78161c53f7a344a0bf7ce9203"
+      },
+      "converterRevision": "140e610fe9d5290e5efbb75c6da39cfb18ac7c7d",
+      "roots": [
+        {
+          "id": "pipeline-model-definition",
+          "version": "2.2265.v140e610fe9d5",
+          "sha256": "a220dad88db681743912342f23e25b59243d410e613c2ff1d36d00414609bb2f"
+        },
+        {
+          "id": "docker-workflow",
+          "version": "647.vf474049b_b_303",
+          "sha256": "741a28ed3b538399ec9ce535450435ba1e84bbd1f71fe581d475b5271a0f2504"
+        },
+        {
+          "id": "kubernetes",
+          "version": "4355.v37e9e7c240e6",
+          "sha256": "278acdbc4509696a407e32c7732a406a5b0bc1953d36e13ebf92b75b8213f4d5"
+        }
+      ],
+      "latest": false,
+      "overrides": [
+        {
+          "id": "script-security",
+          "version": "1436.v1082791135e4",
+          "sha256": "c2292e200c5796675c16d19325469aac4a5460c7ad23974952b9823f62066f6a"
+        },
+        {
+          "id": "credentials-binding",
+          "version": "728.v902a_273b_8947",
+          "sha256": "bd7d1a187e35c8e2b6619cd50f2f8c5d28aafc4ef8fd9de572fb2cfa464f466d"
+        },
+        {
+          "id": "jakarta-mail-api",
+          "version": "2.1.5-1",
+          "sha256": "244735ea85a51332c079d235a5713e70d3810bea62332894002acc39914ce11b"
+        }
+      ]
+    }
+  }
+}

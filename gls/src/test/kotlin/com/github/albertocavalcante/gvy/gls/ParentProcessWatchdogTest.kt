@@ -8,7 +8,10 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -90,15 +93,52 @@ class ParentProcessWatchdogTest {
     fun `parent death after shutdown exits 0 and shares the one shutdown run`() {
         val liveness = FakeLiveness()
         val (code, exit) = exitCodes()
-        val server = GroovyLanguageServer(processLiveness = liveness, exitProcess = exit)
+        var runs = 0
+        val server = GroovyLanguageServer(
+            processLiveness = liveness,
+            exitProcess = exit,
+            shutdownExecutor = { task ->
+                runs++
+                task.run()
+            },
+        )
         server.initialize(InitializeParams().apply { processId = 1234 }).get()
 
-        val first = server.shutdown()
-        first.get(30, TimeUnit.SECONDS)
+        server.shutdown().get(30, TimeUnit.SECONDS)
         liveness.future.complete(null)
 
         assertEquals(0, code.get(30, TimeUnit.SECONDS))
-        assertTrue(first === server.shutdown(), "shutdown must not run a second time")
+        server.shutdown().get(30, TimeUnit.SECONDS)
+        assertEquals(1, runs, "shutdown must not run a second time")
+    }
+
+    @Test
+    fun `a client cancelling its shutdown does not let the watchdog exit before cleanup`() {
+        val liveness = FakeLiveness()
+        val cleanupStarted = AtomicBoolean(false)
+        val exited = CompletableFuture<Pair<Int, Boolean>>()
+        val queued = ArrayDeque<Runnable>()
+        val server = GroovyLanguageServer(
+            processLiveness = liveness,
+            exitProcess = { exited.complete(it to cleanupStarted.get()) },
+            shutdownExecutor = { queued.addLast(it) },
+        )
+        server.initialize(InitializeParams().apply { processId = 1234 }).get()
+
+        server.shutdown().cancel(true)
+        liveness.future.complete(null)
+
+        // The watchdog's own request waits on the still-queued cleanup, so nothing may exit yet. The wait only
+        // bounds the failure case: with the fix it always times out, without it the watchdog exits at once.
+        assertFailsWith<TimeoutException> { exited.get(500, TimeUnit.MILLISECONDS) }
+        val task = queued.removeFirst()
+        cleanupStarted.set(true)
+        task.run()
+
+        val (code, cleanedUp) = exited.get(30, TimeUnit.SECONDS)
+        assertEquals(0, code)
+        assertTrue(cleanedUp, "exit must not precede cleanup")
+        assertTrue(queued.isEmpty(), "cleanup ran once")
     }
 
     @Test

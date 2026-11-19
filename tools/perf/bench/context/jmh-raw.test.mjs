@@ -89,6 +89,13 @@ test('reads the literal JMH 1.37 shape and preserves fork groups without summary
   });
 });
 
+test('direct compiler declarations use the existing structural JMH reader at either phase', () => {
+  for (const phase of ['conversion', 'canonicalization']) {
+    const declaration = context(); declaration.implementation = 'gvy-compiler'; declaration.measurement.compilePhase = phase;
+    assert.deepEqual(read(Buffer.from(rawLiteral), declaration), read(Buffer.from(rawLiteral)));
+  }
+});
+
 test('matches exact public parameter combinations in plan order, independent of raw row order', () => {
   const raw = rawValue();
   const other = structuredClone(raw[0]); other.params.fixture = 'larger'; other.primaryMetric.rawData = [[30, 31], [40, 41]];

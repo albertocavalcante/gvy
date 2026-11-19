@@ -1,0 +1,278 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package com.github.albertocavalcante.gvy.gls.sources
+
+import com.github.albertocavalcante.gvy.source.Utf16LineIndex
+import com.github.javaparser.JavaParser
+import com.github.javaparser.ParseStart
+import com.github.javaparser.ParserConfiguration
+import com.github.javaparser.Providers
+import com.github.javaparser.ast.CompilationUnit
+import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
+import com.github.javaparser.ast.body.EnumDeclaration
+import com.github.javaparser.ast.body.RecordDeclaration
+import com.github.javaparser.ast.body.TypeDeclaration
+import com.github.javaparser.ast.expr.AnnotationExpr
+import com.github.javaparser.ast.expr.Name
+import com.github.javaparser.ast.expr.SimpleName
+import com.github.javaparser.ast.nodeTypes.NodeWithTypeParameters
+import com.github.javaparser.ast.type.ClassOrInterfaceType
+import org.eclipse.lsp4j.Position
+import java.io.StringReader
+import java.util.Collections
+import java.util.IdentityHashMap
+
+/** Syntax-only type links for managed Java views. It never infers Java expression or method types. */
+internal class JavaSourceTypeIndex private constructor(private val byLine: Map<Int, List<SourceTypeReference>>) :
+    SourceTypeIndex {
+    override fun at(position: Position): SourceTypeReference? {
+        if (position.line < 0 || position.character < 0) return null
+        return byLine[position.line].orEmpty().filter {
+            position.character >= it.range.startCharacter && position.character < it.range.endCharacter
+        }.minByOrNull { it.range.endCharacter - it.range.startCharacter }
+    }
+
+    private class Builder(
+        private val content: String,
+        private val unit: CompilationUnit,
+        private val checkCancelled: () -> Unit,
+    ) {
+        private val budget = SourceTypeIndexBudget()
+        private val declarationNames = IdentityHashMap<TypeDeclaration<*>, String>()
+        private val lines = Utf16LineIndex(content)
+        private val packageName = unit.packageDeclaration.map { budget.name(it.nameAsString) }.orElse("")
+        private val declarations = unit.findAll(TypeDeclaration::class.java)
+        private val localDeclarations = declarations.filter { type ->
+            val parent = type.parentNode.orElse(null)
+            parent is CompilationUnit || parent is TypeDeclaration<*>
+        }.groupBy(::typeName)
+        private val unmodelledLocalNames = declarations.filter { type ->
+            val parent = type.parentNode.orElse(null)
+            parent !is CompilationUnit && parent !is TypeDeclaration<*>
+        }.mapTo(hashSetOf()) { it.nameAsString }
+
+        private val explicitImports = unit.imports.filter {
+            !it.isAsterisk && !it.isStatic
+        }.groupBy { it.name.identifier }
+            .mapValues { (_, imports) -> imports.map { budget.name(it.nameAsString) }.distinct() }
+        private val explicitStaticImports = unit.imports
+            .filter { it.isStatic && !it.isAsterisk }
+            .groupBy { it.name.identifier }
+            .mapValues { (_, imports) -> imports.map { budget.name(it.nameAsString) }.distinct() }
+        private val onDemandImports = unit.imports
+            .filter { it.isAsterisk }
+            .map { import -> budget.name(import.nameAsString) }
+            .distinct()
+
+        private val candidateTiers = hashMapOf<String, List<List<String>>>()
+        private val references = linkedMapOf<SourceSpan, SourceTypeReference>()
+
+        fun build(): JavaSourceTypeIndex {
+            checkCancelled()
+            unit.findAll(ClassOrInterfaceType::class.java).forEach { type ->
+                checkCancelled()
+                val parent = type.parentNode.orElse(null)
+                // Qualifier scopes can be package segments, so only the complete type selects a declaration.
+                if (parent !is ClassOrInterfaceType || parent.scope.orElse(null) !== type) {
+                    add(type.nameWithScope, type, type.name)
+                }
+            }
+            unit.findAll(AnnotationExpr::class.java).forEach { annotation ->
+                checkCancelled()
+                add(annotation.nameAsString, annotation, annotation.name)
+            }
+            unit.imports.filter { !it.isAsterisk && !it.isStatic }.forEach { import ->
+                checkCancelled()
+                span(import.name, import.nameAsString)?.let { range ->
+                    put(SourceTypeReference(range, budget.candidates(listOf(listOf(import.nameAsString)))))
+                }
+            }
+            val grouped = references.values.groupBy { it.range.startLine }
+                .mapValues { (_, values) -> Collections.unmodifiableList(values.toList()) }
+            checkCancelled()
+            return JavaSourceTypeIndex(Collections.unmodifiableMap(grouped))
+        }
+
+        private fun add(spelling: String, occurrence: Node, selectedName: Node) {
+            checkCancelled()
+            selectedName.spellingOrNull()?.let { selectedSpelling ->
+                span(selectedName, selectedSpelling)?.let { range ->
+                    addSelectedReference(spelling, occurrence, range)
+                }
+            }
+        }
+
+        private fun addSelectedReference(spelling: String, occurrence: Node, range: SourceSpan) {
+            budget.name(spelling)
+            val first = spelling.substringBefore('.')
+            if (
+                !isTypeVariable(first, occurrence) &&
+                first !in unmodelledLocalNames &&
+                !hasUnmodelledHierarchy(occurrence)
+            ) {
+                addLocalOrImportedReference(spelling, occurrence, first, range)
+            }
+        }
+
+        private fun addLocalOrImportedReference(spelling: String, occurrence: Node, first: String, range: SourceSpan) {
+            val local = localTarget(spelling, occurrence)
+            when {
+                local != null -> put(SourceTypeReference(range, emptyList(), local))
+                explicitImports[first].orEmpty().isNotEmpty() -> addExplicitImportReference(spelling, first, range)
+                else -> addCandidateReference(spelling, range)
+            }
+        }
+
+        private fun addExplicitImportReference(spelling: String, first: String, range: SourceSpan) {
+            val explicit = explicitImports[first].orEmpty()
+            val candidates = candidateTiers.getOrPut(spelling) {
+                // Duplicate exposed imports are not a license to pick one.
+                if (explicit.size == 1) {
+                    budget.candidates(listOf(listOf(explicit.single() + spelling.removePrefix(first))))
+                } else {
+                    emptyList()
+                }
+            }
+            put(SourceTypeReference(range, candidates))
+        }
+
+        private fun addCandidateReference(spelling: String, range: SourceSpan) {
+            val first = spelling.substringBefore('.')
+            val candidates = candidateTiers.getOrPut(spelling) {
+                val samePackage = if (packageName.isEmpty()) spelling else packageName + "." + spelling
+                budget.candidates(
+                    buildList {
+                        // Static imports can name methods, fields, or member types; a non-type must fall through.
+                        explicitStaticImports[first]?.let { imports ->
+                            val suffix = spelling.removePrefix(first)
+                            add(imports.map { it + suffix }.distinct())
+                        }
+                        if (spelling.contains('.')) {
+                            add(listOf(spelling, samePackage).distinct())
+                        } else {
+                            add(listOf(samePackage))
+                        }
+                        if (onDemandImports.size < MAX_CANDIDATES) {
+                            add((onDemandImports.map { it + "." + spelling } + ("java.lang." + spelling)).distinct())
+                        }
+                    },
+                )
+            }
+            put(SourceTypeReference(range, candidates))
+        }
+
+        private fun localTarget(spelling: String, occurrence: Node): SourceDefinition? {
+            val currentNames = lexicalTypes(occurrence).map(::typeName)
+            val wanted = currentNames.map { it + "." + spelling } + qualify(spelling)
+            val declaration = wanted.firstNotNullOfOrNull { candidate ->
+                localDeclarations[candidate].orEmpty().takeIf { matches -> matches.size == 1 }?.single()
+            } ?: return null
+            val nameRange = span(declaration.name, declaration.nameAsString)
+            val declarationRange = declaration.range.orElse(null)?.let(::span)
+            return if (nameRange != null && declarationRange != null) {
+                SourceDefinition(declarationRange, nameRange)
+            } else {
+                null
+            }
+        }
+
+        private fun Node.spellingOrNull(): String? = when (this) {
+            is SimpleName -> identifier
+            is Name -> asString()
+            else -> null
+        }
+
+        private fun enclosingTypes(node: Node): List<TypeDeclaration<*>> =
+            generateSequence(node.parentNode.orElse(null)) { it.parentNode.orElse(null) }
+                .filterIsInstance<TypeDeclaration<*>>().toList()
+
+        private fun typeName(type: TypeDeclaration<*>): String = declarationNames.getOrPut(type) {
+            val nestedName = (enclosingTypes(type).asReversed().map { it.nameAsString } + type.nameAsString)
+                .joinToString(".")
+            budget.name(qualify(nestedName))
+        }
+
+        private fun qualify(name: String): String = if (packageName.isEmpty()) name else packageName + "." + name
+
+        private fun isTypeVariable(name: String, node: Node): Boolean =
+            generateSequence(node.parentNode.orElse(null)) { it.parentNode.orElse(null) }
+                .filterIsInstance<NodeWithTypeParameters<*>>()
+                .any { owner -> owner.typeParameters.any { it.nameAsString == name } }
+
+        // A type's own supertypes and type parameter bounds are outside its member scope.
+        private fun lexicalTypes(node: Node): List<TypeDeclaration<*>> = enclosingTypes(node).filterNot { type ->
+            val headers: List<Node> = when (type) {
+                is ClassOrInterfaceDeclaration -> type.extendedTypes + type.implementedTypes + type.typeParameters
+                is EnumDeclaration -> type.implementedTypes
+                is RecordDeclaration -> type.implementedTypes + type.typeParameters
+                else -> emptyList()
+            }
+            generateSequence(node) { it.parentNode.orElse(null) }.takeWhile { it !== type }
+                .any { ancestor -> headers.any { it === ancestor } }
+        }
+
+        private fun hasUnmodelledHierarchy(node: Node): Boolean = lexicalTypes(node).any {
+            when (it) {
+                is ClassOrInterfaceDeclaration -> it.extendedTypes.isNotEmpty() || it.implementedTypes.isNotEmpty()
+                is EnumDeclaration -> it.implementedTypes.isNotEmpty()
+                is RecordDeclaration -> it.implementedTypes.isNotEmpty()
+                else -> false
+            }
+        }
+
+        private fun put(reference: SourceTypeReference) {
+            if (references.size < MAX_REFERENCES && reference.range !in references) {
+                // References freeze their own list containers, so repeated spellings still consume retained metadata.
+                budget.candidates(reference.candidates)
+                references[reference.range] = reference
+            }
+        }
+
+        private fun span(node: Node, spelling: String): SourceSpan? {
+            val range = node.range.orElse(null)?.let(::span) ?: return null
+            if (range.startLine != range.endLine) return null
+            val start = lines.offsetOf(range.startLine, range.startCharacter)
+            val end = lines.offsetOf(range.endLine, range.endCharacter)
+            return range.takeIf { start <= end && content.substring(start, end) == spelling }
+        }
+
+        private fun span(range: com.github.javaparser.Range): SourceSpan? {
+            val startLine = range.begin.line - 1
+            val startCharacter = range.begin.column - 1
+            val endLine = range.end.line - 1
+            val endCharacter = range.end.column
+            if (!lines.isValidPosition(startLine, startCharacter) || !lines.isValidPosition(endLine, endCharacter)) {
+                return null
+            }
+            return SourceSpan(startLine, startCharacter, endLine, endCharacter)
+        }
+    }
+
+    companion object {
+        private const val MAX_REFERENCES = 16_384
+        private const val MAX_CANDIDATES = 32
+        private const val MAX_SOURCE_CHARACTERS = 1024 * 1024
+
+        fun build(content: String, checkCancelled: () -> Unit = {}): JavaSourceTypeIndex {
+            checkCancelled()
+            if (content.length > MAX_SOURCE_CHARACTERS) return JavaSourceTypeIndex(emptyMap())
+            val configuration = ParserConfiguration().apply {
+                setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE)
+                setTabSize(1)
+            }
+            val parser = JavaParser(configuration)
+            val reader = CancellableSourceReader(StringReader(content), checkCancelled)
+            val parsed = reader.use { input -> parser.parse(ParseStart.COMPILATION_UNIT, Providers.provider(input)) }
+            checkCancelled()
+            val unit = parsed.result.orElse(null)
+            if (!parsed.isSuccessful || unit == null) return JavaSourceTypeIndex(emptyMap())
+            return try {
+                Builder(content, unit, checkCancelled).build()
+            } catch (_: SourceTypeIndexLimitException) {
+                JavaSourceTypeIndex(emptyMap())
+            }
+        }
+    }
+}

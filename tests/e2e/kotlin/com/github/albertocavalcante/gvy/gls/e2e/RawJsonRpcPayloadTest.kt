@@ -43,7 +43,7 @@ class RawJsonRpcPayloadTest {
     @TestFactory
     fun `generic requests send the authored JSON value without coercion`(): List<DynamicTest> =
         payloads().map { payload ->
-            dynamicTest(payload.toString()) {
+            dynamicTest("generic requests send: $payload") {
                 val wire = RawPayloadCapture(root)
 
                 SendRequestStepExecutor().execute(ScenarioStep.SendRequest("initialize", payload), wire.context)
@@ -56,7 +56,7 @@ class RawJsonRpcPayloadTest {
     @TestFactory
     fun `generic notifications send the authored JSON value without coercion`(): List<DynamicTest> =
         payloads().map { payload ->
-            dynamicTest(payload.toString()) {
+            dynamicTest("generic notifications send: $payload") {
                 val wire = RawPayloadCapture(root)
 
                 SendNotificationStepExecutor().execute(
@@ -77,7 +77,11 @@ class RawJsonRpcPayloadTest {
 
         val params = wire.messages.single().getValue("params").jsonObject
         assertThat(params).containsEntry("rootUri", JsonNull)
-        assertThat(params).doesNotContainKeys("capabilities", "initializationOptions")
+        assertThat(params).doesNotContainKeys("initializationOptions")
+        // The only client capability sent: nested document symbols, as VS Code asks for them.
+        val documentSymbol = params.getValue("capabilities").jsonObject.getValue("textDocument").jsonObject
+            .getValue("documentSymbol").jsonObject
+        assertThat(documentSymbol["hierarchicalDocumentSymbolSupport"]).isEqualTo(JsonPrimitive(true))
         assertThat(params["workspaceFolders"]?.jsonArray?.size).isEqualTo(1)
         assertThat(wire.context.state.initializedResult).isNotNull()
     }

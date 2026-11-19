@@ -21,6 +21,7 @@ export function classifyPaths(paths) {
     }
     const reason = knownNarrative.has(path) ? 'narrative documentation'
       : path.startsWith('editors/zed/') ? 'Zed extension input'
+      : path.startsWith('editors/jetbrains/') ? 'JetBrains extension input'
       : executableTree.test(path) ? 'build or executable input'
       : narrative.test(path) ? 'narrative documentation' : bazelOnly.test(path) ? 'Bazel configuration' : 'build or executable input';
     return { path, reason };
@@ -30,6 +31,7 @@ export function classifyPaths(paths) {
     runMain: !classified.length || classified.some(({ reason }) => reason === 'build or executable input'),
     runBazel: !classified.length || classified.some(({ reason }) => reason === 'build or executable input' || reason === 'Bazel configuration'),
     runZed: !classified.length || classified.some(({ path, reason }) => reason === 'Zed extension input' || sharedZedInputs.has(path)),
+    runJetbrains: !classified.length || classified.some(({ path, reason }) => reason === 'JetBrains extension input' || path === '.github/workflows/ci.yml' || path.startsWith('gradle/wrapper/') || path.startsWith('tools/ci/') || path === 'gradlew'),
     paths: classified,
   };
 }
@@ -71,6 +73,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!output || !process.env.GITHUB_OUTPUT) throw new Error('Usage: node ci-applicability.mjs REPORT.json (GitHub Actions context required).');
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
-  appendFileSync(process.env.GITHUB_OUTPUT, `run_main_ci=${report.runMain}\nrun_bazel_ci=${report.runBazel}\nrun_zed_ci=${report.runZed}\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT, `run_main_ci=${report.runMain}\nrun_bazel_ci=${report.runBazel}\nrun_zed_ci=${report.runZed}\nrun_jetbrains_ci=${report.runJetbrains}\n`);
   console.log(`Gradle applicable: ${report.runMain}; Bazel applicable: ${report.runBazel}; Zed applicable: ${report.runZed}; ${report.paths.length} changed paths.`);
 }

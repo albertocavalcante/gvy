@@ -87,4 +87,41 @@ describe("configuration/watcher", () => {
     await listener(change("groovy.languageServer.engine"));
     assert.ok(restartClient.calledOnce);
   });
+
+  it("shows one restart prompt for overlapping restart-required changes", async () => {
+    let answer!: (value: string) => void;
+    showInformationMessage.returns(
+      new Promise<string>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const first = listener(change("groovy.languageServer.engine"));
+    const second = listener(change("groovy.languageServer.engine"));
+    await second;
+    answer("Restart Now");
+    await first;
+    assert.ok(showInformationMessage.calledOnce);
+    assert.ok(restartClient.calledOnce);
+
+    // A later change prompts again.
+    showInformationMessage.resolves("Restart Later");
+    await listener(change("groovy.languageServer.engine"));
+    assert.ok(showInformationMessage.calledTwice);
+  });
+
+  it("applies dynamic settings even when a restart is also required", async () => {
+    client = {
+      isRunning: () => true,
+      sendNotification: sinon.stub().resolves(),
+    };
+    showInformationMessage.resolves("Restart Later");
+    await listener({
+      affectsConfiguration: (section: string) =>
+        section === "groovy" ||
+        section === "groovy.languageServer.engine" ||
+        section === "groovy.compilation.cacheMaxEntries",
+    });
+    assert.ok(client.sendNotification.calledOnce);
+    assert.ok(showInformationMessage.calledOnce);
+  });
 });

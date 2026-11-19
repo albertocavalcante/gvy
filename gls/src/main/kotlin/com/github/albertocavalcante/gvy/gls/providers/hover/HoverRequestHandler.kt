@@ -48,7 +48,8 @@ internal class HoverRequestHandler(
     }
 
     private fun requireUnchanged(uri: URI, input: DocumentSnapshot?) {
-        if (documents.getSnapshot(uri) != input) throw contentModified(uri)
+        // A reopened buffer can have equal text and version but belongs to a different lifecycle.
+        if (documents.getSnapshot(uri) !== input) throw contentModified(uri)
     }
 
     private fun contentModified(uri: URI) = ResponseErrorException(

@@ -6,13 +6,17 @@
  */
 
 import * as fs from "fs";
+import { AnalysisUi } from "./analysis/ui";
 import * as vscode from "vscode";
 import {
   initializeClient,
   startClient,
   stopClient,
   getClient,
+  onClientStarted,
+  setAnalysisUi,
 } from "./server/client";
+import { startServerForActivation } from "./server/activation";
 import { registerStatusBarItem, getStatusBarManager } from "./ui/statusBar";
 import {
   createLanguageStatusManager,
@@ -38,6 +42,7 @@ import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
 import { CommandProvider } from "./features/ai/CommandProvider";
 import { TestFeature } from "./features/testing/TestFeature";
+import { registerFileExecution } from "./features/fileExecution";
 import { registerAstFeatures } from "./features/ast/AstProvider";
 
 /**
@@ -53,6 +58,9 @@ export async function activate(context: vscode.ExtensionContext) {
     (context.extension.packageJSON.version as string) || "unknown";
 
   initializeClient(context);
+  const analysisUi = new AnalysisUi();
+  context.subscriptions.push(analysisUi);
+  setAnalysisUi(analysisUi);
 
   context.subscriptions.push(
     registerStatusBarItem(undefined, extensionVersion),
@@ -65,11 +73,47 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(serverOutputChannel);
   setServerOutputChannel(serverOutputChannel);
   getStatusBarManager()?.setOutputChannel(serverOutputChannel);
+  let initialStart: Promise<boolean> | undefined;
+  const requestInitialStart = (): Promise<boolean> => {
+    if (initialStart) {
+      return initialStart;
+    }
+    const attempt: Promise<boolean> = (async () => {
+      try {
+        await startClient(serverOutputChannel);
+        return true;
+      } catch (error) {
+        // startClient already reports failures; keep the registered commands usable.
+        console.error("Groovy Language Server did not start:", error);
+        return false;
+      }
+    })().then((started) => {
+      // Do not cache a failed start: the next request must retry (for example
+      // after the user installs Java).
+      if (!started && initialStart === attempt) {
+        initialStart = undefined;
+      }
+      return started;
+    });
+    initialStart = attempt;
+    return attempt;
+  };
+  context.subscriptions.push(
+    onClientStarted(() => {
+      initialStart = Promise.resolve(true);
+      vscode.commands
+        .executeCommand("setContext", "groovy.hasProject", true)
+        .then(undefined, (error: unknown) => {
+          console.error("Could not update Groovy project context:", error);
+        });
+    }),
+  );
 
   createLanguageStatusManager();
   context.subscriptions.push({ dispose: () => disposeLanguageStatusManager() });
 
-  registerCommands(context);
+  registerCommands(context, requestInitialStart);
+  registerFileExecution(context, requestInitialStart);
   context.subscriptions.push(setupConfigurationWatcher());
 
   replService.initialize(context);
@@ -83,7 +127,11 @@ export async function activate(context: vscode.ExtensionContext) {
   registerDependencyFeatures(context);
 
   // AI tools
-  const lspToolService = new LSPToolService(vscode, getClient);
+  const lspToolService = new LSPToolService(
+    vscode,
+    getClient,
+    requestInitialStart,
+  );
   const toolRegistry = new ToolRegistry();
   context.subscriptions.push(
     new LMToolProvider(lspToolService, toolRegistry),
@@ -107,18 +155,10 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  // startClient reports failures to the user itself; activation still
-  // succeeds so Restart/Configure Java remain usable.
-  try {
-    await startClient(serverOutputChannel);
-    await vscode.commands.executeCommand(
-      "setContext",
-      "groovy.hasProject",
-      true,
-    );
-  } catch (error) {
-    console.error("Groovy Language Server did not start:", error);
-  }
+  // Static GDSL editing waits for a supported document or an explicit server command.
+  await startServerForActivation(context, async () => {
+    await requestInitialStart();
+  });
 }
 
 /**

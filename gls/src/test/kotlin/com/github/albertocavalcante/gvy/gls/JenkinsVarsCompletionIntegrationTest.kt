@@ -4,7 +4,10 @@
 package com.github.albertocavalcante.gvy.gls
 
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.ClientCapabilities
+import org.eclipse.lsp4j.CompletionCapabilities
 import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionItemCapabilities
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.Hover
@@ -13,6 +16,7 @@ import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.TextDocumentClientCapabilities
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.WorkspaceFolder
@@ -48,6 +52,11 @@ class JenkinsVarsCompletionIntegrationTest {
         serverHandle = runner.startInMemoryServer()
 
         val initParams = InitializeParams().apply {
+            capabilities = ClientCapabilities().apply {
+                textDocument = TextDocumentClientCapabilities().apply {
+                    completion = CompletionCapabilities(CompletionItemCapabilities(true))
+                }
+            }
             workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "test"))
         }
         serverHandle!!.server.initialize(initParams).get()

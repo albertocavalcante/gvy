@@ -107,7 +107,7 @@ class HoverContentGenerator(
         is DeclarationExpression -> renderDeclarationExpression(node, moduleNode, semanticResolver)
         is MethodCallExpression -> renderMethodCallExpression(node, moduleNode, methodCallMetadataResolver)
         is ConstructorCallExpression -> renderConstructorCallExpression(node)
-        is PropertyExpression -> renderPropertyExpression(node, moduleNode)
+        is PropertyExpression -> renderPropertyExpression(node, moduleNode, semanticResolver)
         is BinaryExpression -> renderBinaryExpression(node)
         is ClosureExpression -> renderClosureExpression(node)
         is ListExpression -> renderListExpression(node)

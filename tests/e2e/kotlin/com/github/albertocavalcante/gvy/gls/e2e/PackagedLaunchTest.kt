@@ -802,6 +802,27 @@ class PackagedLaunchTest {
         assertThat(failure.cause).isNull()
     }
 
+    @Test
+    fun `cold recovery resolves a build runfile symlink before strict launch verification`() {
+        val artifact = jar(cleanProperties())
+        val symlink = Files.createSymbolicLink(tempDir.resolve("runfile.jar"), artifact)
+        val resolved = resolveColdRecoveryArtifact(symlink.toString())
+
+        launch(resolved, digest(artifact)).prepare(stagingParent = tempDir).use { prepared ->
+            assertThat(prepared.verification.artifact).isEqualTo(VerificationState.Verified)
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+        }
+        assertThat(resolved).isEqualTo(artifact.toRealPath())
+    }
+
+    @Test
+    fun `cold recovery rejects an unavailable runfile target`() {
+        val dangling = Files.createSymbolicLink(tempDir.resolve("missing-runfile.jar"), tempDir.resolve("missing.jar"))
+
+        assertThatThrownBy { resolveColdRecoveryArtifact(dangling.toString()) }
+            .isInstanceOf(IllegalStateException::class.java)
+    }
+
     private fun launch(artifact: Path, sha: String) = PackagedLaunch(
         javaExecutable = Path.of(
             System.getProperty("java.home"),

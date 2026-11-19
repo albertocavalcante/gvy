@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+# Plugin names selected for this example's metadata profile; versions are intentionally unspecified for offline use.
+pipeline-model-definition
+workflow-basic-steps
+workflow-cps
+workflow-durable-task-step

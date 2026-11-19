@@ -82,6 +82,24 @@ class WorkspaceSourceRescanTest {
         compilation.getCompiledSnapshot(file.toUri())?.parseResult?.diagnostics?.map { it.message }.orEmpty()
 
     @Test
+    fun `watched build deletion reaches build invalidation`() {
+        val paths = mutableListOf<Path>()
+        val service = GroovyWorkspaceService(
+            compilation,
+            compilation.symbolIndexingService,
+            scope,
+            onBuildFilesChanged = { paths.addAll(it) },
+        )
+        val buildFile = tempDir.resolve("build.gradle")
+
+        service.didChangeWatchedFiles(
+            DidChangeWatchedFilesParams(listOf(FileEvent(buildFile.toUri().toString(), FileChangeType.Deleted))),
+        )
+
+        assertEquals(listOf(buildFile), paths)
+    }
+
+    @Test
     fun `a file created after startup joins the compile through the watched-file event`(): Unit = runBlocking {
         val src = src()
         val spec = src.resolve("TableSpec.groovy")

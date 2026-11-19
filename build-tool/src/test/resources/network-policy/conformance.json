@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "configs": [
+    {
+      "name": "absent",
+      "input": null,
+      "valid": true,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "empty",
+      "input": {},
+      "valid": true,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "connected still needs approval",
+      "input": {
+        "mode": "connected"
+      },
+      "valid": true,
+      "mode": "connected",
+      "allowedOrigins": []
+    },
+    {
+      "name": "normalize and deduplicate",
+      "input": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "HTTPS://REPO.EXAMPLE:443/",
+          "https://repo.example"
+        ]
+      },
+      "valid": true,
+      "mode": "connected",
+      "allowedOrigins": [
+        "https://repo.example"
+      ]
+    },
+    {
+      "name": "offline approvals do not enable networking",
+      "input": {
+        "allowedOrigins": [
+          "http://127.0.0.1:8080"
+        ]
+      },
+      "valid": true,
+      "mode": "cache-only",
+      "allowedOrigins": [
+        "http://127.0.0.1:8080"
+      ]
+    },
+    {
+      "name": "legacy third mode",
+      "input": {
+        "mode": "internal-network"
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "null mode",
+      "input": {
+        "mode": null
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "wrong mode type",
+      "input": {
+        "mode": true
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "string origins",
+      "input": {
+        "mode": "connected",
+        "allowedOrigins": "https://repo.example"
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "mixed origins fail whole policy",
+      "input": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example",
+          42
+        ]
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "wildcard fails whole policy",
+      "input": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example",
+          "https://*.example"
+        ]
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "unknown key",
+      "input": {
+        "mode": "connected",
+        "allowPublic": true
+      },
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "array is not config",
+      "input": [],
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    },
+    {
+      "name": "string is not config",
+      "input": "connected",
+      "valid": false,
+      "mode": "cache-only",
+      "allowedOrigins": []
+    }
+  ],
+  "origins": [
+    {
+      "input": "HTTPS://Repo.Example:00443/",
+      "normalized": "https://repo.example"
+    },
+    {
+      "input": "http://repo.example:80",
+      "normalized": "http://repo.example"
+    },
+    {
+      "input": "https://repo.example:8443",
+      "normalized": "https://repo.example:8443"
+    },
+    {
+      "input": "http://127.0.0.1:8080/",
+      "normalized": "http://127.0.0.1:8080"
+    },
+    {
+      "input": "http://localhost",
+      "normalized": "http://localhost"
+    },
+    {
+      "input": "https://xn--bcher-kva.example",
+      "normalized": "https://xn--bcher-kva.example"
+    },
+    {
+      "input": "https://repo.example/path",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example?x",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example#x",
+      "normalized": null
+    },
+    {
+      "input": "https://user:secret@repo.example",
+      "normalized": null
+    },
+    {
+      "input": "https://*.example",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example.",
+      "normalized": null
+    },
+    {
+      "input": " https://repo.example",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example\n",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example\\@evil.example",
+      "normalized": null
+    },
+    {
+      "input": "https://%72epo.example",
+      "normalized": null
+    },
+    {
+      "input": "https://bücher.example",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example:",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example:0",
+      "normalized": null
+    },
+    {
+      "input": "https://repo.example:65536",
+      "normalized": null
+    },
+    {
+      "input": "https://-repo.example",
+      "normalized": null
+    },
+    {
+      "input": "https://repo_.example",
+      "normalized": null
+    },
+    {
+      "input": "http://127.1",
+      "normalized": null
+    },
+    {
+      "input": "http://0177.0.0.1",
+      "normalized": null
+    },
+    {
+      "input": "http://2130706433",
+      "normalized": null
+    },
+    {
+      "input": "http://0x7f000001",
+      "normalized": null
+    },
+    {
+      "input": "http://[::1]",
+      "normalized": null
+    },
+    {
+      "input": "file:///tmp/repo",
+      "normalized": null
+    },
+    {
+      "input": "//repo.example",
+      "normalized": null
+    }
+  ],
+  "requests": [
+    {
+      "name": "default denies",
+      "policy": null,
+      "url": "https://repo.example/a",
+      "code": "CACHE_ONLY"
+    },
+    {
+      "name": "connected empty denies public",
+      "policy": {
+        "mode": "connected"
+      },
+      "url": "https://repo.maven.apache.org/a",
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "name": "approved normalized authority",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "HTTPS://REPO.EXAMPLE:443/path?q=a",
+      "code": null
+    },
+    {
+      "name": "port differs",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example:8443/path",
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "name": "scheme differs",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "http://repo.example/path",
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "name": "subdomain differs",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://a.repo.example/path",
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "name": "authority suffix attack",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example.evil.test/path",
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "name": "userinfo denied",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://secret@repo.example/path",
+      "code": "INVALID_URL"
+    },
+    {
+      "name": "invalid policy wins",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "*"
+        ]
+      },
+      "url": "https://repo.example/path",
+      "code": "INVALID_CONFIGURATION"
+    },
+    {
+      "name": "explicit loopback approval",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "http://127.0.0.1:9000"
+        ]
+      },
+      "url": "http://127.0.0.1:9000/a",
+      "code": null
+    },
+    {
+      "name": "loopback has no automatic exception",
+      "policy": {
+        "mode": "connected"
+      },
+      "url": "http://127.0.0.1:9000/a",
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "name": "reject Unicode control or space 85",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example/a",
+      "code": "INVALID_URL"
+    },
+    {
+      "name": "reject Unicode control or space a0",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example/a ",
+      "code": "INVALID_URL"
+    },
+    {
+      "name": "reject Unicode control or space 2000",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example/a ",
+      "code": "INVALID_URL"
+    },
+    {
+      "name": "reject Unicode control or space 2028",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example/a ",
+      "code": "INVALID_URL"
+    },
+    {
+      "name": "query brackets are valid URI characters",
+      "policy": {
+        "mode": "connected",
+        "allowedOrigins": [
+          "https://repo.example"
+        ]
+      },
+      "url": "https://repo.example/?q=[x]",
+      "code": null
+    }
+  ]
+}

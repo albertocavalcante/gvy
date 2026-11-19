@@ -8,6 +8,8 @@ import com.github.albertocavalcante.gvy.build.TestResources
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import java.nio.file.Paths
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class GradleBuildToolTest {
@@ -91,7 +93,14 @@ class GradleBuildToolTest {
         assertTrue(command.args.contains("test"), "Command should include test task")
         assertTrue(command.args.contains("--tests"), "Command should include --tests flag")
         assertTrue(command.args.contains("com.example.Test.testMethod"), "Command should target specific test")
-        assertTrue(command.args.contains("jacocoTestReport"), "Command should include jacocoTestReport task")
+        assertFalse(command.args.contains("jacocoTestReport"), "The report is a separate optional step")
+    }
+
+    @Test
+    fun `coverage report is a separate jacocoTestReport command`() {
+        val report = GradleBuildTool().getCoverageReportCommand(Paths.get("."))
+
+        assertEquals(listOf("jacocoTestReport", "-x", "test"), report.args)
     }
 
     @Test
@@ -105,7 +114,7 @@ class GradleBuildToolTest {
         assertTrue(command.args.contains("test"), "Command should include test task")
         assertTrue(command.args.contains("--tests"), "Command should include --tests flag")
         assertTrue(command.args.contains("com.example.Test"), "Command should target suite")
-        assertTrue(command.args.contains("jacocoTestReport"), "Command should include jacocoTestReport task")
+        assertFalse(command.args.contains("jacocoTestReport"), "The report is a separate optional step")
     }
 
     @Test

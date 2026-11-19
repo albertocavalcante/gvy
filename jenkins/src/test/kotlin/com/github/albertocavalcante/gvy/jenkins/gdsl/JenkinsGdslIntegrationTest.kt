@@ -173,6 +173,30 @@ class JenkinsGdslIntegrationTest {
         }
     }
 
+    @Test
+    fun `default authoring snippets produce global Jenkins metadata`() {
+        val fixture = requireNotNull(
+            javaClass.getResourceAsStream("/editors/code/client/src/test/fixtures/gdsl-snippet-defaults.gdsl"),
+        ).bufferedReader().use { it.readText() }
+        val scripts = fixture.split("// --- named method ---")
+        assertThat(scripts).hasSize(2)
+
+        val positional = executor.executeAndCapture(scripts[0])
+        assertThat(positional.success).withFailMessage("Parse failed: ${positional.error}").isTrue()
+        assertThat(positional.methods.single().parameters.single().name).isEqualTo("arg")
+        assertThat(positional.properties.single().type).isEqualTo("java.lang.Object")
+        val positionalMetadata = adapter.convert(positional)
+        assertThat(positionalMetadata.getStep("myMethod")?.parameters?.get("arg")?.type).isEqualTo("String")
+        assertThat(positionalMetadata.getGlobalVariable("myProperty")?.type).isEqualTo("Object")
+
+        val named = executor.executeAndCapture(scripts[1])
+        assertThat(named.success).withFailMessage("Parse failed: ${named.error}").isTrue()
+        assertThat(named.methods.map { it.namedParameters.single().name }).containsExactly("myParam", "myParam")
+        val namedMetadata = adapter.convert(named)
+        assertThat(namedMetadata.getStep("myMethod")?.parameters?.get("myParam")?.type).isEqualTo("String")
+        assertThat(namedMetadata.getStep("parameterExample")?.parameters?.get("myParam")?.type).isEqualTo("String")
+    }
+
     @Nested
     inner class ErrorHandling {
 

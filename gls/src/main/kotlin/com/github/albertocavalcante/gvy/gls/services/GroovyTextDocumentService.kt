@@ -3,8 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
@@ -14,6 +14,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
 import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
+import com.github.albertocavalcante.gvy.gls.execution.discoverEntryPoints
 import com.github.albertocavalcante.gvy.gls.providers.SignatureHelpProvider
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.gvy.gls.providers.codeaction.CodeActionProvider
@@ -35,12 +36,13 @@ import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceTextCache
 import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceWalkCache
 import com.github.albertocavalcante.gvy.gls.providers.selection.SelectionRangeProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
-import com.github.albertocavalcante.gvy.gls.providers.symbols.toDocumentSymbol
-import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.providers.symbols.buildDocumentOutline
+import com.github.albertocavalcante.gvy.gls.providers.symbols.flattenOutline
 import com.github.albertocavalcante.gvy.gls.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -48,6 +50,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
+import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -82,8 +85,7 @@ import org.eclipse.lsp4j.InlayHint
 import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
-import org.eclipse.lsp4j.MessageParams
-import org.eclipse.lsp4j.MessageType
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior
 import org.eclipse.lsp4j.PrepareRenameParams
 import org.eclipse.lsp4j.PrepareRenameResult
@@ -114,6 +116,8 @@ import java.util.concurrent.CompletableFuture
 data class GroovyTextDocumentServiceOptions(
     val serverConfiguration: ServerConfiguration = ServerConfiguration(),
     val client: () -> LanguageClient? = { null },
+    val documentAnalysisSupported: () -> Boolean = { false },
+    val documentAnalysisSession: (URI) -> String? = { null },
     val documentProvider: DocumentProvider = DocumentProvider(),
     val formatter: Formatter = OpenRewriteFormatterAdapter(),
     val sourceNavigator: SourceNavigator = SourceNavigationService(),
@@ -136,6 +140,8 @@ class GroovyTextDocumentService(
         compilationService.updateServerConfiguration(options.serverConfiguration)
     }
     private val client: () -> LanguageClient? = options.client
+    private val documentAnalysisSupported: () -> Boolean = options.documentAnalysisSupported
+    private val documentAnalysisSession: (URI) -> String? = options.documentAnalysisSession
     private val documentProvider: DocumentProvider = options.documentProvider
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
@@ -151,6 +157,13 @@ class GroovyTextDocumentService(
     // Read once from the client's initialize capabilities; see updateLabelDetailsSupport.
     @Volatile
     private var labelDetailsSupport: Boolean = false
+
+    @Volatile
+    private var snippetSupport: Boolean = false
+
+    // LSP: a client that does not say it renders `DocumentSymbol` trees gets flat `SymbolInformation`.
+    @Volatile
+    private var hierarchicalDocumentSymbolSupport: Boolean = false
 
     private val logger = KotlinLogging.logger {}
 
@@ -178,6 +191,15 @@ class GroovyTextDocumentService(
         labelDetailsSupport = supported
     }
 
+    /** Whether the client renders nested `DocumentSymbol`s, from its initialize capabilities. */
+    fun updateHierarchicalDocumentSymbolSupport(supported: Boolean) {
+        hierarchicalDocumentSymbolSupport = supported
+    }
+
+    fun updateSnippetSupport(supported: Boolean) {
+        snippetSupport = supported
+    }
+
     fun updateDefinitionLinkSupport(supported: Boolean) {
         definitionLinkSupport = supported
         logger.info { "Definition link support set to $supported" }
@@ -194,11 +216,10 @@ class GroovyTextDocumentService(
             documentProvider = documentProvider,
             serverConfiguration = configuration,
             client = client,
+            documentAnalysisSupported = documentAnalysisSupported,
         )
     }
     private val diagnosticsOrchestrator by diagnosticsOrchestratorDelegate
-
-    private val notifiedIgnoredRulesets = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     @Synchronized
     fun updateConfiguration(configuration: ServerConfiguration) {
@@ -225,19 +246,6 @@ class GroovyTextDocumentService(
                 // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
                 rulesetResolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
                     .also { codeNarcRulesetResolver = it },
-                onWorkspaceRulesetIgnored = { ruleset ->
-                    // Service scope: updateConfiguration rebuilds the provider, which must not repeat the message
-                    if (notifiedIgnoredRulesets.add(ruleset)) {
-                        client()?.showMessage(
-                            MessageParams().apply {
-                                type = MessageType.Info
-                                message = "The workspace CodeNarc ruleset '$ruleset' uses features that are not " +
-                                    "supported for security reasons (workspace rulesets are never evaluated " +
-                                    "as Groovy) and is ignored."
-                            },
-                        )
-                    }
-                },
             )
             val codeNarcAdapter = DiagnosticProviderAdapter(
                 delegate = codeNarcProvider,
@@ -268,7 +276,7 @@ class GroovyTextDocumentService(
     private val typeDefinitionProvider by lazy {
         TypeDefinitionProvider(
             semanticResolver = semanticTypeResolver,
-            contextProvider = { uri -> compilationService.createContext(uri) },
+            contextProvider = { uri -> compilationService.createContextWithSource(uri) },
         )
     }
 
@@ -285,7 +293,7 @@ class GroovyTextDocumentService(
     }
 
     private val codeActionProvider by lazy {
-        CodeActionProvider(compilationService, documentProvider, formatter)
+        CodeActionProvider(compilationService, documentProvider, formatter, documentAnalysisSupported)
     }
 
     // Source navigation service for go-to-definition on JARs
@@ -391,7 +399,8 @@ class GroovyTextDocumentService(
         val content = params.textDocument.text
         // Fence work of the previous lifecycle before the buffer becomes visible to it.
         compilationService.onDocumentOpened(uri)
-        documentProvider.put(uri, content, params.textDocument.version)
+        documentProvider.put(uri, content, params.textDocument.version, documentAnalysisSession(uri))
+        diagnosticsOrchestrator.documentChanged(uri)
 
         diagnosticsOrchestrator.trigger(uri, content)
     }
@@ -407,6 +416,7 @@ class GroovyTextDocumentService(
         val version = params.textDocument.version ?: return
         val uri = URI.create(params.textDocument.uri)
         val snapshot = documentProvider.update(uri, params.contentChanges.lastOrNull()?.text, version) ?: return
+        diagnosticsOrchestrator.documentChanged(uri)
 
         if (params.contentChanges.isNotEmpty()) {
             // Invalidate documentation cache for this document
@@ -445,7 +455,9 @@ class GroovyTextDocumentService(
 
     override fun didSave(params: DidSaveTextDocumentParams) {
         logger.debug { "Document saved: ${params.textDocument.uri}" }
-        // Could trigger additional processing if needed
+        val uri = URI.create(params.textDocument.uri)
+        val snapshot = documentProvider.getSnapshot(uri) ?: return
+        diagnosticsOrchestrator.trigger(uri, snapshot.content)
     }
 
     /**
@@ -491,7 +503,7 @@ class GroovyTextDocumentService(
             )
 
             logger.debug { "Returning ${completions.size} completions" }
-            Either.forLeft(completions.forClient(labelDetailsSupport))
+            Either.forLeft(completions.forClient(labelDetailsSupport, snippetSupport))
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
@@ -574,11 +586,18 @@ class GroovyTextDocumentService(
         params: DocumentSymbolParams,
     ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
         val uri = URI.create(params.textDocument.uri)
-        val storage = ensureSymbolStorage(uri) ?: return@future emptyList()
-
-        storage.getSymbols(uri).filter { it.shouldIncludeInDocumentSymbols() }.mapNotNull { symbol ->
-            symbol.toDocumentSymbol()?.let { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
-                ?: symbol.toSymbolInformation()?.let { Either.forLeft<SymbolInformation, DocumentSymbol>(it) }
+        // Startup worker selection can retire a compile while this request is waiting. Resolve through
+        // the shared ownership policy and retain its model instead of rereading a cache that may be cleared.
+        val compiled = compilationService.ensureCompiled(uri) ?: return@future emptyList()
+        val model = compiled.astModel ?: return@future emptyList()
+        val symbols = SymbolIndex().buildFromVisitor(model).getSymbols(uri)
+        val outline = buildDocumentOutline(symbols, compiled.sourceText?.let(::TextIndex))
+        if (hierarchicalDocumentSymbolSupport) {
+            outline.map { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
+        } else {
+            flattenOutline(params.textDocument.uri, outline).map {
+                Either.forLeft<SymbolInformation, DocumentSymbol>(it)
+            }
         }
     }
 
@@ -670,7 +689,21 @@ class GroovyTextDocumentService(
         // Ensure file is compiled before providing CodeLenses
         compilationService.ensureCompiled(uri)
 
-        testCodeLensProvider.provideCodeLenses(uri)
+        val testLenses = testCodeLensProvider.provideCodeLenses(uri)
+        val module = compilationService.getAst(uri) as? ModuleNode
+        val executionLenses = module?.let { discoverEntryPoints(it) }.orEmpty().map { entry ->
+            val position = Position(entry.line, 0)
+            CodeLens(
+                Range(position, position),
+                Command(
+                    "$(play) Run File",
+                    "groovy.runFile",
+                    listOf(mapOf("uri" to uri.toString(), "entryPoint" to entry.id)),
+                ),
+                null,
+            )
+        }
+        testLenses + executionLenses
     }
 
     override fun selectionRange(params: SelectionRangeParams): CompletableFuture<List<SelectionRange>?> =
@@ -701,18 +734,22 @@ class GroovyTextDocumentService(
             semanticTokensHandler.getSemanticTokens(uri)
         }
 
-    private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =
-        compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
-            compilationService.compile(uri, content)
-            compilationService.getSymbolStorage(uri)
-        }
-
     /**
      * Wait for any ongoing diagnostics job for the given URI to complete.
      * This is useful for testing to ensure compilation is done before making assertions.
      */
     suspend fun awaitDiagnostics(uri: URI) {
         diagnosticsOrchestrator.awaitDiagnostics(uri)
+    }
+
+    /**
+     * Waits until every open buffer has been compiled and indexed, so a workspace-wide query sees the buffers a
+     * client has just opened. A buffer that cannot compile is skipped: its failure belongs to its own requests.
+     */
+    internal suspend fun awaitOpenDocumentsIndexed() {
+        documentProvider.getAllUris().forEach { uri ->
+            runCatching { compilationService.ensureCompiled(uri) }.onFailure(::rethrowIfCancellationOrError)
+        }
     }
 
     /** Returns the retained terminal analysis for the current buffer, including provider failures. */
@@ -727,6 +764,7 @@ class GroovyTextDocumentService(
         logger.info { "CodeNarc ruleset reload requested" }
         // Clears the cached project detection and default rulesets; workspace ruleset files are read per analysis.
         codeNarcRulesetResolver?.reloadRulesets()
+        diagnosticsOrchestrator.invalidateWorkspaceConfiguration()
     }
 
     /**
@@ -742,9 +780,4 @@ class GroovyTextDocumentService(
             }
         }
     }
-}
-
-private fun Symbol.shouldIncludeInDocumentSymbols(): Boolean = when (this) {
-    is Symbol.Variable -> isParameter
-    is Symbol.Method, is Symbol.Field, is Symbol.Property, is Symbol.Class, is Symbol.Import -> true
 }

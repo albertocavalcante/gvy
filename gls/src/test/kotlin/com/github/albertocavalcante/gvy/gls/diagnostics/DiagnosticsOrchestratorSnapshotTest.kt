@@ -43,6 +43,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -68,6 +69,9 @@ class DiagnosticsOrchestratorSnapshotTest {
             val result = mockk<CompilationResult>()
             every { result.diagnostics } returns listOf(diagnostic("parser"))
             every { result.parseCompleted } returns true
+            every { result.outcome } returns null
+            every { result.sourceMembershipKnown } returns null
+            every { result.sourceVisibilityKnown } returns null
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(result)
             coEvery { diagnostics.collectDiagnostics(uri, any(), any()) } returns
                 DiagnosticsCollectionResult(listOf(diagnostic("provider")), emptyList(), emptyList())
@@ -298,16 +302,22 @@ class DiagnosticsOrchestratorSnapshotTest {
         try {
             val fixture = ServiceFixture(scope, uri)
             fixture.service.didOpen(open())
-            var reopenOnLookup = true
+            // Provider collection resumes the first run on an IO thread, where it resolves the client again before
+            // completing. Let that run finish so the hook below can only intercept close's own client lookup.
+            val first = runBlocking { fixture.service.awaitCurrentDiagnostics(uri, 1) }
+            assertEquals(listOf("parse 1"), first.diagnostics.map { it.message })
+            val reopenOnLookup = AtomicBoolean(true)
+            val reopenThread = AtomicReference<Thread>()
             fixture.beforeClientLookup = {
-                if (reopenOnLookup) {
-                    reopenOnLookup = false
+                if (reopenOnLookup.compareAndSet(true, false)) {
+                    reopenThread.set(Thread.currentThread())
                     fixture.service.didOpen(open())
                 }
             }
 
             fixture.service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(uri.toString())))
 
+            assertEquals(Thread.currentThread(), reopenThread.get(), "Reopen must run in close's client lookup")
             val result = runBlocking { fixture.service.awaitCurrentDiagnostics(uri, 1) }
             assertTrue(result.failures.isEmpty(), "The reopened analysis must succeed: ${result.failures}")
             assertEquals(listOf("parse 2"), result.diagnostics.map { it.message })

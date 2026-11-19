@@ -240,6 +240,46 @@ class GradleDependencyResolver(
         }
     }
 
+    /**
+     * Fetches the raw [IdeaProject] model under the same policy as a resolution: the connection is leased for the
+     * whole fetch, the daemon arguments and configured Java home are applied (so no second, differently-configured
+     * daemon starts), and the fetch is cancellable through [cancellation].
+     */
+    @Suppress("TooGenericExceptionCaught") // Tooling API failures arrive as arbitrary exceptions.
+    internal fun fetchIdeaProject(
+        projectDir: Path,
+        cancellation: ResolutionCancellation = ResolutionCancellation(),
+    ): IdeaProject {
+        cancellation.throwIfCancelled()
+        val fetch = { gradleUserHomeDir: File? ->
+            connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
+                val modelBuilder = lease.connection.model(IdeaProject::class.java)
+                modelBuilder.applyDaemonArguments()
+                if (javaHome != null) modelBuilder.setJavaHome(javaHome.toFile())
+                modelBuilder.getCancellable(cancellation)
+            }
+        }
+        val firstFailure = try {
+            return fetch(null)
+        } catch (e: Exception) {
+            e
+        }
+        // A cancelled operation fails with the Tooling API's cancellation error; report cancellation instead.
+        if (cancellation.isCancelled || !failureAnalyzer.isInitScriptError(firstFailure)) {
+            throw if (cancellation.isCancelled) cancelledBy(firstFailure) else firstFailure
+        }
+        logger.warn(firstFailure) {
+            "Gradle model fetch failed; retrying with isolated Gradle user home to avoid incompatible user init scripts"
+        }
+        // Same fallback as resolve(): a broken user init script must not leave the dependency view empty.
+        cancellation.throwIfCancelled()
+        return try {
+            fetch(isolatedGradleUserHomeDir().toFile())
+        } catch (e: Exception) {
+            throw if (cancellation.isCancelled) cancelledBy(e) else e
+        }
+    }
+
     private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
         // Pre-flight check: validate JDK/Gradle compatibility before attempting model fetch
         checkJdkGradleCompatibility(connection, cancellation)
@@ -287,15 +327,21 @@ class GradleDependencyResolver(
         // If not, use the current runtime JDK.
         val jdkMajor = javaHome?.let { captureJavaMajorVersion(it) } ?: Runtime.version().feature()
 
-        if (!compatibilityService.isCompatible(gradleVersion, jdkMajor)) {
-            val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
-            logger.error { suggestion }
-            throw GradleJdkIncompatibleException(
-                suggestion ?: "JDK $jdkMajor is incompatible with Gradle $gradleVersion",
-            )
+        when (compatibilityService.checkCompatibility(gradleVersion, jdkMajor)) {
+            GradleRuntimeSupport.UNSUPPORTED -> {
+                val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
+                logger.error { suggestion }
+                throw GradleJdkIncompatibleException(
+                    suggestion ?: "JDK $jdkMajor is incompatible with Gradle $gradleVersion",
+                )
+            }
+            GradleRuntimeSupport.UNKNOWN -> logger.info {
+                "JDK/Gradle compatibility is unknown: Gradle $gradleVersion with JDK $jdkMajor"
+            }
+            GradleRuntimeSupport.SUPPORTED -> logger.debug {
+                "JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor"
+            }
         }
-
-        logger.debug { "JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor" }
     }
 
     /**

@@ -3,6 +3,10 @@
 Use this map to find the component responsible for a change. For installation and editor features, start with the
 [project README](../README.md); for development setup, see [Contributing](../CONTRIBUTING.md).
 
+## Components
+
+The following groups describe the components in the current checkout.
+
 ## Language server and analysis
 
 | Path                                                | Responsibility                                                       |
@@ -40,3 +44,9 @@ Use this map to find the component responsible for a change. For installation an
 
 Module membership is defined in [settings.gradle.kts](../settings.gradle.kts). Architecture and design records live in
 the [knowledge base](../kb/README.md); priorities live in the [Quality Bar](quality-bar.md).
+
+## Technology
+
+Dependency versions are defined in [the version catalog](../gradle/libs.versions.toml); runtime and compilation
+requirements are in [the contributor setup](../CONTRIBUTING.md#set-up-the-jvm-build). These describe the current source
+checkout, not a compatibility promise for a published extension.

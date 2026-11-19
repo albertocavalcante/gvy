@@ -38,7 +38,10 @@ export function setServerOutputChannel(
 /**
  * Registers all extension commands
  */
-export function registerCommands(context: ExtensionContext): Disposable[] {
+export function registerCommands(
+  context: ExtensionContext,
+  requestInitialStart: () => Promise<boolean> = async () => true,
+): Disposable[] {
   const disposables: Disposable[] = [];
 
   // Register status menu command
@@ -92,6 +95,7 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
   const showVersionCommand = commands.registerCommand(
     "groovy.showVersion",
     async () => {
+      if (!(await requestInitialStart())) return;
       const client = getClient();
       if (!client) {
         window.showErrorMessage("Groovy Language Server is not running");

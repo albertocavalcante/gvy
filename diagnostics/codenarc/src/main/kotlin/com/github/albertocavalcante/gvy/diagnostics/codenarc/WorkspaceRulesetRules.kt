@@ -30,7 +30,7 @@ internal fun rule(name: String, properties: Map<String, String>, out: StringBuil
  * Rule properties whose value is a regular expression. A regex from an untrusted workspace can be catastrophic
  * (ReDoS) and would run on the analysis thread, so workspace rulesets may not set them.
  */
-private fun isRegexProperty(name: String): Boolean =
+internal fun isRegexProperty(name: String): Boolean =
     name.endsWith("regex", ignoreCase = true) || name.endsWith("FilesMatching") || name.endsWith("Pattern")
 
 internal fun property(key: String, value: String, indent: String, out: StringBuilder) {

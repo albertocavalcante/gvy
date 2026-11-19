@@ -15,6 +15,9 @@ import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRequestHandler
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
+import com.github.albertocavalcante.gvy.gls.execution.FileExecutionRequestHandler
+import com.github.albertocavalcante.gvy.gls.execution.FileExecutionResponse
+import com.github.albertocavalcante.gvy.gls.execution.PrepareFileExecutionParams
 import com.github.albertocavalcante.gvy.gls.project.DefaultProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.JenkinsProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
@@ -65,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.future.future
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
@@ -74,6 +78,7 @@ import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
@@ -81,6 +86,7 @@ import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
+import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ForkJoinPool
@@ -89,6 +95,8 @@ import java.util.concurrent.TimeoutException
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
 private const val PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS = 20L
+private const val MAX_PENDING_ANALYSIS_SESSIONS = 1024
+private const val MAX_ANALYSIS_SESSION_LENGTH = 128
 
 class GroovyLanguageServer(
     private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
@@ -141,12 +149,22 @@ class GroovyLanguageServer(
         sourceNavigator = sourceNavigator,
     )
 
+    private val documentAnalysisSessions = java.util.concurrent.ConcurrentHashMap<URI, String>()
+
     // Services
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
         options = GroovyTextDocumentServiceOptions(
             client = { baseClient },
+            documentAnalysisSupported = {
+                val experimental = Gson().toJsonTree(clientCapabilities?.experimental)
+                experimental?.isJsonObject == true &&
+                    experimental.asJsonObject.get("groovyDocumentAnalysis")?.let {
+                        it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean
+                    } == true
+            },
+            documentAnalysisSession = { documentAnalysisSessions.remove(it) },
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
         ),
@@ -167,6 +185,7 @@ class GroovyLanguageServer(
         textDocumentService,
         classpathRestamper = classpathRestamper,
         reportEngineSetting = coreEngineDeprecation::report,
+        onBuildFilesChanged = { paths -> startupManager.dependencyManager?.onWatchedFilesChanged(paths) },
     )
 
     // Helpers
@@ -189,6 +208,12 @@ class GroovyLanguageServer(
         classpathRestamper = classpathRestamper,
         reportEngineSetting = coreEngineDeprecation::report,
     )
+    private val fileExecutionRequestHandler = FileExecutionRequestHandler(
+        documents = documentProvider,
+        workspaceFolders = { executionWorkspaceFolders() },
+        sourceRoots = { compilationService.workspaceManager.getSourceRoots() },
+        model = { root, javaHome -> startupManager.buildToolManager?.executionContexts(root, javaHome) },
+    )
     private val testRequestDelegate =
         TestRequestDelegate(
             coroutineScope,
@@ -206,6 +231,8 @@ class GroovyLanguageServer(
         compilationService,
         CoreAstConverter(),
         NativeAstConverter(),
+        documentProvider,
+        coroutineScope,
     )
 
     // State
@@ -268,6 +295,12 @@ class GroovyLanguageServer(
 
         val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
         textDocumentService.updateDefinitionLinkSupport(linkSupport)
+        textDocumentService.updateHierarchicalDocumentSymbolSupport(
+            params.capabilities?.textDocument?.documentSymbol?.hierarchicalDocumentSymbolSupport == true,
+        )
+        textDocumentService.updateSnippetSupport(
+            params.capabilities?.textDocument?.completion?.completionItem?.snippetSupport == true,
+        )
         textDocumentService.updateLabelDetailsSupport(
             params.capabilities?.textDocument?.completion?.completionItem?.labelDetailsSupport == true,
         )
@@ -278,6 +311,8 @@ class GroovyLanguageServer(
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult(
             prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,
         )
+
+        initializeResult.capabilities.experimental = mapOf("groovyDocumentAnalysis" to true)
 
         implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
@@ -327,17 +362,27 @@ class GroovyLanguageServer(
         )
     }
 
-    override fun shutdown(): CompletableFuture<Any> {
+    /**
+     * Every caller gets its own dependent view of the one shutdown run, so a caller that cancels or fails
+     * its future cannot cancel the run or disturb another caller (including the parent watchdog).
+     */
+    override fun shutdown(): CompletableFuture<Any?> {
         shutdownRequested = true
-        return shutdownFuture
+        return shutdownRun.copy()
     }
 
-    // Created at most once, so repeated shutdown requests (client plus watchdog) share one run.
-    private val shutdownFuture: CompletableFuture<Any> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        CompletableFuture.supplyAsync({ doShutdown() }, shutdownExecutor)
+    // Created at most once, so repeated shutdown requests (client plus watchdog) share one run. It is never
+    // handed out, so no caller can cancel it, and it completes (normally or not) even if the executor refuses
+    // the task.
+    private val shutdownRun: CompletableFuture<Any?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val run = CompletableFuture<Any?>()
+        runCatching {
+            shutdownExecutor.execute { runCatching { doShutdown() }.fold(run::complete, run::completeExceptionally) }
+        }.onFailure(run::completeExceptionally)
+        run
     }
 
-    private fun doShutdown(): Any {
+    private fun doShutdown(): Any? {
         logger.info { "Shutting down Groovy Language Server..." }
         try {
             startupManager.shutdown()
@@ -360,7 +405,7 @@ class GroovyLanguageServer(
         } catch (e: Exception) {
             logger.warn(e) { "Error during shutdown" }
         }
-        return Any()
+        return null
     }
 
     /** LSP: the server process exits with 0 if `shutdown` was requested first, otherwise 1. */
@@ -380,6 +425,27 @@ class GroovyLanguageServer(
      * Versioned server runtime and current hover-engine facts. The engine is observed at request time and is not
      * an attribution to any earlier hover. Optional values are omitted unless their state is known.
      */
+    @JsonNotification("groovy/documentAnalysisSession")
+    fun documentAnalysisSession(params: JsonElement?) {
+        val obj = params?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+        val uri = obj.get("uri")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return
+        val session = obj.get("sessionId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            ?: return
+        if (session.length > MAX_ANALYSIS_SESSION_LENGTH || session.isEmpty()) return
+        val parsed = try {
+            URI.create(uri)
+        } catch (_: IllegalArgumentException) {
+            return
+        }
+        synchronized(documentAnalysisSessions) {
+            if (documentAnalysisSessions.size < MAX_PENDING_ANALYSIS_SESSIONS ||
+                documentAnalysisSessions.containsKey(parsed)
+            ) {
+                documentAnalysisSessions[parsed] = session
+            }
+        }
+    }
+
     @JsonRequest("groovy/runtimeFacts")
     fun runtimeFacts(): CompletableFuture<JsonElement> {
         val error = customRequestLifecycleError()
@@ -406,6 +472,27 @@ class GroovyLanguageServer(
         else -> null
     }
 
+    @JsonRequest("groovy/prepareFileExecution")
+    fun prepareFileExecution(params: PrepareFileExecutionParams): CompletableFuture<FileExecutionResponse> {
+        val error = customRequestLifecycleError()
+        if (error != null) return CompletableFuture.failedFuture(ResponseErrorException(error))
+        return coroutineScope.future { fileExecutionRequestHandler.prepare(params) }
+    }
+
+    private fun executionWorkspaceFolders(): List<Path> {
+        val params = savedInitParams ?: return emptyList()
+        val folders = params.workspaceFolders
+        if (folders.isNullOrEmpty()) return listOfNotNull(startupManager.getWorkspaceRoot(params))
+        return folders.mapNotNull { folder ->
+            try {
+                val uri = URI.create(folder.uri)
+                if (uri.scheme == "file") Path.of(uri) else null
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
+    }
+
     @JsonRequest("groovy/discoverTests")
     fun discoverTests(params: DiscoverTestsParams): CompletableFuture<List<TestSuite>> =
         testRequestDelegate.discoverTests(params)
@@ -426,7 +513,7 @@ class GroovyLanguageServer(
     }, dispatcher.asExecutor())
 
     @JsonRequest("groovy/ast")
-    fun getAst(params: AstParams): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
+    fun getAst(params: AstParams?): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
 
     @JsonRequest("groovy/getTestResults")
     fun getTestResults(params: GetTestResultsParams): CompletableFuture<TestResultsResponse> =

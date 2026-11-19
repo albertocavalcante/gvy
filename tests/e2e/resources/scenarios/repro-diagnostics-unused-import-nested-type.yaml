@@ -1,9 +1,5 @@
 name: repro-diagnostics-unused-import-nested-type
 description: Importing Outer2 and writing `extends Outer2.Inner` does not report the import as unused
-xfail:
-  issue: 1536
-  reason: the outer class import is reported unused when only Outer.Inner is written
-  match: '(?s)Actual:.*Unused import: demo.nesting.Outer2'
 workspace:
   fixture: empty-workspace
   files:

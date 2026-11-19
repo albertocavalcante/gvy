@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Location
+import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -94,6 +96,62 @@ class DefinitionProviderTest {
         assertEquals(uri.toString(), definition.uri)
         assertEquals(0, definition.range.start.line) // Should point to the def testMethod() line
     }
+
+    @Test
+    fun `super call resolves to the parent method even when the parent is declared first`(): Unit = runBlocking {
+        val content = """
+            class Parent { String greet() { 'p' } }
+            class Child extends Parent {
+                String greet() {
+                    super.greet()
+                }
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///super.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+
+        // `greet` after `super.` on line 3.
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(3, 14)).toList()
+
+        assertEquals(listOf(0), definitions.map { it.range.start.line }, "must reach Parent.greet, not the override")
+    }
+
+    @Test
+    fun `super call resolves to the parent method when the child is declared first`(): Unit = runBlocking {
+        val content = """
+            class Child extends Parent {
+                String greet() {
+                    super.greet()
+                }
+            }
+            class Parent { String greet() { 'p' } }
+        """.trimIndent()
+        val uri = URI.create("file:///superChildFirst.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
+
+        assertEquals(listOf(5), definitions.map { it.range.start.line }, "must reach Parent.greet")
+    }
+
+    @Test
+    fun `super call does not resolve to the enclosing override when the parent is in another file`(): Unit =
+        runBlocking {
+            val content = """
+                class Child extends MissingParent {
+                    String greet() {
+                        super.greet()
+                    }
+                }
+            """.trimIndent()
+            val uri = URI.create("file:///superOther.groovy")
+            assertNotNull(compilationService.compile(uri, content))
+            assertNotNull(compilationService.getAst(uri), "the AST must exist so the assertion below is not vacuous")
+
+            val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(2, 14)).toList()
+
+            assertTrue(definitions.none { it.range.start.line == 1 }, "the override must not be reported")
+        }
 
     @Test
     fun `test method name navigation specifically`(): Unit = runBlocking {
@@ -552,4 +610,41 @@ class DefinitionProviderTest {
         }
         // If line is 0, getNodeAt returned ClassNode - this is a known limitation, not a test failure
     }
+
+    @Test
+    fun `definition resolves after a supplementary character on the line`(): Unit = runBlocking {
+        val content = "def x = 1\ndef s = '\uD83D\uDE00\uD83D\uDE00'; println x"
+        val uri = URI.create("file:///emoji.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
+
+        // LSP columns count UTF-16 units; each emoji is two of them but one Groovy column.
+        val column = content.lines()[1].lastIndexOf('x')
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(1, column)).toList()
+
+        assertEquals(listOf(0), definitions.map { it.range.start.line })
+    }
+
+    @Test
+    fun `definition results use UTF-16 columns after supplementary characters on the target line`(): Unit =
+        runBlocking {
+            // The emoji pair and "abcd" occupy the same UTF-16 columns, but Groovy counts the emoji as two columns.
+            fun source(filler: String) = "def s = '$filler'; def x = 1; println x"
+
+            suspend fun resolve(name: String, filler: String): Pair<Location, LocationLink> {
+                val uri = URI.create("file:///$name.groovy")
+                val content = source(filler)
+                assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
+                val position = Position(0, content.lastIndexOf('x'))
+                val location = definitionProvider.provideDefinitions(uri.toString(), position).toList().single()
+                val link = definitionProvider.provideDefinitionLinks(uri.toString(), position).toList().single()
+                return location to link
+            }
+
+            val (expectedLocation, expectedLink) = resolve("ascii", "abcd")
+            val (location, link) = resolve("emoji", "\uD83D\uDE00\uD83D\uDE00")
+
+            assertEquals(expectedLocation.range, location.range)
+            assertEquals(expectedLink.targetRange, link.targetRange)
+            assertEquals(expectedLink.originSelectionRange, link.originSelectionRange)
+        }
 }

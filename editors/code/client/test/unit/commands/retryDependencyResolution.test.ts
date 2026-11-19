@@ -6,7 +6,7 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 describe("groovy.retryDependencyResolution", () => {
-  function load(running = true) {
+  function load(running = true, initialStart?: () => Promise<boolean>) {
     const handlers = new Map<string, () => Promise<void>>();
     // The server has no groovy.resolveDependencies command: an unknown
     // workspace/executeCommand resolves to null instead of failing.
@@ -53,10 +53,19 @@ describe("groovy.retryDependencyResolution", () => {
       },
       "../java/commands": { registerJavaCommands: () => {} },
     });
-    mod.registerCommands({ subscriptions: [] });
+    mod.registerCommands(
+      { subscriptions: [] },
+      initialStart
+        ? async () => {
+            const ready = await initialStart();
+            if (ready) running = true;
+            return ready;
+          }
+        : undefined,
+    );
     const retry = handlers.get("groovy.retryDependencyResolution");
     assert.ok(retry, "retry command is registered");
-    return { retry, sendRequest, restartClient, window };
+    return { retry, sendRequest, restartClient, window, handlers };
   }
 
   it("does not send a command the server does not implement", async () => {
@@ -80,5 +89,22 @@ describe("groovy.retryDependencyResolution", () => {
     await retry();
     assert.ok(restartClient.calledOnce, "server was not started");
     assert.ok(window.showWarningMessage.notCalled);
+  });
+
+  it("starts a deferred server before querying its version", async () => {
+    const start = sinon.stub().resolves(true);
+    const { handlers, sendRequest } = load(false, start);
+    await handlers.get("groovy.showVersion")!();
+    assert.ok(start.calledOnce);
+    assert.ok(sendRequest.calledOnce);
+  });
+
+  it("avoids querying and duplicating an already reported startup failure", async () => {
+    const start = sinon.stub().resolves(false);
+    const { handlers, sendRequest, window } = load(false, start);
+    await handlers.get("groovy.showVersion")!();
+    assert.ok(start.calledOnce);
+    assert.ok(sendRequest.notCalled);
+    assert.ok(window.showErrorMessage.notCalled);
   });
 });

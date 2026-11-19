@@ -1,0 +1,142 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: diagnostics-save-current-buffer
+description: A save diagnoses the latest open buffer and completion remains usable while syntax is incomplete.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.diagnostics.providers.disabled: [codenarc, custom-rules, unused-imports]
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+  - openDocument:
+      path: src/SaveCurrentBuffer.groovy
+      version: 1
+      text: |
+        import java.time.Instant
+
+        class SaveCurrentBuffer {
+            void run() {
+                Instant.now().toString()
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.version
+          expect: { type: EQUALS, value: 1 }
+      timeoutMs: 30000
+  - changeDocument:
+      path: src/SaveCurrentBuffer.groovy
+      version: 2
+      text: |
+        import java.time.
+
+        class SaveCurrentBuffer {
+            void run() {
+                Instant.now().toString()
+            }
+        }
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/SaveCurrentBuffer.groovy" }
+        position: { line: 0, character: 17 }
+      saveAs: importCompletion
+  - assert:
+      source: importCompletion
+      checks:
+        - jsonPath: $.items
+          expect: { type: NOT_EMPTY }
+        - jsonPath: "$.items[?(@.label == 'Instant' || @.label == 'java.time.Instant')]"
+          expect: { type: NOT_EMPTY }
+  - changeDocument:
+      path: src/SaveCurrentBuffer.groovy
+      version: 3
+      text: |
+        import java.time.Instant
+
+        class SaveCurrentBuffer {
+            void run() {
+                Instant.
+            }
+        }
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/SaveCurrentBuffer.groovy" }
+        position: { line: 4, character: 16 }
+      saveAs: memberCompletion
+  - assert:
+      source: memberCompletion
+      checks:
+        - jsonPath: $.items
+          expect: { type: NOT_EMPTY }
+        - jsonPath: $.items[*].label
+          expect: { type: CONTAINS, value: now }
+  - changeDocument:
+      path: src/SaveCurrentBuffer.groovy
+      version: 4
+      text: |
+        import java.time.Instant
+
+        class SaveCurrentBuffer {
+            void run() {
+                println(
+            }
+        }
+  - request:
+      method: textDocument/signatureHelp
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/SaveCurrentBuffer.groovy" }
+        position: { line: 4, character: 16 }
+      saveAs: callSignature
+  - assert:
+      source: callSignature
+      checks:
+        - jsonPath: $.signatures
+          expect: { type: NOT_EMPTY }
+  - changeDocument:
+      path: src/SaveCurrentBuffer.groovy
+      version: 5
+      text: |
+        import java.time.
+
+        class SaveCurrentBuffer {
+            void run() {
+                Instant.now().toString()
+            }
+        }
+  - changeDocument:
+      path: src/SaveCurrentBuffer.groovy
+      version: 6
+      text: |
+        import java.time.Instant
+
+        class SaveCurrentBuffer {
+            void run() {
+                Instant.now().toString()
+            }
+        }
+  - saveDocument:
+      path: src/SaveCurrentBuffer.groovy
+      text: "stale optional save text is ignored"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: SaveCurrentBuffer.groovy }
+        - jsonPath: $.version
+          expect: { type: EQUALS, value: 6 }
+        - jsonPath: $.diagnostics
+          expect: { type: EMPTY }
+      timeoutMs: 30000
+  - shutdown: {}
+  - exit: {}

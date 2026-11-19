@@ -32,7 +32,7 @@ internal object GradleScopedDependencyProjection {
             snapshot(requireNotNull(raw), buildDirectory, provenance, stampOnce)
         }
         require(snapshots.map { it.target.targetId }.distinct().size == snapshots.size) { "Duplicate Gradle target" }
-        return TargetDependencyEvidence.Scoped(snapshots)
+        return TargetDependencyEvidence.Scoped(snapshots, enumerationComplete = model.enumerationComplete == true)
     }
 
     private fun snapshot(
@@ -63,6 +63,7 @@ internal object GradleScopedDependencyProjection {
             state = state,
             artifacts = requireNotNull(raw.artifacts).map { artifact(requireNotNull(it), enrichment, stamp) },
             sourceRoots = requireNotNull(raw.sourceRoots).map(::absolutePath),
+            sourceFiles = raw.sourceFiles?.map(::absolutePath),
         )
     }
 

@@ -409,6 +409,46 @@ class ColdLocalCompletionTest {
     }
 
     @Test
+    fun `a held class extending a JDK collection offers the GDK methods of that collection`(): Unit = runBlocking {
+        val source = "class N extends ArrayList<Integer> {}\nnew N().s"
+
+        val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }.toSet()
+
+        // GDK-only names: ArrayList itself declares neither, so only the GDK of the binary ancestors adds them.
+        assertTrue("first" in labels, "GDK first(Iterable) missing from ${labels.size} labels")
+        assertTrue("asImmutable" in labels, "GDK asImmutable(List) missing from ${labels.size} labels")
+        assertTrue("sum" in labels, "GDK sum(Iterable) missing from ${labels.size} labels")
+    }
+
+    @Test
+    fun `a held class implementing Map offers its GDK methods once each`(): Unit = runBlocking {
+        val source = "abstract class Registry implements Map<String, Integer> {}\nnew Registry().sub"
+
+        val items = complete(source).filter { it.kind == CompletionItemKind.Method }
+
+        // `subMap(Map, Collection)` exists only as a GDK extension of Map, reached through the interface.
+        val gdkOnly = items.filter { it.label == "subMap" }
+        assertTrue(gdkOnly.isNotEmpty(), "GDK subMap(Map, Collection) missing from ${items.map { it.label }}")
+        assertEquals(gdkOnly.size, gdkOnly.map { it.detail }.distinct().size, "duplicated: $gdkOnly")
+        // Object extensions are shared by the receiver and every ancestor: one `toString()`, not one per type.
+        val toStrings = complete("abstract class Registry implements Map<String, Integer> {}\nnew Registry().toStr")
+            .filter { it.label == "toString" && it.kind == CompletionItemKind.Method }
+        assertEquals(1, toStrings.size, "found $toStrings")
+    }
+
+    @Test
+    fun `the GDK documentation wins over the JDK one for toString on binary ancestors`(): Unit = runBlocking {
+        val toStrings = complete("class N extends ArrayList<Integer> {}\nnew N().toStr")
+            .filter { it.label == "toString" && it.kind == CompletionItemKind.Method }
+
+        assertEquals(1, toStrings.size, "found $toStrings")
+        assertTrue(
+            toStrings.single().documentation.toString().contains("Groovy GDK method"),
+            "GDK documentation is the documented winner: ${toStrings.single().documentation}",
+        )
+    }
+
+    @Test
     fun `an indexed parent's generic override hides the erased interface method`(): Unit = runBlocking {
         indexParents("class B implements Comparable<B> { int compareTo(B o) { 0 } }")
 

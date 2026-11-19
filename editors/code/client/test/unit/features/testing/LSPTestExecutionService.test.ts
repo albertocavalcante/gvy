@@ -6,6 +6,7 @@ import * as sinon from "sinon";
 import { EventEmitter } from "events";
 import { PassThrough } from "stream";
 import proxyquire from "proxyquire";
+import type { TestSelectionDescriptor } from "../../../../src/features/testing/testTarget";
 
 interface LSPTestExecutionServiceInstance {
   runTestsWithCoverage: (
@@ -28,6 +29,7 @@ interface LSPTestExecutionServiceType {
     testService: unknown,
     logger: unknown,
     extensionPath: string,
+    describe: (item: FixtureItem) => TestSelectionDescriptor<FixtureItem>,
   ): LSPTestExecutionServiceInstance;
 }
 
@@ -85,6 +87,32 @@ interface PathMock {
 const unquoted = (args: string[]) =>
   args.map((arg) => arg.replace(/^"|"$/gu, ""));
 
+/** A finished build process for the separate coverage report step. */
+const reportProc = (code: number, output = "") => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  return {
+    pid: 456,
+    stdout,
+    stderr,
+    on: (event: string, callback: (code: number) => void) => {
+      if (event === "close") {
+        setTimeout(() => {
+          if (output) stderr.write(output);
+          setTimeout(() => callback(code), 10);
+        }, 0);
+      }
+    },
+    kill: () => {},
+  };
+};
+
+interface FixtureItem {
+  id: string;
+  parent?: FixtureItem;
+  children?: { forEach(callback: (item: FixtureItem) => void): void };
+}
+
 describe("LSPTestExecutionService", () => {
   let LSPTestExecutionService: LSPTestExecutionServiceType;
   let service: LSPTestExecutionServiceInstance;
@@ -121,7 +149,7 @@ describe("LSPTestExecutionService", () => {
       },
       window: {
         showErrorMessage: sandbox.stub().resolves(),
-        showWarningMessage: sandbox.stub(),
+        showWarningMessage: sandbox.stub().resolves(),
       },
       TestRunRequest: class {
         constructor(public include: unknown[]) {}
@@ -218,11 +246,77 @@ describe("LSPTestExecutionService", () => {
       },
     );
     LSPTestExecutionService = module.LSPTestExecutionService;
+    const metadata = new Map<
+      FixtureItem,
+      TestSelectionDescriptor<FixtureItem>
+    >();
     service = new LSPTestExecutionService(
       testServiceMock,
       loggerMock,
       "/extension/path",
+      (item) => metadata.get(item) ?? { kind: "unrepresentable" },
     );
+
+    // Older stream/Java-home fixtures deliberately use server names as IDs.
+    // Supply their intended discovery provenance and native parent/root links.
+    // The separate selection-boundary suite uses opaque IDs and explicit names.
+    const seedDiscovery = (input: unknown, controller: unknown) => {
+      const request = input as {
+        include?: FixtureItem[];
+        exclude?: FixtureItem[];
+      };
+      const ctrl = controller as {
+        items?: { forEach(callback: (item: FixtureItem) => void): void };
+      };
+      const roots = new Set<FixtureItem>();
+      ctrl.items?.forEach((item) => roots.add(item));
+      for (const item of [
+        ...(request.include ?? []),
+        ...(request.exclude ?? []),
+      ]) {
+        let root = item;
+        while (root.parent) root = root.parent;
+        roots.add(root);
+      }
+      const seen = new Set<FixtureItem>();
+      const visit = (item: FixtureItem) => {
+        if (seen.has(item)) return;
+        seen.add(item);
+        const children: FixtureItem[] = [];
+        item.children?.forEach((child) => {
+          child.parent = item;
+          children.push(child);
+          visit(child);
+        });
+        metadata.set(
+          item,
+          item.parent
+            ? {
+                kind: "feature",
+                test: item.id.slice(item.parent.id.length + 1),
+              }
+            : {
+                kind: "suite",
+                suite: item.id,
+                completeChildren: item.children ? children : undefined,
+              },
+        );
+      };
+      for (const root of roots) visit(root);
+      for (const item of request.include ?? [])
+        if (!seen.has(item)) visit(item);
+      ctrl.items = { forEach: (callback) => roots.forEach(callback) };
+    };
+    const runTests = service.runTests.bind(service);
+    service.runTests = (request, token, controller) => {
+      seedDiscovery(request, controller);
+      return runTests(request, token, controller);
+    };
+    const runWithCoverage = service.runTestsWithCoverage.bind(service);
+    service.runTestsWithCoverage = (request, token, controller, coverage) => {
+      seedDiscovery(request, controller);
+      return runWithCoverage(request, token, controller, coverage);
+    };
   });
 
   afterEach(() => {
@@ -321,14 +415,141 @@ describe("LSPTestExecutionService", () => {
         coverageServiceMock,
       );
 
-      // Verify spawn was called with jacocoTestReport appended
-      assert.ok(cpMock.spawn.calledOnce);
-      const spawnArgs = cpMock.spawn.getCall(0).args;
-      const args = spawnArgs[1];
+      // Tests run first without the report; the report is its own step.
+      assert.strictEqual(cpMock.spawn.callCount, 2);
       assert.ok(
-        unquoted(args).includes("jacocoTestReport"),
-        "Should append jacocoTestReport for Gradle",
+        !unquoted(cpMock.spawn.getCall(0).args[1]).includes("jacocoTestReport"),
+        "The test step must not include the report task",
       );
+      const reportArgs = unquoted(cpMock.spawn.getCall(1).args[1]);
+      assert.ok(
+        reportArgs.includes("jacocoTestReport"),
+        "Should run jacocoTestReport as a second step for Gradle",
+      );
+      assert.ok(!reportArgs.includes("--tests"));
+      const at = reportArgs.indexOf("jacocoTestReport");
+      assert.deepStrictEqual(reportArgs.slice(at, at + 3), [
+        "jacocoTestReport",
+        "-x",
+        "test",
+      ]);
+      assert.ok(coverageServiceMock.addCoverageToRun.calledOnce);
+    });
+
+    it("keeps the test results and shows one message when the jacoco plugin is not applied", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/gradlew",
+        args: ["test", "--tests", "com.example.MySpec"],
+        cwd: "/workspace",
+        env: {},
+      });
+      cpMock.spawn
+        .onCall(1)
+        .returns(
+          reportProc(
+            1,
+            "* What went wrong:\nTask 'jacocoTestReport' not found in root project 'app'.\n",
+          ),
+        );
+
+      await service.runTestsWithCoverage(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+        coverageServiceMock,
+      );
+
+      assert.strictEqual(cpMock.spawn.callCount, 2, "tests ran, then report");
+      const output = testRunMock.appendOutput
+        .getCalls()
+        .map((call) => String(call.args[0]));
+      const unavailable = output.filter((line) =>
+        line.includes("the jacoco plugin is not applied"),
+      );
+      assert.strictEqual(unavailable.length, 1);
+      assert.ok(!output.some((line) => line.includes("step failed")));
+      assert.ok(coverageServiceMock.addCoverageToRun.notCalled);
+      assert.ok(testRunMock.errored.notCalled, "not an error state");
+    });
+
+    it("reports another report-step failure as a coverage failure only", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/gradlew",
+        args: ["test", "--tests", "com.example.MySpec"],
+        cwd: "/workspace",
+        env: {},
+      });
+      cpMock.spawn
+        .onCall(1)
+        .returns(
+          reportProc(1, "Execution failed for task ':jacocoTestReport'."),
+        );
+
+      await service.runTestsWithCoverage(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+        coverageServiceMock,
+      );
+
+      const output = testRunMock.appendOutput
+        .getCalls()
+        .map((call) => String(call.args[0]));
+      assert.ok(
+        output.some((line) => line.includes("Coverage report step failed")),
+      );
+      assert.ok(!output.some((line) => line.includes("plugin is not applied")));
+      assert.ok(coverageServiceMock.addCoverageToRun.notCalled);
+      assert.ok(testRunMock.errored.notCalled, "test results are unaffected");
+    });
+
+    it("shows the unavailable message when Maven has no jacoco plugin", async () => {
+      const testItem = {
+        id: "com.example.MyTest",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/mvnw",
+        args: ["test", "-Dtest=com.example.MyTest"],
+        cwd: "/workspace",
+        env: {},
+      });
+      testServiceMock.getTestResults.resolves({ results: [] });
+      cpMock.spawn
+        .onCall(1)
+        .returns(
+          reportProc(
+            1,
+            "No plugin found for prefix 'jacoco' in the current project",
+          ),
+        );
+
+      await service.runTestsWithCoverage(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+        coverageServiceMock,
+      );
+
+      assert.ok(
+        testRunMock.appendOutput
+          .getCalls()
+          .some((call) =>
+            String(call.args[0]).includes("plugin is not applied"),
+          ),
+      );
+      assert.ok(coverageServiceMock.addCoverageToRun.notCalled);
     });
 
     it("should append jacoco:report for Maven projects", async () => {
@@ -356,10 +577,9 @@ describe("LSPTestExecutionService", () => {
         coverageServiceMock,
       );
 
-      // Verify spawn was called with jacoco:report appended
-      assert.ok(cpMock.spawn.calledOnce);
-      const spawnArgs = cpMock.spawn.getCall(0).args;
-      const args = spawnArgs[1];
+      // Verify the report runs as a second step after the tests
+      assert.strictEqual(cpMock.spawn.callCount, 2);
+      const args = cpMock.spawn.getCall(1).args[1];
       assert.ok(
         args.some(
           (arg: string) => arg.replace(/^"|"$/gu, "") === "jacoco:report",
@@ -546,7 +766,7 @@ describe("LSPTestExecutionService", () => {
           coverageServiceMock,
         );
 
-        const spawnArgs = cpMock.spawn.getCall(0).args;
+        const spawnArgs = cpMock.spawn.getCall(1).args;
         const args = spawnArgs[1];
 
         if (testCase.expectGradle) {
@@ -662,6 +882,37 @@ describe("LSPTestExecutionService", () => {
         cpMock.spawn.firstCall.args[1].includes(
           process.platform === "win32" ? `"${args[1]}"` : args[1],
         ),
+      );
+    });
+
+    it("asks for Surefire results written no earlier than the Maven command start", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/usr/bin/mvn",
+        args: ["test", "-Dtest=com.example.MySpec"],
+        cwd: "/workspace",
+        env: {},
+      });
+      testServiceMock.getTestResults.resolves({ results: [] });
+
+      const before = Date.now();
+      await service.runTests(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+      );
+      const after = Date.now();
+
+      assert.ok(testServiceMock.getTestResults.calledOnce);
+      const since = testServiceMock.getTestResults.firstCall.args[1];
+      assert.strictEqual(typeof since, "number");
+      assert.ok(
+        since >= before && since <= after,
+        "an older report must not be read as this run's result",
       );
     });
 
@@ -1505,11 +1756,15 @@ describe("LSPTestExecutionService", () => {
         uri,
         children: { forEach: () => {} },
       };
+      const remaining = { ...child, id: "suite.remaining", label: "remaining" };
       const suite = {
         id: "suite",
         label: "suite",
         uri,
-        children: { forEach: (f: (item: unknown) => void) => f(child) },
+        children: {
+          forEach: (f: (item: unknown) => void) =>
+            [child, remaining].forEach(f),
+        },
       };
       const token = {
         isCancellationRequested: false,
@@ -1565,7 +1820,14 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
-      assert.ok(run.errored.calledWith(suite));
+      assert.ok(run.errored.calledWith(remaining));
+      assert.ok(
+        testServiceMock.getTestCommand.calledOnceWithExactly(
+          "file:///w/a",
+          "suite",
+          "remaining",
+        ),
+      );
       assert.ok(!run.errored.calledWith(child));
     });
   });
@@ -1832,9 +2094,17 @@ describe("LSPTestExecutionService", () => {
         uri: item.uri,
         children: { forEach: () => {} },
       };
+      const remaining = {
+        ...child,
+        id: `${item.id}.remaining`,
+        label: "remaining",
+      };
       const suite = {
         ...item,
-        children: { forEach: (f: (value: unknown) => void) => f(child) },
+        children: {
+          forEach: (f: (value: unknown) => void) =>
+            [child, remaining].forEach(f),
+        },
       };
       testServiceMock.getTestResults.resolves({
         results: [
@@ -1860,6 +2130,10 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
+      assert.ok(
+        testServiceMock.getTestResults.calledOnce,
+        "exercise report filtering after a real selection",
+      );
       assert.ok(!run.passed.calledWith(child));
       assert.ok(!run.failed.calledWith(child));
       assert.ok(!run.errored.calledWith(child));
@@ -1946,6 +2220,285 @@ describe("LSPTestExecutionService", () => {
 
       assert.ok(proc.kill.calledOnce, "build process should be killed");
       assert.ok(run.end.calledOnce);
+    });
+  });
+
+  describe("suites expanded into remaining features", () => {
+    const uri = { toString: () => "file:///w/a" };
+    const leaf = (id: string, label: string) => ({
+      id,
+      label,
+      uri,
+      children: { forEach: () => {} },
+    });
+    function setup(executable: string, featureNames: string[]) {
+      const features = featureNames.map((name) => leaf(`suite.${name}`, name));
+      const created: unknown[] = [];
+      const suite = {
+        id: "suite",
+        label: "suite",
+        uri,
+        children: {
+          forEach: (f: (item: unknown) => void) => features.forEach(f),
+          add: (child: unknown) => created.push(child),
+        },
+      };
+      const token = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+      const run = {
+        enqueued: sandbox.stub(),
+        started: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token,
+      };
+      const controller = {
+        createTestRun: () => run,
+        createTestItem: (id: string, label: string) => leaf(id, label),
+        items: { forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable,
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      const newProc = () =>
+        Object.assign(new EventEmitter(), {
+          pid: 123 as number | undefined,
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          kill: sandbox.stub(),
+        });
+      const finish = async (proc: ReturnType<typeof newProc>) => {
+        proc.stdout.end();
+        proc.stderr.end();
+        await Promise.all([
+          new Promise((resolve) => proc.stdout.on("close", resolve)),
+          new Promise((resolve) => proc.stderr.on("close", resolve)),
+        ]);
+        proc.emit("close", 0);
+      };
+      return {
+        features,
+        suite,
+        created,
+        token,
+        run,
+        controller,
+        newProc,
+        finish,
+      };
+    }
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+    it("keeps the suite as event context for unrolled rows", async () => {
+      const {
+        features,
+        suite,
+        created,
+        token,
+        run,
+        controller,
+        newProc,
+        finish,
+      } = setup("/w/gradlew", ["a", "b"]);
+      const proc = newProc();
+      cpMock.spawn.returns(proc);
+      const done = service.runTests(
+        { include: [suite], exclude: [features[1]] },
+        token,
+        controller,
+      );
+      await tick();
+      proc.stdout.write(
+        JSON.stringify({
+          event: "testFinished",
+          id: "suite.row #0",
+          name: "row #0",
+          parent: "suite",
+          result: "SUCCESS",
+          duration: 1,
+        }) + "\n",
+      );
+      await finish(proc);
+      await done;
+      assert.strictEqual(created.length, 1, "row attached under the suite");
+      assert.ok(run.passed.calledWith(created[0]));
+      assert.ok(!run.enqueued.calledWith(suite), "suite is context only");
+    });
+
+    it("applies each Maven command's report before the next rewrites it", async () => {
+      const { features, suite, token, run, controller, newProc, finish } =
+        setup("/w/mvnw", ["a", "b", "c"]);
+      const first = newProc();
+      const second = newProc();
+      cpMock.spawn.onFirstCall().returns(first);
+      cpMock.spawn.onSecondCall().returns(second);
+      const report = (item: { id: string; label: string }) => ({
+        results: [
+          {
+            testId: item.id,
+            name: item.label,
+            status: "SUCCESS",
+            durationMs: 1,
+          },
+        ],
+      });
+      // Both commands write the same report file, so each read sees only its own.
+      testServiceMock.getTestResults
+        .onFirstCall()
+        .resolves(report(features[0]));
+      testServiceMock.getTestResults
+        .onSecondCall()
+        .resolves(report(features[1]));
+      const done = service.runTests(
+        { include: [suite], exclude: [features[2]] },
+        token,
+        controller,
+      );
+      await tick();
+      await finish(first);
+      await tick();
+      await finish(second);
+      await done;
+      assert.ok(run.passed.calledWith(features[0]));
+      assert.ok(run.passed.calledWith(features[1]));
+    });
+  });
+
+  describe("build exit status", () => {
+    const uri = { toString: () => "file:///w/a" };
+    const leaf = (id: string, label: string) => ({
+      id,
+      label,
+      uri,
+      children: { forEach: () => {} },
+    });
+    function setup() {
+      const features = [leaf("suite.a", "a"), leaf("suite.b", "b")];
+      const suite = {
+        id: "suite",
+        label: "suite",
+        uri,
+        children: {
+          forEach: (f: (item: unknown) => void) => features.forEach(f),
+        },
+      };
+      const token = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+      const run = {
+        enqueued: sandbox.stub(),
+        started: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token,
+      };
+      const controller = {
+        createTestRun: () => run,
+        items: { forEach: () => {} },
+      };
+      const proc = Object.assign(new EventEmitter(), {
+        pid: 123 as number | undefined,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: sandbox.stub(),
+      });
+      // The report step is a separate process that finishes cleanly.
+      cpMock.spawn.callsFake((_executable: string, args: string[]) =>
+        unquoted(args).includes("jacocoTestReport") ? reportProc(0) : proc,
+      );
+      testServiceMock.getTestCommand.resolves({
+        executable: "/w/gradlew",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      const coverage = { addCoverageToRun: sandbox.stub().resolves() };
+      const finish = async (code: number, events: object[] = []) => {
+        await new Promise((resolve) => setImmediate(resolve));
+        for (const event of events)
+          proc.stdout.write(JSON.stringify(event) + "\n");
+        proc.stdout.end();
+        proc.stderr.end();
+        await Promise.all([
+          new Promise((resolve) => proc.stdout.on("close", resolve)),
+          new Promise((resolve) => proc.stderr.on("close", resolve)),
+        ]);
+        proc.emit("close", code);
+      };
+      return { features, suite, token, run, controller, coverage, finish };
+    }
+
+    it("errors tests that reported nothing when Gradle exits non-zero", async () => {
+      const { features, suite, token, run, controller, finish } = setup();
+      const done = service.runTests({ include: [suite] }, token, controller);
+      await finish(1);
+      await done;
+      assert.ok(run.errored.calledWith(features[0]));
+      assert.ok(run.errored.calledWith(features[1]));
+      assert.ok(!run.errored.calledWith(suite), "only leaves are marked");
+    });
+
+    it("keeps real results when Gradle exits non-zero because tests failed", async () => {
+      const { features, suite, token, run, controller, finish } = setup();
+      const done = service.runTests({ include: [suite] }, token, controller);
+      await finish(1, [
+        {
+          event: "testFinished",
+          id: "suite.a",
+          name: "a",
+          result: "FAILURE",
+          duration: 1,
+        },
+        {
+          event: "testFinished",
+          id: "suite.b",
+          name: "b",
+          result: "SUCCESS",
+          duration: 1,
+        },
+      ]);
+      await done;
+      assert.ok(run.failed.calledWith(features[0]));
+      assert.ok(run.passed.calledWith(features[1]));
+      assert.ok(run.errored.notCalled, "no extra incomplete error");
+    });
+
+    it("skips coverage after a failed build and adds it after a clean one", async () => {
+      const failed = setup();
+      const failedRun = service.runTestsWithCoverage(
+        { include: [failed.suite] },
+        failed.token,
+        failed.controller,
+        failed.coverage,
+      );
+      await failed.finish(1);
+      await failedRun;
+      assert.ok(failed.coverage.addCoverageToRun.notCalled);
+
+      const clean = setup();
+      const cleanRun = service.runTestsWithCoverage(
+        { include: [clean.suite] },
+        clean.token,
+        clean.controller,
+        clean.coverage,
+      );
+      await clean.finish(0);
+      await cleanRun;
+      assert.ok(clean.coverage.addCoverageToRun.calledOnce);
     });
   });
 });

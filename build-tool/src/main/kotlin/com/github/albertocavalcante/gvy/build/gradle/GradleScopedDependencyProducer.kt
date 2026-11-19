@@ -18,6 +18,7 @@ import org.gradle.tooling.ResultHandler
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -107,14 +108,61 @@ class GradleScopedDependencyProducer(
         Result.failure(failure)
     }
 
-    private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? {
+    /** Fetches a new execution observation; callers must gate this operation on workspace trust. */
+    suspend fun resolveExecutionContexts(
+        projectDirectory: Path,
+        timeout: Duration? = null,
+        javaHome: Path? = null,
+    ): List<GradleExecutionContext>? = withContext(Dispatchers.IO) {
+        val directory = initScriptDirectory ?: return@withContext null
+        try {
+            val script = GradleScopedInitScript.install(directory)
+            suspend fun read(): List<GradleExecutionContext>? {
+                val model = fetchModel(projectDirectory, script, GradleExecutionModel::class.java, javaHome)
+                    ?: return null
+                return GradleExecutionProjection.project(model)
+            }
+            if (timeout == null) read() else withTimeoutOrNull(timeout) { read() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: GradleConnectionException) {
+            unavailableExecution(failure)
+        } catch (failure: IOException) {
+            unavailableExecution(failure)
+        } catch (failure: IllegalArgumentException) {
+            unavailableExecution(failure)
+        } catch (failure: IllegalStateException) {
+            unavailableExecution(failure)
+        } catch (failure: ClassCastException) {
+            unavailableExecution(failure)
+        } catch (failure: UnsupportedOperationException) {
+            unavailableExecution(failure)
+        }
+    }
+
+    private suspend fun unavailableExecution(failure: Exception): List<GradleExecutionContext>? {
+        coroutineContext.ensureActive()
+        logger.warn(failure) { "Gradle execution observation unavailable" }
+        return null
+    }
+
+    private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? =
+        fetchModel(projectDirectory, script, GradleScopedDependencyModel::class.java, javaHome)
+
+    private suspend fun <T> fetchModel(
+        projectDirectory: Path,
+        script: Path,
+        type: Class<T>,
+        modelJavaHome: Path?,
+    ): T? {
         val cancellation = GradleConnector.newCancellationTokenSource()
-        // The lease spans the whole asynchronous operation so the idle sweep cannot close the connection under it.
-        return connectionFactory.acquire(projectDirectory, null).use { lease ->
+        val lease = connectionFactory.acquire(projectDirectory, null)
+        var configured = false
+        val builder = try {
             // The idle timeout is what bounds the daemon this may start; it is not part of daemon compatibility, so
             // reuse of the user's own daemon is unchanged.
-            val builder = lease.connection
-                .model(GradleScopedDependencyModel::class.java)
+            val model = lease.connection
+                .model(type)
                 .withArguments(
                     "--no-configure-on-demand",
                     "--init-script",
@@ -122,17 +170,48 @@ class GradleScopedDependencyProducer(
                     GradleOperationArguments.idleTimeoutArgument(daemonSettings),
                 )
                 .withCancellationToken(cancellation.token())
-            javaHome?.let { builder.setJavaHome(it.toFile()) }
-            suspendCancellableCoroutine<GradleScopedDependencyModel?> { continuation ->
-                continuation.invokeOnCancellation { cancellation.cancel() }
+            modelJavaHome?.let { model.setJavaHome(it.toFile()) }
+            configured = true
+            model
+        } finally {
+            if (!configured) lease.close()
+        }
+        return suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancellation.cancel() }
+            if (!continuation.isActive) {
+                lease.close()
+                return@suspendCancellableCoroutine
+            }
+            // Once launch begins, only its callback (or synchronous launch failure) acknowledges completion.
+            val completed = AtomicBoolean(false)
+            var launched = false
+            try {
                 builder.get(
-                    object : ResultHandler<GradleScopedDependencyModel> {
-                        override fun onComplete(result: GradleScopedDependencyModel?) = continuation.resume(result)
+                    object : ResultHandler<T> {
+                        override fun onComplete(result: T?) {
+                            if (completed.compareAndSet(false, true)) {
+                                try {
+                                    lease.close()
+                                } finally {
+                                    continuation.resume(result)
+                                }
+                            }
+                        }
 
-                        override fun onFailure(failure: GradleConnectionException) =
-                            continuation.resumeWithException(failure)
+                        override fun onFailure(failure: GradleConnectionException) {
+                            if (completed.compareAndSet(false, true)) {
+                                try {
+                                    lease.close()
+                                } finally {
+                                    continuation.resumeWithException(failure)
+                                }
+                            }
+                        }
                     },
                 )
+                launched = true
+            } finally {
+                if (!launched && completed.compareAndSet(false, true)) lease.close()
             }
         }
     }

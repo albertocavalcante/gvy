@@ -1,0 +1,180 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Native Benchmark Contract
+
+on:
+  pull_request:
+    paths:
+      - 'tools/perf/bench/**'
+      - 'tools/ci/check-rust-diagnostics.mjs'
+      - 'tools/ci/check-rust-diagnostics.test.mjs'
+      - 'tools/ci/read-evidence.mjs'
+      - 'tools/ci/read-evidence.test.mjs'
+      - 'tools/ci/windows-evidence.mjs'
+      - 'tools/ci/windows-evidence.test.mjs'
+      - 'tools/ci/windows-evidence-reader.c'
+      - 'tools/ci/fixtures/rustup-auto-install-warnings.txt'
+      - '.github/workflows/bench-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/perf/bench/**'
+      - 'tools/ci/check-rust-diagnostics.mjs'
+      - 'tools/ci/check-rust-diagnostics.test.mjs'
+      - 'tools/ci/read-evidence.mjs'
+      - 'tools/ci/read-evidence.test.mjs'
+      - 'tools/ci/windows-evidence.mjs'
+      - 'tools/ci/windows-evidence.test.mjs'
+      - 'tools/ci/windows-evidence-reader.c'
+      - 'tools/ci/fixtures/rustup-auto-install-warnings.txt'
+      - '.github/workflows/bench-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  native-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_TERM_COLOR: never
+      NODE_VERSION: '24.22.2'
+      RUST_VERSION: '1.96.1'
+      # Official rust-1.96.1-x86_64-unknown-linux-gnu.tar.xz.sha256.
+      RUST_ARCHIVE_SHA256: d29ccb1559a177c4e72291f6e5f629de7fe8885e7521ca47802627544b121e95
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install the verified Rust toolchain in an owned directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${RUNNER_TEMP:?}"
+          node_bin="${RUNNER_TOOL_CACHE:?}/node/${NODE_VERSION}/x64/bin"
+          test -x "$node_bin/node"
+          test "$("$node_bin/node" -p 'process.versions.node')" = "$NODE_VERSION"
+          log="${RUNNER_TEMP}/native-contract-install.log"
+          set +e
+          (
+            set -euo pipefail
+            archive="rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz"
+            download="${RUNNER_TEMP}/${archive}"
+            unpack="${RUNNER_TEMP}/benchmark-rust-source"
+            prefix="${RUNNER_TEMP}/benchmark-rust"
+            printf 'checksum rejection control\n' > "${RUNNER_TEMP}/checksum-control"
+            if printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "${RUNNER_TEMP}/checksum-control" | sha256sum --check --status; then
+              echo 'Checksum rejection control unexpectedly passed' >&2
+              exit 1
+            fi
+            curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 10 --max-time 300 \
+              --max-filesize 1073741824 --output "$download" "https://static.rust-lang.org/dist/${archive}"
+            printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "$download" | sha256sum --check --status
+            mkdir -p "$unpack"
+            tar --extract --xz --file "$download" --directory "$unpack"
+            "$unpack/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu/install.sh" \
+              --prefix="$prefix" --disable-ldconfig --without=rust-docs
+            printf '%s\n' "$prefix/bin" >> "$GITHUB_PATH"
+            printf '%s\n' "$node_bin" >> "$GITHUB_PATH"
+            rm "$download"
+            rm -rf "$unpack"
+          ) 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          diagnostic_exit=0
+          "$node_bin/node" tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+          printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+          if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+          if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+          exit "$diagnostic_exit"
+
+      - name: Verify exact tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="${RUNNER_TEMP}/native-contract-versions.log"
+          set +e
+          (
+            set -euo pipefail
+            test "$(rustc --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
+            test "$(cargo --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
+            rustc --version --verbose
+            cargo --version
+            node --version
+            test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
+          ) 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          diagnostic_exit=0
+          node tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+          printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+          if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+          if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+          exit "$diagnostic_exit"
+
+      - name: Test source pins and canonical diagnostic validation without native setup
+        run: node --test tools/ci/read-evidence.test.mjs tools/ci/check-rust-diagnostics.test.mjs tools/perf/bench/native-contract/*.test.mjs
+
+      - name: Verify the selected candidate and known secondary rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          secondary_exit=0
+          secondary_binary_sha256=''
+          for variant in primary secondary; do
+            export CARGO_TARGET_DIR="${RUNNER_TEMP}/native-contract-target/${variant}"
+            manifest="tools/perf/bench/native-contract/${variant}/Cargo.toml"
+            log="${RUNNER_TEMP}/native-contract-rust-${variant}.log"
+            set +e
+            (
+              set -euo pipefail
+              cargo fmt --manifest-path "$manifest" --check
+              cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+              cargo test --locked --manifest-path "$manifest"
+              cargo build --release --locked --manifest-path "$manifest"
+            ) 2>&1 | tee "$log"
+            codes=("${PIPESTATUS[@]}")
+            set -e
+            diagnostic_exit=0
+            node tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+            printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+            if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+            if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+            if (( diagnostic_exit != 0 )); then exit "$diagnostic_exit"; fi
+            if [[ "$variant" == primary ]]; then
+              node tools/perf/bench/native-contract/run.mjs primary > "${RUNNER_TEMP}/native-contract-primary.json"
+            else
+              secondary_binary_sha256="$(sha256sum "${CARGO_TARGET_DIR}/release/gvy-native-secondary-contract" | cut -d ' ' -f 1)"
+              if node tools/perf/bench/native-contract/run.mjs secondary --attempt > "${RUNNER_TEMP}/native-contract-secondary.json"; then
+                secondary_exit=0
+              else
+                secondary_exit=$?
+              fi
+            fi
+          done
+          node tools/perf/bench/native-contract/feasibility.mjs \
+            "${RUNNER_TEMP}/native-contract-primary.json" "${RUNNER_TEMP}/native-contract-secondary.json" \
+            "$secondary_exit" "$secondary_binary_sha256" > "${RUNNER_TEMP}/native-contract-feasibility.json"
+
+      - name: Retain public-fixture attempt evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-contract-attempt-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/native-contract-*.json
+            ${{ runner.temp }}/native-contract-*.log
+            ${{ runner.temp }}/native-contract-*.status
+          if-no-files-found: error
+          retention-days: 7

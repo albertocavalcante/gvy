@@ -58,6 +58,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
+          # Never cache Gradle artifact transforms: the entry is ~4.5 GB, restored by every job and
+          # rewritten on main; it rebuilds from the dependency cache. See #2166.
+          gradle-home-cache-excludes: |
+            caches/transforms-*
+            caches/*/transforms
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Setup Node.js
@@ -90,6 +95,8 @@ jobs:
       JAVA_OPTS: -Xmx2g
       GVY_GRADLE_MEMORY_PROBE: 'true'
       GVY_GRADLE_MEMORY_PROFILE: nightly
+      # Pinned file-execution runtime staged by Gradle; the extension tests and packaging need it (#2183).
+      GVY_RUNTIME_SOURCE: ${{ github.workspace }}/gls/build/editor-server/runtime
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -110,6 +117,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
+          # Never cache Gradle artifact transforms: the entry is ~4.5 GB, restored by every job and
+          # rewritten on main; it rebuilds from the dependency cache. See #2166.
+          gradle-home-cache-excludes: |
+            caches/transforms-*
+            caches/*/transforms
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Setup Node.js
@@ -130,7 +142,7 @@ jobs:
       - name: Test and build current server
         run: >-
           node tools/ci/run-gradle.mjs --report-root "${RUNNER_TEMP}/nightly-gradle-evidence" --producer nightly-server
-          --daemon test :tests:e2eTest :gls:stageEditorServer --stacktrace --max-workers=2
+          --daemon test :tests:e2eTest :gls:stageEditorServer stageFileExecutionRuntime --stacktrace --max-workers=2
 
       - name: Upload Gradle diagnostic evidence
         if: ${{ !cancelled() }}
@@ -152,6 +164,7 @@ jobs:
       - name: Build and test extension with current server
         working-directory: editors/code
         run: |
+          pnpm run prepare-runtime
           pnpm run compile
           xvfb-run -a pnpm run test:all
         env:

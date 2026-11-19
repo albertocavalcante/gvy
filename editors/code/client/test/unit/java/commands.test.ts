@@ -540,6 +540,31 @@ describe("Java Commands", () => {
         );
       });
 
+      it("should not prompt itself when the value changes (watcher prompts)", async () => {
+        const mockJdks = [
+          {
+            path: "/jdk17",
+            version: 17,
+            source: "java_home",
+            sourceDescription: "JAVA_HOME",
+          },
+        ];
+        mockFinder.findAllJdks.resolves(mockJdks);
+        mockVscode.window.showQuickPick.resolves({
+          jdk: mockJdks[0],
+          label: "Java 17",
+        });
+        mockVscode.workspace.getConfiguration.returns({
+          get: sinon.stub().returns("/old-jdk"),
+          update: sinon.stub().resolves(),
+        });
+
+        const result = await commandsModule.configureJava(undefined, "lsp");
+
+        assert.isTrue(result);
+        assert.isFalse(mockVscode.window.showInformationMessage.called);
+      });
+
       it("should offer to restart server after configuration", async () => {
         const mockJdks = [
           {
@@ -549,6 +574,10 @@ describe("Java Commands", () => {
             sourceDescription: "JAVA_HOME",
           },
         ];
+        mockVscode.workspace.getConfiguration.returns({
+          get: sinon.stub().returns("/jdk17"),
+          update: sinon.stub().resolves(),
+        });
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves({
           jdk: mockJdks[0],
@@ -574,6 +603,10 @@ describe("Java Commands", () => {
             sourceDescription: "JAVA_HOME",
           },
         ];
+        mockVscode.workspace.getConfiguration.returns({
+          get: sinon.stub().returns("/jdk17"),
+          update: sinon.stub().resolves(),
+        });
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves({
           jdk: mockJdks[0],
@@ -597,6 +630,10 @@ describe("Java Commands", () => {
             sourceDescription: "JAVA_HOME",
           },
         ];
+        mockVscode.workspace.getConfiguration.returns({
+          get: sinon.stub().returns("/jdk17"),
+          update: sinon.stub().resolves(),
+        });
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves({
           jdk: mockJdks[0],

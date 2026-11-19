@@ -7,7 +7,13 @@ import * as path from "path";
 import * as fs from "fs";
 import { createBoundedLines, pipeBoundedLines } from "../../utils/boundedLines";
 import { ITestExecutionService } from "./ITestExecutionService";
-import { resolveTestTarget, selectRunItems } from "./testTarget";
+import {
+  planRunItems,
+  RefusalReason,
+  RefusedSelection,
+  TestSelectionDescriptor,
+  TestTarget,
+} from "./testTarget";
 import {
   buildProcessInvocation,
   buildToolOf,
@@ -18,6 +24,14 @@ import {
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 import { CoverageService } from "./CoverageService";
+import {
+  COVERAGE_REPORT_UNAVAILABLE,
+  coverageReportCommand,
+  isJacocoPluginMissing,
+} from "./coverageReport";
+
+/** How much of a report command's output is kept for diagnostics. */
+const REPORT_OUTPUT_LIMIT = 8192;
 
 interface TestRunOptions {
   withCoverage?: boolean;
@@ -82,6 +96,19 @@ function createHttpBlockerMatcher(
 /** The build command for a test item cannot be spawned safely. */
 class UnrunnableCommandError extends Error {}
 
+const REFUSAL_MESSAGES: Readonly<Record<RefusalReason, string>> = {
+  "unrunnable-iteration":
+    "A single test iteration cannot be run on its own. Run its whole test instead.",
+  "excluded-iteration":
+    "An excluded test iteration may belong to it, and a run cannot leave out a single iteration. Exclude the whole test instead.",
+  "ambiguous-feature-name":
+    "A test with the same name (an overload) is excluded, and tests that share a name cannot be run apart. Run or exclude them together.",
+};
+
+function itemName(item: vscode.TestItem): string {
+  return item.label || item.id;
+}
+
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
 
@@ -89,6 +116,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     private readonly testService: TestService,
     private readonly logger: vscode.OutputChannel,
     extensionPath: string,
+    private readonly describeItem: (
+      item: vscode.TestItem,
+    ) => TestSelectionDescriptor<vscode.TestItem>,
   ) {
     this.initScriptPath = path.join(
       extensionPath,
@@ -128,134 +158,178 @@ export class LSPTestExecutionService implements ITestExecutionService {
     // the run's own token is what Test Explorer's Stop button cancels.
     const tokens = [token, run.token];
     const isCancelled = () => tokens.some((t) => t.isCancellationRequested);
-    const consumer = new TestEventConsumer(run, this.logger, testController);
-    const testsToRun = selectRunItems(
-      request.include,
-      request.exclude,
-      testController.items,
-    );
-
-    // Register requested items and their descendants so events for child
-    // tests update the existing items instead of replacing them.
-    for (const item of this.collectAllTestItems(testsToRun)) {
-      consumer.registerTestItem(item.id, item);
-    }
-    for (const item of testsToRun) {
-      run.enqueued(item);
-    }
-
+    let consumer: TestEventConsumer | undefined;
+    const cancellationSubscriptions: vscode.Disposable[] = [];
     try {
-      // Group tests by suite/file to minimize LSP calls if possible,
-      // but for now, we'll process the first item to get the command
-      // and assume the command runs all requested tests if we pass them effectively.
-      // Actually, LSP 'runTest' might handle one test at a time or a suite.
-      // If the user selected multiple unrelated tests, we might need multiple runs.
-      // For simplicity and to match current behavior, we'll assume they belong to the same project context.
+      if (isCancelled()) return;
+      const plan = planRunItems(
+        request.include,
+        request.exclude,
+        testController.items,
+        this.describeItem,
+      );
+      if (plan.kind === "unsupported") {
+        const message =
+          plan.reason === "incomplete-suite"
+            ? "Cannot run this selection: discovery has not established all suite children. Refresh tests and try again."
+            : "Cannot run this selection exactly: the test tree changed or contradicts discovery. Refresh tests and try again.";
+        // Mark the cause only when the user asked to run it; an excluded or
+        // stale item keeps its status and is named in the output instead.
+        const requested: vscode.TestItem[] = [];
+        if (request.include) requested.push(...request.include);
+        else testController.items.forEach((item) => requested.push(item));
+        if (requested.includes(plan.item)) {
+          this.markErrored(run, plan.item, message);
+        }
+        this.reportPlanningFailure(
+          run,
+          `${message} Nothing was run. Cause: ${itemName(plan.item)}`,
+        );
+        return;
+      }
+      this.reportRefusedSelections(run, plan.refused);
+      if (plan.selections.length === 0) return;
+      // Validate the entire selection before requesting any command. IDs are
+      // opaque UI identity; targets were bound from discovery metadata.
+      const targets: {
+        item: vscode.TestItem;
+        target: Readonly<TestTarget>;
+        uri: string;
+      }[] = [];
+      for (const { item, target } of plan.selections) {
+        const uri = item.uri?.toString();
+        if (!uri) {
+          this.reportPlanningFailure(
+            run,
+            "Cannot run this selection: a test has no source URI. Refresh tests and try again.",
+          );
+          return;
+        }
+        targets.push({ item, target, uri });
+      }
 
-      // TODO: If the request contains multiple distinct items, the current LSP API
-      // might need to be called for each, OR we trust the LSP to build a command for all.
-      // The current `groovy/runTest` takes a single URI/Suite/Test.
-      // So if we have multiple items, we might need to iterate.
-      // However, usually `args` returned by LSP can be manipulated or we call it once.
-
-      // If we have mixed items, running them all in one go is tricky if they require different commands.
-      // We'll iterate through items and run them sequentially if they yield different commands,
-      // or try to batch them.
-      // For now, let's implement the loop:
+      const prepared: {
+        item: vscode.TestItem;
+        command: TestCommand;
+        invocation: ProcessInvocation;
+      }[] = [];
+      // Stop must release the UI run even when command generation does not
+      // settle. Promise.race also observes a losing lookup's later rejection.
+      const lookupCancelled = Symbol("cancelled test command lookup");
+      const cancelled = new Promise<typeof lookupCancelled>((resolve) => {
+        for (const cancellationToken of tokens) {
+          cancellationSubscriptions.push(
+            cancellationToken.onCancellationRequested(() =>
+              resolve(lookupCancelled),
+            ),
+          );
+        }
+      });
+      for (const { item, target, uri } of targets) {
+        if (isCancelled()) return;
+        const command = await Promise.race([
+          this.testService.getTestCommand(uri, target.suite, target.test),
+          cancelled,
+        ]);
+        if (command === lookupCancelled || isCancelled()) return;
+        if (!command) {
+          const message =
+            "No test execution command was returned. The entire selection was cancelled before starting any tests.";
+          run.errored(item, new vscode.TestMessage(message));
+          this.reportPlanningFailure(run, message);
+          return;
+        }
+        // Coverage runs the tests alone; the report is a separate step below.
+        const executableCommand = { ...command, args: [...command.args] };
+        try {
+          prepared.push({
+            item,
+            command: executableCommand,
+            invocation: this.prepareInvocation(executableCommand),
+          });
+        } catch (error) {
+          if (!(error instanceof UnrunnableCommandError)) throw error;
+          run.errored(item, new vscode.TestMessage(error.message));
+          this.reportPlanningFailure(run, error.message);
+          return;
+        }
+      }
+      if (isCancelled()) return;
+      const testsToRun = prepared.map(({ item }) => item);
+      consumer = new TestEventConsumer(run, this.logger, testController);
+      for (const item of this.collectAllTestItems(testsToRun)) {
+        consumer.registerTestItem(item.id, item);
+      }
+      // A suite expanded into its remaining features is not itself a target,
+      // but events for unrolled rows name it as their parent. Register the
+      // ancestors as event context only; they are not enqueued or executed.
+      const contextSeen = new Set<vscode.TestItem>();
+      for (const item of testsToRun) {
+        for (
+          let ancestor = item.parent;
+          ancestor && !contextSeen.has(ancestor);
+          ancestor = ancestor.parent
+        ) {
+          contextSeen.add(ancestor);
+          consumer.registerTestItem(ancestor.id, ancestor);
+        }
+      }
+      for (const item of testsToRun) run.enqueued(item);
 
       // Get workspace URI for LSP requests
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       const workspaceUri = workspaceFolder?.uri.toString() || "";
 
-      const healthyMavenItems: vscode.TestItem[] = [];
       const affectedByLoss = new Set<vscode.TestItem>();
-
-      for (const item of testsToRun) {
-        if (isCancelled()) break;
-
-        // Parse suite/test from Item ID
-        const uri = item.uri?.toString();
-        if (!uri) {
-          this.logger.appendLine(
-            `[Error] Test item ${item.id} has no URI. Skipping.`,
-          );
-          continue;
-        }
-
-        const { suite: suiteName, test: testName } = resolveTestTarget(item);
-
-        const command = await this.testService.getTestCommand(
-          uri,
-          suiteName,
-          testName,
-        );
-
-        if (!command) {
-          this.logger.appendLine(
-            `[Testing] LSP returned no test execution command for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
-          );
-          consumer.markTerminal(item);
-          run.errored(
-            item,
-            new vscode.TestMessage(
-              `No test execution command was returned for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
-            ),
-          );
-          continue;
-        }
-
-        // Execute the test command with optional coverage
-        const tool = buildToolOf(command.executable);
-        const isGradle = tool === "gradle";
-        const isMaven = tool === "maven";
-
-        // Clone command.args to avoid mutation
-        const coverageArgs = [...command.args];
-        if (options.withCoverage) {
-          // Append JaCoCo report generation
-          if (isGradle) {
-            coverageArgs.push("jacocoTestReport");
-          } else if (isMaven) {
-            // For Maven, add jacoco:report goal after test
-            // Requires jacoco-maven-plugin in pom.xml
-            coverageArgs.push("jacoco:report");
-          }
-        }
-
-        try {
-          const outcome = await this.executeCommand(
-            { ...command, args: coverageArgs },
-            consumer,
-            tokens,
-          );
-          if (outcome.incomplete) {
-            for (const affected of this.collectAllTestItems([item]))
-              affectedByLoss.add(affected);
-          }
-          // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
-          if (isMaven && outcome.spawned && !outcome.incomplete) {
-            healthyMavenItems.push(item);
-          }
-        } catch (error) {
-          if (!(error instanceof UnrunnableCommandError)) throw error;
-          this.logger.appendLine(`[Error] ${error.message}`);
-          consumer.markTerminal(item);
-          run.errored(item, new vscode.TestMessage(error.message));
-        }
-      }
-
+      // Leaves of commands that exited non-zero with a readable stream: tests
+      // that reported nothing (compile error, bad filter) get an error below.
+      const failedExitLeaves = new Set<vscode.TestItem>();
+      // Coverage is only meaningful when every command ran to a clean exit.
+      let allCommandsSucceeded = true;
       const excluded = new Set(this.collectAllTestItems(request.exclude ?? []));
 
-      // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
-      if (healthyMavenItems.length > 0 && !isCancelled()) {
-        await this.applyTestResults(
-          workspaceUri,
-          run,
-          healthyMavenItems,
+      for (const { item, command, invocation } of prepared) {
+        if (isCancelled()) break;
+        const isMaven = buildToolOf(command.executable) === "maven";
+
+        const outcome = await this.executeCommand(
+          command,
+          invocation,
           consumer,
-          affectedByLoss,
-          excluded,
+          tokens,
         );
+        if (outcome.incomplete || outcome.failedExit || !outcome.spawned) {
+          allCommandsSucceeded = false;
+        }
+        if (outcome.incomplete) {
+          for (const affected of this.collectAllTestItems([item]))
+            affectedByLoss.add(affected);
+        } else if (outcome.failedExit) {
+          for (const affected of this.collectAllTestItems([item])) {
+            if (this.isLeaf(affected)) failedExitLeaves.add(affected);
+          }
+        }
+        // The time filter proves a report is fresh, not that the run passed;
+        // do not apply reports to failed or incomplete executions.
+        // Apply right after each command: consecutive runs of one suite
+        // rewrite the same Surefire report file, so a later command would
+        // otherwise replace the earlier command's results before they are read.
+        if (
+          isMaven &&
+          outcome.spawned &&
+          !outcome.incomplete &&
+          !isCancelled()
+        ) {
+          await this.applyTestResults(
+            workspaceUri,
+            run,
+            [item],
+            consumer,
+            affectedByLoss,
+            excluded,
+            outcome.startedAt,
+          );
+        }
       }
 
       if (!isCancelled()) {
@@ -277,16 +351,105 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
       }
 
-      // After all tests complete, fetch and add coverage if requested
+      if (!isCancelled()) {
+        for (const item of failedExitLeaves) {
+          if (consumer.isTerminal(item) || excluded.has(item)) continue;
+          consumer.markTerminal(item);
+          run.errored(
+            item,
+            new vscode.TestMessage(
+              "The build exited with a non-zero status before reporting a result for this test. See the output for the cause.",
+            ),
+          );
+        }
+      }
+
+      // After all tests complete, fetch and add coverage if requested. The
+      // report on disk is the last successful run's when this one failed.
       if (options.withCoverage && options.coverageService && !isCancelled()) {
-        await options.coverageService.addCoverageToRun(run, workspaceUri);
+        if (allCommandsSucceeded) {
+          const reported = await this.runCoverageReports(
+            prepared.map(({ command }) => command),
+            tokens,
+            run,
+          );
+          if (reported && !isCancelled()) {
+            await options.coverageService.addCoverageToRun(run, workspaceUri);
+          }
+        } else {
+          const note =
+            "[COVERAGE] Skipped: the build failed or was incomplete, so the coverage report on disk would not belong to this run.";
+          this.logger.appendLine(note);
+          run.appendOutput(`${note}\r\n`);
+        }
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
+      run.appendOutput(`Test execution error: ${error}\r\n`);
     } finally {
-      consumer.clear();
-      run.end();
+      try {
+        consumer?.clear();
+      } finally {
+        try {
+          for (const subscription of cancellationSubscriptions)
+            subscription.dispose();
+        } finally {
+          run.end();
+        }
+      }
     }
+  }
+
+  /** Marks and names each item the plan could not run exactly; the rest still runs. */
+  private reportRefusedSelections(
+    run: vscode.TestRun,
+    refused: readonly RefusedSelection<vscode.TestItem>[],
+  ): void {
+    if (refused.length === 0) return;
+    for (const { item, reason } of refused) {
+      const message = `Not run: ${REFUSAL_MESSAGES[reason]}`;
+      this.markErrored(run, item, message);
+      const line = `[Testing] ${itemName(item)}: ${message}`;
+      this.logger.appendLine(line);
+      run.appendOutput(`${line}\r\n`);
+    }
+    this.reportPlanningFailure(
+      run,
+      `${refused.length} selected test item(s) cannot be run exactly and were not run. See the test output for each item and reason.`,
+    );
+  }
+
+  private markErrored(
+    run: vscode.TestRun,
+    item: vscode.TestItem,
+    message: string,
+  ): void {
+    try {
+      run.errored(item, new vscode.TestMessage(message));
+    } catch (error) {
+      this.logger.appendLine(
+        `[Testing] Could not mark ${item.id} errored: ${error}`,
+      );
+    }
+  }
+
+  private reportPlanningFailure(run: vscode.TestRun, message: string): void {
+    this.logger.appendLine(`[Testing] ${message}`);
+    run.appendOutput(`${message}\r\n`);
+    // This non-modal notification must not keep the TestRun open until dismissal.
+    void vscode.window
+      .showWarningMessage(message)
+      .then(undefined, (error: unknown) => {
+        this.logger.appendLine(
+          `Could not show test selection warning: ${error}`,
+        );
+      });
+  }
+
+  private isLeaf(item: vscode.TestItem): boolean {
+    let children = 0;
+    item.children.forEach(() => children++);
+    return children === 0;
   }
 
   /**
@@ -322,9 +485,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
     consumer: TestEventConsumer,
     affectedByLoss: ReadonlySet<vscode.TestItem>,
     excluded: ReadonlySet<vscode.TestItem>,
+    runStartedAt: number,
   ): Promise<void> {
     try {
-      const results = await this.testService.getTestResults(workspaceUri);
+      // Only reports this command wrote count; an older matching report must not decide an outcome.
+      const results = await this.testService.getTestResults(
+        workspaceUri,
+        runStartedAt,
+      );
       if (results.results.length === 0) {
         this.logger.appendLine(
           "[LSP] No test results found in Surefire reports",
@@ -554,16 +722,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
   }
 
-  private async executeCommand(
-    cmd: TestCommand,
-    consumer: TestEventConsumer,
-    tokens: readonly vscode.CancellationToken[],
-  ): Promise<{ spawned: boolean; incomplete: boolean }> {
-    const { executable, args, cwd, env } = cmd;
-    this.logger.appendLine(
-      `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
-    );
-
+  /** The process environment for a build command, with the configured project JDK applied. */
+  private resolveEnvironment(
+    env: Record<string, string> | undefined,
+  ): NodeJS.ProcessEnv {
     // Get project build JDK from settings
     const projectJavaHome = this.getProjectJavaHome();
 
@@ -580,12 +742,106 @@ export class LSPTestExecutionService implements ITestExecutionService {
         );
       }
     }
+    return resolvedEnv;
+  }
 
-    // Detect Build Tool by executable name
+  /**
+   * Runs the coverage report as its own step after the tests succeeded, once per
+   * distinct build command. Returns true when coverage data can be read. A
+   * missing JaCoCo plugin yields one clear message; any other failure is
+   * reported as a failure of this step only. Test results are never affected.
+   */
+  private async runCoverageReports(
+    testCommands: readonly TestCommand[],
+    tokens: readonly vscode.CancellationToken[],
+    run: vscode.TestRun,
+  ): Promise<boolean> {
+    const seen = new Set<string>();
+    let ok = true;
+    let reportedUnavailable = false;
+    const isCancelled = () =>
+      tokens.some((token) => token.isCancellationRequested);
+    for (const testCommand of testCommands) {
+      if (isCancelled()) return false;
+      const command = coverageReportCommand(testCommand);
+      if (!command) continue;
+      const key = `${command.executable}\0${command.cwd}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const outcome = await this.executeReportCommand(command, tokens);
+      if (outcome.exitCode === 0) continue;
+      // A cancelled run kills the report process; that is not a report failure.
+      if (isCancelled()) return false;
+      ok = false;
+      if (isJacocoPluginMissing(command.executable, outcome.output)) {
+        if (!reportedUnavailable) {
+          reportedUnavailable = true;
+          this.logger.appendLine(COVERAGE_REPORT_UNAVAILABLE);
+          run.appendOutput(`${COVERAGE_REPORT_UNAVAILABLE}\r\n`);
+        }
+      } else {
+        const note = `[COVERAGE] Coverage report step failed (${outcome.failure ?? `exit code ${outcome.exitCode}`}). Test results are unaffected.`;
+        this.logger.appendLine(note);
+        run.appendOutput(`${note}\r\n`);
+        if (outcome.output) {
+          run.appendOutput(`${outcome.output.replace(/\r?\n/gu, "\r\n")}\r\n`);
+        }
+      }
+    }
+    return ok;
+  }
+
+  /** Runs one report command, keeping only the tail of its output. */
+  private async executeReportCommand(
+    command: TestCommand,
+    tokens: readonly vscode.CancellationToken[],
+  ): Promise<{ exitCode: number | null; output: string; failure?: string }> {
+    let invocation: ProcessInvocation;
+    try {
+      invocation = this.prepareInvocation(command);
+    } catch (error) {
+      if (!(error instanceof UnrunnableCommandError)) throw error;
+      return { exitCode: null, output: "", failure: error.message };
+    }
+    this.logger.appendLine(
+      `[LSP] Executing: ${command.executable} ${command.args.join(" ")} (in ${command.cwd})`,
+    );
+    return new Promise((resolve) => {
+      const proc = cp.spawn(invocation.executable, invocation.args, {
+        cwd: command.cwd,
+        env: this.resolveEnvironment(command.env),
+        shell: invocation.shell,
+      });
+      const subscriptions = tokens.map((token) =>
+        token.onCancellationRequested(() => killProcessTree(proc)),
+      );
+      let output = "";
+      const keepTail = (chunk: Buffer | string) => {
+        output = (output + chunk.toString()).slice(-REPORT_OUTPUT_LIMIT);
+      };
+      proc.stdout.on("data", keepTail);
+      proc.stderr.on("data", keepTail);
+      let failure: string | undefined;
+      let settled = false;
+      const settle = (code: number | null) => {
+        if (settled) return;
+        settled = true;
+        subscriptions.forEach((subscription) => subscription.dispose());
+        resolve({ exitCode: failure ? code || 1 : code, output, failure });
+      };
+      proc.on("error", (error: Error) => {
+        failure = `could not start: ${error.message}`;
+        settle(null);
+      });
+      proc.on("close", settle);
+    });
+  }
+
+  private prepareInvocation(cmd: TestCommand): ProcessInvocation {
+    const { executable, args } = cmd;
     const tool = buildToolOf(executable);
     const isGradle = tool === "gradle";
     const isMaven = tool === "maven";
-
     let finalArgs = [...args];
 
     // Inject Gradle Init Script if it's Gradle
@@ -609,17 +865,40 @@ export class LSPTestExecutionService implements ITestExecutionService {
       }
     }
 
-    let invocation: ProcessInvocation;
     try {
-      invocation = buildProcessInvocation(executable, finalArgs);
+      return buildProcessInvocation(executable, finalArgs);
     } catch (error) {
       throw new UnrunnableCommandError(
         `This test cannot be run through the Windows command shell, which ` +
-          `${executable} needs. ${(error as Error).message}. If that is ` +
+          `${executable} needs. ${error instanceof Error ? error.message : String(error)}. If that is ` +
           `the test name, rename the test or run its enclosing class; if it ` +
           `is a path, move the project to a path without those characters.`,
       );
     }
+  }
+
+  private async executeCommand(
+    cmd: TestCommand,
+    invocation: ProcessInvocation,
+    consumer: TestEventConsumer,
+    tokens: readonly vscode.CancellationToken[],
+  ): Promise<{
+    spawned: boolean;
+    incomplete: boolean;
+    failedExit: boolean;
+    startedAt: number;
+  }> {
+    const startedAt = Date.now();
+    const { executable, args, cwd, env } = cmd;
+    this.logger.appendLine(
+      `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
+    );
+
+    const resolvedEnv = this.resolveEnvironment(env);
+
+    // Detect Build Tool by executable name
+    const tool = buildToolOf(executable);
+    const isMaven = tool === "maven";
 
     return new Promise((resolve) => {
       const proc = cp.spawn(invocation.executable, invocation.args, {
@@ -743,7 +1022,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
             `Test execution process exited with code ${code}`,
           );
         }
-        resolve({ spawned, incomplete: incomplete || (isMaven && code !== 0) });
+        resolve({
+          spawned,
+          incomplete: incomplete || (isMaven && code !== 0),
+          failedExit: code !== 0,
+          startedAt,
+        });
       });
 
       proc.on("error", (err) => {

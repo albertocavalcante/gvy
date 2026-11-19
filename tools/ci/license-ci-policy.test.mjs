@@ -39,7 +39,7 @@ test('license producer is unconditional and in the required readiness needs', ()
 
 test('Gradle jobs install the locked licensing environment', () => {
   for (const [file, jobs] of [
-    ['ci.yml', ['lint', 'build', 'e2e-test', 'dependency-check']],
+    ['ci.yml', ['check-paths', 'lint', 'build', 'e2e-test', 'dependency-check']],
     ['ci-launcher.yml', ['build-server', 'native']],
     ['nightly.yml', ['lint', 'build']],
     ['extension.yml', ['build-server']],

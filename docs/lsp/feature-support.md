@@ -1,7 +1,10 @@
 # LSP Feature Support
 
-Groovy LSP targets Language Server Protocol (LSP) 3.17. The matrix below is based on the official specification and the
-current server capabilities and implementations.
+Groovy LSP targets Language Server Protocol (LSP) 3.17. This matrix is a provisional description of development-source
+capabilities, not a release scorecard or a guarantee of correctness. The source inspected is commit `f101e5bf5`;
+validation against a feature scorecard is tracked in [#1550](https://github.com/albertocavalcante/gvy/issues/1550). The
+stable v0.5.4 VSIX bundles a 0.4.8 server; see the [release limitation](../installation.md#stable-release-limitation).
+Client support and project context also affect results.
 
 Legend:
 
@@ -101,6 +104,8 @@ Legend:
 | `workspace/codeLens/refresh`          | no      |                                                             |
 | `workspace/semanticTokens/refresh`    | no      |                                                             |
 | `workspace/inlayHint/refresh`         | no      |                                                             |
+
+<a id="window"></a>
 
 ## Window and telemetry
 

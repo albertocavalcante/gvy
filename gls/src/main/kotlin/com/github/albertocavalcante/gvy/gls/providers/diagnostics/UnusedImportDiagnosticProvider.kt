@@ -5,6 +5,8 @@ package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -34,8 +36,13 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
     // Enabled by default for better UX - this is a common feature users expect
     override val enabledByDefault: Boolean = true
 
-    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> =
-        diagnosticsFromAst(uri) { compilationService.getAst(uri) as? ModuleNode }
+    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = diagnosticsFromAst(uri) {
+        val parsed = compilationService.getCompiledSnapshot(uri)
+            ?.takeIf { snapshot -> snapshot.sourceText == content }
+            ?.parseResult ?: return@diagnosticsFromAst null
+        val ast = parsed.ast ?: return@diagnosticsFromAst null
+        ast to parsed.sourceAnnotations
+    }
 
     override suspend fun provideDiagnostics(
         uri: URI,
@@ -46,55 +53,43 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
         check(ast != null || !compilation.isSuccess) {
             "Completed compilation has no native AST for unused imports at $uri"
         }
-        ast
+        ast?.let { it to compilation.sourceAnnotations }
     }
 
-    private fun diagnosticsFromAst(uri: URI, getAst: () -> ModuleNode?): Flow<Diagnostic> = flow {
+    private fun diagnosticsFromAst(
+        uri: URI,
+        getAst: suspend () -> Pair<ModuleNode, SourceAnnotationIndex>?,
+    ): Flow<Diagnostic> = flow {
         logger.debug { "Checking unused imports for: $uri" }
 
-        val ast = getAst()
-        if (ast == null) {
+        val captured = getAst()
+        if (captured == null) {
             logger.debug { "No AST available for $uri, skipping unused import check" }
             return@flow
         }
 
-        val unusedImports = UnusedImportDetector.detectUnusedImports(ast)
+        val (ast, annotations) = captured
+        val unusedImports = UnusedImportDetector.detectUnusedImports(ast, annotations)
 
         logger.debug { "Found ${unusedImports.size} unused imports in $uri" }
 
         unusedImports.forEach { importNode ->
-            emit(createDiagnostic(importNode))
+            annotations.importRange(importNode)?.let { range -> emit(createDiagnostic(importNode, range)) }
         }
     }
 
-    @Suppress("CyclomaticComplexMethod") // Complexity 15 - diagnostic creation with edge cases
-    private fun createDiagnostic(importNode: ImportNode): Diagnostic {
-        // Defensive guard: Groovy AST uses 1-based line/column numbers; 0 or negative means "unknown position"
-        if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0 ||
-            importNode.lastLineNumber <= 0 || importNode.lastColumnNumber <= 0
-        ) {
-            // Fallback to safe default position if AST has invalid coordinates
-            return Diagnostic().apply {
-                this.range = Range(Position(0, 0), Position(0, 0))
-                this.severity = DiagnosticSeverity.Hint
-                this.message = "Unused import"
-                this.source = "Groovy"
-                this.tags = listOf(DiagnosticTag.Unnecessary)
-                this.code = Either.forLeft("unused-import")
-            }
-        }
-
-        // Line numbers in Groovy AST are 1-based, LSP is 0-based
-        // Groovy lastColumnNumber is 1-based and EXCLUSIVE; the 0-based exclusive LSP end is lastColumnNumber - 1
+    private fun createDiagnostic(importNode: ImportNode, sourceRange: ParserRange): Diagnostic {
         val range = Range(
-            Position(importNode.lineNumber - 1, importNode.columnNumber - 1),
-            Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber - 1),
+            Position(sourceRange.start.line, sourceRange.start.character),
+            Position(sourceRange.end.line, sourceRange.end.character),
         )
 
         // Build descriptive import name for static/aliased imports
         val importName = when {
             // Static import: show class.member (e.g., "Math.PI" not just "Math")
-            importNode.isStatic && !importNode.fieldName.isNullOrBlank() && !importNode.className.isNullOrBlank() ->
+            importNode.isStatic &&
+                !importNode.fieldName.isNullOrBlank() &&
+                !importNode.className.isNullOrBlank() ->
                 "${importNode.className}.${importNode.fieldName}"
             // Aliased import: show original as alias (e.g., "ArrayList as AL")
             !importNode.alias.isNullOrBlank() && !importNode.className.isNullOrBlank() ->

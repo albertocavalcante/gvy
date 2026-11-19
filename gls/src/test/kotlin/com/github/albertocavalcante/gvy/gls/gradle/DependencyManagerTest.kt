@@ -35,7 +35,7 @@ class DependencyManagerTest {
 
         val mockBuildTool = mockk<BuildTool> {
             coEvery { name } returns "Gradle"
-            coEvery { resolve(any(), any()) } throws toolchainError
+            coEvery { resolve(any(), any(), any()) } throws toolchainError
         }
 
         val buildToolManager = mockk<BuildToolManager> {
@@ -81,7 +81,7 @@ class DependencyManagerTest {
 
         val mockBuildTool = mockk<BuildTool> {
             coEvery { name } returns "Gradle"
-            coEvery { resolve(any(), any()) } throws jdkMismatchError
+            coEvery { resolve(any(), any(), any()) } throws jdkMismatchError
         }
 
         val buildToolManager = mockk<BuildToolManager> {

@@ -37,7 +37,7 @@ class DependencyTargetObservationTest {
     private val legacy = WorkspaceResolution(listOf(Path.of("/tmp/union.jar")), listOf(Path.of("/tmp/src")))
     private val tool = mockk<BuildTool> {
         coEvery { name } returns "Gradle"
-        coEvery { resolve(any(), any()) } returns legacy
+        coEvery { resolve(any(), any(), any()) } returns legacy
     }
     private val tools = mockk<BuildToolManager> { coEvery { detectBuildTool(any()) } returns tool }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -88,7 +88,7 @@ class DependencyTargetObservationTest {
     @Test
     fun `an unusable legacy resolution is not observed`() {
         val failed = WorkspaceResolution.failed("TEST", "broken build")
-        coEvery { tool.resolve(any(), any()) } returns failed
+        coEvery { tool.resolve(any(), any(), any()) } returns failed
         val calls = AtomicInteger()
         val done = CountDownLatch(1)
         val manager = DependencyManager(tools, scope) { _, _, _ ->

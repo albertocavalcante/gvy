@@ -1,0 +1,30 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Diagnostic init script: use with --no-configuration-cache; inspect task values before workers start.
+// Optional -PtestResourceExpected=:tests:e2eTest=2G/1 asserts a particular maximum heap and fork count.
+gradle.projectsEvaluated {
+    def expected = gradle.rootProject.findProperty('testResourceExpected')?.toString()
+    def paths = [':gls:test', ':schemas:test', ':tests:e2eTest', ':tests:harnessTest']
+    if (expected != null && !paths.any { expected.startsWith("$it=") }) {
+        throw new GradleException("Unknown test resource expectation: $expected")
+    }
+    paths.each { path ->
+        def task = gradle.rootProject.tasks.findByPath(path)
+        if (!(task instanceof org.gradle.api.tasks.testing.Test)) {
+            throw new GradleException("Test resource probe could not find $path")
+        }
+        def inspect = { phase ->
+            def value = "${task.maxHeapSize}/${task.maxParallelForks}"
+            println("TEST_RESOURCE_PROBE $phase $path min=${task.minHeapSize} max=${task.maxHeapSize} forks=${task.maxParallelForks}")
+            if (expected != null && expected.startsWith("$path=")) {
+                def required = expected.substring(path.length() + 1)
+                if (!value.equalsIgnoreCase(required)) {
+                    throw new GradleException("Test resource probe: $path expected $required, got $value at $phase")
+                }
+            }
+        }
+        inspect('configured')
+        task.doFirst { inspect('before-worker') }
+    }
+}

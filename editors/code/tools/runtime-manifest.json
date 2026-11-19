@@ -1,0 +1,22 @@
+{
+  "version": "4.0.33",
+  "description": "Dedicated Groovy core runtime with Ivy for configured @Grab behavior; additional modules belong on the configured classpath.",
+  "artifacts": [
+    {
+      "group": "org.apache.groovy",
+      "name": "groovy",
+      "version": "4.0.33",
+      "file": "groovy-4.0.33.jar",
+      "sha256": "5240a9151289115e4d447d6b6d4cb9ac8a9fc6374e079714dfeeffda42323be8",
+      "source": "https://repo.maven.apache.org/maven2/org/apache/groovy/groovy/4.0.33/groovy-4.0.33.jar"
+    },
+    {
+      "group": "org.apache.ivy",
+      "name": "ivy",
+      "version": "2.5.3",
+      "file": "ivy-2.5.3.jar",
+      "sha256": "9502aa5aabf0b1484924a13ef4b5d24f121f7f91aab6768f11cc9d0906c0803b",
+      "source": "https://repo.maven.apache.org/maven2/org/apache/ivy/ivy/2.5.3/ivy-2.5.3.jar"
+    }
+  ]
+}

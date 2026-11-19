@@ -1,0 +1,1 @@
+pipeline { agent none; stages {

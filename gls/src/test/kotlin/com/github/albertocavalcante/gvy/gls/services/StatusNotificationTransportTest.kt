@@ -14,6 +14,7 @@ import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.jsonrpc.Launcher
+import org.eclipse.lsp4j.jsonrpc.services.ServiceEndpoints
 import org.eclipse.lsp4j.services.LanguageServer
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
@@ -63,6 +64,65 @@ class StatusNotificationTransportTest {
             assertEquals("groovy/status", message.getValue("method").jsonPrimitive.content)
             assertEquals(Json.parseToJsonElement(expected[index]), message["params"])
         }
+    }
+
+    @Test
+    fun `optional analysis notification still uses JSON RPC transport`() {
+        val output = ByteArrayOutputStream()
+        val launcher = Launcher.Builder<DocumentAnalysisLanguageClient>()
+            .setLocalService(Any())
+            .setRemoteInterface(DocumentAnalysisLanguageClient::class.java)
+            .setInput(ByteArrayInputStream(byteArrayOf()))
+            .setOutput(output)
+            .create()
+        launcher.remoteProxy.documentAnalysis(
+            DocumentAnalysisNotification(
+                "file:///A.groovy",
+                1,
+                7,
+                "session",
+                CompilerAnalysis(true, null, null),
+                emptyList(),
+            ),
+        )
+        val wire = output.toString(Charsets.UTF_8)
+        val body = wire.substringAfter("\r\n\r\n")
+        val message = Json.parseToJsonElement(body).jsonObject
+        assertEquals("groovy/documentAnalysis", message.getValue("method").jsonPrimitive.content)
+        assertEquals("file:///A.groovy", message.getValue("params").jsonObject.getValue("uri").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `legacy client methods remain discoverable without an analysis notification`() {
+        val methods = ServiceEndpoints.getSupportedMethods(RecordingClient::class.java)
+
+        assertEquals(true, methods.containsKey("groovy/status"))
+        assertEquals(false, methods.containsKey("groovy/documentAnalysis"))
+    }
+
+    @Test
+    fun `extended client methods expose both notifications`() {
+        val methods = ServiceEndpoints.getSupportedMethods(DocumentAnalysisLanguageClient::class.java)
+
+        assertEquals(true, methods.containsKey("groovy/status"))
+        assertEquals(true, methods.containsKey("groovy/documentAnalysis"))
+    }
+
+    @Test
+    fun `extended client dispatches an incoming analysis notification`() {
+        val client = AnalysisRecordingClient()
+        val payload = DocumentAnalysisNotification(
+            "file:///A.groovy",
+            1,
+            7,
+            "session",
+            CompilerAnalysis(true, null, null),
+            emptyList(),
+        )
+
+        ServiceEndpoints.toEndpoint(client).notify("groovy/documentAnalysis", payload)
+
+        assertEquals(listOf(payload), client.analyses)
     }
 
     private val errors = listOf(
@@ -209,5 +269,21 @@ class StatusNotificationTransportTest {
         override fun logMessage(message: MessageParams) = Unit
         override fun showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture<MessageActionItem> =
             CompletableFuture.completedFuture(MessageActionItem("OK"))
+    }
+
+    class AnalysisRecordingClient : DocumentAnalysisLanguageClient {
+        val analyses = mutableListOf<DocumentAnalysisNotification>()
+
+        override fun groovyStatus(status: StatusNotification) = Unit
+        override fun telemetryEvent(obj: Any?) = Unit
+        override fun publishDiagnostics(diagnostics: PublishDiagnosticsParams) = Unit
+        override fun showMessage(messageParams: MessageParams) = Unit
+        override fun logMessage(message: MessageParams) = Unit
+        override fun showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture<MessageActionItem> =
+            CompletableFuture.completedFuture(MessageActionItem("OK"))
+
+        override fun documentAnalysis(analysis: DocumentAnalysisNotification) {
+            analyses.add(analysis)
+        }
     }
 }

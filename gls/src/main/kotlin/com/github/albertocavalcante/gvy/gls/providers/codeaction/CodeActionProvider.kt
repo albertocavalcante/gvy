@@ -5,9 +5,11 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.Formatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
+import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
 import java.net.URI
 import java.nio.file.Files
@@ -18,18 +20,22 @@ import java.nio.file.Path
  * Supports:
  * - Missing import resolution (unambiguous only)
  * - Formatting actions
+ * - Removal of unused imports reported by gvy, and Organize Imports
  * - Deterministic lint fixes from CodeNarc
  */
 class CodeActionProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     formatter: Formatter,
+    private val supportsAnalysisRemedies: () -> Boolean = { false },
 ) {
     private val logger = KotlinLogging.logger {}
 
     // Reuse action provider instances to reduce object allocation
     private val formattingAction = FormattingAction(formatter)
     private val importAction = ImportAction(compilationService)
+    private val unusedImportFixAction = UnusedImportFixAction(compilationService)
+    private val organizeImportsAction = OrganizeImportsAction(compilationService)
     private val verdictMemory = SpockVerdictMemory()
 
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
@@ -97,27 +103,15 @@ class CodeActionProvider(
         }
 
         val content = snapshot.content
-        val compiled = compilationService.getCompiledSnapshot(uri)
         val actions = buildList {
-            if (compiled != null && compiled.sourceText == content) {
+            addAll(spockActions(uri, params, snapshot))
+
+            if (supportsAnalysisRemedies()) {
                 addAll(
-                    SpockTableAction.createActions(
-                        SpockTableRequest(
-                            params.textDocument.uri,
-                            content,
-                            compiled.parseResult.ast,
-                            params.range,
-                            params.context.only,
-                            snapshot.version,
-                            isPartial = !compiled.parseResult.isSuccessful,
-                            verdicts = verdictMemory.access(
-                                params.textDocument.uri,
-                                compilationService.workspaceManager.fingerprintFor(uri),
-                                compiled.parseResult.outcome,
-                                ::currentSourceText,
-                                ::packageFileSet,
-                            ),
-                        ),
+                    AnalysisRemedyAction.create(
+                        params.textDocument.uri,
+                        params.context.diagnostics,
+                        params.context.only,
                     ),
                 )
             }
@@ -134,6 +128,15 @@ class CodeActionProvider(
                 ),
             )
 
+            // Import hygiene: quick fixes for gvy's own unused-import diagnostic, and Organize Imports
+            val importRequest = ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics)
+            if (allowsKind(CodeActionKind.QuickFix, params.context.only)) {
+                addAll(unusedImportFixAction.createActions(importRequest))
+            }
+            if (allowsKind(CodeActionKind.SourceOrganizeImports, params.context.only)) {
+                organizeImportsAction.createAction(importRequest)?.let(::add)
+            }
+
             // Add lint fix actions for deterministic CodeNarc fixes
             addAll(
                 lintFixAction.createLintFixActions(
@@ -144,8 +147,32 @@ class CodeActionProvider(
             )
         }
 
-        logger.debug { "Returning ${actions.size} code actions for ${params.textDocument.uri}" }
-        return actions
+        val filtered = actions.filter { it.kind != null && allowsKind(it.kind, params.context.only) }
+        logger.debug { "Returning ${filtered.size} code actions for ${params.textDocument.uri}" }
+        return filtered
+    }
+
+    private fun spockActions(uri: URI, params: CodeActionParams, snapshot: DocumentSnapshot): List<CodeAction> {
+        val compiled = compilationService.getCompiledSnapshot(uri) ?: return emptyList()
+        if (compiled.sourceText != snapshot.content) return emptyList()
+        return SpockTableAction.createActions(
+            SpockTableRequest(
+                params.textDocument.uri,
+                snapshot.content,
+                compiled.parseResult.ast,
+                params.range,
+                params.context.only,
+                snapshot.version,
+                isPartial = !compiled.parseResult.isSuccessful,
+                verdicts = verdictMemory.access(
+                    params.textDocument.uri,
+                    compilationService.workspaceManager.fingerprintFor(uri),
+                    compiled.parseResult.outcome,
+                    ::currentSourceText,
+                    ::packageFileSet,
+                ),
+            ),
+        )
     }
 }
 
