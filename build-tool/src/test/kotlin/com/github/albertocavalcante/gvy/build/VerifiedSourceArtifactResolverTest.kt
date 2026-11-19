@@ -292,6 +292,23 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
+    fun `snapshot without timestamped metadata keeps the base version sidecar path`() = runBlocking {
+        val archive = sourceArchive("non-timestamped")
+        repository(archive, sha256(archive)).use { repository ->
+            val result = assertIs<VerifiedSourceArtifactResult.Available>(
+                MavenSourceArtifactResolver(directory, repository).resolveVerifiedSourceArtifact(snapshotRequest()),
+                "Requests: ${repository.requests}",
+            )
+
+            val baseBinary = "/sample/library/1.0-SNAPSHOT/library-1.0-SNAPSHOT.jar.sha256"
+            val baseSource = "/sample/library/1.0-SNAPSHOT/library-1.0-SNAPSHOT-sources.jar.sha256"
+            assertEquals(sha256(archive), result.expectedSha256)
+            assertTrue(repository.requests.contains(baseBinary), "Requests: ${repository.requests}")
+            assertTrue(repository.requests.indexOf(baseSource) > repository.requests.indexOf(baseBinary))
+        }
+    }
+
+    @Test
     fun `snapshot binary digest mismatch stops before requesting source metadata or bytes`() = runBlocking {
         val archive = sourceArchive("timestamped-mismatch")
         repository(

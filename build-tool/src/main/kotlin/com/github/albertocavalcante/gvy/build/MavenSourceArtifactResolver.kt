@@ -161,7 +161,9 @@ private fun artifactVersionResult(
     if (result.exceptions.any { it !is MetadataNotFoundException }) return ArtifactVersionFetch.Failed
 
     val resolvedVersion = result.version
-    if (resolvedVersion == null || resolvedVersion == coordinates.version) return ArtifactVersionFetch.Missing
+    if (resolvedVersion == null) return ArtifactVersionFetch.Missing
+    // Non-timestamped snapshots (and releases) keep the previous behaviour: use the base-version sidecar path.
+    if (resolvedVersion == coordinates.version) return ArtifactVersionFetch.Resolved(resolvedVersion)
 
     val resolvedArtifact = DefaultArtifact(
         coordinates.group,
