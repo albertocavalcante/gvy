@@ -14,6 +14,7 @@ repositories {
     maven {
         name = "MavenCentralMirror"
         url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+        allowInsecureContinueWhenDisabled = true // fall through to Central when the mirror is unreachable
     }
     mavenCentral()
 }

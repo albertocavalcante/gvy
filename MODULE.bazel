@@ -304,7 +304,7 @@ maven.install(
     ],
     repositories = [
         # Mirror first, Maven Central as fallback: Central rate-limits CI bursts (HTTP 429). See #1908.
-        # rules_jvm_external tries the repositories in order, so a miss or an outage falls through.
+        # A 404 on the mirror falls through to the next repository; behaviour on a mirror outage is untested.
         "https://maven-central.storage-download.googleapis.com/maven2",
         "https://repo1.maven.org/maven2",
         "https://plugins.gradle.org/m2/",
