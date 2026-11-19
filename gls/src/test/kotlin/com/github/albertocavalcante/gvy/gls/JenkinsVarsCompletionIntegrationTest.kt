@@ -187,6 +187,16 @@ class JenkinsVarsCompletionIntegrationTest {
         )
     }
 
+    @Test
+    fun `a shared library withCredentials shadows the binding wrapper`(): Unit = runBlocking {
+        Files.writeString(workspaceRoot.resolve("vars/withCredentials.groovy"), "def call(args, body) {}")
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val line = "withCredentials([string()]) {}"
+        openDocument(uri, line)
+        val items = requestCompletionsAt(uri, Position(0, line.indexOf("string(") + 7))
+        assertTrue(items.none { it.label == "credentialsId:" }, "Shared-library wrapper must not claim binding keys")
+    }
+
     private suspend fun openDocument(uri: String, content: String) {
         serverHandle!!.server.textDocumentService.didOpen(
             DidOpenTextDocumentParams().apply {

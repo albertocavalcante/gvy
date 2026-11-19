@@ -30,7 +30,6 @@ object StableStepDefinitions {
         const val CPS = "workflow-cps"
         const val SCM_STEP = "workflow-scm-step"
         const val STAGE_STEP = "pipeline-stage-step"
-        const val SUPPORT = "workflow-support"
         const val INPUT_STEP = "pipeline-input-step"
         const val BUILD_STEP = "pipeline-build-step"
         const val JUNIT = "junit"
@@ -737,12 +736,13 @@ object StableStepDefinitions {
             ),
         )
 
-        // ========== workflow-support plugin ==========
+        // ========== workflow-durable-task-step node and workspace ==========
+        // https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/
         put(
             "node",
             JenkinsStepMetadata(
                 name = "node",
-                plugin = Plugins.SUPPORT,
+                plugin = Plugins.DURABLE_TASK,
                 documentation = "Allocate a node (executor) for a block.",
                 parameters = mapOf(
                     "label" to StepParameter(
@@ -759,7 +759,7 @@ object StableStepDefinitions {
             "ws",
             JenkinsStepMetadata(
                 name = "ws",
-                plugin = Plugins.SUPPORT,
+                plugin = Plugins.DURABLE_TASK,
                 documentation = "Use a custom workspace directory.",
                 parameters = mapOf(
                     "dir" to StepParameter(

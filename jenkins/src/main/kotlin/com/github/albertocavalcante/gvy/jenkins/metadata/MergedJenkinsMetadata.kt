@@ -31,6 +31,14 @@ data class MergedJenkinsMetadata(
     val declarativeOptions: Map<String, MergedDeclarativeOption> = emptyMap(),
     /** Call-shaped entries of `triggers`, `parameters` and `tools`, keyed by directive name. */
     val directiveEntries: Map<String, Map<String, MergedDeclarativeOption>> = emptyMap(),
+    val nestedDescribables: Map<String, MergedStepMetadata> = emptyMap(),
+    val catalogue: TypedCatalogue = legacyMergedCatalogue(
+        steps,
+        globalVariables,
+        declarativeOptions,
+        directiveEntries,
+        nestedDescribables,
+    ),
 ) {
     /**
      * Retrieve step metadata by name.
@@ -91,7 +99,8 @@ data class MergedParameter(
 
     // From enrichment
     val description: String?,
-    val required: Boolean = false, // Default to false if enrichment doesn't specify
+    /** Null means requiredness is unknown. */
+    val required: Boolean? = null,
     val validValues: List<String>?,
     val examples: List<String>,
 )

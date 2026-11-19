@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.jenkins.metadata
 
+import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.DeprecationInfo
 import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.DirectiveEnrichment
 import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.GlobalVariableEnrichment
 import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.JenkinsEnrichment
@@ -24,6 +25,27 @@ import kotlin.test.assertNull
  * Tests are written FIRST (RED), then implementation follows (GREEN).
  */
 class MetadataMergerEnrichmentTest {
+
+    @Test
+    fun `enrichment merge retains bundled positional parameters`() {
+        val step = JenkinsStepMetadata(
+            name = "sh",
+            plugin = "workflow-durable-task-step",
+            positionalParams = listOf("script"),
+            parameters = mapOf("script" to StepParameter(name = "script", type = "String", required = true)),
+        )
+        val bundled = BundledJenkinsMetadata(steps = mapOf("sh" to step), globalVariables = emptyMap())
+        val merged = MetadataMerger.mergeWithEnrichment(bundled, JenkinsEnrichment())
+        assertEquals(listOf("script"), merged.getStep("sh")?.positionalParams)
+    }
+
+    @Test
+    fun `credential binding is not published as an executable step`() {
+        val metadata = VersionedMetadataLoader().loadMerged()
+        assertNull(metadata.getStep("string"))
+        assertNull(metadata.getStep("usernamePassword"))
+        assertNull(metadata.getStep("file"))
+    }
 
     @Test
     fun `should merge bundled metadata with enrichment metadata`() {
@@ -113,6 +135,9 @@ class MetadataMergerEnrichmentTest {
                 "customStep" to JenkinsStepMetadata(
                     name = "customStep",
                     plugin = "custom-plugin",
+                    ownerPlugin = "custom-plugin",
+                    ownerEvidence = OwnerEvidence.CURATED,
+                    provenance = MetadataProvenance(SourceKind.CURATED, plugin = "custom-plugin"),
                     parameters = mapOf(
                         "param1" to StepParameter(
                             name = "param1",
@@ -328,6 +353,9 @@ class MetadataMergerEnrichmentTest {
             "sh" to JenkinsStepMetadata(
                 name = "sh",
                 plugin = "workflow-durable-task-step",
+                ownerPlugin = "workflow-durable-task-step",
+                ownerEvidence = OwnerEvidence.CURATED,
+                provenance = MetadataProvenance(SourceKind.CURATED, plugin = "workflow-durable-task-step"),
                 parameters = mapOf(
                     "script" to StepParameter(
                         name = "script",
@@ -433,4 +461,67 @@ class MetadataMergerEnrichmentTest {
             ),
         ),
     )
+
+    @Test
+    fun `legacy override retains identity-matched enrichment adjuncts`() {
+        val bundled = createBundledMetadata()
+        val initialEnrichment = createEnrichment()
+        val existing = initialEnrichment.steps.getValue("sh")
+        val enrichment = initialEnrichment.copy(
+            steps = initialEnrichment.steps + (
+                "sh" to existing.copy(
+                    deprecation = DeprecationInfo("1.0", "replacement", "Test deprecation"),
+                )
+                ),
+        )
+        val before = assertNotNull(MetadataMerger.mergeWithEnrichment(bundled, enrichment).getStep("sh"))
+        val patched = MetadataMerger.mergeWithPriority(
+            bundled,
+            emptyMap(),
+            mapOf("sh" to JenkinsStepMetadata("sh", "legacy-user-source", parameters = emptyMap())),
+        )
+        val after = assertNotNull(MetadataMerger.mergeWithEnrichment(patched, enrichment).getStep("sh"))
+        assertEquals(before, after)
+    }
+
+    @Test
+    fun `legacy override documentation wins while enrichment adjuncts survive`() {
+        val bundled = createBundledMetadata()
+        val enrichment = createEnrichment()
+        val before = assertNotNull(MetadataMerger.mergeWithEnrichment(bundled, enrichment).getStep("sh"))
+        for (documentation in listOf("Explicit user documentation", null, before.documentation)) {
+            val patched = MetadataMerger.mergeWithPriority(
+                bundled,
+                emptyMap(),
+                mapOf(
+                    "sh" to JenkinsStepMetadata(
+                        "sh",
+                        "legacy-user-source",
+                        parameters = emptyMap(),
+                        documentation = documentation,
+                        documentationSpecified = true,
+                    ),
+                ),
+            )
+            val after = assertNotNull(MetadataMerger.mergeWithEnrichment(patched, enrichment).getStep("sh"))
+            assertEquals(documentation, after.documentation)
+            assertEquals(before.documentationUrl, after.documentationUrl)
+            assertEquals(before.category, after.category)
+            assertEquals(before.examples, after.examples)
+            assertEquals(before.namedParams.getValue("script").examples, after.namedParams.getValue("script").examples)
+        }
+    }
+
+    @Test
+    fun `unknown legacy plugin label is not projected as an established owner`() {
+        val bundled = BundledJenkinsMetadata(
+            steps = mapOf("opaque" to JenkinsStepMetadata("opaque", "input-label", parameters = emptyMap())),
+            globalVariables = emptyMap(),
+        )
+        val metadata = MetadataMerger.mergeWithEnrichment(bundled, JenkinsEnrichment())
+        val candidate = assertNotNull(metadata.catalogue.unique(SymbolKind.EXECUTABLE_STEP, "opaque"))
+        assertNull(candidate.ownerPlugin)
+        assertNull(assertNotNull(metadata.getStep("opaque")).plugin)
+        assertEquals("input-label", candidate.contributors.single().legacyPlugin)
+    }
 }

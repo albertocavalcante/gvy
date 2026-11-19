@@ -10,6 +10,9 @@ import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverStrategy
+import com.github.albertocavalcante.gvy.gls.providers.jenkins.CredentialBindingSite
+import com.github.albertocavalcante.gvy.gls.providers.jenkins.credentialBindingSite
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MapEntryExpression
@@ -44,22 +47,34 @@ class JenkinsStepHoverStrategy(
 
     override fun generateHover(node: ASTNode, context: HoverContext): Hover? {
         if (node !is MethodCallExpression) return null
-
-        // Check if Jenkins mode is enabled for this file
-        if (!modeResolver.isJenkinsModeEnabled(context.documentUri)) {
-            return null
-        }
-
+        if (!modeResolver.isJenkinsModeEnabled(context.documentUri)) return null
         val stepName = node.methodAsString ?: return null
 
-        // Declarative constructs first: inside options {} `timeout` is the option, not the step.
-        tryCreateDeclarativeHover(stepName, node, context)?.let { return it }
+        // Declarative constructs and vars/ globals take precedence over executable steps.
+        return tryCreateDeclarativeHover(stepName, node, context)
+            ?: tryCreateVarsGlobalVariableHover(stepName, node)
+            ?: tryCreateExecutableHover(stepName, node, context)
+    }
 
-        // Try vars/ global variable hover first
-        tryCreateVarsGlobalVariableHover(stepName, node)?.let { return it }
-
-        // Then try step metadata hover
-        return tryCreateStepMetadataHover(stepName, node, context.documentUri)
+    private fun tryCreateExecutableHover(stepName: String, node: MethodCallExpression, context: HoverContext): Hover? {
+        // A structural credential candidate needs an AST; ordinary step hover still works without one.
+        val model = context.astModel ?: return tryCreateStepMetadataHover(stepName, node, context.documentUri)
+        val metadata = jenkinsCapabilities?.getAllMetadata(context.documentUri) ?: return null
+        return when (
+            model.credentialBindingSite(
+                node,
+                context.documentUri,
+                metadata,
+                jenkinsCapabilities,
+                context.reliableSource,
+            )
+        ) {
+            CredentialBindingSite.UNKNOWN -> null
+            CredentialBindingSite.BINDING -> metadata.nestedDescribables[stepName]?.let { binding ->
+                tryCreateStepMetadataHover(stepName, node, context.documentUri, binding)
+            }
+            CredentialBindingSite.NOT_BINDING -> tryCreateStepMetadataHover(stepName, node, context.documentUri)
+        }
     }
 
     /**
@@ -198,9 +213,14 @@ class JenkinsStepHoverStrategy(
     /**
      * Try to create a hover for a Jenkins step from bundled metadata.
      */
-    private fun tryCreateStepMetadataHover(stepName: String, node: MethodCallExpression, uri: URI): Hover? {
+    private fun tryCreateStepMetadataHover(
+        stepName: String,
+        node: MethodCallExpression,
+        uri: URI,
+        binding: MergedStepMetadata? = null,
+    ): Hover? {
         val metadata = jenkinsCapabilities?.getAllMetadata(uri) ?: return null
-        val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
+        val stepMetadata = binding ?: JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
 
         // Build rich hover content for Jenkins step
         val markdownContent = markdown {
@@ -219,7 +239,7 @@ class JenkinsStepHoverStrategy(
                 h3("Parameters")
                 list(
                     stepMetadata.namedParams.map { (name, param) ->
-                        val required = if (param.required) " *(required)*" else ""
+                        val required = if (param.required == true) " *(required)*" else ""
                         val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
                         val base = "**`$name`**: `${param.type}`$required$defaultVal"
                         param.description?.let { desc -> "$base\n  - $desc" } ?: base

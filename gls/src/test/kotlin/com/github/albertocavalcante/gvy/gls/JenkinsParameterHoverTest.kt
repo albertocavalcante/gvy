@@ -109,6 +109,42 @@ class JenkinsParameterHoverTest {
     }
 
     @Test
+    fun `hover on a direct credential binding uses nested metadata`(): Unit = runBlocking {
+        val line = "    withCredentials([string(credentialsId: 'token', variable: 'T')]) {}"
+        val text = hoverText("node {\n$line\n}", line = 1, character = line.indexOf("string") + 2)
+        assertNotNull(text)
+        assertTrue(text.contains("Secret text") && text.contains("credentialsId"), "binding method: $text")
+    }
+
+    @Test
+    fun `top-level credential binding method and argument use nested metadata`(): Unit = runBlocking {
+        val line = "withCredentials([string(credentialsId: 'token', variable: 'T')]) {}"
+        val method = hoverText(line, line = 0, character = line.indexOf("string") + 2)
+        val argument = hoverText(line, line = 0, character = line.indexOf("credentialsId") + 2)
+
+        assertNotNull(method)
+        assertTrue(method.contains("Secret text") && method.contains("credentialsId"), "binding method: $method")
+        assertNotNull(argument)
+        assertTrue(argument.contains("credentialsId") && argument.contains("Secret text"), "binding key: $argument")
+    }
+
+    @Test
+    fun `local callables prevent credential parameter hover`(): Unit = runBlocking {
+        val cases = listOf(
+            "def withCredentials(a, b) {}\nwithCredentials([string(credentialsId: 'token')]) {}",
+            "def withCredentials = { a, b -> }\nwithCredentials([string(credentialsId: 'token')]) {}",
+            "def string = { a -> }\nwithCredentials([string(credentialsId: 'token')]) {}",
+        )
+        for (code in cases) {
+            val prefix = code.substringBefore("credentialsId") + "credentialsId"
+            val line = prefix.count { it == '\n' }
+            val column = prefix.substringAfterLast('\n').length - 2
+            val text = hoverText(code, line, column)
+            assertTrue(!isParameterHover(text), "Local callable must not acquire credential metadata: $code: $text")
+        }
+    }
+
+    @Test
     fun `hover on a Jenkins global variable shows its documentation`(): Unit = runBlocking {
         val line = "    echo env.BRANCH_NAME"
         val text = hoverText("node {\n$line\n}", line = 1, character = line.indexOf("env") + 1)

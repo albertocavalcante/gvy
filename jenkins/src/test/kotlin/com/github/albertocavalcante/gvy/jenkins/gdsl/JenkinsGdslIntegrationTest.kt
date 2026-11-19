@@ -4,10 +4,12 @@
 package com.github.albertocavalcante.gvy.jenkins.gdsl
 
 import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import kotlin.test.assertNotNull
 
 /**
  * Integration tests for the execution-based GDSL parsing pipeline.
@@ -50,7 +52,10 @@ class JenkinsGdslIntegrationTest {
             val result = executor.executeAndCapture(sampleGdsl, "sample-gdsl.groovy")
             val metadata = adapter.convert(result)
 
-            assertThat(metadata.steps.keys).containsAll(
+            assertThat(
+                assertNotNull(metadata.typedCatalogue).symbols
+                    .filter { it.kind == SymbolKind.EXECUTABLE_STEP }.map { it.name }.toSet(),
+            ).containsAll(
                 listOf("echo", "error", "isUnix", "mail", "parallel", "timeout", "retry", "sleep", "stage", "input"),
             )
         }
@@ -60,7 +65,10 @@ class JenkinsGdslIntegrationTest {
             val result = executor.executeAndCapture(sampleGdsl, "sample-gdsl.groovy")
             val metadata = adapter.convert(result)
 
-            assertThat(metadata.steps.keys).containsAll(
+            assertThat(
+                assertNotNull(metadata.typedCatalogue).symbols
+                    .filter { it.kind == SymbolKind.EXECUTABLE_STEP }.map { it.name }.toSet(),
+            ).containsAll(
                 listOf(
                     "sh", "bat", "powershell", "pwsh", "dir",
                     "deleteDir", "pwd", "fileExists", "readFile", "writeFile",
@@ -98,10 +106,17 @@ class JenkinsGdslIntegrationTest {
             val result = executor.executeAndCapture(sampleGdsl, "sample-gdsl.groovy")
             val metadata = adapter.convert(result)
 
-            val sh = metadata.getStep("sh")
-            assertThat(sh).isNotNull
-            assertThat(sh!!.documentation).isEqualTo("Shell Script")
-            assertThat(sh.parameters.keys).contains("script", "returnStdout", "returnStatus")
+            assertThat(metadata.getStep("sh")).isNull()
+            val candidates = assertNotNull(metadata.typedCatalogue).candidates(SymbolKind.EXECUTABLE_STEP, "sh")
+            assertThat(candidates).hasSize(2)
+            assertThat(candidates.map { it.id }.distinct()).hasSize(2)
+            assertThat(candidates.map { it.documentation }).containsOnly("Shell Script")
+            assertThat(candidates.map { it.contexts }).containsOnly(listOf("node"))
+            val positional = assertNotNull(candidates.singleOrNull { it.positional == listOf("script") })
+            assertThat(positional.parameters.map { it.name }).containsExactly("script")
+            val named = assertNotNull(candidates.singleOrNull { it.positional.isEmpty() })
+            assertThat(named.parameters.map { it.name })
+                .containsExactly("script", "encoding", "label", "returnStatus", "returnStdout")
         }
 
         @Test
@@ -152,7 +167,14 @@ class JenkinsGdslIntegrationTest {
             val result = executor.executeAndCapture(gdsl)
             val metadata = adapter.convert(result)
 
-            assertThat(metadata.steps.keys).containsExactlyInAnyOrder("globalStep", "nodeStep")
+            assertThat(metadata.steps.keys).containsExactly("globalStep")
+            assertThat(metadata.getStep("nodeStep")).isNull()
+            val node = assertNotNull(
+                metadata.typedCatalogue,
+            ).candidates(SymbolKind.EXECUTABLE_STEP, "nodeStep").single()
+            assertThat(node.gdslContext).isEqualTo(
+                kotlinx.serialization.json.Json.parseToJsonElement("""{"scope":{"type":"closure"}}"""),
+            )
             assertThat(metadata.globalVariables.keys).containsExactly("globalVar")
         }
 

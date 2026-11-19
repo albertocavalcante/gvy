@@ -74,7 +74,7 @@ class BundledJenkinsMetadataLoaderTest {
         val scriptParam = shStep.parameters["script"]
 
         assertNotNull(scriptParam, "script parameter should exist")
-        assertTrue(scriptParam.required, "script parameter should be required")
+        assertTrue(scriptParam.required == true, "script parameter should be required")
         assertEquals("String", scriptParam.type)
     }
 
@@ -212,7 +212,7 @@ class BundledJenkinsMetadataLoaderTest {
         assertEquals(setOf("parameters", "tools", "triggers"), merged.directiveEntries.keys)
         val string = assertNotNull(merged.directiveEntries["parameters"]?.get("string"))
         assertEquals(setOf("name", "defaultValue", "description", "trim"), string.parameters.keys)
-        assertTrue(string.parameters.getValue("name").required)
+        assertEquals(true, string.parameters.getValue("name").required)
         assertEquals("jenkins-core", merged.directiveEntries.getValue("triggers").getValue("cron").plugin)
     }
 

@@ -194,6 +194,13 @@ class GdslContributorTest {
         }
 
         @Test
+        fun `preserves omitted false and true parameter requiredness`() {
+            assertThat(contributor.parameter(mapOf("name" to "unknown")).required).isNull()
+            assertThat(contributor.parameter(mapOf("name" to "optional", "required" to false)).required).isFalse()
+            assertThat(contributor.parameter(mapOf("name" to "required", "required" to true)).required).isTrue()
+        }
+
+        @Test
         fun `creates parameter with documentation`() {
             val param = contributor.parameter(
                 mapOf(
