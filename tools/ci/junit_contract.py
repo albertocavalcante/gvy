@@ -28,6 +28,7 @@ MAX_BYTES = 1_048_576
 MAX_ELEMENTS = 20_000
 MAX_DEPTH = 64
 MAX_TEXT = 524_288
+_PARSE_CHUNK = 65_536
 MAX_CASES = 10_000
 _DECL = re.compile(r"^\s*<\?xml\s+([^?]*)\?>", re.IGNORECASE)
 _ENCODING = re.compile(r'\bencoding\s*=\s*([\'"])([^\'"]+)\1', re.IGNORECASE)
@@ -134,19 +135,28 @@ def inspect_junit(
     depth = elements = chars = 0
     root: ET.Element | None = None
     try:
-        for event, element in ET.iterparse(io.StringIO(text), events=("start", "end")):
-            if event == "start":
-                depth += 1
-                elements += 1
-                if root is None:
-                    root = element
-                if depth > MAX_DEPTH or elements > MAX_ELEMENTS:
-                    return result("limit_exceeded")
-            else:
-                chars += len(element.text or "") + len(element.tail or "")
-                if chars > MAX_TEXT:
-                    return result("limit_exceeded")
-                depth -= 1
+        parser = ET.XMLPullParser(events=("start", "end"))
+        for offset in range(0, len(text), _PARSE_CHUNK):
+            parser.feed(text[offset : offset + _PARSE_CHUNK])
+            for parsed in parser.read_events():
+                if len(parsed) != 2:
+                    continue
+                event, element = parsed
+                if not isinstance(element, ET.Element):
+                    continue
+                if event == "start":
+                    depth += 1
+                    elements += 1
+                    if root is None:
+                        root = element
+                    if depth > MAX_DEPTH or elements > MAX_ELEMENTS:
+                        return result("limit_exceeded")
+                else:
+                    chars += len(element.text or "") + len(element.tail or "")
+                    if chars > MAX_TEXT:
+                        return result("limit_exceeded")
+                    depth -= 1
+        parser.close()
     except ET.ParseError:
         return result("invalid_xml")
     if root is None or root.tag != "testsuite":
