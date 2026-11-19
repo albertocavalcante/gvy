@@ -96,7 +96,7 @@
       "sources": [
         {
           "id": "MODULE.bazel:maven.install:maven:gmm",
-          "sha256": "28d2ad37c7459c936d143e680691f43f615642686adb02472947368f1060c25c"
+          "sha256": "3c86fc34b6b08c9d228092e4964a54b884aebf7e2fca941fcfbe4e3d17afa6f4"
         },
         {
           "id": "MODULE.bazel:single_version_override:rules_jvm_external",
@@ -344,7 +344,7 @@
       "responsibleScope": "gvy Bazel dependency maintainers",
       "lastVerified": "2026-11-18",
       "reviewDue": "2026-11-25",
-      "reason": "Historical GMM generated Jupiter/Platform dependency cycles; eight direct JUnit 6.0.2 jars and handwritten targets bypass those graphs.",
+      "reason": "Historical GMM generated Jupiter/Platform dependency cycles; nine direct JUnit 6.0.2 jars (including junit-platform-reporting) and handwritten targets bypass those graphs.",
       "upstreamStatus": "Matching upstream report/fix status for these exact cycles was not established by this audit. Stable resolver integration is pending, not known to fail; no gvy upstream submission was made.",
       "upstreamTrigger": "Released resolver candidate resolves the JUnit graph without historical cycle edges.",
       "verification": "2026-11-18 weekly review (reading only; full verification still owed). Checked 2026-11-18 by reading and CI observation: no stable rules_jvm_external release newer than 7.2 (2026-10-12, bundles Coursier v2.1.24) and no stable Coursier release newer than v2.1.26 (2026-09-30) exists; the gvy pin is rules_jvm_external 6.10 with this patch set; this record's source fingerprint is unchanged. CI (Bazel) run 44238397290 on main 7887a09dd built successfully with the workaround in place. The direct JUnit 6.0.2 jars built and ran in that main CI. No candidate (7.2 or Coursier 2.1.26) was executed without the workaround, so full verification is still owed: published 6.0.2 module/POM versus resolver output without the eight overrides. Prior review history: Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
@@ -394,7 +394,7 @@
         },
         {
           "id": "tools/build_defs/junit.bzl:direct-download",
-          "sha256": "03228bce1c24c9594ed3e9783a310abc68d249879f78f70f0356efef58c56945"
+          "sha256": "ebe77d86b7e2ea011ec9ee6cb95bc93c4df62d00f11e207cdb55ef038561f038"
         }
       ]
     },

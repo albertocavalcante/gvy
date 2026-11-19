@@ -34,9 +34,10 @@ _JARS = {
     "junit-platform-engine": "31495b754ba882ba693c19fa9d887e61af6f3850f58741bd58c3f129deca5517",
     "junit-platform-commons": "1c49eab8ed3d81280459e3f3e1f119b928f9cfc530c7500c2a15a9ae8e7ad30d",
     "junit-platform-console": "adfe7a292d6d8a48b16565cf807aac3fff1a56bc4be88b26707f3b20c902b2fd",
+    "junit-platform-reporting": "34fd2fb625203ec62d61b72d0648ce1cb9609ab3ba04b9f13171aad20bb65a14",
 }
 
-def _junit_impl(ctx):
+def _junit_impl(_ctx):
     for name, sha256 in _JARS.items():
         # Determine the Maven group (jupiter vs platform)
         if name.startswith("junit-jupiter"):
