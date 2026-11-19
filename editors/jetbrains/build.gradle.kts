@@ -17,6 +17,11 @@ group = "org.gvy"
 version = "0.1.0-SNAPSHOT"
 
 repositories {
+    maven {
+        name = "MavenCentralMirror"
+        url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+        allowInsecureContinueWhenDisabled = true
+    }
     mavenCentral()
     intellijPlatform { defaultRepositories() }
 }

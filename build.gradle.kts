@@ -114,6 +114,12 @@ subprojects {
     apply(plugin = "org.jetbrains.kotlinx.kover")
 
     repositories {
+        // Mirror first, Maven Central as fallback (see settings.gradle.kts and #1908).
+        maven {
+            name = "MavenCentralMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+            allowInsecureContinueWhenDisabled = true // fall through to Central when the mirror is unreachable
+        }
         mavenCentral()
         mavenLocal()
         google()
