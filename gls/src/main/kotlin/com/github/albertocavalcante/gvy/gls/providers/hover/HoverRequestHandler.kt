@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
@@ -26,18 +28,7 @@ internal class HoverRequestHandler(
         currentCoroutineContext().ensureActive()
         val uri = URI.create(params.textDocument.uri)
         val input = documents.getSnapshot(uri)
-        compilation.ensureCompiled(uri)
-        currentCoroutineContext().ensureActive()
-        requireUnchanged(uri, input)
-
-        val compiled = compilation.getCompiledSnapshot(uri) ?: input?.let {
-            // Worker selection can invalidate an awaited compilation during initialization.
-            // Compile the captured open buffer directly once rather than returning a missing-cache placeholder.
-            compilation.compile(uri, it.content)
-            currentCoroutineContext().ensureActive()
-            requireUnchanged(uri, input)
-            compilation.getCompiledSnapshot(uri)
-        } ?: return emptyHover()
+        val compiled = acquireSnapshot(uri, input) ?: return emptyHover()
         if (input != null && compiled.sourceText != input.content) throw contentModified(uri)
 
         val session = compilation.getHoverSession(uri, compiled)
@@ -45,6 +36,29 @@ internal class HoverRequestHandler(
         currentCoroutineContext().ensureActive()
         requireUnchanged(uri, input)
         return result
+    }
+
+    private suspend fun acquireSnapshot(uri: URI, input: DocumentSnapshot?): CompiledDocumentSnapshot? {
+        val acquired = compilation.ensureCompiled(uri)
+        currentCoroutineContext().ensureActive()
+        requireUnchanged(uri, input)
+        if (hasNoCurrentAst(uri, input, acquired)) return null
+
+        return compilation.getCompiledSnapshot(uri) ?: input?.let { snapshot ->
+            // Worker selection can invalidate an awaited compilation during initialization.
+            // Compile the captured open buffer directly once rather than returning a missing-cache placeholder.
+            val retried = compilation.compile(uri, snapshot.content)
+            currentCoroutineContext().ensureActive()
+            requireUnchanged(uri, input)
+            if (hasNoCurrentAst(uri, input, retried)) null else compilation.getCompiledSnapshot(uri)
+        }
+    }
+
+    private fun hasNoCurrentAst(uri: URI, input: DocumentSnapshot?, result: CompilationResult?): Boolean {
+        if (result == null || !result.parseCompleted || result.ast != null) return false
+        if (input != null && result.sourceText != input.content) throw contentModified(uri)
+        // A completed parse can leave the last successful AST cached. It cannot describe this incomplete text.
+        return true
     }
 
     private fun requireUnchanged(uri: URI, input: DocumentSnapshot?) {
