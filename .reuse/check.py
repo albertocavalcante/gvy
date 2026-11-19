@@ -112,6 +112,69 @@ NAMES = {
 TAG = re.compile(r"^SPDX-(FileCopyrightText|License-Identifier):\s*(.*?)\s*$")
 
 
+# Admission bounds for parsing, after the current unbounded subprocess capture.
+# REUSE 6.3.0 at 38f7f2b produced <=1,917,343 bytes, depth 5 and 3,003 files.
+REPORT_BYTES = 8 * 1024 * 1024
+REPORT_DEPTH = 32
+REPORT_TOKENS = 524288
+REPORT_FILES = 16384
+
+
+def _json_envelope(text: str) -> tuple[int, int]:
+    """Count strings (including keys), scalars and container starts before parsing."""
+    depth = maximum = tokens = 0
+    quoted = escaped = scalar = False
+    for character in text:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quoted = False
+            continue
+        if character == '"':
+            quoted = True
+            scalar = False
+            tokens += 1
+        elif character in "{[":
+            depth += 1
+            maximum = max(maximum, depth)
+            scalar = False
+            tokens += 1
+        elif character in "}]":
+            depth -= 1
+            scalar = False
+            if depth < 0:
+                raise ValueError("invalid report JSON")
+        elif character in " \t\r\n,:":
+            scalar = False
+        elif not scalar:
+            scalar = True
+            tokens += 1
+        if depth > REPORT_DEPTH:
+            raise ValueError(f"report exceeds {REPORT_DEPTH}-container depth limit")
+        if tokens > REPORT_TOKENS:
+            raise ValueError(f"report exceeds {REPORT_TOKENS}-token limit")
+    if quoted or depth != 0:
+        raise ValueError("invalid report JSON")
+    return tokens, maximum
+
+
+def _load_report(data: bytes) -> object:
+    if len(data) > REPORT_BYTES:
+        raise ValueError(f"report exceeds {REPORT_BYTES}-byte limit")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("invalid report UTF-8") from None
+    _json_envelope(text)
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError):
+        raise ValueError("invalid report JSON") from None
+
+
 def maintained(path: Path, data: bytes) -> bool:
     """Classify original maintained source; REUSE still covers all other files."""
     if path.as_posix() in METADATA_SOURCE_PATHS | BYTE_SENSITIVE_FIXTURE_PATHS | EDITOR_FIXTURE_PATHS:
@@ -235,6 +298,8 @@ def parse_report(value: object) -> tuple[bool, dict[Path, set[str]]]:
     files = report.get("files")
     if not isinstance(compliant, bool) or not isinstance(files, list):
         raise TypeError("invalid REUSE report summary or files")
+    if len(files) > REPORT_FILES:
+        raise ValueError(f"report exceeds {REPORT_FILES}-file limit")
     paths: dict[Path, set[str]] = {}
     for raw_item in files:
         item = as_object(raw_item)
@@ -291,25 +356,25 @@ def check(root: Path) -> list[str]:
         errors.append(f".reuse/license-hashes.toml: invalid inventory: {exc}")
     env = os.environ.copy()
     env["REUSE_ENCODING_MODULE"] = "charset_normalizer"
+    env["PYTHONIOENCODING"] = "utf-8"
     try:
-        # TODO(#1928): Bound subprocess capture and parsed report size before rendering.
+        # TODO(#1928): Bound stdout/stderr collection before buffering; parser admission is separate.
         #   See: https://github.com/albertocavalcante/gvy/issues/1928
         result = subprocess.run(
             [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(root), "lint", "--json"],
             capture_output=True,
-            text=True,
             env=env,
             check=False,
             timeout=120,
         )
         if result.returncode not in (0, 1):
             raise ValueError("REUSE did not return a lint report")
-        compliant, paths = parse_report(json.loads(result.stdout))
+        compliant, paths = parse_report(_load_report(result.stdout))
         if (result.returncode == 0) != compliant:
             errors.append("REUSE check failed: exit/report mismatch")
         if not compliant:
             errors.append("REUSE lint failed; run reuse --root . lint for details")
-        elif result.returncode == 0 and result.stderr != "":
+        elif result.returncode == 0 and result.stderr != b"":
             errors.append("gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)")
         # REUSE validates the SPDX expressions; recognize only the exact MIT
         # identifier, including compound expressions, for the approved inventory.
