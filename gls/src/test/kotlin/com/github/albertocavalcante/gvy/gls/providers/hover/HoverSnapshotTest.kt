@@ -13,6 +13,7 @@ import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOp
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -151,6 +152,7 @@ class HoverSnapshotTest {
             val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
 
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            verify(exactly = 0) { fixture.compilation.getCompiledSnapshot(fixture.uri) }
         }
     }
 
@@ -165,6 +167,10 @@ class HoverSnapshotTest {
             val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
 
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            // The buffer is unchanged since the capture, so only the new source check can reject this result.
+            // The previous handler fell through to the stale cache and rejected it there.
+            verify(exactly = 0) { fixture.compilation.getCompiledSnapshot(fixture.uri) }
+            verify(exactly = 0) { fixture.compilation.getHoverSession(fixture.uri, any()) }
         }
     }
 
@@ -175,7 +181,9 @@ class HoverSnapshotTest {
             coEvery { fixture.compilation.ensureCompiled(fixture.uri) } returns
                 CompilationResult.failure(emptyList(), INCOMPLETE_SOURCE)
 
-            assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
         }
     }
 
@@ -215,6 +223,26 @@ class HoverSnapshotTest {
             val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
 
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            verify(exactly = 0) { fixture.compilation.getCompiledSnapshot(fixture.uri) }
+        }
+    }
+
+    @Test
+    fun `closed file hover ignores a valid stale cache when the disk text is incomplete`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.remove(fixture.uri)
+            Path.of(fixture.uri).writeText(INCOMPLETE_SOURCE)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.compile(INCOMPLETE_SOURCE)
+            }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            // A valid cache for ORIGINAL_SOURCE exists, and a closed file has no captured text to compare against.
+            // The previous handler served that cache; its method signature must not appear.
+            assertEquals("", hover.contents.right.value)
+            verify(exactly = 0) { fixture.compilation.getHoverSession(fixture.uri, any()) }
+            assertNull(fixture.documents.getSnapshot(fixture.uri))
         }
     }
 
@@ -448,6 +476,8 @@ class HoverSnapshotTest {
 
         // Delegate normally: a suspend spy's callOriginal cannot await COROUTINE_SUSPENDED.
         suspend fun acquireCompilation() = actual.ensureCompiled(uri)
+
+        suspend fun compile(source: String) = actual.compile(uri, source)
 
         fun params() = HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, 23))
 
