@@ -62,6 +62,37 @@ kover {
     }
 }
 
+// The standalone Maven BSP server. MavenBspEquivalenceTest launches it as a child process over stdio, so the test
+// crosses the same JSON-RPC boundary an editor does. The server never depends on build-tool, so there is no cycle.
+val mavenBspServer =
+    configurations.create("mavenBspServer") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class.java, "gvy-maven-bsp-server"))
+        }
+    }
+dependencies {
+    add(mavenBspServer.name, project(":bsp:maven-bsp"))
+}
+
+/** The server JAR and the reused fixtures are inputs by content; their absolute paths stay out of cache keys. */
+abstract class MavenBspEquivalenceArguments : CommandLineArgumentProvider {
+    @get:Classpath
+    abstract val serverJar: ConfigurableFileCollection
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val fixtures: DirectoryProperty
+
+    override fun asArguments(): List<String> =
+        listOf(
+            "-Dgvy.mavenBsp.serverJar=${serverJar.singleFile.absolutePath}",
+            "-Dgvy.mavenBsp.fixtures=${fixtures.get().asFile.absolutePath}",
+        )
+}
+
 /** Machine-specific paths for the real Tooling API test; internal so they never affect cache keys. */
 abstract class ScopedGradleTestArguments : CommandLineArgumentProvider {
     @get:Internal
@@ -89,6 +120,12 @@ tasks.test {
         objects.newInstance<ScopedGradleTestArguments>().apply {
             gradle.gradleHomeDir?.let { installation.set(it) }
             userHome.set(layout.buildDirectory.dir("scoped-gradle-test-home"))
+        },
+    )
+    jvmArgumentProviders.add(
+        objects.newInstance<MavenBspEquivalenceArguments>().apply {
+            serverJar.from(mavenBspServer)
+            fixtures.set(layout.projectDirectory.dir("../bsp/maven-bsp/src/test/resources/fixtures"))
         },
     )
 }
