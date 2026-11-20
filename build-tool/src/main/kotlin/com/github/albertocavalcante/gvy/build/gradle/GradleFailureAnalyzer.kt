@@ -161,7 +161,7 @@ class GradleFailureAnalyzer(
                     jdkVersion = jdkVersion,
                     minGradleVersion = minGradleVersion,
                     maxJdkVersion = maxJdkVersion,
-                    suggestions = suggestions,
+                    suggestions = suggestions.toList(),
                 )
             }
         }

@@ -457,62 +457,46 @@ class ProjectStartupManager(
     /**
      * Converts a ResolutionStatus.Failed to structured ErrorDetails.
      */
-    internal fun convertToErrorDetails(status: ResolutionStatus.Failed): ErrorDetails? =
-        when (val detail = status.details) {
-            is ResolutionFailureDetail.ToolchainProvisioning -> ToolchainProvisioningError(
-                requiredVersion = detail.requiredVersion,
-                vendor = detail.vendor,
-                platform = detail.platform,
-            )
-            is ResolutionFailureDetail.GradleJdkIncompatible -> GradleJdkIncompatibleError(
-                gradleVersion = detail.gradleVersion ?: "unknown",
-                jdkVersion = detail.jdkVersion,
-                minGradleVersion = detail.minGradleVersion ?: "unknown",
-                maxJdkVersion = detail.maxJdkVersion,
-                suggestions = detail.suggestions,
-            )
-            is ResolutionFailureDetail.GroovyJdkIncompatible -> GroovyJdkIncompatibleError(
-                groovyVersion = null, // Could be extracted from project if available
-                jdkVersion = detail.jdkVersion ?: detail.currentJdk,
-                classFileMajorVersion = detail.majorVersion,
-                minGroovyVersion = null, // Could be computed from GroovyCompatibilityService
-                maxJdkVersion = null, // Could be computed from GroovyCompatibilityService
-                suggestions = detail.suggestions,
-            )
-            null -> convertWithoutDetail(status.code)
-        }
-
-    /** Client payload for a failure that carries no structured detail, chosen by its code. */
-    private fun convertWithoutDetail(code: String): ErrorDetails = when (code) {
-        ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED -> ToolchainProvisioningError(
-            requiredVersion = null,
-            vendor = null,
-            platform = null,
-        )
-        ResolutionCodes.GRADLE_JDK_INCOMPATIBLE -> GradleJdkIncompatibleError(
-            gradleVersion = "unknown",
-            jdkVersion = 0,
-            minGradleVersion = "unknown",
-            maxJdkVersion = null,
-            suggestions = listOf(
-                "Update Gradle wrapper to a newer version",
-                "Or configure groovy.gradle.javaHome to use a compatible JDK",
-            ),
-        )
-        ResolutionCodes.GROOVY_JDK_INCOMPATIBLE -> GroovyJdkIncompatibleError(
-            groovyVersion = null,
-            jdkVersion = 0,
-            classFileMajorVersion = 0,
-            minGroovyVersion = null,
-            maxJdkVersion = null,
-            suggestions = emptyList(),
-        )
+    internal fun convertToErrorDetails(status: ResolutionStatus.Failed): ErrorDetails? = when (status.code) {
+        ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED ->
+            toolchainError(status.details as? ResolutionFailureDetail.ToolchainProvisioning)
+        ResolutionCodes.GRADLE_JDK_INCOMPATIBLE ->
+            gradleJdkError(status.details as? ResolutionFailureDetail.GradleJdkIncompatible)
+        ResolutionCodes.GROOVY_JDK_INCOMPATIBLE ->
+            groovyJdkError(status.details as? ResolutionFailureDetail.GroovyJdkIncompatible)
         else -> GenericError(
-            errorCode = code,
+            errorCode = status.code,
             details = emptyMap(),
             suggestions = emptyList(),
         )
     }
+
+    /** A detail of another kind, or none, renders the code's default payload. */
+    private fun toolchainError(detail: ResolutionFailureDetail.ToolchainProvisioning?) = ToolchainProvisioningError(
+        requiredVersion = detail?.requiredVersion,
+        vendor = detail?.vendor,
+        platform = detail?.platform,
+    )
+
+    private fun gradleJdkError(detail: ResolutionFailureDetail.GradleJdkIncompatible?) = GradleJdkIncompatibleError(
+        gradleVersion = detail?.gradleVersion ?: "unknown",
+        jdkVersion = detail?.jdkVersion ?: 0,
+        minGradleVersion = detail?.minGradleVersion ?: "unknown",
+        maxJdkVersion = detail?.maxJdkVersion,
+        suggestions = detail?.suggestions ?: listOf(
+            "Update Gradle wrapper to a newer version",
+            "Or configure groovy.gradle.javaHome to use a compatible JDK",
+        ),
+    )
+
+    private fun groovyJdkError(detail: ResolutionFailureDetail.GroovyJdkIncompatible?) = GroovyJdkIncompatibleError(
+        groovyVersion = null, // Could be extracted from project if available
+        jdkVersion = detail?.jdkVersion ?: detail?.currentJdk ?: 0,
+        classFileMajorVersion = detail?.majorVersion ?: 0,
+        minGroovyVersion = null, // Could be computed from GroovyCompatibilityService
+        maxJdkVersion = null, // Could be computed from GroovyCompatibilityService
+        suggestions = detail?.suggestions ?: emptyList(),
+    )
 
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
         val info = groovyVersionResolver.resolve(dependencies, config.groovyLanguageVersion)

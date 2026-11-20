@@ -20,7 +20,7 @@ data class AsmErrorInfo(
     val suggestions: List<String>,
 ) {
     fun toFailureDetail(): ResolutionFailureDetail.GroovyJdkIncompatible =
-        ResolutionFailureDetail.GroovyJdkIncompatible(majorVersion, jdkVersion, currentJdk, suggestions)
+        ResolutionFailureDetail.GroovyJdkIncompatible(majorVersion, jdkVersion, currentJdk, suggestions.toList())
 }
 
 /**

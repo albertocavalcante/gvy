@@ -138,21 +138,23 @@ class ProjectStartupManagerErrorHandlingTest {
             RuntimeException("Unsupported class file major version 65"),
         )
 
-        val detail = assertIs<ResolutionFailureDetail.GradleJdkIncompatible>(status.details)
+        assertIs<ResolutionFailureDetail.GradleJdkIncompatible>(status.details)
         val payload = assertIs<GradleJdkIncompatibleError>(createManager().convertToErrorDetails(status))
 
         assertEquals(
             GradleJdkIncompatibleError(
                 gradleVersion = "unknown",
                 jdkVersion = 21,
-                minGradleVersion = detail.minGradleVersion ?: "unknown",
+                minGradleVersion = "8.5",
                 maxJdkVersion = null,
-                suggestions = detail.suggestions,
+                suggestions = listOf(
+                    "If Gradle runs on JDK 21, use Gradle 8.5 or newer",
+                    "A class file's Java target does not establish the JVM running Gradle; verify that JVM",
+                    "Set groovy.gradle.javaHome in VS Code settings to a compatible Gradle JVM",
+                ),
             ),
             payload,
         )
-        assertEquals(21, payload.jdkVersion)
-        assertTrue(payload.suggestions.isNotEmpty())
     }
 
     @Test
@@ -165,16 +167,53 @@ class ProjectStartupManagerErrorHandlingTest {
         val detail = assertIs<ResolutionFailureDetail.GroovyJdkIncompatible>(status.details)
         val payload = assertIs<GroovyJdkIncompatibleError>(createManager().convertToErrorDetails(status))
 
+        // Suggestions depend on the running JDK, so pin the stable fields and the pass-through.
+        assertEquals(21, payload.jdkVersion)
+        assertEquals(65, payload.classFileMajorVersion)
+        assertEquals(null, payload.groovyVersion)
+        assertEquals(detail.suggestions, payload.suggestions)
+        assertTrue(payload.suggestions.contains("Run the LSP with JDK 21 or later"), payload.suggestions.toString())
+    }
+
+    @Test
+    fun `an unknown code with a toolchain detail renders the generic payload`() {
+        val status = ResolutionStatus.Failed(
+            code = "SOMETHING_ELSE",
+            message = "boom",
+            details = ResolutionFailureDetail.ToolchainProvisioning(requiredVersion = 17),
+        )
+
         assertEquals(
-            GroovyJdkIncompatibleError(
-                groovyVersion = null,
+            GenericError(errorCode = "SOMETHING_ELSE", details = emptyMap(), suggestions = emptyList()),
+            createManager().convertToErrorDetails(status),
+        )
+    }
+
+    @Test
+    fun `a gradle jdk code with a mismatched detail renders the gradle default payload`() {
+        val status = ResolutionStatus.Failed(
+            code = ResolutionCodes.GRADLE_JDK_INCOMPATIBLE,
+            message = "incompatible",
+            details = ResolutionFailureDetail.GroovyJdkIncompatible(
+                majorVersion = 65,
                 jdkVersion = 21,
-                classFileMajorVersion = 65,
-                minGroovyVersion = null,
-                maxJdkVersion = null,
-                suggestions = detail.suggestions,
+                currentJdk = 17,
+                suggestions = listOf("Upgrade Groovy"),
             ),
-            payload,
+        )
+
+        assertEquals(
+            GradleJdkIncompatibleError(
+                gradleVersion = "unknown",
+                jdkVersion = 0,
+                minGradleVersion = "unknown",
+                maxJdkVersion = null,
+                suggestions = listOf(
+                    "Update Gradle wrapper to a newer version",
+                    "Or configure groovy.gradle.javaHome to use a compatible JDK",
+                ),
+            ),
+            createManager().convertToErrorDetails(status),
         )
     }
 

@@ -109,8 +109,7 @@ class MavenFailureAnalyzer {
      * @return Structured ResolutionStatus.Failed with appropriate error code and details.
      */
     fun classifyException(t: Throwable, groovyVersion: String?): ResolutionStatus.Failed {
-        // The status carries only a summary of the exception; keep the full stack trace here.
-        logger.debug(t) { "Classifying Maven exception: ${t.javaClass.simpleName}: ${t.message}" }
+        logger.debug { "Classifying Maven exception: ${t.javaClass.simpleName}: ${t.message}" }
 
         return when {
             isAsmVersionError(t) -> {
