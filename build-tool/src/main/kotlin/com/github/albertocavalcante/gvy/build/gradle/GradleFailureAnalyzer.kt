@@ -4,6 +4,8 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionFailureCause
+import com.github.albertocavalcante.gvy.build.ResolutionFailureDetail
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -91,31 +93,10 @@ class GradleFailureAnalyzer(
     }
 
     /**
-     * Parsed information from a toolchain provisioning exception.
-     */
-    data class ToolchainErrorInfo(
-        val requiredVersion: Int?,
-        val vendor: String? = null,
-        val platform: String? = null,
-        val suggestions: List<String> = emptyList(),
-    )
-
-    /**
-     * Parsed information from a Gradle/JDK incompatibility error.
-     */
-    data class GradleJdkIncompatibleInfo(
-        val gradleVersion: String?,
-        val jdkVersion: Int,
-        val minGradleVersion: String?,
-        val maxJdkVersion: String?,
-        val suggestions: List<String> = emptyList(),
-    )
-
-    /**
      * Extracts structured information from a toolchain provisioning exception.
      * Returns null if the exception is not a toolchain error.
      */
-    fun extractToolchainErrorInfo(t: Throwable): ToolchainErrorInfo? {
+    fun extractToolchainErrorInfo(t: Throwable): ResolutionFailureDetail.ToolchainProvisioning? {
         if (!isToolchainProvisioningError(t)) return null
 
         for (current in causeChain(t)) {
@@ -131,7 +112,7 @@ class GradleFailureAnalyzer(
                 val vendor = vendorMatch?.groupValues?.get(1)?.trim()?.takeIf { it != "any vendor" }
                 val platform = platformMatch?.groupValues?.get(1)
 
-                return ToolchainErrorInfo(
+                return ResolutionFailureDetail.ToolchainProvisioning(
                     requiredVersion = version,
                     vendor = vendor,
                     platform = platform,
@@ -156,7 +137,7 @@ class GradleFailureAnalyzer(
      * Extracts structured information from a Gradle/JDK incompatibility error.
      * Returns null if the exception is not a JDK mismatch error.
      */
-    fun extractGradleJdkIncompatibleInfo(t: Throwable): GradleJdkIncompatibleInfo? {
+    fun extractGradleJdkIncompatibleInfo(t: Throwable): ResolutionFailureDetail.GradleJdkIncompatible? {
         if (!isJdkMismatch(t)) return null
 
         for (current in causeChain(t)) {
@@ -175,12 +156,12 @@ class GradleFailureAnalyzer(
 
                 val suggestions = buildGradleJdkSuggestions(jdkVersion, minGradleVersion)
 
-                return GradleJdkIncompatibleInfo(
+                return ResolutionFailureDetail.GradleJdkIncompatible(
                     gradleVersion = null, // Could parse from other parts of stack trace if needed
                     jdkVersion = jdkVersion,
                     minGradleVersion = minGradleVersion,
                     maxJdkVersion = maxJdkVersion,
-                    suggestions = suggestions,
+                    suggestions = suggestions.toList(),
                 )
             }
         }
@@ -232,7 +213,12 @@ class GradleFailureAnalyzer(
                 append(". ")
                 info?.suggestions?.firstOrNull()?.let { append(it) }
             }
-            ResolutionStatus.Failed(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, message, t, details = info)
+            ResolutionStatus.Failed(
+                ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED,
+                message,
+                ResolutionFailureCause.of(t),
+                details = info,
+            )
         }
 
         isJdkMismatch(t) -> {
@@ -244,7 +230,7 @@ class GradleFailureAnalyzer(
             ResolutionStatus.Failed(
                 ResolutionCodes.GRADLE_JDK_INCOMPATIBLE,
                 message,
-                t,
+                ResolutionFailureCause.of(t),
                 details = info,
             )
         }
@@ -253,7 +239,7 @@ class GradleFailureAnalyzer(
             ResolutionStatus.Failed(
                 ResolutionCodes.INIT_SCRIPT_ERROR,
                 "Gradle init script error. ${t.message}",
-                t,
+                ResolutionFailureCause.of(t),
             )
         }
 
@@ -261,7 +247,7 @@ class GradleFailureAnalyzer(
             ResolutionStatus.Failed(
                 ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
                 t.message ?: "Unknown error during dependency resolution",
-                t,
+                ResolutionFailureCause.of(t),
             )
         }
     }
