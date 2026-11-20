@@ -11,9 +11,6 @@ plugins {
 description = "Maven BSP (Build Server Protocol) server implementation"
 
 dependencies {
-    // BSP Core infrastructure
-    api(project(":bsp:bsp-core"))
-
     // BSP Protocol
     api(libs.bsp4j)
     api(libs.lsp4j.jsonrpc)
