@@ -41,7 +41,16 @@ kt_test(
     data = glob([
         "src/test/resources/test-*-project/**/*",
         "src/test/resources/non-*-project/**/*",
-    ]),
+    ]) + [
+        # MavenBspEquivalenceTest launches the standalone server and copies the reused fixtures.
+        "//bsp/maven-bsp:equivalence_fixtures",
+        "//bsp/maven-bsp:maven-bsp-server_deploy.jar",
+        "//bsp/maven-bsp:src/test/resources/fixtures/single-module/pom.xml",
+    ],
+    jvm_flags = [
+        "-Dgvy.mavenBsp.serverJar=$(rootpath //bsp/maven-bsp:maven-bsp-server_deploy.jar)",
+        "-Dgvy.mavenBsp.fixtures.marker=$(rootpath //bsp/maven-bsp:src/test/resources/fixtures/single-module/pom.xml)",
+    ],
     # Resources: files loaded via classloader (txt, xml files)
     resources = glob([
         "src/test/resources/network-policy/*.json",
