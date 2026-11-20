@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionFailureDetail
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import io.mockk.every
 import io.mockk.mockk
@@ -209,7 +210,7 @@ class GradleDependencyResolverErrorPropagationTest {
         assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, failedStatus.code)
 
         // The details should contain toolchain error info - use assertIs to fail explicitly if type is wrong
-        val details = assertIs<GradleFailureAnalyzer.ToolchainErrorInfo>(failedStatus.details)
+        val details = assertIs<ResolutionFailureDetail.ToolchainProvisioning>(failedStatus.details)
         assertEquals(17, details.requiredVersion)
         assertTrue(details.platform?.contains("Mac OS X") == true || details.platform?.contains("aarch64") == true)
     }
