@@ -105,6 +105,7 @@ class TestDiscoveryProvider(
                 suite = classNode.name,
                 line = classLine,
                 tests = tests,
+                inheritsTests = classNode.superClass.name !in NON_INHERITING_SUPERCLASSES,
             )
         }
     }
@@ -135,6 +136,14 @@ class TestDiscoveryProvider(
     }
 
     companion object {
+        /** Superclasses that contribute no features of their own. */
+        private val NON_INHERITING_SUPERCLASSES = setOf(
+            "spock.lang.Specification",
+            // Unresolved (below the resolution phase) the base keeps its source spelling.
+            "Specification",
+            "java.lang.Object",
+        )
+
         /**
          * Parse a workspace URI string to a URI object.
          * Handles both file:// URIs and plain paths.

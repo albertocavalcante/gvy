@@ -18,7 +18,10 @@ data class AsmErrorInfo(
     val jdkVersion: Int?,
     val currentJdk: Int,
     val suggestions: List<String>,
-)
+) {
+    fun toFailureDetail(): ResolutionFailureDetail.GroovyJdkIncompatible =
+        ResolutionFailureDetail.GroovyJdkIncompatible(majorVersion, jdkVersion, currentJdk, suggestions.toList())
+}
 
 /**
  * Analyzes exceptions to detect and extract information from ASM "Unsupported class file major version" errors.

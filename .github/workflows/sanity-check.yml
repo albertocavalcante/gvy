@@ -15,11 +15,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check-conflict-markers:
+  # One job instead of three: each was under a minute, and every job costs a queue slot. Steps after the
+  # first run even when an earlier gate failed (`!cancelled()`), so one push reports every failing gate.
+  sanity:
+    name: Sanity checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
+      # Only the large-file comment step is given the token explicitly (see below). Earlier steps run PR
+      # code in the same job, so this is job-level write access, as the old check-file-size job had.
+      pull-requests: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -30,51 +36,35 @@ jobs:
         run: bash tools/ci/check-conflict-markers_test.sh
 
       - name: Check for leftover conflict markers
+        if: ${{ !cancelled() }}
         env:
           BASE_REF: ${{ github.base_ref }}
         run: bash tools/ci/check-conflict-markers.sh "origin/${BASE_REF}"
 
-  ext-latest-selftest:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          persist-credentials: false
-
       - name: Self-test make ext-latest helpers
+        if: ${{ !cancelled() }}
         run: bash tools/ext-latest_test.sh
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: ${{ !cancelled() }}
         with:
           node-version: 24
 
       - name: Self-test logging baseline tools
+        if: ${{ !cancelled() }}
         run: |
           node --version
           node -e 'if (Number(process.versions.node.split(".")[0]) < 24) { console.error("Node 24 or newer is required"); process.exit(1); }'
           node --test tools/logging/fixtures.test.mjs tools/logging/server-baseline.test.mjs
 
-  check-file-size:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
       - name: Self-test large-file gate
+        if: ${{ !cancelled() }}
         run: bash tools/ci/check-large-files_test.sh
 
       # The PR-controlled script runs without a token; only the comment step
       # below gets GH_TOKEN.
       - name: Check for large files (>700KB)
+        if: ${{ !cancelled() }}
         env:
           BASE_REF: ${{ github.base_ref }}
           COMMENT_FILE: ${{ runner.temp }}/large-file-comment.md

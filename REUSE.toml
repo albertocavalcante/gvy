@@ -65,12 +65,8 @@ path = [
   ".gitignore",
   ".java-version",
   ".sdkmanrc",
-  ".spec/JENKINSFILE_FIRST_CLASS_SUPPORT_SPECIFICATION.md",
-  ".spec/README.md",
-  ".spec/markdown-standardization.md",
   "AGENTS.md",
   "CHANGELOG.md",
-  "CLAUDE.md",
   "CODE_QUALITY.md",
   "CONTRIBUTING.md",
   "MODULE.bazel.lock",
@@ -200,6 +196,9 @@ path = [
   "kb/PHASE_2_GROOVY_OPERATORS_PLAN.md",
   "kb/PHASE_3_PERFORMANCE_PLAN.md",
   "kb/README.md",
+  "kb/FILE_EXECUTION.md",
+  "docs/file-execution.md",
+  "editors/code/tools/runtime-manifest.json",
   "kb/RECURSIVE_VISITOR_PARITY.md",
   "kb/SDK_EXTRACTION_DELIVERY_PLAN.md",
   "kb/SPOCK_AST_SUPPORT.md",
@@ -251,6 +250,7 @@ path = [
   "tests/e2e/resources/scenarios/cli/jenkins-extract-basic.yaml",
   "tests/e2e/resources/scenarios/cli/repro-cli-check-sarif-stdout.yaml",
   "tests/e2e/resources/scenarios/code-action-basic.yaml",
+  "tests/e2e/resources/scenarios/code-action-organize-imports.yaml",
   "tests/e2e/resources/scenarios/codelens-spock.yaml",
   "tests/e2e/resources/scenarios/codenarc-original-source-ranges.yaml",
   "tests/e2e/resources/scenarios/codenarc-plain-generic-dirs-profile.yaml",
@@ -551,6 +551,26 @@ path = [
   "docs/website/stable-v0.5.4-package.json",
   "kb/DOCUMENTATION_WEBSITE_REVAMP.md",
   "kb/DOCUMENTATION_WEBSITE_VALIDATION.md",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Exact compatibility inputs and handwritten oracle data.
+[[annotations]]
+path = [
+  "tools/jenkins-extractor/oracle/controls.json",
+  "tools/jenkins-extractor/oracle/roots.json",
+  "tools/jenkins-extractor/oracle/locks/current.json",
+  "tools/jenkins-extractor/oracle/locks/legacy.json",
+  "tools/jenkins-extractor/oracle/fixtures/minimal.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/docker.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/kubernetes.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/missing-agent.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/unknown-section.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/malformed.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/scripted.Jenkinsfile",
+  "tools/jenkins-extractor/oracle/fixtures/never-execute.Jenkinsfile",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"

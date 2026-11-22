@@ -18,5 +18,12 @@
             <artifactId>module-a</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- An external dependency next to the sibling one, so losing module-b's classpath is visible. -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

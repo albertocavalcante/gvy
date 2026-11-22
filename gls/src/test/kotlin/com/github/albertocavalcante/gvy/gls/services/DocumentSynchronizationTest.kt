@@ -143,16 +143,28 @@ class DocumentSynchronizationTest {
     @Test
     fun `save diagnoses the current snapshot immediately and ignores supplied save text`(): Unit = runTest {
         val compilation = mockk<GroovyCompilationService>(relaxed = true)
-        val result = mockk<CompilationResult>()
-        every { result.diagnostics } returns emptyList()
-        every { result.parseCompleted } returns true
-        coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
+        coEvery { compilation.compileAsync(any(), any(), any()) } answers {
+            CompletableDeferred(
+                CompilationResult(false, null, emptyList(), sourceText = thirdArg<String>(), parseCompleted = true),
+            )
+        }
         every { compilation.workspaceManager } returns mockk(relaxed = true)
         val documents = DocumentProvider()
+        val publications = mutableListOf<PublishDiagnosticsParams>()
+        val client = mockk<LanguageClient>()
+        every { client.publishDiagnostics(capture(publications)) } just Runs
         val service = GroovyTextDocumentService(
             coroutineScope = backgroundScope,
             compilationService = compilation,
-            options = GroovyTextDocumentServiceOptions(documentProvider = documents),
+            options = GroovyTextDocumentServiceOptions(
+                documentProvider = documents,
+                client = { client },
+                serverConfiguration = ServerConfiguration(
+                    diagnosticConfig = DiagnosticConfig(
+                        disabledProviders = setOf("codenarc", "custom-rules", "unused-imports"),
+                    ),
+                ),
+            ),
         )
         service.didOpen(open("initial", 3))
         service.didChange(change(4, "current buffer"))
@@ -168,6 +180,9 @@ class DocumentSynchronizationTest {
         coVerify(exactly = 1) { compilation.compileAsync(any(), uri, "current buffer") }
         coVerify(exactly = 0) { compilation.compileAsync(any(), uri, "stale client save text") }
         assertEquals(DocumentSnapshot("current buffer", 4), documents.getSnapshot(uri))
+        assertEquals(1, publications.size)
+        assertEquals(4, publications.single().version)
+        assertTrue(publications.single().diagnostics.isEmpty())
 
         advanceTimeBy(250)
         advanceUntilIdle()
@@ -211,9 +226,7 @@ class DocumentSynchronizationTest {
                 severity = DiagnosticSeverity.Error
                 code = Either.forLeft("syntax-error")
             }
-            val result = mockk<CompilationResult>()
-            every { result.diagnostics } returns listOf(oldError)
-            every { result.parseCompleted } returns true
+            val result = CompilationResult(false, null, listOf(oldError), oldContent, parseCompleted = true)
             val deferred = mockk<Deferred<CompilationResult>>()
             coEvery { deferred.await() } coAnswers {
                 withContext(NonCancellable) {
@@ -226,11 +239,8 @@ class DocumentSynchronizationTest {
             return deferred
         }
 
-        private fun cleanResult(): CompilationResult = mockk<CompilationResult>().also { result ->
-            every { result.diagnostics } returns emptyList()
-            every { result.parseCompleted } returns true
-            every { result.sourceText } returns repairedContent
-        }
+        private fun cleanResult(): CompilationResult =
+            CompilationResult(false, null, emptyList(), repairedContent, parseCompleted = true)
     }
 
     @Test
@@ -263,9 +273,7 @@ class DocumentSynchronizationTest {
     @Test
     fun `save for an unknown or closed document does not compile`(): Unit = runTest {
         val compilation = mockk<GroovyCompilationService>(relaxed = true)
-        val result = mockk<CompilationResult>()
-        every { result.diagnostics } returns emptyList()
-        every { result.parseCompleted } returns true
+        val result = CompilationResult(false, null, emptyList(), "opened", parseCompleted = true)
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
         every { compilation.workspaceManager } returns mockk(relaxed = true)
         val service = GroovyTextDocumentService(

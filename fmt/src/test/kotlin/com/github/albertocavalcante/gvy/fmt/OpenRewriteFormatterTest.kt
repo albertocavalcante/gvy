@@ -25,6 +25,44 @@ class OpenRewriteFormatterTest {
     }
 
     @Nested
+    inner class `Enum formatting (#1639)` {
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "enum E {\n    A, B\n}\n",
+                "enum E {\n    A, B,\n}\n",
+                "enum E {\n    A\n}\n",
+                "enum E { A, B }\n",
+                "enum E {\n    A(1), B(2);\n\n    E(int n) {}\n}\n",
+                "enum E {\n    A, B;\n\n    int size() { 1 }\n}\n",
+                "enum E {\n    A, B;\n}\n",
+                "class C {\n    enum E {\n        A, B\n    }\n}\n",
+            ],
+        )
+        fun `formatting twice gives the same result as once`(input: String) {
+            val first = formatter.formatChecked(input)
+            assertThat(first).isNotInstanceOf(FormatOutcome.Refused::class.java)
+            val second = formatter.formatChecked(first.text)
+            assertThat(second).isNotInstanceOf(FormatOutcome.Refused::class.java)
+            assertThat(second.text).isEqualTo(first.text)
+        }
+
+        @Test
+        fun `adds no whitespace-only line before the closing brace`() {
+            val formatted = formatter.format("enum E {\n    A, B\n}\n")
+            assertThat(formatted.lines()).noneMatch { it.isNotEmpty() && it.isBlank() }
+            assertThat(formatted.trimEnd()).endsWith("B\n}")
+        }
+
+        @Test
+        fun `keeps a nested enum closing brace at the enum indentation`() {
+            val formatted = formatter.format("class C {\n    enum E {\n        A, B\n    }\n}\n")
+            assertThat(formatted).contains("        A, B\n    }\n")
+        }
+    }
+
+    @Nested
     inner class `General formatting` {
 
         @Test

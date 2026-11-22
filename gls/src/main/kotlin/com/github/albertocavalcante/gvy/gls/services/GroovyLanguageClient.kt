@@ -31,3 +31,35 @@ interface GroovyLanguageClient : LanguageClient {
     @JsonNotification("groovy/status")
     fun groovyStatus(status: StatusNotification)
 }
+
+/** Client protocol with document analysis notifications, negotiated separately from legacy status support. */
+interface DocumentAnalysisLanguageClient : GroovyLanguageClient {
+    @JsonNotification("groovy/documentAnalysis")
+    fun documentAnalysis(analysis: DocumentAnalysisNotification)
+}
+
+/** A terminal analysis result for one document incarnation and version. */
+data class DocumentAnalysisNotification(
+    val uri: String,
+    val version: Int?,
+    val runId: Long,
+    val sessionId: String?,
+    val compiler: CompilerAnalysis,
+    val providerFailures: List<ProviderAnalysisFailure>,
+)
+
+data class CompilerAnalysis(
+    val complete: Boolean,
+    val phase: String?,
+    val reason: String?,
+    val sourceMembershipKnown: Boolean? = null,
+    val sourceVisibilityKnown: Boolean? = null,
+    val sourceModelMessage: String? = null,
+)
+
+data class ProviderAnalysisFailure(
+    val provider: String,
+    val message: String,
+    val configurationUri: String? = null,
+    val range: org.eclipse.lsp4j.Range? = null,
+)

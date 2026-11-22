@@ -11,9 +11,6 @@ plugins {
 description = "Maven BSP (Build Server Protocol) server implementation"
 
 dependencies {
-    // BSP Core infrastructure
-    api(project(":bsp:bsp-core"))
-
     // BSP Protocol
     api(libs.bsp4j)
     api(libs.lsp4j.jsonrpc)
@@ -73,6 +70,17 @@ tasks.register<Jar>("fatJar") {
     manifest {
         attributes["Main-Class"] = "com.github.groovylsp.bsp.maven.launcher.MavenBspLauncher"
     }
+}
+
+// The standalone server JAR for build-tool's MavenBspEquivalenceTest, which launches it as a real child process.
+// Not part of the published component.
+configurations.create("standaloneServerElements") {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class.java, "gvy-maven-bsp-server"))
+    }
+    outgoing.artifact(tasks.named<Jar>("fatJar"))
 }
 
 // Maven Central publishing configuration

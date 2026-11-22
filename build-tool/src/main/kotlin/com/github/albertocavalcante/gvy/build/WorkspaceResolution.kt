@@ -26,7 +26,7 @@ data class WorkspaceResolution(
     companion object {
         fun empty(): WorkspaceResolution = WorkspaceResolution(emptyList(), emptyList())
 
-        fun failed(code: String, message: String, cause: Throwable? = null): WorkspaceResolution =
+        fun failed(code: String, message: String, cause: ResolutionFailureCause? = null): WorkspaceResolution =
             WorkspaceResolution(emptyList(), emptyList(), ResolutionStatus.Failed(code, message, cause))
     }
 }

@@ -4,10 +4,13 @@
 package com.github.albertocavalcante.gvy.build.maven
 
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionFailureCause
+import com.github.albertocavalcante.gvy.build.ResolutionFailureDetail
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlin.test.assertIs
 
 class MavenFailureAnalyzerTest {
 
@@ -76,6 +79,21 @@ class MavenFailureAnalyzerTest {
         assertEquals(ResolutionCodes.GROOVY_JDK_INCOMPATIBLE, result.code)
         assertTrue(result.message.contains("JDK"))
         assertTrue(result.message.contains("Groovy"))
+    }
+
+    @Test
+    fun `ASM error carries a neutral Groovy JDK detail and a cause summary`() {
+        val exception = RuntimeException("Unsupported class file major version 65")
+        val result = analyzer.classifyException(exception, groovyVersion = "3.0.9")
+
+        val detail = assertIs<ResolutionFailureDetail.GroovyJdkIncompatible>(result.details)
+        assertEquals(65, detail.majorVersion)
+        assertEquals(21, detail.jdkVersion)
+        assertTrue(detail.suggestions.isNotEmpty())
+        assertEquals(
+            ResolutionFailureCause("java.lang.RuntimeException", "Unsupported class file major version 65"),
+            result.cause,
+        )
     }
 
     @Test

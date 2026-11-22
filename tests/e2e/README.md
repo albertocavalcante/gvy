@@ -24,6 +24,50 @@ compilation and thin library JAR dependencies still run as needed. It does not p
 behavior. `e2eTest` continues to run the full suite, including these controls and the artifact-dependent tests. Use
 `make harness-test` for the same focused command.
 
+## Named scenario outcomes
+
+Named checks produce a versioned JSON outcome before JUnit reports a pass, failure or known-failure abort. The report
+retains every planned, observed and blocked check, issue-linked statuses, counts, execution and cleanup outcomes.
+`isSuccessful` is false for known failures, unexpected passes, blocked checks and incomplete cleanup. A skipped JUnit
+test therefore does not establish successful product behavior.
+
+Gradle logs a fresh invocation directory under `tests/build/test-results/<task>/scenario-outcomes/`; each execution
+publishes a separate UUID-named JSON file there. The existing E2E result upload includes this directory. Bazel uses
+`TEST_UNDECLARED_OUTPUTS_DIR/scenario-outcomes`. For direct test-runner invocation, configure the JVM property
+`groovy.lsp.e2e.outcomeDir`. Synthetic runner controls must override it to a private test directory.
+
+Only completed `.json` files are outcomes. Publication failures fail the run and retain the unpublished outcome in the
+exception; they cannot be reclassified as a known product defect. Reports from a cached or earlier invocation are
+historical evidence. These outcome files do not supply server artifact or source-snapshot provenance on their own;
+packaged recovery replays must capture and bind that evidence separately.
+
+`SemanticTokenDecoder` is a test-only oracle for full-document token responses. Supply the initialized legend and the
+exact authored source for that request. It validates UTF-16 tuples, bounds, surrogate boundaries and non-overlap,
+including LF, CRLF and CR input. Omitted position encoding uses the LSP UTF-16 default; other encodings are rejected.
+Its pure mutation tests establish decoding behavior, not product recovery or request/source provenance. The packaged
+recovery workload must still bind request identities and assert current names, kinds and spans.
+
+`ColdIncompleteBufferRecoveryTest` launches a fresh packaged stdio process and empty workspace for each cold first
+feature, using unsaved handwritten source. Valid controls and malformed LF/CRLF cases exercise exact class tokens, hover
+ranges, outline ranges and declared enum members. The sealed named report includes launch/runtime facts, initialized
+capabilities, original bounded wire and request/source bindings. Missing or inconsistent evidence fails the test; these
+requests do not provide response document versions where LSP omits them. Dirty packaged sources are rejected by the
+existing launch verifier, so commit the test source before a qualifying packaged run.
+
+This is the cold replay slice of M0.1a. Warm edits, reused-version reopen, actual supplementary-character coordinates
+and shadowed/unknown completion receivers still require their own packaged controls. Pure decoder tests do not close
+those gates. Passing-test server-log diagnostic coverage remains tracked in #1603.
+
+The named `diagnostics.integrity` control checks terminal URI/version, completion, provider failures and source bounds;
+it preserves all supplied diagnostic metadata in the bound response. It does not establish the expected syntax-error
+location or attribution. Those semantic diagnostic assertions remain part of #2082's open workload gates.
+
+The initial packaged baseline observed missing before-anchor facts with 26 passed, 6 failed and 6 blocked checks. After
+classifying only those observed failures, the next run reached all after-anchor checks: 26 passed, 6 known failures, 6
+failed and none blocked. The final issue-linked metadata therefore covers only measured missing class tokens, empty
+class hovers and absent outline declarations in malformed buffers. Valid controls and enum completion remain required.
+Any unexpected pass fails until the corresponding metadata is removed; known failures never make `isSuccessful` true.
+
 The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
 still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 

@@ -25,15 +25,18 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
+import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
+import org.eclipse.lsp4j.DocumentSymbolCapabilities
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextDocumentClientCapabilities
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -171,6 +174,12 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
         val interpolatedOptions = step.initializationOptions?.let { context.interpolateNode(it) }
         val params = InitializeParams().apply {
             processId = ProcessHandle.current().pid().toInt()
+            // Like VS Code, ask for nested document symbols; a client that does not gets a flat list.
+            capabilities = ClientCapabilities().apply {
+                textDocument = TextDocumentClientCapabilities().apply {
+                    documentSymbol = DocumentSymbolCapabilities().apply { hierarchicalDocumentSymbolSupport = true }
+                }
+            }
             val finalRootUri = step.rootUri ?: context.workspace.rootUri
             workspaceFolders = listOf(WorkspaceFolder(finalRootUri, context.workspace.rootDir.name))
             initializationOptions = interpolatedOptions?.let {

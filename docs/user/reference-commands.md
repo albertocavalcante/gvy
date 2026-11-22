@@ -46,13 +46,15 @@ Packaged manifest from the official v0.5.4 VSIX at tag commit `c441b8451ceed18a8
 
 ## Current checkout
 
-Manifest SHA-256 `5373604260a156449df724ef20f80f3d07fa8c124f4cdf1e569dba89f32c74d0`.
+Contributes SHA-256 `dc750e54b752503d611a752fbbcc745941380bb787b58e9aa4ed6c6c88307dd3`.
 
 | Command                              | Title                                     |
 | ------------------------------------ | ----------------------------------------- |
 | `groovy.addFoojayResolver`           | Groovy: Add Foojay Resolver Plugin        |
 | `groovy.ast.show`                    | Groovy: Show AST Explorer                 |
 | `groovy.checkForUpdates`             | Groovy: Check for Language Server Updates |
+| `groovy.compileFile`                 | Groovy: Compile File                      |
+| `groovy.configureFileExecution`      | Groovy: Configure File Execution          |
 | `groovy.configureJava`               | Groovy: Configure Java Runtime            |
 | `groovy.dependencies.copyCoordinate` | Copy Dependency Coordinate                |
 | `groovy.dependencies.refresh`        | Groovy: Refresh Dependencies              |
@@ -69,7 +71,12 @@ Manifest SHA-256 `5373604260a156449df724ef20f80f3d07fa8c124f4cdf1e569dba89f32c74
 | `groovy.repl.stop`                   | Groovy: Stop REPL                         |
 | `groovy.reportIssue`                 | Groovy: Report Issue                      |
 | `groovy.restartServer`               | Groovy: Restart Language Server           |
+| `groovy.revealFileOutput`            | Groovy: Reveal File Compile Output        |
+| `groovy.runFile`                     | Groovy: Run File                          |
+| `groovy.runFileAgain`                | Groovy: Run File Again                    |
+| `groovy.runFileWithProject`          | Groovy: Run File with Project…            |
 | `groovy.setLogLevel`                 | Groovy: Set Log Level                     |
+| `groovy.showAnalysisDetails`         | Groovy: Show Analysis Details             |
 | `groovy.showStatusMenu`              | Groovy: Show Server Status Menu           |
 | `groovy.showVersion`                 | Groovy: Show Language Server Version      |
 | `groovy.stopServer`                  | Groovy: Stop Language Server              |

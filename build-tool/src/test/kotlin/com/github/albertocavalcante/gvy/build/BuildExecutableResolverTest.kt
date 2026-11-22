@@ -55,7 +55,7 @@ class BuildExecutableResolverTest {
 
         val result = BuildExecutableResolver.resolveGradle(tempDir, forceWindows = true)
 
-        assertEquals("gradle", result)
+        assertEquals("gradle.bat", result)
     }
 
     @Test
@@ -106,7 +106,7 @@ class BuildExecutableResolverTest {
 
         val result = BuildExecutableResolver.resolveMaven(tempDir, forceWindows = true)
 
-        assertEquals("mvn", result)
+        assertEquals("mvn.cmd", result)
     }
 
     @Test

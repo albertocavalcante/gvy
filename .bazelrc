@@ -6,6 +6,12 @@
 startup --host_jvm_args=-Xmx2g
 startup --max_idle_secs=600
 
+# Select a native workspace-status launcher for the host. Only the resource action consumes its output.
+common --enable_platform_specific_config
+build:linux --workspace_status_command=tools/build-info/workspace-status
+build:macos --workspace_status_command=tools/build-info/workspace-status
+build:windows --workspace_status_command=tools/build-info/workspace-status.cmd
+
 # Remote telemetry and execution are disabled by owner policy. Local evidence works
 # without an account or service. Explicit user/command-line overrides remain visible.
 common --bes_backend=

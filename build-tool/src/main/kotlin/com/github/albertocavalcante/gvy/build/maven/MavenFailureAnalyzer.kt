@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.build.maven
 
 import com.github.albertocavalcante.gvy.build.AsmErrorAnalyzer
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionFailureCause
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -129,8 +130,8 @@ class MavenFailureAnalyzer {
                 ResolutionStatus.Failed(
                     ResolutionCodes.GROOVY_JDK_INCOMPATIBLE,
                     message,
-                    t,
-                    details = asmInfo,
+                    ResolutionFailureCause.of(t),
+                    details = asmInfo?.toFailureDetail(),
                 )
             }
 
@@ -138,7 +139,7 @@ class MavenFailureAnalyzer {
                 ResolutionStatus.Failed(
                     ResolutionCodes.POM_PARSING_FAILED,
                     "Failed to parse POM file. Check for XML syntax errors. ${t.message ?: ""}",
-                    t,
+                    ResolutionFailureCause.of(t),
                 )
             }
 
@@ -146,7 +147,7 @@ class MavenFailureAnalyzer {
                 ResolutionStatus.Failed(
                     ResolutionCodes.CONNECTIVITY_ERROR,
                     "Network connectivity error. Check internet connection and repository URLs. ${t.message ?: ""}",
-                    t,
+                    ResolutionFailureCause.of(t),
                 )
             }
 
@@ -154,7 +155,7 @@ class MavenFailureAnalyzer {
                 ResolutionStatus.Failed(
                     ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
                     "Maven dependency resolution failed. ${t.message ?: ""}",
-                    t,
+                    ResolutionFailureCause.of(t),
                 )
             }
 
@@ -162,7 +163,7 @@ class MavenFailureAnalyzer {
                 ResolutionStatus.Failed(
                     ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
                     t.message ?: "Unknown Maven build error",
-                    t,
+                    ResolutionFailureCause.of(t),
                 )
             }
         }

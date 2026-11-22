@@ -4,6 +4,10 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.contentHash
+import com.github.albertocavalcante.gvy.source.DocumentChange
+import com.github.albertocavalcante.gvy.source.DocumentChangeRejectionReason
+import com.github.albertocavalcante.gvy.source.DocumentChangeResult
+import com.github.albertocavalcante.gvy.source.applyOrderedDocumentChanges
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
@@ -14,10 +18,17 @@ data class DocumentSnapshot(val content: String, val version: Int?) {
 }
 
 /** Identity of one open/close lifecycle; accepted edits retain it. */
-internal class DocumentIncarnation
+internal class DocumentIncarnation(val analysisSessionId: String? = null)
 
 /** A buffer's state and the lifecycle it belongs to, read together. */
 internal class OpenBuffer(val snapshot: DocumentSnapshot, val incarnation: DocumentIncarnation)
+
+internal sealed interface BufferChangeResult {
+    data class Applied(val snapshot: DocumentSnapshot) : BufferChangeResult
+    data class Invalid(val changeIndex: Int, val reason: DocumentChangeRejectionReason) : BufferChangeResult
+    data object Stale : BufferChangeResult
+    data object RetiredBase : BufferChangeResult
+}
 
 class DocumentProvider {
     private class OpenDocument(
@@ -44,9 +55,11 @@ class DocumentProvider {
     }
 
     /** Open a buffer. A new open/close lifecycle may restart the client's version sequence. */
-    fun put(uri: URI, content: String, version: Int) {
+    fun put(uri: URI, content: String, version: Int) = put(uri, content, version, null)
+
+    internal fun put(uri: URI, content: String, version: Int, analysisSessionId: String?) {
         synchronized(lifecycleLock) {
-            documents[uri] = OpenDocument(DocumentSnapshot(content, version))
+            documents[uri] = OpenDocument(DocumentSnapshot(content, version), DocumentIncarnation(analysisSessionId))
         }
     }
 
@@ -61,6 +74,48 @@ class DocumentProvider {
         } else {
             DocumentSnapshot(content ?: current.snapshot.content, version).also {
                 documents[uri] = OpenDocument(it, current.incarnation)
+            }
+        }
+    }
+
+    /**
+     * Prepare a batch against exactly [expectedBase], then install its final text in one transition.
+     * Identity is checked before version validation and again after preparation, including invalid batches.
+     * Retired bases are rejected without replaying their edits against different text. Preparation does not
+     * hold the lifecycle lock. Callers must still serialize notification arrival and fence publication.
+     */
+    internal fun applyChanges(
+        uri: URI,
+        expectedBase: DocumentSnapshot,
+        version: Int,
+        changes: List<DocumentChange>,
+    ): BufferChangeResult {
+        val rejection: BufferChangeResult? = synchronized(lifecycleLock) {
+            when {
+                documents[uri]?.snapshot !== expectedBase -> BufferChangeResult.RetiredBase
+                expectedBase.version != null && version <= expectedBase.version -> BufferChangeResult.Stale
+                else -> null
+            }
+        }
+        if (rejection != null) return rejection
+
+        val prepared = applyOrderedDocumentChanges(expectedBase.content, changes)
+        return synchronized(lifecycleLock) {
+            val current = documents[uri]
+            if (current == null || current.snapshot !== expectedBase) {
+                BufferChangeResult.RetiredBase
+            } else {
+                when (prepared) {
+                    is DocumentChangeResult.Rejected -> BufferChangeResult.Invalid(
+                        prepared.changeIndex,
+                        prepared.reason,
+                    )
+                    is DocumentChangeResult.Applied -> {
+                        val accepted = DocumentSnapshot(prepared.text, version)
+                        documents[uri] = OpenDocument(accepted, current.incarnation)
+                        BufferChangeResult.Applied(accepted)
+                    }
+                }
             }
         }
     }
@@ -85,6 +140,9 @@ class DocumentProvider {
                 true
             }
         }
+
+    /** Serialize a short operation against all document lifecycle mutations. */
+    internal fun <T> withLifecycleLock(action: () -> T): T = synchronized(lifecycleLock) { action() }
 
     /** Remove and clear only the incarnation targeted by a close, without clearing a reentrant reopen. */
     internal fun removeIfCurrent(uri: URI, captured: DocumentIncarnation, afterRemove: () -> Unit): Boolean =

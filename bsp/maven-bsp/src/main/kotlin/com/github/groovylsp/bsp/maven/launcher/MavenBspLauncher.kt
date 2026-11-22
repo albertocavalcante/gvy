@@ -16,8 +16,14 @@ import org.eclipse.aether.spi.connector.transport.TransporterFactory
 import org.eclipse.aether.transport.file.FileTransporterFactory
 import org.eclipse.aether.transport.http.HttpTransporterFactory
 import org.eclipse.lsp4j.jsonrpc.Launcher
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.system.exitProcess
 
 /**
  * Main entry point for the Maven BSP server.
@@ -39,7 +45,8 @@ object MavenBspLauncher {
         logger.info { "Starting Maven BSP server for workspace: ${config.workspaceRoot}" }
 
         val server = createServer(config.workspaceRoot, config.localRepository)
-        startServer(server)
+        // The executable owns its exit: stdin may stay open after build/exit, so returning is not enough.
+        exitProcess(serve(server, System.`in`, System.out))
     }
 
     /**
@@ -126,19 +133,40 @@ object MavenBspLauncher {
         )
     }
 
-    private fun startServer(server: MavenBuildServer) {
-        val launcher = Launcher.Builder<BuildClient>()
-            .setLocalService(server)
-            .setRemoteInterface(BuildClient::class.java)
-            .setInput(System.`in`)
-            .setOutput(System.out)
-            .create()
+    /**
+     * Serves BSP over [input]/[output] until the client sends `build/exit` or closes [input], then stops the
+     * listener threads and returns the process exit code: 0 if `build/shutdown` was received first, 1 otherwise
+     * (exit before shutdown, or end of input without shutdown). Requests still in flight at that point are abandoned.
+     */
+    internal fun serve(server: MavenBuildServer, input: InputStream, output: OutputStream): Int {
+        val threadCount = AtomicInteger()
+        val executor = Executors.newCachedThreadPool { task ->
+            Thread(task, "maven-bsp-rpc-${threadCount.incrementAndGet()}").apply { isDaemon = true }
+        }
+        val exitRequested = CompletableFuture<Unit>()
+        server.onExit { exitRequested.complete(Unit) }
+        try {
+            val launcher = Launcher.Builder<BuildClient>()
+                .setLocalService(server)
+                .setRemoteInterface(BuildClient::class.java)
+                .setInput(input)
+                .setOutput(output)
+                .setExecutorService(executor)
+                .create()
+            server.connect(launcher.remoteProxy)
 
-        val client = launcher.remoteProxy
-        server.connect(client)
-
-        logger.info { "Maven BSP server started, listening on stdin/stdout" }
-        launcher.startListening().get()
+            logger.info { "Maven BSP server started, listening on stdin/stdout" }
+            // startListening() returns a plain Future, so a waiter bridges end of input into the same signal.
+            val listening = launcher.startListening()
+            executor.execute {
+                runCatching { listening.get() }
+                exitRequested.complete(Unit)
+            }
+            exitRequested.get()
+        } finally {
+            executor.shutdownNow()
+        }
+        return if (server.shutdownRequested) 0 else 1
     }
 
     private fun defaultLocalRepository(): Path {

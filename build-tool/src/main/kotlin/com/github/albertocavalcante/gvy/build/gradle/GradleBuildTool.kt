@@ -13,6 +13,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gradle.tooling.model.idea.IdeaProject
 import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 import kotlin.io.path.exists
 
 /**
@@ -41,6 +42,15 @@ class GradleBuildTool(
         retryConfig = retryConfig,
         daemonSettings = daemonSettings,
     )
+
+    private val executionProducer = GradleScopedDependencyProducer(
+        connectionFactory = connectionFactory,
+        javaHome = javaHome,
+        daemonSettings = daemonSettings,
+    )
+
+    suspend fun executionContexts(workspaceRoot: Path, javaHome: Path? = null): List<GradleExecutionContext>? =
+        executionProducer.resolveExecutionContexts(workspaceRoot, javaHome = javaHome)
 
     override val name: String = "Gradle"
 
@@ -113,7 +123,9 @@ class GradleBuildTool(
 
     override fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String?): TestCommand {
         val testFilter = if (test != null) "$suite.$test" else suite
-        val args = listOf("test", "--tests", testFilter, "jacocoTestReport")
+        // The report is a separate, optional step (see getCoverageReportCommand): a project without the jacoco
+        // plugin rejects the unknown task name and would run no tests at all.
+        val args = listOf("test", "--tests", testFilter)
 
         return TestCommand(
             executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
@@ -121,6 +133,13 @@ class GradleBuildTool(
             cwd = workspaceRoot.toString(),
         )
     }
+
+    override fun getCoverageReportCommand(workspaceRoot: Path): TestCommand = TestCommand(
+        executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
+        // "-x test": the report task usually depends on test; do not re-run the suite and replace this run's data.
+        args = listOf("jacocoTestReport", "-x", "test"),
+        cwd = workspaceRoot.toString(),
+    )
 
     /**
      * Retrieves rich dependency metadata for all dependencies in the workspace.
@@ -130,17 +149,30 @@ class GradleBuildTool(
      * @param workspaceRoot The root directory of the Gradle project
      * @return List of dependency metadata, or empty list on failure
      */
-    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata> {
+    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata> =
+        getDependencyMetadata(workspaceRoot, ResolutionCancellation())
+
+    /**
+     * Like [getDependencyMetadata]; [cancellation] cancels the in-flight Tooling API operation and releases the
+     * connection lease, then this throws [java.util.concurrent.CancellationException].
+     */
+    override fun getDependencyMetadata(
+        workspaceRoot: Path,
+        cancellation: ResolutionCancellation,
+    ): List<DependencyMetadata> {
         logger.info { "Extracting dependency metadata from Gradle project: $workspaceRoot" }
 
         return try {
-            val connection = connectionFactory.getConnection(workspaceRoot, null)
-            val ideaProject = connection.model(IdeaProject::class.java).get()
+            // Same lease, daemon arguments, Java home and cancellation as resolve(): a bare connection.model(...)
+            // would start a second, differently configured daemon.
+            val ideaProject = dependencyResolver.fetchIdeaProject(workspaceRoot, cancellation)
 
             val dependencies = extractDependenciesFromModules(ideaProject)
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
 
             deduplicateDependencies(dependencies)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error(e) { "Failed to extract Gradle dependency metadata: ${e.message}" }
             emptyList()

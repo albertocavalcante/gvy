@@ -52,23 +52,28 @@ bun run validate
 GVY_E2E_SYSTEM_CHROME=1 bun run test:e2e
 ```
 
-The default uses Playwright's matching bundled Chromium instead. CI installs it with
-`bunx playwright install --with-deps chromium`, then tests the same `dist` artifact produced by validation. One worker
-serves `/gvy/` on a private loopback port and shuts the server down afterward. It checks mapped routes and legacy
-fragments, search result destinations, installation-to-quickstart navigation, mobile menu and search dialog keyboard
-focus, theme persistence, no-JavaScript content, keyboard scrolling, local assets/runtime errors, document overflow and
-axe findings. Axe violations and incomplete results are attached to the test report for review. Representative pages run
-at 360/768/1440 px in both themes. Failed tests retain screenshots and traces; `playwright-report/` and `test-results/`
-are ignored locally and uploaded for seven days in CI.
+The system Chrome opt-in runs the Chromium projects only. The default uses Playwright's matching bundled Chromium,
+Firefox, and WebKit engines. CI installs them with `bunx playwright install --with-deps chromium firefox webkit` and
+tests the same `dist` artifact produced by validation. Firefox and WebKit run the critical journeys; the full route and
+viewport matrix runs in Chromium. One worker serves `/gvy/` on a private loopback port and shuts the server down
+afterward. It checks mapped routes and legacy fragments, search result destinations, installation-to-quickstart
+navigation, mobile menu and search dialog keyboard focus, theme persistence, no-JavaScript content, keyboard scrolling,
+local assets/runtime errors, document overflow and axe findings. Axe violations and incomplete results are attached to
+the test report for review. Representative pages run at 360/768/1440 px in both themes. Failed tests retain screenshots
+and traces; `playwright-report/` and `test-results/` are ignored locally and uploaded for seven days in CI.
 
 `GVY_E2E_BASE_URL=https://albertocavalcante.github.io/gvy/` tests the public artifact instead of starting a local
 server. Use the trailing slash. The real clipboard assertion is skipped by default; CI opts in with
 `GVY_E2E_CLIPBOARD=1` on an ephemeral runner. Browser contexts do not isolate the operating-system clipboard, so a local
 CI-style run should keep that opt-in unset. The suite does not execute installation commands.
 
-These are regression checks, not accessibility certification or a visual-baseline approval. Firefox/WebKit, reviewed
-Linux screenshot baselines, zoom/reflow and manual assistive-technology review remain explicit follow-ups. Record the
-tested input and browser/tool versions with results, as in the
+On Linux, bundled Chromium compares the home page against reviewed screenshots in all six viewport/theme combinations.
+The screenshot-only style hides the generated footer date and reserves a fixed width for it; the page itself is
+unchanged. Missing baselines fail the test, and the report retains actual images for review. System Chrome skips visual
+comparisons. Review actual and diff images before updating baselines; never accept an unexplained change.
+
+These are regression checks, not accessibility certification. Zoom/reflow and manual assistive-technology review remain
+explicit follow-ups. Record the tested input and browser/tool versions with results, as in the
 [validation record](../../kb/DOCUMENTATION_WEBSITE_VALIDATION.md).
 
 ## Release refresh

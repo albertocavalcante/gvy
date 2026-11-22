@@ -44,6 +44,9 @@ class DiagnosticsOrchestratorDebounceTest {
             val result = mockk<CompilationResult> {
                 every { diagnostics } returns emptyList()
                 every { parseCompleted } returns true
+                every { outcome } returns null
+                every { sourceMembershipKnown } returns null
+                every { sourceVisibilityKnown } returns null
             }
             coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
             val diagnosticsService = mockk<DiagnosticsService>()

@@ -163,7 +163,12 @@ private fun resolveMethodDefinition(
     symbolTable: SymbolTable,
     visitor: GroovyAstModel,
 ): ASTNode? = visitor.getUri(call)?.let { uri ->
-    symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull { call.mayCall(it) }
+    val candidates = symbolTable.registry.findMethodDeclarations(uri, call.method.text)
+    if (call.isSuperCall()) {
+        resolveSuperMethod(call, candidates, visitor)
+    } else {
+        candidates.firstOrNull { call.mayCall(it) }
+    }
 }
 
 /**

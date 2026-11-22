@@ -3,7 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.testing.client
 
-import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
+import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisLanguageClient
+import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisNotification
 import com.github.albertocavalcante.gvy.gls.services.Health
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -23,7 +24,7 @@ import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingDeque
 
-class HarnessLanguageClient : GroovyLanguageClient {
+class HarnessLanguageClient : DocumentAnalysisLanguageClient {
     private val logger = KotlinLogging.logger {}
 
     private val journal = NotificationJournal()
@@ -46,6 +47,10 @@ class HarnessLanguageClient : GroovyLanguageClient {
 
     val messages: List<MessageParams>
         get() = messagesStorage.toList()
+
+    override fun documentAnalysis(analysis: DocumentAnalysisNotification) {
+        recordNotification("groovy/documentAnalysis", analysis)
+    }
 
     override fun telemetryEvent(obj: Any?) {
         recordNotification("telemetry/event", obj)

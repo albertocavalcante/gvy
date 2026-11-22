@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+def runChecks(Map branches) {
+    stage('Checks') {
+        parallel branches
+    }
+}
+
+def branchNames = ['unit', 'integration']
+def branches = [:]
+branchNames.each { name ->
+    def branchName = name
+    branches[branchName] = {
+        node('linux') {
+            withEnv(["CHECK_NAME=${branchName}"]) {
+                timeout(time: 10, unit: 'MINUTES') {
+                    try {
+                        echo "Running ${env.CHECK_NAME} checks"
+                        sh "./check-${branchName}.sh"
+                    } finally {
+                        echo "Finished ${branchName} checks"
+                    }
+                }
+            }
+        }
+    }
+}
+
+// This stage and helper are top-level scripted code, outside node { ... }.
+stage('Build') {
+    node('linux') {
+        sh './build.sh'
+    }
+}
+runChecks(branches)

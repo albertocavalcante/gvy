@@ -12,7 +12,9 @@ import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
@@ -26,16 +28,17 @@ import kotlin.test.assertTrue
 
 class DiagnosticsOrchestratorUntitledCloseTest {
     @Test
-    fun `a retired close cannot remove a reopened untitled buffers real symbol index`() {
+    fun `a retired close cannot remove a reopened untitled buffers real symbol index`(): Unit = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val documents = DocumentProvider()
+        val compilation = GroovyCompilationService(
+            ioDispatcher = Dispatchers.Unconfined,
+            documentProvider = documents,
+        )
         try {
             val uri = URI.create("untitled:Scratch")
-            val documents = DocumentProvider()
-            val compilation = GroovyCompilationService(
-                ioDispatcher = Dispatchers.Unconfined,
-                documentProvider = documents,
-            )
             val client = mockk<LanguageClient>(relaxed = true)
+            val closingThread = Thread.currentThread()
             var reopenOnLookup = false
             lateinit var service: GroovyTextDocumentService
             service = GroovyTextDocumentService(
@@ -45,7 +48,7 @@ class DiagnosticsOrchestratorUntitledCloseTest {
                     documentProvider = documents,
                     serverConfiguration = parserOnlyConfiguration(),
                     client = {
-                        if (reopenOnLookup) {
+                        if (Thread.currentThread() === closingThread && reopenOnLookup) {
                             reopenOnLookup = false
                             service.didOpen(open(uri, "class Reopened {}"))
                             val fresh = assertNotNull(compilation.symbolIndexingService.getSymbolIndex(uri))
@@ -56,6 +59,7 @@ class DiagnosticsOrchestratorUntitledCloseTest {
                 ),
             )
             service.didOpen(open(uri, "class Original {}"))
+            service.awaitCurrentDiagnostics(uri, 1)
             assertNotNull(compilation.symbolIndexingService.getSymbolIndex(uri))
             reopenOnLookup = true
 
@@ -64,8 +68,10 @@ class DiagnosticsOrchestratorUntitledCloseTest {
             assertEquals("class Reopened {}", documents.get(uri))
             val retained = assertNotNull(compilation.symbolIndexingService.getSymbolIndex(uri))
             assertTrue("Reopened" in retained.getSymbols(uri).map { it.name })
+            service.awaitCurrentDiagnostics(uri, 1)
         } finally {
-            scope.cancel()
+            scope.coroutineContext.job.cancelAndJoin()
+            compilation.shutdown()
         }
     }
 

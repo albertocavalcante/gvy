@@ -21,6 +21,7 @@ describe("extension activation", () => {
       registerGradleFeatures: sinon.stub(),
       registerTestingFeatures: sinon.stub(),
       registerDependencyFeatures: sinon.stub(),
+      registerFileExecution: sinon.stub(),
       initializeUpdateService: sinon.stub().returns({
         activate: sinon.stub().resolves(),
         dispose: sinon.stub(),
@@ -48,7 +49,13 @@ describe("extension activation", () => {
     };
     const ext = proxyquire.noCallThru()("../../src/extension", {
       vscode: vscodeMock,
+      "./analysis/ui": {
+        AnalysisUi: class {
+          dispose() {}
+        },
+      },
       "./server/client": {
+        setAnalysisUi: () => {},
         initializeClient: () => {},
         startClient: async () => {
           await startClient();
@@ -82,6 +89,9 @@ describe("extension activation", () => {
         getConfiguration: () => ({ serverPath: undefined }),
       },
       "./features/repl": { replService: { initialize: () => {} } },
+      "./features/fileExecution": {
+        registerFileExecution: stubs.registerFileExecution,
+      },
       "./features/gradle": {
         registerGradleFeatures: stubs.registerGradleFeatures,
       },
@@ -125,6 +135,10 @@ describe("extension activation", () => {
     await ext.activate(context());
 
     assert.ok(stubs.registerGradleFeatures.calledOnce, "gradle commands");
+    assert.ok(
+      stubs.registerFileExecution.calledOnce,
+      "file execution commands",
+    );
     assert.ok(stubs.registerTestingFeatures.calledOnce, "test commands");
     assert.ok(
       stubs.registerDependencyFeatures.calledOnce,
@@ -191,6 +205,20 @@ describe("extension activation", () => {
     assert.strictEqual(await request(), true);
     assert.strictEqual(await request(), true);
     assert.ok(start.calledOnce);
+  });
+
+  it("retries the initial start after a failed attempt", async () => {
+    const start = sinon.stub();
+    start.onFirstCall().rejects(new Error("Java validation failed"));
+    start.onSecondCall().resolves();
+    const { ext, stubs } = load(start, [gdsl]);
+    await ext.activate(context());
+    const request = stubs.registerCommands.firstCall
+      .args[1] as () => Promise<boolean>;
+    assert.strictEqual(await request(), false);
+    assert.strictEqual(await request(), true);
+    assert.strictEqual(await request(), true);
+    assert.ok(start.calledTwice);
   });
 
   it("keeps activation usable if the workspace search fails", async () => {

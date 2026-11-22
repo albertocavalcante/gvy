@@ -43,9 +43,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -386,17 +390,15 @@ class HoverProvider(
             is ImportNode -> node.type?.redirect()
             else -> null
         }
-        if (classDeclaration != null) {
-            val attached = DocExtractor.extractAttachedDocumentation(classDeclaration)
-            if (!attached.isEmpty()) return attached
-            // A referenced class's positions index into its own source, never the caller's buffer.
-            if (classDeclaration.module !== module(uri, snapshot)) return Documentation.EMPTY
-        }
         val declaration = classDeclaration ?: node
-        return if (snapshot != null) {
-            DocExtractor.extractDocumentation(snapshot.sourceText, declaration)
-        } else {
-            documentationProvider.getDocumentation(declaration, uri)
+        val attached = (declaration as? AnnotatedNode)?.let(DocExtractor::extractAttachedDocumentation)
+            ?: Documentation.EMPTY
+        return when {
+            !attached.isEmpty() -> attached
+            // A declaration from another file carries that file's line numbers, never the caller buffer's.
+            declaration.isDeclaredInAnotherModule(module(uri, snapshot)) -> Documentation.EMPTY
+            snapshot != null -> DocExtractor.extractDocumentation(snapshot.sourceText, declaration)
+            else -> documentationProvider.getDocumentation(declaration, uri)
         }
     }
 
@@ -441,5 +443,19 @@ class HoverProvider(
             contents = Either.forRight(markupContent)
             range = baseHover.range
         }
+    }
+}
+
+/** Whether this class or member is declared in a module other than [current]. */
+private fun ASTNode.isDeclaredInAnotherModule(current: ModuleNode?): Boolean {
+    val owner = when (this) {
+        is FieldNode -> declaringClass
+        is PropertyNode -> declaringClass
+        is MethodNode -> declaringClass
+        else -> null
+    }
+    return when {
+        this is ClassNode -> module !== current
+        else -> owner?.module.let { it != null && current != null && it !== current }
     }
 }

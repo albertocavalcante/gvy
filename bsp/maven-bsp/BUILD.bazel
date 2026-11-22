@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_java//java:defs.bzl", "java_binary")
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
@@ -45,4 +46,25 @@ kt_test(
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
+)
+
+# The standalone server and the reused fixtures for build-tool's MavenBspEquivalenceTest, which launches the
+# server's deploy JAR as a child process over stdio.
+java_binary(
+    name = "maven-bsp-server",
+    main_class = "com.github.groovylsp.bsp.maven.launcher.MavenBspLauncher",
+    visibility = ["//build-tool:__pkg__"],
+    runtime_deps = [":maven-bsp"],
+)
+
+filegroup(
+    name = "equivalence_fixtures",
+    srcs = glob(["src/test/resources/fixtures/**"]),
+    visibility = ["//build-tool:__pkg__"],
+)
+
+# Bazel has no directory labels; the test derives the fixtures directory from this file.
+exports_files(
+    ["src/test/resources/fixtures/single-module/pom.xml"],
+    visibility = ["//build-tool:__pkg__"],
 )

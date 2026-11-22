@@ -167,7 +167,7 @@ class TestRequestDelegate(
         return coroutineScope.future {
             withContext(ioDispatcher) {
                 val workspaceRoot = resolveWorkspaceRoot(params.workspaceUri)
-                SurefireParser.parseWorkspace(workspaceRoot)
+                SurefireParser.parseWorkspace(workspaceRoot, params.modifiedSinceMillis)
             }
         }
     }

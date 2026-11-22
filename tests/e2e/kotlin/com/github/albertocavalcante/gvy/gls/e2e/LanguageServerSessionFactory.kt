@@ -4,7 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
-import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
+import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisLanguageClient
 import com.github.albertocavalcante.gvy.gls.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.gvy.gls.testing.client.HarnessLanguageClient
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
@@ -249,9 +249,9 @@ class LanguageServerSessionFactory(
             val server = createServer { exitCode.complete(it) }
             pending.own(AutoCloseable { server.shutdown().get(SERVER_SHUTDOWN_TIMEOUT.seconds, TimeUnit.SECONDS) })
             require(server is LanguageClientAware) { "In-process server must accept a language client" }
-            val serverLauncher = Launcher.Builder<GroovyLanguageClient>()
+            val serverLauncher = Launcher.Builder<DocumentAnalysisLanguageClient>()
                 .setLocalService(server)
-                .setRemoteInterface(GroovyLanguageClient::class.java)
+                .setRemoteInterface(DocumentAnalysisLanguageClient::class.java)
                 .setInput(serverIn)
                 .setOutput(serverOut)
                 .setExecutorService(executor.service)

@@ -9,11 +9,13 @@ import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.native.displayName
 import com.github.albertocavalcante.gvy.semantics.native.displayType
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
@@ -80,11 +82,14 @@ internal object ExpressionNodeRenderer {
         }
     }
 
-    @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _moduleNode for enhanced type resolution
-    fun MarkdownBuilder.renderPropertyExpression(node: PropertyExpression, _moduleNode: ModuleNode?) {
+    fun MarkdownBuilder.renderPropertyExpression(
+        node: PropertyExpression,
+        moduleNode: ModuleNode?,
+        semanticResolver: SemanticTypeResolver,
+    ) {
         val propertyName = node.propertyAsString ?: node.property.text
         val objectExpr = node.objectExpression
-        val objectType = objectExpr.type.displayName()
+        val objectType = propertyExpressionType(objectExpr, moduleNode, semanticResolver) ?: "def"
 
         val displayExpr = buildString {
             append(objectExpr.text.takeIf { it.isNotBlank() } ?: "this")
@@ -100,11 +105,28 @@ internal object ExpressionNodeRenderer {
                 "Safe Navigation" to node.isSafe.toString(),
             )
 
-            // Try to resolve the property type
-            val propertyType = node.type.displayName()
-            if (node.type.name != "java.lang.Object") {
+            val propertyType = propertyExpressionType(node, moduleNode, semanticResolver)
+            if (propertyType != null) {
                 keyValue("Property Type" to propertyType)
             }
+        }
+    }
+
+    private fun propertyExpressionType(
+        expression: Expression,
+        moduleNode: ModuleNode?,
+        semanticResolver: SemanticTypeResolver,
+    ): String? {
+        if (!ClassHelper.isDynamicTyped(expression.type)) {
+            return expression.type.displayName()
+        }
+        if (moduleNode == null) {
+            return null
+        }
+
+        return when (val type = semanticResolver.resolveType(expression, moduleNode)) {
+            is SemanticType.Dynamic, is SemanticType.Unknown, is SemanticType.Null -> null
+            else -> semanticResolver.formatSemanticType(type)
         }
     }
 

@@ -99,6 +99,14 @@ export const SERVER_DYNAMIC_SETTINGS: readonly string[] = [
 /** Read by the extension when needed; the server does not use them. */
 export const CLIENT_ONLY_SETTINGS: readonly string[] = [
   "project.javaHome",
+  "fileExecution.javaExecutable",
+  "fileExecution.runtime",
+  "fileExecution.localRuntime",
+  "fileExecution.arguments",
+  "fileExecution.jvmArguments",
+  "fileExecution.workingDirectory",
+  "fileExecution.environment",
+  "fileExecution.classpath",
   "jdk.suppressMismatchWarning",
   "configuration.runtimes",
   // vscode-languageclient reads <client id>.trace.server itself.

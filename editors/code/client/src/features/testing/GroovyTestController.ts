@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { TestService, TestSuite, Test } from "./TestService";
 import { CoverageService } from "./CoverageService";
+import type { TestItemRegistry } from "./TestItemRegistry";
 
 /**
  * Tag for runnable test items - enables native Test Explorer play buttons.
@@ -17,18 +18,6 @@ export const runnableTag = new vscode.TestTag("runnable");
 function getCodiconLabel(kind: "suite" | "test"): string {
   return kind === "suite" ? "$(symbol-class)" : "$(symbol-method)";
 }
-
-/**
- * Metadata for test items stored in cache.
- */
-interface TestItemMetadata {
-  kind: "suite" | "test";
-  suiteName: string;
-  line?: number;
-}
-
-/** Cache for test item metadata. */
-const dataCache = new WeakMap<vscode.TestItem, TestItemMetadata>();
 
 interface TestCommandArgs {
   suite: string;
@@ -81,6 +70,7 @@ export class GroovyTestController {
     context: vscode.ExtensionContext,
     // TODO(#715): Using interface for hacky Maven support
     private readonly executionService: ITestExecutionService,
+    private readonly itemRegistry: TestItemRegistry,
     private readonly testService?: TestService,
     private readonly coverageService?: CoverageService,
   ) {
@@ -217,7 +207,7 @@ export class GroovyTestController {
     if (!this.canRunTests()) {
       return;
     }
-    if (!(await this.discoverTests())) {
+    if (!(await this.discoverForRun())) {
       return;
     }
     const items: vscode.TestItem[] = [];
@@ -250,7 +240,7 @@ export class GroovyTestController {
     }
 
     // Ensure tests are discovered for this file
-    if (!(await this.discoverTests())) {
+    if (!(await this.discoverForRun())) {
       return;
     }
 
@@ -341,13 +331,36 @@ export class GroovyTestController {
    * Discover tests from the LSP and populate the TestItem tree.
    */
   private async discoverTests(): Promise<boolean> {
+    return (await this.discoverOnce()) === "ok";
+  }
+
+  /**
+   * Discovery for a command that needs the tree. A refresh that arrives while
+   * the request is in flight supersedes it; that is not a failure, so look
+   * again (a bounded number of times) instead of silently running nothing.
+   */
+  private async discoverForRun(): Promise<boolean> {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const outcome = await this.discoverOnce();
+      if (outcome !== "superseded") {
+        return outcome === "ok";
+      }
+    }
+    vscode.window.showWarningMessage(
+      "Test discovery was interrupted by repeated refreshes. Try running the tests again.",
+    );
+    return false;
+  }
+
+  private async discoverOnce(): Promise<"ok" | "superseded" | "failed"> {
     if (this.disposed || !this.testService?.isReady()) {
-      return false;
+      return "failed";
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      return false;
+      return "failed";
     }
 
     // Immediate discovery supersedes a queued refresh, which would invalidate it.
@@ -360,12 +373,11 @@ export class GroovyTestController {
       const suites = await this.testService.discoverTestsInWorkspace(
         workspaceFolder.uri.toString(),
       );
-      if (
-        this.disposed ||
-        discoveryVersion !== this.discoveryVersion ||
-        !this.testService.isReady()
-      ) {
-        return false;
+      if (this.disposed || !this.testService.isReady()) {
+        return "failed";
+      }
+      if (discoveryVersion !== this.discoveryVersion) {
+        return "superseded";
       }
 
       // Clear existing items
@@ -376,10 +388,10 @@ export class GroovyTestController {
         const suiteItem = this.createSuiteItem(suite);
         this.ctrl.items.add(suiteItem);
       }
-      return true;
+      return "ok";
     } catch (error) {
       console.error("Failed to discover tests:", error);
-      return false;
+      return "failed";
     }
   }
 
@@ -399,14 +411,19 @@ export class GroovyTestController {
     suiteItem.tags = [runnableTag];
     suiteItem.canResolveChildren = true;
 
-    // Store metadata
-    dataCache.set(suiteItem, { kind: "suite", suiteName: suite.suite });
-
     // Add child test items
+    const features: vscode.TestItem[] = [];
     for (const test of suite.tests) {
       const testItem = this.createTestItem(test, suite.suite, uri);
       suiteItem.children.add(testItem);
+      features.push(testItem);
     }
+    // Inherited features are not reported by discovery, so the list is not a complete snapshot.
+    this.itemRegistry.registerSuite(
+      suiteItem,
+      suite.suite,
+      suite.inheritsTests ? undefined : features,
+    );
 
     // Set suite range using the actual class line from the LSP
     // suite.line is 1-indexed, VS Code positions are 0-indexed
@@ -446,12 +463,7 @@ export class GroovyTestController {
     // Preserve source order with sortText
     testItem.sortText = String(test.line).padStart(6, "0");
 
-    // Store metadata
-    dataCache.set(testItem, {
-      kind: "test",
-      suiteName: parentId,
-      line: test.line,
-    });
+    this.itemRegistry.registerFeature(testItem, test.test);
 
     return testItem;
   }
@@ -538,7 +550,7 @@ export class GroovyTestController {
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
       // Try discovery first.
-      if (!(await this.discoverTests())) {
+      if (!(await this.discoverForRun())) {
         return;
       }
 
@@ -697,6 +709,7 @@ export class GroovyTestController {
         uri,
       );
       this.ctrl.items.add(suiteItem);
+      this.itemRegistry.registerSuite(suiteItem, suiteName, undefined);
     }
 
     // Check if test item already exists under the suite
@@ -709,6 +722,10 @@ export class GroovyTestController {
       testItem = this.ctrl.createTestItem(testId, testName, uri);
       // We don't have line information for on-the-fly items, so skip setting range
       suiteItem.children.add(testItem);
+      this.itemRegistry.registerFeature(testItem, testName);
+      // An extra command target means the earlier discovery is no longer a
+      // complete child snapshot. Never expand exclusions from a partial tree.
+      this.itemRegistry.registerSuite(suiteItem, suiteName, undefined);
     }
 
     return testItem;

@@ -8,6 +8,8 @@ load("@gazelle//:def.bzl", "gazelle")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["build.gradle.kts"])
+
 # Build mode flag for production builds
 bool_flag(
     name = "production_flag",

@@ -114,6 +114,19 @@ java_import(
     ],
 )
 
+java_import(
+    name = "junit_platform_reporting",
+    jars = ["@junit_platform_reporting_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_platform_engine",
+        ":junit_platform_launcher",
+        "@maven//:org_apiguardian_apiguardian_api",
+        "@maven//:org_jspecify_jspecify",
+        "@maven//:org_opentest4j_reporting_open_test_reporting_tooling_spi",
+    ],
+)
+
 # --- JUnit Jupiter ---
 
 java_import(

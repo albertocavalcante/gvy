@@ -9,6 +9,7 @@ interface GroovyTestControllerType {
   new (
     context: unknown,
     executionService: unknown,
+    itemRegistry: unknown,
     testService: unknown,
     coverageService?: unknown,
   ): { dispose: () => void; refreshTests: () => void };
@@ -83,6 +84,10 @@ describe("GroovyTestController", () => {
   let GroovyTestController: GroovyTestControllerType;
   let contextMock: { subscriptions: { push: sinon.SinonStub } };
   let executionServiceMock: ExecutionServiceMock;
+  let itemRegistry: {
+    registerSuite: sinon.SinonStub;
+    registerFeature: sinon.SinonStub;
+  };
   let testServiceMock: TestServiceMock;
   let vscodeMock: VscodeMock;
   let testControllerMock: TestControllerMock;
@@ -91,6 +96,10 @@ describe("GroovyTestController", () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    itemRegistry = {
+      registerSuite: sandbox.stub(),
+      registerFeature: sandbox.stub(),
+    };
     onChildLookup = undefined;
 
     // Mock test items
@@ -282,6 +291,7 @@ describe("GroovyTestController", () => {
       controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
         coverageService,
       );
@@ -313,6 +323,84 @@ describe("GroovyTestController", () => {
       assert.ok(testControllerMock.refreshHandler);
       await testControllerMock.refreshHandler();
     }
+
+    it("registers a suite extending a base spec without a complete feature snapshot", async () => {
+      testServiceMock.discoverTestsInWorkspace.resolves([
+        {
+          suite,
+          uri,
+          line: 1,
+          tests: [{ test: feature, line: 2 }],
+          inheritsTests: true,
+        },
+      ]);
+      assert.ok(testControllerMock.refreshHandler);
+      await testControllerMock.refreshHandler();
+      const suiteItem = testControllerMock.items.get(suite);
+      assert.ok(
+        itemRegistry.registerSuite.calledOnceWithExactly(
+          suiteItem,
+          suite,
+          undefined,
+        ),
+      );
+    });
+
+    it("records raw discovery names and an explicit complete feature snapshot", async () => {
+      await discoverTests();
+      const suiteItem = testControllerMock.items.get(suite);
+      const featureItem = suiteItem.children.get(`${suite}.${feature}`);
+      assert.ok(
+        itemRegistry.registerFeature.calledOnceWithExactly(
+          featureItem,
+          feature,
+        ),
+      );
+      assert.ok(
+        itemRegistry.registerSuite.calledOnceWithExactly(suiteItem, suite, [
+          featureItem,
+        ]),
+      );
+      assert.equal(
+        suiteItem.canResolveChildren,
+        true,
+        "lazy loading is not completeness evidence",
+      );
+    });
+
+    it("marks an on-the-fly suite incomplete and preserves its literal feature name", async () => {
+      await handler("run")({ suite, test: feature, uri });
+      const suiteItem = testControllerMock.items.get(suite);
+      const featureItem = suiteItem.children.get(`${suite}.${feature}`);
+      assert.ok(
+        itemRegistry.registerFeature.calledWithExactly(featureItem, feature),
+      );
+      assert.ok(
+        itemRegistry.registerSuite.alwaysCalledWithExactly(
+          suiteItem,
+          suite,
+          undefined,
+        ),
+      );
+    });
+
+    it("invalidates completeness when a command adds an undiscovered feature", async () => {
+      await discoverTests();
+      await handler("run")({ suite, test: "new literal.name", uri });
+      const suiteItem = testControllerMock.items.get(suite);
+      assert.ok(
+        itemRegistry.registerSuite.calledWithExactly(suiteItem, suite, [
+          suiteItem.children.get(`${suite}.${feature}`),
+        ]),
+      );
+      assert.ok(
+        itemRegistry.registerSuite.calledWithExactly(
+          suiteItem,
+          suite,
+          undefined,
+        ),
+      );
+    });
 
     for (const mode of modes) {
       it(`guides a no-argument ${mode} call without selecting the active file`, async () => {
@@ -419,6 +507,7 @@ describe("GroovyTestController", () => {
         controller = new GroovyTestController(
           contextMock,
           executionServiceMock,
+          itemRegistry,
           testServiceMock,
           missing === "service" ? undefined : coverageService,
         );
@@ -556,6 +645,7 @@ describe("GroovyTestController", () => {
       controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
       return controller;
@@ -670,6 +760,103 @@ describe("GroovyTestController", () => {
       });
     }
 
+    for (const command of ["runAll", "runCurrentFile"] as const) {
+      it(`runs ${command} when a refresh supersedes its in-flight discovery`, async () => {
+        const uri = "file:///workspace/ExampleSpec.groovy";
+        const suite = "example.ExampleSpec";
+        const suites = [
+          { suite, uri, line: 1, tests: [{ test: "works", line: 2 }] },
+        ];
+        let complete!: (suites: unknown[]) => void;
+        testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+        );
+        testServiceMock.discoverTestsInWorkspace
+          .onSecondCall()
+          .resolves(suites);
+        vscodeMock.window.activeTextEditor = {
+          document: { uri: vscodeMock.Uri.parse(uri) },
+        };
+        createController();
+        const registration = vscodeMock.commands.registerCommand
+          .getCalls()
+          .find((call) => call.args[0] === `groovy.test.${command}`);
+        assert.ok(registration);
+
+        const run = registration.args[1]();
+        sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+        // A file event refreshes the tree while the request is in flight.
+        controller.refreshTests();
+        complete(suites);
+        await run;
+
+        sinon.assert.calledTwice(testServiceMock.discoverTestsInWorkspace);
+        sinon.assert.calledOnce(executionServiceMock.runTests);
+        const request = executionServiceMock.runTests.firstCall.args[0];
+        assert.deepStrictEqual(
+          request.include.map((item: { id: string }) => item.id),
+          [suite],
+        );
+        sinon.assert.notCalled(vscodeMock.window.showWarningMessage);
+      });
+    }
+
+    for (const command of ["runAll", "runCurrentFile"] as const) {
+      it(`gives up ${command} after three consecutive supersessions`, async () => {
+        const uri = "file:///workspace/ExampleSpec.groovy";
+        const suite = "example.StaleSpec";
+        // Every attempt is superseded by a refresh while its request is in flight.
+        testServiceMock.discoverTestsInWorkspace.callsFake(async () => {
+          controller.refreshTests();
+          return [{ suite, uri, line: 1, tests: [{ test: "works", line: 2 }] }];
+        });
+        vscodeMock.window.activeTextEditor = {
+          document: { uri: vscodeMock.Uri.parse(uri) },
+        };
+        createController();
+        const registration = vscodeMock.commands.registerCommand
+          .getCalls()
+          .find((call) => call.args[0] === `groovy.test.${command}`);
+        assert.ok(registration);
+
+        await registration.args[1]();
+
+        sinon.assert.calledThrice(testServiceMock.discoverTestsInWorkspace);
+        sinon.assert.calledOnceWithExactly(
+          vscodeMock.window.showWarningMessage,
+          "Test discovery was interrupted by repeated refreshes. Try running the tests again.",
+        );
+        sinon.assert.notCalled(executionServiceMock.runTests);
+        assert.strictEqual(
+          testControllerMock.items.get(suite),
+          undefined,
+          "a superseded snapshot must not be applied",
+        );
+      });
+    }
+
+    it("does not retry a disposed discovery for a command", async () => {
+      let complete!: (suites: unknown[]) => void;
+      testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      createController();
+      const registration = vscodeMock.commands.registerCommand
+        .getCalls()
+        .find((call) => call.args[0] === "groovy.test.runAll");
+      assert.ok(registration);
+      const run = registration.args[1]();
+      controller.dispose();
+      complete([]);
+      await run;
+      sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+      sinon.assert.notCalled(executionServiceMock.runTests);
+    });
+
     it("cancels queued discovery and rejects new refreshes after disposal", async () => {
       createController().refreshTests();
       controller.dispose();
@@ -774,6 +961,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -818,6 +1006,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -878,6 +1067,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -920,6 +1110,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1043,6 +1234,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1107,6 +1299,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1164,6 +1357,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 
@@ -1206,6 +1400,7 @@ describe("GroovyTestController", () => {
       _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
+        itemRegistry,
         testServiceMock,
       );
 

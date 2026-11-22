@@ -7,7 +7,10 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
+import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.parallel.Isolated
@@ -17,6 +20,23 @@ import java.nio.file.Path
 @Isolated
 class NamedScenarioRunnerTest {
     @TempDir lateinit var tempDir: Path
+    private var previousReportDirectory: String? = null
+
+    @BeforeEach
+    fun isolateSyntheticReports() {
+        previousReportDirectory = System.getProperty(ScenarioOutcomeReport.DIRECTORY_PROPERTY)
+        System.setProperty(ScenarioOutcomeReport.DIRECTORY_PROPERTY, tempDir.resolve("reports").toString())
+    }
+
+    @AfterEach
+    fun restoreReportDirectory() {
+        val previous = previousReportDirectory
+        if (previous == null) {
+            System.clearProperty(ScenarioOutcomeReport.DIRECTORY_PROPERTY)
+        } else {
+            System.setProperty(ScenarioOutcomeReport.DIRECTORY_PROPERTY, previous)
+        }
+    }
 
     @Test
     fun `real runner path reports later unexpected pass after earlier known failure`() {
@@ -46,6 +66,9 @@ class NamedScenarioRunnerTest {
 
             assertThatThrownBy { ScenarioRunnerExecution.run(definition, executor) }
                 .isInstanceOf(AssertionError::class.java).hasMessageContaining("later")
+            Files.list(tempDir.resolve("reports")).use { reports ->
+                assertThat(reports.toList()).hasSize(1)
+            }
         } finally {
             unmockkObject(WorkspaceFixture)
         }

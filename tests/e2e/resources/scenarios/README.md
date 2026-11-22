@@ -24,6 +24,7 @@ This directory contains YAML scenario files that define end-to-end LSP test case
 | **Document Symbols** | `document-symbol-basic`                                                       | Document symbols              |
 | **Signature**        | `signature-help`                                                              | Method signature help         |
 | **Build Tools**      | `gradle-hover-deps`                                                           | Gradle integration            |
+| **Code actions**     | `code-action-basic`, `code-action-organize-imports`                           | Quick fixes, Organize Imports |
 | **CodeLens**         | `codelens-spock`                                                              | Test CodeLens commands        |
 | **Jenkins**          | `jenkins-pipeline`, `jenkins-completion`, `jenkins-hover`, `jenkins-scripted` | Jenkins pipeline support      |
 

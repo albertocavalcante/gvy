@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_java//java:defs.bzl", "java_test")
+
+exports_files(["source-stamp.mjs"])
+
+java_test(
+    name = "resource_test",
+    srcs = ["BuildInfoResourceTest.java"],
+    args = [
+        "execute",
+        "--fail-if-no-tests",
+        "--select-class=com.github.albertocavalcante.gvy.build.BuildInfoResourceTest",
+    ],
+    data = [
+        "//gls:gls_deploy_deploy.jar",
+        "//gls:version_properties",
+    ],
+    jvm_flags = [
+        "-Xmx128m",
+        "-Dgvy.test.properties=$(rootpath //gls:version_properties)",
+        "-Dgvy.test.jar=$(rootpath //gls:gls_deploy_deploy.jar)",
+    ],
+    main_class = "org.junit.platform.console.ConsoleLauncher",
+    use_testrunner = False,
+    runtime_deps = [
+        "//gls:gls-lib",
+        "//tools:junit_jupiter_engine",
+        "//tools:junit_platform_console",
+        "//tools:junit_platform_launcher",
+    ],
+    deps = ["//tools:junit_jupiter_api"],
+)

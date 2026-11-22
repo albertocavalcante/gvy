@@ -6,6 +6,7 @@
  */
 
 import * as fs from "fs";
+import { AnalysisUi } from "./analysis/ui";
 import * as vscode from "vscode";
 import {
   initializeClient,
@@ -13,6 +14,7 @@ import {
   stopClient,
   getClient,
   onClientStarted,
+  setAnalysisUi,
 } from "./server/client";
 import { startServerForActivation } from "./server/activation";
 import { registerStatusBarItem, getStatusBarManager } from "./ui/statusBar";
@@ -40,6 +42,7 @@ import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
 import { CommandProvider } from "./features/ai/CommandProvider";
 import { TestFeature } from "./features/testing/TestFeature";
+import { registerFileExecution } from "./features/fileExecution";
 import { registerAstFeatures } from "./features/ast/AstProvider";
 
 /**
@@ -55,6 +58,9 @@ export async function activate(context: vscode.ExtensionContext) {
     (context.extension.packageJSON.version as string) || "unknown";
 
   initializeClient(context);
+  const analysisUi = new AnalysisUi();
+  context.subscriptions.push(analysisUi);
+  setAnalysisUi(analysisUi);
 
   context.subscriptions.push(
     registerStatusBarItem(undefined, extensionVersion),
@@ -69,7 +75,10 @@ export async function activate(context: vscode.ExtensionContext) {
   getStatusBarManager()?.setOutputChannel(serverOutputChannel);
   let initialStart: Promise<boolean> | undefined;
   const requestInitialStart = (): Promise<boolean> => {
-    initialStart ??= (async () => {
+    if (initialStart) {
+      return initialStart;
+    }
+    const attempt: Promise<boolean> = (async () => {
       try {
         await startClient(serverOutputChannel);
         return true;
@@ -78,8 +87,16 @@ export async function activate(context: vscode.ExtensionContext) {
         console.error("Groovy Language Server did not start:", error);
         return false;
       }
-    })();
-    return initialStart;
+    })().then((started) => {
+      // Do not cache a failed start: the next request must retry (for example
+      // after the user installs Java).
+      if (!started && initialStart === attempt) {
+        initialStart = undefined;
+      }
+      return started;
+    });
+    initialStart = attempt;
+    return attempt;
   };
   context.subscriptions.push(
     onClientStarted(() => {
@@ -96,6 +113,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => disposeLanguageStatusManager() });
 
   registerCommands(context, requestInitialStart);
+  registerFileExecution(context, requestInitialStart);
   context.subscriptions.push(setupConfigurationWatcher());
 
   replService.initialize(context);

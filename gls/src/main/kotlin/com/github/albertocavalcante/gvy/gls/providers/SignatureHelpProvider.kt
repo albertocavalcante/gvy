@@ -81,21 +81,24 @@ class SignatureHelpProvider(
             ?: return emptySignatureHelp()
         requireCurrentSnapshot(documentUri, snapshot)
 
-        resolveSignatureContext(documentUri, position, currentParse)?.let { context ->
+        val groovyPos = position.toGroovyPosition(snapshot.content)
+        resolveSignatureContext(documentUri, groovyPos, currentParse)?.let { context ->
             requireCurrentSnapshot(documentUri, snapshot)
-            return buildSignatureHelp(context, position)
+            return buildSignatureHelp(context, groovyPos)
         }
 
         return recoverIncompleteCall(documentUri, position, snapshot, currentParse)
-            ?.let { buildSignatureHelp(it, position) }
+            ?.let { buildSignatureHelp(it, groovyPos) }
             ?: emptySignatureHelp()
     }
 
     private suspend fun provideFromCachedDocument(documentUri: URI, position: Position): SignatureHelp {
         ensureAstPrepared(documentUri)
-        val cached = compilationService.getParseResult(documentUri) ?: return emptySignatureHelp()
-        val context = resolveSignatureContext(documentUri, position, cached) ?: return emptySignatureHelp()
-        return buildSignatureHelp(context, position)
+        // One snapshot supplies text and parse result, so a concurrent recompile cannot mix generations.
+        val cached = compilationService.getCompiledSnapshot(documentUri) ?: return emptySignatureHelp()
+        val groovyPos = position.toGroovyPosition(cached.sourceText)
+        val context = resolveSignatureContext(documentUri, groovyPos, cached.parseResult) ?: return emptySignatureHelp()
+        return buildSignatureHelp(context, groovyPos)
     }
 
     private suspend fun recoverIncompleteCall(
@@ -108,7 +111,8 @@ class SignatureHelpProvider(
             ?: return null
         val repairedParse = parseTransient(documentUri, repairedSource) ?: return null
         requireCurrentSnapshot(documentUri, snapshot)
-        return resolveSignatureContext(documentUri, position, repairedParse)?.copy(activeParameterOverride = 0)
+        val groovyPos = position.toGroovyPosition(snapshot.content)
+        return resolveSignatureContext(documentUri, groovyPos, repairedParse)?.copy(activeParameterOverride = 0)
     }
 
     private data class SignatureContext(
@@ -130,7 +134,7 @@ class SignatureHelpProvider(
 
     private fun resolveSignatureContext(
         documentUri: URI,
-        position: Position,
+        position: GroovyPosition,
         parseResult: ParseResult,
     ): SignatureContext? {
         val inputs = resolveSignatureInputs(documentUri, position, parseResult) ?: return null
@@ -146,20 +150,19 @@ class SignatureHelpProvider(
 
     private fun resolveSignatureInputs(
         documentUri: URI,
-        position: Position,
+        groovyPos: GroovyPosition,
         parseResult: ParseResult,
     ): ResolvedSignatureInputs? {
         val moduleNode = parseResult.ast ?: return null
         val astVisitor = parseResult.astModel
         val symbolTable = parseResult.symbolTable
 
-        val groovyPos = position.toGroovyPosition()
         val nodeAtPosition = astVisitor.getNodeAt(documentUri, groovyPos)
         val methodCall = nodeAtPosition?.let { findMethodCall(astVisitor, documentUri, it, groovyPos) }
         val methodName = methodCall?.extractMethodName()
         if (nodeAtPosition == null || methodCall == null || methodName == null) {
             if (methodCall != null && methodName == null) {
-                logger.debug { "Could not resolve method name for call at $position in $documentUri" }
+                logger.debug { "Could not resolve method name for call at $groovyPos in $documentUri" }
             }
             return null
         }
@@ -275,12 +278,12 @@ class SignatureHelpProvider(
         return current?.name ?: "groovy.lang.Script"
     }
 
-    private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
+    private fun buildSignatureHelp(context: SignatureContext, position: GroovyPosition): SignatureHelp {
         val signatures = context.signatures
         val activeParameter = context.activeParameterOverride ?: determineActiveParameter(
             context.methodCall,
             context.nodeAtPosition,
-            position.toGroovyPosition(),
+            position,
             context.astVisitor,
         )
         // Normalize active parameter to prevent out-of-bounds

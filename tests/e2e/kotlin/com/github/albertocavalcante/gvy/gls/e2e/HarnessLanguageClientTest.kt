@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.services.CompilerAnalysis
+import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisNotification
 import com.github.albertocavalcante.gvy.gls.services.Health
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.testing.client.HarnessLanguageClient
@@ -15,6 +17,24 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class HarnessLanguageClientTest {
+    @Test
+    fun `analysis notifications enter the journal with their typed payload`() {
+        val client = HarnessLanguageClient()
+        val analysis =
+            DocumentAnalysisNotification(
+                "file:///A.groovy",
+                1,
+                7,
+                "session",
+                CompilerAnalysis(true, null, null),
+                emptyList(),
+            )
+        client.documentAnalysis(analysis)
+        val received = client.awaitNotificationDetailed("groovy/documentAnalysis", 0, { it == analysis })
+        assertThat(received.envelope?.payload).isEqualTo(analysis)
+        assertThat(client.awaitNotificationDetailed("groovy/documentAnalysis", 0, { true }).envelope).isNull()
+    }
+
     @Test
     fun `readiness completes only after the server reports a quiescent healthy state`() {
         val client = HarnessLanguageClient()

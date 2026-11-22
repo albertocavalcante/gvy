@@ -217,6 +217,8 @@ maven.install(
         "org.junit.platform:junit-platform-engine:6.0.2",
         "org.junit.platform:junit-platform-commons:6.0.2",
         "org.junit.platform:junit-platform-console:6.0.2",
+        "org.opentest4j.reporting:open-test-reporting-tooling-spi:0.2.4",
+        "org.jspecify:jspecify:1.0.0",
         "junit:junit:4.13.2",
         "org.assertj:assertj-core:3.27.7",
         "io.mockk:mockk:1.14.12",
@@ -238,7 +240,7 @@ maven.install(
         "org.openrewrite.tools:jgit:1.4.1",
 
         # Java Source Parsing
-        "com.github.javaparser:javaparser-core:3.27.1",
+        "com.github.javaparser:javaparser-core:3.28.2",
 
         # HTML to Markdown
         "com.vladsch.flexmark:flexmark-html2md-converter:0.64.8",
@@ -254,15 +256,15 @@ maven.install(
         "org.zeromq:jeromq:0.6.0",
 
         # CLI - JVM variants for Kotlin Multiplatform artifacts
-        "com.github.ajalt.clikt:clikt-jvm:5.0.3",
-        "com.github.ajalt.mordant:mordant-jvm:3.0.2",
+        "com.github.ajalt.clikt:clikt-jvm:5.2.1",
+        "com.github.ajalt.mordant:mordant-jvm:3.1.1",
 
         # ==========================================================================
         # Compose Multiplatform Desktop
         # ==========================================================================
         # Requires GMM (Gradle Module Metadata) for correct variant selection.
         # See: https://github.com/JetBrains/compose-multiplatform
-        # Maven: https://maven.pkg.jetbrains.space/public/p/compose/dev
+        # Maven: Maven Central (the former JetBrains Space dev repository no longer accepts connections; see #2187)
         #
         # These artifacts use -desktop or -jvm suffixes for the JVM Desktop variant.
         # GMM + variant attributes select correct platform (vs Android/JS/Native).
@@ -301,10 +303,12 @@ maven.install(
         "protobuf",
     ],
     repositories = [
+        # Mirror first, Maven Central as fallback: Central rate-limits CI bursts (HTTP 429). See #1908.
+        # A 404 on the mirror falls through to the next repository; behaviour on a mirror outage is untested.
+        "https://maven-central.storage-download.googleapis.com/maven2",
         "https://repo1.maven.org/maven2",
         "https://plugins.gradle.org/m2/",
         "https://repo.gradle.org/gradle/libs-releases/",  # For gradle-tooling-api
-        "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
         "https://maven.google.com",  # Google Maven for AndroidX
     ],
     # Maven lock remains disabled after historical GMM cross-environment checksum mismatches.
@@ -428,6 +432,7 @@ use_repo(
     "junit_platform_console_jar",
     "junit_platform_engine_jar",
     "junit_platform_launcher_jar",
+    "junit_platform_reporting_jar",
 )
 
 # Override maven JUnit modules to use our directly-downloaded jars

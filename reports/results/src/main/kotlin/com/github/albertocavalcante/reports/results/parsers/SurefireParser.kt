@@ -30,6 +30,7 @@ import kotlin.math.roundToLong
  */
 object SurefireParser : TestResultParser {
     private val logger = KotlinLogging.logger {}
+    private const val MILLIS_PER_SECOND = 1000L
 
     /**
      * Parse all Surefire reports in a workspace.
@@ -37,15 +38,26 @@ object SurefireParser : TestResultParser {
      * @param workspaceRoot Root directory of the workspace
      * @return Aggregated test results from all modules
      */
-    override fun parseWorkspace(workspaceRoot: File): TestResultsResponse {
+    override fun parseWorkspace(workspaceRoot: File): TestResultsResponse = parseWorkspace(workspaceRoot, null)
+
+    /**
+     * Like [parseWorkspace], but reads only reports last modified at or after [modifiedSinceMillis] (epoch
+     * milliseconds; a time that is a whole second is treated as coarse and compared at second precision, because
+     * some file systems store whole seconds). A report
+     * from an earlier run is ignored instead of being reported as the current outcome. Null reads every report.
+     */
+    fun parseWorkspace(workspaceRoot: File, modifiedSinceMillis: Long?): TestResultsResponse {
+        val coarseThreshold = modifiedSinceMillis?.let { it / MILLIS_PER_SECOND * MILLIS_PER_SECOND }
         val reportDirs = discoverSurefireReportDirs(workspaceRoot)
         logger.info { "Found ${reportDirs.size} surefire-reports directories" }
 
         val allResults = mutableListOf<TestResultItem>()
 
         for (reportDir in reportDirs) {
-            val xmlFiles = reportDir.listFiles { file -> file.name.startsWith("TEST-") && file.extension == "xml" }
-                ?: continue
+            val xmlFiles = reportDir.listFiles { file ->
+                file.name.startsWith("TEST-") && file.extension == "xml" &&
+                    isFreshEnough(file.lastModified(), modifiedSinceMillis, coarseThreshold)
+            } ?: continue
 
             for (xmlFile in xmlFiles) {
                 try {
@@ -61,6 +73,13 @@ object SurefireParser : TestResultParser {
             results = allResults,
             summary = computeSummary(allResults),
         )
+    }
+
+    private fun isFreshEnough(modified: Long, since: Long?, coarseSince: Long?): Boolean = when {
+        since == null || coarseSince == null -> true
+        modified >= since -> true
+        // A whole-second time may be a truncated sub-second one, so compare it at second precision.
+        else -> modified % MILLIS_PER_SECOND == 0L && modified >= coarseSince
     }
 
     /**

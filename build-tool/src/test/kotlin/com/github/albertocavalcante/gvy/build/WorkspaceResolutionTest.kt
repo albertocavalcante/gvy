@@ -46,14 +46,14 @@ class WorkspaceResolutionTest {
         val resolution = WorkspaceResolution.failed(
             code = "DEPENDENCY_RESOLUTION_FAILED",
             message = "Resolution failed",
-            cause = cause,
+            cause = ResolutionFailureCause.of(cause),
         )
 
         assertFalse(resolution.isUsable)
 
         val status = resolution.status
         assertTrue(status is ResolutionStatus.Failed)
-        assertEquals(cause, status.cause)
+        assertEquals(ResolutionFailureCause("java.lang.RuntimeException", "Root cause"), status.cause)
     }
 
     @Test

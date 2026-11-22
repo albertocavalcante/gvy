@@ -82,6 +82,10 @@ interface GroovyLanguageServerProtocol : LanguageServer {
     @JsonRequest("groovy/getTestResults")
     fun getTestResults(params: JsonElement?): CompletableFuture<JsonElement>
 
+    /** Returns a file execution plan without duplicating its editor-independent DTO schema. */
+    @JsonRequest("groovy/prepareFileExecution")
+    fun prepareFileExecution(params: JsonElement?): CompletableFuture<JsonElement>
+
     /** Returns workspace dependency information. */
     @JsonRequest("groovy/workspace/dependencies")
     fun getDependencies(params: JsonElement?): CompletableFuture<JsonElement>

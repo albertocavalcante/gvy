@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+node_modules/
+astro/dist/
+astro/.astro/
+astro/src/pages/**/*.md
+astro/src/pages/*.md
+astro/src/pages/*.mdx
+playwright-report/
+test-results/

@@ -84,3 +84,6 @@ user.buckconfig
 # Documentation browser reports
 docs/website/playwright-report/
 docs/website/test-results/
+
+# Generated dedicated execution runtime (pinned by tools/runtime-manifest.json).
+editors/code/runtime/

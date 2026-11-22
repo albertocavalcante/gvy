@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
@@ -11,9 +12,8 @@ import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import io.mockk.coEvery
 import io.mockk.every
-import io.mockk.mockkObject
 import io.mockk.spyk
-import io.mockk.unmockkObject
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,10 +34,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Path
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -98,33 +102,276 @@ class HoverSnapshotTest {
     }
 
     @Test
+    fun `hover does not mistake an incomplete current parse for a changed document`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.put(fixture.uri, INCOMPLETE_SOURCE, 42)
+            val input = assertNotNull(fixture.documents.getSnapshot(fixture.uri))
+            val result = assertNotNull(fixture.acquireCompilation())
+            assertTrue(result.parseCompleted)
+            assertEquals(INCOMPLETE_SOURCE, result.sourceText)
+            assertNull(result.ast, "The real parser must reproduce the missing current AST")
+            assertEquals(ORIGINAL_SOURCE, fixture.compilation.getCompiledSnapshot(fixture.uri)?.sourceText)
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals("", hover.contents.right.value, "An older method signature must not escape")
+            assertSame(input, fixture.documents.getSnapshot(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `hover does not use a stale cache after its fallback parses incomplete source`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.put(fixture.uri, INCOMPLETE_SOURCE, 42)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } returns null
+            var captures = 0
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                captures++
+                if (captures == 1) null else callOriginal()
+            }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals("", hover.contents.right.value)
+            assertEquals(ORIGINAL_SOURCE, fixture.compilation.getCompiledSnapshot(fixture.uri)?.sourceText)
+        }
+    }
+
+    @Test
+    fun `hover rejects another edit after a completed incomplete parse`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.put(fixture.uri, INCOMPLETE_SOURCE, 42)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                val result = assertNotNull(fixture.acquireCompilation())
+                assertTrue(result.parseCompleted)
+                assertNull(result.ast)
+                fixture.documents.put(fixture.uri, CURRENT_SOURCE, 43)
+                result
+            }
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            verify(exactly = 0) { fixture.compilation.getCompiledSnapshot(fixture.uri) }
+        }
+    }
+
+    @Test
+    fun `hover cannot treat an incomplete parse of different text as current`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.put(fixture.uri, INCOMPLETE_SOURCE, 42)
+            val result = assertNotNull(fixture.acquireCompilation())
+            fixture.documents.put(fixture.uri, CURRENT_SOURCE, 43)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } returns result
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            // The buffer is unchanged since the capture, so only the new source check can reject this result.
+            // The previous handler fell through to the stale cache and rejected it there.
+            verify(exactly = 0) { fixture.compilation.getCompiledSnapshot(fixture.uri) }
+            verify(exactly = 0) { fixture.compilation.getHoverSession(fixture.uri, any()) }
+        }
+    }
+
+    @Test
+    fun `hover does not classify an unfinished compilation as unavailable syntax`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.put(fixture.uri, INCOMPLETE_SOURCE, 42)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } returns
+                CompilationResult.failure(emptyList(), INCOMPLETE_SOURCE)
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `closed file hover remains useful and reports an incomplete parse without stale facts`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.remove(fixture.uri)
+            fixture.compilation.invalidateCache(fixture.uri)
+            Path.of(fixture.uri).writeText(CURRENT_SOURCE)
+
+            val valid = fixture.endpoint.hover(fixture.params()).await()
+            assertContains(valid.contents.right.value, "Integer")
+
+            Path.of(fixture.uri).writeText(INCOMPLETE_SOURCE)
+            fixture.compilation.invalidateCache(fixture.uri)
+            val incomplete = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals("", incomplete.contents.right.value)
+            assertNull(fixture.documents.getSnapshot(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `hover rejects an open during an incomplete disk compilation`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.remove(fixture.uri)
+            fixture.compilation.invalidateCache(fixture.uri)
+            Path.of(fixture.uri).writeText(INCOMPLETE_SOURCE)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                val result = assertNotNull(fixture.acquireCompilation())
+                assertTrue(result.parseCompleted)
+                assertNull(result.ast)
+                fixture.documents.put(fixture.uri, CURRENT_SOURCE, 42)
+                result
+            }
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            verify(exactly = 0) { fixture.compilation.getCompiledSnapshot(fixture.uri) }
+        }
+    }
+
+    @Test
+    fun `closed file hover ignores a valid stale cache when the disk text is incomplete`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            fixture.documents.remove(fixture.uri)
+            Path.of(fixture.uri).writeText(INCOMPLETE_SOURCE)
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.compile(INCOMPLETE_SOURCE)
+            }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            // A valid cache for ORIGINAL_SOURCE exists, and a closed file has no captured text to compare against.
+            // The previous handler served that cache; its method signature must not appear.
+            assertEquals("", hover.contents.right.value)
+            verify(exactly = 0) { fixture.compilation.getHoverSession(fixture.uri, any()) }
+            assertNull(fixture.documents.getSnapshot(fixture.uri))
+        }
+    }
+
+    @Test
     fun `native hover retains captured facts when an older parse replaces the cache`(): Unit = runBlocking {
         fixture(EngineType.Native).use { fixture ->
             val original = assertNotNull(fixture.compilation.getParseResult(fixture.uri))
             fixture.change(CURRENT_SOURCE, 42)
             val cache = fixture.compilation.compilationCacheService
-            mockkObject(cache)
-            try {
-                every { cache.getCachedWithContent(fixture.uri, any()) } answers {
-                    callOriginal().also {
-                        cache.publish(cache.ownership.begin(fixture.uri), ORIGINAL_SOURCE, original, secondArg())
-                    }
-                }
-
-                val hover = fixture.endpoint.hover(fixture.params()).await()
-
-                assertContains(hover.contents.right.value, "Integer")
-                assertEquals(CURRENT_SOURCE, fixture.documents.get(fixture.uri))
-                assertEquals(
-                    ORIGINAL_SOURCE,
-                    cache.getCachedWithContent(
-                        fixture.uri,
-                        fixture.compilation.workspaceManager.getConfigurationFingerprint(),
-                    )?.first,
-                )
-            } finally {
-                unmockkObject(cache)
+            val fingerprint = fixture.compilation.workspaceManager.getConfigurationFingerprint()
+            var captures = 0
+            var published = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                assertEquals(CURRENT_SOURCE, captured.sourceText)
+                assertNotSame(original, captured.parseResult)
+                captures++
+                published = cache.publish(cache.ownership.begin(fixture.uri), ORIGINAL_SOURCE, original, fingerprint)
+                captured
             }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals(1, captures, "The replacement must occur after exactly one snapshot capture")
+            assertTrue(published, "The older parse must actually replace the cache")
+            assertEquals(ORIGINAL_SOURCE, cache.getCachedWithContent(fixture.uri, fingerprint)?.first)
+            assertContains(hover.contents.right.value, "Integer")
+            assertEquals(CURRENT_SOURCE, fixture.documents.get(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `native hover retains an older capture when a newer parse replaces the cache`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            val original = assertNotNull(fixture.compilation.getParseResult(fixture.uri))
+            val newer = fixture.compilation.compileTransient(fixture.uri, CURRENT_SOURCE)
+            assertNotNull(newer.ast)
+            val cache = fixture.compilation.compilationCacheService
+            val fingerprint = fixture.compilation.workspaceManager.getConfigurationFingerprint()
+            var captures = 0
+            var published = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                assertEquals(ORIGINAL_SOURCE, captured.sourceText)
+                assertSame(original, captured.parseResult)
+                captures++
+                published = cache.publish(cache.ownership.begin(fixture.uri), CURRENT_SOURCE, newer, fingerprint)
+                captured
+            }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertEquals(1, captures)
+            assertTrue(published, "The newer parse must actually replace the cache")
+            assertEquals(CURRENT_SOURCE, cache.getCachedWithContent(fixture.uri, fingerprint)?.first)
+            assertContains(hover.contents.right.value, "String value()")
+            assertEquals(ORIGINAL_SOURCE, fixture.documents.get(fixture.uri))
+        }
+    }
+
+    @Test
+    fun `hover rejects a version change during snapshot capture`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            val incarnation = assertNotNull(fixture.documents.getIncarnation(fixture.uri))
+            var captures = 0
+            var updated = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                captures++
+                updated = fixture.documents.update(fixture.uri, ORIGINAL_SOURCE, 42) != null
+                captured
+            }
+
+            val result = runCatching { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(1, captures)
+            assertTrue(updated, "The version update must be accepted during capture")
+            assertSame(incarnation, fixture.documents.getIncarnation(fixture.uri))
+            assertEquals(ORIGINAL_SOURCE, fixture.documents.getSnapshot(fixture.uri)?.content)
+            assertEquals(42, fixture.documents.getSnapshot(fixture.uri)?.version)
+            val error = assertIs<ResponseErrorException>(result.exceptionOrNull())
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `hover rejects a closed and reopened identical buffer during snapshot capture`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            val incarnation = assertNotNull(fixture.documents.getIncarnation(fixture.uri))
+            var captures = 0
+            var removed = false
+            var reopened = false
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                val captured = assertNotNull(callOriginal())
+                captures++
+                fixture.documents.remove(fixture.uri)
+                removed = fixture.documents.getSnapshot(fixture.uri) == null
+                fixture.documents.put(fixture.uri, ORIGINAL_SOURCE, 41)
+                reopened = fixture.documents.getIncarnation(fixture.uri) !== incarnation
+                captured
+            }
+
+            val result = runCatching { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(1, captures)
+            assertTrue(removed, "The captured buffer must be closed during capture")
+            assertTrue(reopened, "A new buffer incarnation must be opened during capture")
+            assertNotSame(incarnation, fixture.documents.getIncarnation(fixture.uri))
+            assertEquals(ORIGINAL_SOURCE, fixture.documents.getSnapshot(fixture.uri)?.content)
+            assertEquals(41, fixture.documents.getSnapshot(fixture.uri)?.version)
+            val error = assertIs<ResponseErrorException>(result.exceptionOrNull())
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `hover propagates cancellation during snapshot capture`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            var captures = 0
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                assertNotNull(callOriginal())
+                captures++
+                throw CancellationException("cancelled during snapshot capture")
+            }
+
+            val result = runCatching { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(1, captures)
+            assertIs<CancellationException>(result.exceptionOrNull())
         }
     }
 
@@ -230,6 +477,8 @@ class HoverSnapshotTest {
         // Delegate normally: a suspend spy's callOriginal cannot await COROUTINE_SUSPENDED.
         suspend fun acquireCompilation() = actual.ensureCompiled(uri)
 
+        suspend fun compile(source: String) = actual.compile(uri, source)
+
         fun params() = HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, 23))
 
         fun change(source: String, version: Int) = endpoint.didChange(
@@ -248,5 +497,6 @@ class HoverSnapshotTest {
     private companion object {
         const val ORIGINAL_SOURCE = "class Sample { String value() { 'before' } }\n"
         const val CURRENT_SOURCE = "class Sample { Integer value() { 42 } }\n"
+        const val INCOMPLETE_SOURCE = "class Sample { Integer value() { OrderStatus. } }\n"
     }
 }

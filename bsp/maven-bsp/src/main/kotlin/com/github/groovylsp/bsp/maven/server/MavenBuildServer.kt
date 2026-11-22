@@ -74,8 +74,24 @@ class MavenBuildServer(
     private var modules: List<MavenModuleInfo> = emptyList()
     private var client: BuildClient? = null
 
+    @Volatile
+    private var exitListener: (() -> Unit)? = null
+
+    /** True once `build/shutdown` was received; the standalone launcher maps it to the process exit code. */
+    @Volatile
+    var shutdownRequested: Boolean = false
+        private set
+
     fun connect(client: BuildClient) {
         this.client = client
+    }
+
+    /**
+     * Registers the owner's reaction to `build/exit`. The server never terminates the process itself:
+     * the executable decides how and when to stop. A later call replaces the earlier listener.
+     */
+    fun onExit(listener: () -> Unit) {
+        exitListener = listener
     }
 
     // === BSP Lifecycle ===
@@ -102,12 +118,13 @@ class MavenBuildServer(
 
     override fun buildShutdown(): CompletableFuture<Any> {
         logger.info { "Shutting down Maven BSP server" }
+        shutdownRequested = true
         return CompletableFuture.completedFuture(null)
     }
 
     override fun onBuildExit() {
-        // TODO(#1838): Give the standalone launcher an owned, bounded process-exit policy.
         logger.info { "Maven BSP server exiting" }
+        exitListener?.invoke()
     }
 
     // === Workspace Operations ===
@@ -166,10 +183,10 @@ class MavenBuildServer(
     override fun buildTargetResources(params: ResourcesParams): CompletableFuture<ResourcesResult> =
         CompletableFuture.supplyAsync {
             val items = params.targets.map { targetId ->
-                val module = findModuleForTarget(targetId)
-                val resources = if (module != null) {
+                val resolved = findModuleForTarget(targetId)
+                val resources = if (resolved != null) {
+                    val (module, isTest) = resolved
                     val baseDir = module.baseDir
-                    val isTest = targetId.uri.endsWith(":test")
                     val resourceDir = if (isTest) {
                         baseDir.resolve("src/test/resources")
                     } else {
@@ -222,10 +239,10 @@ class MavenBuildServer(
     override fun buildTargetOutputPaths(params: OutputPathsParams): CompletableFuture<OutputPathsResult> =
         CompletableFuture.supplyAsync {
             val items = params.targets.map { targetId ->
-                val module = findModuleForTarget(targetId)
-                val outputPaths = if (module != null) {
+                val resolved = findModuleForTarget(targetId)
+                val outputPaths = if (resolved != null) {
+                    val (module, isTest) = resolved
                     val baseDir = module.baseDir
-                    val isTest = targetId.uri.endsWith(":test")
                     val outputDir = if (isTest) {
                         baseDir.resolve("target/test-classes")
                     } else {
@@ -259,10 +276,19 @@ class MavenBuildServer(
         ResponseErrorException(ResponseError(ResponseErrorCode.MethodNotFound, "$method is not supported", null)),
     )
 
-    private fun findModuleForTarget(targetId: BuildTargetIdentifier): MavenModuleInfo? {
-        val uri = targetId.uri.removeSuffix(":test")
-        return modules.find { module ->
-            targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri == uri
+    /**
+     * Resolves a target to its module and whether it is the test target, by exact ID. A suffix check would mistake
+     * the main target of a module whose artifactId is `test` (`maven:g:test`) for a test target.
+     */
+    private fun findModuleForTarget(targetId: BuildTargetIdentifier): Pair<MavenModuleInfo, Boolean>? {
+        for (module in modules) {
+            if (targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri == targetId.uri) {
+                return module to false
+            }
+            if (targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.TEST).uri == targetId.uri) {
+                return module to true
+            }
         }
+        return null
     }
 }

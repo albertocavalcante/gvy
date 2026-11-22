@@ -45,6 +45,7 @@ class GroovyLanguageServerCapabilitiesContractTest {
 
         val capabilities = result.capabilities
         assertNotNull(capabilities)
+        assertEquals(true, (capabilities.experimental as? Map<*, *>)?.get("groovyDocumentAnalysis"))
 
         // Text document sync
         val syncKind = capabilities.textDocumentSync?.left
@@ -61,7 +62,14 @@ class GroovyLanguageServerCapabilitiesContractTest {
         assertTrue(capabilities.typeDefinitionProvider?.left == true)
         assertTrue(capabilities.documentFormattingProvider?.left == true)
         assertTrue(capabilities.renameProvider?.left == true)
-        assertTrue(capabilities.codeActionProvider?.left == true, "Code actions should be advertised.")
+        val codeActions = assertNotNull(
+            capabilities.codeActionProvider?.right,
+            "Code action kinds should be advertised.",
+        )
+        assertEquals(
+            listOf("quickfix", "refactor.rewrite", "source.organizeImports", "source.fixAll"),
+            codeActions.codeActionKinds,
+        )
 
         val signatureHelp = capabilities.signatureHelpProvider
         assertNotNull(signatureHelp, "Signature help should be advertised when implemented.")

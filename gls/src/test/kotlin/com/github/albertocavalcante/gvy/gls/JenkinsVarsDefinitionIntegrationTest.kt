@@ -97,6 +97,24 @@ class JenkinsVarsDefinitionIntegrationTest {
     }
 
     @Test
+    fun `should navigate to vars file from the first characters of the step name`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "node {\n    deployApp(name: 'x')\n}"
+
+        openDocument(uri, content)
+
+        // Every column of `deployApp` (line 1, chars 4..12) plus the position just after its last character.
+        for (character in 4..13) {
+            val definitions = requestDefinitionAt(uri, Position(1, character))
+            assertEquals(1, definitions.size, "one definition expected at character $character")
+            assertTrue(
+                definitions[0].uri.endsWith("vars/deployApp.groovy"),
+                "character $character resolved to ${definitions[0].uri}",
+            )
+        }
+    }
+
+    @Test
     fun `should navigate to different vars files`(): Unit = runBlocking {
         val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
         val content = "node {\n    deployApp()\n}"

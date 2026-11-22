@@ -9,10 +9,16 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 
 /** A convenience view of a decoded SDK response, independent of raw wire evidence. */
 object SdkResponseProjection {
+    private val protocolGson = MessageJsonHandler(emptyMap()).gson
+
+    /** Removes typed union carriers without adding convenience metadata. Original wire still needs independent audit. */
+    fun unwrappedValue(response: Any?): JsonElement = JsonBridge.run { protocolGson.toJsonElement(response) }
+
     fun project(response: Any?): JsonElement {
         val decoded = JsonBridge.wrapJavaObject(response)
         if (response !is Either<*, *> || decoded !is JsonObject) return decoded

@@ -665,10 +665,12 @@ class WorkspaceManager internal constructor(
 
     private fun scanSources(sourceRoots: List<Path>, workspaceRoot: Path?): List<Path> {
         // A refused root lists nothing, an accepted link root is walked at its checked target, and a directory
-        // named by several roots is walked once, under the first ([scannedRoots]).
+        // named by several roots is walked once, under the first ([scannedRoots]). A file under nested roots is
+        // found by each walk holding it and listed once, under the first root in order, the group
+        // [ordered] puts it in (#1441).
         val workspaceSources = scannedRoots(sourceRoots, workspaceRoot).scanned.flatMap { (sourceRoot, start) ->
             collectGroovySources(sourceRoot, start = start).sorted()
-        }
+        }.distinct()
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
         workspaceSources.forEach { logger.debug { "Indexed source: $it" } }

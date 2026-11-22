@@ -24,3 +24,29 @@ for (const route of [
       });
   });
 }
+
+test("home matches the reviewed Linux screenshot", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    process.platform !== "linux" || process.env.GVY_E2E_SYSTEM_CHROME === "1",
+    "Visual baselines require bundled Chromium on Linux.",
+  );
+  await page.goto("");
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page.locator("footer .meta time")).toBeVisible();
+  const screenshot = await page.screenshot({
+    fullPage: true,
+    animations: "disabled",
+    caret: "hide",
+    scale: "css",
+    style:
+      "footer .meta time { display: inline-block; width: 8em; visibility: hidden; }",
+  });
+  // Retain candidate images even when no baseline exists yet.
+  await testInfo.attach("home-visual-actual", {
+    body: screenshot,
+    contentType: "image/png",
+  });
+  expect(screenshot).toMatchSnapshot("home.png");
+});

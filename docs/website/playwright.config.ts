@@ -13,7 +13,7 @@ export default defineConfig({
     node: process.version,
     bun: execFileSync("bun", ["--version"], { encoding: "utf8" }).trim(),
     platform: process.platform,
-    browserChannel: chrome ? "system Chrome" : "bundled Chromium",
+    browserChannel: chrome ? "system Chrome" : "bundled Playwright browsers",
   },
   testDir: "./tests/e2e",
   workers: 1,
@@ -26,7 +26,6 @@ export default defineConfig({
   use: {
     baseURL: external ?? "http://127.0.0.1:43219/gvy/",
     browserName: "chromium",
-    channel: chrome ? "chrome" : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -39,12 +38,24 @@ export default defineConfig({
         timeout: 30000,
       },
   projects: [
-    { name: "contracts", testMatch: /(contracts|journeys)\.spec\.ts/ },
+    {
+      name: "contracts",
+      testMatch: /(contracts|journeys|search-delay)\.spec\.ts/,
+      use: { channel: chrome ? "chrome" : undefined },
+    },
+    ...(chrome
+      ? []
+      : (["firefox", "webkit"] as const).map((browserName) => ({
+          name: `${browserName}-journeys`,
+          testMatch: /(journeys|search-delay)\.spec\.ts/,
+          use: { browserName },
+        }))),
     ...[360, 768, 1440].flatMap((width) =>
       (["light", "dark"] as const).map((colorScheme) => ({
         name: `chromium-${width}-${colorScheme}`,
         testMatch: /matrix\.spec\.ts/,
         use: {
+          channel: chrome ? "chrome" : undefined,
           viewport: { width, height: 900 },
           colorScheme,
           reducedMotion: "reduce" as const,
@@ -53,5 +64,3 @@ export default defineConfig({
     ),
   ],
 });
-
-// TODO(#2020): Add reviewed Linux visual baselines and Firefox/WebKit critical journeys.

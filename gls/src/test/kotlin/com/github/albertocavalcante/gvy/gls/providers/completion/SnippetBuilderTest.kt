@@ -15,6 +15,32 @@ import kotlin.test.assertEquals
 class SnippetBuilderTest {
 
     @Test
+    fun `plain alternatives retain type and quote choice values`() {
+        fun parameter(type: String, choices: List<String>? = null) = MergedParameter(
+            name = "value",
+            type = type,
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = choices,
+            examples = emptyList(),
+        )
+
+        assertEquals("value: [:]", SnippetBuilder.buildParameterTemplate("value", parameter("Map")).plainText)
+        assertEquals("value: []", SnippetBuilder.buildParameterTemplate("value", parameter("List")).plainText)
+        assertEquals("value: true", SnippetBuilder.buildParameterTemplate("value", parameter("boolean")).plainText)
+        assertEquals(", value: 0", SnippetBuilder.buildParameterTemplate("value", parameter("int"), ", ").plainText)
+        assertEquals(
+            "value: 'can\\'t'",
+            SnippetBuilder.buildParameterTemplate("value", parameter("String", listOf("can't"))).plainText,
+        )
+        assertEquals(
+            "value: 'a\\\\b\\'c\\r\\n\$name'",
+            SnippetBuilder.buildParameterTemplate("value", parameter("String", listOf("a\\b'c\r\n\$name"))).plainText,
+        )
+    }
+
+    @Test
     fun `should build snippet for String parameter with quotes`() {
         val param = MergedParameter(
             name = "message",

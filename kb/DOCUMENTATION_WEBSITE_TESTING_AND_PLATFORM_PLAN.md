@@ -199,9 +199,9 @@ or a separate component repository ahead of demonstrated need.
 | Increment                                  | Owner and dependency                                       | Observable completion gate                                                                                                                                                                         |
 | ------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Browser harness and defect reproduction | Website maintainers; current built site                    | Commit pinned tests and CI lifecycle; B01–B04 reproduce as real failures, five search journeys pass, failures retain useful artifacts                                                              |
-| 2. Correct current behavior                | Website maintainers; increment 1                           | Fix B01–B04, repeat matrix/keyboard/axe and independent review, approve clean visual baselines; finish the revamp's separate runtime gates before merge                                            |
+| 2. Correct current behavior                | Website maintainers; increment 1                           | Fix B01–B04, repeat matrix/keyboard/axe and independent review, approve clean visual baselines; keep release/workflow verification separately owned in #2021                                       |
 | 3. Component contract                      | Website maintainers; demonstrated content need             | Land one small component with SSR/no-JavaScript, keyboard and hydration coverage; add Svelte only if interaction warrants it                                                                       |
-| 4. Custom Astro shell experiment           | Website maintainers; browser contracts stable              | Render the same home, guide, code/table reference and 404; preserve every route/legacy fragment, edit destination, search query and essential no-JavaScript content                                |
+| 4. Custom Astro shell experiment           | Website maintainers; browser contracts stable              | Render the selected home, guide, code/table reference and 404; prove selected edit links, search and no-JavaScript content; require full route/fragment parity before migration                    |
 | 5. SvelteKit/mdsvex comparison             | Website maintainers; same corpus and contracts             | Static `/gvy/` artifact passes the same browser gates; record component conversions and docs-shell ownership alongside Astro results                                                               |
 | 6. Renderer decision and migration PRs     | Maintainers and independent reviewer; measured experiments | Record versioned build size/time, client JavaScript, accessibility, maintenance and conversion evidence; choose a renderer, stage parity, then switch deployment with a previous-artifact rollback |
 
@@ -210,3 +210,31 @@ after these experiments produce evidence. Keep findings in this record; no recur
 candidate fails a gate, record the failure and next action rather than migrating around it. Preserve the existing Pages
 destination and release qualifications throughout. Remove disposable candidate projects after retaining concise
 evidence; preserve the prior deployed artifact and exact deployment SHA for rollback.
+
+## Authoring experiment and dependency gate
+
+The bounded authoring slice in #2051 uses canonical quickstart/settings Markdown plus a small neutral home and static
+404. Its real MDX page imports a static Astro notice with a nested heading checked in no-JavaScript output. MDX uses JSX
+imports and expressions; mdsvex uses Svelte syntax. Canonical prose remains plain Markdown, and renderer-specific
+layout/import code stays in the experiment adapter. No production Svelte dependency is required for this static notice.
+
+Astro 7 defaults to Satteri. The first hosted attempt failed because the prototype configured legacy remark plugins
+without the optional remark processor. The correction uses the configured native processor, matching the production
+site's extension pattern, plus a Shiki transformer for static keyboard-focus attributes. Browser tests verify the actual
+rendered result; syntax checks alone do not establish build or accessibility success. The isolated workflow records
+exact inputs, selected route/search/no-JavaScript behavior and uncompressed output/JavaScript byte counts. Its
+build-and-index timing has one-second resolution and is not a whole-site performance comparison.
+
+The initial SvelteKit/mdsvex four-page attempt built and passed five functional browser tests in run 43676373639,
+attempt 1, job 132697311886, source `2a645fd2672441d92dee747ebdf29ab1b8b18031`. That does not make it merge-ready: OSV
+run 43676374061 found [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) in `deepmerge@4.3.1`,
+introduced by the compatible released Svelte Vite plugin 7.3.1. No supported fixed release was found;
+[upstream PR1415](https://github.com/sveltejs/vite-plugin-svelte/pull/1415) remains open and conflicting. The finding is
+not suppressed. The unsafe dependency set is removed from the active Astro slice, and the unmerged Kit source is
+preserved privately with a verified bundle and receipt for resumption.
+
+Website maintainers own the blocked comparison in #2022. Resume after verifying a compatible supported fix, refreshing
+the frozen lock and passing the dependency scan, build, component and selected browser contracts. A renderer decision
+still needs the actual production-homepage conversion, broader metadata/navigation/TOC ownership, full 19-route and
+legacy-fragment parity, the five production search journeys, manual accessibility and a staged deployment rollback. The
+small neutral home and one successful framework build do not establish those gates.

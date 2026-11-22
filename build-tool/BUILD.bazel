@@ -10,6 +10,7 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:com_google_code_gson_gson",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_maven_maven_model",
         "@maven//:org_apache_maven_maven_model_builder",
@@ -40,7 +41,16 @@ kt_test(
     data = glob([
         "src/test/resources/test-*-project/**/*",
         "src/test/resources/non-*-project/**/*",
-    ]),
+    ]) + [
+        # MavenBspEquivalenceTest launches the standalone server and copies the reused fixtures.
+        "//bsp/maven-bsp:equivalence_fixtures",
+        "//bsp/maven-bsp:maven-bsp-server_deploy.jar",
+        "//bsp/maven-bsp:src/test/resources/fixtures/single-module/pom.xml",
+    ],
+    jvm_flags = [
+        "-Dgvy.mavenBsp.serverJar=$(rootpath //bsp/maven-bsp:maven-bsp-server_deploy.jar)",
+        "-Dgvy.mavenBsp.fixtures.marker=$(rootpath //bsp/maven-bsp:src/test/resources/fixtures/single-module/pom.xml)",
+    ],
     # Resources: files loaded via classloader (txt, xml files)
     resources = glob([
         "src/test/resources/network-policy/*.json",
@@ -50,9 +60,14 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
         "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:com_google_code_gson_gson",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_apache_groovy_groovy_ant",
+        "@maven//:org_apache_groovy_groovy_xml",
         "@maven//:org_apache_maven_maven_model",
+        "@maven//:org_apache_maven_maven_model_builder",
         "@maven//:org_apache_maven_resolver_maven_resolver_api",
         "@maven//:org_apache_maven_resolver_maven_resolver_spi",
         "@maven//:org_gradle_gradle_tooling_api",

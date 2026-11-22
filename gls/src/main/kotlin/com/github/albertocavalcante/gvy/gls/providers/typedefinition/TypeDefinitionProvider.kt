@@ -22,7 +22,7 @@ import java.net.URI
  */
 class TypeDefinitionProvider(
     private val semanticResolver: SemanticTypeResolver,
-    private val contextProvider: (URI) -> CompilationContext?,
+    private val contextProvider: (URI) -> Pair<CompilationContext, String?>?,
 ) {
 
     private val logger = KotlinLogging.logger {}
@@ -49,13 +49,14 @@ class TypeDefinitionProvider(
     }
 
     private suspend fun findTypeDefinition(uri: URI, position: Position): Location? {
-        val context = contextProvider(uri) ?: return null
+        // One read supplies the AST context and the text its columns index into, so they share a generation.
+        val (context, sourceText) = contextProvider(uri) ?: return null
 
         // Inject module node for semantic analysis
         semanticResolver.semantics.inject(context.moduleNode)
 
         // Find the AST node at the given position
-        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {
+        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition(sourceText)) ?: run {
             logger.debug { "No AST node found at position $position" }
             return null
         }
@@ -66,22 +67,26 @@ class TypeDefinitionProvider(
         logger.debug { "Resolved semantic type: $semanticType" }
 
         // Convert to location
-        val location = resolveTypeLocation(semanticType, context)
+        val location = resolveTypeLocation(semanticType, context, sourceText)
         logger.debug { "Resolved location: $location" }
         return location
     }
 
-    private suspend fun resolveTypeLocation(type: SemanticType, context: CompilationContext): Location? = when (type) {
-        is SemanticType.Known -> findClassLocation(type.fqn, context)
-        is SemanticType.Array -> resolveTypeLocation(type.componentType, context)
+    private suspend fun resolveTypeLocation(
+        type: SemanticType,
+        context: CompilationContext,
+        sourceText: String?,
+    ): Location? = when (type) {
+        is SemanticType.Known -> findClassLocation(type.fqn, context, sourceText)
+        is SemanticType.Array -> resolveTypeLocation(type.componentType, context, sourceText)
         is SemanticType.Union -> {
             // Return first resolvable type location
-            type.types.firstNotNullOfOrNull { resolveTypeLocation(it, context) }
+            type.types.firstNotNullOfOrNull { resolveTypeLocation(it, context, sourceText) }
         }
         else -> null
     }
 
-    private suspend fun findClassLocation(fqn: String, context: CompilationContext): Location? {
+    private suspend fun findClassLocation(fqn: String, context: CompilationContext, sourceText: String?): Location? {
         logger.debug { "Looking for class location for FQN: '$fqn'" }
         logger.debug { "Available classes in module: ${context.moduleNode.classes.map { it.name }}" }
 
@@ -89,7 +94,8 @@ class TypeDefinitionProvider(
         // This handles classes defined in the same file we are currently editing.
         context.moduleNode.classes.find { it.name == fqn }?.let { classNode ->
             logger.debug { "Found class in module: ${classNode.name}" }
-            val location = classNode.toLspLocation(context.astModel)
+            // A class of this module is declared in the document whose text [sourceText] is.
+            val location = classNode.toLspLocation(context.astModel) { sourceText }
             logger.debug { "Converted to LSP location: $location" }
             return location
         }

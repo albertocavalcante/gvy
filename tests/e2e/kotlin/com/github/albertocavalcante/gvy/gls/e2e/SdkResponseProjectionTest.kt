@@ -9,6 +9,12 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.DocumentSymbol
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.DynamicTest.dynamicTest
@@ -40,6 +46,37 @@ class SdkResponseProjectionTest {
             assertThat(context.savedResults["response"]).isEqualTo(expected)
             assertThat(context.variables["response"]).isEqualTo(expected)
         }
+    }
+
+    @Test
+    fun `unwrapped values remove actual nested SDK carriers without altering payload keys`() {
+        val payload = JsonParser.parseString("""{"name":"Before","left":"authored","right":{"nested":true}}""")
+        val symbols = listOf(Either.forRight<Any, Any>(payload))
+        val completion = Either.forRight<Any, Any>(JsonParser.parseString("""{"items":[{"label":"NEW"}]}"""))
+
+        assertThat(SdkResponseProjection.unwrappedValue(symbols))
+            .isEqualTo(Json.parseToJsonElement("""[$payload]"""))
+        assertThat(SdkResponseProjection.unwrappedValue(completion))
+            .isEqualTo(Json.parseToJsonElement("""{"items":[{"label":"NEW"}]}"""))
+        assertThat(SdkResponseProjection.unwrappedValue(payload)).isEqualTo(Json.parseToJsonElement(payload.toString()))
+        assertThat(SdkResponseProjection.unwrappedValue(null)).isEqualTo(Json.parseToJsonElement("null"))
+    }
+
+    @Test
+    fun `unwrapped typed DTOs preserve protocol enum numbers and symbol ranges`() {
+        val range = Range(Position(0, 0), Position(0, 6))
+        val symbol = DocumentSymbol("Before", SymbolKind.Class, range, range)
+        val item = CompletionItem("NEW").apply { kind = CompletionItemKind.EnumMember }
+        val expectedRange = """{"start":{"line":0,"character":0},"end":{"line":0,"character":6}}"""
+
+        assertThat(SdkResponseProjection.unwrappedValue(listOf(Either.forRight<Any, Any>(symbol))))
+            .isEqualTo(
+                Json.parseToJsonElement(
+                    """[{"name":"Before","kind":5,"range":$expectedRange,"selectionRange":$expectedRange}]""",
+                ),
+            )
+        assertThat(SdkResponseProjection.unwrappedValue(item))
+            .isEqualTo(Json.parseToJsonElement("""{"label":"NEW","kind":20}"""))
     }
 
     @Test

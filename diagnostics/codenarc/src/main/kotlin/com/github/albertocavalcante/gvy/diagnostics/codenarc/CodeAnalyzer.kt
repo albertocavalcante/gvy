@@ -7,7 +7,6 @@ import groovy.lang.Closure
 import groovy.lang.ExpandoMetaClass
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.CodeNarcRunner
-import org.codenarc.analyzer.FilesSourceAnalyzer
 import org.codenarc.results.Results
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
@@ -54,10 +53,9 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
 
         // Base temp directory
         private val baseTempDir: Path = Files.createTempDirectory("codenarc-lsp-")
-            .also { it.toFile().deleteOnExit() }
+            .also { registerTreeCleanup(it) }
 
         private val rulesetCacheDir: Path = Files.createDirectory(baseTempDir.resolve("rulesets"))
-            .also { it.toFile().deleteOnExit() }
 
         private val rulesetFileCache = RulesetFileCache(cacheDir = rulesetCacheDir)
 
@@ -85,29 +83,17 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
             // Efficient write with NIO - direct UTF-8 bytes
             Files.write(tempSourceFile, sourceCode.toByteArray(StandardCharsets.UTF_8))
 
+            // Only a sanitized copy reaches CodeNarc, addressed by URI: a bare path is a classpath resource.
+            val propertiesUri = propertiesFile?.let { sanitizedPropertiesUri(analysisDir, it) }
+
             val runner = CodeNarcRunner().apply {
                 routeSummaryToStderr()
-                // FilesSourceAnalyzer produces FileResults (supports getChildren())
-                sourceAnalyzer = FilesSourceAnalyzer().also { analyzer ->
-                    // Use reflection to set properties since Kotlin can't access Groovy property setters directly
-                    analyzer.javaClass.getDeclaredField("baseDirectory").apply {
-                        isAccessible = true
-                        set(analyzer, analysisDir.toString())
-                    }
-                    analyzer.javaClass.getDeclaredField("sourceFiles").apply {
-                        isAccessible = true
-                        set(analyzer, arrayOf(tempSourceFile.fileName.toString()))
-                    }
-                }
+                sourceAnalyzer = SingleFileSourceAnalyzer(analysisDir, safeFileName)
 
                 // Set the ruleset file
                 ruleSetFiles = rulesetFile.toUri().toString()
 
-                // Set properties file if provided
-                propertiesFile?.let { propFile ->
-                    propertiesFilename = propFile
-                    logger.debug { "Using CodeNarc properties file: $propFile" }
-                }
+                propertiesUri?.let { propertiesFilename = it }
             }
 
             // Execute analysis on the source code
@@ -136,6 +122,13 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 logger.debug { "Temp file cleanup failed for $fileName: ${e.message}" }
             }
         }
+    }
+
+    internal fun sanitizedPropertiesUri(analysisDir: Path, propertiesFile: String): String? {
+        val sanitized = PropertiesSanitizer.sanitize(Paths.get(propertiesFile)) ?: return null
+        val target = analysisDir.resolve(".codenarc-sanitized.properties")
+        Files.write(target, sanitized.content.toByteArray(StandardCharsets.UTF_8))
+        return target.toUri().toString()
     }
 
     internal fun resolveSafeFileName(fileName: String): String = try {

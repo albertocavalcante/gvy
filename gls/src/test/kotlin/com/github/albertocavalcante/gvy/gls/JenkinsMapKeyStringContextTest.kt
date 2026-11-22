@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
+import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -96,7 +97,9 @@ class JenkinsMapKeyStringContextTest {
         val edit = returnStdout.textEdit.left
         assertEquals(Position(1, line.length - 3), edit.range.start)
         assertEquals(Position(1, line.length), edit.range.end)
-        assertTrue(edit.newText.startsWith(", returnStdout: "), edit.newText)
+        assertEquals(", returnStdout: true", edit.newText)
+        assertEquals(edit.newText, returnStdout.insertText)
+        assertEquals(InsertTextFormat.PlainText, returnStdout.insertTextFormat)
     }
 
     @Test

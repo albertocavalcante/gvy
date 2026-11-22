@@ -31,7 +31,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -43,7 +43,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.4
+          bun-version: 1.4.5
 
       - name: Setup Pages
         id: pages
@@ -58,11 +58,11 @@ jobs:
         working-directory: docs/website
         run: bun run validate
 
-      - name: Install browser
+      - name: Install browsers
         working-directory: docs/website
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium firefox webkit
 
-      - name: Test documentation in Chromium
+      - name: Test documentation in browsers
         id: browser-tests
         working-directory: docs/website
         env:

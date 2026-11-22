@@ -16,6 +16,10 @@ java -version  # Verify Java is available
 
 > [!NOTE] Each new worktree requires `direnv allow` to be run once.
 
+Non-interactive agent shells do not run the direnv hook. Load the profile explicitly with
+`eval "$(direnv export bash)"`, or set `JAVA_HOME` as described in
+[CONTRIBUTING.md](CONTRIBUTING.md#set-up-the-jvm-build).
+
 ## Commands
 
 ```bash
@@ -60,8 +64,46 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
 9. **Readable Kotlin**: Follow [Kotlin style and readability](docs/kotlin-style.md) for every Kotlin change, including
    tests. Review readability separately from lint: make alternatives and logical groups visible, use meaningful names,
    and prefer clear control flow over dense expressions. Preserve evaluation and failure behavior during style changes.
+10. **Never drop a failing case silently**: Do not delete, comment out, skip, weaken or narrow a test, case, assertion,
+    check or baseline because it fails; an unexpected failure is a finding. If you do not fix the bug in the same
+    change, file a gvy issue, keep the case as an executable record, mark it `FIXME(#n)` and list it under "Known gaps"
+    in the PR body. A commit message alone is not documentation. Procedure:
+    [code-quality rules](.agent/rules/code-quality.md#never-drop-a-failing-case-silently).
+11. **PR lifetime**: A PR merges or carries a named blocker comment within 24 hours of opening. Merge as soon as all
+    applicable checks (rule 8) are green and the head SHA equals the reviewed SHA; never hold a PR for a batch. At most
+    three PRs open per agent. Draft means CI in progress only; parked work becomes an issue naming the branch, and the
+    draft is closed. Check the main CI run after every merge. A PR you stop working on is closed with a comment linking
+    the issue that carries the remaining work. Details: [PR lifetime](.agent/rules/git-workflow.md#pr-lifetime).
+12. **Gradle repositories**: Declare them only in `settings.gradle.kts` (`pluginManagement` and
+    `dependencyResolutionManagement`, which uses `FAIL_ON_PROJECT_REPOS`); never in a `build.gradle(.kts)` or convention
+    plugin. Exceptions are tracked in #2276.
+
+## Recovery and mixed-version architecture requirements
+
+Before changing parsing, completion/hover/tokens, analysis sessions, target/import selection, caches/indexes, semantic
+edits, compiler workers or framework providers, read the
+[current contract and PR packets](kb/INCREMENTAL_REPARSE_DELIVERY_PLAN.md#recovery-and-mixed-version-implementation-contract)
+and the relevant [SDK boundary](kb/SDK_EXTRACTION_DELIVERY_PLAN.md). These requirements remain active across sessions;
+verified implementation adds regression obligations rather than retiring the invariants.
+
+- Ordinary incomplete buffers need useful current-source syntax and unaffected editor facts, including on a cold open. A
+  last-good AST, completion-only repair or host compiler upgrade does not satisfy the independent syntax requirement.
+- The public syntax/analysis boundary must be compiler-free. Version-specific compiler facts are optional, qualified
+  providers; never equate a configured version with the compiler actually loaded.
+- One session must support distinct target/compiler/JDK/framework contexts, including shared files. Global selected
+  compilers, union classpaths and URI-only semantic stores cannot certify mixed-context analysis.
+- Before mixed-context exposure, every semantic entry point uses context-owned state or explicitly reports unavailable
+  (M2.4). Unique target membership per file does not make a shared global index safe. Physical edits require affected-
+  context impact proof or conservative refusal; context switches must retire client-visible cached results.
+
+Each affected PR identifies its packet, remaining acceptance gates and actual evidence. Update the canonical delivery
+record before handoff; keep proposed, reviewed, passed, merged and installed states distinct. Backend choice, exact
+supported versions and resource defaults remain experiment-gated. The packet sequence is a staged migration, not an
+instruction to rewrite every feature at once. Unrelated changes do not need to read the full program.
 
 ## Architecture
+
+The following describes the current implementation; the required migration boundary is recorded above.
 
 - `gls/`: the LSP server. `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
 - Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves language features. Hover goes through the
@@ -118,9 +160,17 @@ The git workflow rules apply to any branch, commit, or PR work.
 
 ## Deferred Work
 
+Use `TODO(#n)` for planned work and `FIXME(#n)` for a known defect, always with the issue link:
+
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/albertocavalcante/gvy/issues/123
+
+// FIXME(#124): Hover returns the wrong range for X; this test pins today's behaviour.
+//   See: https://github.com/albertocavalcante/gvy/issues/124
+@Disabled("Fails because of #124")
+@Test
+fun `hover on X returns the identifier range`() { ... }
 ```
 
 ## Helper Files

@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.fmt.OpenRewriteFormatter
+import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -17,7 +18,6 @@ import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.services.LanguageClient
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.max
 
 fun interface Formatter {
     fun format(text: String): String
@@ -169,26 +169,11 @@ private fun shouldMarkOptionsIgnored(options: FormattingOptions?): Boolean {
     return options.keys.any { it !in KNOWN_FORMATTING_OPTION_KEYS }
 }
 
-private fun String.toFullDocumentRange(): Range {
-    var line = 0
-    var lastLineStart = 0
-    this.indices.forEach { index ->
-        if (this[index] == '\n') {
-            line++
-            lastLineStart = index + 1
-        }
-    }
-
-    var column = length - lastLineStart
-    if (column > 0 && this[length - 1] == '\r') {
-        column--
-    }
-    column = max(column, 0)
-
-    return Range(
-        Position(0, 0),
-        Position(line, column),
-    )
+/** The range from the start to the end of this text; LF, CRLF and a bare CR each end a line, as in LSP. */
+internal fun String.toFullDocumentRange(): Range {
+    val index = Utf16LineIndex(this)
+    val lastLine = index.lineAt(length)
+    return Range(Position(0, 0), Position(lastLine, index.lineLength(lastLine) ?: 0))
 }
 
 internal class OpenRewriteFormatterAdapter : Formatter {

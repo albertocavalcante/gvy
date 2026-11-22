@@ -8,6 +8,7 @@ import { mkdtemp, rm, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { runWithFixtureCleanup } from "../support/fixtureCleanup";
 
 suite("Jenkins parameter authoring evidence", () => {
   let serverSha256: string;
@@ -70,8 +71,10 @@ suite("Jenkins parameter authoring evidence", () => {
     const directory = await mkdtemp(
       path.join(tmpdir(), "gvy-jenkins-authoring-"),
     );
-    const uri = vscode.Uri.file(path.join(directory, "Jenkinsfile"));
-    try {
+    let fixtureUri: vscode.Uri | undefined;
+    await runWithFixtureCleanup(async () => {
+      const uri = vscode.Uri.file(path.join(directory, "Jenkinsfile"));
+      fixtureUri = uri;
       await writeFile(uri.fsPath, source);
       const opened = await vscode.workspace.openTextDocument(uri);
       assert.strictEqual(opened.languageId, "jenkinsfile");
@@ -90,25 +93,32 @@ suite("Jenkins parameter authoring evidence", () => {
       const position = document.positionAt(offset);
       editor.selection = new vscode.Selection(position, position);
       await check(editor, source, offset);
-    } finally {
-      const open = vscode.workspace.textDocuments.find(
-        (document) => document.uri.toString() === uri.toString(),
-      );
-      if (open && !open.isClosed) {
-        await vscode.window.showTextDocument(open);
-        await vscode.commands.executeCommand("hideSuggestWidget");
-        await vscode.commands.executeCommand(
-          "workbench.action.revertAndCloseActiveEditor",
+    }, [
+      async () => {
+        const uri = fixtureUri;
+        if (!uri) return;
+        const open = vscode.workspace.textDocuments.find(
+          (document) => document.uri.toString() === uri.toString(),
         );
-      }
-      // Windows may still hold fixture files after the editor closes.
-      await rm(directory, {
-        recursive: true,
-        force: true,
-        maxRetries: 8,
-        retryDelay: 100,
-      });
-    }
+        if (open && !open.isClosed) {
+          await vscode.window.showTextDocument(open);
+          await vscode.commands.executeCommand("hideSuggestWidget");
+          await vscode.commands.executeCommand(
+            "workbench.action.revertAndCloseActiveEditor",
+          );
+        }
+      },
+      async () => {
+        // Windows may retain an editor or watcher handle briefly after close.
+        // Bound retries so a persistent cleanup failure still fails the scenario.
+        await rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 8,
+          retryDelay: 100,
+        });
+      },
+    ]);
   }
 
   async function capture(name: string, observation: object) {

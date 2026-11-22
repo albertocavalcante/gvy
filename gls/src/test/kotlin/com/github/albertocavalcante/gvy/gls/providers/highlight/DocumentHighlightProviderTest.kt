@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.DocumentHighlightKind
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -568,5 +569,60 @@ println x"""
         assertEquals(5, writes.size, "Should find 5 writes")
         // Reads: println
         assertEquals(1, reads.size, "Should find 1 read")
+    }
+
+    @Test
+    fun `highlights cover only the identifier of a method declaration and its calls`(): Unit = runTest {
+        val content = """
+            def testMethod(a) {
+                return "test"
+            }
+
+            testMethod(1)
+            def result = testMethod(2)
+        """.trimIndent()
+        val uri = URI.create("file:///names.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+
+        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, 4))
+
+        val ranges = highlights.map { it.range }.sortedBy { it.start.line }
+        assertEquals(
+            listOf(
+                Range(Position(0, 4), Position(0, 14)),
+                Range(Position(4, 0), Position(4, 10)),
+                Range(Position(5, 13), Position(5, 23)),
+            ),
+            ranges,
+        )
+    }
+
+    @Test
+    fun `highlight ranges are UTF-16 columns after a supplementary character`(): Unit = runTest {
+        val content = "def s = '\uD83D\uDE00'; def x = 1; println x"
+        val uri = URI.create("file:///emoji.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess)
+        val declaration = content.indexOf("x = 1")
+
+        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, declaration))
+
+        val columns = highlights.map { it.range.start.character }.sorted()
+        assertEquals(listOf(declaration, content.lastIndexOf('x')), columns)
+        assertTrue(highlights.all { it.range.end.character - it.range.start.character == 1 })
+    }
+
+    @Test
+    fun `method highlight targets the name, not an annotation argument`(): Unit = runTest {
+        val content = "@SuppressWarnings(value = 'unused') def value() { 1 }\n\nvalue()\ndef r = value()"
+        val uri = URI.create("file:///annotated.groovy")
+        assertTrue(compilationService.compile(uri, content).isSuccess, "Compilation should succeed")
+
+        val declaration = content.indexOf("value()")
+        val highlights = highlightProvider.provideHighlights(uri.toString(), Position(0, declaration + 1))
+        assertTrue(
+            highlights.any { it.range == Range(Position(0, declaration), Position(0, declaration + 5)) },
+            "Highlights should include the method name: ${highlights.map { it.range }}",
+        )
+        assertFalse(highlights.any { it.range.start.line == 0 && it.range.start.character < declaration })
     }
 }

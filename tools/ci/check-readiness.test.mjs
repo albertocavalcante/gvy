@@ -8,8 +8,7 @@ import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 function successful(main = true, bazel = true, zed = true, jetbrains = zed) {
   return {
     license: { result: 'success' },
-    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed), run_jetbrains_ci: String(jetbrains) } },
-    'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
+    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed), run_jetbrains_ci: String(jetbrains), provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
     build: { result: main ? 'success' : 'skipped' },
     launcher: { result: main ? 'success' : 'skipped' },
@@ -59,8 +58,8 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
   }
 });
 
-test('every applicable producer must succeed, including Bazel and the runner check', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
+test('every applicable producer must succeed, including Bazel', () => {
+  for (const name of ['lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
     for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
       const jobs = successful();
       jobs[name].result = result;
@@ -74,7 +73,7 @@ test('every applicable producer must succeed, including Bazel and the runner che
 
 test('provisioning pending cannot satisfy required readiness', () => {
   const jobs = successful();
-  jobs['check-runner'].outputs.provisioning_triggered = 'true';
+  jobs['check-paths'].outputs.provisioning_triggered = 'true';
   for (const name of ['lint', 'build', 'e2e-test']) jobs[name].result = 'skipped';
   const report = evaluateReadiness(jobs);
   assert.equal(report.ok, false);
@@ -82,7 +81,7 @@ test('provisioning pending cannot satisfy required readiness', () => {
 });
 
 test('excluded jobs must be skipped; failures remain visible', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
+  for (const name of ['lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
     for (const result of ['success', 'failure', 'cancelled', undefined]) {
       const jobs = successful(false, false, false);
       jobs[name].result = result;
@@ -104,6 +103,39 @@ test('Zed-only readiness requires its typed producer while main and Bazel remain
   const missing = structuredClone(jobs);
   delete missing.zed;
   assert.equal(evaluateReadiness(missing).ok, false);
+});
+
+test('a pull-request lint gate in check-paths excuses only a skipped Lint job', () => {
+  const gated = successful();
+  gated['check-paths'].outputs.lint_verified = 'true';
+  gated.lint.result = 'skipped';
+  assert.equal(evaluateReadiness(gated).ok, true);
+  for (const result of ['success', 'failure', 'cancelled', undefined]) {
+    const jobs = structuredClone(gated);
+    jobs.lint.result = result;
+    assert.equal(evaluateReadiness(jobs).ok, false, `gated lint job: ${result}`);
+  }
+  // Without the gate, or with any other value, a skipped Lint job still fails readiness.
+  for (const value of [undefined, '', 'false', 'True', '1', true]) {
+    const jobs = structuredClone(gated);
+    jobs['check-paths'].outputs.lint_verified = value;
+    assert.equal(evaluateReadiness(jobs).ok, false, `lint_verified=${value}`);
+  }
+  // The gate cannot stand in for a failed check-paths, and is not valid when main CI does not apply.
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    const jobs = structuredClone(gated);
+    jobs['check-paths'].result = result;
+    assert.equal(evaluateReadiness(jobs).ok, false, `check-paths: ${result}`);
+  }
+  const docsOnly = successful(false, false, false);
+  docsOnly['check-paths'].outputs.lint_verified = 'true';
+  assert.equal(evaluateReadiness(docsOnly).ok, false);
+  // Every other producer is still required when the lint gate passed.
+  for (const name of ['build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed', 'jetbrains']) {
+    const jobs = structuredClone(gated);
+    jobs[name].result = 'skipped';
+    assert.equal(evaluateReadiness(jobs).ok, false, name);
+  }
 });
 
 test('malformed needs fails closed with a report', () => {

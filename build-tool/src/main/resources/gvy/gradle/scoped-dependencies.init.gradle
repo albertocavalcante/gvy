@@ -26,6 +26,12 @@ class GvyScopedTarget implements Serializable {
     List sourceRoots
     List sourceFiles
     List artifacts
+    String executionState
+    List inputFiles
+    List runtimeClasspath
+    List runtimeArtifacts
+    List outputDirectories
+    String preparationTask
 }
 class GvyScopedEntry implements Serializable {
     String path
@@ -39,7 +45,8 @@ class GvyScopedCoordinates implements Serializable {
 
 class GvyScopedModelBuilder implements ToolingModelBuilder {
     boolean canBuild(String name) {
-        name == 'com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyModel'
+        name in ['com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyModel',
+                 'com.github.albertocavalcante.gvy.build.gradle.GradleExecutionModel']
     }
 
     Object buildAll(String name, Project requested) {
@@ -61,7 +68,7 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
                     if (sourceSet.extensions.findByName('groovy') != null) {
                         modeledGroovyTasks.add(sourceSet.getCompileTaskName('groovy'))
                     }
-                    observed << observe(locked, sourceSet)
+                    observed << observe(locked, sourceSet, name.endsWith('GradleExecutionModel'))
                 }
                 if (!modeledGroovyTasks.containsAll(locked.tasks.withType(GroovyCompile).names) ||
                     !modeledJavaTasks.containsAll(locked.tasks.withType(JavaCompile).names)) {
@@ -95,7 +102,7 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
         )
     }
 
-    private static GvyScopedTarget observe(Project project, sourceSet) {
+    private static GvyScopedTarget observe(Project project, sourceSet, boolean execution) {
         def target = unresolved(project, sourceSet.name)
         try {
             // Inside the guard: lazily configured roots can fail for one target without erasing siblings.
@@ -118,6 +125,38 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
             rethrowCancellationOrError(failure)
             target.state = 'UNRESOLVED'
             target.artifacts = []
+        }
+        if (!execution) return target
+        try {
+            target.inputFiles = sourceSet.allSource.files.collect { it.absolutePath }
+            target.preparationTask = project.path == ':' ? ":${sourceSet.classesTaskName}" :
+                "${project.path}:${sourceSet.classesTaskName}"
+            target.outputDirectories = sourceSet.output.files.collect { it.absolutePath }
+            target.runtimeClasspath = sourceSet.runtimeClasspath.collect { it.absolutePath }
+            target.runtimeArtifacts = []
+            try {
+                def resolved = project.configurations.getByName(sourceSet.runtimeClasspathConfigurationName)
+                    .incoming.artifacts.artifacts
+                def byFile = [:].withDefault { [] }
+                resolved.each { artifact ->
+                    def component = artifact.id.componentIdentifier
+                    if (component instanceof ModuleComponentIdentifier) {
+                        byFile[artifact.file] << new GvyScopedCoordinates(
+                            group: component.group, module: component.module, version: component.version
+                        )
+                    }
+                }
+                target.runtimeArtifacts = sourceSet.runtimeClasspath.collect { file ->
+                    new GvyScopedEntry(path: file.absolutePath, coordinateCandidates: byFile[file])
+                }
+            } catch (Exception failure) {
+                rethrowCancellationOrError(failure)
+                // Runtime identity is unknown when exact-file metadata is unavailable.
+            }
+            target.executionState = 'COMPLETE'
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            target.executionState = 'UNRESOLVED'
         }
         target
     }

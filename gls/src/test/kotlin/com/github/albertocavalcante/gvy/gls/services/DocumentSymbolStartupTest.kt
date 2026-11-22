@@ -51,6 +51,7 @@ class DocumentSymbolStartupTest {
             compilation,
             GroovyTextDocumentServiceOptions(documentProvider = documents),
         )
+        service.updateHierarchicalDocumentSymbolSupport(true)
         try {
             compilation.onDocumentOpened(uri)
             documents.put(uri, "class AfterGdsl { String hello() { 'hello' } }", 1)
@@ -63,7 +64,7 @@ class DocumentSymbolStartupTest {
 
             val symbols = response.get(WAIT_SECONDS, TimeUnit.SECONDS)
             assertTrue(symbols.any { it.isRight && it.right.name == "AfterGdsl" })
-            assertTrue(symbols.any { it.isRight && it.right.name == "hello" })
+            assertTrue(symbols.any { it.isRight && it.right.children.orEmpty().any { child -> child.name == "hello" } })
         } finally {
             release.countDown()
             scope.cancel()
@@ -82,6 +83,7 @@ class DocumentSymbolStartupTest {
             compilation,
             GroovyTextDocumentServiceOptions(documentProvider = documents),
         )
+        service.updateHierarchicalDocumentSymbolSupport(true)
         try {
             compilation.onDocumentOpened(uri)
             documents.put(uri, "class Before {}", 1)
