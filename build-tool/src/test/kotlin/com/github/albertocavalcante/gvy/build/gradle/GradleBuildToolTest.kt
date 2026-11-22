@@ -5,8 +5,17 @@ package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.TestEnvironment
 import com.github.albertocavalcante.gvy.build.TestResources
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.gradle.tooling.GradleConnectionException
+import org.gradle.tooling.ModelBuilder
+import org.gradle.tooling.ProjectConnection
+import org.gradle.tooling.model.idea.IdeaProject
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
+import java.io.File
+import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -148,16 +157,35 @@ class GradleBuildToolTest {
     }
 
     @Test
-    fun `getDependencyMetadata should handle non-gradle project`() {
-        // This test requires Gradle Tooling API
-        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+    fun `getDependencyMetadata returns empty when the model is rejected`() {
+        val project = Paths.get("src/test/resources/non-gradle-project")
+        val connection = mockk<ProjectConnection>()
+        val model = mockk<ModelBuilder<IdeaProject>>()
+        every { connection.model(IdeaProject::class.java) } returns model
+        every { model.withCancellationToken(any()) } returns model
+        every { model.withArguments(*anyVararg()) } returns model
+        every { model.setJvmArguments(*anyVararg<String>()) } returns model
+        every { model.get() } throws GradleConnectionException("deliberate model rejection")
 
-        val tool = GradleBuildTool()
-        val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
+        var acquired = 0
+        var released = 0
+        val factory = object : LeasingConnectionFactory {
+            override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection =
+                error("the dependency tree must lease the connection, not take a bare one")
 
-        val metadata = tool.getDependencyMetadata(nonGradleProject)
+            override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease {
+                acquired++
+                return ConnectionLease(connection) { released++ }
+            }
+        }
 
-        assertTrue(metadata.isEmpty(), "Should return empty list for non-Gradle project")
+        val metadata = GradleBuildTool(connectionFactory = factory).getDependencyMetadata(project)
+
+        assertTrue(metadata.isEmpty())
+        assertEquals(1, acquired)
+        assertEquals(1, released, "the lease must be released after the rejected fetch")
+        verify(exactly = 1) { connection.model(IdeaProject::class.java) }
+        verify(exactly = 1) { model.get() }
     }
 
     @Test
