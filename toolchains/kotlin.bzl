@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
+"""Custom Kotlin toolchain rule for the Buck2 build."""
+
 # Custom Kotlin toolchain for Buck2
 #
 # This allows using a user-provided Kotlin version instead of
 # the prelude's default, similar to rules_kotlin's define_kt_toolchain().
 
-load("@prelude//kotlin:kotlin_toolchain.bzl", "KotlinToolchainInfo")
 load("@prelude//java:java_toolchain.bzl", "DepFiles")
+load("@prelude//kotlin:kotlin_toolchain.bzl", "KotlinToolchainInfo")
 
 def _kotlin_toolchain_impl(ctx):
     """Implementation of the custom Kotlin toolchain rule."""

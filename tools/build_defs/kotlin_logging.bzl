@@ -15,7 +15,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 _KOTLIN_LOGGING_VERSION = "7.0.14"
 _KOTLIN_LOGGING_SHA256 = "ac537321218c670aeeb98c3868d4e21a13ac0b5798125ee60096fb97c197c8f3"
 
-def _kotlin_logging_impl(ctx):
+def _kotlin_logging_impl(_module_ctx):
     http_file(
         name = "kotlin_logging_jar",
         urls = [

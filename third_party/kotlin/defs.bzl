@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
+"""Maven JAR dependency macros for the Buck2 build."""
+
 # Maven dependency macros for Buck2
 #
 # Simple helper for defining Maven JAR dependencies.
