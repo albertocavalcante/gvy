@@ -72,6 +72,17 @@ tasks.register<Jar>("fatJar") {
     }
 }
 
+// The standalone server JAR for build-tool's MavenBspEquivalenceTest, which launches it as a real child process.
+// Not part of the published component.
+configurations.create("standaloneServerElements") {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class.java, "gvy-maven-bsp-server"))
+    }
+    outgoing.artifact(tasks.named<Jar>("fatJar"))
+}
+
 // Maven Central publishing configuration
 publishing {
     val repoPath = "albertocavalcante/gvy"
