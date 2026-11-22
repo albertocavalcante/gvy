@@ -5,16 +5,12 @@ package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
-import com.github.albertocavalcante.groovyparser.ast.methodsSafe
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.DynamicVariable
-import org.codehaus.groovy.ast.FieldNode
-import org.codehaus.groovy.ast.MethodNode
-import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
@@ -146,7 +142,7 @@ class JenkinsVarsResolutionStrategy(
     private fun skipReason(reference: GlobalReference, context: ResolutionContext): String? {
         if (isGroovyOnlyMode()) return "Groovy-only mode disables vars/ lookup"
         if (reference.viaDynamicReceiver) return null
-        val scope = astModel?.let { enclosingScope(it, context) }
+        val scope = astModel?.let { findEnclosingScope(it, context.targetNode, context.documentUri) }
         val type = scope?.type
         val method = scope?.method
         return when {
@@ -190,60 +186,6 @@ class JenkinsVarsResolutionStrategy(
             else -> false
         }
     }
-
-    /** The method and class enclosing the target node, plus the fallback script classes. */
-    private class EnclosingScope(
-        val method: MethodNode?,
-        val type: ClassNode?,
-        private val fallbackScripts: () -> Sequence<ClassNode>,
-    ) {
-        /**
-         * Method calls are shadowed by methods, fields and properties (a closure-valued field is callable);
-         * variable references only by fields and properties, since `deploy.foo` is a property lookup.
-         */
-        fun declares(name: String, includeMethods: Boolean): Boolean =
-            (type?.let { sequenceOf(it) } ?: fallbackScripts()).any { it.declaresMember(name, includeMethods) }
-
-        private fun ClassNode.declaresMember(name: String, includeMethods: Boolean): Boolean =
-            (includeMethods && methodsSafe(name).isNotEmpty()) ||
-                getDeclaredField(name) != null ||
-                getProperty(name) != null
-    }
-
-    /**
-     * Find the method and class enclosing the target node.
-     *
-     * The class comes from the AST parent chain, using the declaring class of the first method,
-     * field or property on the way. A script with no top-level statements gets no source position
-     * for its script class, so the tracker never records that class as a parent; the declaring class
-     * of the enclosing method still reaches it. When nothing on the chain names a class, shadowing
-     * falls back to the script classes of the model, preferring the document's own.
-     */
-    private fun enclosingScope(model: GroovyAstModel, context: ResolutionContext): EnclosingScope {
-        val chain = generateSequence(model.getParent(context.targetNode)) { model.getParent(it) }.toList()
-        return EnclosingScope(
-            method = chain.firstNotNullOfOrNull { it as? MethodNode },
-            type = chain.firstNotNullOfOrNull { it.declaringClassOrSelf() },
-            fallbackScripts = { scriptClassesOf(model, context.documentUri) },
-        )
-    }
-
-    private fun ASTNode.declaringClassOrSelf(): ClassNode? = when (this) {
-        is ClassNode -> this
-        is MethodNode -> declaringClass
-        is FieldNode -> declaringClass
-        is PropertyNode -> declaringClass
-        else -> null
-    }
-
-    /**
-     * Script classes for [documentUri]. An untracked script class has no recorded URI, so classes
-     * with an unknown URI are kept; at worst that skips vars/ lookup and defers to later strategies.
-     */
-    private fun scriptClassesOf(model: GroovyAstModel, documentUri: URI): Sequence<ClassNode> =
-        model.getAllClassNodes().asSequence()
-            .filter { it.isScriptSafe() }
-            .filter { cls -> model.getUri(cls).let { it == null || it == documentUri } }
 
     companion object {
         private const val STRATEGY_NAME = "JenkinsVars"

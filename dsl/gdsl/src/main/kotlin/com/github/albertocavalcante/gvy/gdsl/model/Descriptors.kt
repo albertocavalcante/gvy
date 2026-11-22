@@ -27,8 +27,8 @@ data class NamedParameterDescriptor(
     val name: String,
     /** Fully qualified type name */
     val type: String,
-    /** Whether this parameter is required */
-    val required: Boolean = false,
+    /** Null means the contribution did not state whether this parameter is required. */
+    val required: Boolean? = null,
     /** Default value as string, if any */
     val defaultValue: String? = null,
     /** Optional documentation */

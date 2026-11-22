@@ -103,6 +103,22 @@ class GdslExecutorTest {
         }
 
         @Test
+        fun `captures explicit and omitted named parameter requiredness`() {
+            val script = """
+                contributor([context()]) {
+                    method(name: "sample", namedParams: [
+                        parameter(name: 'unknown'),
+                        parameter(name: 'optional', required: false),
+                        parameter(name: 'required', required: true),
+                    ])
+                }
+            """.trimIndent()
+            val result = executor.executeAndCapture(script, "test.gdsl")
+            assertThat(result.success).isTrue()
+            assertThat(result.methods.single().namedParameters.map { it.required }).containsExactly(null, false, true)
+        }
+
+        @Test
         fun `captures multiple methods from single contributor`() {
             val script = """
                 contributor([context()]) {

@@ -66,7 +66,7 @@ class DescriptorsTest {
 
             assertThat(param.name).isEqualTo("returnStdout")
             assertThat(param.type).isEqualTo("boolean")
-            assertThat(param.required).isFalse()
+            assertThat(param.required).isNull()
             assertThat(param.defaultValue).isNull()
             assertThat(param.documentation).isNull()
         }

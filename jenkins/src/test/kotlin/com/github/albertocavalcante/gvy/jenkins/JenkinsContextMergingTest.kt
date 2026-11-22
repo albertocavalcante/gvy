@@ -5,7 +5,11 @@ package com.github.albertocavalcante.gvy.jenkins
 
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MetadataProvenance
+import com.github.albertocavalcante.gvy.jenkins.metadata.OwnerEvidence
+import com.github.albertocavalcante.gvy.jenkins.metadata.SourceKind
 import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.SymbolKind
 import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -20,7 +24,7 @@ class JenkinsContextMergingTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `getAllMetadata should merge stable parameters when overlaying dynamic metadata`() {
+    fun `unknown scanner owner remains distinct from bundled metadata`() {
         // 2. Define a dynamic step for "sh" (which exists in StableStepDefinitions)
         // Stable "sh" has parameters like "script", "returnStdout", etc.
         // Our dynamic version only defines "script" and a NEW "customDynamicParam".
@@ -58,21 +62,36 @@ class JenkinsContextMergingTest {
         val result = context.getAllMetadata(classpath)
         val mergedSh = result.steps["sh"]
 
-        // 5. Assert
-        assertNotNull(mergedSh, "Should resolve 'sh' step")
+        // The scanner label is approximate and differs from the bundled owner. It must not
+        // be treated as proof that the two records are one symbol.
+        assertEquals(null, mergedSh)
+        val candidates = result.catalogue.symbols.filter { it.kind == SymbolKind.EXECUTABLE_STEP && it.name == "sh" }
+        assertEquals(2, candidates.size)
+    }
 
-        // Dynamic overrides
-        assertEquals("Dynamic docs", mergedSh.extractedDocumentation, "Should use dynamic documentation")
-
-        // Check Parameters
-        val params = mergedSh.namedParams
-        assertTrue(params.containsKey("script"), "Should contain 'script'")
-        assertTrue(params.containsKey("customDynamicParam"), "Should contain 'customDynamicParam'")
-
-        // CRITICAL CHECK: Does it assume "returnStatus" or "returnStdout" from stable/bundled definitions?
-        // Note: StableStepDefinitions for "sh" usually includes "returnStdout".
-        // We verify that this parameter is PRESERVED even though dynamicSh didn't have it.
-        assertTrue(params.containsKey("returnStdout"), "Should preserve 'returnStdout' from stable definitions")
-        assertTrue(params.containsKey("returnStatus"), "Should preserve 'returnStatus' from stable definitions")
+    @Test
+    fun `matching evidenced owner preserves legacy and contributed parameters`() {
+        val dynamic = JenkinsStepMetadata(
+            name = "sh",
+            plugin = "workflow-durable-task-step",
+            ownerPlugin = "workflow-durable-task-step",
+            ownerEvidence = OwnerEvidence.CURATED,
+            provenance = MetadataProvenance(SourceKind.CURATED, plugin = "workflow-durable-task-step"),
+            parameters = mapOf("extra" to StepParameter("extra", "String")),
+        )
+        val context = JenkinsContext(
+            configuration = JenkinsConfiguration(),
+            workspaceRoot = tempDir,
+            pluginManager = JenkinsPluginManager(),
+            bundledMetadataLoader = { VersionedMetadataLoader().loadMerged() },
+            classpathScanner = { BundledJenkinsMetadata(steps = mapOf("sh" to dynamic), globalVariables = emptyMap()) },
+        )
+        val classpath = listOf(tempDir.resolve("owner-evidence.jar"))
+        context.scanClasspath(classpath)
+        val metadata = context.getAllMetadata(classpath)
+        val sh = assertNotNull(metadata.getStep("sh"))
+        assertTrue("script" in sh.namedParams)
+        assertTrue("extra" in sh.namedParams)
+        assertEquals(1, metadata.catalogue.candidates(SymbolKind.EXECUTABLE_STEP, "sh").size)
     }
 }
