@@ -14,6 +14,8 @@ import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.idea.IdeaProject
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
+import java.io.File
+import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -157,17 +159,31 @@ class GradleBuildToolTest {
     @Test
     fun `getDependencyMetadata returns empty when the model is rejected`() {
         val project = Paths.get("src/test/resources/non-gradle-project")
-        val factory = mockk<GradleConnectionFactory>()
         val connection = mockk<ProjectConnection>()
         val model = mockk<ModelBuilder<IdeaProject>>()
-        every { factory.getConnection(project, null) } returns connection
         every { connection.model(IdeaProject::class.java) } returns model
+        every { model.withCancellationToken(any()) } returns model
+        every { model.withArguments(*anyVararg()) } returns model
+        every { model.setJvmArguments(*anyVararg<String>()) } returns model
         every { model.get() } throws GradleConnectionException("deliberate model rejection")
+
+        var acquired = 0
+        var released = 0
+        val factory = object : LeasingConnectionFactory {
+            override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection =
+                error("the dependency tree must lease the connection, not take a bare one")
+
+            override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease {
+                acquired++
+                return ConnectionLease(connection) { released++ }
+            }
+        }
 
         val metadata = GradleBuildTool(connectionFactory = factory).getDependencyMetadata(project)
 
         assertTrue(metadata.isEmpty())
-        verify(exactly = 1) { factory.getConnection(project, null) }
+        assertEquals(1, acquired)
+        assertEquals(1, released, "the lease must be released after the rejected fetch")
         verify(exactly = 1) { connection.model(IdeaProject::class.java) }
         verify(exactly = 1) { model.get() }
     }
