@@ -31,8 +31,15 @@ plugins {
     kotlin("plugin.serialization")
 }
 
+// TODO(#2276): buildscript classpath repositories are not governed by FAIL_ON_PROJECT_REPOS; move when possible.
+// See: https://github.com/albertocavalcante/gvy/issues/2276
 buildscript {
     repositories {
+        maven {
+            name = "MavenCentralMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+            allowInsecureContinueWhenDisabled = true // fall through to Central when the mirror is unreachable
+        }
         mavenCentral()
     }
     dependencies {

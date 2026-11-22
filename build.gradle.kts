@@ -113,13 +113,6 @@ subprojects {
     apply(plugin = "com.diffplug.spotless")
     apply(plugin = "org.jetbrains.kotlinx.kover")
 
-    repositories {
-        mavenCentral()
-        mavenLocal()
-        google()
-        maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
-    }
-
     val libs = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
     dependencies {
         detektPlugins(libs.findLibrary("detekt-formatting").get())

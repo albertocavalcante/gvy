@@ -107,6 +107,25 @@ exactly empty stderr: even whitespace or unclassified output fails gvy's diagnos
 assert a license violation. The checker reports a fixed message and continues the independent repository checks; it does
 not print raw REUSE stderr for this policy failure.
 
+Complete REUSE stdout is admitted to the JSON parser only within these limits:
+
+| Bound                                 |        Limit |
+| ------------------------------------- | -----------: |
+| UTF-8 report bytes                    |        8 MiB |
+| JSON container depth / lexical tokens | 32 / 524,288 |
+| Files processed from a report         |       16,384 |
+
+Tokens count strings (including object keys), scalar values and container starts. Byte, depth and token checks run
+before JSON parsing; the file limit bounds subsequent repository work. At commit `38f7f2b`, complete REUSE 6.3.0 reports
+measured at most 1,917,343 stdout bytes, depth 5 and 3,003 files. These limits provide headroom, not a promise that
+future reports will fit. Invalid UTF-8, malformed JSON and over-limit reports produce fixed diagnostics without echoing
+report content.
+
+These are parser admission limits. The current subprocess receiver still buffers stdout and stderr without a byte limit
+before these checks, so producer output can exhaust memory before parser admission. Bounded collection and
+cross-platform cleanup remain unresolved in [#1928](https://github.com/albertocavalcante/gvy/issues/1928). The existing
+120-second subprocess timeout and the nonempty-successful-stderr policy remain in effect.
+
 When updating uv, update the version and all wheel SHA-256 hashes in `.reuse/bootstrap-requirements.txt` from the
 [uv release metadata](https://pypi.org/pypi/uv/0.13.7/json), then validate the Linux, macOS, and Windows tooling jobs.
 

@@ -170,6 +170,91 @@ class HeaderTests(unittest.TestCase):
             self.assertTrue(check.header_errors(path, shebang + hash_header + b"pipeline {}\n"))
 
 
+class ReportEnvelopeTests(unittest.TestCase):
+    def test_scanner_ignores_escaped_quotes_backslashes_and_braces_in_strings(self) -> None:
+        value = {"key": ['a"\\{[', True, None, -12]}
+        text = json.dumps(value)
+        self.assertEqual((7, 2), check._json_envelope(text))
+        self.assertEqual(value, check._load_report(text.encode()))
+
+    def test_rejects_invalid_utf8_and_malformed_json(self) -> None:
+        for data, message in ((b"\xff", "invalid report UTF-8"), (b'{"a":}', "invalid report JSON")):
+            with self.subTest(data=data), self.assertRaisesRegex(ValueError, message):
+                check._load_report(data)
+
+    def test_depth_boundary(self) -> None:
+        for depth in (31, 32, 33):
+            data = ("[" * depth + "0" + "]" * depth).encode()
+            with self.subTest(depth=depth):
+                if depth == 33:
+                    with self.assertRaisesRegex(ValueError, "report exceeds 32-container depth limit"):
+                        check._load_report(data)
+                else:
+                    value: object = check._load_report(data)
+                    for _ in range(depth):
+                        if not isinstance(value, list):
+                            self.fail("expected nested array")
+                        value = value[0]
+                    self.assertEqual(0, value)
+
+    def test_duplicate_keys_and_float_are_counted_lexically(self) -> None:
+        text = '{"x": -1.25e+3, "x": 2.0}'
+        self.assertEqual((5, 1), check._json_envelope(text))
+        self.assertEqual({"x": 2.0}, check._load_report(text.encode()))
+
+    def test_file_count_boundary(self) -> None:
+        for count in (16383, 16384, 16385):
+            report = {
+                "lint_version": "1.0",
+                "reuse_spec_version": "3.3",
+                "reuse_tool_version": "6.3.0",
+                "summary": {"compliant": True},
+                "files": [{"path": f"x{i}", "spdx_expressions": []} for i in range(count)],
+            }
+            with self.subTest(count=count):
+                if count <= 16384:
+                    compliant, paths = check.parse_report(report)
+                    self.assertTrue(compliant)
+                    self.assertEqual(count, len(paths))
+                else:
+                    with self.assertRaisesRegex(ValueError, "report exceeds 16384-file limit"):
+                        check.parse_report(report)
+
+    def test_token_boundary_for_shallow_array(self) -> None:
+        for tokens in (524287, 524288, 524289):
+            data = b"[" + b"0," * (tokens - 2) + b"0]"
+            with self.subTest(tokens=tokens):
+                if tokens <= 524288:
+                    self.assertEqual(tokens - 1, len(check._load_report(data)))
+                else:
+                    with self.assertRaisesRegex(ValueError, "report exceeds 524288-token limit"):
+                        check._load_report(data)
+
+    def test_byte_boundary_with_valid_json_padding(self) -> None:
+        cap = 8 * 1024 * 1024
+        for size in (cap - 1, cap, cap + 1):
+            data = b"0" + b" " * (size - 1)
+            with self.subTest(size=size):
+                if size <= cap:
+                    self.assertEqual(0, check._load_report(data))
+                else:
+                    with patch.object(check.json, "loads") as loads:
+                        with self.assertRaisesRegex(ValueError, "report exceeds 8388608-byte limit"):
+                            check._load_report(data)
+                        loads.assert_not_called()
+
+    def test_hostile_json_is_rejected_before_json_loads(self) -> None:
+        for data in (b'{"unterminated": "text', b'{"escape": "text\\', b"[" * 33 + b"0" + b"]" * 33):
+            with self.subTest(data=data), patch.object(check.json, "loads") as loads:
+                with self.assertRaises(ValueError):
+                    check._load_report(data)
+                loads.assert_not_called()
+
+    def test_large_valid_report(self) -> None:
+        value = {"padding": "x" * (1024 * 1024), "files": []}
+        self.assertEqual(value, check._load_report(json.dumps(value).encode()))
+
+
 class IntegrationTests(unittest.TestCase):
     def git(self, *arguments: str, directory: Path | None = None) -> subprocess.CompletedProcess[bytes]:
         environment = {name: value for name, value in os.environ.items() if not name.upper().startswith("GIT_")}
@@ -239,7 +324,7 @@ class IntegrationTests(unittest.TestCase):
     @staticmethod
     def reuse_result(
         returncode: int, compliant: bool, stderr: str = "", expression: str = "Apache-2.0"
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> subprocess.CompletedProcess[bytes]:
         report = {
             "lint_version": "1.0",
             "reuse_spec_version": "3.3",
@@ -248,7 +333,7 @@ class IntegrationTests(unittest.TestCase):
             "files": [{"path": "src/a.py", "spdx_expressions": [{"value": expression, "is_valid": True}]}],
             "private_field": "PRIVATE_REPORT_SENTINEL",
         }
-        return subprocess.CompletedProcess(["reuse"], returncode, json.dumps(report), stderr)
+        return subprocess.CompletedProcess(["reuse"], returncode, json.dumps(report).encode(), stderr.encode())
 
     def test_reuse_success_contract_in_shared_api_and_cli(self) -> None:
         mismatch = "REUSE check failed: exit/report mismatch"
@@ -307,6 +392,33 @@ class IntegrationTests(unittest.TestCase):
                     "src/a.py: effective REUSE license must be Apache-2.0",
                 ):
                     self.assertIn(error, errors)
+
+    def assert_report_envelope_failure(self, stdout: str, expected: str) -> None:
+        result = self.reuse_result(0, True)
+        result.stdout = stdout.encode()
+        with patch.object(check.subprocess, "run", return_value=result):
+            errors = check.check(self.root)
+        self.assertTrue(expected in errors, "unbounded report was accepted or lost its stable limit diagnostic")
+
+    def test_report_envelope_rejects_bytes_before_parsing(self) -> None:
+        report = json.loads(self.reuse_result(0, True).stdout)
+        report["padding"] = "x" * (8 * 1024 * 1024)
+        self.assert_report_envelope_failure(json.dumps(report), "REUSE check failed: report exceeds 8388608-byte limit")
+
+    def test_report_envelope_rejects_deep_input_before_parsing(self) -> None:
+        base = self.reuse_result(0, True).stdout.decode()
+        report = base[:-1] + ', "padding": ' + "[" * 33 + "0" + "]" * 33 + "}"
+        self.assert_report_envelope_failure(report, "REUSE check failed: report exceeds 32-container depth limit")
+
+    def test_report_envelope_rejects_shallow_object_amplification(self) -> None:
+        base = self.reuse_result(0, True).stdout.decode()
+        report = base[:-1] + ', "padding": [' + ",".join(["0"] * 524288) + "]}"
+        self.assert_report_envelope_failure(report, "REUSE check failed: report exceeds 524288-token limit")
+
+    def test_report_envelope_limits_per_file_work(self) -> None:
+        report = json.loads(self.reuse_result(0, True).stdout)
+        report["files"] = [{"path": f"x{i}.txt", "spdx_expressions": []} for i in range(16385)]
+        self.assert_report_envelope_failure(json.dumps(report), "REUSE check failed: report exceeds 16384-file limit")
 
     def test_compliant_and_tampered_license(self) -> None:
         self.assertEqual([], check.check(self.root))

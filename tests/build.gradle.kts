@@ -10,10 +10,6 @@ plugins {
     groovy
 }
 
-repositories {
-    mavenCentral()
-}
-
 tasks.withType<Test>().configureEach {
     val outcomeRoot = layout.buildDirectory.dir("test-results/$name/scenario-outcomes")
     doFirst {
