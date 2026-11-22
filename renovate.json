@@ -4,7 +4,19 @@
   "extends": [
     "config:recommended"
   ],
+  "minimumReleaseAge": "14 days",
+  "internalChecksFilter": "strict",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": null,
+    "labels": ["security"]
+  },
   "packageRules": [
+    {
+      "description": "Release-age policy (docs/dependency-maintenance.md#release-age-policy): every non-security update waits 14 days, matching pnpm's minimumReleaseAge. Security fixes found through osv.dev or GitHub alerts bypass the wait via vulnerabilityAlerts. The bazel (BCR) and docker (GHCR) datasources publish no release timestamps, which Renovate would otherwise hold forever, so for them the age applies only when a timestamp exists.",
+      "matchDatasources": ["bazel", "docker"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
     {
       "description": "Keep Maven Resolver on 1.x: 2.x drops transport-http and the supplier artifacts, and maven-embedder 3.9.x is tied to resolver 1.x. Revisit on a Maven 4 migration.",
       "matchPackageNames": ["org.apache.maven.resolver:**"],

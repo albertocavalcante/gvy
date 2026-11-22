@@ -17,6 +17,32 @@ node tools/ci/dependency-maintenance.mjs --inventory
 The normal check fails for missing, changed, duplicate or stale source records, incomplete accountability and overdue
 reviews. It reports every record even when dependency caches emit no warnings.
 
+## Release-age policy
+
+Dependency updates wait **14 days** after publication unless they fix a security vulnerability. The cooling-off period
+lets the ecosystem catch broken or compromised releases before gvy adopts them.
+
+| Update                                        | When it is proposed       | Enforced by                                                                                                                        |
+| --------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Feature, fix or enhancement release           | 14 days after publication | `minimumReleaseAge` in `renovate.json`; pnpm `minimumReleaseAge` (20160 minutes) in `editors/code/pnpm-workspace.yaml`             |
+| Release that fixes a known vulnerability      | Immediately               | `vulnerabilityAlerts` (no minimum age) with `osvVulnerabilityAlerts`, so osv.dev advisories count even while GitHub alerts are off |
+| `bazel` (BCR) and `docker` (GHCR) datasources | Without an age check      | They publish no release timestamps. Renovate would otherwise hold them forever, so review these PRs by hand                        |
+
+`internalChecksFilter: strict` means Renovate creates no branch until the release is old enough. Pending updates appear
+under **Pending Status Checks** on the Dependency Dashboard (#8), where a maintainer can force one early with a recorded
+reason.
+
+pnpm enforces its own release age when updating the lockfile. A security fix younger than 14 days therefore fails the
+lockfile update until the exact fixed version is exempted:
+
+```yaml
+minimumReleaseAgeExclude:
+  # GHSA-xxxx-xxxx-xxxx: <one-line reason>. Remove once the version is 14 days old.
+  - "some-package@1.2.3"
+```
+
+Exempt the exact version (`name@version`, or several joined with `||`), never the whole package, and cite the advisory.
+
 ## Review and retirement
 
 `tools/ci/dependency-maintenance.json` pairs each exact source with a record containing:
