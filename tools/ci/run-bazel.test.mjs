@@ -9,6 +9,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import test from 'node:test';
 import { auditPublicRoot } from './audit-public-bazel-evidence.mjs';
+import { PINNED_BAZEL_VERSION } from './public-bazel-evidence.mjs';
 
 const runner = resolve('tools/ci/run-bazel.mjs');
 const sha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
@@ -38,7 +39,7 @@ const metadata = Object.fromEntries(args.filter(arg => arg.startsWith('--build_m
 metadata.EXTRA = canary;
 const code = mode === 'failure' ? 3 : 0;
 const events = [
-  { id: { started: {} }, started: { uuid: id, command, buildToolVersion: '9.0.0', optionsDescription: canary, host: canary, user: canary } },
+  { id: { started: {} }, started: { uuid: id, command, buildToolVersion: '${PINNED_BAZEL_VERSION}', optionsDescription: canary, host: canary, user: canary } },
   { id: { buildMetadata: {} }, buildMetadata: { metadata } },
   { id: { unstructuredCommandLine: {} }, unstructuredCommandLine: { args: [canary] } },
   { id: { structuredCommandLine: { commandLineLabel: 'original' } }, structuredCommandLine: { sections: [{ options: [canary] }] } },
