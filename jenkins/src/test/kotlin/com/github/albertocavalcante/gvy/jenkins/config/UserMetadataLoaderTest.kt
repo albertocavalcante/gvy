@@ -198,8 +198,7 @@ class UserMetadataLoaderTest {
         val loader = UserMetadataLoader(tempDir)
         val metadata = loader.load()
 
-        // Should return metadata without the GDSL steps (or null)
-        // Not throw an exception
+        assertNull(metadata)
     }
 
     @Test
