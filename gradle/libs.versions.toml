@@ -181,5 +181,5 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 gitHooks = { id = "org.danilopianini.gradle-pre-commit-git-hooks", version.ref = "gitHooks" }
 jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
-gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradleVersions" }
+gradle-versions = { id = "io.github.ben-manes.versions", version.ref = "gradleVersions" }
 wire = { id = "com.squareup.wire", version.ref = "wire" }
