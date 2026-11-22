@@ -325,7 +325,7 @@ maven.artifact(
     artifact = "guava",
     force_version = True,
     group = "com.google.guava",
-    version = "33.5.0-jre",
+    version = "33.7.2-jre",
 )
 
 # bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
