@@ -18,6 +18,10 @@ export function bazelChildEnvironment(parent) {
 import { createHash } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
 import { gunzipSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+
+/** The Bazel release pinned by `.bazelversion`; BEP must come from exactly this binary. */
+export const PINNED_BAZEL_VERSION = readFileSync(new URL('../../.bazelversion', import.meta.url), 'utf8').trim();
 
 export const PUBLIC_CONTRACT = 'gvy-public-bazel-v2';
 export const MAX_BEP_BYTES = 256 * 1024 * 1024;
@@ -145,7 +149,7 @@ export function projectBep(text, context, { publicInput = false } = {}) {
     if (event.lastMessage !== undefined) projected.lastMessage = boolean(event.lastMessage);
     if (event.started !== undefined) {
       const started = fields(event.started, { uuid: value => value, buildToolVersion: value => value, command: value => value, startTime: timestamp, startTimeMillis: numeric });
-      if (started.uuid !== context.invocationId || started.command !== context.command || started.buildToolVersion !== '9.0.0') throw new Error('BEP identity does not match approved context');
+      if (started.uuid !== context.invocationId || started.command !== context.command || started.buildToolVersion !== PINNED_BAZEL_VERSION) throw new Error('BEP identity does not match approved context');
       projected.started = started;
     }
     if (event.buildMetadata !== undefined) {

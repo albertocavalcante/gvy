@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
-import { projectBep } from './public-bazel-evidence.mjs';
+import { PINNED_BAZEL_VERSION, projectBep } from './public-bazel-evidence.mjs';
 
 const context = {
   schemaVersion: 1,
@@ -22,7 +22,7 @@ const context = {
 
 function events() {
   const payloads = [
-    { id: { started: {} }, started: { uuid: context.invocationId, command: 'test', buildToolVersion: '9.0.0', startTime: '2026-11-11T00:00:00Z' } },
+    { id: { started: {} }, started: { uuid: context.invocationId, command: 'test', buildToolVersion: PINNED_BAZEL_VERSION, startTime: '2026-11-11T00:00:00Z' } },
     { id: { buildMetadata: {} }, buildMetadata: { metadata: { HEAD_SHA: context.headSha, TESTED_SHA: context.testedSha, RUN_ID: context.runId, RUN_ATTEMPT: context.runAttempt } } },
     { id: { actionCompleted: { primaryOutput: 'out' } }, action: { success: true, type: 'KotlinCompile' } },
     { id: { targetCompleted: { label: '//common:test', configuration: { id: 'c' } } }, completed: { success: true } },

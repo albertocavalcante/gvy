@@ -25,12 +25,12 @@ test('Bazel child inherits only explicit tool/platform variables and no parent c
 
 import { gzipSync } from 'node:zlib';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
-import { projectBep, projectProfile } from './public-bazel-evidence.mjs';
+import { PINNED_BAZEL_VERSION, projectBep, projectProfile } from './public-bazel-evidence.mjs';
 
 const context = { schemaVersion: 1, headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: 1, invocationId: '12345678-1234-4234-8234-123456789abc', command: 'test' };
 function rawEvents(code = 0) {
   const events = [
-    { id: { started: {} }, started: { uuid: context.invocationId, command: 'test', buildToolVersion: '9.0.0', optionsDescription: canary, workingDirectory: canary, startTime: '2026-11-11T00:00:00Z' } },
+    { id: { started: {} }, started: { uuid: context.invocationId, command: 'test', buildToolVersion: PINNED_BAZEL_VERSION, optionsDescription: canary, workingDirectory: canary, startTime: '2026-11-11T00:00:00Z' } },
     { id: { buildMetadata: {} }, buildMetadata: { metadata: { HEAD_SHA: context.headSha, TESTED_SHA: context.testedSha, RUN_ID: '123', RUN_ATTEMPT: '1', EXTRA: canary } } },
     { id: { unstructuredCommandLine: {} }, unstructuredCommandLine: { args: [canary] } },
     { id: { structuredCommandLine: { commandLineLabel: 'original' } }, structuredCommandLine: { sections: [{ optionList: { option: [{ optionName: 'client_env', optionValue: canary }] } }] } },

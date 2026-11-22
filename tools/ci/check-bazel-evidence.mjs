@@ -5,6 +5,7 @@ import { statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readEvidenceText } from './read-evidence.mjs';
+import { PINNED_BAZEL_VERSION } from './public-bazel-evidence.mjs';
 
 const MAX_BEP_BYTES = 256 * 1024 * 1024;
 const METADATA_FIELDS = { headSha: 'HEAD_SHA', testedSha: 'TESTED_SHA', runId: 'RUN_ID', runAttempt: 'RUN_ATTEMPT' };
@@ -93,7 +94,7 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
       started++;
       if (event.started.uuid !== context?.invocationId) fail('BEP invocation does not match context');
       if (event.started.command !== context?.command) fail('BEP command does not match context');
-      if (event.started.buildToolVersion !== '9.0.0') fail('BEP tool version does not match pinned Bazel 9.0.0');
+      if (event.started.buildToolVersion !== PINNED_BAZEL_VERSION) fail(`BEP tool version does not match pinned Bazel ${PINNED_BAZEL_VERSION}`);
       result.timing.started = event.started.startTime ?? null;
     }
     if (event.buildMetadata) {

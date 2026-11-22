@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { auditPublicRoot, publicSummary, writePublicManifest } from './audit-public-bazel-evidence.mjs';
-import { projectBep, projectProfile } from './public-bazel-evidence.mjs';
+import { PINNED_BAZEL_VERSION, projectBep, projectProfile } from './public-bazel-evidence.mjs';
 
 const canary = 'synthetic-unpublishable-audit-canary';
 const canonicalJson = value => JSON.stringify(value, null, 2) + '\n';
@@ -21,7 +21,7 @@ function fixture(t, code = 0) {
   const invocation = join(root, `bazel-build-build-${context.invocationId}`);
   mkdirSync(invocation, { recursive: true });
   const events = [
-    { id: { started: {} }, started: { uuid: context.invocationId, command: 'build', buildToolVersion: '9.0.0' } },
+    { id: { started: {} }, started: { uuid: context.invocationId, command: 'build', buildToolVersion: PINNED_BAZEL_VERSION } },
     { id: { buildMetadata: {} }, buildMetadata: { metadata: { HEAD_SHA: context.headSha, TESTED_SHA: context.testedSha, RUN_ID: '123', RUN_ATTEMPT: '1' } } },
     { id: { buildFinished: {} }, finished: { exitCode: { code } } },
     { id: { buildToolLogs: {} }, buildToolLogs: {}, lastMessage: true },
