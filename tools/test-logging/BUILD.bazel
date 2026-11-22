@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+filegroup(
+    name = "logback_test_config",
+    testonly = True,
+    srcs = ["src/test/resources/logback-test.xml"],
+    visibility = [
+        "//build-tool:__pkg__",
+        "//jenkins:__pkg__",
+    ],
+)
