@@ -3,9 +3,9 @@
 
 """Linter aspect definitions for the Groovy Language Server project."""
 
+load("@aspect_rules_lint//lint:buf.bzl", "lint_buf_aspect")
 load("@aspect_rules_lint//lint:eslint.bzl", "lint_eslint_aspect")
 load("@aspect_rules_lint//lint:ktlint.bzl", "lint_ktlint_aspect")
-load("@aspect_rules_lint//lint:buf.bzl", "lint_buf_aspect")
 
 # ESLint aspect for TypeScript/JavaScript linting
 eslint = lint_eslint_aspect(

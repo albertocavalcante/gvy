@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
+"""Maven dependency declarations for the Buck2 build."""
+
 # JVM Dependencies Configuration
 #
 # This file declares Maven dependencies for the project.
