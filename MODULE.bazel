@@ -229,7 +229,7 @@ maven.install(
 
         # Jackson (Note: jackson-bom is POM-only, use explicit versions)
         "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.20.1",
-        "com.fasterxml.jackson.core:jackson-databind:2.20.1",
+        "com.fasterxml.jackson.core:jackson-databind:2.21.7",
         "com.fasterxml.jackson.module:jackson-module-kotlin:2.20.1",
 
         # Classpath Scanning
