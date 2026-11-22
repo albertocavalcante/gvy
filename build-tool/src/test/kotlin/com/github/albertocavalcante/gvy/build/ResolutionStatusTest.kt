@@ -40,9 +40,9 @@ class ResolutionStatusTest {
         val status = ResolutionStatus.Failed(
             code = "DEPENDENCY_RESOLUTION_FAILED",
             message = "Resolution failed",
-            cause = cause,
+            cause = ResolutionFailureCause.of(cause),
         )
         assertFalse(status.isUsable)
-        assertEquals(cause, status.cause)
+        assertEquals(ResolutionFailureCause("java.lang.RuntimeException", "Root cause"), status.cause)
     }
 }

@@ -4,6 +4,8 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionFailureCause
+import com.github.albertocavalcante.gvy.build.ResolutionFailureDetail
 import org.gradle.tooling.BuildException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -11,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlin.test.assertIs
 
 class GradleFailureAnalyzerTest {
 
@@ -169,7 +172,12 @@ class GradleFailureAnalyzerTest {
         assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, status.code)
         assertTrue(status.message.contains("Java 17"))
         assertNotNull(status.details, "Should contain structured details")
-        assertTrue(status.details is GradleFailureAnalyzer.ToolchainErrorInfo)
+        assertTrue(status.details is ResolutionFailureDetail.ToolchainProvisioning)
+        assertEquals(
+            ResolutionFailureCause("java.lang.RuntimeException", error.message),
+            status.cause,
+            "The status carries a serializable summary, not the live exception",
+        )
     }
 
     @Test
@@ -217,8 +225,7 @@ class GradleFailureAnalyzerTest {
         val status = analyzer.classifyException(error)
         assertEquals(ResolutionCodes.GRADLE_JDK_INCOMPATIBLE, status.code)
         assertNotNull(status.details)
-        assertTrue(status.details is GradleFailureAnalyzer.GradleJdkIncompatibleInfo)
-        val info = status.details as GradleFailureAnalyzer.GradleJdkIncompatibleInfo
+        val info = assertIs<ResolutionFailureDetail.GradleJdkIncompatible>(status.details)
         assertEquals(21, info.jdkVersion, "Should detect JDK 21 from class file major version 65")
     }
 
@@ -237,8 +244,7 @@ class GradleFailureAnalyzerTest {
         val status = analyzer.classifyException(error)
         assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, status.code)
         assertNotNull(status.details)
-        assertTrue(status.details is GradleFailureAnalyzer.ToolchainErrorInfo)
-        val info = status.details as GradleFailureAnalyzer.ToolchainErrorInfo
+        val info = assertIs<ResolutionFailureDetail.ToolchainProvisioning>(status.details)
         assertEquals(17, info.requiredVersion, "Should detect required Java 17")
         assertEquals("Mac OS X 15.6 aarch64", info.platform)
     }

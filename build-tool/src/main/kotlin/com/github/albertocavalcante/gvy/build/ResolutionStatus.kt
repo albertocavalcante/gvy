@@ -14,8 +14,12 @@ sealed interface ResolutionStatus {
     data class Warning(val code: String, val message: String) : ResolutionStatus
 
     /** Resolution failed with an error. */
-    data class Failed(val code: String, val message: String, val cause: Throwable? = null, val details: Any? = null) :
-        ResolutionStatus
+    data class Failed(
+        val code: String,
+        val message: String,
+        val cause: ResolutionFailureCause? = null,
+        val details: ResolutionFailureDetail? = null,
+    ) : ResolutionStatus
 }
 
 /**
