@@ -168,7 +168,7 @@ maven.install(
         # SCIP / Protobuf (Wire)
         # wire-runtime is KMP (needs -jvm)
         # wire-compiler: downloaded separately via http_file (see below) due to GMM issues
-        "com.squareup.wire:wire-runtime-jvm:5.4.0",
+        "com.squareup.wire:wire-runtime-jvm:6.3.0",
         "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
 
         # Code Quality & Analysis
