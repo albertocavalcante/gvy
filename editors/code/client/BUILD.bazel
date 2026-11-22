@@ -18,6 +18,8 @@ ts_project(
     composite = True,
     declaration = True,
     out_dir = "out",
+    # tsconfig.json sets rootDir "src"; rules_ts requires ts_project to declare it too.
+    root_dir = "src",
     source_map = True,
     transpiler = "tsc",
     tsconfig = ":tsconfig.json",
@@ -53,6 +55,7 @@ ts_project(
     composite = True,
     declaration = True,
     out_dir = "out",
+    root_dir = "src",
     source_map = True,
     tags = ["manual"],
     transpiler = "tsc",
@@ -72,7 +75,7 @@ ts_project(
 esbuild(
     name = "extension_bundle",
     srcs = [":client_lib"],
-    entry_point = "out/src/extension.js",
+    entry_point = "out/extension.js",
     external = ["vscode"],
     format = "cjs",
     minify = select({
@@ -90,7 +93,7 @@ esbuild(
 esbuild(
     name = "ast_webview_bundle",
     srcs = [":client_lib"],
-    entry_point = "out/src/features/ast/webview/main.js",
+    entry_point = "out/features/ast/webview/main.js",
     format = "iife",
     minify = select({
         "//:production": True,
