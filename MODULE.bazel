@@ -240,7 +240,7 @@ maven.install(
         "org.openrewrite.tools:jgit:1.4.1",
 
         # Java Source Parsing
-        "com.github.javaparser:javaparser-core:3.27.1",
+        "com.github.javaparser:javaparser-core:3.28.2",
 
         # HTML to Markdown
         "com.vladsch.flexmark:flexmark-html2md-converter:0.64.8",
