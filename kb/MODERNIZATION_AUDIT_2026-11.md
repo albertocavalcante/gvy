@@ -12,8 +12,130 @@ Server, grounded in a read-only review of every main-source module.
 | Scope: tests       | 115.8K LOC / 4,571 tests                                           |
 | Method             | 7 parallel subsystem reviews, 11 High claims re-verified at source |
 
-Contents: Executive summary, Part 1 (debt inventory), Part 2 (Kotlin idiom plan), Part 3 (breaking-change RFCs), Part 4
-(phased PR plan), Appendix (verification and limits).
+Contents: Status (2026-11-23), Executive summary, Part 1 (debt inventory), Part 2 (Kotlin idiom plan), Part 3
+(breaking-change RFCs), Part 4 (phased PR plan), Appendix (verification and limits).
+
+## Status at 2026-11-23
+
+This section records how much of the audit has landed. The findings below are unchanged and describe `d6f5ca66`
+(2026-11-09). Status was re-read against `main` at `9632a55e` (2026-11-23, after #2418 and #2419) by reading the cited
+source; nothing here was executed unless it says so, and no performance claim is measured. The work is tracked in the
+milestone "Foundation: typed primitives, one implementation per concept, enforced" under epic #2385; this table is its
+index.
+
+Statuses: **DONE** (the defect is gone in source), **PARTIAL** (some of the fix landed), **NOT STARTED**, **OBSOLETE**
+(the premise no longer applies), **UNVERIFIED** (not checked). Paths are relative to the module's
+`src/main/kotlin/com/github/albertocavalcante/gvy/`.
+
+To refresh: fetch `main`, list what changed since the commit above with `git log 9632a55e..origin/main -- <path>` for
+each cited path, re-read the cited lines, and update the row, the commit and the date. The counters come from:
+
+```sh
+rg -c '@JvmInline' --glob '*/src/main/**/*.kt'          # value classes
+rg -l 'explicitApi\(' --glob '*.kts'                     # explicitApi modules
+rg -c '<ID>' --glob 'detekt-baseline.xml'                # baseline entries per module
+rg 'allWarningsAsErrors|Werror' --glob '*.kts'           # warnings as errors
+```
+
+### Headline counters
+
+| Counter                | Audit (`d6f5ca66`)        | Now (`9632a55e`)                                                                                                               | Tracking            |
+| ---------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| Value classes          | 0                         | 8 (see below)                                                                                                                  | #2394, #2403, #2393 |
+| `explicitApi()`        | 0 modules                 | 1 module: `source` (`source/build.gradle.kts:12`)                                                                              | #2389               |
+| Detekt baseline        | 234 entries in 16 modules | 227 entries in 16 modules                                                                                                      | #578                |
+| Detekt forbidden calls | `println`, `print`        | `println`, `print` only (`tools/lint/detekt.yml:155`); the PR lint gate runs detekt without type resolution, so it never fires | #2409, #1687, #2386 |
+| Architecture tests     | none                      | none                                                                                                                           | #2390               |
+| Warnings as errors     | none                      | none for Kotlin                                                                                                                | #2388               |
+
+The 8 value classes: `Line`, `Utf16Column`, `CodePointColumn`, `Utf16Position`, `CodePointPosition` (module `source`,
+#2419), `Symbol` (`semantics/core`, #2418), and `LineNumber`, `ColumnNumber` (`parser/native`, older). Detekt baseline
+entries by module: gls 121, semantics/core 22, build-tool 19, parser/native 18, parser/core 14, semantics/native 8,
+codenarc 5, results 3, coverage 3, bsp-core 3, semantics/dsl 3, jenkins 2, common 2, jenkins-extractor 2, maven-bsp 1,
+sarif 1.
+
+### High findings (H1 to H27)
+
+Titles are short labels for the Defect column of section 1.1; the numbering is the audit's.
+
+| ID  | Finding                                    | Status      | Evidence                                                                                                                                                                                                                                                                                                                              | Issue        |
+| --- | ------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| H1  | Workspace state mutable and unsynchronized | DONE        | `gls/compilation/WorkspaceManager.kt:67` holds one immutable `WorkspaceModel` in an `AtomicReference`                                                                                                                                                                                                                                 |              |
+| H2  | Classloader per classpath update leaks     | DONE        | `gls/services/ClasspathService.kt:264` `ClasspathGenerations`: leases (`:85`), replacement (`:72`), retired generations closed (`:319`), shutdown (`:300`)                                                                                                                                                                            |              |
+| H3  | Cancellation swallowed in `future {}`      | DONE        | The broad catch is gone; `gls/utils/CoroutineUtils.kt:18` `rethrowIfCancellationOrError`, used at `gls/services/GroovyTextDocumentService.kt:575`. Other request paths: see Phase 1 item 2                                                                                                                                            | #1311        |
+| H4  | `runBlocking` on worker threads            | NOT STARTED | `gls/services/GroovyGdkProvider.kt:44`, `gls/services/ProjectStartupManager.kt:280`, `jenkins/JenkinsContext.kt:660`; the comments call it intentional                                                                                                                                                                                | #2398        |
+| H5  | JDK source re-parsed on every cache hit    | NOT STARTED | `gls/sources/JdkSourceResolver.kt:54` calls `inspectClass` on a cache hit; `gls/sources/JavaSourceInspector.kt:80` keeps no result cache                                                                                                                                                                                              | #2399        |
+| H6  | Partial reference list looks complete      | PARTIAL     | `gls/providers/references/ReferenceProvider.kt:119` now rethrows cancellation; `:121-129` and `:223-226` still log and complete normally                                                                                                                                                                                              | #2398        |
+| H7  | `getAllNodes()` per references request     | NOT STARTED | `gls/providers/references/ReferenceProvider.kt:306,365` still flatten all nodes; `resolveToDefinition` per node at `:292`                                                                                                                                                                                                             | #2399        |
+| H8  | Typed `ResolutionError` collapsed to null  | PARTIAL     | `gls/providers/definition/DefinitionResolver.kt:142` no longer turns cancellation into "not found"; `:279-282` still maps `Left` to null, `:144` rewrites unknown exceptions as symbol-not-found, `DefinitionProvider.kt:472` reports `NO_DEFINITION`                                                                                 | #2398        |
+| H9  | Engine abstraction used by hover only      | PARTIAL     | Default is `Native` (`gls/config/ServerConfiguration.kt:19`); `EngineType` has `Native` and `OpenRewrite` only (`gls/engine/config/EngineConfiguration.kt:20,28`). `FeatureSet` and `gls/engine/impl/rewrite`, `gls/engine/features` remain (about 1.1K LOC under `engine/`)                                                          | #2397, #1276 |
+| H10 | Raw-string regex never matches             | DONE        | `gls/providers/completion/CompletionContextDetector.kt:234` hoisted, single-escaped                                                                                                                                                                                                                                                   |              |
+| H11 | Completion compiles up to three times      | PARTIAL     | `ensureActive()` added (`gls/providers/completion/CompletionProvider.kt:102,108,120`); up to three `compileTransient` calls remain (`:98,109,122`)                                                                                                                                                                                    | #2399        |
+| H12 | Workspace symbol scans per keystroke       | DONE        | Source read only: the three cited scans now use `SymbolIndexingService.findClasses` backed by a simple-name index (`gls/compilation/WorkspaceClassNames.kt:60`, `SymbolIndexingService.kt:138`) and the owner index; #861 is closed. Latency not measured                                                                             |              |
+| H13 | Copied helpers                             | PARTIAL     | #2418 removed the dead signature-parsing pair. Still: `addKeywords` twice (`CompletionProvider.kt:431`, `strategy/GroovyCompletionStrategy.kt:124`); `formatType` wrapper twice, one with no caller (`CompletionProvider.kt:394`, `MemberAccessCompletionStrategy.kt:553`)                                                            | #2407        |
+| H14 | AST-first resolution, SemanticDB third     | NOT STARTED | `gls/providers/definition/DefinitionResolver.kt:68-100` builds Jenkins, local-AST, then SemanticDB strategies; `resolveToDefinition` is still the primary path (`ReferenceProvider.kt:292`)                                                                                                                                           | #2395, #2406 |
+| H15 | Method resolution implemented four times   | NOT STARTED | `semantics/core/db/CallResolution.kt:168` (`CallResolver.resolve`), `gls/providers/definition/resolution/MethodResolutionStrategy.kt:44-51`, `gls/providers/SignatureHelpProvider.kt:183-188`, `gls/indexing/WorkspaceSymbolIndex.kt:242`                                                                                             | #2405, #2408 |
+| H16 | Symbol-id string surgery                   | PARTIAL     | `semantics/core/db/Symbol.kt:32` is a value class with the parsers (#2418). Raw-string handling remains: `gls/providers/references/IndexedReferenceRanges.kt:30`, `gls/providers/implementation/ImplementationProvider.kt:105`; escaping gap in #2412                                                                                 | #2411, #2412 |
+| H17 | Member lookup copies the whole map         | DONE        | `semantics/core/db/GroovySemanticDB.kt:43,182` owner-to-members index; `gls/indexing/WorkspaceSymbolIndex.kt:251` uses it                                                                                                                                                                                                             |              |
+| H18 | parser/core tree open and mutable          | NOT STARTED | `parser/core/.../ast/Node.kt:11` is an open `abstract class` with mutable annotation and comment lists; `Range.kt:12` is a data class of two `Position`s                                                                                                                                                                              | none         |
+| H19 | `getChildNodes()` allocates per call       | NOT STARTED | `parser/core/.../ast/CompilationUnit.kt:65` builds a new list; 22 `.toList()` remain under `parser/core/.../ast`                                                                                                                                                                                                                      | none         |
+| H20 | Lossy Groovy-to-core conversion            | NOT STARTED | `parser/core/.../internal/StatementConverter.kt:78-83` `convertUnknown` returns an empty block; no `Unsupported` node exists                                                                                                                                                                                                          | none         |
+| H21 | GDSL results discarded                     | DONE        | `jenkins/JenkinsContext.kt:390` and `jenkins/config/UserMetadataLoader.kt:112` consume `executeAndCapture`; the regex parser is gone                                                                                                                                                                                                  |              |
+| H22 | Jenkins metadata rebuilt per request       | DONE        | `jenkins/JenkinsContext.kt:410,417-421,479-491` memoized merged view and `@Volatile` scan snapshot                                                                                                                                                                                                                                    |              |
+| H23 | CodeNarc ruleset FS walk per run           | DONE        | `diagnostics/codenarc/RulesetResolver.kt:133` per-root detection cache; `:114` `reloadRulesets()` clears it; interpretation cached by content hash (`:339`)                                                                                                                                                                           |              |
+| H24 | Ruleset errors swallowed                   | PARTIAL     | Ignored and invalid workspace rulesets now produce diagnostics (`diagnostics/codenarc/CodeNarcDiagnosticProvider.kt:98-119,143`); analyzer failures throw `CodeAnalysisException` (`CodeAnalyzer.kt:116`). UNVERIFIED: where the language server turns that into a signal                                                             | #2398        |
+| H25 | Untrusted GDSL executed in a `GroovyShell` | DONE        | Changed from the earlier assessment (NOT STARTED): `dsl/gdsl/.../GdslInterpreter.kt:28-32` reads GDSL as data and never executes it (`77ba7361e`); `GdslExecutor.kt:62-64` uses it, with parse limits. No `GroovyShell` remains in main sources                                                                                       |              |
+| H26 | Duplicate BSP client in build-tool         | NOT STARTED | `build-tool/.../build/bsp/BspClient.kt:41` and `BspConnectionDetails.kt:22` remain; `bsp/bsp-core` has no consumer outside its own module                                                                                                                                                                                             | #2397        |
+| H27 | Blocking calls on shared pools             | PARTIAL     | The Gradle backoff `Thread.sleep` is gone. Remaining: `bsp/maven-bsp/.../MavenBuildServer.kt:74` plain `var modules`, `supplyAsync` at `:102-240` on the common pool; `gls/GroovyLanguageServer.kt:106`; `build-tool/.../BspClient.kt:117,131`. `ProjectStartupManager.kt:64` is a 100 ms interruptible poll, not the audit's backoff | #2398        |
+
+H1 to H27 is the audit's merged list; the document and the assessment agree on the numbering.
+
+### Phase plan (Part 4)
+
+| Phase | Item                                                                          | Status      | Evidence or note                                                                                                                                                                      | Issue                      |
+| ----- | ----------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 0     | Reclaim disk                                                                  | OBSOLETE    | A condition of the audit's own session, not repository work                                                                                                                           |                            |
+| 0     | Land #914 first                                                               | PARTIAL     | Four `GroovyTextDocumentService*Test` files exist and the class is 783 lines (was about 1,250); the issue is still open                                                               | #914, #958                 |
+| 0     | Baseline benchmarks                                                           | NOT STARTED | `parser/native/src/jmh` has only `VisitorBenchmark` (`recursiveVisitor`); no hover, completion or definition benchmark                                                                | #2399                      |
+| 1     | 1. Regex fix, hoist all, detekt forbid rule                                   | PARTIAL     | Fix done (H10). `RuleRangeCalculator.kt:327-342` still builds regexes inside a function. No detekt rule forbids `Regex(` in bodies                                                    | none for the rule          |
+| 1     | 2. Cancellation hygiene on 9 paths and 12 `runCatching`                       | PARTIAL     | Helper exists and is used in 19 main files; 166 `runCatching` lines remain in main sources, which of the 12 are fixed is UNVERIFIED                                                   | #1311, #619                |
+| 1     | 3. Immutable `WorkspaceModel`                                                 | DONE        | H1                                                                                                                                                                                    |                            |
+| 1     | 4. `ClasspathService` loader lifecycle                                        | DONE        | H2                                                                                                                                                                                    |                            |
+| 1     | 5. Cache invalidation cancels the `Deferred`; fingerprints                    | DONE        | `gls/compilation/CompilationCache.kt:46,62` require a fingerprint; `CompilationCacheService.kt:150,168` cancel detached work; #1184 is closed                                         |                            |
+| 1     | 6. `runBlocking` out of `GdkProvider.initialize`                              | NOT STARTED | H4                                                                                                                                                                                    | #2398                      |
+| 1     | 7. build-tool blocking calls                                                  | PARTIAL     | H27                                                                                                                                                                                   | #2398                      |
+| 1     | 8. Config errors, partial results, typed definition error                     | PARTIAL     | CodeNarc notices done (H24); `ReferenceProvider` partial result (H6) and typed definition error (H8) open; Jenkins typed load failures UNVERIFIED                                     | #2398                      |
+| 2     | 1. Jenkins memoization and GDSL capture                                       | DONE        | H21, H22                                                                                                                                                                              |                            |
+| 2     | 2. CodeNarc ruleset cache, table-driven ranges                                | PARTIAL     | Cache done (H23); `RuleRangeCalculator` still has in-body regexes                                                                                                                     | #2399                      |
+| 2     | 3. Completion: single compile, index, delete dead copies                      | PARTIAL     | Index and `ensureActive` done (H11, H12); three compiles and dead `formatType` remain (H11, H13)                                                                                      | #2399, #2407               |
+| 2     | 4. Hover: lazy strategies, JDK inspection cache, logs                         | PARTIAL     | JDK cache missing (H5); the other sub-items UNVERIFIED                                                                                                                                | #2399                      |
+| 2     | 5. References: per-URI nodes, owner index, inlay hints                        | PARTIAL     | Owner index done (H17); per-URI nodes not (H7); inlay hints and `SemanticIndexer` build UNVERIFIED                                                                                    | #2399                      |
+| 2     | 6. Native side table: interval index, caches                                  | NOT STARTED | `parser/native/.../ast/AstPositionQuery.kt:49-58` still filters all tracked nodes per call; transform-scan cache UNVERIFIED                                                           | #2399, #2404               |
+| 3     | RFC-1 stack                                                                   | NOT STARTED | H14, H15                                                                                                                                                                              | #2395, #2406, #2405, #2408 |
+| 3     | RFC-2 remainder                                                               | NOT STARTED | `gls/compilation/CompilationResult.kt:16` is still a data class; no `withCapturedDocument`; god-class extraction continues under #958                                                 | #958                       |
+| 3     | RFC-4 stack                                                                   | NOT STARTED | No `ext/api` module (`ext/` holds only `junit`, `spock`, `testing`); no `GvyDiagnostic`                                                                                               | #2396, #2330               |
+| 3     | RFC-3b engine decision                                                        | PARTIAL     | H9: default flipped and `Core` removed; OpenRewrite engine and `engine/features` remain                                                                                               | #2397, #1276               |
+| 4     | 1. `explicitApi()` and `Pos`/`Span` value classes                             | PARTIAL     | #2419 added typed coordinates in `source` (`explicitApi()`, compile-fail check in `:source:check`). parser/api, core, native and rewrite are untouched and providers are not migrated | #2402, #2413, #1190        |
+| 4     | 2. Seal `Node`, non-null span                                                 | NOT STARTED | H18                                                                                                                                                                                   | none                       |
+| 4     | 3. Constructor-only children, read-only views                                 | NOT STARTED | H19; `CompilationUnit.kt:52,60` `addImport`, `addType` remain                                                                                                                         | none                       |
+| 4     | 4. Bottom-up converter with `Unsupported` node                                | NOT STARTED | H20                                                                                                                                                                                   | none                       |
+| 4     | 5. Delete cloners, `GroovyVisitor`, `StaticGroovyParser`, `TokenEditDistance` | NOT STARTED | All still present under `parser/core` (`ast/*Cloner.kt`, `ast/visitor/GroovyVisitor.kt`, `StaticGroovyParser.kt`, `incremental/TokenEditDistance.kt`)                                 | #2397                      |
+| 4     | 6. `parser/core-groovy` bridge                                                | NOT STARTED | No such module; `parser/core/build.gradle.kts:20` still has `api(libs.groovy.core)`                                                                                                   | none                       |
+| 5     | 1. `build-logic` convention plugins                                           | NOT STARTED | No `build-logic` or `buildSrc` directory                                                                                                                                              | none                       |
+| 5     | 2. RFC-5 deletions and merges                                                 | NOT STARTED | `dsl/dsld`, `semantics/dsl`, `semantics/openrewrite`, `jupyter/kernels/jenkins`, `reports/{api,coverage,results}`, both `LRUCache`, `common/functional` still exist                   | #2397                      |
+| 5     | 3. Package renames (bsp first)                                                | NOT STARTED | `bsp/bsp-core` still uses `com.github.groovylsp.bsp`                                                                                                                                  | none                       |
+| 5     | 4. `explicitApi` rollout, `internal` sweep                                    | NOT STARTED | One module so far (counters above)                                                                                                                                                    | #2389                      |
+| 5     | 5. Idiom sweep, baselines retired                                             | NOT STARTED | 234 to 227 baseline entries, no module baseline deleted                                                                                                                               | #578, #2388                |
+
+### RFCs
+
+| RFC   | Status      | One line                                                                                                                    |
+| ----- | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| RFC-1 | NOT STARTED | Resolution still runs AST-first (H14, H15); the parity corpus (#2395) comes first.                                          |
+| RFC-2 | PARTIAL     | Immutable workspace model and the cancellation helper landed; sealed `CompilationResult` and the request boundary have not. |
+| RFC-3 | PARTIAL     | 3b: default flipped, `Core` engine removed, OpenRewrite leftovers remain. 3a and 3c not started.                            |
+| RFC-4 | NOT STARTED | No `ext/api`, no neutral diagnostic model. GDSL is read as data (H25), which RFC-4 did not anticipate.                      |
+| RFC-5 | NOT STARTED | Spot-checked: the modules to delete or merge still exist, no convention plugins, one `explicitApi()` module.                |
 
 ## Executive summary: the server is architecturally sound at its core and carries its debt at the edges
 
@@ -219,10 +341,9 @@ Each section is the reviewing agent's finding table, lightly edited. IDs are loc
 Flow observed: lsp4j thread → `GroovyTextDocumentService` wraps handlers in `coroutineScope.future {}` on a server-wide
 `CoroutineScope(Dispatchers.Default + SupervisorJob())` → `DiagnosticsOrchestrator.trigger` (debounced LAZY jobs) →
 `GroovyCompilationService.compileAsync` → `CompilationOrchestrator.scheduleCompilation` →
-`CompilationCacheService.registerPending` (CAS on `CompilationIdentity(content, fingerprint, snapshot===)`;
-the job keeps its fence ticket) → `WorkerSessionManager.parse` → `GroovyParserFacade` → cache,
-`SymbolIndexingService`, `SemanticIndexer.publish`.
-Publication re-validates snapshot identity, config and job ownership under `publicationLock`.
+`CompilationCacheService.registerPending` (CAS on `CompilationIdentity(content, fingerprint, snapshot===)`; the job
+keeps its fence ticket) → `WorkerSessionManager.parse` → `GroovyParserFacade` → cache, `SymbolIndexingService`,
+`SemanticIndexer.publish`. Publication re-validates snapshot identity, config and job ownership under `publicationLock`.
 
 | ID  | Sev  | File:line                                                                                 | Defect                                                                       | Fix                                           |
 | --- | ---- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
@@ -249,9 +370,9 @@ Publication re-validates snapshot identity, config and job ownership under `publ
 | F21 | Low  | `GroovyWorkspaceService.kt:100-106,134-149`                                               | Catch Exception around `URI.create`                                          | Catch IAE only                                |
 | F22 | Low  | `CompilationOrchestrator.kt:372-373`                                                      | All open buffers copied per compile                                          | Lazy accessor                                 |
 
-Verified fine: `registerPending` CAS semantics (formerly `registerCompilation`, removed in #1391),
-`DocumentProvider` gating, `SemanticSnapshotGuard`,
-`LanguageEngineManager` locking, `ConfigWatchDebouncer`, `ParentProcessWatchdog`; no `!!` or `lateinit` in scope.
+Verified fine: `registerPending` CAS semantics (formerly `registerCompilation`, removed in #1391), `DocumentProvider`
+gating, `SemanticSnapshotGuard`, `LanguageEngineManager` locking, `ConfigWatchDebouncer`, `ParentProcessWatchdog`; no
+`!!` or `lateinit` in scope.
 
 </details>
 

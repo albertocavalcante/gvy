@@ -221,6 +221,10 @@ outcome, then use examples, diagrams or comparison tables where they clarify the
 - Use Conventional Commit subjects, such as `fix(lsp): handle unresolved symbols` or `docs: clarify server setup`.
 - Explain the user impact, validation, and any remaining limits in the PR description.
 - Address review findings and required checks. Maintainers use squash merges to keep history linear.
+- A new feature program names the foundation issues it depends on (see epic
+  [#2385](https://github.com/albertocavalcante/gvy/issues/2385) and the
+  [audit status](kb/MODERNIZATION_AUDIT_2026-11.md#status-at-2026-11-23)) and does not start on a concept those issues
+  are still consolidating. A consolidation deletes the copies it replaces in the same series; it does not add another.
 
 Review [CI diagnostic accountability](docs/ci-diagnostics.md) when evaluating build results. Report actionable warnings
 and skipped validation alongside failures.
