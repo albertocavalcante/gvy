@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.build
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class JdkVersionMapperTest {
@@ -109,5 +110,27 @@ class JdkVersionMapperTest {
                 "Major version $expectedMajor should map to JDK $jdk",
             )
         }
+    }
+
+    @Test
+    fun `should map class file versions for every JDK named in the compatibility table`() {
+        val entries = loadBundledCompatibilityEntries()
+        assertTrue(entries.isNotEmpty(), "The bundled table should load")
+
+        val namedJdks = entries.flatMap { listOfNotNull(it.jdkMin, it.jdkMax, it.jdkMaxPartial) }.toSortedSet()
+
+        for (jdk in namedJdks) {
+            assertEquals(
+                jdk,
+                JdkVersionMapper.toJdkVersion(JdkVersionMapper.toMajorVersion(jdk)),
+                "Class file major version ${JdkVersionMapper.toMajorVersion(jdk)} should map to JDK $jdk",
+            )
+        }
+    }
+
+    @Test
+    fun `should map class file versions 70 and 71 to JDK 26 and 27`() {
+        assertEquals(26, JdkVersionMapper.toJdkVersion(70))
+        assertEquals(27, JdkVersionMapper.toJdkVersion(71))
     }
 }
