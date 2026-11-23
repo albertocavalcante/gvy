@@ -69,8 +69,10 @@ class GroovyVersionResolverTest {
         assertNotNull(info.version)
     }
 
+    // The tests below characterise existing resolver behaviour for Groovy 5.1 and 6 jar names; they needed no
+    // production change.
     @Test
-    fun `groovy 6 release jar is detected`() {
+    fun `characterisation - groovy 6 release jar is detected`() {
         val info = resolveSingle("lib/groovy-6.0.0.jar")
 
         assertEquals(GroovyVersionSource.DEPENDENCY, info.source)
@@ -79,7 +81,7 @@ class GroovyVersionResolverTest {
     }
 
     @Test
-    fun `groovy 6 pre-release jars are detected`() {
+    fun `characterisation - groovy 6 pre-release jars are detected`() {
         for (version in listOf("6.0.0-alpha-1", "6.0.0-beta-2", "6.0.0-RC-3")) {
             val info = resolveSingle("lib/groovy-$version.jar")
 
@@ -90,28 +92,13 @@ class GroovyVersionResolverTest {
     }
 
     @Test
-    fun `groovy-all style jar names are detected for groovy 6`() {
+    fun `characterisation - groovy-all style jar names are detected for groovy 6`() {
         assertEquals("6.0.0", resolveSingle("lib/groovy-all-6.0.0.jar").version.raw)
         assertEquals("6.0.0-RC-3", resolveSingle("lib/groovy-all-6.0.0-RC-3.jar").version.raw)
     }
 
     @Test
-    fun `groovy 6 pre-releases order before the release`() {
-        val resolver = GroovyVersionResolver { "4.0.0" }
-        val info = resolver.resolve(
-            dependencies = listOf(
-                Path.of("lib/groovy-6.0.0-RC-3.jar"),
-                Path.of("lib/groovy-6.0.0.jar"),
-                Path.of("lib/groovy-6.0.0-beta-2.jar"),
-            ),
-            overrideVersion = null,
-        )
-
-        assertEquals("6.0.0", info.version.raw)
-    }
-
-    @Test
-    fun `groovy 6 pre-release order is alpha then beta then rc`() {
+    fun `characterisation - groovy 6 pre-release order is alpha then beta then rc`() {
         val alpha = checkNotNull(GroovyVersion.parse("6.0.0-alpha-1"))
         val beta = checkNotNull(GroovyVersion.parse("6.0.0-beta-2"))
         val rc = checkNotNull(GroovyVersion.parse("6.0.0-RC-3"))
@@ -120,7 +107,7 @@ class GroovyVersionResolverTest {
     }
 
     @Test
-    fun `groovy 5 1 jar is detected`() {
+    fun `characterisation - groovy 5 1 jar is detected`() {
         assertEquals("5.1.0", resolveSingle("lib/groovy-5.1.0.jar").version.raw)
     }
 

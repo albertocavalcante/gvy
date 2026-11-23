@@ -6,8 +6,11 @@ package com.github.albertocavalcante.gvy.build
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 
 class GroovyCompatibilityServiceTest {
 
@@ -113,16 +116,6 @@ class GroovyCompatibilityServiceTest {
     }
 
     @Test
-    fun `should suggest Groovy 6 for JDK 25`() {
-        assertEquals("Groovy 6.0", service.suggestGroovyVersion(25))
-    }
-
-    @Test
-    fun `should suggest Groovy 6 for JDK 21`() {
-        assertEquals("Groovy 6.0", service.suggestGroovyVersion(21))
-    }
-
-    @Test
     fun `should suggest Groovy 3 for JDK 17`() {
         val suggestion = service.suggestGroovyVersion(17)
         assertNotNull(suggestion, "Should suggest a Groovy version for JDK 17")
@@ -179,60 +172,97 @@ class GroovyCompatibilityServiceTest {
     // - Groovy 5.1: https://groovy-lang.org/releasenotes/groovy-5.1.html ("tested on JDK versions 11 through 25,
     //   and additionally on early access builds of JDK 26 and 27")
 
-    @Test
-    fun `should require JDK 17 for Groovy 6`() {
-        val result = service.checkCompatibility("6.0.0", 11)
+    @ParameterizedTest(name = "Groovy {0} on JDK {1}: full={2}, partial={3}")
+    @CsvSource(
+        "6.0.0,        16, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 16 is being used'",
+        "6.0.0,        17, true,  false, 'Groovy 6.0 is fully compatible with JDK 17'",
+        "6.0.0,        27, true,  false, 'Groovy 6.0 is fully compatible with JDK 27'",
+        "6.0.0,        28, false, false, 'Groovy 6.0 is not compatible with JDK 28 (max supported: JDK 27)'",
+        "6.0.0-alpha-1, 11, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used'",
+        "6.0.0-beta-2,  11, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used'",
+        "6.0.0-RC-3,    11, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used'",
+        "5.1.3,        10, false, false, 'Groovy 5.1 requires JDK 11 or later, but JDK 10 is being used'",
+        "5.1.3,        11, true,  false, 'Groovy 5.1 is fully compatible with JDK 11'",
+        "5.1.3,        25, true,  false, 'Groovy 5.1 is fully compatible with JDK 25'",
+        "5.1.3,        26, false, true,  " +
+            "'Groovy 5.1 has partial/experimental support for JDK 26 (fully supports up to JDK 25)'",
+        "5.1.3,        27, false, true,  " +
+            "'Groovy 5.1 has partial/experimental support for JDK 27 (fully supports up to JDK 25)'",
+        "5.1.3,        28, false, false, 'Groovy 5.1 is not compatible with JDK 28 (max supported: JDK 27)'",
+    )
+    fun `should check Groovy 5 1 and 6 JDK boundaries`(
+        groovyVersion: String,
+        jdkVersion: Int,
+        expectedFull: Boolean,
+        expectedPartial: Boolean,
+        expectedMessage: String,
+    ) {
+        val result = service.checkCompatibility(groovyVersion, jdkVersion)
 
-        assertFalse(result.isFullyCompatible, "Groovy 6.0.0 should not be compatible with JDK 11")
-        assertFalse(result.isPartiallyCompatible, "Groovy 6.0.0 should not be partially compatible with JDK 11")
-        assertTrue(result.message.contains("requires JDK 17"), "Message should state the minimum: ${result.message}")
+        assertEquals(CompatibilityResult(expectedFull, expectedPartial, expectedMessage), result)
+    }
+
+    @ParameterizedTest(name = "JDK {0} -> {1}")
+    @CsvSource(
+        "8,  Groovy 4.0",
+        "11, Groovy 5.1",
+        "16, Groovy 5.1",
+        "17, Groovy 6.0",
+        "21, Groovy 6.0",
+        "25, Groovy 6.0",
+        "26, Groovy 6.0",
+        "27, Groovy 6.0",
+    )
+    fun `should suggest the newest Groovy line that fully supports the JDK`(jdkVersion: Int, expected: String) {
+        assertEquals(expected, service.suggestGroovyVersion(jdkVersion))
     }
 
     @Test
-    fun `should report Groovy 6 fully compatible with JDK 17 through 27`() {
-        for (jdk in 17..27) {
-            val result = service.checkCompatibility("6.0.0", jdk)
-            assertTrue(result.isFullyCompatible, "Groovy 6.0.0 should be fully compatible with JDK $jdk")
+    fun `should suggest nothing for a JDK newer than every Groovy line`() {
+        assertNull(service.suggestGroovyVersion(28))
+    }
+
+    @Test
+    fun `should suggest the newest line regardless of the order of the entries`() {
+        val entries = listOf(
+            CompatibilityEntry(groovy = "4.0", jdkMin = 8, jdkMax = 21),
+            CompatibilityEntry(groovy = "6.0", jdkMin = 17, jdkMax = 27),
+            CompatibilityEntry(groovy = "2.4", jdkMin = 7, jdkMax = 8),
+            CompatibilityEntry(groovy = "5.1", jdkMin = 11, jdkMax = 25),
+            CompatibilityEntry(groovy = "5.0", jdkMin = 11, jdkMax = 25),
+        )
+
+        for (ordering in listOf(entries, entries.reversed(), entries.sortedBy { it.groovy })) {
+            val shuffled = GroovyCompatibilityService { ordering }
+
+            assertEquals("Groovy 6.0", shuffled.suggestGroovyVersion(21), "Entries: ${ordering.map { it.groovy }}")
+            assertEquals("Groovy 5.1", shuffled.suggestGroovyVersion(11), "Entries: ${ordering.map { it.groovy }}")
+            assertEquals("Groovy 4.0", shuffled.suggestGroovyVersion(8), "Entries: ${ordering.map { it.groovy }}")
         }
     }
 
     @Test
-    fun `should report Groovy 6 pre-releases against the Groovy 6 entry`() {
-        for (version in listOf("6.0.0-alpha-1", "6.0.0-beta-2", "6.0.0-RC-3")) {
-            val result = service.checkCompatibility(version, 11)
-            assertFalse(result.isFullyCompatible, "Groovy $version should require JDK 17")
-            assertTrue(result.message.contains("Groovy 6.0"), "Message should name Groovy 6.0: ${result.message}")
+    fun `bundled compatibility table should be well formed`() {
+        val entries = loadBundledCompatibilityEntries()
+
+        assertTrue(entries.isNotEmpty(), "The bundled table should load")
+        assertEquals(entries.size, entries.map { it.groovy }.toSet().size, "Groovy lines should be unique")
+        for (entry in entries) {
+            assertTrue(entry.jdkMax >= entry.jdkMin, "Groovy ${entry.groovy}: jdkMax must not be below jdkMin")
+            val partial = entry.jdkMaxPartial
+            assertTrue(
+                partial == null || partial > entry.jdkMax,
+                "Groovy ${entry.groovy}: jdkMaxPartial must exceed jdkMax",
+            )
         }
     }
 
-    @Test
-    fun `should not support Groovy 6 beyond JDK 27`() {
-        val result = service.checkCompatibility("6.0.0", 28)
-
-        assertFalse(result.isFullyCompatible, "Groovy 6.0.0 is only tested through JDK 27")
-        assertFalse(result.isPartiallyCompatible, "Groovy 6.0.0 has no partial range beyond JDK 27")
-    }
+    // The next two tests characterise existing behaviour: a Groovy line that is not in the table is reported as
+    // unknown (and fails open) rather than being matched to a neighbouring entry. Fail-open itself is tracked apart.
 
     @Test
-    fun `should keep Groovy 5 1 at the Groovy 5 JDK minimum of 11`() {
-        val result = service.checkCompatibility("5.1.0", 11)
-
-        assertTrue(result.isFullyCompatible, "Groovy 5.1.0 should be fully compatible with JDK 11")
-        assertTrue(result.message.contains("Groovy 5.1"), "Message should name Groovy 5.1: ${result.message}")
-    }
-
-    @Test
-    fun `should report Groovy 5 1 as partially compatible with JDK 26 and 27`() {
-        for (jdk in 26..27) {
-            val result = service.checkCompatibility("5.1.0", jdk)
-            assertFalse(result.isFullyCompatible, "Groovy 5.1.0 is only fully tested through JDK 25")
-            assertTrue(result.isPartiallyCompatible, "Groovy 5.1.0 was tested on early access JDK $jdk")
-        }
-    }
-
-    @Test
-    fun `should report an unknown future Groovy major as unknown instead of using the nearest entry`() {
-        // JDK 8 would be incompatible with Groovy 6 (the nearest entry); unknown versions fail open.
+    fun `characterisation - Groovy 7 is not in the table and is reported as unknown`() {
+        // Groovy 6.0 would reject JDK 8, so a message naming 7.0 as unknown shows no neighbouring entry was used.
         val result = service.checkCompatibility("7.0.0", 8)
 
         assertTrue(result.isFullyCompatible, "Unknown versions fail open")
@@ -243,13 +273,7 @@ class GroovyCompatibilityServiceTest {
     }
 
     @Test
-    fun `should suggest the newest Groovy line that supports the JDK`() {
-        assertEquals("Groovy 5.1", service.suggestGroovyVersion(11))
-        assertEquals("Groovy 6.0", service.suggestGroovyVersion(17))
-    }
-
-    @Test
-    fun `should report a Groovy 5 minor missing from the table as unknown`() {
+    fun `characterisation - Groovy 5 2 is not in the table and is reported as unknown`() {
         val result = service.checkCompatibility("5.2.0", 8)
 
         assertTrue(result.isFullyCompatible, "Unknown versions fail open")

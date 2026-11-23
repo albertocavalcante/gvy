@@ -12,7 +12,7 @@ import java.io.InputStreamReader
  * Represents a single entry in the Groovy/JDK compatibility matrix.
  */
 @Serializable
-private data class CompatibilityEntry(
+internal data class CompatibilityEntry(
     val groovy: String,
     val jdkMin: Int,
     val jdkMax: Int,
@@ -37,34 +37,40 @@ private data class CompatibilityMatrix(
  */
 data class CompatibilityResult(val isFullyCompatible: Boolean, val isPartiallyCompatible: Boolean, val message: String)
 
+private val logger = KotlinLogging.logger {}
+
+/**
+ * Reads the entries of the bundled `groovy-compatibility.json`, or an empty list (logged) when it cannot be read.
+ */
+internal fun loadBundledCompatibilityEntries(): List<CompatibilityEntry> = runCatching {
+    val resourceStream = checkNotNull(
+        GroovyCompatibilityService::class.java.getResourceAsStream("/groovy-compatibility.json"),
+    ) {
+        "groovy-compatibility.json not found in resources"
+    }
+
+    val content = InputStreamReader(resourceStream).use { it.readText() }
+    Json.decodeFromString<CompatibilityMatrix>(content).compatibility
+}.getOrElse { throwable ->
+    if (throwable is Error) throw throwable
+    logger.error(throwable) { "Failed to load Groovy compatibility matrix" }
+    emptyList()
+}
+
 /**
  * Service for checking Groovy/JDK version compatibility.
  *
  * Loads compatibility information from groovy-compatibility.json and provides
  * methods to check if a given Groovy version works with a specific JDK version.
  */
-class GroovyCompatibilityService {
+class GroovyCompatibilityService internal constructor(private val entriesSource: () -> List<CompatibilityEntry>) {
 
-    private val logger = KotlinLogging.logger {}
+    /** Creates a service backed by the bundled `groovy-compatibility.json`. */
+    constructor() : this(::loadBundledCompatibilityEntries)
 
-    // Sorted list of compatibility entries (loaded from JSON)
+    // Entries ordered newest Groovy line first, whatever the order of the source.
     private val compatibilityEntries: List<CompatibilityEntry> by lazy {
-        loadCompatibilityMatrix()
-    }
-
-    private fun loadCompatibilityMatrix(): List<CompatibilityEntry> = runCatching {
-        val resourceStream = checkNotNull(javaClass.getResourceAsStream("/groovy-compatibility.json")) {
-            "groovy-compatibility.json not found in resources"
-        }
-
-        val content = InputStreamReader(resourceStream).use { it.readText() }
-        val matrix = Json.decodeFromString<CompatibilityMatrix>(content)
-
-        matrix.compatibility
-    }.getOrElse { throwable ->
-        if (throwable is Error) throw throwable
-        logger.error(throwable) { "Failed to load Groovy compatibility matrix" }
-        emptyList()
+        entriesSource().sortedWith(NEWEST_LINE_FIRST)
     }
 
     /**
@@ -141,13 +147,15 @@ class GroovyCompatibilityService {
     }
 
     /**
-     * Suggests a Groovy version that is compatible with the given JDK version.
+     * Suggests the newest Groovy line that fully supports the given JDK version.
+     *
+     * Partial or experimental support (`jdkMaxPartial`) does not count, and the result does not depend on the
+     * order of the entries in the compatibility file.
      *
      * @param jdkVersion The JDK major version (e.g., 25)
      * @return A suggested Groovy version string, or null if no specific suggestion
      */
     fun suggestGroovyVersion(jdkVersion: Int): String? {
-        // Find the first (highest) Groovy version that fully supports this JDK
         val compatibleEntry = compatibilityEntries.firstOrNull { entry ->
             jdkVersion >= entry.jdkMin && jdkVersion <= entry.jdkMax
         }
@@ -178,4 +186,13 @@ class GroovyCompatibilityService {
             else -> "${parts[0]}.${parts[1]}"
         }
     }.getOrNull()
+
+    private companion object {
+        private val NEWEST_LINE_FIRST: Comparator<CompatibilityEntry> =
+            compareByDescending<CompatibilityEntry> { lineNumber(it.groovy, 0) }
+                .thenByDescending { lineNumber(it.groovy, 1) }
+
+        /** Reads one dot-separated part of a "major.minor" line; unparseable parts sort oldest. */
+        private fun lineNumber(line: String, index: Int): Int = line.split(".").getOrNull(index)?.toIntOrNull() ?: -1
+    }
 }
