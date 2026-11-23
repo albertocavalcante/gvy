@@ -98,12 +98,23 @@ class GroovyVersionResolverTest {
     }
 
     @Test
-    fun `characterisation - groovy 6 pre-release order is alpha then beta then rc`() {
+    fun `characterisation - groovy 6 pre-release order is alpha then beta then rc then release`() {
         val alpha = checkNotNull(GroovyVersion.parse("6.0.0-alpha-1"))
         val beta = checkNotNull(GroovyVersion.parse("6.0.0-beta-2"))
         val rc = checkNotNull(GroovyVersion.parse("6.0.0-RC-3"))
+        val release = checkNotNull(GroovyVersion.parse("6.0.0"))
 
-        assertEquals(listOf(alpha, beta, rc), listOf(rc, alpha, beta).sorted())
+        assertEquals(listOf(alpha, beta, rc, release), listOf(release, rc, alpha, beta).sorted())
+    }
+
+    @Test
+    fun `characterisation - resolver picks the groovy 6 release over its release candidate`() {
+        val info = GroovyVersionResolver { "4.0.0" }.resolve(
+            dependencies = listOf(Path.of("lib/groovy-6.0.0-RC-3.jar"), Path.of("lib/groovy-6.0.0.jar")),
+            overrideVersion = null,
+        )
+
+        assertEquals("6.0.0", info.version.raw)
     }
 
     @Test

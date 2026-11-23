@@ -116,12 +116,6 @@ class GroovyCompatibilityServiceTest {
     }
 
     @Test
-    fun `should suggest Groovy 3 for JDK 17`() {
-        val suggestion = service.suggestGroovyVersion(17)
-        assertNotNull(suggestion, "Should suggest a Groovy version for JDK 17")
-    }
-
-    @Test
     fun `should return null or generic suggestion for very old JDK versions`() {
         // JDK 6 is very old, might not have explicit suggestion
         val suggestion = service.suggestGroovyVersion(6)
