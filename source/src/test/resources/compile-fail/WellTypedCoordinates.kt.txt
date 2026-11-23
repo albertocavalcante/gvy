@@ -1,0 +1,28 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Control for MixedCoordinateUnits.kt.txt: the same operations with matching units. This file must
+// compile with the same command, so a failure of the other file is caused by the units, not by the
+// classpath or imports.
+
+import com.github.albertocavalcante.gvy.source.CodePointColumn
+import com.github.albertocavalcante.gvy.source.CodePointPosition
+import com.github.albertocavalcante.gvy.source.Line
+import com.github.albertocavalcante.gvy.source.Utf16Column
+import com.github.albertocavalcante.gvy.source.Utf16LineIndex
+import com.github.albertocavalcante.gvy.source.Utf16Position
+import com.github.albertocavalcante.gvy.source.Utf16Span
+
+fun matchUnits(index: Utf16LineIndex, line: Line, utf16: Utf16Column, codePoint: CodePointColumn, lineText: String) {
+    val c1: CodePointColumn = utf16.toCodePoint(lineText)
+    val c2: Utf16Column = codePoint.toUtf16(lineText)
+    CodePointPosition.of(line, codePoint)
+    Utf16Position.of(line, utf16)
+    index.toCodePoint(Utf16Position.of(line, utf16))
+    val c7: Line = Line.ofZeroBased(3)
+    val c8: Utf16Column = Utf16Column.ofZeroBased(3)
+    val c9: Utf16Column = Utf16Column.ofZeroBased(utf16.zeroBased + 1)
+    val c10: Int = line.oneBased
+    Utf16Span.of(Utf16Position.of(line, utf16), Utf16Position.of(line, utf16))
+    index.toUtf16OrNull(CodePointPosition.of(line, codePoint))
+}

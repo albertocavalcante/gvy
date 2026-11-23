@@ -1,0 +1,35 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Compile-fail proof for the typed coordinates in :source (issue #2391). This file must NOT
+// compile: every statement in mixUnits mixes a unit, a base or an Int with a typed coordinate.
+// The .txt suffix keeps it out of every source set and formatter.
+//
+// `./gradlew :source:verifyCoordinateUnitCompileFailures` (part of `:source:check`) compiles it with
+// the project's Kotlin compiler against the :source main classes as a separate module, so internal
+// constructors are invisible as they are to every consumer. It requires an error on every line
+// marked `// <n>:` and on no other line, and requires WellTypedCoordinates.kt.txt to compile.
+
+import com.github.albertocavalcante.gvy.source.CodePointColumn
+import com.github.albertocavalcante.gvy.source.CodePointPosition
+import com.github.albertocavalcante.gvy.source.Line
+import com.github.albertocavalcante.gvy.source.Utf16Column
+import com.github.albertocavalcante.gvy.source.Utf16LineIndex
+import com.github.albertocavalcante.gvy.source.Utf16Position
+import com.github.albertocavalcante.gvy.source.Utf16Span
+
+fun mixUnits(index: Utf16LineIndex, line: Line, utf16: Utf16Column, codePoint: CodePointColumn) {
+    val e1: CodePointColumn = utf16 // 1: a UTF-16 column is not a code-point column
+    val e2: Utf16Column = codePoint // 2: nor the other way round
+    CodePointPosition.of(line, utf16) // 3: a code-point position needs a code-point column
+    Utf16Position.of(line, codePoint) // 4: a UTF-16 position needs a UTF-16 column
+    Utf16Position.of(utf16, line) // 5: line and column cannot be swapped
+    index.toCodePoint(CodePointPosition.of(line, codePoint)) // 6: no conversion from the unit it already has
+    val e7: Line = 3 // 7: an Int is not a line; name its base with Line.ofZeroBased or Line.ofOneBased
+    val e8: Utf16Column = Utf16Column(3) // 8: the constructor is internal; factories name the base
+    val e9: Utf16Column = utf16 + 1 // 9: no arithmetic on columns, so no hand-written +1 or -1
+    val e10: Int = line // 10: reading a line needs .zeroBased or .oneBased
+    Utf16Span(Utf16Position.of(line, utf16), Utf16Position.of(line, utf16)) // 11: spans are built by checked factories
+    val e12: CodePointColumn = utf16.toCodePoint() // 12: changing the column unit needs the line text
+    index.toUtf16OrNull(Utf16Position.of(line, utf16)) // 13: the strict forms check units too
+}
