@@ -3,6 +3,11 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -109,5 +114,36 @@ class JdkVersionMapperTest {
                 "Major version $expectedMajor should map to JDK $jdk",
             )
         }
+    }
+
+    @Test
+    fun `should map class file versions for every JDK named in the compatibility table`() {
+        val table = Json.parseToJsonElement(readCompatibilityJson()).jsonObject
+        val namedJdks = table.getValue("compatibility").jsonArray.flatMap { entry ->
+            listOf("jdkMin", "jdkMax", "jdkMaxPartial").mapNotNull { key ->
+                entry.jsonObject[key]?.jsonPrimitive?.int
+            }
+        }.toSortedSet()
+
+        for (jdk in namedJdks) {
+            assertEquals(
+                jdk,
+                JdkVersionMapper.toJdkVersion(JdkVersionMapper.toMajorVersion(jdk)),
+                "Class file major version ${JdkVersionMapper.toMajorVersion(jdk)} should map to JDK $jdk",
+            )
+        }
+    }
+
+    @Test
+    fun `should map class file versions 70 and 71 to JDK 26 and 27`() {
+        assertEquals(26, JdkVersionMapper.toJdkVersion(70))
+        assertEquals(27, JdkVersionMapper.toJdkVersion(71))
+    }
+
+    private fun readCompatibilityJson(): String {
+        val stream = checkNotNull(javaClass.getResourceAsStream("/groovy-compatibility.json")) {
+            "groovy-compatibility.json not found in resources"
+        }
+        return stream.use { it.readBytes().decodeToString() }
     }
 }

@@ -97,6 +97,17 @@ class AsmErrorAnalyzerTest {
     }
 
     @Test
+    fun `should recommend the newest Groovy line that supports the class file JDK`() {
+        val info = analyzer.analyze(RuntimeException("Unsupported class file major version 69"))
+
+        assertNotNull(info, "Should return AsmErrorInfo")
+        assertTrue(
+            info!!.suggestions.contains("Upgrade to Groovy 6.0 which supports JDK 25"),
+            "Suggestions should recommend Groovy 6.0 for JDK 25: ${info.suggestions}",
+        )
+    }
+
+    @Test
     fun `should handle unknown major version gracefully`() {
         // Major version 100 doesn't map to any known JDK
         val error = RuntimeException("Unsupported class file major version 100")

@@ -1,6 +1,17 @@
 {
   "compatibility": [
     {
+      "groovy": "6.0",
+      "jdkMin": 17,
+      "jdkMax": 27
+    },
+    {
+      "groovy": "5.1",
+      "jdkMin": 11,
+      "jdkMax": 25,
+      "jdkMaxPartial": 27
+    },
+    {
       "groovy": "5.0",
       "jdkMin": 11,
       "jdkMax": 25
@@ -28,6 +39,7 @@
     }
   ],
   "majorVersionMapping": {
+    "51": 7,
     "52": 8,
     "53": 9,
     "54": 10,
@@ -45,6 +57,8 @@
     "66": 22,
     "67": 23,
     "68": 24,
-    "69": 25
+    "69": 25,
+    "70": 26,
+    "71": 27
   }
 }
