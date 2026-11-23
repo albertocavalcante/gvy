@@ -404,7 +404,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private var staticContext = false
 
         // Id prefix of the method (or initializer) whose body is being visited; scopes locals.
-        private var scopeOwnerId: String = "${createClassSymbolId(currentClass)}{init}."
+        private var scopeOwnerId: String = Symbol.ofInitializer(Symbol.ofClass(currentClass.name)).id
 
         override fun getSourceUnit(): SourceUnit? = null
 
@@ -550,7 +550,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val typeName = resolver.resolveTypeName(call.type)
             // Use class symbol ID to resolve to the class definition
             // TODO: Support precise constructor resolution with parameters
-            val symbolId = "$typeName#"
+            val symbolId = Symbol.ofClass(typeName).id
 
             occurrences.add(
                 SymbolOccurrence(
@@ -567,7 +567,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(expression)
             if (range != null && resolver.isResolved(expression.type)) {
                 occurrences.add(
-                    SymbolOccurrence("${resolver.resolveTypeName(expression.type)}#", range, OccurrenceRole.TYPE_REF),
+                    SymbolOccurrence(
+                        Symbol.ofClass(resolver.resolveTypeName(expression.type)).id,
+                        range,
+                        OccurrenceRole.TYPE_REF,
+                    ),
                 )
             }
             super.visitClassExpression(expression)
@@ -580,7 +584,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 // the class declares, and not inside an opaque closure, whose delegate may resolve the name first.
                 val local = lookup(expression.name)
                 val symbolId = local?.id
-                    ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}.".takeIf {
+                    ?: Symbol.ofField(
+                        Symbol.ofClass(resolver.resolveTypeName(currentClass)),
+                        expression.name,
+                    ).id.takeIf {
                         declaresMember(currentClass, expression.name) &&
                             !closureScope.delegateMayAnswer(expression.name)
                     }
@@ -673,21 +680,21 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * Create unique symbol ID for a class following SemanticDB convention.
          * Format: "com/example/MyClass#"
          */
-        fun createClassSymbolId(classNode: ClassNode): String = "${classNode.name.replace('.', '/')}#"
+        fun createClassSymbolId(classNode: ClassNode): String = Symbol.ofClass(classNode.name).id
 
         /**
          * Create unique symbol ID for a field.
          * Format: "com/example/MyClass#myField."
          */
         fun createFieldSymbolId(owner: ClassNode, field: FieldNode): String =
-            "${createClassSymbolId(owner)}${field.name}."
+            Symbol.ofField(Symbol.ofClass(owner.name), field.name).id
 
         /**
          * Create unique symbol ID for a property.
          * Format: "com/example/MyClass#myProperty."
          */
         fun createPropertySymbolId(owner: ClassNode, property: PropertyNode): String =
-            "${createClassSymbolId(owner)}${property.name}."
+            Symbol.ofField(Symbol.ofClass(owner.name), property.name).id
 
         /**
          * Create unique symbol ID for a method.
@@ -697,17 +704,21 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * written as simple names, so overloads get distinct ids while the id stays the same
          * whether or not the compiler has qualified the type names yet.
          */
-        fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String {
-            val ownerPrefix = owner?.let { createClassSymbolId(it) } ?: ""
-            return "${ownerPrefix}${method.name}(${TypeSignatures.parameterList(method.parameters)})."
-        }
+        fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String = Symbol.ofMethod(
+            owner?.let {
+                Symbol.ofClass(it.name)
+            },
+            method.name,
+            TypeSignatures.parameterList(method.parameters),
+        )
+            .id
 
         /**
          * Create unique symbol ID for a parameter.
          * Format: "com/example/MyClass#myMethod(int,String).(param)"
          */
         fun createParameterSymbolId(owner: ClassNode?, method: MethodNode, parameter: Parameter): String =
-            "${createMethodSymbolId(owner, method)}(${parameter.name})"
+            Symbol.ofParameter(Symbol(createMethodSymbolId(owner, method)), parameter.name).id
 
         /**
          * Create unique symbol ID for a local variable or closure/loop/catch parameter.
@@ -716,7 +727,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * field id, and the same for the same declaration in identical content.
          */
         fun createLocalSymbolId(scopeOwnerId: String, name: String, declaration: Range): String =
-            "$scopeOwnerId$name@${declaration.startLine}:${declaration.startColumn}"
+            Symbol.ofLocal(Symbol(scopeOwnerId), name, declaration.startLine, declaration.startColumn).id
 
         /**
          * Create symbol ID for import.
@@ -724,7 +735,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          */
         fun createImportSymbolId(importNode: ImportNode): String {
             val className = importNode.className ?: importNode.packageName
-            return "import#${className.replace('.', '/')}"
+            return Symbol.ofImport(className).id
         }
 
         /**
@@ -734,7 +745,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         fun createStaticImportSymbolId(importNode: ImportNode): String {
             val className = importNode.className ?: ""
             val fieldName = importNode.fieldName ?: ""
-            return "import#${className.replace('.', '/')}.$fieldName"
+            return Symbol.ofStaticImport(className, fieldName).id
         }
     }
 }

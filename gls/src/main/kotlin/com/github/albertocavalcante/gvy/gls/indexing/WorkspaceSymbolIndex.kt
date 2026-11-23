@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.IndexedOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
+import com.github.albertocavalcante.gvy.semantics.db.Symbol
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
@@ -241,7 +242,7 @@ class WorkspaceSymbolIndex(
     override fun findMethods(classFqn: String, methodName: String, arity: Int?): List<MemberInfo> =
         directMembers(classFqn)
             .filter { it.kind == SymbolKind.METHOD && it.name == methodName }
-            .filter { arity == null || extractParameterCount(it.symbol) == arity }
+            .filter { arity == null || Symbol(it.symbol).arity == arity }
             .map { it.toMemberInfo() }
 
     override val version: Long get() = semanticDb.version
@@ -319,14 +320,7 @@ class WorkspaceSymbolIndex(
      * @param symbolId The symbol ID
      * @return The class FQN
      */
-    fun extractClassFqn(symbolId: String): String {
-        val hashIndex = symbolId.indexOf('#')
-        return if (hashIndex >= 0) {
-            symbolId.substring(0, hashIndex)
-        } else {
-            symbolId
-        }
-    }
+    fun extractClassFqn(symbolId: String): String = Symbol(symbolId).owner
 }
 
 /** Retains a queryable view without owning the database; retirement does not invalidate the detached lookup. */
@@ -359,7 +353,7 @@ private class FrozenWorkspaceMemberLookup(
 
     override fun findMethods(classFqn: String, methodName: String, arity: Int?): List<MemberInfo> =
         directMembers(classFqn).filter { it.kind == SymbolKind.METHOD && it.name == methodName }
-            .filter { arity == null || extractParameterCount(it.symbol) == arity }.map { it.toMemberInfo() }
+            .filter { arity == null || Symbol(it.symbol).arity == arity }.map { it.toMemberInfo() }
 
     override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = directMembers(classFqn)
         .filter { it.kind == SymbolKind.FIELD || it.kind == SymbolKind.METHOD || it.kind == SymbolKind.PROPERTY }
@@ -373,59 +367,6 @@ private fun SymbolInfo.toMemberInfo() = MemberInfo(
     signature = if (kind == SymbolKind.METHOD) symbol else null,
     symbolId = symbol,
 )
-
-/**
- * Extract parameter count from a method symbol ID.
- *
- * Examples:
- * - "com/example/MyClass#myMethod()." -> 0
- * - "com/example/MyClass#myMethod(String)." -> 1
- * - "com/example/MyClass#myMethod(String,int)." -> 2
- * - "com/example/MyClass#myMethod(Map<String,String>)." -> 1
- *
- * @param methodSymbolId The method symbol ID
- * @return The number of parameters
- */
-@Suppress("ReturnCount") // Multiple validation checks require early returns
-private fun extractParameterCount(methodSymbolId: String): Int {
-    val startIndex = methodSymbolId.indexOf('(')
-    val endIndex = methodSymbolId.indexOf(')')
-
-    if (startIndex < 0 || endIndex < 0 || startIndex >= endIndex) {
-        return 0
-    }
-
-    val params = methodSymbolId.substring(startIndex + 1, endIndex)
-    if (params.isEmpty()) return 0
-
-    // Split by comma while respecting angle brackets for generics
-    var count = 0
-    var bracketDepth = 0
-    var invalidBrackets = false
-    for (char in params) {
-        when (char) {
-            '<' -> bracketDepth++
-            '>' -> {
-                bracketDepth--
-                if (bracketDepth < 0) {
-                    invalidBrackets = true
-                    break
-                }
-            }
-            ',' -> if (bracketDepth == 0) count++
-        }
-    }
-
-    // If brackets are unbalanced, fall back to a simple comma-based count
-    if (invalidBrackets || bracketDepth != 0) {
-        return params.split(',')
-            .map { it.trim() }
-            .count { it.isNotEmpty() }
-    }
-
-    // Add 1 for the last parameter (no trailing comma)
-    return count + 1
-}
 
 /**
  * Convert a semantic Range to an LSP Range.

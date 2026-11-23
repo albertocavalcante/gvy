@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
+import com.github.albertocavalcante.gvy.semantics.db.Symbol
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ImportNode
 
@@ -82,7 +83,7 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
 
         // 4. Get symbol info to extract the name
         val symbolInfo = workspaceSymbolIndex.findSymbol(occurrence.symbol)
-        val symbolName = symbolInfo?.name ?: extractNameFromSymbolId(occurrence.symbol)
+        val symbolName = symbolInfo?.name ?: Symbol(occurrence.symbol).member
 
         // 5. Return DefinitionResult.Binary (we don't have access to AST nodes in this strategy)
         // The LSP will handle loading the source when the user navigates to the definition
@@ -93,43 +94,6 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
                 range = location.range,
             ),
         )
-    }
-
-    /**
-     * Extract the simple name from a SemanticDB symbol ID.
-     *
-     * Examples:
-     * - "com/example/MyClass#myMethod()." -> "myMethod"
-     * - "com/example/MyClass#myField." -> "myField"
-     * - "com/example/MyClass#`<init>`()." -> "<init>"
-     */
-    private fun extractNameFromSymbolId(symbolId: String): String {
-        // Find the last # which separates class from member
-        val hashIndex = symbolId.lastIndexOf('#')
-        if (hashIndex < 0) {
-            return symbolId
-        }
-
-        // Extract the member part (e.g., "myMethod()." or "myField.")
-        val memberPart = symbolId.substring(hashIndex + 1)
-
-        // Handle backtick-quoted names like `<init>`
-        if (memberPart.startsWith('`')) {
-            val endBacktick = memberPart.indexOf('`', 1)
-            if (endBacktick > 0) {
-                return memberPart.substring(1, endBacktick)
-            }
-        }
-
-        // Extract name before parentheses (for methods) or dot (for fields/properties)
-        val parenIndex = memberPart.indexOf('(')
-        val dotIndex = memberPart.indexOf('.')
-
-        return when {
-            parenIndex >= 0 -> memberPart.substring(0, parenIndex)
-            dotIndex >= 0 -> memberPart.substring(0, dotIndex)
-            else -> memberPart
-        }
     }
 
     companion object {

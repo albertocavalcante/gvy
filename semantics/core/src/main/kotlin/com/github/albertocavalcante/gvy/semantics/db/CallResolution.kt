@@ -247,7 +247,7 @@ internal class CallResolver(
         val declaring = classes?.takeUnless { spread || (classReference && name in GroovyDispatch.classPropertyNames) }
             ?.let { propertyDeclaration(it, name) }
             ?.takeUnless { classReference && !declaresStatic(it, name) }
-        return declaring?.let { "${SemanticDocumentBuilder.createClassSymbolId(it)}$name." }
+        return declaring?.let { Symbol.ofField(Symbol.ofClass(it.name), name).id }
     }
 
     /**
