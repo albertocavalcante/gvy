@@ -122,7 +122,6 @@
     <ID>TooManyFunctions:GroovyTextDocumentService.kt$GroovyTextDocumentService : TextDocumentService</ID>
     <ID>TooManyFunctions:InlineTagRenderer.kt$InlineTagRenderer</ID>
     <ID>TooManyFunctions:ProjectStartupManager.kt$ProjectStartupManager</ID>
-    <ID>UnusedPrivateMember:CompletionProvider.kt$CompletionProvider$@Suppress("ReturnCount") // Multiple validation checks require early returns private fun parseSignatureToParams(signature: String?): List&lt;String></ID>
     <ID>UnusedPrivateMember:CompletionProvider.kt$CompletionProvider$private fun formatType(type: SemanticType): String</ID>
   </CurrentIssues>
 </SmellBaseline>

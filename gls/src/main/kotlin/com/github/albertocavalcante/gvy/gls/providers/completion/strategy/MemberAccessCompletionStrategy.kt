@@ -23,6 +23,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationMethodSignatures
+import com.github.albertocavalcante.gvy.semantics.db.Symbol
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.displayName
@@ -365,7 +366,9 @@ internal class MemberAccessCompletionStrategy(
                     method(
                         name = member.name,
                         returnType = member.type?.let { formatType(it) } ?: "def",
-                        parameters = member.signature.completionParameters().map(::simpleTypeName),
+                        parameters = member.signature?.let {
+                            Symbol(it).parameterTypes
+                        }.orEmpty().map(::simpleTypeName),
                         doc = "Method: ${member.name}${member.signature ?: "()"}",
                     )
                 }
@@ -549,86 +552,6 @@ private fun receiverExpression(ctx: CompletionStrategyContext): Expression? {
  */
 private fun formatType(type: SemanticType): String = SemanticTypeFormatter.formatForCompletion(type)
 
-/**
- * Extracts the raw parameter types of a symbol signature, respecting generic brackets.
- *
- * @param signature The method signature
- *   (e.g., "com/example/MyClass#myMethod(String,int)." or "com/example/MyClass#myMethod(Map<String,String>).")
- * @return List of parameter types as written (e.g., ["String", "int"] or ["Map<String,String>"])
- */
-private fun String?.completionParameters(): List<String> {
-    val signature = this ?: return emptyList()
-
-    val startIndex = signature.indexOf('(')
-    val endIndex = signature.indexOf(')')
-
-    if (startIndex < 0 || endIndex < 0 || startIndex >= endIndex) {
-        return emptyList()
-    }
-
-    val params = signature.substring(startIndex + 1, endIndex).trim()
-
-    // Split by comma while respecting angle brackets for generics
-    return parseParametersWithGenerics(params)
-}
-
-/**
- * Parse comma-separated parameters while respecting angle brackets for generics.
- *
- * This helper extracts the complex bracket-tracking logic from completionParameters.
- */
-private fun parseParametersWithGenerics(params: String): List<String> {
-    val result = mutableListOf<String>()
-    val currentParam = StringBuilder()
-    var bracketDepth = 0
-    var invalidBrackets = false
-
-    fun addCurrentParam() {
-        result.add(currentParam.toString().trim())
-        currentParam.clear()
-    }
-
-    for (char in params) {
-        when (char) {
-            '<' -> {
-                bracketDepth++
-                currentParam.append(char)
-            }
-
-            '>' -> {
-                bracketDepth--
-                if (bracketDepth < 0) {
-                    invalidBrackets = true
-                    break
-                }
-                currentParam.append(char)
-            }
-
-            ',' -> {
-                if (bracketDepth == 0) {
-                    addCurrentParam()
-                } else {
-                    currentParam.append(char)
-                }
-            }
-
-            else -> currentParam.append(char)
-        }
-    }
-
-    // If brackets are unbalanced, fall back to simple comma-based parsing
-    if (invalidBrackets || bracketDepth != 0) {
-        return params.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-    }
-
-    // Add the last parameter
-    if (currentParam.isNotEmpty()) {
-        addCurrentParam()
-    }
-
-    return result
-}
-
 private val QUALIFIED_NAME = Regex("""(?:[\w$]+[./])+([\w$]+)""")
 
 /** `java.util.Map<java.lang.String,int[]>` becomes `Map<String,int[]>`; `java.util.Map$Entry` becomes `Entry`. */
@@ -671,7 +594,7 @@ private fun indexedDocumentMembers(
     }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
     val methods = members.filter { it.kind == SymbolKind.METHOD }.flatMap { member ->
         val alternatives = exact[member.symbolId]?.filterNot { it in privateAlternatives[member.symbolId].orEmpty() }
-            ?: listOf(member.signature.completionParameters())
+            ?: listOf(member.signature?.let { Symbol(it).parameterTypes }.orEmpty())
         alternatives.map { types ->
             MethodCandidate(
                 name = member.name,
@@ -714,7 +637,7 @@ private fun inheritedStep(name: String, held: LocalCompletionMembers, index: Wor
             ),
         )
     }
-    val owner = "${name.replace('.', '/')}#"
+    val owner = Symbol.ofClass(name).id
     val document = index.findImplementationDocument(owner)
         ?: return InheritedStep(
             members = index.getAllMembers(name.replace('.', '/'), includeInherited = true),
@@ -727,8 +650,8 @@ private fun inheritedStep(name: String, held: LocalCompletionMembers, index: Wor
         members = fields,
         genericOverrides = lazy { ImplementationMethodSignatures.genericOverrides(document, owner) },
         parents = Parents(
-            parents?.superclass?.toClassName(),
-            parents?.interfaces.orEmpty().map { it.toClassName() },
+            parents?.superclass?.let { Symbol(it).ownerClassName },
+            parents?.interfaces.orEmpty().map { Symbol(it).ownerClassName },
         ),
     )
 }
@@ -742,8 +665,6 @@ private class InheritedWalk(
 /** Only a method whose declaring type is generic can be a generic override's erased twin. */
 private fun java.lang.reflect.Method.isGenericInstantiation(): Boolean =
     genericParameterTypes.any { it is java.lang.reflect.TypeVariable<*> }
-
-private fun String.toClassName(): String = removeSuffix("#").replace('/', '.')
 
 /**
  * Methods whose simple display collides (for example `choose(Date)` from `java.util` and `java.sql`)
@@ -845,7 +766,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 if (externalSuperclass == null) externalSuperclass = parent?.name
             }
         }
-        val owner = "${first.name.replace('.', '/')}#"
+        val owner = Symbol.ofClass(first.name).id
         return Result(
             methods.values.toList(),
             fields.values.toList(),
@@ -871,7 +792,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
         }
 
     private fun ownFields(node: ClassNode, inherited: Boolean): List<Pair<String, MemberInfo>> {
-        val owner = node.name.replace('.', '/')
+        val owner = Symbol.ofClass(node.name)
         val fields = node.fields.filter {
             hasSource(it) && (!inherited || !it.isPrivate)
         }.map {
@@ -880,7 +801,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 SymbolKind.FIELD,
                 SemanticType.Known(typeName(it.type)),
                 null,
-                "$owner#${it.name}.",
+                Symbol.ofField(owner, it.name).id,
             )
         }
         val properties = node.properties.filter {
@@ -891,7 +812,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 SymbolKind.PROPERTY,
                 SemanticType.Known(typeName(it.type)),
                 null,
-                "$owner#${it.name}.",
+                Symbol.ofField(owner, it.name).id,
             )
         }
         return fields + properties

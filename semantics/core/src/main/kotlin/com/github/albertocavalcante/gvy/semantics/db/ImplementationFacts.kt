@@ -131,7 +131,7 @@ object ImplementationFacts {
             }
             // Other generated declarations have no navigable range, but still mask inherited methods.
             ImplementationMethod(
-                symbol = SemanticDocumentBuilder.createMethodSymbolId(this, method),
+                symbol = SemanticDocumentBuilder.createMethodSymbolId(this, method).id,
                 name = method.name,
                 parameterTypes = method.parameters.map { qualifiedType(it.type) },
                 range = range,
@@ -182,7 +182,7 @@ object ImplementationFacts {
         else -> node.name
     }
 
-    private fun ClassNode.symbol(): String = SemanticDocumentBuilder.createClassSymbolId(this)
+    private fun ClassNode.symbol(): String = SemanticDocumentBuilder.createClassSymbolId(this).id
 
     private fun ASTNode.range(): Range? =
         SemanticDocumentBuilder.groovyToLspRange(lineNumber, columnNumber, lastLineNumber, lastColumnNumber)
