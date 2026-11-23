@@ -206,8 +206,8 @@ class WorkspaceSymbolIndex(
      */
     override fun findField(classFqn: String, fieldName: String): MemberInfo? {
         // Look for field in the class
-        val classSymbolId = "$classFqn#"
-        val fieldSymbolId = "$classSymbolId$fieldName."
+        val classSymbol = Symbol.ofInternalName(classFqn)
+        val fieldSymbolId = Symbol.ofField(classSymbol, fieldName).id
 
         val field = findSymbol(fieldSymbolId)
         if (field != null) {
@@ -249,7 +249,7 @@ class WorkspaceSymbolIndex(
 
     /** The symbols owned by the class, from the owner index; empty for a class the workspace does not define. */
     private fun directMembers(classFqn: String): List<SymbolInfo> {
-        val classSymbolId = "$classFqn#"
+        val classSymbolId = Symbol.ofInternalName(classFqn).id
         findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
         val hidden = shadowed()
         return semanticDb.findMembers(classSymbolId).filter { it.first !in hidden }.map { it.second }
@@ -338,13 +338,13 @@ private class FrozenWorkspaceMemberLookup(
         snapshot.findDefinitions(id).firstOrNull { it.first !in hidden }?.second
 
     private fun directMembers(classFqn: String): List<SymbolInfo> {
-        val owner = "$classFqn#"
+        val owner = Symbol.ofInternalName(classFqn).id
         if (definition(owner) == null) return emptyList()
         return snapshot.findMembers(owner).filter { it.first !in hidden }.map { it.second }
     }
 
     override fun findField(classFqn: String, fieldName: String): MemberInfo? =
-        definition("$classFqn#$fieldName.")?.let { field ->
+        definition(Symbol.ofField(Symbol.ofInternalName(classFqn), fieldName).id)?.let { field ->
             MemberInfo(field.name, field.kind, field.type, null, field.symbol)
         }
 

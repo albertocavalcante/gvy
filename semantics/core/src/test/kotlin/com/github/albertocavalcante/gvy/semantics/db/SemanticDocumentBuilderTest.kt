@@ -60,7 +60,7 @@ class SemanticDocumentBuilderTest {
 
             val module = parse(code)
             val classNode = module.classes.first { it.nameWithoutPackage == "MyClass" }
-            val symbolId = SemanticDocumentBuilder.createClassSymbolId(classNode)
+            val symbolId = SemanticDocumentBuilder.createClassSymbolId(classNode).id
 
             assertEquals("com/example/MyClass#", symbolId)
         }
@@ -76,7 +76,7 @@ class SemanticDocumentBuilderTest {
             val module = parse(code)
             val classNode = module.classes.first { it.nameWithoutPackage == "MyClass" }
             val fieldNode = classNode.fields.first { it.name == "myField" }
-            val symbolId = SemanticDocumentBuilder.createFieldSymbolId(classNode, fieldNode)
+            val symbolId = SemanticDocumentBuilder.createFieldSymbolId(classNode, fieldNode).id
 
             assertEquals("MyClass#myField.", symbolId)
         }
@@ -92,7 +92,7 @@ class SemanticDocumentBuilderTest {
             val module = parse(code)
             val classNode = module.classes.first { it.nameWithoutPackage == "MyClass" }
             val methodNode = classNode.methods.first { it.name == "myMethod" }
-            val symbolId = SemanticDocumentBuilder.createMethodSymbolId(classNode, methodNode)
+            val symbolId = SemanticDocumentBuilder.createMethodSymbolId(classNode, methodNode).id
 
             assertEquals("MyClass#myMethod().", symbolId)
         }
@@ -108,7 +108,7 @@ class SemanticDocumentBuilderTest {
             val module = parse(code)
             val classNode = module.classes.first { it.nameWithoutPackage == "MyClass" }
             val methodNode = classNode.methods.first { it.name == "concat" }
-            val symbolId = SemanticDocumentBuilder.createMethodSymbolId(classNode, methodNode)
+            val symbolId = SemanticDocumentBuilder.createMethodSymbolId(classNode, methodNode).id
 
             assertEquals("MyClass#concat(String,int).", symbolId)
         }

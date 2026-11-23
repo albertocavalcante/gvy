@@ -186,13 +186,13 @@ internal class CrossFileUseGuard(
 
     /** The id the semantic index stores for [definition]; null for locals, parameters and other non-members. */
     private fun symbolIdOf(definition: ASTNode): String? = when (definition) {
-        is ClassNode -> SemanticDocumentBuilder.createClassSymbolId(definition)
-        is MethodNode -> SemanticDocumentBuilder.createMethodSymbolId(definition.declaringClass, definition)
+        is ClassNode -> SemanticDocumentBuilder.createClassSymbolId(definition).id
+        is MethodNode -> SemanticDocumentBuilder.createMethodSymbolId(definition.declaringClass, definition).id
         is PropertyNode -> definition.declaringClass?.let {
-            SemanticDocumentBuilder.createPropertySymbolId(it, definition)
+            SemanticDocumentBuilder.createPropertySymbolId(it, definition).id
         }
         is FieldNode -> definition.declaringClass?.let {
-            SemanticDocumentBuilder.createFieldSymbolId(it, definition)
+            SemanticDocumentBuilder.createFieldSymbolId(it, definition).id
         }
         else -> null
     }

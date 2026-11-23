@@ -244,7 +244,7 @@ class CrossFileGuardInternalsTest {
         val module = checkNotNull(service.getValidParseResult(ownUri)?.ast)
         val owner = module.classes.single { it.nameWithoutPackage == "A" }
         val greet = owner.getMethods("greet").single()
-        val proven = index.findReferenceDocuments(SemanticDocumentBuilder.createMethodSymbolId(owner, greet)).keys
+        val proven = index.findReferenceDocuments(SemanticDocumentBuilder.createMethodSymbolId(owner, greet).id).keys
         assertTrue(shared.toUri() in proven && strangerUri in proven, "the index proves both uses: $proven")
         val guard = CrossFileUseGuard(
             index,

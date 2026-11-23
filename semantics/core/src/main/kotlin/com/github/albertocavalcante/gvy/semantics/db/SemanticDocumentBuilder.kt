@@ -89,7 +89,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = SymbolKind.IMPORT,
                 range = range,
                 name = name,
@@ -100,7 +100,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         // Add occurrence for the import itself
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.IMPORT,
             ),
@@ -120,7 +120,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = SymbolKind.IMPORT,
                 range = range,
                 name = name,
@@ -130,7 +130,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.IMPORT,
             ),
@@ -143,7 +143,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         val resolved = TypeHierarchies().compilerResolved(type) ?: return null
         // A shared ClassHelper node carries whichever file last stamped it (#1354): use this import's own range.
         val typeRange = if (ClassHelper.isCachedType(type)) range else nodeToRange(type) ?: range
-        return SymbolOccurrence(createClassSymbolId(resolved), typeRange, OccurrenceRole.TYPE_REF)
+        return SymbolOccurrence(createClassSymbolId(resolved).id, typeRange, OccurrenceRole.TYPE_REF)
     }
 
     private fun isNotIndexed(classNode: ClassNode) =
@@ -170,7 +170,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = kind,
                 range = range,
                 name = classNode.sourceSimpleName(),
@@ -181,7 +181,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         // Add definition occurrence
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.DEFINITION,
             ),
@@ -195,7 +195,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val referenceRange = nodeToRange(type)
             if (resolved != null && referenceRange != null) {
                 occurrences.add(
-                    SymbolOccurrence(createClassSymbolId(resolved), referenceRange, OccurrenceRole.TYPE_REF),
+                    SymbolOccurrence(createClassSymbolId(resolved).id, referenceRange, OccurrenceRole.TYPE_REF),
                 )
             }
         }
@@ -251,18 +251,18 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = SymbolKind.FIELD,
                 range = range,
                 name = fieldNode.name,
-                owner = ownerSymbolId,
+                owner = ownerSymbolId.id,
                 type = fieldNode.type.toDeclaredType(),
             ),
         )
 
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.DEFINITION,
             ),
@@ -279,18 +279,18 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = SymbolKind.PROPERTY,
                 range = range,
                 name = propertyNode.name,
-                owner = ownerSymbolId,
+                owner = ownerSymbolId.id,
                 type = propertyNode.type.toDeclaredType(),
             ),
         )
 
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.DEFINITION,
             ),
@@ -312,18 +312,18 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = kind,
                 range = range,
                 name = methodNode.name,
-                owner = ownerSymbolId,
+                owner = ownerSymbolId?.id,
                 type = methodNode.returnType.toDeclaredType().takeIf { kind == SymbolKind.METHOD },
             ),
         )
 
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.DEFINITION,
             ),
@@ -345,17 +345,17 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         symbols.add(
             SymbolInfo(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 kind = SymbolKind.PARAMETER,
                 range = range,
                 name = parameter.name,
-                owner = ownerSymbolId,
+                owner = ownerSymbolId.id,
             ),
         )
 
         occurrences.add(
             SymbolOccurrence(
-                symbol = symbolId,
+                symbol = symbolId.id,
                 range = range,
                 role = OccurrenceRole.DEFINITION,
             ),
@@ -404,7 +404,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private var staticContext = false
 
         // Id prefix of the method (or initializer) whose body is being visited; scopes locals.
-        private var scopeOwnerId: String = Symbol.ofInitializer(Symbol.ofClass(currentClass.name)).id
+        private var scopeOwnerId: Symbol = Symbol.ofInitializer(Symbol.ofClass(currentClass.name))
 
         override fun getSourceUnit(): SourceUnit? = null
 
@@ -430,9 +430,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val scope = scopes.lastOrNull() ?: return
             val range = nodeToRange(node) ?: return
             val id = createLocalSymbolId(scopeOwnerId, name, range)
-            scope[name] = LocalBinding(id, TypeSignatures.knownTypeOrNull(type))
-            symbols.add(SymbolInfo(id, SymbolKind.VARIABLE, range, name, scopeOwnerId))
-            occurrences.add(SymbolOccurrence(id, range, OccurrenceRole.DEFINITION))
+            scope[name] = LocalBinding(id.id, TypeSignatures.knownTypeOrNull(type))
+            symbols.add(SymbolInfo(id.id, SymbolKind.VARIABLE, range, name, scopeOwnerId.id))
+            occurrences.add(SymbolOccurrence(id.id, range, OccurrenceRole.DEFINITION))
         }
 
         override fun visitConstructorOrMethod(node: MethodNode, isConstructor: Boolean) {
@@ -444,7 +444,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             scoped {
                 node.parameters?.forEach { param ->
                     scopes.last()[param.name] = LocalBinding(
-                        createParameterSymbolId(currentClass, node, param),
+                        createParameterSymbolId(currentClass, node, param).id,
                         TypeSignatures.knownTypeOrNull(param.type),
                     )
                 }
@@ -484,7 +484,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             } else {
                 // The implicit `it`: bound so uses do not fall through to a field named `it`.
                 nodeToRange(expression)?.let { range ->
-                    scopes.last()["it"] = LocalBinding(createLocalSymbolId(scopeOwnerId, "it", range), null)
+                    scopes.last()["it"] = LocalBinding(createLocalSymbolId(scopeOwnerId, "it", range).id, null)
                 }
             }
             super.visitClosureExpression(expression)
@@ -680,21 +680,21 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * Create unique symbol ID for a class following SemanticDB convention.
          * Format: "com/example/MyClass#"
          */
-        fun createClassSymbolId(classNode: ClassNode): String = Symbol.ofClass(classNode.name).id
+        fun createClassSymbolId(classNode: ClassNode): Symbol = Symbol.ofClass(classNode.name)
 
         /**
          * Create unique symbol ID for a field.
          * Format: "com/example/MyClass#myField."
          */
-        fun createFieldSymbolId(owner: ClassNode, field: FieldNode): String =
-            Symbol.ofField(Symbol.ofClass(owner.name), field.name).id
+        fun createFieldSymbolId(owner: ClassNode, field: FieldNode): Symbol =
+            Symbol.ofField(createClassSymbolId(owner), field.name)
 
         /**
          * Create unique symbol ID for a property.
          * Format: "com/example/MyClass#myProperty."
          */
-        fun createPropertySymbolId(owner: ClassNode, property: PropertyNode): String =
-            Symbol.ofField(Symbol.ofClass(owner.name), property.name).id
+        fun createPropertySymbolId(owner: ClassNode, property: PropertyNode): Symbol =
+            Symbol.ofField(createClassSymbolId(owner), property.name)
 
         /**
          * Create unique symbol ID for a method.
@@ -704,21 +704,18 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * written as simple names, so overloads get distinct ids while the id stays the same
          * whether or not the compiler has qualified the type names yet.
          */
-        fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String = Symbol.ofMethod(
-            owner?.let {
-                Symbol.ofClass(it.name)
-            },
+        fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): Symbol = Symbol.ofMethod(
+            owner?.let(::createClassSymbolId),
             method.name,
             TypeSignatures.parameterList(method.parameters),
         )
-            .id
 
         /**
          * Create unique symbol ID for a parameter.
          * Format: "com/example/MyClass#myMethod(int,String).(param)"
          */
-        fun createParameterSymbolId(owner: ClassNode?, method: MethodNode, parameter: Parameter): String =
-            Symbol.ofParameter(Symbol(createMethodSymbolId(owner, method)), parameter.name).id
+        fun createParameterSymbolId(owner: ClassNode?, method: MethodNode, parameter: Parameter): Symbol =
+            Symbol.ofParameter(createMethodSymbolId(owner, method), parameter.name)
 
         /**
          * Create unique symbol ID for a local variable or closure/loop/catch parameter.
@@ -726,26 +723,26 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * are the 0-indexed start of the declaration. Unique per declaration, never equal to a
          * field id, and the same for the same declaration in identical content.
          */
-        fun createLocalSymbolId(scopeOwnerId: String, name: String, declaration: Range): String =
-            Symbol.ofLocal(Symbol(scopeOwnerId), name, declaration.startLine, declaration.startColumn).id
+        fun createLocalSymbolId(scope: Symbol, name: String, declaration: Range): Symbol =
+            Symbol.ofLocal(scope, name, declaration.startLine, declaration.startColumn)
 
         /**
          * Create symbol ID for import.
          * Format: "import#com/example/MyClass"
          */
-        fun createImportSymbolId(importNode: ImportNode): String {
+        fun createImportSymbolId(importNode: ImportNode): Symbol {
             val className = importNode.className ?: importNode.packageName
-            return Symbol.ofImport(className).id
+            return Symbol.ofImport(className)
         }
 
         /**
          * Create symbol ID for static import.
          * Format: "import#com/example/MyClass.staticMethod"
          */
-        fun createStaticImportSymbolId(importNode: ImportNode): String {
+        fun createStaticImportSymbolId(importNode: ImportNode): Symbol {
             val className = importNode.className ?: ""
             val fieldName = importNode.fieldName ?: ""
-            return Symbol.ofStaticImport(className, fieldName).id
+            return Symbol.ofStaticImport(className, fieldName)
         }
     }
 }

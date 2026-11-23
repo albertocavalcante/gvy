@@ -591,7 +591,7 @@ class CrossFileRenameGuardTest {
         val index = checkNotNull(service.getWorkspaceSymbolIndex())
         val module = checkNotNull(service.getValidParseResult(uri)?.ast)
         val owner = module.classes.single { it.nameWithoutPackage == "A" }
-        val greet = SemanticDocumentBuilder.createMethodSymbolId(owner, owner.getMethods("greet").single())
+        val greet = SemanticDocumentBuilder.createMethodSymbolId(owner, owner.getMethods("greet").single()).id
         val proven = index.findReferenceDocuments(greet).keys
         assertTrue(untitled in proven && outside in proven, "the index proves both uses: $proven")
 
@@ -682,10 +682,10 @@ class CrossFileRenameGuardTest {
         val owner: ClassNode = module.classes.single { it.nameWithoutPackage == "A" }
 
         val built = setOf(
-            SemanticDocumentBuilder.createClassSymbolId(owner),
-            SemanticDocumentBuilder.createPropertySymbolId(owner, owner.getProperty("label")),
-            SemanticDocumentBuilder.createFieldSymbolId(owner, owner.getField("code")),
-            SemanticDocumentBuilder.createMethodSymbolId(owner, owner.getMethods("greet").single()),
+            SemanticDocumentBuilder.createClassSymbolId(owner).id,
+            SemanticDocumentBuilder.createPropertySymbolId(owner, owner.getProperty("label")).id,
+            SemanticDocumentBuilder.createFieldSymbolId(owner, owner.getField("code")).id,
+            SemanticDocumentBuilder.createMethodSymbolId(owner, owner.getMethods("greet").single()).id,
         )
 
         assertTrue(stored.containsAll(built), "built=$built, stored=$stored")

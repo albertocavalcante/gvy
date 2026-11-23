@@ -22,8 +22,11 @@ package com.github.albertocavalcante.gvy.semantics.db
  * Parsing is total: every string is a [Symbol] and no accessor fails. An accessor answers what the callers that
  * parsed ids before this type existed got for the same text, including for text no formatter produces, so a
  * malformed id yields a fallback (documented per accessor), never an exception or a null that says "invalid".
- * [owner] splits at the first `#`; [member] reads after the last one; the two differ only for ids with several
- * `#`, which no formatter emits.
+ * [owner] splits at the first `#`; [member] reads after the last one.
+ *
+ * Known limitation (FIXME(#2412)): the formatters do not escape. Groovy and Spock allow method names that contain
+ * `#`, `.` or `(` (`def "fixes #12"()`), and the id `a/B#fixes #12().` then has two `#`: [member] reads `12`, not
+ * `fixes #12`. Such ids are formatted and parsed as before this type existed; [ofMethod] is not injective for them.
  */
 @JvmInline
 value class Symbol(val id: String) {
@@ -80,13 +83,7 @@ value class Symbol(val id: String) {
     val arity: Int
         get() {
             val params = descriptor.orEmpty()
-            if (params.isEmpty()) return 0
-            val split = splitTopLevel(params)
-            return if (split.balanced) {
-                split.pieces.size
-            } else {
-                params.split(',').count { it.isNotBlank() }
-            }
+            return if (params.isEmpty()) 0 else topLevelCommas(params)?.plus(1) ?: nonBlankPieces(params)
         }
 
     /**
@@ -112,6 +109,9 @@ value class Symbol(val id: String) {
     companion object {
         /** The class id of [className], given with `.` or `/` between packages: `a.b.C` is `a/b/C#`. */
         fun ofClass(className: String): Symbol = Symbol("${className.replace('.', '/')}#")
+
+        /** The class id of [internalName], taken as written: `a/b/C` is `a/b/C#`, with no `.` to `/` conversion. */
+        fun ofInternalName(internalName: String): Symbol = Symbol("$internalName#")
 
         /** The id of the field or property [name] of [owner] (a class id): `a/b/C#name.`. */
         fun ofField(owner: Symbol, name: String): Symbol = Symbol("${owner.id}$name.")
@@ -141,6 +141,23 @@ value class Symbol(val id: String) {
             Symbol("import#${className.replace('.', '/')}.$member")
     }
 }
+
+/** The commas outside `<...>`, counted without building pieces; null when the brackets do not pair up. */
+private fun topLevelCommas(params: String): Int? {
+    var depth = 0
+    var commas = 0
+    for (char in params) {
+        when {
+            char == '<' -> depth++
+            char == '>' && depth == 0 -> return null
+            char == '>' -> depth--
+            char == ',' && depth == 0 -> commas++
+        }
+    }
+    return commas.takeIf { depth == 0 }
+}
+
+private fun nonBlankPieces(params: String): Int = params.split(',').count { it.isNotBlank() }
 
 /** The pieces of a descriptor at depth zero of `<...>`; [balanced] is false when the brackets do not pair up. */
 private class TopLevelSplit(val pieces: List<String>, val balanced: Boolean)

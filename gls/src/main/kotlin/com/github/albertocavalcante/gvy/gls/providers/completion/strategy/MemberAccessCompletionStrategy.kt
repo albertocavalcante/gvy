@@ -366,7 +366,9 @@ internal class MemberAccessCompletionStrategy(
                     method(
                         name = member.name,
                         returnType = member.type?.let { formatType(it) } ?: "def",
-                        parameters = member.signature.signatureParameterTypes().map(::simpleTypeName),
+                        parameters = member.signature?.let {
+                            Symbol(it).parameterTypes
+                        }.orEmpty().map(::simpleTypeName),
                         doc = "Method: ${member.name}${member.signature ?: "()"}",
                     )
                 }
@@ -550,8 +552,6 @@ private fun receiverExpression(ctx: CompletionStrategyContext): Expression? {
  */
 private fun formatType(type: SemanticType): String = SemanticTypeFormatter.formatForCompletion(type)
 
-private fun String?.signatureParameterTypes(): List<String> = this?.let { Symbol(it).parameterTypes }.orEmpty()
-
 private val QUALIFIED_NAME = Regex("""(?:[\w$]+[./])+([\w$]+)""")
 
 /** `java.util.Map<java.lang.String,int[]>` becomes `Map<String,int[]>`; `java.util.Map$Entry` becomes `Entry`. */
@@ -594,7 +594,7 @@ private fun indexedDocumentMembers(
     }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
     val methods = members.filter { it.kind == SymbolKind.METHOD }.flatMap { member ->
         val alternatives = exact[member.symbolId]?.filterNot { it in privateAlternatives[member.symbolId].orEmpty() }
-            ?: listOf(member.signature.signatureParameterTypes())
+            ?: listOf(member.signature?.let { Symbol(it).parameterTypes }.orEmpty())
         alternatives.map { types ->
             MethodCandidate(
                 name = member.name,
@@ -637,7 +637,7 @@ private fun inheritedStep(name: String, held: LocalCompletionMembers, index: Wor
             ),
         )
     }
-    val owner = "${name.replace('.', '/')}#"
+    val owner = Symbol.ofClass(name).id
     val document = index.findImplementationDocument(owner)
         ?: return InheritedStep(
             members = index.getAllMembers(name.replace('.', '/'), includeInherited = true),
@@ -766,7 +766,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 if (externalSuperclass == null) externalSuperclass = parent?.name
             }
         }
-        val owner = "${first.name.replace('.', '/')}#"
+        val owner = Symbol.ofClass(first.name).id
         return Result(
             methods.values.toList(),
             fields.values.toList(),
@@ -792,7 +792,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
         }
 
     private fun ownFields(node: ClassNode, inherited: Boolean): List<Pair<String, MemberInfo>> {
-        val owner = node.name.replace('.', '/')
+        val owner = Symbol.ofClass(node.name)
         val fields = node.fields.filter {
             hasSource(it) && (!inherited || !it.isPrivate)
         }.map {
@@ -801,7 +801,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 SymbolKind.FIELD,
                 SemanticType.Known(typeName(it.type)),
                 null,
-                "$owner#${it.name}.",
+                Symbol.ofField(owner, it.name).id,
             )
         }
         val properties = node.properties.filter {
@@ -812,7 +812,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 SymbolKind.PROPERTY,
                 SemanticType.Known(typeName(it.type)),
                 null,
-                "$owner#${it.name}.",
+                Symbol.ofField(owner, it.name).id,
             )
         }
         return fields + properties

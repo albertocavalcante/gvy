@@ -180,6 +180,7 @@ class SymbolTest {
             "myMethod()." to 0,
             "com/example/MyClass#m(Map<String,String>,int)." to 2,
             "a#m(List<Map<String,Integer>>,String)." to 2,
+            // Degenerate rows: the builder writes simple erased names and arrays as `String[]`, never these forms.
             "a#m(String...)." to 1,
             "" to 0,
             "a#m( )." to 1,
@@ -208,6 +209,8 @@ class SymbolTest {
             "com/example/MyClass#myMethod(int).x@3:4" to listOf("int"),
             "com/example/MyClass#m(Map<String,String>,int)." to listOf("Map<String,String>", "int"),
             "a#m(java.lang.String)." to listOf("java.lang.String"),
+            "a#m(String[])." to listOf("String[]"),
+            // Degenerate rows: the builder writes simple erased names and arrays as `String[]`, never these forms.
             "a#m(String...)." to listOf("String..."),
             "a#m( )." to emptyList(),
             "a#m(a,,b)." to listOf("a", "", "b"),
@@ -229,6 +232,46 @@ class SymbolTest {
         assertEquals(emptyList<String>(), Symbol("a#m( ).").parameterTypes)
         assertEquals(2, Symbol("a#m(a,).").arity)
         assertEquals(listOf("a"), Symbol("a#m(a,).").parameterTypes)
+    }
+
+    @Test
+    fun `formatters are byte-identical to the templates they replaced`() {
+        val classNames = listOf("com.example.MyClass", "com/example/MyClass", "Foo", "a.b.Outer\$Inner", "")
+        classNames.forEach { name ->
+            assertEquals("${name.replace('.', '/')}#", Symbol.ofClass(name).id, "ofClass $name")
+            assertEquals("$name#", Symbol.ofInternalName(name).id, "ofInternalName $name")
+            listOf("field", "x1", "").forEach { member ->
+                val owner = name.replace('.', '/')
+                assertEquals(
+                    "$owner#$member.",
+                    Symbol.ofField(Symbol.ofClass(name), member).id,
+                    "ofField $name $member",
+                )
+                assertEquals("$name#$member.", Symbol.ofField(Symbol.ofInternalName(name), member).id)
+            }
+        }
+        assertEquals("a/B#m(String,int).", Symbol.ofMethod(Symbol.ofClass("a.B"), "m", "String,int").id)
+        assertEquals("m().", Symbol.ofMethod(null, "m", "").id)
+        assertEquals("a/B#m(int).(x)", Symbol.ofParameter(Symbol("a/B#m(int)."), "x").id)
+        assertEquals("a/B#m(int).x@3:4", Symbol.ofLocal(Symbol("a/B#m(int)."), "x", 3, 4).id)
+        assertEquals("a/B#{init}.", Symbol.ofInitializer(Symbol.ofClass("a.B")).id)
+        assertEquals("import#a/b/C", Symbol.ofImport("a.b.C").id)
+        assertEquals("import#a/b/C.m", Symbol.ofStaticImport("a.b.C", "m").id)
+    }
+
+    /**
+     * Pins today's behaviour for a method name containing `#` (Spock feature names). The formatters do not escape, so
+     * the id has two `#` and the member reads `12`, not `fixes #12`.
+     */
+    // FIXME(#2412): method names containing #, . or ( corrupt symbol ids; this test pins the corrupted reading.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2412
+    @Test
+    fun `a method name containing a hash is not escaped`() {
+        val id = Symbol.ofMethod(Symbol.ofClass("a.B"), "fixes #12", "")
+
+        assertEquals("a/B#fixes #12().", id.id)
+        assertEquals("a/B", id.owner)
+        assertEquals("12", id.member)
     }
 
     @Test

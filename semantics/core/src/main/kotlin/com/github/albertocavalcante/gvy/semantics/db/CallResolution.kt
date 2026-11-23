@@ -211,7 +211,7 @@ internal class CallResolver(
         return when (candidates.size) {
             0 -> CallOutcome.Unresolved(Reason.NO_CANDIDATE)
             1 -> candidates.single().let {
-                CallOutcome.Resolved(SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it))
+                CallOutcome.Resolved(SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it).id)
             }
             else -> CallOutcome.Unresolved(Reason.AMBIGUOUS)
         }
@@ -247,7 +247,7 @@ internal class CallResolver(
         val declaring = classes?.takeUnless { spread || (classReference && name in GroovyDispatch.classPropertyNames) }
             ?.let { propertyDeclaration(it, name) }
             ?.takeUnless { classReference && !declaresStatic(it, name) }
-        return declaring?.let { Symbol.ofField(Symbol.ofClass(it.name), name).id }
+        return declaring?.let { Symbol.ofField(SemanticDocumentBuilder.createClassSymbolId(it), name).id }
     }
 
     /**
