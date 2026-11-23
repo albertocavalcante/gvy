@@ -5,6 +5,8 @@ package com.github.albertocavalcante.gvy.source
 
 /**
  * A line of a source text, as delimited by [Utf16LineIndex] (LF, CRLF and bare CR end a line).
+ * It is not a Groovy compiler line, which ends only at LF: on text with a bare CR the numbers
+ * differ, so do not build one from compiler coordinates until issue #2413 decides the model.
  *
  * The value is stored zero-based. The base is named only where an [Int] enters or leaves the type
  * ([ofZeroBased], [ofOneBased], [zeroBased], [oneBased]), so a line cannot be passed with the
@@ -46,7 +48,7 @@ public value class Line internal constructor(
         /** The line with zero-based number [value], or null outside 0..[MAX_ZERO_BASED] (for unvalidated input). */
         public fun ofZeroBasedOrNull(value: Int): Line? = if (value in 0..MAX_ZERO_BASED) Line(value) else null
 
-        /** The line with one-based number [value], or null below 1 (for example a compiler's synthetic -1). */
+        /** The line with one-based number [value], or null below 1. */
         public fun ofOneBasedOrNull(value: Int): Line? = if (value >= 1) Line(value - 1) else null
     }
 }

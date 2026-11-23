@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.source
 import org.junit.jupiter.api.Test
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -61,6 +63,16 @@ class ColumnConversionPropertyTest {
     }
 
     @Test
+    fun `line-text conversions count a line break inside the given text as ordinary characters`() {
+        // The overloads take one line's content; a break inside it is not interpreted as a new line.
+        val text = "\uD83D\uDE00\r\n\uD834\uDD1E"
+        assertEquals(CodePointColumn.ofZeroBased(3), Utf16Column.ofZeroBased(4).toCodePoint(text))
+        assertEquals(Utf16Column.ofZeroBased(4), CodePointColumn.ofZeroBased(3).toUtf16(text))
+        assertEquals(CodePointColumn.ofZeroBased(4), Utf16Column.ofZeroBased(9).toCodePoint(text))
+        assertEquals(Utf16Column.ofZeroBased(6), CodePointColumn.ofZeroBased(9).toUtf16(text))
+    }
+
+    @Test
     fun `the index converts on its own lines and clamps past the text`() {
         val index = Utf16LineIndex("a😀\rb\r\n😀\n")
         assertEquals(Line.ofZeroBased(3), index.lastLine)
@@ -101,58 +113,85 @@ class ColumnConversionPropertyTest {
         val lines = oracleLines(text)
         val context = "text \"${escape(text)}\""
         assertEquals(lines.size - 1, index.lastLine.zeroBased, context)
+        assertEquals(lines.size, index.lineCount, context)
 
         val positions = mutableListOf<Utf16Position>()
         lines.forEachIndexed { lineNumber, content ->
-            val line = Line.ofZeroBased(lineNumber)
-            val boundaries = codePointBoundaries(content)
-            val codePoints = boundaries.size - 1
-            assertEquals(content.length, index.lineLength(lineNumber), "$context line $lineNumber")
+            positions += checkLine(index, lineNumber, content, "$context line $lineNumber")
+        }
+        checkAfterText(index, lines, context)
+        positions += Utf16Position.of(Line.ofZeroBased(lines.size), Utf16Column.ofZeroBased(0))
+        checkSpans(index, positions, context)
+    }
 
-            for (codePoint in 0..codePoints + 2) {
-                val where = "$context line $lineNumber code point $codePoint"
-                val expected = Utf16Column.ofZeroBased(boundaries[minOf(codePoint, codePoints)])
-                val column = CodePointColumn.ofZeroBased(codePoint)
-                assertEquals(expected, column.toUtf16(content), where)
-                assertEquals(Utf16Position.of(line, expected), index.toUtf16(CodePointPosition.of(line, column)), where)
-                if (codePoint <= codePoints) {
-                    // Round trip: code point -> UTF-16 -> code point is the identity.
-                    assertEquals(column, expected.toCodePoint(content), where)
-                }
-            }
+    /** Checks every column of one line, in both units and both forms; returns the UTF-16 positions it checked. */
+    private fun checkLine(
+        index: Utf16LineIndex,
+        lineNumber: Int,
+        content: String,
+        context: String,
+    ): List<Utf16Position> {
+        val line = Line.ofZeroBased(lineNumber)
+        val boundaries = codePointBoundaries(content)
+        val codePoints = boundaries.size - 1
+        assertEquals(content.length, index.lineLength(lineNumber), context)
+        assertEquals(Utf16Column.ofZeroBased(content.length), index.lineLength(line), context)
+        // The constant-time path is chosen exactly for lines without any surrogate.
+        val expectedUnits = if (content.any(Char::isSurrogate)) ColumnUnits.Walking else ColumnUnits.Identity
+        assertEquals(expectedUnits, index.columnUnitsOf(lineNumber), context)
 
-            for (unit in 0..content.length + 2) {
-                val where = "$context line $lineNumber UTF-16 column $unit"
-                val clamped = minOf(unit, content.length)
-                val expected = CodePointColumn.ofZeroBased(boundaries.count { it in 1..clamped })
-                val column = Utf16Column.ofZeroBased(unit)
-                assertEquals(expected, column.toCodePoint(content), where)
-                assertEquals(
-                    CodePointPosition.of(line, expected),
-                    index.toCodePoint(Utf16Position.of(line, column)),
-                    where,
-                )
-                // Round trip: UTF-16 -> code point -> UTF-16 lands on the last boundary at or before it.
-                val floor = boundaries.last { it <= clamped }
-                assertEquals(Utf16Column.ofZeroBased(floor), expected.toUtf16(content), where)
-                positions += Utf16Position.of(line, column)
+        for (codePoint in 0..codePoints + 2) {
+            val where = "$context code point $codePoint"
+            val expected = Utf16Column.ofZeroBased(boundaries[minOf(codePoint, codePoints)])
+            val column = CodePointColumn.ofZeroBased(codePoint)
+            assertEquals(expected, column.toUtf16(content), where)
+            val position = CodePointPosition.of(line, column)
+            assertEquals(Utf16Position.of(line, expected), index.toUtf16(position), where)
+            assertEquals(Utf16Position.of(line, expected), index.toUtf16OrNull(position), where)
+            assertEquals(codePoint <= codePoints, index.contains(position), where)
+            if (codePoint <= codePoints) {
+                // Round trip: code point -> UTF-16 -> code point is the identity.
+                assertEquals(column, expected.toCodePoint(content), where)
             }
         }
-        val beyond = Line.ofZeroBased(lines.size)
+
+        val positions = mutableListOf<Utf16Position>()
+        for (unit in 0..content.length + 2) {
+            val where = "$context UTF-16 column $unit"
+            val clamped = minOf(unit, content.length)
+            val expected = CodePointColumn.ofZeroBased(boundaries.count { it in 1..clamped })
+            val column = Utf16Column.ofZeroBased(unit)
+            assertEquals(expected, column.toCodePoint(content), where)
+            val position = Utf16Position.of(line, column)
+            assertEquals(CodePointPosition.of(line, expected), index.toCodePoint(position), where)
+            assertEquals(CodePointPosition.of(line, expected), index.toCodePointOrNull(position), where)
+            assertEquals(unit <= content.length, index.contains(position), where)
+            // Round trip: UTF-16 -> code point -> UTF-16 lands on the last boundary at or before it.
+            val floor = boundaries.last { it <= clamped }
+            assertEquals(Utf16Column.ofZeroBased(floor), expected.toUtf16(content), where)
+            positions += position
+        }
+        return positions
+    }
+
+    /** A line after the last: the clamping forms answer the end of the text, the strict forms null. */
+    private fun checkAfterText(index: Utf16LineIndex, lines: List<String>, context: String) {
+        val beyondUtf16 = Utf16Position.of(Line.ofZeroBased(lines.size), Utf16Column.ofZeroBased(0))
+        val beyondCodePoints = CodePointPosition.of(Line.ofZeroBased(lines.size), CodePointColumn.ofZeroBased(0))
         val lastLine = Line.ofZeroBased(lines.size - 1)
         val lastContent = lines.last()
-        assertEquals(
-            CodePointPosition.of(lastLine, CodePointColumn.ofZeroBased(codePointBoundaries(lastContent).size - 1)),
-            index.toCodePoint(Utf16Position.of(beyond, Utf16Column.ofZeroBased(0))),
-            context,
-        )
+        val lastCodePoints = CodePointColumn.ofZeroBased(codePointBoundaries(lastContent).size - 1)
+        assertEquals(CodePointPosition.of(lastLine, lastCodePoints), index.toCodePoint(beyondUtf16), context)
         assertEquals(
             Utf16Position.of(lastLine, Utf16Column.ofZeroBased(lastContent.length)),
-            index.toUtf16(CodePointPosition.of(beyond, CodePointColumn.ofZeroBased(0))),
+            index.toUtf16(beyondCodePoints),
             context,
         )
-        positions += Utf16Position.of(beyond, Utf16Column.ofZeroBased(0))
-        checkSpans(index, positions, context)
+        assertNull(index.toCodePointOrNull(beyondUtf16), context)
+        assertNull(index.toUtf16OrNull(beyondCodePoints), context)
+        assertFalse(index.contains(beyondUtf16), context)
+        assertFalse(index.contains(beyondCodePoints), context)
+        assertNull(index.lineLength(beyondUtf16.line), context)
     }
 
     /** Conversion is monotonic, so every ordered pair converts to a valid span, end for end. */
@@ -172,8 +211,11 @@ class ColumnConversionPropertyTest {
     }
 
     private companion object {
-        /** Every unit that interacts with columns or lines: plain, tab, combining, pair, lone halves, breaks. */
-        val TOKENS = listOf("a", "\t", "\u0301", "😀", "\uD83D", "\uDE00", "\r", "\n")
+        /**
+         * Every unit that interacts with columns or lines: plain, tab, combining mark, two different
+         * supplementary characters (U+1F600 and U+1D11E), lone halves, CR and LF.
+         */
+        val TOKENS = listOf("a", "\t", "\u0301", "\uD83D\uDE00", "\uD834\uDD1E", "\uD83D", "\uDE00", "\r", "\n")
         const val EXHAUSTIVE_LENGTH = 5
         const val RANDOM_SEED = 2391L
         const val RANDOM_TEXTS = 300
@@ -187,7 +229,11 @@ class ColumnConversionPropertyTest {
             extend("", maxTokens)
         }
 
-        fun pow(base: Int, exponent: Int): Int = (1..exponent).fold(1) { product, _ -> product * base }
+        fun pow(base: Int, exponent: Int): Int {
+            var product = 1
+            repeat(exponent) { product *= base }
+            return product
+        }
 
         /** Line contents split on CRLF, bare CR and LF, written independently of [Utf16LineIndex]. */
         fun oracleLines(text: String): List<String> = text.split("\r\n", "\r", "\n")

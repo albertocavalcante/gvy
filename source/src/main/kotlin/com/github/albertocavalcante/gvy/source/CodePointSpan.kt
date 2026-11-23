@@ -7,8 +7,9 @@ package com.github.albertocavalcante.gvy.source
  * A half-open stretch of source text from [start] to [endExclusive] in code-point columns.
  * `start <= endExclusive` holds for every instance; an empty span marks a point.
  *
- * This type defines no containment test (see [Utf16Span]). Groovy AST end columns are not proven to
- * be exclusive code-point columns for every node (issue #1190), so building one from a compiler
+ * This type defines no containment test (see [Utf16Span]). Its lines are [Utf16LineIndex] lines,
+ * not compiler lines (issue #2413), and compiler end columns are not proven to be exclusive
+ * code-point columns for every node (issue #1190), so building one from a compiler
  * node is a provider decision, not something this type certifies. The conversion to [Utf16Span] is
  * [Utf16LineIndex.toUtf16].
  */

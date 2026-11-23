@@ -33,7 +33,7 @@ public value class Utf16Column internal constructor(
      * break characters inside [lineText] are counted as ordinary characters.
      */
     public fun toCodePoint(lineText: CharSequence): CodePointColumn =
-        CodePointColumn(ColumnUnits.codePointColumn(lineText, 0, lineText.length, zeroBased))
+        CodePointColumn(ColumnUnits.Walking.codePointColumn(lineText, 0, lineText.length, zeroBased))
 
     /** Orders columns from the start of the line. */
     override fun compareTo(other: Utf16Column): Int = zeroBased.compareTo(other.zeroBased)

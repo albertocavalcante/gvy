@@ -20,6 +20,9 @@ public value class Utf16Position private constructor(private val packed: Long) :
     /** The UTF-16 column of this position on [line]. */
     public val column: Utf16Column get() = Utf16Column(PackedCoordinates.column(packed))
 
+    /** This position as the unvalidated shape [applyOrderedDocumentChanges] accepts. */
+    public fun toRaw(): RawUtf16Position = RawUtf16Position(line.zeroBased, column.zeroBased)
+
     /** Orders by line, then column. */
     override fun compareTo(other: Utf16Position): Int = packed.compareTo(other.packed)
 

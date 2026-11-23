@@ -24,6 +24,9 @@ public class Utf16Span internal constructor(
     /** True when the span covers no text. */
     public val isEmpty: Boolean get() = start == endExclusive
 
+    /** This span as the unvalidated shape [applyOrderedDocumentChanges] accepts. */
+    public fun toRaw(): RawUtf16Range = RawUtf16Range(start.toRaw(), endExclusive.toRaw())
+
     /** Spans are equal when both ends are. */
     override fun equals(other: Any?): Boolean =
         other is Utf16Span && start == other.start && endExclusive == other.endExclusive

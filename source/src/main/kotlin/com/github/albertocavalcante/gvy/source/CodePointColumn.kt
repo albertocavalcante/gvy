@@ -4,9 +4,9 @@
 package com.github.albertocavalcante.gvy.source
 
 /**
- * A column counted in Unicode code points from the start of its line: LSP's `utf-32` position
- * encoding, and the unit Groovy AST columns are usually counted in (some compiler endpoints are not;
- * see issue #1190, so a compiler column is not proven to be one by its type alone).
+ * A column counted in Unicode code points from the start of its line, LSP's `utf-32` position
+ * encoding. A Groovy compiler column is not one of these by assumption: compiler lines differ
+ * (issue #2413) and some compiler endpoints are not code points (issue #1190).
  *
  * The value is stored zero-based; the base is named only where an [Int] enters or leaves the type.
  * A supplementary character (a surrogate pair) is one column; a combining mark and a tab are one
@@ -25,7 +25,7 @@ public value class CodePointColumn internal constructor(
         }
     }
 
-    /** The one-based column (1 is before the first code point), as the Groovy AST reports it. Never overflows. */
+    /** The one-based column (1 is before the first code point), Never overflows. */
     public val oneBased: Int get() = zeroBased + 1
 
     /**
@@ -34,7 +34,7 @@ public value class CodePointColumn internal constructor(
      * inside [lineText] are counted as ordinary characters.
      */
     public fun toUtf16(lineText: CharSequence): Utf16Column =
-        Utf16Column(ColumnUnits.utf16Column(lineText, 0, lineText.length, zeroBased))
+        Utf16Column(ColumnUnits.Walking.utf16Column(lineText, 0, lineText.length, zeroBased))
 
     /** Orders columns from the start of the line. */
     override fun compareTo(other: CodePointColumn): Int = zeroBased.compareTo(other.zeroBased)
@@ -60,7 +60,7 @@ public value class CodePointColumn internal constructor(
         public fun ofZeroBasedOrNull(value: Int): CodePointColumn? =
             if (value in 0..MAX_ZERO_BASED) CodePointColumn(value) else null
 
-        /** The one-based column [value], or null below 1 (for example a compiler's synthetic -1). */
+        /** The one-based column [value], or null below 1. */
         public fun ofOneBasedOrNull(value: Int): CodePointColumn? = if (value >= 1) CodePointColumn(value - 1) else null
     }
 }

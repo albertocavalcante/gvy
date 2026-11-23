@@ -24,4 +24,5 @@ fun matchUnits(index: Utf16LineIndex, line: Line, utf16: Utf16Column, codePoint:
     val c9: Utf16Column = Utf16Column.ofZeroBased(utf16.zeroBased + 1)
     val c10: Int = line.oneBased
     Utf16Span.of(Utf16Position.of(line, utf16), Utf16Position.of(line, utf16))
+    index.toUtf16OrNull(CodePointPosition.of(line, codePoint))
 }
