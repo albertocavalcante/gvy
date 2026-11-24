@@ -81,9 +81,6 @@ kt_library(
         # CLI - JVM variants
         "@maven//:com_github_ajalt_clikt_clikt_jvm",
 
-        # Classpath Scanning
-        "@maven//:io_github_classgraph_classgraph",
-
         # Java Source Parsing
         "@maven//:com_github_javaparser_javaparser_core",
     ],
