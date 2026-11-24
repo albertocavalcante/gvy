@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.every
@@ -43,7 +44,7 @@ class DiagnosticsOrchestratorSharedCompilationIntegrationTest {
         try {
             val uri = URI.create("untitled:SharedCompilation.groovy")
             val content = "class SharedCompilation { def value = }"
-            val documents = DocumentProvider().apply { put(uri, content, 17) }
+            val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(17)) }
             val compilation = GroovyCompilationService(ioDispatcher = io, documentProvider = documents)
             val providers = mockk<DiagnosticsService>()
             coEvery { providers.collectDiagnostics(any(), any(), any()) } returns

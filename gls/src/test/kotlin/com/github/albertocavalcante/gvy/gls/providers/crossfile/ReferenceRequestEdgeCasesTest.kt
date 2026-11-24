@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvid
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -38,7 +39,7 @@ class ReferenceRequestEdgeCasesTest {
     private val uri = URI.create("file:///Edge.groovy")
     private val text = "class Edge {\n    void helper() {}\n    void run() { helper() }\n}\n"
     private val callOfHelper = Position(2, 19)
-    private val documents = DocumentProvider().apply { put(uri, text, 1) }
+    private val documents = DocumentProvider().apply { put(uri, text, DocumentVersion.of(1)) }
     private val compilation = spyk(GroovyCompilationService(documentProvider = documents))
 
     private fun handler() = CrossFileOperationsHandler(

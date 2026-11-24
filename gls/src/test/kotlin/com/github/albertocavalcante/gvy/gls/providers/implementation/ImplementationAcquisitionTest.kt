@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -157,7 +158,11 @@ class ImplementationAcquisitionTest {
     @Test
     fun `an unrelated malformed buffer does not block navigation`(): Unit = runBlocking {
         fixture().use { fixture ->
-            fixture.documents.put(URI.create("file:///acquisition/Broken.groovy"), "class Broken {", 1)
+            fixture.documents.put(
+                URI.create("file:///acquisition/Broken.groovy"),
+                "class Broken {",
+                DocumentVersion.of(1),
+            )
 
             val locations = fixture.handler.getImplementations(fixture.contract.toString(), Position(1, 12)).left
 
@@ -170,7 +175,7 @@ class ImplementationAcquisitionTest {
     fun `an unparseable replacement buffer cannot retain old implementation facts`(): Unit = runBlocking {
         fixture().use { fixture ->
             assertEquals(1, fixture.handler.getImplementations(fixture.contract.toString(), Position(1, 12)).left.size)
-            fixture.documents.put(fixture.implementation, "class Unrelated {", 2)
+            fixture.documents.put(fixture.implementation, "class Unrelated {", DocumentVersion.of(2))
 
             val locations = fixture.handler.getImplementations(fixture.contract.toString(), Position(1, 12)).left
 
@@ -183,7 +188,7 @@ class ImplementationAcquisitionTest {
     fun `current buffer text replaces a cached implementation semantic range`(): Unit = runBlocking {
         fixture().use { fixture ->
             val text = checkNotNull(fixture.documents.get(fixture.implementation))
-            fixture.documents.put(fixture.implementation, "\n\n$text", 2)
+            fixture.documents.put(fixture.implementation, "\n\n$text", DocumentVersion.of(2))
 
             val locations = fixture.handler.getImplementations(fixture.contract.toString(), Position(1, 12)).left
 
@@ -284,8 +289,8 @@ class ImplementationAcquisitionTest {
         val declaration = if (implementsContract) "class Impl implements Contract" else "class Unrelated"
         val implementationText = "$declaration {\n    String greet() { 'hi' }\n}\n"
         val documents = DocumentProvider().apply {
-            put(contract, contractText, 1)
-            put(implementation, implementationText, 1)
+            put(contract, contractText, DocumentVersion.of(1))
+            put(implementation, implementationText, DocumentVersion.of(1))
         }
         val compilation = GroovyCompilationService(documentProvider = documents)
         if (closedOrigin) {

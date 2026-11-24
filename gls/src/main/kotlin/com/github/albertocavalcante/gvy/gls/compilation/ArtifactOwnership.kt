@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
@@ -13,7 +14,7 @@ import java.net.URI
  * (#1383). [version] is the client's LSP version, monotonic within one [incarnation] (an open/close
  * lifecycle). [isCurrent] says whether that text is still the buffer's current state.
  */
-internal class BufferOrder(val incarnation: Any, val version: Int, val isCurrent: () -> Boolean)
+internal class BufferOrder(val incarnation: Any, val version: DocumentVersion, val isCurrent: () -> Boolean)
 
 /**
  * The publication boundary shared by every artifact derived from a source file: the compilation cache, the

@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -56,10 +57,10 @@ class SelectionRangeSnapshotTest {
 
     @Test
     fun `version changes during compilation reject the selection`(): Unit = runBlocking {
-        documents.put(uri, source, 7)
+        documents.put(uri, source, DocumentVersion.of(7))
         val parsed = compilation.compileTransient(uri, source, Phases.CONVERSION)
         coEvery { compilation.compileTransient(uri, source, any()) } coAnswers {
-            documents.put(uri, source, 8)
+            documents.put(uri, source, DocumentVersion.of(8))
             parsed
         }
         assertEquals(ResponseErrorCode.ContentModified.value, failure().responseError.code)
@@ -70,7 +71,7 @@ class SelectionRangeSnapshotTest {
         prepare()
         val compiled = assertNotNull(compilation.getCompiledSnapshot(uri))
         every { compilation.getCompiledSnapshot(uri) } answers {
-            documents.put(uri, source, 8)
+            documents.put(uri, source, DocumentVersion.of(8))
             compiled
         }
         assertEquals(ResponseErrorCode.ContentModified.value, failure().responseError.code)
@@ -79,7 +80,7 @@ class SelectionRangeSnapshotTest {
     @Test
     fun `a cached AST for older text cannot contribute ranges`(): Unit = runBlocking {
         prepare()
-        documents.put(uri, "// fresh\n", 8)
+        documents.put(uri, "// fresh\n", DocumentVersion.of(8))
         val selected = assertNotNull(service.selectionRange(params()).get(5, TimeUnit.SECONDS)).single()
         assertEquals(Range(Position(0, 3), Position(0, 8)), selected.range)
         assertEquals(Range(Position(0, 0), Position(0, 8)), selected.parent.range)
@@ -89,7 +90,7 @@ class SelectionRangeSnapshotTest {
 
     @Test
     fun `compilation cancellation propagates`(): Unit = runBlocking {
-        documents.put(uri, source, 7)
+        documents.put(uri, source, DocumentVersion.of(7))
         coEvery { compilation.compileTransient(uri, source, any()) } throws CancellationException("cancelled")
         assertThrows<CancellationException> { service.selectionRange(params()).get(5, TimeUnit.SECONDS) }
     }
@@ -103,7 +104,7 @@ class SelectionRangeSnapshotTest {
 
     @Test
     fun `request positions are captured before suspension`(): Unit = runBlocking {
-        documents.put(uri, source, 7)
+        documents.put(uri, source, DocumentVersion.of(7))
         val parsed = compilation.compileTransient(uri, source, Phases.CONVERSION)
         val request = params()
         coEvery { compilation.compileTransient(uri, source, any()) } coAnswers {
@@ -116,7 +117,7 @@ class SelectionRangeSnapshotTest {
     }
 
     private suspend fun prepare(): CompilationResult {
-        documents.put(uri, source, 7)
+        documents.put(uri, source, DocumentVersion.of(7))
         return compilation.compile(uri, source)
     }
 

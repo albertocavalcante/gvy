@@ -7,12 +7,13 @@ import com.github.albertocavalcante.gvy.gls.compilation.contentHash
 import com.github.albertocavalcante.gvy.source.DocumentChange
 import com.github.albertocavalcante.gvy.source.DocumentChangeRejectionReason
 import com.github.albertocavalcante.gvy.source.DocumentChangeResult
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.source.applyOrderedDocumentChanges
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
 /** Text and the client's version captured from the same buffer state. Null means unversioned input. */
-data class DocumentSnapshot(val content: String, val version: Int?) {
+data class DocumentSnapshot(val content: String, val version: DocumentVersion?) {
     /** SHA-256 of [content], computed once per buffer state (readiness checks run on every navigation). */
     internal val contentHash: String by lazy { contentHash(content) }
 }
@@ -55,9 +56,9 @@ class DocumentProvider {
     }
 
     /** Open a buffer. A new open/close lifecycle may restart the client's version sequence. */
-    fun put(uri: URI, content: String, version: Int) = put(uri, content, version, null)
+    fun put(uri: URI, content: String, version: DocumentVersion) = put(uri, content, version, null)
 
-    internal fun put(uri: URI, content: String, version: Int, analysisSessionId: String?) {
+    internal fun put(uri: URI, content: String, version: DocumentVersion, analysisSessionId: String?) {
         synchronized(lifecycleLock) {
             documents[uri] = OpenDocument(DocumentSnapshot(content, version), DocumentIncarnation(analysisSessionId))
         }
@@ -67,7 +68,7 @@ class DocumentProvider {
      * Accept a newer full-sync state only for an existing buffer. Null [content] means no text change.
      * Returns the accepted state, or null for a closed buffer or an obsolete/duplicate version.
      */
-    fun update(uri: URI, content: String?, version: Int): DocumentSnapshot? = synchronized(lifecycleLock) {
+    fun update(uri: URI, content: String?, version: DocumentVersion): DocumentSnapshot? = synchronized(lifecycleLock) {
         val current = documents[uri] ?: return@synchronized null
         if (current.snapshot.version != null && version <= current.snapshot.version) {
             null
@@ -87,7 +88,7 @@ class DocumentProvider {
     internal fun applyChanges(
         uri: URI,
         expectedBase: DocumentSnapshot,
-        version: Int,
+        version: DocumentVersion,
         changes: List<DocumentChange>,
     ): BufferChangeResult {
         val rejection: BufferChangeResult? = synchronized(lifecycleLock) {

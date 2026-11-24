@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.services.GroovyWorkspaceService
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -98,7 +99,7 @@ class WorkspaceSymbolsTest {
     fun `symbols of a buffer that was just opened are found without waiting for a diagnostics pass`() {
         val uri = URI.create("file:///workspace/src/Symbols.groovy")
         compilation.onDocumentOpened(uri)
-        documents.put(uri, "class UniqueController {\n    void uniqueMethod() {}\n}\n", 1)
+        documents.put(uri, "class UniqueController {\n    void uniqueMethod() {}\n}\n", DocumentVersion.of(1))
 
         val names = search("Unique").map { it.name }
 

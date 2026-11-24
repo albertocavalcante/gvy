@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.every
 import io.mockk.mockk
@@ -83,7 +84,7 @@ class DeclarativeBlockLevelCompletionTest {
     fun `explicit Groovy mode suppresses Jenkins completions in a detected Jenkinsfile`(): Unit = runTest {
         val uri = tempDir.resolve("Jenkinsfile").toUri()
         val content = "pipeline {\n    options {\n        \n    }\n}"
-        val documents = documentProvider.apply { put(uri, content, 1) }
+        val documents = documentProvider.apply { put(uri, content, DocumentVersion.of(1)) }
         val endpoint = GroovyTextDocumentService(
             coroutineScope,
             compilationService,
@@ -104,7 +105,7 @@ class DeclarativeBlockLevelCompletionTest {
     fun `Native hover follows live explicit mode changes`(): Unit = runTest {
         val uri = tempDir.resolve("Jenkinsfile").toUri()
         val content = "echo 'hello'"
-        val documents = documentProvider.apply { put(uri, content, 1) }
+        val documents = documentProvider.apply { put(uri, content, DocumentVersion.of(1)) }
         compilationService.updateEngineConfiguration(
             com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration(
                 com.github.albertocavalcante.gvy.gls.engine.config.EngineType.Native,

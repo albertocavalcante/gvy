@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.ast
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
@@ -28,7 +29,7 @@ class AstSnapshotIntegrationTest {
         val uri = URI("file:///AstSnapshot.groovy")
         val old = "class Old {}\n"
         val source = "class Current { String face = '😀' }\r\n"
-        val documents = DocumentProvider().apply { put(uri, source, 7) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(7)) }
         val compiler = GroovyCompilationService(documentProvider = documents)
         val handler = AstRequestHandler(compiler, CoreAstConverter(), NativeAstConverter(), documents, this)
         try {
@@ -37,10 +38,10 @@ class AstSnapshotIntegrationTest {
             }
             assertNull(compiler.getCompiledSnapshot(uri))
             assertTrue(compiler.getWorkspaceSymbolIndex()?.implementationSnapshot?.containsKey(uri) != true)
-            documents.put(uri, old, 6)
+            documents.put(uri, old, DocumentVersion.of(6))
             compiler.compile(uri, old)
             assertEquals(old, assertNotNull(compiler.getCompiledSnapshot(uri)).sourceText)
-            documents.update(uri, source, 7)
+            documents.update(uri, source, DocumentVersion.of(7))
             val warm = listOf("native", "core").associateWith { parser ->
                 handler.getAst(AstParams(uri.toString(), parser)).await()
             }
@@ -68,7 +69,7 @@ class AstSnapshotIntegrationTest {
             Files.writeString(path, "class Alias { String diskOnly }\n")
             val uri = URI(path.toUri().toString().replace("Alias.groovy", "%41lias.groovy"))
             val source = "class Alias { String bufferOnly }\n"
-            val documents = DocumentProvider().apply { put(uri, source, 1) }
+            val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(1)) }
             val compiler = GroovyCompilationService(documentProvider = documents)
             compiler.updateWorkspaceModel(root, emptyList(), listOf(root))
             assertTrue(path in compiler.workspaceManager.current().sources)

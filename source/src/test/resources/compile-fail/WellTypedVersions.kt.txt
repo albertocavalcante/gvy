@@ -1,0 +1,18 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Control for MixedVersionKinds.kt.txt: the same operations with matching kinds. This file must
+// compile with the same command, so a failure of the other file is caused by the kinds, not by the
+// classpath or imports.
+
+import com.github.albertocavalcante.gvy.source.DocumentVersion
+
+fun matchKinds(version: DocumentVersion, other: DocumentVersion) {
+    val c1: DocumentVersion = DocumentVersion.of(3)
+    val c2: Int = version.value
+    val c3 = version < other
+    val c4 = version == other
+    val c5: DocumentVersion? = DocumentVersion.ofOrNull(null)
+    val c6: Boolean = version <= DocumentVersion.of(3)
+    val c7: Long = version.value.toLong()
+}

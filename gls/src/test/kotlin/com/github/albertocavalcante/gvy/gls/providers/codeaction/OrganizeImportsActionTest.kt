@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CodeAction
@@ -42,7 +43,7 @@ class OrganizeImportsActionTest {
     }
 
     private fun open(content: String, version: Int = 3) = runBlocking {
-        documents.put(uri, content, version)
+        documents.put(uri, content, DocumentVersion.of(version))
         compilationService.compile(uri, content)
     }
 
@@ -147,14 +148,14 @@ class OrganizeImportsActionTest {
     @Test
     fun `returns no action when the buffer moved on since the compile`() {
         open(unorganized.joinToString("\n"))
-        assertNotNull(documents.update(uri, "import b.B\nimport a.A\n", 4))
+        assertNotNull(documents.update(uri, "import b.B\nimport a.A\n", DocumentVersion.of(4)))
 
         assertNull(organizeAction())
     }
 
     @Test
     fun `returns no action before the document was ever compiled`() {
-        documents.put(uri, unorganized.joinToString("\n"), 1)
+        documents.put(uri, unorganized.joinToString("\n"), DocumentVersion.of(1))
 
         assertNull(organizeAction())
     }

@@ -470,7 +470,7 @@ class RenameProvider private constructor(
             }
 
             val textDocumentEdit = TextDocumentEdit(
-                VersionedTextDocumentIdentifier(uri, sources.capture(URI.create(uri)).version),
+                VersionedTextDocumentIdentifier(uri, sources.capture(URI.create(uri)).version?.value),
                 textEdits,
             )
             documentChanges.add(Either.forLeft(textDocumentEdit))

@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.jayway.jsonpath.Configuration
 import io.mockk.every
 import io.mockk.mockk
@@ -39,7 +40,7 @@ class DocumentVersionStepTest {
         every { session.server } returns server
         every { service.didOpen(any()) } answers {
             val document = firstArg<DidOpenTextDocumentParams>().textDocument
-            documents.put(URI.create(document.uri), document.text, document.version)
+            documents.put(URI.create(document.uri), document.text, DocumentVersion.of(document.version))
         }
         every { service.didChange(any()) } answers {
             val params = firstArg<DidChangeTextDocumentParams>()
@@ -48,7 +49,7 @@ class DocumentVersionStepTest {
             documents.update(
                 URI.create(params.textDocument.uri),
                 params.contentChanges.lastOrNull()?.text,
-                params.textDocument.version,
+                DocumentVersion.of(params.textDocument.version),
             )
         }
         every { service.didClose(any()) } answers {

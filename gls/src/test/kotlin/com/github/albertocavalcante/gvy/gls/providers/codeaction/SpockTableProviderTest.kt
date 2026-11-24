@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
@@ -57,7 +58,7 @@ class SpockTableProviderTest {
 
     @Test
     fun `default compilation produces a versioned table action`(): Unit = runBlocking {
-        documents.put(uri, content, 7)
+        documents.put(uri, content, DocumentVersion.of(7))
         compilationService.compile(uri, content)
 
         val action = provider.provideCodeActions(params()).single { it.title == "Align Spock data table" }
@@ -69,9 +70,9 @@ class SpockTableProviderTest {
 
     @Test
     fun `withholds table action when current document differs from cached compilation`(): Unit = runBlocking {
-        documents.put(uri, content, 7)
+        documents.put(uri, content, DocumentVersion.of(7))
         compilationService.compile(uri, content)
-        assertNotNull(documents.update(uri, content.replace("100", "1000"), 8))
+        assertNotNull(documents.update(uri, content.replace("100", "1000"), DocumentVersion.of(8)))
 
         val actions = provider.provideCodeActions(params())
 
@@ -80,7 +81,7 @@ class SpockTableProviderTest {
 
     @Test
     fun `withholds table action when client requests quick fixes`(): Unit = runBlocking {
-        documents.put(uri, content, 7)
+        documents.put(uri, content, DocumentVersion.of(7))
         compilationService.compile(uri, content)
         val params = params().apply { context.only = listOf(CodeActionKind.QuickFix) }
 
@@ -104,7 +105,7 @@ class SpockTableProviderTest {
                     }
                 }
         """.trimIndent()
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         compilationService.compile(uri, source)
 
         val actions = provider.provideCodeActions(params(line = 7))
@@ -115,7 +116,7 @@ class SpockTableProviderTest {
     @Test
     fun `an uncertain external base gets no table action`(): Unit = runBlocking {
         val source = content.replace("spock.lang.Specification", "BaseSpec")
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         compilationService.compile(uri, source)
 
         val actions = provider.provideCodeActions(params())
@@ -145,7 +146,7 @@ class SpockTableProviderTest {
             },
         )
         try {
-            documents.put(uri, source, 1)
+            documents.put(uri, source, DocumentVersion.of(1))
             service.compile(uri, source)
 
             val actions = starProvider.provideCodeActions(params(line = 6))
@@ -200,7 +201,7 @@ class SpockTableProviderTest {
         suspend fun edit(newText: String = "$text\n// edit $version") {
             text = newText
             version++
-            documents.put(fileUri, text, version)
+            documents.put(fileUri, text, DocumentVersion.of(version))
             compilationService.compile(fileUri, text)
         }
 
@@ -494,7 +495,7 @@ class SpockTableProviderTest {
     @Test
     fun `a clean star-import spec keeps the table action`(): Unit = runBlocking {
         useSpockClasspath()
-        documents.put(uri, starImported, 1)
+        documents.put(uri, starImported, DocumentVersion.of(1))
         compilationService.compile(uri, starImported)
 
         val actions = provider.provideCodeActions(params(line = 6))
@@ -506,7 +507,7 @@ class SpockTableProviderTest {
     fun `a spec extending a base from a jar keeps the table action`(): Unit = runBlocking {
         useSpockClasspath(baseSpecJar())
         val source = content.replace("extends spock.lang.Specification", "extends com.example.JarBaseSpec")
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         compilationService.compile(uri, source)
 
         val actions = provider.provideCodeActions(params())
@@ -522,7 +523,7 @@ class SpockTableProviderTest {
             "    def broken() {\n        def x = 1\n        def x = 2\n    }\n    def \"feature\"() {",
         )
         useSpockClasspath()
-        documents.put(uri, broken, 1)
+        documents.put(uri, broken, DocumentVersion.of(1))
         compilationService.compile(uri, broken)
 
         val actions = provider.provideCodeActions(params(line = 10))
@@ -537,7 +538,7 @@ class SpockTableProviderTest {
         // classpath that fails to load the base (which also breaks the parser's debug logging, see #1409).
         useSpockClasspath(baseSpecJar())
         val source = content.replace("extends spock.lang.Specification", "extends com.example.JarBaseSpec")
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         compilationService.compile(uri, source, compilePhase = Phases.CONVERSION)
 
         val actions = provider.provideCodeActions(params())

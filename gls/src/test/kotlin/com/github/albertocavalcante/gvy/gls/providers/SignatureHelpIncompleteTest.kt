@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.AfterEach
@@ -45,9 +46,9 @@ class SignatureHelpIncompleteTest {
                         println(
             """.trimIndent()
 
-            documents.put(uri, previousSource, version = 1)
+            documents.put(uri, previousSource, version = DocumentVersion.of(1))
             compilation.compile(uri, previousSource)
-            documents.put(uri, currentSource, version = 2)
+            documents.put(uri, currentSource, version = DocumentVersion.of(2))
 
             val position = positionAfter(currentSource, "println(")
             val result = provider.provideSignatureHelp(uri.toString(), position)
@@ -77,7 +78,7 @@ class SignatureHelpIncompleteTest {
 
         sources.forEachIndexed { index, source ->
             val uri = URI.create("file:///SignatureHelpFreshIncomplete$index.groovy")
-            documents.put(uri, source, version = 1)
+            documents.put(uri, source, version = DocumentVersion.of(1))
 
             val result = provider.provideSignatureHelp(uri.toString(), positionAfter(source, "println("))
             val labels = result.signatures.map { it.label }
@@ -106,9 +107,9 @@ class SignatureHelpIncompleteTest {
                 }
             }
         """.trimIndent()
-        documents.put(uri, previousSource, version = 1)
+        documents.put(uri, previousSource, version = DocumentVersion.of(1))
         compilation.compile(uri, previousSource)
-        documents.put(uri, currentSource, version = 2)
+        documents.put(uri, currentSource, version = DocumentVersion.of(2))
 
         val result = provider.provideSignatureHelp(uri.toString(), positionAfter(currentSource, "substring("))
         val labels = result.signatures.map { it.label }
@@ -172,7 +173,7 @@ class SignatureHelpIncompleteTest {
 
         examples.forEachIndexed { index, source ->
             val uri = URI.create("file:///SignatureHelpLiteralContext$index.groovy")
-            documents.put(uri, source, version = 1)
+            documents.put(uri, source, version = DocumentVersion.of(1))
 
             val result = provider.provideSignatureHelp(uri.toString(), positionAfter(source, "println("))
 

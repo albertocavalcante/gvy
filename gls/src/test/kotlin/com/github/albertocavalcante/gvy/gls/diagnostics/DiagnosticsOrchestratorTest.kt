@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -117,7 +118,7 @@ class DiagnosticsOrchestratorTest {
             DiagnosticsCollectionResult(listOf(Diagnostic().apply { message = "current" }), emptyList(), emptyList())
         val publications = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publications)) } just Runs
-        val documents = DocumentProvider().apply { put(testUri, testContent, 1) }
+        val documents = DocumentProvider().apply { put(testUri, testContent, DocumentVersion.of(1)) }
         val orchestrator =
             DiagnosticsOrchestrator(this, compilation, oldService, documents, ServerConfiguration(), { client })
         orchestrator.trigger(testUri, testContent)
@@ -162,13 +163,13 @@ class DiagnosticsOrchestratorTest {
         )
 
         // When: Trigger diagnostics twice for the same URI
-        documentProvider.put(testUri, "first content", 1)
+        documentProvider.put(testUri, "first content", DocumentVersion.of(1))
         orchestrator.trigger(testUri, "first content")
         val firstJob = assertNotNull(orchestrator.getDiagnosticJob(testUri))
         coVerify(timeout = 5_000, exactly = 1) {
             compilationService.compileAsync(any(), testUri, "first content")
         }
-        documentProvider.update(testUri, "second content", 2)
+        documentProvider.update(testUri, "second content", DocumentVersion.of(2))
         orchestrator.trigger(testUri, "second content")
         val secondJob = assertNotNull(orchestrator.getDiagnosticJob(testUri))
 
@@ -504,7 +505,7 @@ class DiagnosticsOrchestratorTest {
             uri2 to content2,
         )
 
-        snapshot.forEach { (uri, content) -> documentProvider.put(uri, content, 1) }
+        snapshot.forEach { (uri, content) -> documentProvider.put(uri, content, DocumentVersion.of(1)) }
 
         val result = createMockCompilationResult()
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
@@ -680,7 +681,7 @@ class DiagnosticsOrchestratorTest {
 
     // ==================== Test Helpers ====================
 
-    private fun openDocuments() = DocumentProvider().apply { put(testUri, testContent, 1) }
+    private fun openDocuments() = DocumentProvider().apply { put(testUri, testContent, DocumentVersion.of(1)) }
 
     private fun createTestDiagnostic(message: String, line: Int): Diagnostic = Diagnostic().apply {
         range = Range(Position(line, 0), Position(line, 10))

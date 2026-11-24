@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,7 +63,7 @@ class ColdLocalCompletionTest {
 
     @Test
     fun `manual public completion resolves a cold buffer without a diagnostic job`(): Unit = runBlocking {
-        documents.put(uri, memberSource, 1)
+        documents.put(uri, memberSource, DocumentVersion.of(1))
         val service = GroovyTextDocumentService(
             scope,
             compilation,
@@ -83,7 +84,7 @@ class ColdLocalCompletionTest {
         assertUnpublished()
         assertHasGreet(items)
         assertEquals(memberSource, documents.get(uri))
-        assertEquals(1, documents.getSnapshot(uri)?.version)
+        assertEquals(DocumentVersion.of(1), documents.getSnapshot(uri)?.version)
     }
 
     @Test

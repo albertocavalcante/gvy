@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.mockk
@@ -113,7 +114,7 @@ class CompilationReadinessTest {
     fun `an edited document is compiled again instead of navigating its old index`(): Unit = runBlocking {
         open(first, "class Before {}")
         assertTrue(waitFor { compilation.getSymbolStorage(first) != null })
-        documents.update(first, "class After {}", 2)
+        documents.update(first, "class After {}", DocumentVersion.of(2))
 
         withTimeout(READY_WITHIN_MS) { handler.getDefinitions(first.toString(), Position(0, 7)) }
 
@@ -123,7 +124,8 @@ class CompilationReadinessTest {
 
     @Test
     fun `cancelling one request does not retire the compile another request shares`(): Unit = runBlocking {
-        documents.put(first, firstText, 1) // opened without diagnostics: the requests start the compile
+        // opened without diagnostics: the requests start the compile
+        documents.put(first, firstText, DocumentVersion.of(1))
         held.set(true)
         val cancelled = async(start = CoroutineStart.UNDISPATCHED) {
             handler.getDefinitions(first.toString(), Position(0, 21))
@@ -142,7 +144,7 @@ class CompilationReadinessTest {
     }
 
     private fun open(uri: URI, text: String) {
-        documents.put(uri, text, 1)
+        documents.put(uri, text, DocumentVersion.of(1))
         diagnostics.trigger(uri, text)
     }
 

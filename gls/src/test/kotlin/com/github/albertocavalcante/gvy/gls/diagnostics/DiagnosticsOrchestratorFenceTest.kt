@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -52,7 +53,7 @@ class DiagnosticsOrchestratorFenceTest {
     private class Fixture(scope: CoroutineScope, configuration: ServerConfiguration = ServerConfiguration()) {
         val uri: URI = URI.create("file:///workspace/Fence.groovy")
         val content = "class Fence {}"
-        val documents = DocumentProvider().apply { put(uri, content, INITIAL_VERSION) }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(INITIAL_VERSION)) }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val parsed = mockk<CompilationResult>()
@@ -202,14 +203,14 @@ class DiagnosticsOrchestratorFenceTest {
             runCatching { fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION) }
         }
         runCurrent()
-        fixture.documents.update(fixture.uri, "class Changed {}", INITIAL_VERSION + 1)
+        fixture.documents.update(fixture.uri, "class Changed {}", DocumentVersion.of(INITIAL_VERSION + 1))
         fixture.trigger()
         advanceUntilIdle()
 
         assertIs<DiagnosticsRunUnavailableException>(waiting.await().exceptionOrNull())
         val current = fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION + 1)
         assertEquals(INITIAL_VERSION + 1, current.version)
-        fixture.documents.update(fixture.uri, "class Latest {}", INITIAL_VERSION + 2)
+        fixture.documents.update(fixture.uri, "class Latest {}", DocumentVersion.of(INITIAL_VERSION + 2))
         assertFailsWith<DiagnosticsRunUnavailableException> {
             fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION + 2)
         }
@@ -222,7 +223,7 @@ class DiagnosticsOrchestratorFenceTest {
         advanceUntilIdle()
         val old = fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
         fixture.orchestrator.close(fixture.uri)
-        fixture.documents.put(fixture.uri, fixture.content, INITIAL_VERSION)
+        fixture.documents.put(fixture.uri, fixture.content, DocumentVersion.of(INITIAL_VERSION))
 
         assertFailsWith<DiagnosticsRunUnavailableException> {
             fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
@@ -432,7 +433,7 @@ class DiagnosticsOrchestratorFenceTest {
             val previous = checkNotNull(fixture.orchestrator.getDiagnosticJob(fixture.uri))
             try {
                 fixture.orchestrator.close(fixture.uri)
-                fixture.documents.put(fixture.uri, fixture.content, INITIAL_VERSION)
+                fixture.documents.put(fixture.uri, fixture.content, DocumentVersion.of(INITIAL_VERSION))
                 coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } returns healthyResult()
                 fixture.trigger()
                 runCurrent()
@@ -456,7 +457,7 @@ class DiagnosticsOrchestratorFenceTest {
             val release = CompletableDeferred<Unit>()
             coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } coAnswers {
                 release.await()
-                fixture.documents.update(fixture.uri, "class Changed {}", INITIAL_VERSION + 1)
+                fixture.documents.update(fixture.uri, "class Changed {}", DocumentVersion.of(INITIAL_VERSION + 1))
                 healthyResult()
             }
             fixture.trigger()

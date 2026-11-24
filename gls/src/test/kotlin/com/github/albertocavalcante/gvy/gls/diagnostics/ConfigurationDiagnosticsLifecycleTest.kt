@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.every
@@ -47,8 +48,8 @@ class ConfigurationDiagnosticsLifecycleTest {
         val first = root.resolve("First.groovy").toUri()
         val second = root.resolve("Second.groovy").toUri()
         val documents = DocumentProvider().apply {
-            put(first, "class First {}", 1)
-            put(second, "class Second {}", 1)
+            put(first, "class First {}", DocumentVersion.of(1))
+            put(second, "class Second {}", DocumentVersion.of(1))
         }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
@@ -95,8 +96,8 @@ class ConfigurationDiagnosticsLifecycleTest {
         Files.writeString(config, text)
         val source = root.resolve("Source.groovy").toUri()
         val documents = DocumentProvider().apply {
-            put(source, "class Source {}", 1)
-            put(config.toUri(), text, 1)
+            put(source, "class Source {}", DocumentVersion.of(1))
+            put(config.toUri(), text, DocumentVersion.of(1))
         }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
@@ -121,7 +122,7 @@ class ConfigurationDiagnosticsLifecycleTest {
             DiagnosticsOrchestrator(scope, compilation, providers, documents, ServerConfiguration(), { client })
         orchestrator.trigger(source, "class Source {}")
         orchestrator.awaitDiagnostics(source)
-        documents.update(config.toUri(), "// unsaved edit\n$text", 2)
+        documents.update(config.toUri(), "// unsaved edit\n$text", DocumentVersion.of(2))
         orchestrator.documentChanged(config.toUri())
         assertTrue(publications.last { it.uri == config.toUri().toString() }.diagnostics.isEmpty())
         orchestrator.trigger(source, "class Source {}")
@@ -136,7 +137,7 @@ class ConfigurationDiagnosticsLifecycleTest {
         val text = "ruleset { ruleset('rulesets/empty.xml') }"
         Files.writeString(config, text)
         val source = root.resolve("Source.groovy").toUri()
-        val documents = DocumentProvider().apply { put(source, "class Source {}", 1) }
+        val documents = DocumentProvider().apply { put(source, "class Source {}", DocumentVersion.of(1)) }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val result = mockk<CompilationResult>()
@@ -180,7 +181,7 @@ class ConfigurationDiagnosticsLifecycleTest {
         val text = "ruleset { ruleset('rulesets/empty.xml') }"
         Files.writeString(config, text)
         val source = root.resolve("Source.groovy").toUri()
-        val documents = DocumentProvider().apply { put(source, "class Source {}", 1) }
+        val documents = DocumentProvider().apply { put(source, "class Source {}", DocumentVersion.of(1)) }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val result = mockk<CompilationResult>()

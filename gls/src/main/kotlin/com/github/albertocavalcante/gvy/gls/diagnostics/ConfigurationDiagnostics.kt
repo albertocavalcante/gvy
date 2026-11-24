@@ -141,5 +141,7 @@ internal fun clearConfigurationNotices(
             affected.add(uri)
         }
     }
-    affected.forEach { publishCombined(recipient, it, documentProvider.getSnapshot(it)?.version, maxProblems, state) }
+    affected.forEach {
+        publishCombined(recipient, it, documentProvider.getSnapshot(it)?.version?.value, maxProblems, state)
+    }
 }

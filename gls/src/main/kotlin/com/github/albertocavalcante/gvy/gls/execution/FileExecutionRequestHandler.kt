@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.build.gradle.GradleExecutionContext
 import com.github.albertocavalcante.gvy.build.gradle.GradleExecutionRuntime
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -79,7 +80,7 @@ class FileExecutionRequestHandler(
         val snapshot = documents.getSnapshot(uri)
         return when {
             snapshot == null -> stop("Open and save the document first.")
-            snapshot.version != version -> stop("The document version changed; run again.")
+            snapshot.version != DocumentVersion.of(version) -> stop("The document version changed; run again.")
             else -> ExecutionStep.Value(snapshot)
         }
     }

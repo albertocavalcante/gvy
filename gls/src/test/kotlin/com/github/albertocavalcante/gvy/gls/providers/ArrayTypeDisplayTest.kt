@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerato
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
@@ -70,7 +71,7 @@ class ArrayTypeDisplayTest {
     fun `nested array types read the same in the hover code block and its Type line`(): Unit = runBlocking {
         val nestedUri = URI.create("file:///Nested.groovy")
         val nested = "class Outer {\n    static class Inner {}\n    Inner[] wrap(Inner[] xs) { xs }\n}\n"
-        documents.put(nestedUri, nested, 1)
+        documents.put(nestedUri, nested, DocumentVersion.of(1))
         assertTrue(compilation.compile(nestedUri, nested).isSuccess)
         val position = Position(2, nested.lines()[2].indexOf("wrap") + 1)
 
@@ -88,7 +89,7 @@ class ArrayTypeDisplayTest {
     }
 
     private suspend fun compile() {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         assertTrue(compilation.compile(uri, source).isSuccess)
     }
 }

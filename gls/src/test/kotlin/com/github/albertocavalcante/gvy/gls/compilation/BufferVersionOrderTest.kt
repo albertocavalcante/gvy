@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
@@ -61,11 +62,11 @@ class BufferVersionOrderTest {
     @Test
     fun `the newest buffer version wins although the older compile finishes last`(): Unit = runBlocking {
         service.onDocumentOpened(uri)
-        documents.put(uri, older, 1)
+        documents.put(uri, older, DocumentVersion.of(1))
         val first = service.compileAsync(scope, uri, older)
         assertTrue(olderParsing.await(WAIT_SECONDS, TimeUnit.SECONDS), "the older compile never started")
 
-        val current = assertNotNull(documents.update(uri, newer, 2))
+        val current = assertNotNull(documents.update(uri, newer, DocumentVersion.of(2)))
         service.compileAsync(scope, uri, newer).await()
         releaseOlder.countDown()
         first.await()
@@ -79,13 +80,13 @@ class BufferVersionOrderTest {
     fun `a reopened buffer starts a new order, so its first version is accepted`(): Unit = runBlocking {
         releaseOlder.countDown() // nothing waits in this test
         service.onDocumentOpened(uri)
-        documents.put(uri, newer, 5)
+        documents.put(uri, newer, DocumentVersion.of(5))
         service.compileAsync(scope, uri, newer).await()
 
         documents.remove(uri)
         service.onClosedSourceChanged(uri)
         service.onDocumentOpened(uri)
-        documents.put(uri, older, 1) // a new lifecycle restarts the client's version sequence
+        documents.put(uri, older, DocumentVersion.of(1)) // a new lifecycle restarts the client's version sequence
         service.compileAsync(scope, uri, older).await()
 
         assertEquals(older, cachedText(), "version 1 of the new lifecycle is not refused by the old version 5")

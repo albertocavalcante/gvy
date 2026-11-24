@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +38,7 @@ import kotlin.test.assertTrue
 class SelectionRangeReadOnlyTest {
     private val uri = URI.create("file:///SelectionReadOnly.groovy")
     private val source = "def result = value + 1\n"
-    private val documents = DocumentProvider().apply { put(uri, source, 7) }
+    private val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(7)) }
     private val actual = GroovyCompilationService()
     private val compilation = spyk(actual)
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
@@ -73,7 +74,7 @@ class SelectionRangeReadOnlyTest {
     @Test
     fun `a raced publishing waiter cannot leave a stale AST after the request`(): Unit = runBlocking {
         coEvery { compilation.ensureCompiled(uri) } coAnswers {
-            documents.put(uri, "def newer = 2\n", 8)
+            documents.put(uri, "def newer = 2\n", DocumentVersion.of(8))
             actual.compile(uri, source)
             null
         }
@@ -93,7 +94,7 @@ class SelectionRangeReadOnlyTest {
     fun `a document change during transient parsing rejects without publishing`(): Unit = runBlocking {
         val parsed = actual.compileTransient(uri, source, Phases.CONVERSION)
         coEvery { compilation.compileTransient(uri, source, any()) } coAnswers {
-            documents.put(uri, "def newer = 2\n", 8)
+            documents.put(uri, "def newer = 2\n", DocumentVersion.of(8))
             parsed
         }
         val error = assertThrows<ExecutionException> { service.selectionRange(params()).get(5, TimeUnit.SECONDS) }

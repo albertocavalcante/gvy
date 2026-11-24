@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.crossfile.CrossFileOperationsHandler
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
@@ -77,10 +78,10 @@ class ShutdownDuringRequestTest {
 
     @Test
     fun `shutdown with a references request in flight logs no error`(): Unit = runBlocking {
-        documents.put(uri, "class Shutdown { def m() { m() } }", 1)
+        documents.put(uri, "class Shutdown { def m() { m() } }", DocumentVersion.of(1))
         compilation.compile(uri, "class Shutdown { def m() { m() } }")
         // The index is now older than the buffer, so the request waits on a compile of the new text.
-        documents.update(uri, "class Shutdown { def m() { m(); m() } }", 2)
+        documents.update(uri, "class Shutdown { def m() { m(); m() } }", DocumentVersion.of(2))
         armed.set(true)
         val request = requests.async { handler().getReferences(uri.toString(), Position(0, 28), true) }
         assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "the request never waited on a compile")
@@ -98,9 +99,9 @@ class ShutdownDuringRequestTest {
 
     @Test
     fun `stopping compilation before the request scope still logs no error`(): Unit = runBlocking {
-        documents.put(uri, "class Shutdown { def m() { m() } }", 1)
+        documents.put(uri, "class Shutdown { def m() { m() } }", DocumentVersion.of(1))
         compilation.compile(uri, "class Shutdown { def m() { m() } }")
-        documents.update(uri, "class Shutdown { def m() { m(); m() } }", 2)
+        documents.update(uri, "class Shutdown { def m() { m(); m() } }", DocumentVersion.of(2))
         armed.set(true)
         val request = requests.async { handler().getReferences(uri.toString(), Position(0, 28), true) }
         assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "the request never waited on a compile")
@@ -119,7 +120,7 @@ class ShutdownDuringRequestTest {
 
     @Test
     fun `after shutdown a waiter is cancelled at once`(): Unit = runBlocking {
-        documents.put(uri, "class Shutdown {}", 1)
+        documents.put(uri, "class Shutdown {}", DocumentVersion.of(1))
         compilation.shutdown()
 
         assertFailsWith<CancellationException> { compilation.ensureCompiled(uri) }
@@ -127,7 +128,7 @@ class ShutdownDuringRequestTest {
 
     @Test
     fun `references propagate ContentModified to the client without logging an error`(): Unit = runBlocking {
-        documents.put(uri, "class Shutdown {}", 1)
+        documents.put(uri, "class Shutdown {}", DocumentVersion.of(1))
         coEvery { compilation.ensureCompiled(uri) } throws
             ResponseErrorException(ResponseError(ResponseErrorCode.ContentModified, "changed", null))
 

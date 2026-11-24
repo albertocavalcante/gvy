@@ -40,7 +40,7 @@ internal class DocumentAnalysisPublisher(
         val outcome = compilation.outcome
         val payload = DocumentAnalysisNotification(
             context.uri.toString(),
-            context.snapshot.version,
+            context.snapshot.version?.value,
             context.runId,
             context.sessionId,
             CompilerAnalysis(

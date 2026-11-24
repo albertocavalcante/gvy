@@ -68,7 +68,7 @@ class AstRequestHandler(
             val result = AstResult(
                 ast = Json.encodeToString<AstNodeDto>(astDto),
                 parser = requestedParser,
-                documentVersion = snapshot.version,
+                documentVersion = snapshot.version?.value,
                 sourceHash = snapshot.contentHash,
             )
             currentCoroutineContext().ensureActive()

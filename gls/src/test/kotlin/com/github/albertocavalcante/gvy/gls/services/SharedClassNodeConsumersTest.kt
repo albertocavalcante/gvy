@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.GroovySemanticTokenProvider
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,7 +53,7 @@ class SharedClassNodeConsumersTest {
     @Test
     fun `semantic tokens of another script carry no class token at the stamped range`() {
         stampScriptType()
-        documents.put(script, scriptText, 1)
+        documents.put(script, scriptText, DocumentVersion.of(1))
 
         val tokens = tokens()
 

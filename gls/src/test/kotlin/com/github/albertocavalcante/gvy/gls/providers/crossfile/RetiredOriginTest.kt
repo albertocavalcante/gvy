@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.spyk
@@ -34,7 +35,7 @@ class RetiredOriginTest {
     private val uri = URI.create("file:///Origin.groovy")
     private val text = "class Origin {\n    void call() { call() }\n}\n"
     private val position = Position(1, 19)
-    private val documents = DocumentProvider().apply { put(uri, text, 1) }
+    private val documents = DocumentProvider().apply { put(uri, text, DocumentVersion.of(1)) }
     private val compilation = spyk(GroovyCompilationService(documentProvider = documents))
 
     @Test
@@ -74,7 +75,7 @@ class RetiredOriginTest {
     @Test
     fun `a retirement of another document does not fail the request`(): Unit = runBlocking {
         val other = URI.create("file:///Other.groovy")
-        documents.put(other, "class Other {}", 1)
+        documents.put(other, "class Other {}", DocumentVersion.of(1))
         coEvery { compilation.ensureCompiled(other, any<DocumentSnapshot>()) } throws
             ResponseErrorException(ResponseError(ResponseErrorCode.ContentModified, "other kept changing", null))
 
@@ -99,7 +100,7 @@ class RetiredOriginTest {
 
     private fun editDuringCompile() {
         coEvery { compilation.ensureCompiled(uri) } coAnswers {
-            documents.update(uri, text.replace("call()", "other()"), 2)
+            documents.update(uri, text.replace("call()", "other()"), DocumentVersion.of(2))
             callOriginal()
         }
     }

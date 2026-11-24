@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.google.gson.Gson
 import io.mockk.coVerify
 import io.mockk.spyk
@@ -36,7 +37,7 @@ import kotlin.test.assertTrue
 
 class SelectionRangeRequestValidationTest {
     private val uri = URI.create("file:///SelectionValidation.groovy")
-    private val documents = DocumentProvider().apply { put(uri, "x\r\n", 7) }
+    private val documents = DocumentProvider().apply { put(uri, "x\r\n", DocumentVersion.of(7)) }
     private val compilation = spyk(GroovyCompilationService())
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(

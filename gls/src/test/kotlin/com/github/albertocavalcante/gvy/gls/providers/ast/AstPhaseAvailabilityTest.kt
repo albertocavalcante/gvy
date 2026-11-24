@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.ast
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.nativeapi.Fallback
@@ -202,7 +203,7 @@ class AstPhaseAvailabilityTest {
         verify: suspend (ParseResult, DocumentProvider, URI) -> Unit,
     ) {
         val uri = URI("file:///$className.groovy")
-        val documents = DocumentProvider().apply { put(uri, source, 1) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(1)) }
         val compiler = GroovyCompilationService(documentProvider = documents)
         try {
             val parsed = compiler.compileTransient(uri, source, phase)
@@ -240,7 +241,7 @@ class AstPhaseAvailabilityTest {
         for (parser in listOf("native", "core")) {
             val result = handler.getAst(AstParams(uri.toString(), parser)).await()
             assertEquals(parser, result.parser)
-            assertEquals(snapshot.version, result.documentVersion)
+            assertEquals(snapshot.version?.value, result.documentVersion)
             assertEquals(snapshot.contentHash, result.sourceHash)
             assertTrue(result.ast.isNotBlank(), parser)
         }

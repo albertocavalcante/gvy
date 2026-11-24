@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.source.DocumentChange
 import com.github.albertocavalcante.gvy.source.DocumentChangeRejectionReason
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.source.RawUtf16Position
 import com.github.albertocavalcante.gvy.source.RawUtf16Range
 import org.junit.jupiter.api.Test
@@ -29,13 +30,13 @@ class DocumentProviderChangesTest {
     @Test
     fun `a valid batch installs its ordered final text and version in one new snapshot`() {
         val base = open("abc", 3)
-        val result = documents.applyChanges(uri, base, 10, listOf(insert(1, "X"), insert(1, "Y")))
+        val result = documents.applyChanges(uri, base, DocumentVersion.of(10), listOf(insert(1, "X"), insert(1, "Y")))
 
         val accepted = assertIs<BufferChangeResult.Applied>(result).snapshot
-        assertEquals(DocumentSnapshot("aYXbc", 10), accepted)
+        assertEquals(DocumentSnapshot("aYXbc", DocumentVersion.of(10)), accepted)
         assertSame(accepted, documents.getSnapshot(uri))
         assertNotSame(base, accepted)
-        assertEquals(DocumentSnapshot("abc", 3), base)
+        assertEquals(DocumentSnapshot("abc", DocumentVersion.of(3)), base)
     }
 
     @Test
@@ -45,19 +46,19 @@ class DocumentProviderChangesTest {
 
         assertEquals(
             BufferChangeResult.Invalid(1, DocumentChangeRejectionReason.LINE_OUT_OF_BOUNDS),
-            documents.applyChanges(uri, base, 4, changes),
+            documents.applyChanges(uri, base, DocumentVersion.of(4), changes),
         )
         assertSame(base, documents.getSnapshot(uri))
-        assertEquals(DocumentSnapshot("abc", 3), base)
+        assertEquals(DocumentSnapshot("abc", DocumentVersion.of(3)), base)
     }
 
     @Test
     fun `empty newer batches retire snapshot publication while retaining the same incarnation`() {
         val base = open()
         val incarnation = assertNotNull(documents.getIncarnation(uri))
-        val result = documents.applyChanges(uri, base, 4, emptyList())
+        val result = documents.applyChanges(uri, base, DocumentVersion.of(4), emptyList())
         val accepted = assertIs<BufferChangeResult.Applied>(result).snapshot
-        assertEquals(DocumentSnapshot("abc", 4), accepted)
+        assertEquals(DocumentSnapshot("abc", DocumentVersion.of(4)), accepted)
         assertNotSame(base, accepted)
         assertSame(incarnation, documents.getIncarnation(uri))
 
@@ -71,7 +72,10 @@ class DocumentProviderChangesTest {
     fun `duplicate and older versions are stale on a current base`() {
         val base = open()
         for (version in listOf(Int.MIN_VALUE, 2, 3)) {
-            assertEquals(BufferChangeResult.Stale, documents.applyChanges(uri, base, version, listOf(insert(0, "!"))))
+            assertEquals(
+                BufferChangeResult.Stale,
+                documents.applyChanges(uri, base, DocumentVersion.of(version), listOf(insert(0, "!"))),
+            )
             assertSame(base, documents.getSnapshot(uri))
         }
     }
@@ -79,12 +83,12 @@ class DocumentProviderChangesTest {
     @Test
     fun `version gaps and signed extremes are compared without overflow`() {
         val base = open("abc", Int.MIN_VALUE)
-        val result = documents.applyChanges(uri, base, Int.MAX_VALUE, listOf(insert(3, "!")))
+        val result = documents.applyChanges(uri, base, DocumentVersion.of(Int.MAX_VALUE), listOf(insert(3, "!")))
         val accepted = assertIs<BufferChangeResult.Applied>(result).snapshot
-        assertEquals(DocumentSnapshot("abc!", Int.MAX_VALUE), accepted)
+        assertEquals(DocumentSnapshot("abc!", DocumentVersion.of(Int.MAX_VALUE)), accepted)
         assertEquals(
             BufferChangeResult.Stale,
-            documents.applyChanges(uri, accepted, Int.MIN_VALUE, emptyList()),
+            documents.applyChanges(uri, accepted, DocumentVersion.of(Int.MIN_VALUE), emptyList()),
         )
         assertSame(accepted, documents.getSnapshot(uri))
     }
@@ -93,18 +97,29 @@ class DocumentProviderChangesTest {
     fun `an unversioned buffer can adopt any signed client version`() {
         documents.put(uri, "internal")
         val base = assertNotNull(documents.getSnapshot(uri))
-        val result = documents.applyChanges(uri, base, Int.MIN_VALUE, listOf(DocumentChange.ReplaceAll("client")))
-        assertEquals(DocumentSnapshot("client", Int.MIN_VALUE), assertIs<BufferChangeResult.Applied>(result).snapshot)
+        val result = documents.applyChanges(
+            uri,
+            base,
+            DocumentVersion.of(Int.MIN_VALUE),
+            listOf(DocumentChange.ReplaceAll("client")),
+        )
+        assertEquals(
+            DocumentSnapshot("client", DocumentVersion.of(Int.MIN_VALUE)),
+            assertIs<BufferChangeResult.Applied>(result).snapshot,
+        )
     }
 
     @Test
     fun `an equal snapshot or another documents snapshot cannot authorize a transition`() {
         val base = open()
         val other = URI.create("file:///workspace/Other.groovy")
-        documents.put(other, base.content, assertNotNull(base.version))
+        documents.put(other, base.content, assertNotNull((base.version)))
         val impostors = listOf(base.copy(), assertNotNull(documents.getSnapshot(other)))
         for (impostor in impostors) {
-            assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, impostor, 4, emptyList()))
+            assertEquals(
+                BufferChangeResult.RetiredBase,
+                documents.applyChanges(uri, impostor, DocumentVersion.of(4), emptyList()),
+            )
             assertSame(base, documents.getSnapshot(uri))
         }
     }
@@ -114,13 +129,19 @@ class DocumentProviderChangesTest {
         val base = open()
         val oldIncarnation = assertNotNull(documents.getIncarnation(uri))
         documents.remove(uri)
-        assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, base, 4, emptyList()))
+        assertEquals(
+            BufferChangeResult.RetiredBase,
+            documents.applyChanges(uri, base, DocumentVersion.of(4), emptyList()),
+        )
         assertNull(documents.getSnapshot(uri))
 
-        documents.put(uri, base.content, assertNotNull(base.version))
+        documents.put(uri, base.content, assertNotNull((base.version)))
         val reopened = assertNotNull(documents.getSnapshot(uri))
         assertEquals(base, reopened)
-        assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, base, 4, emptyList()))
+        assertEquals(
+            BufferChangeResult.RetiredBase,
+            documents.applyChanges(uri, base, DocumentVersion.of(4), emptyList()),
+        )
         assertSame(reopened, documents.getSnapshot(uri))
         assertNotSame(oldIncarnation, documents.getIncarnation(uri))
         var cleared = false
@@ -133,7 +154,9 @@ class DocumentProviderChangesTest {
     fun `the original incarnation can still close a successfully edited buffer`() {
         val base = open()
         val incarnation = assertNotNull(documents.getIncarnation(uri))
-        assertIs<BufferChangeResult.Applied>(documents.applyChanges(uri, base, 4, listOf(insert(0, "!"))))
+        assertIs<BufferChangeResult.Applied>(
+            documents.applyChanges(uri, base, DocumentVersion.of(4), listOf(insert(0, "!"))),
+        )
         assertSame(incarnation, documents.getIncarnation(uri))
         var cleared = false
         assertTrue(documents.removeIfCurrent(uri, incarnation) { cleared = true })
@@ -149,7 +172,10 @@ class DocumentProviderChangesTest {
             assertEquals("ab", documents.get(uri))
             assertEquals(mapOf(uri to "ab"), documents.snapshot())
         }
-        assertEquals(DocumentSnapshot("aYXb", 4), assertIs<BufferChangeResult.Applied>(result).snapshot)
+        assertEquals(
+            DocumentSnapshot("aYXb", DocumentVersion.of(4)),
+            assertIs<BufferChangeResult.Applied>(result).snapshot,
+        )
     }
 
     @Test
@@ -157,10 +183,10 @@ class DocumentProviderChangesTest {
         val base = open()
         var winner: DocumentSnapshot? = null
         val result = withPausedBatch(base, listOf(insert(0, "discarded"))) {
-            winner = assertNotNull(documents.update(uri, "winner", 5))
+            winner = assertNotNull(documents.update(uri, "winner", DocumentVersion.of(5)))
         }
         assertEquals(BufferChangeResult.RetiredBase, result)
-        assertEquals(DocumentSnapshot("winner", 5), winner)
+        assertEquals(DocumentSnapshot("winner", DocumentVersion.of(5)), winner)
         assertSame(winner, documents.getSnapshot(uri))
     }
 
@@ -168,10 +194,13 @@ class DocumentProviderChangesTest {
     fun `a version-only concurrent update also retires prepared edits against the same text`() {
         val base = open()
         val result = withPausedBatch(base, listOf(insert(0, "discarded")), version = 5) {
-            assertEquals(DocumentSnapshot("abc", 4), documents.update(uri, null, 4))
+            assertEquals(
+                DocumentSnapshot("abc", DocumentVersion.of(4)),
+                documents.update(uri, null, DocumentVersion.of(4)),
+            )
         }
         assertEquals(BufferChangeResult.RetiredBase, result)
-        assertEquals(DocumentSnapshot("abc", 4), documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("abc", DocumentVersion.of(4)), documents.getSnapshot(uri))
     }
 
     @Test
@@ -188,7 +217,7 @@ class DocumentProviderChangesTest {
         val incarnation = assertNotNull(documents.getIncarnation(uri))
         val result = withPausedBatch(base, listOf(insert(0, "discarded"))) {
             documents.remove(uri)
-            documents.put(uri, base.content, assertNotNull(base.version))
+            documents.put(uri, base.content, assertNotNull((base.version)))
         }
         assertEquals(BufferChangeResult.RetiredBase, result)
         assertEquals(base, documents.getSnapshot(uri))
@@ -200,10 +229,10 @@ class DocumentProviderChangesTest {
     fun `retirement takes precedence over an invalid result prepared for old text`() {
         val base = open()
         val result = withPausedBatch(base, listOf(invalidLine())) {
-            assertNotNull(documents.update(uri, "winner", 5))
+            assertNotNull(documents.update(uri, "winner", DocumentVersion.of(5)))
         }
         assertEquals(BufferChangeResult.RetiredBase, result)
-        assertEquals(DocumentSnapshot("winner", 5), documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("winner", DocumentVersion.of(5)), documents.getSnapshot(uri))
     }
 
     @Test
@@ -213,11 +242,16 @@ class DocumentProviderChangesTest {
             val losingVersion = if (winningVersion == 4) 5 else 4
             var winner: DocumentSnapshot? = null
             val loser = withPausedBatch(base, listOf(insert(0, "loser")), version = losingVersion) {
-                val result = documents.applyChanges(uri, base, winningVersion, listOf(insert(0, "winner")))
+                val result = documents.applyChanges(
+                    uri,
+                    base,
+                    DocumentVersion.of(winningVersion),
+                    listOf(insert(0, "winner")),
+                )
                 winner = assertIs<BufferChangeResult.Applied>(result).snapshot
             }
             assertEquals(BufferChangeResult.RetiredBase, loser, "winning version=$winningVersion")
-            assertEquals(DocumentSnapshot("winnerab", winningVersion), winner)
+            assertEquals(DocumentSnapshot("winnerab", DocumentVersion.of(winningVersion)), winner)
             assertSame(winner, documents.getSnapshot(uri))
         }
     }
@@ -228,30 +262,39 @@ class DocumentProviderChangesTest {
         for (version in listOf(3, 2, Int.MIN_VALUE)) {
             assertEquals(
                 BufferChangeResult.RetiredBase,
-                documents.applyChanges(uri, base.copy(), version, emptyList()),
+                documents.applyChanges(uri, base.copy(), DocumentVersion.of(version), emptyList()),
             )
         }
-        assertNotNull(documents.update(uri, "newer", 5))
-        assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, base, 3, emptyList()))
-        assertEquals(DocumentSnapshot("newer", 5), documents.getSnapshot(uri))
+        assertNotNull(documents.update(uri, "newer", DocumentVersion.of(5)))
+        assertEquals(
+            BufferChangeResult.RetiredBase,
+            documents.applyChanges(uri, base, DocumentVersion.of(3), emptyList()),
+        )
+        assertEquals(DocumentSnapshot("newer", DocumentVersion.of(5)), documents.getSnapshot(uri))
     }
 
     @Test
     fun `retired and stale requests return before inspecting the change list`() {
         val base = open()
         val changes = UnreadChanges()
-        assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, base.copy(), 3, changes))
-        assertEquals(BufferChangeResult.Stale, documents.applyChanges(uri, base, 3, changes))
-        assertEquals(BufferChangeResult.Stale, documents.applyChanges(uri, base, Int.MIN_VALUE, changes))
+        assertEquals(
+            BufferChangeResult.RetiredBase,
+            documents.applyChanges(uri, base.copy(), DocumentVersion.of(3), changes),
+        )
+        assertEquals(BufferChangeResult.Stale, documents.applyChanges(uri, base, DocumentVersion.of(3), changes))
+        assertEquals(
+            BufferChangeResult.Stale,
+            documents.applyChanges(uri, base, DocumentVersion.of(Int.MIN_VALUE), changes),
+        )
         assertSame(base, documents.getSnapshot(uri))
 
         documents.remove(uri)
-        assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, base, 4, changes))
+        assertEquals(BufferChangeResult.RetiredBase, documents.applyChanges(uri, base, DocumentVersion.of(4), changes))
         assertNull(documents.getSnapshot(uri))
     }
 
     private fun open(content: String = "abc", version: Int = 3): DocumentSnapshot {
-        documents.put(uri, content, version)
+        documents.put(uri, content, DocumentVersion.of(version))
         return assertNotNull(documents.getSnapshot(uri))
     }
 
@@ -275,7 +318,11 @@ class DocumentProviderChangesTest {
         val paused = PausedChanges(changes, pauseIndex)
         val executor = Executors.newFixedThreadPool(2)
         try {
-            val batch = executor.submit(Callable { documents.applyChanges(uri, base, version, paused) })
+            val batch = executor.submit(
+                Callable {
+                    documents.applyChanges(uri, base, DocumentVersion.of(version), paused)
+                },
+            )
             assertTrue(paused.entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "batch never reached preparation")
             // Completion before release proves that preparation does not hold the lifecycle lock.
             executor.submit(Callable { whilePaused() }).get(WAIT_SECONDS, TimeUnit.SECONDS)

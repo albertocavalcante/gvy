@@ -129,7 +129,7 @@ class CodeActionProvider(
             )
 
             // Import hygiene: quick fixes for gvy's own unused-import diagnostic, and Organize Imports
-            val importRequest = ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics)
+            val importRequest = ImportActionRequest(uri, snapshot.version?.value, content, params.context.diagnostics)
             if (allowsKind(CodeActionKind.QuickFix, params.context.only)) {
                 addAll(unusedImportFixAction.createActions(importRequest))
             }
@@ -162,7 +162,7 @@ class CodeActionProvider(
                 compiled.parseResult.ast,
                 params.range,
                 params.context.only,
-                snapshot.version,
+                snapshot.version?.value,
                 isPartial = !compiled.parseResult.isSuccessful,
                 verdicts = verdictMemory.access(
                     params.textDocument.uri,

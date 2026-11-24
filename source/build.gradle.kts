@@ -31,7 +31,7 @@ tasks.test {
 }
 
 /**
- * Compiles a well-typed control and a file that mixes coordinate units against the main classes,
+ * Compiles a well-typed control and a file that mixes coordinate units or version kinds against the main classes,
  * as a separate module (so internal constructors are invisible). The control must compile; the
  * mixed file must fail with an error on every line marked `// <n>:` and on no other line.
  */
@@ -95,7 +95,7 @@ abstract class VerifyCompileFailures
                     "Expected errors on lines $expectedLines of ${mixedSource.name}, got $errorLines:\n${mixed.output}",
                 )
             }
-            logger.lifecycle("Coordinate units do not mix: ${expectedLines.size} statements fail, the control compiles")
+            logger.lifecycle("Compile-fail check: ${expectedLines.size} statements fail, the control compiles")
         }
 
         private class Compilation(
@@ -147,6 +147,18 @@ val verifyCoordinateUnitCompileFailures =
         workDirectory.set(layout.buildDirectory.dir("compile-fail"))
     }
 
+val verifyVersionKindCompileFailures =
+    tasks.register<VerifyCompileFailures>("verifyVersionKindCompileFailures") {
+        description = "Prove that document versions and raw numbers do not mix at compile time"
+        group = "verification"
+        compilerClasspath.from(compileFailCompiler)
+        consumerClasspath.from(sourceSets.main.map { it.output }, configurations.named("compileClasspath"))
+        wellTyped.set(layout.projectDirectory.file("src/test/resources/compile-fail/WellTypedVersions.kt.txt"))
+        mixedUnits.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedVersionKinds.kt.txt"))
+        launcher.set(javaToolchains.launcherFor(java.toolchain))
+        workDirectory.set(layout.buildDirectory.dir("compile-fail-versions"))
+    }
+
 tasks.check {
-    dependsOn(verifyCoordinateUnitCompileFailures)
+    dependsOn(verifyCoordinateUnitCompileFailures, verifyVersionKindCompileFailures)
 }

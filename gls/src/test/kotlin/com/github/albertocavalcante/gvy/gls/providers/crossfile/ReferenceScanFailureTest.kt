@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -34,7 +35,7 @@ class ReferenceScanFailureTest {
     private val uri = URI.create("file:///Scan.groovy")
     private val text = "class Scan {\n    void helper() {}\n    void run() { helper() }\n}\n"
     private val callOfHelper = Position(2, 19)
-    private val documents = DocumentProvider().apply { put(uri, text, 1) }
+    private val documents = DocumentProvider().apply { put(uri, text, DocumentVersion.of(1)) }
     private val compilation = GroovyCompilationService(documentProvider = documents)
 
     @Test

@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.spyk
@@ -55,7 +56,7 @@ class SemanticTokensSnapshotTest {
 
     @Test
     fun `cold token queries highlight current source without publishing`() {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         assertFreshClass(request())
         assertNull(compilation.getCompiledSnapshot(uri))
         assertTrue(compilation.getWorkspaceSymbolIndex()?.implementationSnapshot?.containsKey(uri) != true)
@@ -65,7 +66,7 @@ class SemanticTokensSnapshotTest {
     fun `older compiled text cannot supply tokens for the current buffer`(): Unit = runBlocking {
         val old = "class Old {}\n"
         actual.compile(uri, old)
-        documents.put(uri, source, 2)
+        documents.put(uri, source, DocumentVersion.of(2))
         assertFreshClass(request())
         assertEquals(old, assertNotNull(compilation.getCompiledSnapshot(uri)).sourceText)
     }
@@ -78,7 +79,7 @@ class SemanticTokensSnapshotTest {
 
     @Test
     fun `cancellation is not converted into an empty token success`() {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         coEvery { compilation.ensureCompiled(uri) } throws CancellationException("cancelled")
         coEvery { compilation.compileTransient(uri, source, any()) } throws CancellationException("cancelled")
         assertThrows<CancellationException> { request() }
@@ -86,15 +87,15 @@ class SemanticTokensSnapshotTest {
 
     @Test
     fun `a version change during AST acquisition rejects the response`(): Unit = runBlocking {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         actual.compile(uri, source)
         val cached = assertNotNull(compilation.getCompiledSnapshot(uri))
         every { compilation.getAstModel(uri) } answers {
-            documents.put(uri, source, 2)
+            documents.put(uri, source, DocumentVersion.of(2))
             cached.parseResult.astModel
         }
         every { compilation.getCompiledSnapshot(uri) } answers {
-            documents.put(uri, source, 2)
+            documents.put(uri, source, DocumentVersion.of(2))
             cached
         }
         val error = assertThrows<ExecutionException> { request() }
@@ -125,7 +126,7 @@ class SemanticTokensSnapshotTest {
 
     @Test
     fun `matching current source still produces ordinary class tokens`(): Unit = runBlocking {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         actual.compile(uri, source)
         assertFreshClass(request())
     }

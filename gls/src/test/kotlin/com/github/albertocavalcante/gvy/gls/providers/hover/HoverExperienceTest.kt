@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
@@ -125,7 +126,7 @@ class HoverExperienceTest {
 
     private suspend fun hover(source: String, position: Position, engine: EngineType? = null): Hover {
         val uri = workspace.resolve("Sample.groovy").toUri()
-        val documents = DocumentProvider().apply { put(uri, source, 1) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(1)) }
         val config = engine?.let { EngineConfiguration(it) } ?: EngineConfiguration()
         val compilation = GroovyCompilationService(documentProvider = documents, engineConfig = config)
         try {
