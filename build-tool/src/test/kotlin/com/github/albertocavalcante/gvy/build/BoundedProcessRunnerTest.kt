@@ -15,6 +15,8 @@ import java.io.InputStream
 import java.io.InterruptedIOException
 import java.io.OutputStream
 import java.nio.file.Path
+import java.util.Optional
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -64,10 +66,7 @@ class BoundedProcessRunnerTest {
         assertTrue(result.timedOut)
         assertTrue(elapsedSeconds < 30, "run must return shortly after the timeout, took ${elapsedSeconds}s")
         val childPid = result.output.trim().lines().first().toLong()
-        val deadline = System.nanoTime() + 5_000_000_000L
-        while (ProcessHandle.of(childPid).map { it.isAlive }.orElse(false) && System.nanoTime() < deadline) {
-            Thread.sleep(50)
-        }
+        // No polling: run() itself must not return before the kill has completed.
         assertFalse(ProcessHandle.of(childPid).map { it.isAlive }.orElse(false), "descendant must be killed")
     }
 
@@ -106,7 +105,17 @@ class BoundedProcessRunnerTest {
         val failure = AtomicReference<Throwable>()
         val runner = Thread {
             try {
-                BoundedProcessRunner.run(listOf("stuck"), tempDir, 120.seconds, 200.milliseconds) { _, _ -> process }
+                BoundedProcessRunner.run(
+                    listOf("stuck"),
+                    tempDir,
+                    120.seconds,
+                    BoundedProcessRunner.Waits(200.milliseconds, 200.milliseconds),
+                ) {
+                        _,
+                        _,
+                    ->
+                    process
+                }
             } catch (e: InterruptedException) {
                 failure.set(e)
             }
@@ -132,7 +141,15 @@ class BoundedProcessRunnerTest {
         val aliveOnReturn = AtomicReference<Boolean>()
         val runner = Thread {
             try {
-                BoundedProcessRunner.run(listOf("lingering"), tempDir, 120.seconds, 200.milliseconds) { _, _ ->
+                BoundedProcessRunner.run(
+                    listOf("lingering"),
+                    tempDir,
+                    120.seconds,
+                    BoundedProcessRunner.Waits(readerJoin = 200.milliseconds),
+                ) {
+                        _,
+                        _,
+                    ->
                     process
                 }
             } catch (e: InterruptedException) {
@@ -155,7 +172,12 @@ class BoundedProcessRunnerTest {
     fun `timeout returns only after the killed process has exited`() {
         val process = LingeringProcess(dyingMillis = 500)
 
-        val result = BoundedProcessRunner.run(listOf("lingering"), tempDir, 100.milliseconds, 200.milliseconds) {
+        val result = BoundedProcessRunner.run(
+            listOf("lingering"),
+            tempDir,
+            100.milliseconds,
+            BoundedProcessRunner.Waits(readerJoin = 200.milliseconds),
+        ) {
                 _,
                 _,
             ->
@@ -166,8 +188,114 @@ class BoundedProcessRunnerTest {
         assertFalse(process.isAlive, "run() returned while the killed process was still alive")
     }
 
-    /** A process that dies [dyingMillis] after it is asked to, like a kill that the kernel has not yet completed. */
-    private class LingeringProcess(private val dyingMillis: Long) : Process() {
+    @Test
+    fun `a process that never exits is reported as a survivor once the exit wait elapses`() {
+        val process = LingeringProcess(dyingMillis = null)
+        val started = System.nanoTime()
+
+        val result = BoundedProcessRunner.run(
+            listOf("immortal"),
+            tempDir,
+            100.milliseconds,
+            BoundedProcessRunner.Waits(200.milliseconds, 300.milliseconds),
+        ) {
+                _,
+                _,
+            ->
+            process
+        }
+        val elapsedMillis = (System.nanoTime() - started) / 1_000_000
+
+        assertTrue(result.timedOut)
+        assertEquals(listOf(LingeringProcess.PID), result.survivors)
+        assertTrue(elapsedMillis < 10_000, "the exit wait must be bounded by its limit, took ${elapsedMillis}ms")
+    }
+
+    @Test
+    fun `a clean kill reports no survivors`() {
+        val process = LingeringProcess(dyingMillis = 50)
+
+        val result = BoundedProcessRunner.run(
+            listOf("lingering"),
+            tempDir,
+            100.milliseconds,
+            BoundedProcessRunner.Waits(readerJoin = 200.milliseconds),
+        ) {
+                _,
+                _,
+            ->
+            process
+        }
+
+        assertEquals(emptyList<Long>(), result.survivors)
+    }
+
+    @Test
+    fun `run waits for a descendant that exits late`() {
+        val descendant = LateHandle(dyingMillis = 600)
+        val process = LingeringProcess(dyingMillis = 10, descendants = listOf(descendant))
+
+        val result = BoundedProcessRunner.run(
+            listOf("tree"),
+            tempDir,
+            100.milliseconds,
+            BoundedProcessRunner.Waits(readerJoin = 200.milliseconds),
+        ) {
+                _,
+                _,
+            ->
+            process
+        }
+
+        assertTrue(result.timedOut)
+        assertFalse(descendant.isAlive, "run() returned while a killed descendant was still alive")
+        assertEquals(emptyList<Long>(), result.survivors)
+    }
+
+    /** A descendant whose death is [dyingMillis] after the kill request. */
+    private class LateHandle(private val dyingMillis: Long) : ProcessHandle {
+        @Volatile private var diesAtNanos = Long.MAX_VALUE
+        private val exit = CompletableFuture<ProcessHandle>()
+
+        override fun pid(): Long = DESCENDANT_PID
+
+        override fun isAlive(): Boolean = System.nanoTime() < diesAtNanos
+
+        override fun onExit(): CompletableFuture<ProcessHandle> = exit
+
+        override fun destroyForcibly(): Boolean {
+            diesAtNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(dyingMillis)
+            CompletableFuture.delayedExecutor(dyingMillis, TimeUnit.MILLISECONDS).execute { exit.complete(this) }
+            return true
+        }
+
+        override fun destroy(): Boolean = destroyForcibly()
+
+        override fun supportsNormalTermination(): Boolean = false
+
+        override fun parent(): Optional<ProcessHandle> = Optional.empty()
+
+        override fun children(): Stream<ProcessHandle> = Stream.empty()
+
+        override fun descendants(): Stream<ProcessHandle> = Stream.empty()
+
+        override fun info(): ProcessHandle.Info = throw UnsupportedOperationException()
+
+        override fun compareTo(other: ProcessHandle): Int = pid().compareTo(other.pid())
+
+        private companion object {
+            const val DESCENDANT_PID = 4242L
+        }
+    }
+
+    /**
+     * A process that dies [dyingMillis] after it is asked to, like a kill that the kernel has not yet completed;
+     * `null` means it never dies.
+     */
+    private class LingeringProcess(
+        private val dyingMillis: Long?,
+        private val descendants: List<ProcessHandle> = emptyList(),
+    ) : Process() {
         val running = CountDownLatch(1)
 
         @Volatile private var diesAtNanos = Long.MAX_VALUE
@@ -192,13 +320,17 @@ class BoundedProcessRunnerTest {
         override fun exitValue(): Int = if (isAlive) throw IllegalThreadStateException() else KILLED
 
         override fun destroy() {
-            diesAtNanos = minOf(diesAtNanos, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(dyingMillis))
+            val delay = dyingMillis ?: return
+            diesAtNanos = minOf(diesAtNanos, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay))
         }
 
-        override fun descendants(): Stream<ProcessHandle> = Stream.empty()
+        override fun descendants(): Stream<ProcessHandle> = descendants.stream()
 
-        private companion object {
-            const val KILLED = 137
+        override fun pid(): Long = PID
+
+        companion object {
+            const val PID = 1234L
+            private const val KILLED = 137
         }
     }
 
@@ -231,6 +363,8 @@ class BoundedProcessRunnerTest {
                 return -1
             }
         }
+
+        override fun pid(): Long = 1L
 
         override fun getOutputStream(): OutputStream = OutputStream.nullOutputStream()
 
