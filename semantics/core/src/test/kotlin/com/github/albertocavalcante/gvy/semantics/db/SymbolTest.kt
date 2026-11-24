@@ -259,19 +259,77 @@ class SymbolTest {
         assertEquals("import#a/b/C.m", Symbol.ofStaticImport("a.b.C", "m").id)
     }
 
-    /**
-     * Pins today's behaviour for a method name containing `#` (Spock feature names). The formatters do not escape, so
-     * the id has two `#` and the member reads `12`, not `fixes #12`.
-     */
-    // FIXME(#2412): method names containing #, . or ( corrupt symbol ids; this test pins the corrupted reading.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2412
     @Test
-    fun `a method name containing a hash is not escaped`() {
-        val id = Symbol.ofMethod(Symbol.ofClass("a.B"), "fixes #12", "")
+    fun `a method name containing a hash round-trips`() {
+        val id = Symbol.ofMethod(Symbol.ofClass("a.B"), "fixes #12", "int")
 
-        assertEquals("a/B#fixes #12().", id.id)
+        assertEquals("a/B#fixes \\#12(int).", id.id)
         assertEquals("a/B", id.owner)
-        assertEquals("12", id.member)
+        assertEquals("fixes #12", id.member)
+        assertEquals("int", id.descriptor)
+        assertEquals(1, id.arity)
+    }
+
+    @Test
+    fun `escaped ids are written exactly`() {
+        val owner = Symbol.ofClass("a.B")
+        assertEquals("a/B#a\\.b().", Symbol.ofMethod(owner, "a.b", "").id)
+        assertEquals("a/B#f\\(x\\)().", Symbol.ofMethod(owner, "f(x)", "").id)
+        assertEquals("a/B#back\\\\slash(int).", Symbol.ofMethod(owner, "back\\slash", "int").id)
+        assertEquals("a/B#a\\.b\\(c\\)().", Symbol.ofMethod(owner, "a.b(c)", "").id)
+        assertEquals("a/B#\\`q\\`.", Symbol.ofField(owner, "`q`").id)
+    }
+
+    @Test
+    fun `method names containing separators round-trip`() {
+        val names = listOf(
+            "fixes #12",
+            "a.b",
+            "f(x)",
+            "open(",
+            "close)",
+            "back\\slash",
+            "ends with backslash\\",
+            "#.()\\",
+            "`quoted`",
+            "a#b#c",
+            "<init>",
+            "plain",
+        )
+        names.forEach { name ->
+            val method = Symbol.ofMethod(Symbol.ofClass("a.B"), name, "String,int")
+            val parsed = Symbol(method.id)
+            assertEquals("a/B", parsed.owner, "owner of '$name'")
+            assertEquals(name, parsed.member, "member of '$name'")
+            assertEquals("String,int", parsed.descriptor, "descriptor of '$name'")
+            assertEquals(2, parsed.arity, "arity of '$name'")
+            assertEquals(listOf("String", "int"), parsed.parameterTypes, "parameter types of '$name'")
+        }
+    }
+
+    @Test
+    fun `members and parameters with separators read as their method`() {
+        val method = Symbol.ofMethod(Symbol.ofClass("a.B"), "fixes #12.x(y)", "int")
+
+        assertEquals("fixes #12.x(y)", Symbol.ofParameter(method, "p)q").member)
+        assertEquals(listOf("int"), Symbol.ofParameter(method, "p)q").parameterTypes)
+        assertEquals("fixes #12.x(y)", Symbol.ofLocal(method, "v#w", 1, 2).member)
+    }
+
+    @Test
+    fun `a field name containing separators round-trips`() {
+        val field = Symbol.ofField(Symbol.ofClass("a.B"), "odd#name.(x)")
+
+        assertEquals("a/B", field.owner)
+        assertEquals("odd#name.(x)", field.member)
+    }
+
+    @Test
+    fun `different method names never share an id`() {
+        val owner = Symbol.ofClass("a.B")
+        val ids = listOf("fixes #12", "fixes \\#12", "fixes", "fixes.", "fixes(").map { Symbol.ofMethod(owner, it, "") }
+
+        assertEquals(ids.size, ids.toSet().size)
     }
 
     @Test

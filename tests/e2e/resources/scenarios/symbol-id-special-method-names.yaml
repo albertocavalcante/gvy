@@ -1,0 +1,89 @@
+name: symbol-id-special-method-names
+description: >
+  Definition, references and rename on methods whose names contain the symbol id separators `#`, `.` and `(`
+  (Spock feature names). The ids of these methods must keep the name intact (#2412).
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/main/groovy/OddNames.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class OddNames {
+            def "fixes #12"() { 1 }
+            def "a.b(c)"() { 2 }
+        }
+        class Caller {
+            def run(OddNames n) {
+                n."fixes #12"()
+                n."a.b(c)"()
+            }
+        }
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/main/groovy/OddNames.groovy" }
+        position: { line: 6, character: 14 }
+      saveAs: hashDefinition
+  - assert:
+      source: hashDefinition
+      checks:
+        - jsonPath: $.items.length()
+          expect: { type: EQUALS, value: 1 }
+        - jsonPath: $.items[0].range.start.line
+          expect: { type: EQUALS, value: 1 }
+
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/main/groovy/OddNames.groovy" }
+        position: { line: 7, character: 14 }
+      saveAs: dotParenDefinition
+  - assert:
+      source: dotParenDefinition
+      checks:
+        - jsonPath: $.items.length()
+          expect: { type: EQUALS, value: 1 }
+        - jsonPath: $.items[0].range.start.line
+          expect: { type: EQUALS, value: 2 }
+
+  - request:
+      method: textDocument/references
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/main/groovy/OddNames.groovy" }
+        position: { line: 1, character: 10 }
+        context: { includeDeclaration: true }
+      saveAs: hashReferences
+  - assert:
+      source: hashReferences
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 2 }
+
+  - request:
+      method: textDocument/rename
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/main/groovy/OddNames.groovy" }
+        position: { line: 1, character: 10 }
+        newName: renamedFeature
+      saveAs: hashRename
+  - assert:
+      source: hashRename
+      checks:
+        - jsonPath: $.documentChanges[0].edits
+          expect: { type: SIZE, value: 2 }
+
+  - shutdown: {}
+  - exit: {}

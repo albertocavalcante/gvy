@@ -336,6 +336,7 @@ path = [
   "tests/e2e/resources/scenarios/signature-help-basic.yaml",
   "tests/e2e/resources/scenarios/signature-help-gdk.yaml",
   "tests/e2e/resources/scenarios/signature-help.yaml",
+  "tests/e2e/resources/scenarios/symbol-id-special-method-names.yaml",
   "tests/e2e/resources/scenarios/type-definition-basic.yaml",
   "tests/e2e/resources/scenarios/workspace-symbol-basic.yaml",
   "tests/e2e/resources/scenarios/workspace-symbols.yaml",
