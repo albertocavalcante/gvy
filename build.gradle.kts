@@ -94,6 +94,33 @@ val licenseCheck = tasks.register<Exec>("licenseCheck") {
     )
 }
 
+// Dynamic versions (ranges, "+", latest.*) make Gradle list versions from Maven Central (maven-metadata.xml),
+// which CI bursts get rate-limited on (HTTP 429, #1908). Pin the version in the catalog instead.
+// Kept outside the `allprojects` licensing block: tools/ci/verify-license-task-ordering.mjs extracts that block
+// into a catalog-less fixture project, and this policy is unrelated to licensing.
+val gsonPin = libs.gson.get()
+val resolutionPolicy = Action<Configuration> {
+    resolutionStrategy {
+        // The rewrite applies to every gson request, not only lsp4j's ranges ([2.9.1,3.0) and [2.9.1,2.11));
+        // replacing the requested version before resolution means no version listing is ever needed.
+        eachDependency {
+            if (requested.group == gsonPin.module.group && requested.name == gsonPin.module.name) {
+                useVersion(requireNotNull(gsonPin.versionConstraint.requiredVersion.takeIf { it.isNotEmpty() }) {
+                    "gson must have a required version in the catalog"
+                })
+                because("lsp4j declares a gson version range; pinned in gradle/libs.versions.toml (#1908)")
+            }
+        }
+        // Order matters: this guard must stay registered after the eachDependency rewrite above. It passes the
+        // lsp4j gson ranges only because they are rewritten first; Gradle does not document that ordering
+        // (verified on Gradle 9.8.2). If a Gradle upgrade changes it, the build is expected to fail on those
+        // ranges ("Resolution strategy disallows usage of dynamic versions") rather than pass silently.
+        failOnDynamicVersions()
+    }
+}
+configurations.configureEach(resolutionPolicy)
+subprojects { configurations.configureEach(resolutionPolicy) }
+
 allprojects {
     tasks.configureEach {
         // Scan licensing before requested work can create ignored output trees.
