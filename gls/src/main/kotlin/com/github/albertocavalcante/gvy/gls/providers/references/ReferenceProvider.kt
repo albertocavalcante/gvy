@@ -11,6 +11,8 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
+import com.github.albertocavalcante.gvy.gls.errors.ReferenceScanFailedException
+import com.github.albertocavalcante.gvy.gls.errors.ReferenceScanPhase
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.utils.ParameterOrigins
 import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
@@ -20,6 +22,7 @@ import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
+import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.ProducerScope
@@ -71,19 +74,19 @@ class ReferenceProvider(
      * @param uri The URI of the document
      * @param position The position in the document
      * @param includeDeclaration Whether to include the declaration in the results
-     * @return Flow of locations where the symbol is referenced
+     * @return Flow of locations where the symbol is referenced. The flow fails with
+     * [ReferenceScanFailedException] when a scan phase fails, never completing with a partial list.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     fun provideReferences(uri: String, position: Position, includeDeclaration: Boolean): Flow<Location> = channelFlow {
         logger.debug { "Finding references for $uri at ${position.line}:${position.character}" }
 
         val emittedLocations = mutableSetOf<String>()
+        var symbolName: String? = null
+        var isLocal = false
 
-        try {
-            // First, try same-file AST-based reference finding
+        // First, try same-file AST-based reference finding
+        scanning(logger, ReferenceScanPhase.DOCUMENT) {
             val context = createReferenceContext(uri, position)
-            var symbolName: String? = null
-            var isLocal = false
             if (context != null) {
                 val definition = resolveTargetDefinition(context)
                 symbolName = definition?.declaredName()
@@ -111,21 +114,13 @@ class ReferenceProvider(
                     )
                 }
             }
+        }
 
-            // Second, search workspace-wide using SemanticDB
-            workspaceSymbolIndex?.takeUnless { isLocal }?.let { index ->
+        // Second, search workspace-wide using SemanticDB
+        workspaceSymbolIndex?.takeUnless { isLocal }?.let { index ->
+            scanning(logger, ReferenceScanPhase.WORKSPACE) {
                 findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: GroovyLspException) {
-            logger.error(e) { "LSP error finding references" }
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments for finding references" }
-        } catch (e: IllegalStateException) {
-            logger.error(e) { "Invalid state while finding references" }
-        } catch (e: Exception) {
-            logger.error(e) { "Unexpected error finding references" }
         }
     }
 
@@ -174,55 +169,50 @@ class ReferenceProvider(
         emittedLocations: MutableSet<String>,
         symbolName: String?,
     ) {
-        try {
-            // Get SemanticDocument for current file
-            val origin = index.getDocumentSnapshot(URI.create(uri))
-            val originText = origin?.sourceText?.let(::TextIndex)
-            val cursor = originText?.codePointPosition(position)
-            if (origin == null || cursor == null) {
-                logger.debug { "No semantic document found for $uri" }
-                return
-            }
+        // Get SemanticDocument for current file
+        val origin = index.getDocumentSnapshot(URI.create(uri))
+        val originText = origin?.sourceText?.let(::TextIndex)
+        val cursor = originText?.codePointPosition(position)
+        if (origin == null || cursor == null) {
+            logger.debug { "No semantic document found for $uri" }
+            return
+        }
 
-            // The innermost occurrence at the cursor: a method's occurrence lies inside its class's,
-            // and taking the first match returned the class (LSP uses 0-indexed positions).
-            val occurrence = origin.document.occurrences
-                .filter { occ -> occ.range.contains(cursor.line, cursor.character) }
-                .minWithOrNull(
-                    compareBy(
-                        { it.range.endLine - it.range.startLine },
-                        { it.range.span() },
-                        { if (it.role == OccurrenceRole.IMPORT) 1 else 0 },
-                    ),
-                )
+        // The innermost occurrence at the cursor: a method's occurrence lies inside its class's,
+        // and taking the first match returned the class (LSP uses 0-indexed positions).
+        val occurrence = origin.document.occurrences
+            .filter { occ -> occ.range.contains(cursor.line, cursor.character) }
+            .minWithOrNull(
+                compareBy(
+                    { it.range.endLine - it.range.startLine },
+                    { it.range.span() },
+                    { if (it.role == OccurrenceRole.IMPORT) 1 else 0 },
+                ),
+            )
 
-            if (occurrence == null) {
-                logger.debug { "No occurrence found at ${position.line}:${position.character}" }
-                return
-            }
+        if (occurrence == null) {
+            logger.debug { "No occurrence found at ${position.line}:${position.character}" }
+            return
+        }
 
-            logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
+        logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
 
-            val symbol = index.findSymbol(occurrence.symbol)
-            val name = symbolName ?: symbol?.name
-            if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER || name == null) {
-                logger.debug { "Not searching the workspace for local or unnamed ${occurrence.symbol}" }
-                return
+        val symbol = index.findSymbol(occurrence.symbol)
+        val name = symbolName ?: symbol?.name
+        if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER || name == null) {
+            logger.debug { "Not searching the workspace for local or unnamed ${occurrence.symbol}" }
+            return
+        }
+        index.findReferenceDocuments(occurrence.symbol).forEach { (referenceUri, snapshot) ->
+            snapshot.referenceLocations(
+                referenceUri,
+                occurrence.symbol,
+                name,
+                includeDeclaration,
+            ).forEach { named ->
+                val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
+                if (emittedLocations.add(key)) send(named)
             }
-            index.findReferenceDocuments(occurrence.symbol).forEach { (referenceUri, snapshot) ->
-                snapshot.referenceLocations(
-                    referenceUri,
-                    occurrence.symbol,
-                    name,
-                    includeDeclaration,
-                ).forEach { named ->
-                    val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
-                    if (emittedLocations.add(key)) send(named)
-                }
-            }
-        } catch (e: Exception) {
-            rethrowIfCancellationOrError(e)
-            logger.error(e) { "Error finding workspace references" }
         }
     }
 
@@ -580,6 +570,26 @@ class ReferenceProvider(
         val span = ranges.name(this) ?: return null
         return Range(Position(span.line, span.start), Position(span.line, span.start + span.length))
     }
+}
+
+/**
+ * Runs one phase of a reference scan. A failure is rethrown as [ReferenceScanFailedException] instead of
+ * being logged: a flow that completes after a failed phase is a partial list the client cannot tell from a
+ * complete one. Cancellation passes through untouched; failures of other kinds propagate as they are.
+ */
+private inline fun <T> scanning(logger: KLogger, phase: ReferenceScanPhase, block: () -> T): T = try {
+    block()
+} catch (e: CancellationException) {
+    throw e
+} catch (e: GroovyLspException) {
+    logger.error(e) { "LSP error scanning ${phase.label} for references" }
+    throw ReferenceScanFailedException(phase, e)
+} catch (e: IllegalArgumentException) {
+    logger.error(e) { "Invalid arguments scanning ${phase.label} for references" }
+    throw ReferenceScanFailedException(phase, e)
+} catch (e: IllegalStateException) {
+    logger.error(e) { "Invalid state scanning ${phase.label} for references" }
+    throw ReferenceScanFailedException(phase, e)
 }
 
 /** Column span on a single line; a large value for multi-line ranges, which sort after it. */

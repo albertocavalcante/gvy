@@ -91,7 +91,7 @@ class LocalSymbolResolutionStrategyTest {
             // Act: Request definition at the constructor call position
             // Line 4: "        Calculator calc = new Calculator(10)"
             //                                       ^-- char 30
-            val result = definitionResolver.findDefinitionAt(mainUri, Position(4, 30))
+            val result = definitionResolver.findDefinitionAt(mainUri, Position(4, 30)).foundOrNull()
 
             // Assert: Should resolve to Calculator.groovy, NOT Main.groovy
             // Note: Without WorkspaceSymbolIndex, it may return null (which is acceptable)

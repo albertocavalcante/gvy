@@ -45,9 +45,15 @@ class NativeDefinitionService(
         )
         // The request position carries UTF-16 columns; the engine's Groovy positions count code points.
         val groovyPosition = position.toGroovyPosition(snapshot.sourceText)
-        return resolver.findDefinitionAt(uri, groovyPosition)
-            ?.toUnifiedDefinition(visitor) { compilationService.compiledTextOf(it, uri, snapshot.sourceText) }
-            ?: emptyList()
+        return when (val lookup = resolver.findDefinitionAt(uri, groovyPosition)) {
+            is DefinitionResolver.DefinitionLookup.Found ->
+                lookup.result.toUnifiedDefinition(visitor) {
+                    compilationService.compiledTextOf(it, uri, snapshot.sourceText)
+                }
+
+            is DefinitionResolver.DefinitionLookup.NotFound -> emptyList()
+            is DefinitionResolver.DefinitionLookup.Failed -> throw lookup.error
+        }
     }
 
     private fun parseUri(uriStr: String): URI? = try {

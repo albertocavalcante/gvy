@@ -146,7 +146,7 @@ class CrossFileOperationsHandler(
      * @param uri Document URI
      * @param position Cursor position
      * @param includeDeclaration Whether to include the declaration/definition in results
-     * @return List of reference locations
+     * @return List of reference locations; a failed scan is a [ResponseErrorException], not a partial list
      */
     suspend fun getReferences(uri: String, position: Position, includeDeclaration: Boolean): List<Location> {
         logger.debug {
@@ -173,7 +173,10 @@ class CrossFileOperationsHandler(
         }.getOrElse { e ->
             if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
             logException(e, "finding references")
-            emptyList()
+            // An error is not "no references": a failed scan must reach the client as a failed request.
+            throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.InternalError, "Finding references failed: ${e.message}", null),
+            )
         }
     }
 

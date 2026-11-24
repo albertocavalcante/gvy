@@ -35,6 +35,24 @@ class SymbolNotFoundException(symbolName: String, uri: URI, line: Int, column: I
 class AmbiguousSymbolException(symbolName: String, candidateCount: Int, uri: URI) :
     SymbolResolutionException("Ambiguous symbol '$symbolName' at $uri ($candidateCount candidates found)")
 
+/** Which part of a reference scan failed. */
+enum class ReferenceScanPhase(val label: String) {
+    DOCUMENT("the document"),
+    WORKSPACE("the workspace index"),
+}
+
+/**
+ * A reference scan stopped before it finished, so any list it had produced would be incomplete.
+ *
+ * Refusing is the honest answer: a partial list shown as complete misleads the client, and rename or call
+ * hierarchy built on it would act on a subset.
+ */
+class ReferenceScanFailedException(val phase: ReferenceScanPhase, cause: Throwable) :
+    SymbolResolutionException(
+        "Reference scan of ${phase.label} failed, so the references would be incomplete: ${cause.message}",
+        cause,
+    )
+
 /**
  * Position and range exceptions
  */
