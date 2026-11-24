@@ -35,4 +35,7 @@ fun mixKinds(version: DocumentVersion, generation: AnalysisGeneration, epoch: Ow
     val e18: AnalysisGeneration = AnalysisGeneration(1L) // 18: nor can a generation be built from a number
     val e19: AnalysisGeneration = generation + 1 // 19: no arithmetic; a generation advances only with next()
     val e20: OwnershipEpoch = epoch + 1 // 20: nor an epoch
+    val e21 = generation == epoch // 21: equality between a generation and an epoch does not compile
+    val e22: AnalysisGeneration = 0L // 22: a raw number is not a generation
+    val e23: OwnershipEpoch = 0L // 23: nor an epoch
 }

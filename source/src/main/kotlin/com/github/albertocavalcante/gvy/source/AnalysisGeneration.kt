@@ -4,10 +4,12 @@
 package com.github.albertocavalcante.gvy.source
 
 /**
- * A count of the server-side invalidations of derived analysis state, such as a configuration change or a
- * retirement of every publication. A result carries the generation it began in and is stale once the
- * current one differs.
+ * A count of the server-side invalidations of one piece of derived analysis state, such as a configuration
+ * change, a retirement of every publication or a new dependency-resolution attempt. A holder that captured
+ * a generation can later compare it with the current one to learn that the state was invalidated since; the
+ * generation may also be carried to the wire as a number.
  *
+ * Each owner keeps its own counter, so the type is shared by counters that never meet.
  * It is not a [DocumentVersion] (the client's number for a buffer) or an [OwnershipEpoch]; the three do
  * not compare or convert into each other. Generations only move forward, by [next].
  */

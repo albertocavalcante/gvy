@@ -162,6 +162,8 @@ class DependencyManager(
     ): StartDecision = synchronized(lock) {
         if (currentAttempt !== expected) return@synchronized StartDecision.Retry
         if (expectedWatcher != null && watcherToken !== expectedWatcher) return@synchronized StartDecision.Stop
+        // Bumped before any mutation: next() throws on overflow, which must not leave the attempt half-installed.
+        generation = generation.next()
         // Invalidate the old watcher before publishing the new attempt, so a stale event cannot pair
         // its token with an attempt from another workspace.
         val watcher = if (currentWorkspaceRoot != request.workspaceRoot) detachWatcher() else null
@@ -170,7 +172,6 @@ class DependencyManager(
             sourceDirs.set(emptyList())
             currentBuildToolName = null
         }
-        generation = generation.next()
         val previousJob = resolutionJob
         currentWorkspaceRoot = request.workspaceRoot
         state.set(State.IN_PROGRESS)
