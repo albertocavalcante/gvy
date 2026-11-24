@@ -21,7 +21,9 @@ import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
+import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
+import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
 import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -198,15 +200,16 @@ class ReferenceProvider(
         logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
 
         val symbol = index.findSymbol(occurrence.symbol)
-        val name = symbolName ?: symbol?.name
-        if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER || name == null) {
+        val indexed = searchTarget(occurrence, symbol, symbolName)
+        if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER || indexed == null) {
             logger.debug { "Not searching the workspace for local or unnamed ${occurrence.symbol}" }
             return
         }
-        index.findReferenceDocuments(occurrence.symbol).forEach { (referenceUri, snapshot) ->
+        val (target, name) = indexed
+        index.findReferenceDocuments(target).forEach { (referenceUri, snapshot) ->
             snapshot.referenceLocations(
                 referenceUri,
-                occurrence.symbol,
+                target,
                 name,
                 includeDeclaration,
             ).forEach { named ->
@@ -595,3 +598,20 @@ private inline fun <T> scanning(logger: KLogger, phase: ReferenceScanPhase, bloc
 /** Column span on a single line; a large value for multi-line ranges, which sort after it. */
 private fun com.github.albertocavalcante.gvy.semantics.db.Range.span(): Int =
     if (startLine == endLine) endColumn - startColumn else Int.MAX_VALUE
+
+/**
+ * The symbol id and source name to search the workspace for, from the [occurrence] at the cursor; null when there is
+ * no name. A `new Foo(..)` resolves to the class in the document phase, so the workspace phase answers for the
+ * class too, not for the one constructor that call occurrence names; a constructor declaration is its own target.
+ * A constructor's AST name is `<init>`, while the source spells the class name, which the index keeps as its name.
+ */
+private fun searchTarget(
+    occurrence: SymbolOccurrence,
+    symbol: SymbolInfo?,
+    symbolName: String?,
+): Pair<String, String>? {
+    val constructor = symbol?.takeIf { it.kind == SymbolKind.CONSTRUCTOR }
+        ?: return (symbolName ?: symbol?.name)?.let { occurrence.symbol to it }
+    val target = if (occurrence.role == OccurrenceRole.DEFINITION) occurrence.symbol else constructor.owner
+    return target?.let { it to constructor.name }
+}

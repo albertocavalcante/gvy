@@ -215,6 +215,13 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, classNode)
         }
 
+        // `methods` excludes constructors. Some take hidden compiler parameters (enums, inner classes): not indexed.
+        if (!IndexedConstructors.addsParameters(classNode)) {
+            classNode.declaredConstructors.forEach { constructor ->
+                extractMethod(constructor, classNode)
+            }
+        }
+
         visitBody(classNode, record = true)
     }
 
@@ -309,13 +316,15 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             methodNode is ConstructorNode -> SymbolKind.CONSTRUCTOR
             else -> SymbolKind.METHOD
         }
+        // A constructor is named for its class, as a source declaration spells it (its AST name is `<init>`).
+        val name = if (methodNode is ConstructorNode && owner != null) owner.sourceSimpleName() else methodNode.name
 
         symbols.add(
             SymbolInfo(
                 symbol = symbolId.id,
                 kind = kind,
                 range = range,
-                name = methodNode.name,
+                name = name,
                 owner = ownerSymbolId?.id,
                 type = methodNode.returnType.toDeclaredType().takeIf { kind == SymbolKind.METHOD },
             ),
@@ -381,6 +390,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
 
         private val resolver = CallResolver(moduleNode, currentClass, ::lookup)
+
+        private val constructors = ConstructorResolver()
 
         // Enclosing closures, innermost last; true when the closure is an argument of a delegate-neutral GDK call.
         private val closures = ArrayDeque<Boolean>()
@@ -546,21 +557,65 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             // Only a class the compiler resolved: a bare name would be guessed into this package.
             if (range == null || !resolver.isResolved(call.type)) return super.visitConstructorCallExpression(call)
 
-            // Create symbol ID for constructor call
             val typeName = resolver.resolveTypeName(call.type)
-            // Use class symbol ID to resolve to the class definition
-            // TODO: Support precise constructor resolution with parameters
-            val symbolId = Symbol.ofClass(typeName).id
-
+            // The class stays attributed at the type name: references to the class include its `new` expressions.
             occurrences.add(
                 SymbolOccurrence(
-                    symbol = symbolId,
+                    symbol = Symbol.ofClass(typeName).id,
                     range = range,
                     role = OccurrenceRole.CALL,
                 ),
             )
+            constructorCallOccurrence(call, range)?.let(occurrences::add)
 
             super.visitConstructorCallExpression(call)
+        }
+
+        /**
+         * The call of the constructor `new T(args)` invokes, when [ConstructorResolver] can tell. It
+         * covers `new T`, from the keyword to the end of the type name, so it never shares a range with the class
+         * occurrence at [typeRange] and the innermost occurrence at the type name stays the class's.
+         */
+        private fun constructorCallOccurrence(call: ConstructorCallExpression, typeRange: Range): SymbolOccurrence? {
+            val outcome = constructors.resolve(call)
+            val occurrence = (outcome as? CallOutcome.Resolved)?.let { resolved ->
+                constructorCallRange(call, typeRange)
+                    ?.let { range -> SymbolOccurrence(resolved.symbolId, range, OccurrenceRole.CALL) }
+            }
+            // Certain only when the occurrence is kept: a class that gets no occurrences (an anonymous class body)
+            // discards it, as it does a method call's, and then the class's name is recorded as uncertain instead.
+            val kept = record && occurrence != null
+            if (!kept && outcome.isUncertainConstructorUse() && unresolved.isSource(call)) {
+                constructedClass(call)?.let { unresolved.name(it.sourceSimpleName()) }
+            }
+            return occurrence
+        }
+
+        /** Uncertain, unless the class is not a source class (classpath) or the call makes a class of its own. */
+        private fun CallOutcome.isUncertainConstructorUse() = when (this) {
+            is CallOutcome.Resolved -> true
+            is CallOutcome.Unresolved ->
+                reason != CallOutcome.Reason.NOT_SOURCE_CLASS && reason != CallOutcome.Reason.ANONYMOUS_CLASS
+        }
+
+        /**
+         * The class whose constructor [call] invokes. `this(...)` and `super(...)` carry the placeholder types
+         * `ClassNode.THIS` and `ClassNode.SUPER`, which are not the classes: they mean this class and its superclass.
+         * A superclass of `Object` has no source constructor to be unsure about, so it is null.
+         */
+        private fun constructedClass(call: ConstructorCallExpression): ClassNode? = when {
+            call.isThisCall -> currentClass
+            call.isSuperCall -> currentClass.unresolvedSuperClass?.takeUnless { it.name == "java.lang.Object" }
+            else -> call.type
+        }
+
+        /** From the `new` keyword to the end of the type name; null when the type has no position of its own. */
+        private fun constructorCallRange(call: ConstructorCallExpression, typeRange: Range): Range? {
+            val start = nodeToRange(call) ?: return null
+            val starts = start.startLine < typeRange.startLine ||
+                start.startLine == typeRange.startLine && start.startColumn < typeRange.startColumn
+            if (!starts) return null
+            return Range(start.startLine, start.startColumn, typeRange.endLine, typeRange.endColumn)
         }
 
         override fun visitClassExpression(expression: ClassExpression) {
