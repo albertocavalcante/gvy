@@ -3,14 +3,18 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import com.github.albertocavalcante.gvy.build.CompatibilityResult.Compatible
+import com.github.albertocavalcante.gvy.build.CompatibilityResult.PartiallySupported
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
+import java.util.stream.Stream
 
 class GroovyCompatibilityServiceTest {
 
@@ -18,147 +22,110 @@ class GroovyCompatibilityServiceTest {
 
     @Test
     fun `should load compatibility matrix from JSON resource`() {
-        // Verify that the service can load the matrix without errors
-        // This is implicitly tested by other tests, but we make it explicit
-        assertNotNull(service, "Service should be created successfully")
-        // Try to get a known compatibility - this will fail if JSON didn't load
-        val result = service.checkCompatibility("5.0.0", 25)
-        assertNotNull(result, "Should return a result when matrix is loaded")
+        // A known line is answered from the table, not reported as unknown, so the resource loaded.
+        assertEquals(Compatible("5.0", 25), service.checkCompatibility("5.0.0", 25))
     }
 
-    @Test
-    fun `should report Groovy 5 compatible with JDK 25`() {
-        val result = service.checkCompatibility("5.0.0", 25)
-        assertTrue(result.isFullyCompatible, "Groovy 5.0.0 should be fully compatible with JDK 25")
-        assertFalse(result.isPartiallyCompatible, "Should not be partial if fully compatible")
-    }
-
-    @Test
-    fun `should report Groovy 5 compatible with JDK 11`() {
-        val result = service.checkCompatibility("5.0.0", 11)
-        assertTrue(result.isFullyCompatible, "Groovy 5.0.0 should be compatible with JDK 11 (minimum)")
+    @ParameterizedTest(name = "Groovy {0} on JDK {1} is fully compatible")
+    @CsvSource(
+        "5.0.0, 25, 5.0",
+        "5.0.0, 11, 5.0",
+        "4.0.0, 21, 4.0",
+        "3.0.0, 17, 3.0",
+        "2.5.0, 8,  2.5",
+        "2.5.0, 11, 2.5",
+        "2.4.0, 7,  2.4",
+        "5.0.1, 25, 5.0",
+        "4.0.22, 21, 4.0",
+        "5.0.0-rc-1, 25, 5.0",
+    )
+    fun `should report fully compatible combinations`(groovyVersion: String, jdkVersion: Int, line: String) {
+        assertEquals(Compatible(line, jdkVersion), service.checkCompatibility(groovyVersion, jdkVersion))
     }
 
     @Test
     fun `should report Groovy 4 incompatible with JDK 25`() {
         val result = service.checkCompatibility("4.0.0", 25)
-        assertFalse(result.isFullyCompatible, "Groovy 4.0.0 should not be fully compatible with JDK 25")
-        assertFalse(result.isPartiallyCompatible, "Groovy 4.0.0 should not be partially compatible with JDK 25")
-        assertTrue(result.message.isNotEmpty(), "Should provide a message explaining incompatibility")
+
+        assertEquals(CompatibilityResult.Incompatible.AboveMaximum("4.0", 25, maxSupportedJdk = 23), result)
+        assertEquals("Groovy 4.0 is not compatible with JDK 25 (max supported: JDK 23)", result.message)
     }
 
     @Test
-    fun `should report Groovy 4 fully compatible with JDK 21`() {
-        val result = service.checkCompatibility("4.0.0", 21)
-        assertTrue(result.isFullyCompatible, "Groovy 4.0.0 should be fully compatible with JDK 21")
-    }
-
-    @Test
-    fun `should report Groovy 4 partially compatible with JDK 22`() {
-        val result = service.checkCompatibility("4.0.0", 22)
-        assertFalse(result.isFullyCompatible, "Groovy 4.0.0 should not be fully compatible with JDK 22")
-        assertTrue(result.isPartiallyCompatible, "Groovy 4.0.0 should be partially compatible with JDK 22")
-        assertTrue(
-            result.message.contains("partial", ignoreCase = true),
-            "Message should mention partial compatibility",
+    fun `should report Groovy 3 incompatible with JDK 21 and 25`() {
+        assertEquals(
+            CompatibilityResult.Incompatible.AboveMaximum("3.0", 21, maxSupportedJdk = 17),
+            service.checkCompatibility("3.0.0", 21),
+        )
+        assertEquals(
+            CompatibilityResult.Incompatible.AboveMaximum("3.0", 25, maxSupportedJdk = 17),
+            service.checkCompatibility("3.0.0", 25),
         )
     }
 
-    @Test
-    fun `should report Groovy 4 partially compatible with JDK 23`() {
-        val result = service.checkCompatibility("4.0.0", 23)
-        assertFalse(result.isFullyCompatible, "Groovy 4.0.0 should not be fully compatible with JDK 23")
-        assertTrue(result.isPartiallyCompatible, "Groovy 4.0.0 should be partially compatible with JDK 23")
-    }
+    @ParameterizedTest(name = "Groovy 4.0.0 on JDK {0} is partially supported")
+    @CsvSource("22", "23")
+    fun `should report Groovy 4 partially supported with JDK 22 and 23`(jdkVersion: Int) {
+        val result = service.checkCompatibility("4.0.0", jdkVersion)
 
-    @Test
-    fun `should report Groovy 3 compatible with JDK 17`() {
-        val result = service.checkCompatibility("3.0.0", 17)
-        assertTrue(result.isFullyCompatible, "Groovy 3.0.0 should be compatible with JDK 17")
-    }
-
-    @Test
-    fun `should report Groovy 3 incompatible with JDK 21`() {
-        val result = service.checkCompatibility("3.0.0", 21)
-        assertFalse(result.isFullyCompatible, "Groovy 3.0.0 should not be compatible with JDK 21")
-    }
-
-    @Test
-    fun `should report Groovy 2dot5 compatible with JDK 8`() {
-        val result = service.checkCompatibility("2.5.0", 8)
-        assertTrue(result.isFullyCompatible, "Groovy 2.5.0 should be compatible with JDK 8")
-    }
-
-    @Test
-    fun `should report Groovy 2_5 compatible with JDK 11`() {
-        val result = service.checkCompatibility("2.5.0", 11)
-        assertTrue(result.isFullyCompatible, "Groovy 2.5.0 should be compatible with JDK 11")
-    }
-
-    @Test
-    fun `should report Groovy 2_4 compatible with JDK 7`() {
-        val result = service.checkCompatibility("2.4.0", 7)
-        assertTrue(result.isFullyCompatible, "Groovy 2.4.0 should be compatible with JDK 7")
-    }
-
-    @Test
-    fun `should fail open for unknown Groovy versions`() {
-        // Unknown/future Groovy versions should fail open (assume compatible)
-        val result = service.checkCompatibility("99.0.0", 21)
-        assertTrue(result.isFullyCompatible, "Unknown Groovy version should fail open")
-        assertTrue(result.message.contains("unknown", ignoreCase = true), "Should indicate unknown version")
-    }
-
-    @Test
-    fun `should fail open for unparseable Groovy versions`() {
-        val result = service.checkCompatibility("not-a-version", 21)
-        assertTrue(result.isFullyCompatible, "Unparseable Groovy version should fail open")
-    }
-
-    @Test
-    fun `should return null or generic suggestion for very old JDK versions`() {
-        // JDK 6 is very old, might not have explicit suggestion
-        val suggestion = service.suggestGroovyVersion(6)
-        // Either null or a generic message is acceptable
-        assertTrue(suggestion == null || suggestion.isNotEmpty(), "Should handle old JDK gracefully")
-    }
-
-    @Test
-    fun `should handle patch versions correctly`() {
-        // Test that patch versions work (5.0.1, 4.0.22, etc.)
-        val result1 = service.checkCompatibility("5.0.1", 25)
-        assertTrue(result1.isFullyCompatible, "Groovy 5.0.1 should be compatible with JDK 25")
-
-        val result2 = service.checkCompatibility("4.0.22", 21)
-        assertTrue(result2.isFullyCompatible, "Groovy 4.0.22 should be compatible with JDK 21")
-    }
-
-    @Test
-    fun `should handle version with RC or snapshot correctly`() {
-        val result = service.checkCompatibility("5.0.0-rc-1", 25)
-        assertTrue(result.isFullyCompatible, "Groovy 5.0.0-rc-1 should be compatible with JDK 25")
-    }
-
-    @Test
-    fun `should provide helpful message for incompatible versions`() {
-        val result = service.checkCompatibility("3.0.0", 25)
-        assertFalse(result.isFullyCompatible, "Groovy 3.0.0 should not be compatible with JDK 25")
-        assertTrue(result.message.isNotEmpty(), "Should provide an explanation")
-        assertTrue(
-            result.message.contains("compatible", ignoreCase = true) ||
-                result.message.contains("support", ignoreCase = true),
-            "Message should mention compatibility or support",
+        assertEquals(PartiallySupported("4.0", jdkVersion, fullySupportedUpToJdk = 21), result)
+        assertEquals(
+            "Groovy 4.0 has partial/experimental support for JDK $jdkVersion (fully supports up to JDK 21)",
+            result.message,
         )
     }
 
+    @ParameterizedTest(name = "Groovy {0} on JDK 21 is unknown")
+    @CsvSource("99.0.0", "not-a-version", "7.0.0", "5.2.0", "7", "''")
+    fun `should report versions outside the table as unknown with the version asked about`(groovyVersion: String) {
+        val result = service.checkCompatibility(groovyVersion, 21)
+
+        assertEquals(CompatibilityResult.Unknown(groovyVersion), result)
+        assertEquals("Unknown Groovy version $groovyVersion - no compatibility data", result.message)
+    }
+
     @Test
-    fun `should provide helpful message for partial compatibility`() {
-        val result = service.checkCompatibility("4.0.0", 22)
-        assertTrue(result.isPartiallyCompatible, "Groovy 4.0.0 should be partially compatible with JDK 22")
-        assertTrue(
-            result.message.contains("partial", ignoreCase = true),
-            "Message should mention partial compatibility",
-        )
+    fun `should report Groovy 7 on JDK 8 as unknown and not as the neighbouring line`() {
+        // Groovy 6.0 would reject JDK 8, so Unknown shows no neighbouring entry was used.
+        assertEquals(CompatibilityResult.Unknown("7.0.0"), service.checkCompatibility("7.0.0", 8))
+    }
+
+    @Test
+    fun `should report Groovy 5 2 on JDK 8 as unknown and not as the neighbouring line`() {
+        assertEquals(CompatibilityResult.Unknown("5.2.0"), service.checkCompatibility("5.2.0", 8))
+    }
+
+    @Test
+    fun `should report every version as unknown when the table failed to load`() {
+        val empty = GroovyCompatibilityService { emptyList() }
+
+        assertEquals(CompatibilityResult.Unknown("5.0.0"), empty.checkCompatibility("5.0.0", 21))
+        assertNull(empty.suggestGroovyVersion(21))
+    }
+
+    @ParameterizedTest(name = "[{0}] is malformed and unknown")
+    @ValueSource(
+        strings = [
+            "4.0.not-a-version", "4.0.", "4.0..1", "4.0.1.2.3.x", "4..0", "v4.0.1", "4.0.1-", "4.0.1--rc",
+            "4.0.1.2.3.4", "4.0.1 beta", "-4.0.1",
+        ],
+    )
+    fun `should report malformed versions with a known prefix as unknown with the raw input`(raw: String) {
+        assertEquals(CompatibilityResult.Unknown(raw), service.checkCompatibility(raw, 21))
+    }
+
+    @ParameterizedTest(name = "[{0}] is accepted as Groovy {1}")
+    @CsvSource(
+        "4.0.22, 4.0", "5.1.3, 5.1", "6.0.0, 6.0", "6.0.0-RC-3, 6.0", "6.0.0-beta-2, 6.0", "6.0.0-alpha-1, 6.0",
+        "5.0.0-rc-1, 5.0", "4.0.0-SNAPSHOT, 4.0", "4.0, 4.0", "4, 4.0", "'  4.0.1 ', 4.0",
+    )
+    fun `should accept release and qualified versions and trim whitespace`(raw: String, line: String) {
+        assertEquals(Compatible(line, 17), service.checkCompatibility(raw, 17))
+    }
+
+    @Test
+    fun `should suggest nothing for a JDK older than every Groovy line`() {
+        assertNull(service.suggestGroovyVersion(6))
     }
 
     // JDK bounds come from the release notes JDK requirements sections:
@@ -166,34 +133,18 @@ class GroovyCompatibilityServiceTest {
     // - Groovy 5.1: https://groovy-lang.org/releasenotes/groovy-5.1.html ("tested on JDK versions 11 through 25,
     //   and additionally on early access builds of JDK 26 and 27")
 
-    @ParameterizedTest(name = "Groovy {0} on JDK {1}: full={2}, partial={3}")
-    @CsvSource(
-        "6.0.0,        16, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 16 is being used'",
-        "6.0.0,        17, true,  false, 'Groovy 6.0 is fully compatible with JDK 17'",
-        "6.0.0,        27, true,  false, 'Groovy 6.0 is fully compatible with JDK 27'",
-        "6.0.0,        28, false, false, 'Groovy 6.0 is not compatible with JDK 28 (max supported: JDK 27)'",
-        "6.0.0-alpha-1, 11, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used'",
-        "6.0.0-beta-2,  11, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used'",
-        "6.0.0-RC-3,    11, false, false, 'Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used'",
-        "5.1.3,        10, false, false, 'Groovy 5.1 requires JDK 11 or later, but JDK 10 is being used'",
-        "5.1.3,        11, true,  false, 'Groovy 5.1 is fully compatible with JDK 11'",
-        "5.1.3,        25, true,  false, 'Groovy 5.1 is fully compatible with JDK 25'",
-        "5.1.3,        26, false, true,  " +
-            "'Groovy 5.1 has partial/experimental support for JDK 26 (fully supports up to JDK 25)'",
-        "5.1.3,        27, false, true,  " +
-            "'Groovy 5.1 has partial/experimental support for JDK 27 (fully supports up to JDK 25)'",
-        "5.1.3,        28, false, false, 'Groovy 5.1 is not compatible with JDK 28 (max supported: JDK 27)'",
-    )
+    @ParameterizedTest(name = "Groovy {0} on JDK {1}")
+    @MethodSource("groovy6Boundaries", "groovy51Boundaries")
     fun `should check Groovy 5 1 and 6 JDK boundaries`(
         groovyVersion: String,
         jdkVersion: Int,
-        expectedFull: Boolean,
-        expectedPartial: Boolean,
+        expected: CompatibilityResult,
         expectedMessage: String,
     ) {
         val result = service.checkCompatibility(groovyVersion, jdkVersion)
 
-        assertEquals(CompatibilityResult(expectedFull, expectedPartial, expectedMessage), result)
+        assertEquals(expected, result)
+        assertEquals(expectedMessage, result.message)
     }
 
     @ParameterizedTest(name = "JDK {0} -> {1}")
@@ -251,29 +202,74 @@ class GroovyCompatibilityServiceTest {
         }
     }
 
-    // The next two tests characterise existing behaviour: a Groovy line that is not in the table is reported as
-    // unknown (and fails open) rather than being matched to a neighbouring entry. Fail-open itself is tracked apart.
+    private companion object {
+        fun belowMinimum(line: String, jdk: Int, min: Int) =
+            CompatibilityResult.Incompatible.BelowMinimum(line, jdk, min)
 
-    @Test
-    fun `characterisation - Groovy 7 is not in the table and is reported as unknown`() {
-        // Groovy 6.0 would reject JDK 8, so a message naming 7.0 as unknown shows no neighbouring entry was used.
-        val result = service.checkCompatibility("7.0.0", 8)
-
-        assertTrue(result.isFullyCompatible, "Unknown versions fail open")
-        assertTrue(
-            result.message.startsWith("Unknown Groovy version 7.0"),
-            "Message should report the version as unknown: ${result.message}",
+        @JvmStatic
+        fun groovy6Boundaries(): Stream<Arguments> = Stream.of(
+            Arguments.of(
+                "6.0.0",
+                16,
+                belowMinimum("6.0", 16, 17),
+                "Groovy 6.0 requires JDK 17 or later, but JDK 16 is being used",
+            ),
+            Arguments.of("6.0.0", 17, Compatible("6.0", 17), "Groovy 6.0 is fully compatible with JDK 17"),
+            Arguments.of("6.0.0", 27, Compatible("6.0", 27), "Groovy 6.0 is fully compatible with JDK 27"),
+            Arguments.of(
+                "6.0.0",
+                28,
+                CompatibilityResult.Incompatible.AboveMaximum("6.0", 28, 27),
+                "Groovy 6.0 is not compatible with JDK 28 (max supported: JDK 27)",
+            ),
+            Arguments.of(
+                "6.0.0-alpha-1",
+                11,
+                belowMinimum("6.0", 11, 17),
+                "Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used",
+            ),
+            Arguments.of(
+                "6.0.0-beta-2",
+                11,
+                belowMinimum("6.0", 11, 17),
+                "Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used",
+            ),
+            Arguments.of(
+                "6.0.0-RC-3",
+                11,
+                belowMinimum("6.0", 11, 17),
+                "Groovy 6.0 requires JDK 17 or later, but JDK 11 is being used",
+            ),
         )
-    }
 
-    @Test
-    fun `characterisation - Groovy 5 2 is not in the table and is reported as unknown`() {
-        val result = service.checkCompatibility("5.2.0", 8)
-
-        assertTrue(result.isFullyCompatible, "Unknown versions fail open")
-        assertTrue(
-            result.message.startsWith("Unknown Groovy version 5.2"),
-            "Message should report the version as unknown: ${result.message}",
+        @JvmStatic
+        fun groovy51Boundaries(): Stream<Arguments> = Stream.of(
+            Arguments.of(
+                "5.1.3",
+                10,
+                belowMinimum("5.1", 10, 11),
+                "Groovy 5.1 requires JDK 11 or later, but JDK 10 is being used",
+            ),
+            Arguments.of("5.1.3", 11, Compatible("5.1", 11), "Groovy 5.1 is fully compatible with JDK 11"),
+            Arguments.of("5.1.3", 25, Compatible("5.1", 25), "Groovy 5.1 is fully compatible with JDK 25"),
+            Arguments.of(
+                "5.1.3",
+                26,
+                PartiallySupported("5.1", 26, 25),
+                "Groovy 5.1 has partial/experimental support for JDK 26 (fully supports up to JDK 25)",
+            ),
+            Arguments.of(
+                "5.1.3",
+                27,
+                PartiallySupported("5.1", 27, 25),
+                "Groovy 5.1 has partial/experimental support for JDK 27 (fully supports up to JDK 25)",
+            ),
+            Arguments.of(
+                "5.1.3",
+                28,
+                CompatibilityResult.Incompatible.AboveMaximum("5.1", 28, 27),
+                "Groovy 5.1 is not compatible with JDK 28 (max supported: JDK 27)",
+            ),
         )
     }
 }
