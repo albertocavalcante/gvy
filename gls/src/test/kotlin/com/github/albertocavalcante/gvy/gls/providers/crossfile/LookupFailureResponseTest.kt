@@ -12,8 +12,10 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -35,6 +37,7 @@ class LookupFailureResponseTest {
     private val text = "class Lookup {\n    void call() { call() }\n}\nprintln \"literal\"\n"
     private val onCall = Position(1, 19)
     private val onLiteral = Position(3, 10)
+    private val onMissingImport = Position(0, 22)
     private val documents = DocumentProvider().apply { put(uri, text, 1) }
     private val compilation = spyk(GroovyCompilationService(documentProvider = documents))
     private val events = mutableListOf<DefinitionTelemetryEvent>()
@@ -75,6 +78,23 @@ class LookupFailureResponseTest {
     }
 
     @Test
+    fun `a request cancelled while a strategy runs ends cancelled with one cancelled event`(): Unit = runBlocking {
+        documents.update(uri, "import com.example.Missing\n", 2)
+        lateinit var request: Deferred<*>
+        every { compilation.findClasspathClass(any()) } answers {
+            request.cancel()
+            throw CancellationException("cancelled while the strategy ran")
+        }
+        request = async(start = CoroutineStart.LAZY) {
+            handler(links = true).getDefinitions(uri.toString(), onMissingImport)
+        }
+
+        assertFailsWith<CancellationException> { request.await() }
+        assertTrue(request.isCancelled)
+        assertEquals(listOf(DefinitionStatus.CANCELLED), events.map { it.status })
+    }
+
+    @Test
     fun `a position that is not a symbol answers empty`(): Unit = runBlocking {
         assertTrue(handler().getDefinitions(uri.toString(), onLiteral).left.isEmpty())
         assertTrue(handler(links = true).getDefinitions(uri.toString(), onLiteral).isLeft)
@@ -102,7 +122,8 @@ class LookupFailureResponseTest {
         val answer = handler(links = true).getDefinitions(uri.toString(), onLiteral)
 
         assertTrue(answer.isLeft && answer.left.isEmpty())
-        assertEquals(listOf(DefinitionStatus.RESOLUTION_FAILED), events.map { it.status })
+        verify(exactly = 1) { compilation.getCompiledSnapshot(uri) }
+        assertEquals(listOf(DefinitionStatus.NO_DEFINITION), events.map { it.status })
     }
 
     private fun failResolutionAfterCompile() {

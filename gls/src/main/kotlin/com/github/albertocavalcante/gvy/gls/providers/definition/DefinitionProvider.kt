@@ -12,7 +12,6 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
-import com.github.albertocavalcante.gvy.gls.errors.PositionException
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -30,6 +29,7 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
 import kotlin.coroutines.cancellation.CancellationException
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 /**
  * Main provider for go-to-definition functionality.
@@ -49,34 +49,17 @@ class DefinitionProvider(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Provide definitions for the symbol at the given position using Flow pattern.
-     *
-     * The flow is empty for a failed lookup too (the failure is reported to telemetry); a caller that must tell
-     * "nothing found" from "lookup failed" uses [lookupDefinitions].
+     * Looks up the definition at [position] as [Location]s. An empty list means nothing is there (no symbol under
+     * the cursor, no definition with a position, a file that is not compiled); a lookup that broke is
+     * [Result.failure] with its cause, never an empty list. Cancellation is rethrown.
      */
-    fun provideDefinitions(uri: String, position: Position): Flow<Location> = flow {
-        logger.debug { "Providing definitions for $uri at ${position.line}:${position.character}" }
-        (lookupDefinitions(uri, position) as? DefinitionOutcome.Found)?.targets?.forEach { emit(it) }
-    }
-
-    /**
-     * Provide definitions as LocationLink objects for enhanced navigation.
-     *
-     * Like [provideDefinitions], a failed lookup is an empty flow; see [lookupDefinitionLinks].
-     */
-    fun provideDefinitionLinks(uri: String, position: Position): Flow<LocationLink> = flow {
-        logger.debug { "Providing definition links for $uri at ${position.line}:${position.character}" }
-        (lookupDefinitionLinks(uri, position) as? DefinitionOutcome.Found)?.targets?.forEach { emit(it) }
-    }
-
-    /** Looks up the definition as [Location]s: found, a benign miss, or a failure that keeps its cause. */
-    suspend fun lookupDefinitions(uri: String, position: Position): DefinitionOutcome<Location> =
+    internal suspend fun lookupDefinitions(uri: String, position: Position): Result<List<Location>> =
         lookup(uri, position, spockTarget = { it }, render = {
             locationOf(it.result, it.context, it.documentUri)
         })
 
-    /** Looks up the definition as [LocationLink]s, resolving once; the outcomes are those of [lookupDefinitions]. */
-    suspend fun lookupDefinitionLinks(uri: String, position: Position): DefinitionOutcome<LocationLink> = lookup(
+    /** Like [lookupDefinitions], as [LocationLink]s, resolving the position once. */
+    internal suspend fun lookupDefinitionLinks(uri: String, position: Position): Result<List<LocationLink>> = lookup(
         uri,
         position,
         spockTarget = { LocationLink(it.uri, it.range, it.range) },
@@ -87,28 +70,28 @@ class DefinitionProvider(
     )
 
     /** A lookup's result with the one telemetry event that describes it. */
-    private class Verdict<out T>(val event: DefinitionTelemetryEvent, val outcome: DefinitionOutcome<T>)
+    private class Verdict<out T>(val event: DefinitionTelemetryEvent, val targets: Result<List<T>>)
 
     /** The resolved definition and what rendering it needs. */
     private class Resolved(
         val result: DefinitionResolver.DefinitionResult,
         val context: DefinitionContext,
         val documentUri: URI,
-        val position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        val position: GroovyPosition,
     )
 
     /**
      * The single lookup behind every definition request: exactly one telemetry event per request, reported after
      * the lookup's own try so a throwing sink can neither add a second event nor be swallowed as a lookup failure.
-     * An unexpected failure becomes [DefinitionOutcome.Failed]; cancellation is reported and rethrown.
+     * An unexpected failure is the [Result.failure]; cancellation is reported and rethrown.
      */
     private suspend fun <T> lookup(
         uri: String,
         position: Position,
         spockTarget: (Location) -> T,
         render: (Resolved) -> T,
-    ): DefinitionOutcome<T> {
-        val documentUri = parseUriOrReport(uri) ?: return DefinitionOutcome.NotFound
+    ): Result<List<T>> {
+        val documentUri = parseUriOrReport(uri) ?: return Result.success(emptyList())
         val attempt = try {
             runSuspendCatching { attemptLookup(uri, documentUri, position, spockTarget, render) }
         } catch (e: CancellationException) {
@@ -119,14 +102,11 @@ class DefinitionProvider(
             throw e
         }
         val verdict = attempt.getOrElse { error ->
-            logger.warn(error) { "Error during definition resolution: ${error.message}" }
-            Verdict(
-                DefinitionTelemetryEvent(uri, DefinitionStatus.ERROR, failureReason(error)),
-                DefinitionOutcome.Failed(error),
-            )
+            // Not logged here: the response boundary logs a failed request once, with its stack.
+            Verdict(DefinitionTelemetryEvent(uri, DefinitionStatus.ERROR, failureReason(error)), Result.failure(error))
         }
         telemetrySink.report(verdict.event)
-        return verdict.outcome
+        return verdict.targets
     }
 
     private suspend fun <T> attemptLookup(
@@ -141,12 +121,12 @@ class DefinitionProvider(
         spockDefinition(documentUri, position, snapshot)?.let {
             return Verdict(
                 DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS),
-                DefinitionOutcome.Found(listOf(spockTarget(it))),
+                Result.success(listOf(spockTarget(it))),
             )
         }
         if (snapshot == null || snapshot.parseResult.ast == null) {
             logger.warn { "No AST available for $uri - this might indicate compilation service cache issue" }
-            return Verdict(DefinitionTelemetryEvent(uri, DefinitionStatus.AST_MISSING), DefinitionOutcome.NotFound)
+            return Verdict(DefinitionTelemetryEvent(uri, DefinitionStatus.AST_MISSING), Result.success(emptyList()))
         }
         val context = DefinitionContext(
             snapshot.parseResult.astModel,
@@ -161,27 +141,22 @@ class DefinitionProvider(
                 val target = render(Resolved(lookup.result, context, documentUri, groovyPosition))
                 Verdict(
                     DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS),
-                    DefinitionOutcome.Found(listOf(target)),
+                    Result.success(listOf(target)),
                 )
             }
 
             is DefinitionResolver.DefinitionLookup.NotFound -> {
                 logger.debug { "No definition found at position: ${lookup.error.reason}" }
-                Verdict(DefinitionTelemetryEvent(uri, DefinitionStatus.NO_DEFINITION), DefinitionOutcome.NotFound)
+                Verdict(DefinitionTelemetryEvent(uri, DefinitionStatus.NO_DEFINITION), Result.success(emptyList()))
             }
 
             is DefinitionResolver.DefinitionLookup.Failed -> {
                 val reason = failureReason(lookup.error)
                 logger.debug { "Definition resolution failed: $reason" }
-                val event = DefinitionTelemetryEvent(uri, DefinitionStatus.RESOLUTION_FAILED, reason)
-                // A position that names no symbol, or a definition without a position, is a miss about the
-                // cursor; what a resolution strategy raised means the lookup itself broke.
-                val outcome = if (lookup.error is PositionException) {
-                    DefinitionOutcome.NotFound
-                } else {
-                    DefinitionOutcome.Failed(lookup.error)
-                }
-                Verdict(event, outcome)
+                Verdict(
+                    DefinitionTelemetryEvent(uri, DefinitionStatus.RESOLUTION_FAILED, reason),
+                    Result.failure(lookup.error),
+                )
             }
         }
     }

@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
+import com.github.albertocavalcante.gvy.gls.errors.PositionException
 import com.github.albertocavalcante.gvy.gls.errors.invalidPosition
 import com.github.albertocavalcante.gvy.gls.errors.nodeNotFoundAtPosition
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
@@ -110,16 +111,20 @@ class DefinitionResolver(
 
     /**
      * Outcome of a definition lookup: a definition, an honest "nothing there", or a failure that keeps its type.
+     * The one result type for "definition lookup", shared by the LSP provider and the engine's service.
      */
     sealed interface DefinitionLookup {
         data class Found(val result: DefinitionResult) : DefinitionLookup
 
-        /** No strategy resolved the symbol; [error] is the last strategy's miss. */
+        /**
+         * Nothing to navigate to, and the lookup worked: no strategy resolved the symbol ([error] is the last
+         * strategy's miss), the cursor names no symbol, or the definition has no position.
+         */
         data class NotFound(val error: ResolutionError) : DefinitionLookup
 
         /**
-         * The lookup could not be carried out: [error] is a typed [GroovyLspException] (invalid position, no node,
-         * ...) or the throwable a resolution strategy raised. Its class says why.
+         * The lookup broke: [error] is the throwable a resolution strategy raised (or another typed
+         * [GroovyLspException]). Its class says why. A position that names no symbol is [NotFound], not this.
          */
         data class Failed(val error: Throwable) : DefinitionLookup
     }
@@ -127,9 +132,10 @@ class DefinitionResolver(
     /**
      * Find the definition of the symbol at the given position.
      *
-     * Expected failures of the request itself (invalid position, no node, definition without a position) come
-     * back as [DefinitionLookup.Failed]. Anything else, an unexpected exception above all, propagates unchanged:
-     * it is neither "not found" nor a typed failure, and cancellation must never be rewritten.
+     * A [PositionException] (invalid position, no node, definition without a position) is
+     * [DefinitionLookup.NotFound]; a typed failure of a strategy is [DefinitionLookup.Failed]. Anything else, an
+     * unexpected exception above all, propagates unchanged: it is neither "not found" nor a typed failure, and
+     * cancellation must never be rewritten.
      */
     suspend fun findDefinitionAt(uri: URI, position: Position): DefinitionLookup {
         logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
@@ -142,6 +148,10 @@ class DefinitionResolver(
                 validateDefinition(lookup.result.node, uri)
             }
             lookup
+        } catch (e: PositionException) {
+            // The cursor names no symbol, or the definition has no position: a miss, not a broken lookup.
+            logger.debug { "No navigable position: $e" }
+            DefinitionLookup.NotFound(ResolutionError(e.message.orEmpty(), "position"))
         } catch (e: GroovyLspException) {
             logger.debug { "Specific error finding definition: $e" }
             DefinitionLookup.Failed(e)

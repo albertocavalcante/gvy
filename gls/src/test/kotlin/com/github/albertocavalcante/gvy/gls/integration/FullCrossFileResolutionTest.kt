@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.resolution.typesolvers.Reflecti
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionProvider
+import com.github.albertocavalcante.gvy.gls.providers.definition.provideDefinitions
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest

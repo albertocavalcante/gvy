@@ -39,14 +39,13 @@ class DefinitionFailureTelemetryTest {
     }
 
     @Test
-    fun `a typed failure is reported with its kind and no trailing no-definition event`(): Unit = runBlocking {
+    fun `a position that names no symbol is one no-definition event, not a failure`(): Unit = runBlocking {
         compilation.compile(uri, "println \"literal\"\n")
 
         val definitions = provider.provideDefinitions(uri.toString(), Position(0, 10)).toList()
 
         assertTrue(definitions.isEmpty())
         val event = events.single()
-        assertEquals(DefinitionStatus.RESOLUTION_FAILED, event.status)
-        assertTrue("NodeNotFoundAtPositionException" in event.reason.orEmpty(), "reason: ${event.reason}")
+        assertEquals(DefinitionStatus.NO_DEFINITION, event.status)
     }
 }

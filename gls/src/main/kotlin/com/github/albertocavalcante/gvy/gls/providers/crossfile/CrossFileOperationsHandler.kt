@@ -116,14 +116,14 @@ class CrossFileOperationsHandler(
         }
 
         // One lookup per request: a link-capable client gets links, or an honest empty/failed answer, never a
-        // second resolution of the same position. A failed lookup throws to the response boundary.
+        // second resolution of the same position. A failed lookup is thrown to the response boundary.
         if (definitionLinkSupport()) {
-            val links = definitionProvider.lookupDefinitionLinks(uri, position).targetsOrThrow()
+            val links = definitionProvider.lookupDefinitionLinks(uri, position).getOrThrow()
             logger.debug { "Returning ${links.size} definition links" }
             return if (links.isEmpty()) Either.forLeft(emptyList()) else Either.forRight(links)
         }
 
-        val locations = definitionProvider.lookupDefinitions(uri, position).targetsOrThrow()
+        val locations = definitionProvider.lookupDefinitions(uri, position).getOrThrow()
         logger.debug {
             if (locations.isNotEmpty()) {
                 "Returning ${locations.size} definition locations (first=${locations.first().uri})"
