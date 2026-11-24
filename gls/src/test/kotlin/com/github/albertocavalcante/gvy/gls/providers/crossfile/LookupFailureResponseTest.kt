@@ -78,6 +78,43 @@ class LookupFailureResponseTest {
     }
 
     @Test
+    fun `definition reports content modified when its origin is edited and the lookup then fails`(): Unit =
+        runBlocking {
+            editThenFail { fail -> every { compilation.getAst(uri) } answers { fail() } }
+            assertContentModified { handler().getDefinitions(uri.toString(), onCall) }
+        }
+
+    @Test
+    fun `definition links report content modified when their origin is edited and the lookup then fails`(): Unit =
+        runBlocking {
+            editThenFail { fail -> every { compilation.getAst(uri) } answers { fail() } }
+            assertContentModified { handler(links = true).getDefinitions(uri.toString(), onCall) }
+        }
+
+    @Test
+    fun `implementation reports content modified when its origin is edited and the lookup then fails`(): Unit =
+        runBlocking {
+            editThenFail { fail -> coEvery { compilation.ensureCompiled(uri) } coAnswers { fail() } }
+            assertContentModified { handler().getImplementations(uri.toString(), onCall) }
+        }
+
+    @Test
+    fun `references report content modified when their origin is edited and the lookup then fails`(): Unit =
+        runBlocking {
+            editThenFail { fail -> coEvery { compilation.ensureCompiled(uri) } coAnswers { fail() } }
+            assertContentModified { handler().getReferences(uri.toString(), onCall, includeDeclaration = true) }
+        }
+
+    @Test
+    fun `a request cancelled after its origin was edited stays cancelled`(): Unit = runBlocking {
+        coEvery { compilation.ensureCompiled(uri) } coAnswers {
+            documents.update(uri, text.replace("call()", "other()"), 2)
+            throw CancellationException("cancelled after the edit")
+        }
+        assertFailsWith<CancellationException> { handler().getDefinitions(uri.toString(), onCall) }
+    }
+
+    @Test
     fun `a request cancelled while a strategy runs ends cancelled with one cancelled event`(): Unit = runBlocking {
         documents.update(uri, "import com.example.Missing\n", 2)
         lateinit var request: Deferred<*>
@@ -124,6 +161,17 @@ class LookupFailureResponseTest {
         assertTrue(answer.isLeft && answer.left.isEmpty())
         verify(exactly = 1) { compilation.getCompiledSnapshot(uri) }
         assertEquals(listOf(DefinitionStatus.NO_DEFINITION), events.map { it.status })
+    }
+
+    /** Installs a seam whose first call edits the origin buffer and then throws, as a failure the edit caused. */
+    private fun editThenFail(install: (() -> Nothing) -> Unit) = install {
+        documents.update(uri, text.replace("call()", "other()"), 2)
+        error("lookup broke after the edit")
+    }
+
+    private suspend fun assertContentModified(request: suspend () -> Any) {
+        val error = assertFailsWith<ResponseErrorException> { request() }
+        assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
     }
 
     private fun failResolutionAfterCompile() {

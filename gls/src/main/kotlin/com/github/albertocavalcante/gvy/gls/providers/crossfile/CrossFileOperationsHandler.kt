@@ -17,6 +17,7 @@ import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvid
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
@@ -170,17 +171,25 @@ class CrossFileOperationsHandler(
     /**
      * Runs a request whose answer is computed from [uri]'s open buffer, and reports ContentModified instead of an
      * answer about text the client no longer shows: the origin buffer was edited, closed or reopened while the
-     * request ran. Retirements of other work (a configuration refresh, another file closing) are retried by the
+     * request ran. That holds for a failure too: a lookup that broke because the origin changed under it is
+     * ContentModified, not an InternalError the client would show; the original failure is logged at debug.
+     * A [ResponseErrorException] from [block] is already a deliberate answer and passes unchanged, as does
+     * cancellation. Retirements of other work (a configuration refresh, another file closing) are retried by the
      * compilation service and do not fail the request; clients drop ContentModified silently for definition and
      * references, so it must mean the origin really changed.
      */
     private suspend fun <T> withCurrentOrigin(uri: URI, block: suspend () -> T): T {
         val origin = documentProvider.getSnapshot(uri)
-        val result = block()
+        // runSuspendCatching is the response boundary's catch: it rethrows cancellation and Errors, so only an
+        // ordinary failure is held back here, to be judged against the origin below.
+        val result = runSuspendCatching { block() }
+        val failure = result.exceptionOrNull()
+        if (failure is ResponseErrorException) throw failure
         if (origin != null && documentProvider.getSnapshot(uri) !== origin) {
+            failure?.let { logger.debug { "Request failed after $uri changed: ${it.message}" } }
             throw contentModified("$uri changed during the request")
         }
-        return result
+        return result.getOrThrow()
     }
 
     private fun contentModified(message: String) =
