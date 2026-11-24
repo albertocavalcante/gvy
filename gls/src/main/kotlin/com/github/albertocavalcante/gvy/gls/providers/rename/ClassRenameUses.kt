@@ -88,6 +88,15 @@ internal object ClassRenameUses {
     fun declaredElsewhere(name: String): String =
         "Cannot rename '$name': it is not declared in this file, and renaming across files is not supported yet"
 
+    /** The refusal of a symbol declared in a dependency, which is not workspace source; [where] says which. */
+    fun inDependency(where: String): String = "Cannot rename symbols defined in dependencies (read-only): $where"
+
+    /**
+     * Whether the compiler read [type]'s declaration from source (this module's or another file's), as it never does
+     * for a JDK or classpath class: such a class has no source in the workspace to rename.
+     */
+    fun hasSource(type: ClassNode): Boolean = type.redirect().isPrimaryClassNode
+
     /** Whether [type] (any node of it) is a class [compiled]'s own module declares. */
     fun declaredIn(type: ClassNode, compiled: CompiledDocumentSnapshot): Boolean {
         val declared = type.redirect()
@@ -120,6 +129,8 @@ private class DocumentNames(
         val sameNamed = module.classes.filter { it !== type && it.sourceSimpleName() == name }
         val otherUses = sites.uses.filter { it.type !== type && it.type.sourceSimpleName() == name }
         val otherNames = sites.otherNames.filter { it.name == name }
+        // The compiler resolves a name inside a generic declaration to its type parameter, which shadows the class.
+        val typeParameters = sites.typeParameters.filter { it.name == name }
         val others = otherNames.mapNotNull { single(occurrences, otherNameWindow(it)) } +
             sameNamed.flatMap { declaredNames(it, name, occurrences) }
         return NameAccount(
@@ -128,7 +139,8 @@ private class DocumentNames(
             located,
             uses = sites.uses.filter { it.type === type }.mapNotNull(::window),
             others = others,
-            otherUses = otherUses.mapNotNull(::window),
+            otherUses = otherUses.mapNotNull(::window) +
+                typeParameters.mapNotNull { nodeWindow(it.node, TypeUseKind.TYPE_PARAMETER) },
         )
     }
 
@@ -158,6 +170,13 @@ private class DocumentNames(
                 .firstOrNull { it.start >= start && it.end <= nodeEnd }?.start ?: return null
         }
         return NameWindow(start, end, site.kind, source.positionOf(start).line + 1).takeIf { start < end }
+    }
+
+    /** The whole source range of [node], or null when the AST gives it none (the occurrence stays unexplained). */
+    private fun nodeWindow(node: ASTNode, kind: TypeUseKind): NameWindow? {
+        val start = start(node) ?: return null
+        val end = end(node) ?: return null
+        return NameWindow(start, end, kind, source.positionOf(start).line + 1).takeIf { start < end }
     }
 
     /** The part of a name site's node after its [OtherNameSite.after] nodes and before its [OtherNameSite.until]. */

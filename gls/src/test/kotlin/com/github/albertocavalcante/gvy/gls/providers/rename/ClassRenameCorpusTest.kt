@@ -5,15 +5,18 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import groovy.lang.GroovyClassLoader
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.InnerClassNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
@@ -22,10 +25,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Renames every class each corpus source declares, from its declaration, and compiles every result with the Groovy
- * compiler: a rename either refuses or yields changed source that still compiles (#2438). Compiling is necessary,
- * not sufficient: a stale use that resolves to another class of the same name (`java.util.Date`) compiles too, which
- * the focused tests pin with exact text.
+ * Renames every class each corpus source declares, from its declaration, and pins the outcome of each: renamed, or
+ * refused for a named reason (#2438, #2443). A renamed result must still compile with the Groovy compiler: necessary,
+ * not sufficient, as a stale use that resolves to another class of the same name (`java.util.Date`) compiles too,
+ * which the focused tests pin with exact text. A class that moves from renamed to refused, or from one reason to
+ * another, fails here; so does any failure that is not a [RenameRefusedException] with `RequestFailed`.
  */
 class ClassRenameCorpusTest {
     @TempDir
@@ -33,27 +37,38 @@ class ClassRenameCorpusTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("corpus")
-    fun `every class rename in the corpus refuses or still compiles`(name: String, source: String) {
-        assertEquals(null, compileError(source), "the corpus source $name must compile as written")
-        val outcomes = declaredClasses(source).mapIndexed { index, type ->
+    fun `every class rename in the corpus has its pinned outcome`(fixture: Fixture) {
+        assertEquals(null, compileError(fixture.source), "the corpus source ${fixture.name} must compile as written")
+        val actual = declaredClasses(fixture.source).withIndex().associate { (index, type) ->
             val simpleName = type.nameWithoutPackage.substringAfterLast('$')
             val rename = SingleFileRename(Files.createDirectories(workspace.resolve("r$index")))
-            val start = declarationName(source, type, simpleName)
-            val result = runBlocking { rename.apply(source, start, "${simpleName}X") }
-            result.fold(
-                onSuccess = { renamed ->
-                    assertEquals(null, compileError(renamed), "renaming $simpleName in $name gave:\n$renamed")
-                    assertTrue(renamed != source, "renaming $simpleName in $name changed nothing")
-                    "$simpleName: renamed"
-                },
-                onFailure = { failure ->
-                    assertTrue(failure is ResponseErrorException, "renaming $simpleName in $name threw $failure")
-                    "$simpleName: refused (${failure.message})"
-                },
-            )
+            val start = declarationName(fixture.source, type, simpleName)
+            val result = runBlocking { rename.apply(fixture.source, start, "${simpleName}X") }
+            type.name to outcome(fixture, simpleName, result)
         }
-        assertTrue(outcomes.any { it.endsWith("renamed") }, "no rename succeeded in $name: $outcomes")
+
+        assertEquals(fixture.expected, actual, "outcomes per class in ${fixture.name}")
     }
+
+    private fun outcome(fixture: Fixture, simpleName: String, result: Result<String>): Outcome = result.fold(
+        onSuccess = { renamed ->
+            assertEquals(null, compileError(renamed), "renaming $simpleName in ${fixture.name} gave:\n$renamed")
+            assertTrue(renamed != fixture.source, "renaming $simpleName in ${fixture.name} changed nothing")
+            Outcome.Renamed
+        },
+        onFailure = { failure ->
+            val refused = assertInstanceOf(
+                RenameRefusedException::class.java,
+                failure,
+                "renaming $simpleName in ${fixture.name} threw $failure",
+            )
+            assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code, refused.message)
+            val reason = Reason.entries.firstOrNull { it.fragment in refused.responseError.message }
+            Outcome.Refused(
+                checkNotNull(reason) { "renaming $simpleName in ${fixture.name}: unknown reason: ${refused.message}" },
+            )
+        },
+    )
 
     private fun declaredClasses(source: String): List<ClassNode> {
         val rename = SingleFileRename(Files.createDirectories(workspace.resolve("parse")))
@@ -70,19 +85,57 @@ class ClassRenameCorpusTest {
         return index.positionOf(tokens.first { it.start >= from }.start)
     }
 
-    private fun compileError(source: String): String? = try {
-        CompilationUnit().apply { addSource("Rename.groovy", source) }.compile(Phases.CLASS_GENERATION)
-        null
-    } catch (e: CompilationFailedException) {
-        e.message
+    /** The compile error of [source], or null; the unit's class loader is closed either way. */
+    private fun compileError(source: String): String? = GroovyClassLoader().use { loader ->
+        try {
+            CompilationUnit(CompilerConfiguration(), null, loader)
+                .apply { addSource("Rename.groovy", source) }
+                .compile(Phases.CLASS_GENERATION)
+            null
+        } catch (e: CompilationFailedException) {
+            e.message
+        }
+    }
+
+    /** What renaming one class from its declaration does. */
+    sealed interface Outcome {
+        data object Renamed : Outcome
+
+        data class Refused(val reason: Reason) : Outcome
+    }
+
+    /** The categories of refusal a class rename gives; each is a fragment of the refusal message. */
+    enum class Reason(val fragment: String) {
+        UNREADABLE_TOKENS("cannot be read as complete tokens"),
+        EDIT_OUTSIDE_DOCUMENT("is outside the document being renamed"),
+        EDIT_NOT_ON_NAME("is not on the name in code"),
+        AMBIGUOUS_USE("cannot be located exactly in the source"),
+        CONTESTED_NAME("is spelled by uses of two different classes"),
+        NAME_CONFLICT("is both a use of the class and another name"),
+        UNCLASSIFIED_USE("could not be classified"),
+        TYPE_PARAMETER("renaming a type parameter is not supported"),
+        COMPACT_CONSTRUCTOR("renaming a record with a compact constructor"),
+        DECLARED_ELSEWHERE("it is not declared in this file"),
+        CROSS_FILE("renaming across files is not supported"),
+    }
+
+    /** One corpus source and the outcome pinned for each class it declares, by binary name. */
+    class Fixture(val name: String, source: String, val expected: Map<String, Outcome>) {
+        val source: String = source.trimIndent()
+
+        override fun toString(): String = name
     }
 
     companion object {
         @JvmStatic
-        fun corpus(): List<Array<Any>> = CORPUS.map { (name, source) -> arrayOf(name, source.trimIndent()) }
+        fun corpus(): List<Fixture> = CORPUS
+
+        private val renamed = Outcome.Renamed
 
         private val CORPUS = listOf(
-            "nested generic type with a same-named JDK argument" to """
+            Fixture(
+                "nested generic type with a same-named JDK argument",
+                """
                 class Date {
                     static class Inner<T> {}
                     static Inner<java.util.Date> m(Inner<java.util.Date> p) {
@@ -91,11 +144,28 @@ class ClassRenameCorpusTest {
                     }
                 }
             """,
-            "nested generic type with a same-named nested argument" to """
+                mapOf(
+                    "Date" to renamed,
+                    "Date\$Inner" to renamed,
+                ),
+            ),
+            Fixture(
+                "nested generic type with a same-named nested argument",
+                """
                 class Node { static class Inner<T> {}; Inner<Tree.Node> f; Node.Inner<Node> g }
                 class Tree { static class Node {}; static class Leaf {} }
             """,
-            "same-named classes of other packages" to """
+                mapOf(
+                    "Node" to renamed,
+                    "Node\$Inner" to renamed,
+                    "Tree" to renamed,
+                    "Tree\$Node" to renamed,
+                    "Tree\$Leaf" to renamed,
+                ),
+            ),
+            Fixture(
+                "same-named classes of other packages",
+                """
                 class Date { }
                 class List { }
                 Date mine = new Date()
@@ -103,7 +173,29 @@ class ClassRenameCorpusTest {
                 java.util.List<Date> dates = [mine]
                 List local = new List()
             """,
-            "nested classes" to """
+                mapOf(
+                    "Date" to renamed,
+                    "List" to renamed,
+                ),
+            ),
+            Fixture(
+                "type parameters spelled like a class",
+                """
+                class T { }
+                class Box<T> { T x; List<T> xs }
+                class Pair<X extends T, Y> { X first; T second; Y third }
+                class Util { def <T> T id(T value) { value } }
+            """,
+                mapOf(
+                    "T" to renamed,
+                    "Box" to renamed,
+                    "Pair" to renamed,
+                    "Util" to renamed,
+                ),
+            ),
+            Fixture(
+                "nested classes",
+                """
                 class Outer {
                     static class Inner { Inner(int a) { } }
                     class Member { }
@@ -116,7 +208,17 @@ class ClassRenameCorpusTest {
                 Service top = new Service('a')
                 List<Outer.Inner> inners = [inner]
             """,
-            "type uses in signatures and expressions" to """
+                mapOf(
+                    "Outer" to renamed,
+                    "Outer\$Inner" to renamed,
+                    "Outer\$Member" to renamed,
+                    "Outer\$Service" to renamed,
+                    "Service" to renamed,
+                ),
+            ),
+            Fixture(
+                "type uses in signatures and expressions",
+                """
                 interface Api { }
                 class Service implements Api {
                     static final String NAME = 'n'
@@ -148,7 +250,16 @@ class ClassRenameCorpusTest {
                 def made = new Service[2]
                 def text = "${'$'}{Service.NAME}"
             """,
-            "exceptions, records, enums, traits and annotations" to """
+                mapOf(
+                    "Api" to renamed,
+                    "Service" to renamed,
+                    "Derived" to renamed,
+                    "Holder" to renamed,
+                ),
+            ),
+            Fixture(
+                "exceptions, records, enums, traits and annotations",
+                """
                 class Failure extends RuntimeException { }
                 class Use {
                     void m() throws Failure {
@@ -165,6 +276,14 @@ class ClassRenameCorpusTest {
                 sealed class Shape permits Square { }
                 final class Square extends Shape { }
             """,
+                mapOf(
+                    "Failure" to renamed, "Use" to renamed, "Holder" to renamed,
+                    // Not supported yet by design (ClassRenameConstructorsTest pins the message).
+                    "Checked" to Outcome.Refused(Reason.COMPACT_CONSTRUCTOR),
+                    "Color" to renamed, "Greeter" to renamed, "Person" to renamed, "Marker" to renamed,
+                    "Marked" to renamed, "Shape" to renamed, "Square" to renamed,
+                ),
+            ),
         )
     }
 }

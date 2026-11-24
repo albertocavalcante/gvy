@@ -26,10 +26,14 @@ class ClassRenameNestedTypeArgumentsTest {
         runBlocking { rename.apply(content, position, newName) }.getOrThrow()
 
     /** The refusal rename and prepareRename both give at [position]. */
-    private fun refusal(content: String, position: Position): String {
+    private fun refusal(
+        content: String,
+        position: Position,
+        code: ResponseErrorCode = ResponseErrorCode.RequestFailed,
+    ): String {
         val failure = runBlocking { rename.apply(content, position, "Renamed") }.exceptionOrNull()
         val refused = assertInstanceOf(RenameRefusedException::class.java, failure, "rename: $failure")
-        assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code)
+        assertEquals(code.value, refused.responseError.code)
         val prepared = runBlocking { rename.prepare(content, position) }
         val preparedRefusal =
             assertInstanceOf(RenameRefusedException::class.java, prepared.exceptionOrNull(), "prepare: $prepared")
@@ -75,8 +79,8 @@ class ClassRenameNestedTypeArgumentsTest {
         val onForeign = at(foreignArgument, "java.util.Date> m", offset = "java.util.".length + 1)
 
         assertEquals(
-            "Cannot rename 'Date': it is not declared in this file, and renaming across files is not supported yet",
-            refusal(foreignArgument, onForeign),
+            "Cannot rename symbols defined in dependencies (read-only): java.util.Date",
+            refusal(foreignArgument, onForeign, ResponseErrorCode.InvalidRequest),
         )
     }
 

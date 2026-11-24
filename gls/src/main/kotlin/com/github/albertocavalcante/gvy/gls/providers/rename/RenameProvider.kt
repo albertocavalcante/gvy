@@ -228,9 +228,15 @@ class RenameProvider private constructor(
         when (atCursor) {
             is ClassAtCursor.Refused ->
                 throw RenameRefusedException(ResponseError(ResponseErrorCode.RequestFailed, atCursor.reason, null))
-            // Always refused: by the guard when another file spells the name, else as declared elsewhere.
-            is ClassAtCursor.Foreign ->
+            // Always refused: as a dependency when no source declares it, else by the guard when another file
+            // spells the name, else as declared elsewhere.
+            is ClassAtCursor.Foreign -> {
+                if (!ClassRenameUses.hasSource(atCursor.type)) {
+                    val reason = ClassRenameUses.inDependency(atCursor.type.redirect().name)
+                    throw RenameRefusedException(ResponseError(ResponseErrorCode.InvalidRequest, reason, null))
+                }
                 refuseIfUsedElsewhere(documentUri, atCursor.type, atCursor.type.declaredName().orEmpty(), false)
+            }
             is ClassAtCursor.Declared, null -> Unit
         }
         val targetNode = (atCursor as? ClassAtCursor.Declared)?.type
@@ -251,10 +257,7 @@ class RenameProvider private constructor(
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine definition location")
 
         if (!isInWorkspace(definitionLocation.uri, documentUri)) {
-            throw createError(
-                ResponseErrorCode.InvalidRequest,
-                "Cannot rename symbols defined in dependencies (read-only): ${definitionLocation.uri}",
-            )
+            throw createError(ResponseErrorCode.InvalidRequest, ClassRenameUses.inDependency(definitionLocation.uri))
         }
 
         // Get symbol name
