@@ -37,14 +37,14 @@ object MavenBspLauncher {
     /**
      * Main entry point.
      *
-     * @param args Command line arguments: [--local-repo <path>] <workspace-root>
+     * @param args Command line arguments: [--local-repo <path>] [--offline] <workspace-root>
      */
     @JvmStatic
     fun main(args: Array<String>) {
         val config = parseArgs(args)
         logger.info { "Starting Maven BSP server for workspace: ${config.workspaceRoot}" }
 
-        val server = createServer(config.workspaceRoot, config.localRepository)
+        val server = createServer(config.workspaceRoot, config.localRepository, config.offline)
         // The executable owns its exit: stdin may stay open after build/exit, so returning is not enough.
         exitProcess(serve(server, System.`in`, System.out))
     }
@@ -54,14 +54,15 @@ object MavenBspLauncher {
      *
      * @param workspaceRoot The root directory of the Maven project
      * @param localRepository Optional path to local Maven repository
+     * @param offline Resolve from the local repository only, never contacting a remote repository
      * @return Configured MavenBuildServer
      */
-    fun createServer(workspaceRoot: Path, localRepository: Path? = null): MavenBuildServer {
+    fun createServer(workspaceRoot: Path, localRepository: Path? = null, offline: Boolean = false): MavenBuildServer {
         val repoSystem = createRepositorySystem()
         val localRepoPath = localRepository ?: defaultLocalRepository()
 
         return MavenBuildServer(workspaceRoot, repoSystem) {
-            createSession(repoSystem, localRepoPath)
+            createSession(repoSystem, localRepoPath, offline)
         }
     }
 
@@ -91,10 +92,17 @@ object MavenBspLauncher {
      *
      * @param repositorySystem The Aether repository system
      * @param localRepoPath Path to the local Maven repository
+     * @param offline When true, an artifact missing from the local repository fails at once instead of waiting
+     *   on a remote repository, whose latency is outside the caller's control
      * @return Configured session
      */
-    fun createSession(repositorySystem: RepositorySystem, localRepoPath: Path): RepositorySystemSession {
+    fun createSession(
+        repositorySystem: RepositorySystem,
+        localRepoPath: Path,
+        offline: Boolean = false,
+    ): RepositorySystemSession {
         val session = MavenRepositorySystemUtils.newSession()
+        session.isOffline = offline
 
         val localRepo = LocalRepository(localRepoPath.toFile())
         session.localRepositoryManager = repositorySystem.newLocalRepositoryManager(session, localRepo)
@@ -111,6 +119,7 @@ object MavenBspLauncher {
     fun parseArgs(args: Array<String>): LauncherConfig {
         var workspaceRoot: Path? = null
         var localRepository: Path? = null
+        var offline = false
         var i = 0
 
         while (i < args.size) {
@@ -119,6 +128,10 @@ object MavenBspLauncher {
                     require(i + 1 < args.size) { "--local-repo requires a path argument" }
                     localRepository = Paths.get(args[i + 1])
                     i += 2
+                }
+                "--offline" -> {
+                    offline = true
+                    i++
                 }
                 else -> {
                     workspaceRoot = Paths.get(args[i])
@@ -130,6 +143,7 @@ object MavenBspLauncher {
         return LauncherConfig(
             workspaceRoot = workspaceRoot ?: Paths.get(".").toAbsolutePath().normalize(),
             localRepository = localRepository,
+            offline = offline,
         )
     }
 
@@ -178,4 +192,4 @@ object MavenBspLauncher {
 /**
  * Configuration parsed from command line arguments.
  */
-data class LauncherConfig(val workspaceRoot: Path, val localRepository: Path? = null)
+data class LauncherConfig(val workspaceRoot: Path, val localRepository: Path? = null, val offline: Boolean = false)

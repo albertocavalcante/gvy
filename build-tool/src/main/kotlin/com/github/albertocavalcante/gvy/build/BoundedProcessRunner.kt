@@ -3,8 +3,11 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -12,30 +15,50 @@ import kotlin.time.Duration.Companion.seconds
  * Runs a short-lived build-tool command with a bounded wait.
  *
  * Standard input is closed immediately (so prompts cannot block), stderr is merged into the captured
- * output, and on timeout the whole process tree is killed so wrapper scripts cannot leave orphans.
+ * output, and on timeout or interrupt the whole process tree is killed so wrapper scripts cannot leave orphans.
+ * [run] returns (or throws) only after the killed processes have exited, or until the exit-wait limit elapses,
+ * because `destroyForcibly` merely requests the kill: a caller that checks right afterwards would otherwise see a
+ * process that is still dying. Processes still alive when the limit elapses are logged and listed in
+ * [Result.survivors] (an interrupt exception cannot carry them, so on that path they are only logged).
+ * An interrupt arriving during the post-kill wait on the timeout path returns a normal result with the
+ * interrupt flag set.
  *
  * Captured output is bounded: the first [HEAD_CHARS] and last [TAIL_CHARS] characters are kept and the middle
  * is replaced by a truncation marker, so a chatty command cannot grow memory or logs without limit.
  */
 internal object BoundedProcessRunner {
 
-    data class Result(val exitCode: Int?, val output: String, val timedOut: Boolean)
+    /** [survivors] are the PIDs of killed processes that were still alive when the exit wait gave up. */
+    data class Result(
+        val exitCode: Int?,
+        val output: String,
+        val timedOut: Boolean,
+        val survivors: List<Long> = emptyList(),
+    )
 
-    private val READER_JOIN_TIMEOUT = 5.seconds
+    private val logger = KotlinLogging.logger {}
+
+    /**
+     * Bounds on the waits that follow a kill: [readerJoin] limits each wait for the output reader, [exitWait] the
+     * wait for the operating system to complete the kill (a SIGKILL normally lands within milliseconds).
+     */
+    internal class Waits(val readerJoin: Duration = 5.seconds, val exitWait: Duration = 10.seconds)
 
     internal const val HEAD_CHARS = 16 * 1024
     internal const val TAIL_CHARS = 48 * 1024
     private const val READ_BUFFER_CHARS = 8 * 1024
 
     fun run(command: List<String>, directory: Path, timeout: Duration): Result =
-        run(command, directory, timeout, READER_JOIN_TIMEOUT, ::startProcess)
+        run(command, directory, timeout, Waits(), ::startProcess)
 
-    /** Test seam: [start] supplies the process and [readerJoinTimeout] bounds each wait for the reader. */
+    /**
+     * Test seam: [start] supplies the process and [waits] bounds the waits that follow a kill.
+     */
     internal fun run(
         command: List<String>,
         directory: Path,
         timeout: Duration,
-        readerJoinTimeout: Duration,
+        waits: Waits,
         start: (List<String>, Path) -> Process,
     ): Result {
         val process = start(command, directory)
@@ -59,16 +82,16 @@ internal object BoundedProcessRunner {
         try {
             val finished = process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
             if (!finished) {
-                killTree(process)
-                stopReader(process, reader, readerJoinTimeout)
-                return Result(null, output.toString(), timedOut = true)
+                val survivors = killTree(process, waits.exitWait)
+                stopReader(process, reader, waits.readerJoin)
+                return Result(null, output.toString(), timedOut = true, survivors = survivors)
             }
-            stopReader(process, reader, readerJoinTimeout)
+            stopReader(process, reader, waits.readerJoin)
             return Result(process.exitValue(), output.toString(), timedOut = false)
         } catch (e: InterruptedException) {
-            killTree(process)
+            killTree(process, waits.exitWait)
             // Keep the interrupt for the caller, but do not leave the reader thread or stream behind.
-            stopReader(process, reader, readerJoinTimeout)
+            stopReader(process, reader, waits.readerJoin)
             throw e
         }
     }
@@ -98,10 +121,46 @@ internal object BoundedProcessRunner {
         .redirectErrorStream(true)
         .start()
 
-    private fun killTree(process: Process) {
+    /** Kills the tree, waits for it to exit and returns the PIDs of the processes that outlived the wait. */
+    private fun killTree(process: Process, exitWaitTimeout: Duration): List<Long> {
         // Snapshot descendants before killing the parent, which would reparent them.
-        process.descendants().forEach { it.destroyForcibly() }
+        val descendants = process.descendants().toList()
+        descendants.forEach { it.destroyForcibly() }
         process.destroyForcibly()
+        awaitExit(process, descendants, exitWaitTimeout)
+        val survivors = buildList {
+            if (process.isAlive) add(process.pid())
+            descendants.filter { it.isAlive }.forEach { add(it.pid()) }
+        }
+        if (survivors.isNotEmpty()) {
+            logger.warn {
+                "Processes still alive ${exitWaitTimeout.inWholeMilliseconds} ms after being killed: $survivors"
+            }
+        }
+        return survivors
+    }
+
+    /** Waits a bounded time for the kill to complete; a restored interrupt ends the wait early. */
+    private fun awaitExit(process: Process, descendants: List<ProcessHandle>, limit: Duration) {
+        val deadline = System.nanoTime() + limit.inWholeNanoseconds
+        try {
+            process.waitFor(limit.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+            descendants.forEach { descendant -> awaitHandle(descendant, deadline) }
+        } catch (ignored: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /** Waits for [handle] until [deadlineNanos]; running out of time or an abnormal completion is not an error. */
+    private fun awaitHandle(handle: ProcessHandle, deadlineNanos: Long) {
+        val remaining = maxOf(deadlineNanos - System.nanoTime(), 0L)
+        try {
+            handle.onExit().get(remaining, TimeUnit.NANOSECONDS)
+        } catch (ignored: TimeoutException) {
+            // Still dying after the budget: the caller reports it as a survivor.
+        } catch (ignored: ExecutionException) {
+            // The handle's completion is not a failure of the kill; the process is gone either way.
+        }
     }
 }
 

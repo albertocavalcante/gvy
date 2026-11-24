@@ -89,6 +89,20 @@ class MavenBspLauncherTest {
             // Then
             assertThat(session.localRepository.basedir.toPath()).isEqualTo(localRepoPath)
         }
+
+        @Test
+        fun `should resolve through remote repositories by default`() {
+            val session = MavenBspLauncher.createSession(MavenBspLauncher.createRepositorySystem(), tempDir)
+
+            assertThat(session.isOffline).isFalse()
+        }
+
+        @Test
+        fun `should never contact a remote repository when offline`() {
+            val session = MavenBspLauncher.createSession(MavenBspLauncher.createRepositorySystem(), tempDir, true)
+
+            assertThat(session.isOffline).isTrue()
+        }
     }
 
     @Nested
@@ -129,6 +143,29 @@ class MavenBspLauncherTest {
 
             // Then
             assertThat(config.localRepository).isEqualTo(localRepo)
+        }
+
+        @Test
+        fun `should parse offline flag in any position`() {
+            val config = MavenBspLauncher.parseArgs(arrayOf("--offline", tempDir.toString()))
+
+            assertThat(config.offline).isTrue()
+            assertThat(config.workspaceRoot).isEqualTo(tempDir)
+        }
+
+        @Test
+        fun `should parse offline flag after the workspace root`() {
+            val config = MavenBspLauncher.parseArgs(arrayOf(tempDir.toString(), "--offline"))
+
+            assertThat(config.offline).isTrue()
+            assertThat(config.workspaceRoot).isEqualTo(tempDir)
+        }
+
+        @Test
+        fun `should resolve remotely unless told otherwise`() {
+            val config = MavenBspLauncher.parseArgs(arrayOf(tempDir.toString()))
+
+            assertThat(config.offline).isFalse()
         }
     }
 
