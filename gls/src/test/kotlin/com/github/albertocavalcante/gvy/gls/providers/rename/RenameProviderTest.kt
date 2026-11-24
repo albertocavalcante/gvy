@@ -63,31 +63,6 @@ class RenameProviderTest {
         assertTrue(textEdits.size >= 4, "Should rename declaration and all usages")
     }
 
-    /**
-     * Applies [edits] to [text]. Fails, listing what each edit would replace, if edits overlap
-     * (LSP forbids that) or fall outside the text.
-     */
-    private fun applyEdits(text: String, edits: List<org.eclipse.lsp4j.TextEdit>): String {
-        val lineStarts = listOf(0) + text.indices.filter { text[it] == '\n' }.map { it + 1 }
-        fun offset(p: Position) = lineStarts.getOrNull(p.line)?.plus(p.character) ?: Int.MAX_VALUE
-        val spans = edits.map { offset(it.range.start) to offset(it.range.end) }.sortedBy { it.first }
-        val described = spans.joinToString("; ") { (from, to) ->
-            if (to <=
-                text.length
-            ) {
-                "[$from,$to)=" + text.substring(from, to).replace("\n", "\\n")
-            } else {
-                "[$from,$to)=<out of range>"
-            }
-        }
-        check(spans.all { it.second <= text.length } && spans.zipWithNext().all { (a, b) -> a.second <= b.first }) {
-            "Edits overlap or exceed the text: $described"
-        }
-        return spans.sortedByDescending { it.first }.fold(text) { acc, (from, to) ->
-            acc.substring(0, from) + edits.first { offset(it.range.start) == from }.newText + acc.substring(to)
-        }
-    }
-
     private suspend fun renameAndApply(content: String, position: Position, newName: String): String {
         val uri = workspaceRoot.resolve("Rename.groovy").toUri().toString()
         val javaUri = java.net.URI.create(uri)
@@ -96,7 +71,7 @@ class RenameProviderTest {
         val edits = renameProvider.provideRename(uri, position, newName).documentChanges
             .filter { it.isLeft && it.left.textDocument.uri == uri }
             .flatMap { it.left.edits }
-        return applyEdits(content, edits)
+        return applyTextEdits(content, edits)
     }
 
     @Test
@@ -181,83 +156,6 @@ class RenameProviderTest {
         val result = renameAndApply(content, Position(0, 7), "Worker")
 
         assertEquals(content.replace("Service", "Worker"), result)
-    }
-
-    private val serviceWithConstructors = """
-        class Service {
-            Service(String name) { }
-            Service(String name, int size) { }
-        }
-        def a = new Service('a')
-        def b = new Service('b', 1)
-        def c = new Service('c')
-    """.trimIndent()
-
-    private val renamedServiceCalls = """
-        def a = new Worker('a')
-        def b = new Worker('b', 1)
-        def c = new Worker('c')
-    """.trimIndent()
-
-    private fun prepareRename(content: String, position: Position) = runBlocking {
-        val uri = workspaceRoot.resolve("Rename.groovy").toUri().toString()
-        val javaUri = java.net.URI.create(uri)
-        documentProvider.put(javaUri, content)
-        compilationService.compile(javaUri, content)
-        runCatching { renameProvider.providePrepareRename(uri, position) }
-    }
-
-    // FIXME(#2434): renaming a class leaves its constructor declarations unrenamed (`Service(String name)` below),
-    //   which no longer compile; this test pins today's text.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2434
-    @Test
-    fun `renaming a class with constructors renames the class and each new expression once`(): Unit = runBlocking {
-        val result = renameAndApply(serviceWithConstructors, Position(0, 7), "Worker")
-
-        val expected = "class Worker {\n    Service(String name) { }\n    Service(String name, int size) { }\n}\n" +
-            renamedServiceCalls
-        assertEquals(expected, result)
-    }
-
-    // FIXME(#2434): the constructor declarations stay `Service`, as in the test above.
-    @Test
-    fun `renaming from the new keyword renames the type name and keeps the keyword`(): Unit = runBlocking {
-        val position = Position(4, serviceWithConstructors.lines()[4].indexOf("new"))
-
-        val result = renameAndApply(serviceWithConstructors, position, "Worker")
-
-        val expected = "class Worker {\n    Service(String name) { }\n    Service(String name, int size) { }\n}\n" +
-            renamedServiceCalls
-        assertEquals(expected, result)
-    }
-
-    @Test
-    fun `prepare rename on the new keyword offers no rename`(): Unit = runBlocking {
-        // FIXME(#2434): prepare rename should answer the range of the type name after `new` (rename itself works
-        //   from there); today it answers null, so a client does not offer the rename. Pins today's answer.
-        //   See: https://github.com/albertocavalcante/gvy/issues/2434
-        val position = Position(4, serviceWithConstructors.lines()[4].indexOf("new"))
-
-        assertEquals(Result.success(null), prepareRename(serviceWithConstructors, position))
-    }
-
-    @Test
-    fun `renaming from a constructor declaration is refused and prepare offers nothing`(): Unit = runBlocking {
-        // FIXME(#2434): a rename started on a constructor declaration's name should rename the class and its
-        //   constructors, or be refused with a clear reason, and prepare rename should answer likewise. Today the
-        //   rename fails with the misleading "Source changed or is unavailable" and prepare answers null; this test
-        //   pins that.
-        //   See: https://github.com/albertocavalcante/gvy/issues/2434
-        val failure = runCatching { renameAndApply(serviceWithConstructors, Position(1, 4), "Worker") }
-            .exceptionOrNull()
-
-        assertTrue(failure is ResponseErrorException, "Got: $failure")
-        assertEquals(
-            "Source changed or is unavailable during rename: " +
-                workspaceRoot.resolve("Rename.groovy").toUri(),
-            failure?.message,
-        )
-        assertEquals(Result.success(null), prepareRename(serviceWithConstructors, Position(1, 4)))
     }
 
     @Test

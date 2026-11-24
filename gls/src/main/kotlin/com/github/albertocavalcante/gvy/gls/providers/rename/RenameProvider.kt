@@ -143,9 +143,15 @@ class RenameProvider private constructor(
     suspend fun providePrepareRename(uri: String, position: Position): PrepareRenameResult? = try {
         val sources = RenameSourceSnapshots(documentSource)
         val target = captureTarget(uri, position, sources)
-        val location = collectNameLocations(target, sources).firstOrNull {
+        val locations = collectNameLocations(target, sources)
+        val location = locations.firstOrNull {
             URI.create(it.uri) == target.documentUri && it.range.start <= position && position < it.range.end
-        }
+        } ?: ClassRenameConstructors.constructedTypeName(
+            target.node,
+            target.documentUri,
+            target.compiled.sourceText,
+            locations,
+        )
         if (location == null) {
             null
         } else {
@@ -180,6 +186,7 @@ class RenameProvider private constructor(
         val documentUri: URI,
         val compiled: CompiledDocumentSnapshot,
         val parameterOrigins: ParameterOrigins,
+        val node: ASTNode,
         val definition: ASTNode,
         val definitionLocation: Location,
         val oldName: String,
@@ -223,7 +230,15 @@ class RenameProvider private constructor(
         val oldName = definition.declaredName()
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine symbol name")
 
-        return RenameTarget(documentUri, compiled, parameterOrigins, definition, definitionLocation, oldName)
+        return RenameTarget(
+            documentUri,
+            compiled,
+            parameterOrigins,
+            node = targetNode,
+            definition = definition,
+            definitionLocation = definitionLocation,
+            oldName = oldName,
+        )
     }
 
     private suspend fun collectNameLocations(target: RenameTarget, sources: RenameSourceSnapshots): List<Location> {
@@ -255,7 +270,16 @@ class RenameProvider private constructor(
         if (nameLocations.isEmpty()) {
             throw createError(ResponseErrorCode.InvalidRequest, "No occurrences of '${target.oldName}' found to rename")
         }
-        return nameLocations
+        val constructorNames = ClassRenameConstructors.nameLocations(
+            target.definition,
+            target.compiled,
+            target.definitionLocation,
+            target.documentUri,
+            target.oldName,
+        )
+        return (nameLocations + constructorNames).distinctBy {
+            Triple(it.uri, it.range.start.line, it.range.start.character)
+        }
     }
 
     private suspend fun requireSemanticCompilation(
@@ -281,6 +305,7 @@ class RenameProvider private constructor(
     ): ASTNode {
         val parsed = compiled.parseResult
         val resolved = target.resolveToDefinition(parsed.astModel, parsed.symbolTable, strict = false)
+            ?.let(ClassRenameConstructors::renamedDeclaration)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not resolve symbol to definition")
         return if (resolved is Parameter) {
             try {

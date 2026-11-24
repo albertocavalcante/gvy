@@ -251,6 +251,51 @@ class CrossFileRenameGuardTest {
         "total",
     )
 
+    private val constructed = "class A {\n    A(String s) { }\n    A(String s, int n) { }\n}\n"
+    private val constructing =
+        "class B {\n    def run() { [new A('x'), new A('x', 1)] }\n}\nclass C extends A {\n    C() { super('c') }\n}\n"
+
+    @Test
+    fun `a class whose constructors another file calls is refused from the class and from each constructor`() {
+        val uri = workspace(mapOf("A.groovy" to constructed, "B.groovy" to constructing), open = "A.groovy")
+
+        val fromClass = refusal { provider.provideRename(uri.toString(), positionOf(constructed, "A {"), "Z") }
+        assertRefused(uri, constructed, "A {", "'A'", "B.groovy", "not supported yet")
+        assertRefused(uri, constructed, "A(String s) {", "'A'", "B.groovy", "not supported yet")
+        assertRefused(uri, constructed, "A(String s, int n)", "'A'", "B.groovy", "not supported yet")
+        assertEquals(
+            fromClass,
+            refusal { provider.provideRename(uri.toString(), positionOf(constructed, "A(String s, int n)"), "Z") },
+            "the same refusal whether the rename starts on the class or on a constructor",
+        )
+    }
+
+    @Test
+    fun `a class renamed from a new site in another file is refused`() {
+        val b = "class B {\n    def run() { [new A('x'), new A('x', 1)] }\n}\n"
+        val uri = workspace(mapOf("A.groovy" to constructed, "B.groovy" to b), open = "B.groovy")
+
+        assertRefused(uri, b, "A('x', 1)", "'A'", "A.groovy", "not supported yet")
+        assertRefused(uri, b, "new A('x')", "'A'", "A.groovy", "not supported yet")
+    }
+
+    // FIXME(#unfiled-cross-file-supertype): renaming from a file whose class extends a class of another file fails
+    //   with ContentModified ("Source changed or is unavailable"), not the guard's refusal: the visitor tracks the
+    //   resolved superclass, whose positions are in the other file, as a type use in this one, and strict narrowing
+    //   cannot find the name there. Nothing is edited, so it is safe, but the reason is wrong. This test pins that.
+    @Test
+    fun `a class renamed from a file that also subclasses it reports a changed source`() {
+        val uri = workspace(mapOf("A.groovy" to constructed, "B.groovy" to constructing), open = "B.groovy")
+
+        val error = runCatching {
+            runBlocking { provider.provideRename(uri.toString(), positionOf(constructing, "A('x', 1)"), "Z") }
+        }.exceptionOrNull()
+
+        val response = assertNotNull(error as? ResponseErrorException, "expected an error, got $error").responseError
+        assertEquals(ResponseErrorCode.ContentModified.value, response.code)
+        assertEquals("Source changed or is unavailable during rename: $uri", response.message)
+    }
+
     @Test
     fun `the word match is whole-word so a longer name does not refuse`(): Unit = runBlocking {
         val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def greeting() { 'greetings' }\n}\n")
