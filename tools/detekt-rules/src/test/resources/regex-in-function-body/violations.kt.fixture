@@ -80,3 +80,30 @@ class Holder {
         fun method() = Regex("F+") // FLAG
     }
 }
+
+// A genuine file-level, object-level or companion-level constant is still a constant.
+object Constants {
+    const val OBJECT_PATTERN = "G+"
+    private val OBJECT_PLAIN = "H+"
+}
+
+fun viaObjectConstant() = Regex(OBJECT_PATTERN) // FLAG
+fun viaObjectPlainValue() = OBJECT_PLAIN.toRegex() // FLAG
+
+class WithCompanionConstant {
+    fun use() = Regex(COMPANION_PATTERN) // FLAG
+
+    companion object {
+        private val COMPANION_PATTERN = "I+"
+    }
+}
+
+// The safe call form is still a construction.
+fun safeCallOnLiteral() = "J+"?.toRegex() // FLAG
+fun safeCallWithOptionOnLiteral() = "K+"?.toRegex(RegexOption.MULTILINE) // FLAG
+
+// Only a direct argument of a run-once scope function or builder is one-shot; stored or mapped lambdas repeat.
+val viaMap = listOf(1).map { Regex("L+") } // FLAG
+val storedLambda: () -> Regex = { Regex("M+") } // FLAG
+val nestedStoredLambda = run { { Regex("N+") } } // FLAG
+fun runInsideFunction() = run { Regex("O+") } // FLAG

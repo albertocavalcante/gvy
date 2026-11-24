@@ -11,29 +11,38 @@ import io.gitlab.arturbosch.detekt.api.Issue
 import io.gitlab.arturbosch.detekt.api.Rule
 import io.gitlab.arturbosch.detekt.api.Severity
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtAnonymousInitializer
 import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtCatchClause
+import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtEscapeStringTemplateEntry
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtForExpression
 import org.jetbrains.kotlin.psi.KtFunctionLiteral
 import org.jetbrains.kotlin.psi.KtLambdaExpression
 import org.jetbrains.kotlin.psi.KtLiteralStringTemplateEntry
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
+import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtParenthesizedExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPropertyAccessor
+import org.jetbrains.kotlin.psi.KtQualifiedExpression
 import org.jetbrains.kotlin.psi.KtSecondaryConstructor
-import org.jetbrains.kotlin.psi.KtSimpleNameStringTemplateEntry
+import org.jetbrains.kotlin.psi.KtStringTemplateEntry
 import org.jetbrains.kotlin.psi.KtStringTemplateEntryWithExpression
 import org.jetbrains.kotlin.psi.KtStringTemplateExpression
 import org.jetbrains.kotlin.psi.KtValueArgument
 import org.jetbrains.kotlin.psi.KtValueArgumentList
+import org.jetbrains.kotlin.psi.KtWhenExpression
 import org.jetbrains.kotlin.psi.psiUtil.parents
 
 /**
@@ -48,13 +57,17 @@ import org.jetbrains.kotlin.psi.psiUtil.parents
  * Flagged constructions: `Regex(p)`, `Regex.fromLiteral(p)`, `p.toRegex(...)`, `p.toPattern(...)` and
  * `Pattern.compile(p, ...)` (also `java.util.regex.Pattern` and `kotlin.text.Regex`), where `p` is a constant, and
  * only when they sit lexically inside code that runs repeatedly: a function (named, local or anonymous), a property
- * accessor, a lambda that is not the argument of `lazy`, a secondary constructor or the `init` block of a class.
+ * accessor, a lambda that is not the direct argument of `lazy`, `run`, `let`, `also`, `apply`, `with`, `buildList`,
+ * `buildMap`, `buildSet` or `buildString`, a secondary constructor or the `init` block of a class. A stored function
+ * value (`val f = { Regex("a") }`) and a lambda for any other call (`map { ... }`) count as repeated.
  * Property initialisers at file, `object`, `companion object` and class scope are not flagged, nor is `object`
  * `init` (it runs once).
  *
  * A pattern is constant when it is a string literal without interpolation, such as `"a+"` or `"""a+"""`, or
  * concatenations, parentheses, `trimIndent()`/`trimMargin()` and `${NAME}` interpolations of constants. A name is
- * constant when this file declares it as a `const val`, or as a non-local `val` initialised with a string literal.
+ * constant when this file declares it, at file or `object`/`companion object` scope, as a `const val` or a `val`
+ * initialised with a string literal, no other declaration in the file shares the name, and no parameter, local,
+ * loop, catch or destructuring name of that spelling is in scope at the use.
  *
  * Patterns built from a runtime value (a parameter, a call such as `Regex.escape(x)` or `Pattern.quote(x)`, an
  * interpolated expression, a `var`, or a name this file does not declare) cannot be hoisted, so they are not
@@ -96,7 +109,7 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
 
     private fun constructionOf(call: KtCallExpression): Construction? {
         val name = (call.calleeExpression as? KtNameReferenceExpression)?.getReferencedName() ?: return null
-        val qualified = (call.parent as? KtDotQualifiedExpression)?.takeIf { it.selectorExpression == call }
+        val qualified = (call.parent as? KtQualifiedExpression)?.takeIf { it.selectorExpression == call }
         val receiver = qualified?.receiverExpression
         val first = call.firstArgument()
         val qualifier = receiver?.text
@@ -115,20 +128,20 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
     private fun KtCallExpression.firstArgument(): KtExpression? = valueArguments.firstOrNull()?.getArgumentExpression()
 
     private fun isConstant(expression: KtExpression): Boolean = when (expression) {
-        is KtStringTemplateExpression -> expression.entries.all { entry ->
-            when (entry) {
-                is KtLiteralStringTemplateEntry, is KtEscapeStringTemplateEntry -> true
-                is KtSimpleNameStringTemplateEntry, is KtStringTemplateEntryWithExpression ->
-                    entry.expression?.let(::isConstant) ?: false
-                else -> false
-            }
-        }
+        is KtStringTemplateExpression -> expression.entries.all(::isConstantEntry)
         is KtParenthesizedExpression -> expression.expression?.let(::isConstant) ?: false
         is KtBinaryExpression ->
             expression.operationToken == KtTokens.PLUS &&
                 listOf(expression.left, expression.right).all { it != null && isConstant(it) }
-        is KtNameReferenceExpression -> expression.getReferencedName() in constantNames
+        is KtNameReferenceExpression -> expression.getReferencedName() in constantNames && !expression.isShadowed()
         is KtDotQualifiedExpression -> isTrimmedConstant(expression)
+        else -> false
+    }
+
+    // KtStringTemplateEntry is not a sealed type, so the `when` needs its `else` branch.
+    private fun isConstantEntry(entry: KtStringTemplateEntry): Boolean = when (entry) {
+        is KtLiteralStringTemplateEntry, is KtEscapeStringTemplateEntry -> true
+        is KtStringTemplateEntryWithExpression -> entry.expression?.let(::isConstant) ?: false
         else -> false
     }
 
@@ -138,16 +151,52 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
         return trimmer in TRIMMERS && isConstant(expression.receiverExpression)
     }
 
+    /**
+     * Names this file declares as hoisted constants: a `const val`, or a `val` initialised with a plain string
+     * literal, at file or `object`/`companion object` scope. A name that the file also declares as anything else
+     * (a class member, a `var`, a computed value) is ambiguous without type resolution, so it is dropped.
+     */
     private fun collectConstantNames(file: KtFile): Set<String> {
-        val properties = generateSequence(listOf<PsiElement>(file)) { level -> level.flatMap { it.children.toList() } }
-            .takeWhile { it.isNotEmpty() }
-            .flatten()
-            .filterIsInstance<KtProperty>()
-            .filter { !it.isLocal && !it.isVar }
-        return properties.filter { it.hasModifier(KtTokens.CONST_KEYWORD) || it.initializer.isPlainLiteral() }
-            .mapNotNull { it.name }
-            .toSet()
+        val (constants, others) = PsiTreeUtil.findChildrenOfType(file, KtProperty::class.java)
+            .filter { !it.isLocal }
+            .partition { it.isHoistedConstant() }
+        return constants.mapNotNull { it.name }.toSet() - others.mapNotNull { it.name }.toSet()
     }
+
+    private fun KtProperty.isHoistedConstant(): Boolean {
+        val owner = parent?.parent as? KtObjectDeclaration
+        val atConstantScope = isTopLevel || (owner != null && !owner.isObjectLiteral())
+        return !isVar && atConstantScope && (hasModifier(KtTokens.CONST_KEYWORD) || initializer.isPlainLiteral())
+    }
+
+    /** True when a parameter, local, loop, catch or destructuring name hides the file-level constant. */
+    private fun KtNameReferenceExpression.isShadowed(): Boolean {
+        val name = getReferencedName()
+        return parents.any { scope -> name in scope.declaredNames() }
+    }
+
+    private fun PsiElement.declaredNames(): Set<String> = when (this) {
+        is KtNamedFunction -> parameterNames(valueParameters)
+        is KtFunctionLiteral -> parameterNames(valueParameters)
+        is KtSecondaryConstructor -> parameterNames(valueParameters)
+        is KtClassOrObject -> parameterNames(primaryConstructorParameters)
+        is KtPropertyAccessor -> parameterNames(listOfNotNull(parameter))
+        is KtForExpression -> parameterNames(listOfNotNull(loopParameter))
+        is KtCatchClause -> parameterNames(listOfNotNull(catchParameter))
+        is KtWhenExpression -> setOfNotNull(subjectVariable?.name)
+        is KtBlockExpression -> statements.flatMap { statement ->
+            when (statement) {
+                is KtProperty -> listOfNotNull(statement.name)
+                is KtDestructuringDeclaration -> statement.entries.mapNotNull { it.name }
+                else -> emptyList()
+            }
+        }.toSet()
+        else -> emptySet()
+    }
+
+    private fun parameterNames(parameters: List<KtParameter>): Set<String> = parameters.flatMap { parameter ->
+        listOfNotNull(parameter.name) + parameter.destructuringDeclaration?.entries.orEmpty().mapNotNull { it.name }
+    }.toSet()
 
     private fun KtExpression?.isPlainLiteral(): Boolean = this is KtStringTemplateExpression &&
         entries.all { it is KtLiteralStringTemplateEntry || it is KtEscapeStringTemplateEntry }
@@ -157,21 +206,27 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
     private fun PsiElement.isRepeatedScope(): Boolean = when (this) {
         is KtNamedFunction, is KtPropertyAccessor, is KtSecondaryConstructor -> true
         is KtAnonymousInitializer -> parent?.parent !is KtObjectDeclaration
-        is KtFunctionLiteral -> !isLazyInitializer()
+        is KtFunctionLiteral -> !isRunOnceBuilder()
         else -> false
     }
 
-    /** A lambda handed to `lazy` runs at most once per property, so the enclosing scope alone decides. */
-    private fun KtFunctionLiteral.isLazyInitializer(): Boolean {
+    /**
+     * A lambda handed straight to an inline scope function, builder or `lazy` runs where its call runs: once at
+     * file, `object` and `companion object` scope, and per call inside a function. Either way the enclosing scopes
+     * decide, so the lambda itself is not a repetition.
+     */
+    private fun KtFunctionLiteral.isRunOnceBuilder(): Boolean {
         val argument = (parent as? KtLambdaExpression)?.parent as? KtValueArgument ?: return false
         val owner = argument.parent.let { if (it is KtValueArgumentList) it.parent else it }
         val call = owner as? KtCallExpression
-        return (call?.calleeExpression as? KtNameReferenceExpression)?.getReferencedName() == "lazy"
+        return (call?.calleeExpression as? KtNameReferenceExpression)?.getReferencedName() in RUN_ONCE_CALLEES
     }
 
     private companion object {
         val REGEX_RECEIVERS = setOf("Regex", "kotlin.text.Regex")
         val PATTERN_RECEIVERS = setOf("Pattern", "java.util.regex.Pattern")
+        val RUN_ONCE_CALLEES =
+            setOf("lazy", "run", "let", "also", "apply", "with", "buildList", "buildMap", "buildSet", "buildString")
         val TRIMMERS = setOf("trimIndent", "trimMargin")
     }
 }

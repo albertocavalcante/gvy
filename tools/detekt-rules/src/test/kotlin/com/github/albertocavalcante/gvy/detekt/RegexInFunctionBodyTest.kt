@@ -3,7 +3,9 @@
 
 package com.github.albertocavalcante.gvy.detekt
 
+import io.gitlab.arturbosch.detekt.api.Config
 import io.gitlab.arturbosch.detekt.test.lint
+import io.gitlab.arturbosch.detekt.test.yamlConfig
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -41,9 +43,29 @@ class RegexInFunctionBodyTest {
         assertThat(findings.single().message).contains("Regex").contains("hoist")
     }
 
+    private fun ruleFrom(resource: String): RegexInFunctionBody {
+        val ruleSetConfig = yamlConfig(resource).subConfig("gvy")
+        val rule = GvyRuleSetProvider().instance(ruleSetConfig).rules.single()
+        return rule as RegexInFunctionBody
+    }
+
+    @Test
+    fun `the plugin default config activates the rule`() {
+        val rule = ruleFrom("config/config.yml")
+        assertThat(rule.active).isTrue()
+        assertThat(rule.lint("fun f() = Regex(\"a+\")")).hasSize(1)
+    }
+
+    @Test
+    fun `a yaml config can switch the rule off`() {
+        val rule = ruleFrom("inactive-config.yml")
+        assertThat(rule.active).isFalse()
+        assertThat(rule.lint("fun f() = Regex(\"a+\")")).isEmpty()
+    }
+
     @Test
     fun `provider registers the rule under the gvy id`() {
-        val ruleSet = GvyRuleSetProvider().instance(io.gitlab.arturbosch.detekt.api.Config.empty)
+        val ruleSet = GvyRuleSetProvider().instance(Config.empty)
         assertThat(ruleSet.id).isEqualTo("gvy")
         assertThat(ruleSet.rules.map { it.ruleId }).containsExactly("RegexInFunctionBody")
     }

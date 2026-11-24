@@ -69,3 +69,92 @@ fun lookalikes(input: String) {
     Other.compile("u+")
     RegexOption.IGNORE_CASE
 }
+
+// A file-level constant is hidden by every kind of local declaration of the same name.
+private const val SHADOWED = "z+"
+val name = "x"
+
+class Member {
+    val member = "m+"
+    val sharedName = computed()
+
+    fun fromClassMember() = Regex(member)
+}
+
+object OtherScope {
+    val sharedName = "y+"
+}
+
+fun shadowedByParameterOfOtherName(name: String) = Regex(name)
+fun ambiguousBetweenScopes() = Regex(sharedName)
+fun shadowedByParameter(SHADOWED: String) = Regex(SHADOWED)
+fun shadowedByLocal(): Regex {
+    val SHADOWED = readLine().orEmpty()
+    return Regex(SHADOWED)
+}
+fun shadowedByLocalVar(): Regex {
+    var SHADOWED = "a"
+    SHADOWED += readLine()
+    return Regex("$SHADOWED")
+}
+fun shadowedByLambdaParameter(items: List<String>) = items.map { SHADOWED -> Regex(SHADOWED) }
+fun shadowedByDestructuredLambdaParameter(pairs: List<Pair<String, String>>) =
+    pairs.map { (SHADOWED, _) -> Regex(SHADOWED) }
+fun shadowedByDestructuring(pair: Pair<String, String>): Regex {
+    val (SHADOWED, _) = pair
+    return Regex(SHADOWED)
+}
+fun shadowedByLoop(items: List<String>) {
+    for (SHADOWED in items) {
+        Regex(SHADOWED)
+    }
+}
+fun shadowedByDestructuredLoop(pairs: List<Pair<String, String>>) {
+    for ((SHADOWED, _) in pairs) {
+        Regex("$SHADOWED")
+    }
+}
+fun shadowedByCatch() {
+    try {
+        work()
+    } catch (SHADOWED: IllegalStateException) {
+        Regex("$SHADOWED")
+    }
+}
+fun shadowedByWhenSubject() {
+    when (val SHADOWED = readLine().orEmpty()) {
+        else -> Regex(SHADOWED)
+    }
+}
+class ShadowedByConstructorParameter(SHADOWED: String) {
+    fun use() = Regex(SHADOWED)
+}
+class ShadowedBySecondaryConstructor {
+    constructor(SHADOWED: String) {
+        Regex(SHADOWED)
+    }
+}
+
+// The safe call form on a runtime value is not reported either.
+fun safeCallOnVariable(pattern: String?) = pattern?.toRegex()
+
+// Direct arguments of run-once scope functions and builders at file, object and companion scope run once.
+val viaRun = run { Regex("a1+") }
+val viaLet = "x".let { Regex("a2+") }
+val viaAlso = "x".also { Regex("a3+") }
+val viaApply = StringBuilder().apply { Regex("a4+") }
+val viaWith = with("x") { Regex("a5+") }
+val viaBuildList = buildList { add(Regex("a6+")) }
+val viaBuildMap = buildMap { put("k", Regex("a7+")) }
+val viaBuildSet = buildSet { add(Regex("a8+")) }
+val viaBuildString = buildString { append(Regex("a9+").pattern) }
+
+object OneShot {
+    val viaRun = run { Regex("b1+") }
+}
+
+class OneShotCompanion {
+    companion object {
+        val viaApply = StringBuilder().apply { Regex("b2+") }
+    }
+}
