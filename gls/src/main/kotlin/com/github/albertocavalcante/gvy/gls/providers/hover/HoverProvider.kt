@@ -75,42 +75,48 @@ class HoverProvider(
     private val documentProvider: DocumentProvider,
     private val contentGenerator: HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
+    /**
+     * The workspace-independent strategies, evaluated in order after any Jenkins ones; the first that handles a
+     * node and returns a hover wins. Built once and shared by every request, so they must hold no per-request
+     * state. The last one should be a fallback.
+     */
+    baseStrategies: List<HoverStrategy> = DEFAULT_STRATEGIES,
 ) {
+    // The shared default is already immutable and is used as is; an injected list is copied defensively.
+    private val baseStrategies: List<HoverStrategy> =
+        if (baseStrategies === DEFAULT_STRATEGIES) DEFAULT_STRATEGIES else baseStrategies.toList()
+
     private val logger = KotlinLogging.logger {}
 
     // Documentation provider for extracting groovydoc - use shared instance for cache consistency
     private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
 
-    // Strategies for handling different node types (order matters - more specific first)
-    private val strategies: List<HoverStrategy>
+    /**
+     * The strategies for this request, most specific first.
+     *
+     * The Jenkins strategies come first and exist only when a Jenkins strategy is active. They capture the
+     * workspace's current [com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities] and server mode,
+     * both of which change after construction, so they are built per request (two objects and a combined list).
+     * Every other strategy is stateless and shared by every provider: with no Jenkins project this returns
+     * [baseStrategies] itself and allocates nothing.
+     */
+    internal val strategies: List<HoverStrategy>
         get() {
             val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+                ?: return baseStrategies
             val modeResolver = ModeResolver.fromConfig(compilationService.serverConfiguration, jenkinsCapabilities)
-            return listOfNotNull(
+            return listOf(
                 // Jenkins step hover has high priority for method calls in Jenkins files
-                jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
-                jenkinsCapabilities?.let { JenkinsParameterHoverStrategy(it, modeResolver) },
-                MethodDeclarationHoverStrategy(),
-                ClassDeclarationHoverStrategy(),
-                FieldDeclarationHoverStrategy(),
-                ImportHoverStrategy(),
-                DeclarationExpressionHoverStrategy(),
-                VariableExpressionHoverStrategy(),
-                MethodCallHoverStrategy(),
-                ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
-                PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
-                ClosureHoverStrategy(), // Phase 4: Closure expressions
-                LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
-                GenericHoverStrategy(), // Fallback - must be last
-            )
+                JenkinsStepHoverStrategy(jenkinsCapabilities, modeResolver),
+                JenkinsParameterHoverStrategy(jenkinsCapabilities, modeResolver),
+            ) + baseStrategies
         }
 
     /**
      * Provide hover information for the symbol at the given position.
      * Returns null if no hover information is available.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     suspend fun provideHover(uri: String, position: Position): Hover? = provideHoverInternal(uri, position, null)
 
     internal suspend fun provideHover(uri: String, position: Position, snapshot: CompiledDocumentSnapshot): Hover? =
@@ -443,6 +449,27 @@ class HoverProvider(
             contents = Either.forRight(markupContent)
             range = baseHover.range
         }
+    }
+
+    private companion object {
+        /**
+         * The default workspace-independent strategies (order matters: more specific first, fallback last).
+         * Stateless, so one list serves every provider; production builds a provider for each hover request.
+         */
+        val DEFAULT_STRATEGIES: List<HoverStrategy> = listOf(
+            MethodDeclarationHoverStrategy(),
+            ClassDeclarationHoverStrategy(),
+            FieldDeclarationHoverStrategy(),
+            ImportHoverStrategy(),
+            DeclarationExpressionHoverStrategy(),
+            VariableExpressionHoverStrategy(),
+            MethodCallHoverStrategy(),
+            ConstructorCallHoverStrategy(),
+            PropertyExpressionHoverStrategy(),
+            ClosureHoverStrategy(),
+            LiteralHoverStrategy(),
+            GenericHoverStrategy(),
+        )
     }
 }
 

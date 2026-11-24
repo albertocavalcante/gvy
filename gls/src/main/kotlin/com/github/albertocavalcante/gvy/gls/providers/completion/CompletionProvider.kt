@@ -65,6 +65,17 @@ data class CompletionContext(
 object CompletionProvider {
     private val logger = KotlinLogging.logger {}
 
+    // Stateless, so one instance of each serves every request and mode. Order is semantics: completions are
+    // aggregated in list order.
+    private val spockStrategy = SpockCompletionStrategy()
+    private val groovyStrategy = GroovyCompletionStrategy()
+    private val jenkinsStrategy = JenkinsCompletionStrategy()
+
+    // After member access: Jenkins mode (and AUTO, which only resolves to it for Jenkins files) adds Jenkins steps.
+    private val groovyModeStrategies: List<CompletionStrategy> = listOf(spockStrategy, groovyStrategy)
+    private val jenkinsAwareStrategies: List<CompletionStrategy> =
+        listOf(jenkinsStrategy, spockStrategy, groovyStrategy)
+
     // Note: IntelliJ uses "IntelliJIdeaRulezzz"
     // Kotlin LSP uses "RWwgUHN5IEtvbmdyb28g" (El Psy Kongroo)
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
@@ -307,31 +318,23 @@ object CompletionProvider {
         }
     }
 
-    private fun buildStrategies(
+    /**
+     * The strategies for one request in [mode]: member access first, then the shared per-mode list.
+     *
+     * Member access holds the request's [compilationService] (this provider is a process-wide object that
+     * receives the service per call), so it is the one strategy built per request.
+     */
+    internal fun buildStrategies(
         mode: GroovyMode,
         compilationService: GroovyCompilationService,
         workspaceSymbolIndex: WorkspaceSymbolIndex?,
     ): List<CompletionStrategy> {
         val memberAccessStrategy = MemberAccessCompletionStrategy(compilationService, workspaceSymbolIndex)
-        return when (mode) {
-            GroovyMode.GROOVY -> listOf(
-                memberAccessStrategy,
-                SpockCompletionStrategy(),
-                GroovyCompletionStrategy(),
-            )
-            GroovyMode.JENKINS -> listOf(
-                memberAccessStrategy,
-                JenkinsCompletionStrategy(),
-                SpockCompletionStrategy(),
-                GroovyCompletionStrategy(),
-            )
-            GroovyMode.AUTO -> listOf(
-                memberAccessStrategy,
-                JenkinsCompletionStrategy(),
-                SpockCompletionStrategy(),
-                GroovyCompletionStrategy(),
-            )
+        val modeStrategies = when (mode) {
+            GroovyMode.GROOVY -> groovyModeStrategies
+            GroovyMode.JENKINS, GroovyMode.AUTO -> jenkinsAwareStrategies
         }
+        return listOf(memberAccessStrategy) + modeStrategies
     }
 
     private fun buildJenkinsBlockContext(ctx: CompletionContext, isJenkinsFile: Boolean): JenkinsBlockContext? {
