@@ -32,10 +32,24 @@ Deliberately not covered:
 - Option arguments (`RegexOption`, `Pattern` flags) are not inspected; only the pattern decides.
 - A pattern is constant when it is a plain literal, a `+` concatenation of constants, `trimIndent()`/`trimMargin()` of a
   constant, or a name this file declares as a `const val` or a literal `val` at file or `object` scope (and no parameter,
-  local, loop, catch or destructuring name of that spelling is in scope, and no other declaration of that name exists in
-  the file). Names declared in other files count as dynamic, because resolving them needs type resolution.
+  local, loop, catch or destructuring name of that spelling is in scope, and no other property of that name is declared
+  in the file). Names declared in other files count as dynamic, because resolving them needs type resolution.
 
 Use `@Suppress("RegexInFunctionBody")` only with a comment that says why hoisting is impossible.
+
+### Known limits
+
+The rule cannot resolve names, so it errs in these documented ways:
+
+1. A constant name is ignored for the whole file when a non-hoisted property declaration shares its spelling (a class
+   member, a `var`, a computed `val`, an object-literal member). This is silent: detection for that name is off in that
+   file. Functions and classes with the same spelling are not considered.
+2. Qualified references (`this.NAME`, `Outer.NAME`) and import aliases count as dynamic (false negatives).
+3. Shadowing ignores declaration order: a local declared after the use still hides the constant (false negative).
+4. The one-shot exemption is by callee name. A user function named `run`, `let` and so on that invokes its lambda
+   repeatedly is missed, and a labelled lambda (`run label@{ ... }`) at file scope is reported.
+5. A name that resolves to a member of a `with(x) { }` receiver, or to an inherited member declared in another file,
+   cannot be seen and may be reported. Suppress that site locally with `@Suppress("RegexInFunctionBody")` and a reason.
 
 ### Enabling a module
 

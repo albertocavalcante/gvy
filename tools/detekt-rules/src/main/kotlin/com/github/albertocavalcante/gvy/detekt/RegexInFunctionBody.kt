@@ -73,6 +73,8 @@ import org.jetbrains.kotlin.psi.psiUtil.parents
  * interpolated expression, a `var`, or a name this file does not declare) cannot be hoisted, so they are not
  * flagged, and need no suppression. Only the pattern decides: `Regex.fromLiteral` and the option arguments are not
  * inspected. Without type resolution a name declared in another file counts as dynamic, a deliberate false negative.
+ *
+ * The documented limits of this syntactic approach are in the "Known limits" section of `tools/detekt-rules/README.md`.
  */
 internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config) {
     override val issue = Issue(
