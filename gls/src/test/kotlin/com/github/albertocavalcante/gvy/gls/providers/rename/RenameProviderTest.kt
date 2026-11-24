@@ -233,7 +233,9 @@ class RenameProviderTest {
 
     @Test
     fun `prepare rename on the new keyword offers no rename`(): Unit = runBlocking {
-        // Pins today's answer: rename works from `new`, but prepare answers null (not filed; see the report).
+        // FIXME(#2434): prepare rename should answer the range of the type name after `new` (rename itself works
+        //   from there); today it answers null, so a client does not offer the rename. Pins today's answer.
+        //   See: https://github.com/albertocavalcante/gvy/issues/2434
         val position = Position(4, serviceWithConstructors.lines()[4].indexOf("new"))
 
         assertEquals(Result.success(null), prepareRename(serviceWithConstructors, position))
@@ -241,7 +243,11 @@ class RenameProviderTest {
 
     @Test
     fun `renaming from a constructor declaration is refused and prepare offers nothing`(): Unit = runBlocking {
-        // Pins today's behaviour: a constructor declaration is not a rename target (see FIXME(#2434) above).
+        // FIXME(#2434): a rename started on a constructor declaration's name should rename the class and its
+        //   constructors, or be refused with a clear reason, and prepare rename should answer likewise. Today the
+        //   rename fails with the misleading "Source changed or is unavailable" and prepare answers null; this test
+        //   pins that.
+        //   See: https://github.com/albertocavalcante/gvy/issues/2434
         val failure = runCatching { renameAndApply(serviceWithConstructors, Position(1, 4), "Worker") }
             .exceptionOrNull()
 

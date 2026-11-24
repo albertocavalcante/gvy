@@ -589,11 +589,22 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 is CallOutcome.Unresolved -> {
                     // The class occurrence stands, but the constructor is not known: say so, keyed by the class.
                     if (outcome.reason.isUncertainConstructorUse() && unresolved.isSource(call)) {
-                        unresolved.name(call.type.sourceSimpleName())
+                        constructedClass(call)?.let { unresolved.name(it.sourceSimpleName()) }
                     }
                     null
                 }
             }
+
+        /**
+         * The class whose constructor [call] invokes. `this(...)` and `super(...)` carry the placeholder types
+         * `ClassNode.THIS` and `ClassNode.SUPER`, which are not the classes: they mean this class and its superclass.
+         * A superclass of `Object` has no source constructor to be unsure about, so it is null.
+         */
+        private fun constructedClass(call: ConstructorCallExpression): ClassNode? = when {
+            call.isThisCall -> currentClass
+            call.isSuperCall -> currentClass.unresolvedSuperClass?.takeUnless { it.name == "java.lang.Object" }
+            else -> call.type
+        }
 
         /** From the `new` keyword to the end of the type name; null when the type has no position of its own. */
         private fun constructorCallRange(call: ConstructorCallExpression, typeRange: Range): Range? {

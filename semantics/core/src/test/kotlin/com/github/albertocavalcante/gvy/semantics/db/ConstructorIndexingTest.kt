@@ -304,6 +304,32 @@ open class ConstructorIndexingTest : SymbolIdTestSupport() {
     }
 
     @Test
+    @DisplayName("this(...) records the class and super(...) the superclass as uncertain uses, never `this`/`super`")
+    fun specialCallsAreRecordedByClassName() {
+        val doc = build(
+            """
+            class Base { Base(String a) { } }
+            class Foo extends Base {
+                Foo() { this('x') }
+                Foo(String a) { super(a) }
+            }
+            """,
+        )
+
+        assertTrue("Foo" in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+        assertTrue("Base" in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+        assertTrue("this" !in doc.unresolvedNames && "super" !in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+    }
+
+    @Test
+    @DisplayName("super(...) of a class without an explicit superclass is not recorded under Object")
+    fun superOfObjectIsNotRecorded() {
+        val doc = build("class Foo { Foo() { super() } }")
+
+        assertTrue("Object" !in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+    }
+
+    @Test
     @DisplayName("an anonymous class is not attributed to a constructor and has no constructor symbol")
     fun anonymousClassIsNotAttributed() {
         val doc = build(

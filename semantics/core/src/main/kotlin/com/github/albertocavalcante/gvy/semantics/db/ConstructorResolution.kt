@@ -24,7 +24,9 @@ internal object IndexedConstructors {
      *   `Builder` (its initializer strategy) generate constructors;
      * - `InheritConstructors` copies the superclass's;
      * - `AutoClone(style = COPY_CONSTRUCTOR)` adds a copy constructor `T(T)`;
-     * - `NamedVariant` on a constructor adds a `Map`-taking one.
+     * - `NamedVariant` on a constructor adds a `Map`-taking one. This entry is believed redundant: the generated
+     *   constructor exists, without a source position, by the end of SEMANTIC_ANALYSIS, so the position check below
+     *   already sees it (the test passes without the entry). It stays as a harmless guard.
      * See the Groovy documentation of `groovy.transform` (TupleConstructor, MapConstructor, Canonical, Immutable,
      * InheritConstructors, AutoClone, NamedVariant, builder.Builder). `Singleton` makes the constructor private and
      * adds none, and `Newify` only rewrites calls, so neither is listed.
