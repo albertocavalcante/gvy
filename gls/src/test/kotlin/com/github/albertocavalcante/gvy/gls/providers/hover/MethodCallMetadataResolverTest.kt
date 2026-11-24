@@ -13,6 +13,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.mockk.every
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -24,6 +25,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertTimeoutPreemptively
+import java.lang.reflect.Modifier
+import java.time.Duration
 
 class MethodCallMetadataResolverTest {
 
@@ -235,5 +239,28 @@ class MethodCallMetadataResolverTest {
         val result = resolver.resolveMethodCall(call, null)
 
         assertNull(result)
+    }
+
+    @Test
+    fun `a call on a receiver with a cyclic superclass chain terminates`() {
+        // `class A extends B {}; class B extends A {}` as Groovy leaves it after reporting "Cycle detected" (#2401)
+        val a = ClassNode("demo.A", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        ClassNode("demo.B", Modifier.PUBLIC, a).also { a.superClass = it }
+        val call = mockCall()
+        every { call.methodAsString } returns "missing"
+        every { call.objectExpression } returns VariableExpression("a", a)
+        every { call.isImplicitThis } returns false
+        every { call.arguments } returns ArgumentListExpression(emptyList())
+        every { gdkProvider.getMethodsForType(any()) } returns emptyList()
+
+        val result = assertTimeoutPreemptively(Duration.ofSeconds(TIMEOUT_SECONDS)) {
+            resolver.resolveMethodCall(call, null)
+        }
+
+        assertNull(result)
+    }
+
+    private companion object {
+        const val TIMEOUT_SECONDS = 10L
     }
 }

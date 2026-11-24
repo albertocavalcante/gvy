@@ -89,9 +89,33 @@ fun ClassNode.methodsSafe(name: String): List<MethodNode> = if (hasCyclicSuperCl
 
 /**
  * Cycle-safe replacement for [ClassNode.implementsInterface]: true when [other] is among the interfaces of this
- * class, its superclasses or any super-interface (visited by identity, so interface cycles terminate).
+ * class, its superclasses or any super-interface (visited by identity, so interface cycles terminate). At most
+ * [MAX_HIERARCHY_NODES] classes and interfaces are visited; an interface beyond that is reported as not implemented.
  */
 fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean {
+    var found = false
+    walkInterfaces { iface ->
+        found = iface == other
+        !found
+    }
+    return found
+}
+
+/**
+ * Every interface of this class, its superclasses and their super-interfaces, each once, in discovery order. Bounded
+ * like [implementsInterfaceSafe]: past [MAX_HIERARCHY_NODES] visited classes the rest is left out.
+ */
+fun ClassNode.allInterfacesSafe(): Set<ClassNode> {
+    val found = LinkedHashSet<ClassNode>()
+    walkInterfaces { iface ->
+        found += iface
+        true
+    }
+    return found
+}
+
+/** Breadth-first walk over the interfaces reachable from this class; [visit] returns false to stop early. */
+private inline fun ClassNode.walkInterfaces(visit: (ClassNode) -> Boolean) {
     val seen = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
     val pending = ArrayDeque<ClassNode>()
     pending.add(this)
@@ -102,13 +126,14 @@ fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean {
         if (!seen.add(node)) continue
         visited++
         for (iface in node.interfaces.orEmpty()) {
-            if (iface == other) return true
+            if (!visit(iface)) return
             pending.add(iface)
         }
     }
-    return false
 }
 
 /** Default depth bound for [superClassChain] and [hasCyclicSuperClassChain]. */
 const val MAX_HIERARCHY_DEPTH = 256
-private const val MAX_HIERARCHY_NODES = 4096
+
+/** Bound on the classes and interfaces visited by an interface walk; pinned by ClassHierarchyBoundsTest. */
+internal const val MAX_HIERARCHY_NODES = 4096

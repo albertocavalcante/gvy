@@ -3,6 +3,9 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.findFieldSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper

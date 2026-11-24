@@ -16,6 +16,9 @@ dependencies {
     // Common functional utilities (DomainError, etc.)
     implementation(project(":common"))
 
+    // Cycle-safe class hierarchy walks (internal package, shared by every module that walks user-written hierarchies)
+    implementation(project(":parser:api"))
+
     // Groovy AST for SemanticDocumentBuilder
     implementation(libs.groovy.core)
 

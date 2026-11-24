@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
+import com.github.albertocavalcante.groovyparser.ast.methodsSafe
 import com.github.albertocavalcante.gvy.gls.documentation.DocExtractor
 import com.github.albertocavalcante.gvy.gls.documentation.DocFormatter
 import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
@@ -61,7 +62,7 @@ class MethodCallMetadataResolver(
         // which preserves source parameter names/documentation rather than compiler-generated arg0 names.
         val sourceReceiver = receiver.redirect().isPrimaryClassNode
         // Removing non-public overloads before ranking can fabricate a less-specific public target.
-        val methods = receiver.takeIf { sourceReceiver }?.getMethods(name).orEmpty().filter {
+        val methods = receiver.takeIf { sourceReceiver }?.methodsSafe(name).orEmpty().filter {
             call.objectExpression !is ClassExpression || it.isStatic
         }
         val nativeMatches = HoverMethodSelection.select(receiver, methods, arguments)
