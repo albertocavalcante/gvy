@@ -33,6 +33,19 @@ import java.util.Properties
 object DocExtractor {
     private val logger = KotlinLogging.logger {}
 
+    private val COMMENT_OPEN = Regex("""^\s*/\*+""")
+    private val COMMENT_CLOSE = Regex("""\*/\s*$""")
+    private val WHITESPACE = Regex("""\s+""")
+    private val SUMMARY_BOUNDARY = Regex("""[.?!]\s+|\n\n""")
+    private val TAG_START = Regex("""(?=@\w+)""")
+    private val PARAM_TAG = Regex("""@param\s+(\w+)\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+    private val RETURN_TAG = Regex("""@return\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+    private val THROWS_TAG = Regex("""@(?:throws|exception)\s+(\w+)\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+    private val SINCE_TAG = Regex("""@since\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+    private val AUTHOR_TAG = Regex("""@author\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+    private val DEPRECATED_TAG = Regex("""@deprecated\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+    private val SEE_TAG = Regex("""@see\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
+
     /** Documentation retained by the compiler belongs to the declaration, including cross-file references. */
     fun extractAttachedDocumentation(node: AnnotatedNode): Documentation =
         node.groovydoc?.content?.takeIf { it.isNotBlank() }?.let(::parseDocComment) ?: Documentation.EMPTY
@@ -150,8 +163,8 @@ object DocExtractor {
         .lines()
         .joinToString("\n") { line ->
             line.trim()
-                .replaceFirst(Regex("""^\s*/\*+"""), "")
-                .replaceFirst(Regex("""\*/\s*$"""), "")
+                .replaceFirst(COMMENT_OPEN, "")
+                .replaceFirst(COMMENT_CLOSE, "")
                 .removePrefix("*")
                 .trim()
         }
@@ -160,70 +173,52 @@ object DocExtractor {
     /**
      * Parse a doc comment using regex (legacy fallback method).
      */
-    private fun parseDocCommentWithRegex(docComment: String): Documentation {
+    internal fun parseDocCommentWithRegex(docComment: String): Documentation {
         // Remove comment delimiters and asterisks
         val cleanedComment = cleanDocCommentForParser(docComment)
 
-        // Regex for whitespace normalization
-        val whitespaceRegex = Regex("""\s+""")
-
-        // Regex to extract @param tags
-        val paramRegex = Regex("""@param\s+(\w+)\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-        // Regex to extract @return tag
-        val returnRegex = Regex("""@return\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-        // Regex to extract @throws/@exception tags
-        val throwsRegex = Regex("""@(?:throws|exception)\s+(\w+)\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-        // Regex to extract @since tag
-        val sinceRegex = Regex("""@since\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-        // Regex to extract @author tag
-        val authorRegex = Regex("""@author\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-        // Regex to extract @deprecated tag
-        val deprecatedRegex = Regex("""@deprecated\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-        // Regex to extract @see tag
-        val seeRegex = Regex("""@see\s+(.+?)(?=@\w+|$)""", RegexOption.DOT_MATCHES_ALL)
-
         // Extract summary (first sentence or first paragraph)
-        val summaryMatch = cleanedComment.split(Regex("""[.?!]\s+|\n\n""")).firstOrNull()?.trim() ?: ""
+        val summaryMatch = cleanedComment.split(SUMMARY_BOUNDARY).firstOrNull()?.trim() ?: ""
         val summary = if (summaryMatch.startsWith("@")) "" else summaryMatch
 
         // Extract description (everything before first @ tag)
-        val descParts = cleanedComment.split(Regex("""(?=@\w+)"""))
+        val descParts = cleanedComment.split(TAG_START)
         val description = descParts.firstOrNull()?.trim()?.let {
             if (it.startsWith("@")) "" else it
         } ?: ""
 
         // Extract @param tags
-        val params = paramRegex.findAll(cleanedComment).associate { match ->
+        val params = PARAM_TAG.findAll(cleanedComment).associate { match ->
             val paramName = match.groupValues[1]
-            val paramDesc = match.groupValues[2].trim().replace(whitespaceRegex, " ")
+            val paramDesc = match.groupValues[2].trim().replace(WHITESPACE, " ")
             paramName to paramDesc
         }
 
         // Extract @return tag
-        val returnDoc = returnRegex.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(whitespaceRegex, " ")
+        val returnDoc = RETURN_TAG.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(WHITESPACE, " ")
             ?: ""
 
         // Extract @throws tags
-        val throws = throwsRegex.findAll(cleanedComment).associate { match ->
+        val throws = THROWS_TAG.findAll(cleanedComment).associate { match ->
             val exceptionType = match.groupValues[1]
-            val exceptionDesc = match.groupValues[2].trim().replace(whitespaceRegex, " ")
+            val exceptionDesc = match.groupValues[2].trim().replace(WHITESPACE, " ")
             exceptionType to exceptionDesc
         }
 
         // Extract @since tag
-        val since = sinceRegex.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(whitespaceRegex, " ") ?: ""
+        val since = SINCE_TAG.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(WHITESPACE, " ") ?: ""
 
         // Extract @author tag
-        val author = authorRegex.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(whitespaceRegex, " ")
+        val author = AUTHOR_TAG.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(WHITESPACE, " ")
             ?: ""
 
         // Extract @deprecated tag
         val deprecated =
-            deprecatedRegex.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(whitespaceRegex, " ") ?: ""
+            DEPRECATED_TAG.find(cleanedComment)?.groupValues?.get(1)?.trim()?.replace(WHITESPACE, " ") ?: ""
 
         // Extract @see tags
-        val see = seeRegex.findAll(cleanedComment).map { match ->
-            match.groupValues[1].trim().replace(whitespaceRegex, " ")
+        val see = SEE_TAG.findAll(cleanedComment).map { match ->
+            match.groupValues[1].trim().replace(WHITESPACE, " ")
         }.toList()
 
         return Documentation(

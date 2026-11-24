@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
  */
 object DocFormatter {
     private val punctuation = Regex("""\p{P}""")
+    private val SENTENCE_BOUNDARY = Regex("""[.?!]\s+""")
 
     /**
      * Format documentation as markdown for display in hover.
@@ -154,7 +155,7 @@ object DocFormatter {
         doc.summary.isNotBlank() -> InlineTagRenderer.render(doc.summary)
         doc.description.isNotBlank() -> {
             // Take first sentence of description
-            val firstSentence = doc.description.split(Regex("""[.?!]\s+""")).firstOrNull()?.trim() ?: doc.description
+            val firstSentence = doc.description.split(SENTENCE_BOUNDARY).firstOrNull()?.trim() ?: doc.description
             InlineTagRenderer.render(firstSentence)
         }
 

@@ -21,6 +21,14 @@ import java.net.URI
 class CompilationErrorHandler {
     private val logger = KotlinLogging.logger {}
 
+    private companion object {
+        // Matches "@ line 5, column 10" or "line: 5, column: 10"
+        private val LINE_COLUMN = Regex(
+            """(?:@\s*)?line[:\s]*(\d+)(?:[,\s]*column[:\s]*(\d+))?""",
+            RegexOption.IGNORE_CASE,
+        )
+    }
+
     fun handleException(e: Exception, uri: URI): CompilationResult = when (e) {
         is CompilationFailedException -> handleCompilationFailed(e, uri)
         is GroovyLspException -> handleGroovyParserError(e)
@@ -115,10 +123,7 @@ class CompilationErrorHandler {
         if (message == null) return null
 
         // Look for patterns like "@ line 5, column 10" or "line: 5, column: 10"
-        val lineColumnRegex = """(?:@\s*)?line[:\s]*(\d+)(?:[,\s]*column[:\s]*(\d+))?""".toRegex(
-            RegexOption.IGNORE_CASE,
-        )
-        val match = lineColumnRegex.find(message)
+        val match = LINE_COLUMN.find(message)
 
         return match?.let { matchResult ->
             val line = matchResult.groups[1]?.value?.toIntOrNull() ?: 0

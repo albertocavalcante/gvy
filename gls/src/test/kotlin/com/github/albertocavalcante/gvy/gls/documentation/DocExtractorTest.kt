@@ -107,6 +107,43 @@ class DocExtractorTest {
         assertTrue(doc.deprecated.contains("Use newMethod instead"))
     }
 
+    // No test reaches the regex fallback through extractDocumentation (the Groovydoc parser accepts every
+    // comment it is given), so it is characterized directly.
+    @Test
+    fun `regex fallback parses summary description and every tag`() {
+        val doc = DocExtractor.parseDocCommentWithRegex(
+            """
+            /**
+             * Does the thing.   It really
+             * does.
+             *
+             * @param a the   first
+             * @param b the second
+             * @return the result
+             * @throws IOException if broken
+             * @exception IllegalStateException when bad
+             * @since 1.2
+             * @author Someone
+             * @deprecated use other
+             * @see Other
+             */
+            """.trimIndent(),
+        )
+
+        assertEquals("Does the thing", doc.summary)
+        assertEquals("Does the thing.   It really\ndoes.", doc.description)
+        assertEquals(mapOf("a" to "the first", "b" to "the second"), doc.params)
+        assertEquals("the result", doc.returnDoc)
+        assertEquals(
+            mapOf("IOException" to "if broken", "IllegalStateException" to "when bad"),
+            doc.throws,
+        )
+        assertEquals("1.2", doc.since)
+        assertEquals("Someone", doc.author)
+        assertEquals("use other", doc.deprecated)
+        assertEquals(listOf("Other"), doc.see)
+    }
+
     @Test
     fun `returns empty documentation when no doc comment exists`() {
         val source = """

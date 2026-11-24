@@ -23,6 +23,11 @@ import java.net.URI
  */
 class EmptyBlockRule : AbstractDiagnosticRule() {
 
+    private companion object {
+        // Pattern: { } with only whitespace between
+        private val EMPTY_BLOCK_PATTERN = Regex("""\{\s*}""")
+    }
+
     override val id = "empty-block"
 
     override val description = "Detect empty code blocks that may indicate incomplete implementation"
@@ -33,16 +38,12 @@ class EmptyBlockRule : AbstractDiagnosticRule() {
 
     override val enabledByDefault = true
 
-    override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
-        // Pattern: { } with only whitespace between
-        val emptyBlockPattern = Regex("""\{\s*}""")
-
-        return diagnosticsFromPattern(
+    override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
+        diagnosticsFromPattern(
             content = content,
-            pattern = emptyBlockPattern,
+            pattern = EMPTY_BLOCK_PATTERN,
             messageProvider = { "Empty block found - consider removing or adding implementation" },
             severity = defaultSeverity,
             excludeComments = true,
         )
-    }
 }
