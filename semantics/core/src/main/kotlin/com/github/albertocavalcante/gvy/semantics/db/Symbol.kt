@@ -24,9 +24,11 @@ package com.github.albertocavalcante.gvy.semantics.db
  * malformed id yields a fallback (documented per accessor), never an exception or a null that says "invalid".
  * [owner] splits at the first `#`; [member] reads after the last one.
  *
- * Known limitation (FIXME(#2412)): the formatters do not escape. Groovy and Spock allow method names that contain
- * `#`, `.` or `(` (`def "fixes #12"()`), and the id `a/B#fixes #12().` then has two `#`: [member] reads `12`, not
- * `fixes #12`. Such ids are formatted and parsed as before this type existed; [ofMethod] is not injective for them.
+ * Names are escaped: Groovy and Spock allow method names that contain `#`, `.` or `(` (`def "fixes #12"()`). The
+ * formatters write a backslash before each of `\`, `#`, `.`, `(`, `)` and the backtick in a member name
+ * (`a/B#fixes \#12().`); the accessors skip an escaped character when they look for a separator, and [member]
+ * unescapes. A name without those characters is written as it always was. An id written before escaping existed
+ * for a name that holds one of them is not read back correctly.
  */
 @JvmInline
 value class Symbol(val id: String) {
@@ -36,7 +38,7 @@ value class Symbol(val id: String) {
      * For an import id this is `import`.
      */
     val owner: String
-        get() = id.substringBefore('#')
+        get() = indexOfUnescaped(id, '#').let { if (it < 0) id else id.substring(0, it) }
 
     /** [owner] as a dotted name (`com.example.MyClass`); the `$` of a nested class is kept. */
     val ownerClassName: String
@@ -45,24 +47,25 @@ value class Symbol(val id: String) {
     /**
      * The simple name of the member, read after the last `#`: `` `<init>` `` is `<init>`; otherwise the text before
      * the first `(`, else before the first `.`, else the rest. A class id has the empty member; a parameter or a
-     * local reads as its method. The whole id when there is no `#`.
+     * local reads as its method. The name is unescaped. The whole id when there is no `#`.
      */
     val member: String
         get() {
-            val hash = id.lastIndexOf('#')
+            val hash = lastIndexOfUnescaped(id, '#')
             if (hash < 0) return id
             val part = id.substring(hash + 1)
             if (part.startsWith('`')) {
                 val close = part.indexOf('`', 1)
                 if (close > 0) return part.substring(1, close)
             }
-            val paren = part.indexOf('(')
-            val dot = part.indexOf('.')
-            return when {
+            val paren = indexOfUnescaped(part, '(')
+            val dot = indexOfUnescaped(part, '.')
+            val name = when {
                 paren >= 0 -> part.substring(0, paren)
                 dot >= 0 -> part.substring(0, dot)
                 else -> part
             }
+            return unescape(name)
         }
 
     /**
@@ -71,8 +74,8 @@ value class Symbol(val id: String) {
      */
     val descriptor: String?
         get() {
-            val open = id.indexOf('(')
-            val close = id.indexOf(')')
+            val open = indexOfUnescaped(id, '(')
+            val close = indexOfUnescaped(id, ')')
             return if (open < 0 || close < 0 || open >= close) null else id.substring(open + 1, close)
         }
 
@@ -114,32 +117,87 @@ value class Symbol(val id: String) {
         fun ofInternalName(internalName: String): Symbol = Symbol("$internalName#")
 
         /** The id of the field or property [name] of [owner] (a class id): `a/b/C#name.`. */
-        fun ofField(owner: Symbol, name: String): Symbol = Symbol("${owner.id}$name.")
+        fun ofField(owner: Symbol, name: String): Symbol = Symbol("${owner.id}${escape(name)}.")
 
         /**
          * The id of a method or constructor. [parameters] is the already-written descriptor (`String,int`); a
          * method without a class ([owner] null) has no class part.
          */
         fun ofMethod(owner: Symbol?, name: String, parameters: String): Symbol =
-            Symbol("${owner?.id.orEmpty()}$name($parameters).")
+            Symbol("${owner?.id.orEmpty()}${escape(name)}($parameters).")
 
         /** The id of the parameter [name] of [method]: `a/b/C#m(int).(name)`. */
-        fun ofParameter(method: Symbol, name: String): Symbol = Symbol("${method.id}($name)")
+        fun ofParameter(method: Symbol, name: String): Symbol = Symbol("${method.id}(${escape(name)})")
 
         /** The id of the initializer scope of [owner], which locals outside any method hang from: `a/b/C#{init}.`. */
         fun ofInitializer(owner: Symbol): Symbol = Symbol("${owner.id}{init}.")
 
         /** The id of the local [name] declared at [line]:[column] (0-based) in [scope] (a method or initializer). */
         fun ofLocal(scope: Symbol, name: String, line: Int, column: Int): Symbol =
-            Symbol("${scope.id}$name@$line:$column")
+            Symbol("${scope.id}${escape(name)}@$line:$column")
 
         /** The id of an import of [className] (`a.b.C`; a star import passes the package). */
         fun ofImport(className: String): Symbol = Symbol("import#${className.replace('.', '/')}")
 
         /** The id of a static import of [member] of [className]. */
         fun ofStaticImport(className: String, member: String): Symbol =
-            Symbol("import#${className.replace('.', '/')}.$member")
+            Symbol("import#${className.replace('.', '/')}.${escape(member)}")
     }
+}
+
+private const val ESCAPE = '\\'
+
+/** The characters a member name must not hold unescaped: the separators of the grammar, the quote, and [ESCAPE]. */
+private const val RESERVED = "\\#.()`"
+
+private fun escape(name: String): String {
+    if (name.none { it in RESERVED }) return name
+    return buildString(name.length + 2) {
+        for (char in name) {
+            if (char in RESERVED) append(ESCAPE)
+            append(char)
+        }
+    }
+}
+
+/** Drops each [ESCAPE] and keeps the character after it; a trailing [ESCAPE] stays. Total: never fails. */
+private fun unescape(text: String): String {
+    if (ESCAPE !in text) return text
+    return buildString(text.length) {
+        var index = 0
+        while (index < text.length) {
+            if (text[index] == ESCAPE && index + 1 < text.length) index++
+            append(text[index])
+            index++
+        }
+    }
+}
+
+/** The index of the first [target] that is not the character after an [ESCAPE], or -1. */
+private fun indexOfUnescaped(text: String, target: Char): Int {
+    var index = 0
+    while (index < text.length) {
+        when (text[index]) {
+            ESCAPE -> index++
+            target -> return index
+        }
+        index++
+    }
+    return -1
+}
+
+/** The index of the last [target] that is not the character after an [ESCAPE], or -1. */
+private fun lastIndexOfUnescaped(text: String, target: Char): Int {
+    var last = -1
+    var index = 0
+    while (index < text.length) {
+        when (text[index]) {
+            ESCAPE -> index++
+            target -> last = index
+        }
+        index++
+    }
+    return last
 }
 
 /** The commas outside `<...>`, counted without building pieces; null when the brackets do not pair up. */
