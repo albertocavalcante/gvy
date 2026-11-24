@@ -65,6 +65,23 @@ class HoverStrategyWiringTest {
     }
 
     @Test
+    fun `providers built per request share the default strategy instances`() {
+        // Production builds a HoverProvider per hover request (GroovyCompilationService.getHoverSession ->
+        // NativeLanguageEngine.createHoverSession -> NativeHoverProvider -> HoverProvider).
+        val first = HoverProvider(compilationService, documentProvider, contentGenerator)
+        val second = HoverProvider(compilationService, documentProvider, contentGenerator)
+
+        assertEquals(first.strategies.size, second.strategies.size)
+        first.strategies.zip(second.strategies).forEach { (a, b) ->
+            assertSame(a, b, "${a::class.simpleName} was allocated again for a new provider")
+        }
+    }
+
+    /**
+     * Pins today's default order. The planned extension SPI (RFC-4) will legitimately change this list; update
+     * the expectation then, deliberately.
+     */
+    @Test
     fun `the default strategies keep their specific-first order`() {
         val provider = HoverProvider(compilationService, documentProvider, contentGenerator)
 

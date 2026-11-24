@@ -80,9 +80,11 @@ class HoverProvider(
      * node and returns a hover wins. Built once and shared by every request, so they must hold no per-request
      * state. The last one should be a fallback.
      */
-    baseStrategies: List<HoverStrategy> = defaultHoverStrategies(),
+    baseStrategies: List<HoverStrategy> = DEFAULT_STRATEGIES,
 ) {
-    private val baseStrategies: List<HoverStrategy> = baseStrategies.toList()
+    // The shared default is already immutable and is used as is; an injected list is copied defensively.
+    private val baseStrategies: List<HoverStrategy> =
+        if (baseStrategies === DEFAULT_STRATEGIES) DEFAULT_STRATEGIES else baseStrategies.toList()
 
     private val logger = KotlinLogging.logger {}
 
@@ -95,8 +97,9 @@ class HoverProvider(
      *
      * The Jenkins strategies come first and exist only when a Jenkins strategy is active. They capture the
      * workspace's current [com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities] and server mode,
-     * both of which change after construction, so they are built per request (two objects at most). Every other
-     * strategy is stateless and shared: with no Jenkins project this returns [baseStrategies] itself.
+     * both of which change after construction, so they are built per request (two objects and a combined list).
+     * Every other strategy is stateless and shared by every provider: with no Jenkins project this returns
+     * [baseStrategies] itself and allocates nothing.
      */
     internal val strategies: List<HoverStrategy>
         get() {
@@ -114,7 +117,6 @@ class HoverProvider(
      * Provide hover information for the symbol at the given position.
      * Returns null if no hover information is available.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     suspend fun provideHover(uri: String, position: Position): Hover? = provideHoverInternal(uri, position, null)
 
     internal suspend fun provideHover(uri: String, position: Position, snapshot: CompiledDocumentSnapshot): Hover? =
@@ -448,23 +450,28 @@ class HoverProvider(
             range = baseHover.range
         }
     }
-}
 
-/** The default workspace-independent hover strategies (order matters: more specific first, fallback last). */
-internal fun defaultHoverStrategies(): List<HoverStrategy> = listOf(
-    MethodDeclarationHoverStrategy(),
-    ClassDeclarationHoverStrategy(),
-    FieldDeclarationHoverStrategy(),
-    ImportHoverStrategy(),
-    DeclarationExpressionHoverStrategy(),
-    VariableExpressionHoverStrategy(),
-    MethodCallHoverStrategy(),
-    ConstructorCallHoverStrategy(),
-    PropertyExpressionHoverStrategy(),
-    ClosureHoverStrategy(),
-    LiteralHoverStrategy(),
-    GenericHoverStrategy(),
-)
+    private companion object {
+        /**
+         * The default workspace-independent strategies (order matters: more specific first, fallback last).
+         * Stateless, so one list serves every provider; production builds a provider for each hover request.
+         */
+        val DEFAULT_STRATEGIES: List<HoverStrategy> = listOf(
+            MethodDeclarationHoverStrategy(),
+            ClassDeclarationHoverStrategy(),
+            FieldDeclarationHoverStrategy(),
+            ImportHoverStrategy(),
+            DeclarationExpressionHoverStrategy(),
+            VariableExpressionHoverStrategy(),
+            MethodCallHoverStrategy(),
+            ConstructorCallHoverStrategy(),
+            PropertyExpressionHoverStrategy(),
+            ClosureHoverStrategy(),
+            LiteralHoverStrategy(),
+            GenericHoverStrategy(),
+        )
+    }
+}
 
 /** Whether this class or member is declared in a module other than [current]. */
 private fun ASTNode.isDeclaredInAnotherModule(current: ModuleNode?): Boolean {

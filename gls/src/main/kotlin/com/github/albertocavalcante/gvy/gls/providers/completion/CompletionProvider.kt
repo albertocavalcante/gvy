@@ -65,6 +65,17 @@ data class CompletionContext(
 object CompletionProvider {
     private val logger = KotlinLogging.logger {}
 
+    // Stateless, so one instance of each serves every request and mode. Order is semantics: completions are
+    // aggregated in list order.
+    private val spockStrategy = SpockCompletionStrategy()
+    private val groovyStrategy = GroovyCompletionStrategy()
+    private val jenkinsStrategy = JenkinsCompletionStrategy()
+
+    // After member access: Jenkins mode (and AUTO, which only resolves to it for Jenkins files) adds Jenkins steps.
+    private val groovyModeStrategies: List<CompletionStrategy> = listOf(spockStrategy, groovyStrategy)
+    private val jenkinsAwareStrategies: List<CompletionStrategy> =
+        listOf(jenkinsStrategy, spockStrategy, groovyStrategy)
+
     // Note: IntelliJ uses "IntelliJIdeaRulezzz"
     // Kotlin LSP uses "RWwgUHN5IEtvbmdyb28g" (El Psy Kongroo)
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
@@ -306,17 +317,6 @@ object CompletionProvider {
             it.label?.contains(DUMMY_IDENTIFIER) == true
         }
     }
-
-    // Stateless, so one instance of each serves every request and mode. Order is semantics: completions are
-    // aggregated in list order.
-    private val spockStrategy = SpockCompletionStrategy()
-    private val groovyStrategy = GroovyCompletionStrategy()
-    private val jenkinsStrategy = JenkinsCompletionStrategy()
-
-    // After member access: Jenkins mode (and AUTO, which only resolves to it for Jenkins files) adds Jenkins steps.
-    private val groovyModeStrategies: List<CompletionStrategy> = listOf(spockStrategy, groovyStrategy)
-    private val jenkinsAwareStrategies: List<CompletionStrategy> =
-        listOf(jenkinsStrategy, spockStrategy, groovyStrategy)
 
     /**
      * The strategies for one request in [mode]: member access first, then the shared per-mode list.
