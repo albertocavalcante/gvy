@@ -16,6 +16,7 @@ import com.github.albertocavalcante.gvy.gls.providers.implementation.Implementat
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -146,7 +147,7 @@ class CrossFileOperationsHandler(
      * @param uri Document URI
      * @param position Cursor position
      * @param includeDeclaration Whether to include the declaration/definition in results
-     * @return List of reference locations
+     * @return List of reference locations; a failed scan is a [ResponseErrorException], not a partial list
      */
     suspend fun getReferences(uri: String, position: Position, includeDeclaration: Boolean): List<Location> {
         logger.debug {
@@ -155,7 +156,7 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        return runSuspendCatching {
+        return failingAsInternalError("finding references") {
             withCurrentOrigin(documentUri) {
                 // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
                 // Fixes #749: Race condition where target file may not be indexed yet
@@ -170,10 +171,6 @@ class CrossFileOperationsHandler(
                         .also { logger.debug { "Found ${it.size} references" } }
                 }
             }
-        }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
-            logException(e, "finding references")
-            emptyList()
         }
     }
 

@@ -3,7 +3,6 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.definition
 
-import arrow.core.getOrElse
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
@@ -22,10 +21,10 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.Jenk
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.LocalSymbolResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.MethodResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.ResolutionContext
+import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.ResolutionError
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SemanticDBResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SymbolResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
-import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -103,12 +102,7 @@ class DefinitionResolver(
         }
 
     /**
-     * Find the definition of the symbol at the given position.
-     * Throws specific exceptions for different failure scenarios.
-     */
-
-    /**
-     * Result of a definition lookup.
+     * A definition found by a resolution strategy.
      */
     sealed class DefinitionResult {
         data class Source(val node: ASTNode, val uri: URI) : DefinitionResult()
@@ -116,32 +110,42 @@ class DefinitionResolver(
     }
 
     /**
-     * Find the definition of the symbol at the given position.
-     * Throws specific exceptions for different failure scenarios.
+     * Outcome of a definition lookup: a definition, an honest "nothing there", or a failure that keeps its type.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
-    suspend fun findDefinitionAt(
-        uri: URI,
-        position: Position,
-    ): DefinitionResult? {
+    sealed interface DefinitionLookup {
+        data class Found(val result: DefinitionResult) : DefinitionLookup
+
+        /** No strategy resolved the symbol; [error] is the last strategy's miss. */
+        data class NotFound(val error: ResolutionError) : DefinitionLookup
+
+        /**
+         * The lookup could not be carried out: [error] is a typed [GroovyLspException] (invalid position, no node,
+         * ...) or the throwable a resolution strategy raised. Its class says why.
+         */
+        data class Failed(val error: Throwable) : DefinitionLookup
+    }
+
+    /**
+     * Find the definition of the symbol at the given position.
+     *
+     * Expected failures of the request itself (invalid position, no node, definition without a position) come
+     * back as [DefinitionLookup.Failed]. Anything else, an unexpected exception above all, propagates unchanged:
+     * it is neither "not found" nor a typed failure, and cancellation must never be rewritten.
+     */
+    suspend fun findDefinitionAt(uri: URI, position: Position): DefinitionLookup {
         logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
 
         return try {
             val targetNode = validateAndFindNode(uri, position)
-            val result = resolveDefinition(targetNode, uri, position)
+            val lookup = resolveDefinition(targetNode, uri, position)
 
-            if (result is DefinitionResult.Source) {
-                validateDefinition(result.node, uri)
+            if (lookup is DefinitionLookup.Found && lookup.result is DefinitionResult.Source) {
+                validateDefinition(lookup.result.node, uri)
             }
-            result
+            lookup
         } catch (e: GroovyLspException) {
-            // Re-throw our specific exceptions
             logger.debug { "Specific error finding definition: $e" }
-            throw e
-        } catch (e: Exception) {
-            rethrowIfCancellationOrError(e) // a cancelled lookup is not "symbol not found"
-            logger.error(e) { "Unexpected error finding definition at $uri:${position.line}:${position.character}" }
-            throw createSymbolNotFoundException("unknown", uri, position)
+            DefinitionLookup.Failed(e)
         }
     }
 
@@ -267,19 +271,21 @@ class DefinitionResolver(
      * - Pipeline short-circuits on first Right (success)
      * - Strategies are tried in priority order (Jenkins vars → Local → Global → Classpath)
      */
-    private suspend fun resolveDefinition(targetNode: ASTNode, uri: URI, position: Position): DefinitionResult? {
+    private suspend fun resolveDefinition(targetNode: ASTNode, uri: URI, position: Position): DefinitionLookup {
         val context = ResolutionContext(
             targetNode = targetNode,
             documentUri = uri,
             position = position,
         )
 
-        val result = resolutionPipeline.resolve(context)
-
-        return result.getOrElse { error ->
-            logger.debug { "Resolution failed [${error.source}]: ${error.reason}" }
-            null
-        }
+        return resolutionPipeline.resolve(context).fold(
+            ifLeft = { error ->
+                logger.debug { "Resolution failed [${error.source}]: ${error.reason}" }
+                // A cause means a strategy threw (see SymbolResolutionStrategy.pipeline): a failure, not a miss.
+                error.cause?.let { DefinitionLookup.Failed(it) } ?: DefinitionLookup.NotFound(error)
+            },
+            ifRight = { DefinitionLookup.Found(it) },
+        )
     }
 
     /**

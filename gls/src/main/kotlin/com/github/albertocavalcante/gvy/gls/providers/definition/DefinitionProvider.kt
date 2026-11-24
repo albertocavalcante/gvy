@@ -14,7 +14,6 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
-import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
@@ -119,15 +118,23 @@ class DefinitionProvider(
         originNode: ASTNode,
         context: DefinitionContext,
     ): LocationLink? = try {
-        val result = resolver.findDefinitionAt(documentUri, groovyPosition)
-        result?.let { createLocationLink(it, originNode, context, documentUri) }
+        when (val lookup = resolver.findDefinitionAt(documentUri, groovyPosition)) {
+            is DefinitionResolver.DefinitionLookup.Found ->
+                createLocationLink(lookup.result, originNode, context, documentUri)
+
+            is DefinitionResolver.DefinitionLookup.NotFound -> null
+
+            is DefinitionResolver.DefinitionLookup.Failed -> {
+                logger.debug { "Definition link resolution failed: ${failureReason(lookup.error)}" }
+                null
+            }
+        }
     } catch (e: Exception) {
         when (e) {
             is CancellationException -> {
                 logger.debug { "Definition link resolution cancelled by client" }
                 throw e // Must re-throw to preserve coroutine cancellation
             }
-            is GroovyLspException -> logger.debug { "Definition link resolution failed: ${e.message}" }
             is IllegalArgumentException -> logger.warn(e) { "Invalid arguments during definition link resolution" }
             is IllegalStateException -> logger.warn(e) { "Invalid state during definition link resolution" }
             else -> logger.warn(e) { "Unexpected error during definition link resolution" }
@@ -387,7 +394,7 @@ class DefinitionProvider(
         return DefinitionContext(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, snapshot.sourceText)
     }
 
-    @Suppress("LongMethod", "TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught") // Final fallback: an unexpected failure is reported, not rethrown
     private suspend fun FlowCollector<Location>.emitDefinitions(
         uri: String,
         documentUri: URI,
@@ -401,54 +408,26 @@ class DefinitionProvider(
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
         )
-        var definitionFound = false
-        try {
-            val result = resolver.findDefinitionAt(documentUri, position)
-
-            if (result != null) {
-                when (result) {
-                    is DefinitionResolver.DefinitionResult.Source -> {
-                        // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
-                        // (e.g., Jenkins vars) that aren't in the visitor's AST.
-                        val targetUri = result.node.toLspLocation(context.visitor)?.uri
-                            ?: result.uri.toString()
-                        val range = result.node.toProtocolRange(
-                            compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
-                        ) ?: EMPTY_RANGE
-                        val location = Location(targetUri, range)
-                        logger.debug {
-                            "Found definition at ${location.uri}:${location.range} " +
-                                "(node: ${result.node.javaClass.simpleName})"
-                        }
-                        telemetrySink.report(
-                            DefinitionTelemetryEvent(
-                                uri = uri,
-                                status = DefinitionStatus.SUCCESS,
-                            ),
-                        )
-                        definitionFound = true
-                        emit(location)
-                    }
-
-                    is DefinitionResolver.DefinitionResult.Binary -> {
-                        val location =
-                            Location(
-                                result.uri.toString(),
-                                result.range ?: EMPTY_RANGE,
-                            )
-                        logger.debug { "Found binary definition at ${location.uri}" }
-                        telemetrySink.report(
-                            DefinitionTelemetryEvent(
-                                uri = uri,
-                                status = DefinitionStatus.SUCCESS,
-                            ),
-                        )
-                        definitionFound = true
-                        emit(location)
-                    }
+        // Exactly one telemetry event per request, reported after the lookup's own try so a throwing sink or
+        // collector can neither add a second event nor have its exception swallowed as a definition failure.
+        val (event, location) = try {
+            when (val lookup = resolver.findDefinitionAt(documentUri, position)) {
+                is DefinitionResolver.DefinitionLookup.Found -> {
+                    val location = locationOf(lookup.result, context, documentUri)
+                    logger.debug { "Found definition at ${location.uri}:${location.range}" }
+                    DefinitionTelemetryEvent(uri = uri, status = DefinitionStatus.SUCCESS) to location
                 }
-            } else {
-                logger.debug { "No definition found at position" }
+
+                is DefinitionResolver.DefinitionLookup.NotFound -> {
+                    logger.debug { "No definition found at position: ${lookup.error.reason}" }
+                    DefinitionTelemetryEvent(uri = uri, status = DefinitionStatus.NO_DEFINITION) to null
+                }
+
+                is DefinitionResolver.DefinitionLookup.Failed -> {
+                    val reason = failureReason(lookup.error)
+                    logger.debug { "Definition resolution failed: $reason" }
+                    DefinitionTelemetryEvent(uri, DefinitionStatus.RESOLUTION_FAILED, reason) to null
+                }
             }
         } catch (e: CancellationException) {
             // Client cancelled the request - must rethrow to preserve coroutine cancellation
@@ -462,46 +441,29 @@ class DefinitionProvider(
             )
             throw e
         } catch (e: Exception) {
-            handleResolutionException(e, uri)
+            logger.warn(e) { "Error during definition resolution: ${e.message}" }
+            DefinitionTelemetryEvent(uri, DefinitionStatus.ERROR, failureReason(e)) to null
         }
-
-        if (!definitionFound) {
-            telemetrySink.report(
-                DefinitionTelemetryEvent(
-                    uri = uri,
-                    status = DefinitionStatus.NO_DEFINITION,
-                ),
-            )
-        }
+        telemetrySink.report(event)
+        location?.let { emit(it) }
     }
 
-    /**
-     * Handle exceptions from definition resolution with appropriate logging and telemetry.
-     *
-     * Maps exception types to their corresponding status codes:
-     * - GroovyLspException → RESOLUTION_FAILED (debug log)
-     * - IllegalArgumentException, IllegalStateException → ERROR (warn log)
-     * - Other exceptions → ERROR (warn log)
-     */
-    private fun handleResolutionException(e: Exception, uri: String) {
-        val (status, logLevel) = when (e) {
-            is GroovyLspException -> DefinitionStatus.RESOLUTION_FAILED to "debug"
-            is IllegalArgumentException, is IllegalStateException -> DefinitionStatus.ERROR to "warn"
-            else -> DefinitionStatus.ERROR to "warn"
+    private fun locationOf(
+        result: DefinitionResolver.DefinitionResult,
+        context: DefinitionContext,
+        documentUri: URI,
+    ): Location = when (result) {
+        is DefinitionResolver.DefinitionResult.Source -> {
+            // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
+            // (e.g., Jenkins vars) that aren't in the visitor's AST.
+            val targetUri = result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
+            val range = result.node.toProtocolRange(
+                compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
+            ) ?: EMPTY_RANGE
+            Location(targetUri, range)
         }
 
-        when (logLevel) {
-            "debug" -> logger.debug { "Definition resolution failed: ${e.message}" }
-            else -> logger.warn(e) { "Error during definition resolution: ${e.message}" }
-        }
-
-        telemetrySink.report(
-            DefinitionTelemetryEvent(
-                uri = uri,
-                status = status,
-                reason = e.message,
-            ),
-        )
+        is DefinitionResolver.DefinitionResult.Binary -> Location(result.uri.toString(), result.range ?: EMPTY_RANGE)
     }
 
     private fun parseUriOrReport(uri: String): URI? = try {
@@ -530,6 +492,14 @@ class DefinitionProvider(
         )
         null
     }
+}
+
+private const val MAX_REASON_LENGTH = 200
+
+/** The failure's kind (its class) with its message, capped, so telemetry and logs keep the real reason. */
+private fun failureReason(error: Throwable): String {
+    val reason = "${error::class.simpleName}: ${error.message ?: "no message"}"
+    return if (reason.length <= MAX_REASON_LENGTH) reason else reason.take(MAX_REASON_LENGTH - 1) + "…"
 }
 
 private fun spockDefinition(uri: URI, position: Position, snapshot: CompiledDocumentSnapshot?): Location? {

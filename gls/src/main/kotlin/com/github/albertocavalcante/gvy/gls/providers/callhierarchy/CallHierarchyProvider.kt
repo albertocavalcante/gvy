@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -88,7 +89,12 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             .firstOrNull { it.name == methodName }
     }
 
-    suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> {
+    suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> =
+        failingAsInternalError("finding incoming calls") { collectIncomingCalls(params) }
+
+    private suspend fun collectIncomingCalls(
+        params: CallHierarchyIncomingCallsParams,
+    ): List<CallHierarchyIncomingCall> {
         val uri = params.item.uri
         val position = params.item.selectionRange.start
 
