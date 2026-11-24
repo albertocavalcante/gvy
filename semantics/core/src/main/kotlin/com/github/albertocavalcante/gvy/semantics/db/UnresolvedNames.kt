@@ -3,8 +3,8 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
-import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
-import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.HierarchyMembership
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isSubtypeChecked
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -113,7 +113,8 @@ internal class UnresolvedNames {
     /**
      * `receiver[index]`. On a Map, List or array the index is a key or a position, but on any other object Groovy
      * calls `getAt`/`putAt`, and `getAt(String)` reads the property of that name. An index that cannot be a
-     * String is not a name.
+     * String is not a name. Only a receiver proved keyed records nothing: one whose hierarchy a bound kept us from
+     * searching is recorded like any other, which over-approximates the names, the safe direction here.
      */
     fun index(receiver: Expression, index: Expression, typeOf: (Expression) -> ClassNode?, access: Access) {
         val keyed = receiver is ListExpression || receiver is MapExpression ||
@@ -126,7 +127,7 @@ internal class UnresolvedNames {
 
     private fun isKeyedByIndex(type: ClassNode): Boolean = type.isArray ||
         listOf(ClassHelper.MAP_TYPE, ClassHelper.LIST_TYPE).any {
-            type.name == it.name || type.isDerivedFromSafe(it) || type.implementsInterfaceSafe(it)
+            type.name == it.name || type.isSubtypeChecked(it) == HierarchyMembership.MEMBER
         }
 
     private fun cannotBeName(index: Expression): Boolean = when (index) {

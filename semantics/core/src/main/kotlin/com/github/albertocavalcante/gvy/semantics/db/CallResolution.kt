@@ -3,9 +3,11 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.HierarchyMembership
+import com.github.albertocavalcante.groovyparser.api.internal.ast.InterfaceWalk
+import com.github.albertocavalcante.groovyparser.api.internal.ast.allInterfacesChecked
 import com.github.albertocavalcante.groovyparser.api.internal.ast.findFieldSafe
-import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
-import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isSubtypeChecked
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper
@@ -319,11 +321,12 @@ internal object RuntimeReceivers {
         if (exact) return true
         val visible = type.isPrimaryClassNode || type.name.startsWith("java.")
         return visible && unitClasses.none {
-            it.isSubtypeOf(type) && (it.getDeclaredMethods(name).isNotEmpty() || GroovyDispatch.isDynamic(it))
+            it.mayBeSubtypeOf(type) && (it.getDeclaredMethods(name).isNotEmpty() || GroovyDispatch.isDynamic(it))
         }
     }
 
-    private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFromSafe(type) || implementsInterfaceSafe(type)
+    /** A hierarchy the bounded walk could not finish may reach [type], so only a definite "no" rules it out. */
+    private fun ClassNode.mayBeSubtypeOf(type: ClassNode) = isSubtypeChecked(type) != HierarchyMembership.NOT_MEMBER
 }
 
 /** The runtime class of a literal, or null: only literals whose JDK/Groovy class is certain. */
@@ -536,10 +539,25 @@ internal object GroovyDispatch {
     /** Names of `java.lang.Class` methods. */
     val classMethodNames: Set<String> by lazy { Class::class.java.methods.mapTo(HashSet()) { it.name } }
 
-    /** A class whose property reads Groovy routes elsewhere: a Map (keys), or one handling them itself. */
-    fun interceptsProperties(type: ClassNode): Boolean =
-        type.name == MAP || type.implementsInterfaceSafe(ClassHelper.MAP_TYPE) ||
-            type.methods.any { it.name in propertyDispatchMethods }
+    /**
+     * Whether one class [type] of an enumerated hierarchy routes property reads elsewhere: a Map (keys), or one
+     * handling them itself. It looks at [type] alone (its own name, declared interfaces and methods) and does not
+     * follow its superclasses, so a subclass of `HashMap` is not answered "Map" here: the caller must ask about
+     * every class of the hierarchy ([TypeHierarchies.Hierarchy.classes]) and combine the answers.
+     */
+    fun interceptsProperties(type: ClassNode): Boolean = type.name == MAP ||
+        declaresMapInterface(type) ||
+        type.methods.any { it.name in propertyDispatchMethods }
+
+    /**
+     * Whether [type] itself declares Map among its interfaces, or a bound kept us from searching them all (only a
+     * definite "no" says it does not). Superclasses are not followed: [interceptsProperties] and
+     * [dispatchesByItself] are asked about each class of an enumerated hierarchy.
+     */
+    private fun declaresMapInterface(type: ClassNode): Boolean = when (val walk = type.allInterfacesChecked()) {
+        is InterfaceWalk.Complete -> ClassHelper.MAP_TYPE in walk.interfaces
+        is InterfaceWalk.Truncated -> true
+    }
 
     private val propertyDispatchMethods = setOf("getProperty", "propertyMissing")
 
@@ -547,11 +565,12 @@ internal object GroovyDispatch {
      * Whether [type], a source or a compiled class, answers calls or reads by itself: what [isDynamic] and
      * [interceptsProperties] see, plus a `setProperty` override (writes), but only for hooks the source wrote
      * (the bridges Groovy generates into every member class do not count here). The index of what stays
-     * unattributed uses this, so a class that does is a site where any name may be meant.
+     * unattributed uses this, so a class that does is a site where any name may be meant. Like
+     * [interceptsProperties] it answers for [type] alone, not its superclasses: ask about each class of a hierarchy.
      */
     fun dispatchesByItself(type: ClassNode): Boolean =
         (type.isPrimaryClassNode && (addsMethods(type) || isInterceptable(type))) ||
-            type.name == MAP || type.implementsInterfaceSafe(ClassHelper.MAP_TYPE) ||
+            type.name == MAP || declaresMapInterface(type) ||
             type.methods.any { it.name in selfDispatchMethods && (it.lineNumber > 0 || !isGeneratedMemberHook(type)) }
 
     /**
