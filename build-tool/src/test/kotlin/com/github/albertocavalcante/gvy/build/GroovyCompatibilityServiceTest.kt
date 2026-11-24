@@ -6,7 +6,6 @@ package com.github.albertocavalcante.gvy.build
 import com.github.albertocavalcante.gvy.build.CompatibilityResult.Compatible
 import com.github.albertocavalcante.gvy.build.CompatibilityResult.PartiallySupported
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -14,6 +13,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
 import java.util.stream.Stream
 
 class GroovyCompatibilityServiceTest {
@@ -103,12 +103,24 @@ class GroovyCompatibilityServiceTest {
         assertNull(empty.suggestGroovyVersion(21))
     }
 
-    @Test
-    fun `should only report Compatible for a known line within its JDK range`() {
-        for ((version, jdk) in listOf("7.0.0" to 8, "5.2.0" to 8, "99.0.0" to 21, "x" to 21)) {
-            val result = service.checkCompatibility(version, jdk)
-            assertInstanceOf(CompatibilityResult.Unknown::class.java, result, "$version on JDK $jdk")
-        }
+    @ParameterizedTest(name = "[{0}] is malformed and unknown")
+    @ValueSource(
+        strings = [
+            "4.0.not-a-version", "4.0.", "4.0..1", "4.0.1.2.3.x", "4..0", "v4.0.1", "4.0.1-", "4.0.1--rc",
+            "4.0.1.2.3.4", "4.0.1 beta", "-4.0.1",
+        ],
+    )
+    fun `should report malformed versions with a known prefix as unknown with the raw input`(raw: String) {
+        assertEquals(CompatibilityResult.Unknown(raw), service.checkCompatibility(raw, 21))
+    }
+
+    @ParameterizedTest(name = "[{0}] is accepted as Groovy {1}")
+    @CsvSource(
+        "4.0.22, 4.0", "5.1.3, 5.1", "6.0.0, 6.0", "6.0.0-RC-3, 6.0", "6.0.0-beta-2, 6.0", "6.0.0-alpha-1, 6.0",
+        "5.0.0-rc-1, 5.0", "4.0.0-SNAPSHOT, 4.0", "4.0, 4.0", "4, 4.0", "'  4.0.1 ', 4.0",
+    )
+    fun `should accept release and qualified versions and trim whitespace`(raw: String, line: String) {
+        assertEquals(Compatible(line, 17), service.checkCompatibility(raw, 17))
     }
 
     @Test
