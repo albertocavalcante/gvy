@@ -539,15 +539,22 @@ internal object GroovyDispatch {
     /** Names of `java.lang.Class` methods. */
     val classMethodNames: Set<String> by lazy { Class::class.java.methods.mapTo(HashSet()) { it.name } }
 
-    /** A class whose property reads Groovy routes elsewhere: a Map (keys), or one handling them itself. */
-    fun interceptsProperties(type: ClassNode): Boolean = type.name == MAP || mayBeMap(type) ||
+    /**
+     * Whether one class [type] of an enumerated hierarchy routes property reads elsewhere: a Map (keys), or one
+     * handling them itself. It looks at [type] alone (its own name, declared interfaces and methods) and does not
+     * follow its superclasses, so a subclass of `HashMap` is not answered "Map" here: the caller must ask about
+     * every class of the hierarchy ([TypeHierarchies.Hierarchy.classes]) and combine the answers.
+     */
+    fun interceptsProperties(type: ClassNode): Boolean = type.name == MAP ||
+        declaresMapInterface(type) ||
         type.methods.any { it.name in propertyDispatchMethods }
 
     /**
-     * Whether [type] declares Map among its interfaces, or a bound kept us from searching them all (only a definite
-     * "no" says it does not). Superclasses are the caller's to enumerate, as [TypeHierarchies.Hierarchy.classes] does.
+     * Whether [type] itself declares Map among its interfaces, or a bound kept us from searching them all (only a
+     * definite "no" says it does not). Superclasses are not followed: [interceptsProperties] and
+     * [dispatchesByItself] are asked about each class of an enumerated hierarchy.
      */
-    private fun mayBeMap(type: ClassNode): Boolean = when (val walk = type.allInterfacesChecked()) {
+    private fun declaresMapInterface(type: ClassNode): Boolean = when (val walk = type.allInterfacesChecked()) {
         is InterfaceWalk.Complete -> ClassHelper.MAP_TYPE in walk.interfaces
         is InterfaceWalk.Truncated -> true
     }
@@ -558,11 +565,12 @@ internal object GroovyDispatch {
      * Whether [type], a source or a compiled class, answers calls or reads by itself: what [isDynamic] and
      * [interceptsProperties] see, plus a `setProperty` override (writes), but only for hooks the source wrote
      * (the bridges Groovy generates into every member class do not count here). The index of what stays
-     * unattributed uses this, so a class that does is a site where any name may be meant.
+     * unattributed uses this, so a class that does is a site where any name may be meant. Like
+     * [interceptsProperties] it answers for [type] alone, not its superclasses: ask about each class of a hierarchy.
      */
     fun dispatchesByItself(type: ClassNode): Boolean =
         (type.isPrimaryClassNode && (addsMethods(type) || isInterceptable(type))) ||
-            type.name == MAP || mayBeMap(type) ||
+            type.name == MAP || declaresMapInterface(type) ||
             type.methods.any { it.name in selfDispatchMethods && (it.lineNumber > 0 || !isGeneratedMemberHook(type)) }
 
     /**

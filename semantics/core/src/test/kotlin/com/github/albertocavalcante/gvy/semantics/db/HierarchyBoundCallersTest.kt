@@ -37,6 +37,9 @@ class HierarchyBoundCallersTest {
         return ClassNode(name, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE).apply { interfaces = arrayOf(tail) }
     }
 
+    private fun runMethod() =
+        MethodNode("run", Modifier.PUBLIC, ClassHelper.VOID_TYPE, emptyArray(), emptyArray(), EmptyStatement())
+
     private fun short(): ClassNode =
         ClassNode("Short", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE).apply { interfaces = arrayOf(iface("Small")) }
 
@@ -53,17 +56,20 @@ class HierarchyBoundCallersTest {
     }
 
     @Test
-    fun `a call receiver with a searched hierarchy and no override is certain`() {
+    fun `an unrelated class that declares the method does not stop a call receiver being certain`() {
         val declared = iface("Target")
+        val unrelated = short().apply { addMethod(runMethod()) }
         val receiver = VariableExpression("target")
-        assertTrue(inTime { RuntimeReceivers.cannotOverride(declared, receiver, "run", listOf(short())) })
+        assertTrue(inTime { RuntimeReceivers.cannotOverride(declared, receiver, "run", listOf(unrelated)) })
     }
 
     @Test
-    fun `an index on a receiver whose hierarchy is unknown also marks any name`() {
-        val names = UnresolvedNames()
-        names.index(VariableExpression("x"), ConstantExpression("k"), { beyondTheBound() }, Access.READ)
-        assertTrue(UnresolvedNames.WILDCARD in names.toSet(), "names: ${names.toSet()}")
+    fun `an index on a receiver whose hierarchy is unknown records what a non-member records`() {
+        fun recorded(type: ClassNode) = UnresolvedNames().also {
+            it.index(VariableExpression("x"), ConstantExpression("k"), { type }, Access.READ)
+        }.toSet()
+        assertEquals(setOf("getAt", "k"), recorded(short()))
+        assertEquals(recorded(short()), recorded(beyondTheBound()))
     }
 
     @Test
@@ -89,6 +95,20 @@ class HierarchyBoundCallersTest {
     fun `a type whose interfaces cannot all be searched may dispatch by itself`() {
         assertTrue(inTime { GroovyDispatch.dispatchesByItself(beyondTheBound()) })
         assertFalse(inTime { GroovyDispatch.dispatchesByItself(short()) })
+    }
+
+    /*
+     * The two dispatch predicates answer for one class of an already enumerated hierarchy: they do not follow
+     * superclasses, since their callers hold every class of the hierarchy (TypeHierarchies.Hierarchy.classes).
+     */
+    @Test
+    fun `a subclass of a Map is not itself a Map until its superclass is enumerated`() {
+        val hashMap = ClassHelper.make(java.util.HashMap::class.java)
+        val subclass = ClassNode("M", Modifier.PUBLIC, hashMap)
+        assertFalse(GroovyDispatch.interceptsProperties(subclass))
+        assertFalse(GroovyDispatch.dispatchesByItself(subclass))
+        assertTrue(listOf(subclass, hashMap).any(GroovyDispatch::interceptsProperties))
+        assertTrue(listOf(subclass, hashMap).any(GroovyDispatch::dispatchesByItself))
     }
 
     private companion object {

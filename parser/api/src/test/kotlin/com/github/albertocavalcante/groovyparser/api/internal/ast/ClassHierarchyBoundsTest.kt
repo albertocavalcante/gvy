@@ -11,6 +11,7 @@ import java.lang.reflect.Modifier
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /** Pins the shape and the bounds of the cycle-safe hierarchy walks on programmatically built nodes (#2401). */
@@ -183,7 +184,7 @@ class ClassHierarchyBoundsTest {
     fun `all interfaces of a long chain are truncated at the node bound`() {
         val (leaf, _) = interfaceChain(MAX_HIERARCHY_NODES * 2)
         val walk = inTime { leaf.allInterfacesChecked() }
-        assertTrue(walk is InterfaceWalk.Truncated, "expected Truncated but was $walk")
+        assertIs<InterfaceWalk.Truncated>(walk)
         assertEquals(MAX_HIERARCHY_NODES, walk.interfaces.size)
     }
 
@@ -191,8 +192,27 @@ class ClassHierarchyBoundsTest {
     fun `all interfaces of a short chain are complete`() {
         val (leaf, _) = interfaceChain(3)
         val walk = inTime { leaf.allInterfacesChecked() }
-        assertTrue(walk is InterfaceWalk.Complete, "expected Complete but was $walk")
+        assertIs<InterfaceWalk.Complete>(walk)
         assertEquals(4, walk.interfaces.size)
+    }
+
+    @Test
+    fun `a walk of exactly the node bound is complete and one more node is truncated`() {
+        val (exact, _) = interfaceChain(MAX_HIERARCHY_NODES - 2)
+        val (oneMore, _) = interfaceChain(MAX_HIERARCHY_NODES - 1)
+        assertIs<InterfaceWalk.Complete>(inTime { exact.allInterfacesChecked() })
+        assertIs<InterfaceWalk.Truncated>(inTime { oneMore.allInterfacesChecked() })
+    }
+
+    @Test
+    fun `a walk that reaches the bound with only visited nodes pending is complete`() {
+        val (leaf, last) = interfaceChain(MAX_HIERARCHY_NODES - 2)
+        last.interfaces = leaf.interfaces
+        assertIs<InterfaceWalk.Complete>(inTime { leaf.allInterfacesChecked() })
+        // The implements walk also visits Object, one node more, so its chain is one shorter to end at the bound.
+        val (implementer, end) = interfaceChain(MAX_HIERARCHY_NODES - 3)
+        end.interfaces = implementer.interfaces
+        assertEquals(HierarchyMembership.NOT_MEMBER, inTime { implementer.implementsInterfaceChecked(iface("Other")) })
     }
 
     private companion object {

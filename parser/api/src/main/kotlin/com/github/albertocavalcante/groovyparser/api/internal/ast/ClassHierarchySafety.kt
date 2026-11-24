@@ -132,8 +132,9 @@ fun ClassNode.isSubtypeChecked(other: ClassNode): HierarchyMembership =
 /**
  * Every interface of this class and their super-interfaces, each once, in discovery order, as an [InterfaceWalk]:
  * [InterfaceWalk.Complete] when the walk saw everything reachable, [InterfaceWalk.Truncated] when a bound stopped
- * it. Superclasses are not followed (a caller that wants them walks [superClassChain] and calls this on each, so
- * the depth bound of that chain does not make every one of its members unknown). Once [MAX_HIERARCHY_NODES]
+ * it. Superclasses are not followed, so this answers for this class alone: a caller that wants a whole hierarchy
+ * enumerates the classes itself and calls this on each. [superClassChain] is not a safe enumerator for that: it
+ * stops at [MAX_HIERARCHY_DEPTH] with no signal, so a deeper chain is cut silently. Once [MAX_HIERARCHY_NODES]
  * classes and interfaces have been visited, no further one is expanded. The interfaces of the last expanded class
  * are still added, so the set can exceed the bound by that class's fan-out.
  */
@@ -208,5 +209,8 @@ private inline fun ClassNode.walkInterfaces(
 /** Default depth bound for [superClassChain] and [hasCyclicSuperClassChain]. */
 const val MAX_HIERARCHY_DEPTH = 256
 
-/** Bound on the classes and interfaces visited by an interface walk; pinned by ClassHierarchyBoundsTest. */
+/**
+ * Bound on the classes and interfaces visited by an interface walk, which [implementsInterfaceChecked] and
+ * [allInterfacesChecked] report as unknown or truncated; pinned by ClassHierarchyBoundsTest.
+ */
 const val MAX_HIERARCHY_NODES = 4096
