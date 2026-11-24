@@ -279,10 +279,11 @@ class CrossFileRenameGuardTest {
         assertRefused(uri, b, "new A('x')", "'A'", "A.groovy", "not supported yet")
     }
 
-    // FIXME(#unfiled-cross-file-supertype): renaming from a file whose class extends a class of another file fails
+    // FIXME(#2438): renaming from a file whose class extends a class of another file fails
     //   with ContentModified ("Source changed or is unavailable"), not the guard's refusal: the visitor tracks the
     //   resolved superclass, whose positions are in the other file, as a type use in this one, and strict narrowing
     //   cannot find the name there. Nothing is edited, so it is safe, but the reason is wrong. This test pins that.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `a class renamed from a file that also subclasses it reports a changed source`() {
         val uri = workspace(mapOf("A.groovy" to constructed, "B.groovy" to constructing), open = "B.groovy")

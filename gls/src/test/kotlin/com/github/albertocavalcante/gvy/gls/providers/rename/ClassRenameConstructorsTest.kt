@@ -207,9 +207,10 @@ class ClassRenameConstructorsTest {
             assertEquals(expected, result)
         }
 
-    // FIXME(#unfiled-parameter-types): a class rename does not rename method or constructor parameter types
+    // FIXME(#2438): a class rename does not rename method or constructor parameter types
     //   (`RecursiveAstVisitor.visitParameter` does not track them, see #865), so `Worker(Service other)` below no
     //   longer compiles. The constructor name is renamed once, as #2434 requires; this test pins the rest.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `renaming a class renames a constructor taking its own type but not the parameter type`(): Unit = runBlocking {
         val content = "class Service {\n    Service(Service other) { }\n    void take(Service s) { }\n}\n"
@@ -310,9 +311,10 @@ class ClassRenameConstructorsTest {
         assertEquals(expected, result)
     }
 
-    // FIXME(#unfiled-same-file-supertypes): a class rename does not rename `extends Base` of a subclass in the same
+    // FIXME(#2438): a class rename does not rename `extends Base` of a subclass in the same
     //   file (the visitor tracks the resolved superclass, which is the declaration itself), so the subclass below no
     //   longer compiles. This test pins that; the constructors, `this(...)` and `super(...)` are as #2434 requires.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `renaming a class keeps this and super calls and renames its constructors`(): Unit = runBlocking {
         val content = """
@@ -339,7 +341,8 @@ class ClassRenameConstructorsTest {
         assertEquals(expected, result)
     }
 
-    // FIXME(#unfiled-same-file-supertypes): `extends Point` stays, as in the test above.
+    // FIXME(#2438): `extends Point` stays, as in the test above.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `renaming a class with generated constructors edits only the source`(): Unit = runBlocking {
         val content = """
@@ -415,9 +418,10 @@ class ClassRenameConstructorsTest {
         assertEquals(content.replace("Greeter", "Welcomer"), result)
     }
 
-    // FIXME(#unfiled-anonymous-subclass): a class rename does not rename `new Service('a') { ... }` of an anonymous
+    // FIXME(#2438): a class rename does not rename `new Service('a') { ... }` of an anonymous
     //   subclass (the call's type is the anonymous class), so the result below no longer compiles. This test pins
     //   that; the constructor is renamed as #2434 requires.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `renaming a class renames its constructor but not an anonymous subclass's new`(): Unit = runBlocking {
         val content = """
