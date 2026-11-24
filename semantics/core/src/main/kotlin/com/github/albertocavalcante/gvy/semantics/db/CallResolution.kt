@@ -622,10 +622,25 @@ sealed interface CallOutcome {
         /** A GDK method of that name may be the target. */
         GDK_METHOD,
 
-        /** No method of that name and arity. */
+        /** No method or constructor of that name and arity. */
         NO_CANDIDATE,
 
-        /** More than one method of that name and arity. */
+        /** More than one method or constructor that can take the arguments. */
         AMBIGUOUS,
+
+        /** A constructor call of a class whose constructors are not indexed: a classpath, enum or inner class. */
+        NOT_INDEXED_CLASS,
+
+        /** `new T() { ... }` creates a class of its own. */
+        ANONYMOUS_CLASS,
+
+        /** `this(...)` or `super(...)` in a constructor. */
+        SPECIAL_CONSTRUCTOR_CALL,
+
+        /** The class has a constructor its source does not declare, which may take the call. */
+        GENERATED_CONSTRUCTOR,
+
+        /** `new T(name: value)` may use the map constructor instead of a declared one. */
+        NAMED_ARGUMENTS,
     }
 }

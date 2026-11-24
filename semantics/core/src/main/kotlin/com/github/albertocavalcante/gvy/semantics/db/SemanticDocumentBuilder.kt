@@ -215,6 +215,13 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, classNode)
         }
 
+        // `methods` excludes constructors. Some take hidden compiler parameters (enums, inner classes): not indexed.
+        if (!IndexedConstructors.addsParameters(classNode)) {
+            classNode.declaredConstructors.forEach { constructor ->
+                extractMethod(constructor, classNode)
+            }
+        }
+
         visitBody(classNode, record = true)
     }
 
@@ -309,13 +316,15 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             methodNode is ConstructorNode -> SymbolKind.CONSTRUCTOR
             else -> SymbolKind.METHOD
         }
+        // A constructor is named for its class, as a source declaration spells it (its AST name is `<init>`).
+        val name = if (methodNode is ConstructorNode && owner != null) owner.sourceSimpleName() else methodNode.name
 
         symbols.add(
             SymbolInfo(
                 symbol = symbolId.id,
                 kind = kind,
                 range = range,
-                name = methodNode.name,
+                name = name,
                 owner = ownerSymbolId?.id,
                 type = methodNode.returnType.toDeclaredType().takeIf { kind == SymbolKind.METHOD },
             ),
@@ -381,6 +390,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
 
         private val resolver = CallResolver(moduleNode, currentClass, ::lookup)
+
+        private val constructors = ConstructorResolver()
 
         // Enclosing closures, innermost last; true when the closure is an argument of a delegate-neutral GDK call.
         private val closures = ArrayDeque<Boolean>()
@@ -546,21 +557,33 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             // Only a class the compiler resolved: a bare name would be guessed into this package.
             if (range == null || !resolver.isResolved(call.type)) return super.visitConstructorCallExpression(call)
 
-            // Create symbol ID for constructor call
             val typeName = resolver.resolveTypeName(call.type)
-            // Use class symbol ID to resolve to the class definition
-            // TODO: Support precise constructor resolution with parameters
-            val symbolId = Symbol.ofClass(typeName).id
-
+            // The class stays attributed at the type name: references to the class include its `new` expressions.
             occurrences.add(
                 SymbolOccurrence(
-                    symbol = symbolId,
+                    symbol = Symbol.ofClass(typeName).id,
                     range = range,
                     role = OccurrenceRole.CALL,
                 ),
             )
+            constructorCallOccurrence(call, range)?.let(occurrences::add)
 
             super.visitConstructorCallExpression(call)
+        }
+
+        /**
+         * The call of the constructor `new T(args)` invokes, when [ConstructorResolver] can tell. It
+         * covers `new T`, from the keyword to the end of the type name, so it never shares a range with the class
+         * occurrence at [typeRange] and the innermost occurrence at the type name stays the class's.
+         */
+        private fun constructorCallOccurrence(call: ConstructorCallExpression, typeRange: Range): SymbolOccurrence? {
+            val symbolId = (constructors.resolve(call) as? CallOutcome.Resolved)?.symbolId ?: return null
+            val start = nodeToRange(call) ?: return null
+            val starts = start.startLine < typeRange.startLine ||
+                start.startLine == typeRange.startLine && start.startColumn < typeRange.startColumn
+            if (!starts) return null // the type has no position of its own, so `typeRange` is the whole call
+            val range = Range(start.startLine, start.startColumn, typeRange.endLine, typeRange.endColumn)
+            return SymbolOccurrence(symbolId, range, OccurrenceRole.CALL)
         }
 
         override fun visitClassExpression(expression: ClassExpression) {

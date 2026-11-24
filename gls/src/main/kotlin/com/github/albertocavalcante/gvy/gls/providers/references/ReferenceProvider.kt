@@ -198,7 +198,8 @@ class ReferenceProvider(
         logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
 
         val symbol = index.findSymbol(occurrence.symbol)
-        val name = symbolName ?: symbol?.name
+        // A constructor's AST name is `<init>`; the source spells the class name, which the index keeps as its name.
+        val name = symbol?.takeIf { it.kind == SymbolKind.CONSTRUCTOR }?.name ?: symbolName ?: symbol?.name
         if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER || name == null) {
             logger.debug { "Not searching the workspace for local or unnamed ${occurrence.symbol}" }
             return

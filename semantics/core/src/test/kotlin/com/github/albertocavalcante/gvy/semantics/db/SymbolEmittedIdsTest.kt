@@ -15,8 +15,6 @@ class SymbolEmittedIdsTest : SymbolIdTestSupport() {
 
     private class Expected(val id: String, val owner: String, val member: String, val descriptor: String?)
 
-    // The builder indexes no constructor today (extractMethod runs over classNode.methods only), so the fixture's
-    // constructor yields no `<init>` id; that shape is covered by SymbolTest as a formatter-only case.
     private val packaged = build(
         """
         package com.example
@@ -28,6 +26,8 @@ class SymbolEmittedIdsTest : SymbolIdTestSupport() {
             String label
             private int count
             Outer(String label) { this.label = label }
+            Outer(String label, int count) { this(label) }
+            Outer() { }
             void noArgs() {}
             void withArray(String[] items) { int local = 1 }
             void withVarargs(String... rest) {}
@@ -85,6 +85,34 @@ class SymbolEmittedIdsTest : SymbolIdTestSupport() {
             Expected("com/example/Outer\$Inner#go(int).", "com/example/Outer\$Inner", "go", "int"),
         ).forEach { assertParts(packaged, it) }
         assertParts(defaultPackage, Expected("Plain#run().", "Plain", "run", ""))
+    }
+
+    @Test
+    fun `constructors read as the init member with the descriptor the builder writes`() {
+        listOf(
+            Expected("com/example/Outer#<init>().", "com/example/Outer", "<init>", ""),
+            Expected("com/example/Outer#<init>(String).", "com/example/Outer", "<init>", "String"),
+            Expected("com/example/Outer#<init>(String,int).", "com/example/Outer", "<init>", "String,int"),
+        ).forEach { assertParts(packaged, it) }
+        val symbols = packaged.symbols.filter { it.kind == SymbolKind.CONSTRUCTOR }
+        assertEquals(3, symbols.size)
+        symbols.forEach {
+            assertEquals("Outer", it.name)
+            assertEquals("com/example/Outer#", it.owner)
+        }
+    }
+
+    @Test
+    fun `constructor parameters read as the constructor they belong to`() {
+        val parameter = Symbol(
+            packaged.symbols.single {
+                it.kind == SymbolKind.PARAMETER && it.owner == "com/example/Outer#<init>(String)."
+            }
+                .symbol,
+        )
+        assertEquals("com/example/Outer", parameter.owner)
+        assertEquals("<init>", parameter.member)
+        assertEquals("String", parameter.descriptor)
     }
 
     @Test

@@ -184,6 +184,25 @@ class RenameProviderTest {
     }
 
     @Test
+    fun `renaming a class that has constructors edits each new expression exactly once`(): Unit = runBlocking {
+        val content = """
+            class Service {
+                Service(String name) { }
+                Service(String name, int size) { }
+            }
+            def a = new Service('a')
+            def b = new Service('b', 1)
+            def c = new Service('c')
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(0, 7), "Worker")
+
+        assertEquals(3, Regex("new Worker\\(").findAll(result).count(), result)
+        assertEquals(0, Regex("new Service").findAll(result).count(), result)
+        assertTrue(result.startsWith("class Worker {"), result)
+    }
+
+    @Test
     fun `renaming a field changes only the name and its uses`(): Unit = runBlocking {
         val content = """
             class Holder {
