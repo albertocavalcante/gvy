@@ -17,7 +17,6 @@ import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvid
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
-import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
@@ -96,12 +95,8 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        return runSuspendCatching {
+        return failingAsInternalError("finding definitions") {
             withCurrentOrigin(documentUri) { findDefinitions(documentUri, position) }
-        }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
-            logException(e, "finding definitions")
-            Either.forLeft(emptyList())
         }
     }
 
@@ -120,17 +115,15 @@ class CrossFileOperationsHandler(
             return Either.forLeft(emptyList())
         }
 
-        // Try LocationLink format if supported
+        // One lookup per request: a link-capable client gets links, or an honest empty/failed answer, never a
+        // second resolution of the same position. A failed lookup throws to the response boundary.
         if (definitionLinkSupport()) {
-            val links = definitionProvider.provideDefinitionLinks(uri, position).toList()
-            if (links.isNotEmpty()) {
-                logger.debug { "Returning ${links.size} definition links (first=${links.first().targetUri})" }
-                return Either.forRight(links)
-            }
+            val links = definitionProvider.lookupDefinitionLinks(uri, position).targetsOrThrow()
+            logger.debug { "Returning ${links.size} definition links" }
+            return if (links.isEmpty()) Either.forLeft(emptyList()) else Either.forRight(links)
         }
 
-        // Fall back to Location format
-        val locations = definitionProvider.provideDefinitions(uri, position).toList()
+        val locations = definitionProvider.lookupDefinitions(uri, position).targetsOrThrow()
         logger.debug {
             if (locations.isNotEmpty()) {
                 "Returning ${locations.size} definition locations (first=${locations.first().uri})"
@@ -209,7 +202,7 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        return runSuspendCatching {
+        return failingAsInternalError("finding implementations") {
             withCurrentOrigin(documentUri) {
                 val snapshot = acquireImplementationSnapshot(documentUri)
                 if (snapshot == null) {
@@ -222,10 +215,6 @@ class CrossFileOperationsHandler(
                         .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
                 }
             }
-        }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e
-            logException(e, "finding implementations")
-            Either.forLeft(emptyList())
         }
     }
 
@@ -300,18 +289,5 @@ class CrossFileOperationsHandler(
         // One captured snapshot, compiled under the shared retirement policy (no raw cancellation escapes).
         val snapshot = documentProvider.getSnapshot(uri) ?: return null
         return compilationService.ensureCompiled(uri, snapshot)
-    }
-
-    /**
-     * Helper function to log exceptions with appropriate context.
-     * Uses idiomatic `when` expression for type-based message selection.
-     */
-    private fun logException(e: Throwable, operation: String) {
-        val message = when (e) {
-            is IllegalArgumentException -> "Invalid arguments $operation"
-            is IllegalStateException -> "Invalid state $operation"
-            else -> "Unexpected error $operation"
-        }
-        logger.error(e) { message }
     }
 }
