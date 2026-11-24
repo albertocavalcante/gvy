@@ -183,23 +183,75 @@ class RenameProviderTest {
         assertEquals(content.replace("Service", "Worker"), result)
     }
 
+    private val serviceWithConstructors = """
+        class Service {
+            Service(String name) { }
+            Service(String name, int size) { }
+        }
+        def a = new Service('a')
+        def b = new Service('b', 1)
+        def c = new Service('c')
+    """.trimIndent()
+
+    private val renamedServiceCalls = """
+        def a = new Worker('a')
+        def b = new Worker('b', 1)
+        def c = new Worker('c')
+    """.trimIndent()
+
+    private fun prepareRename(content: String, position: Position) = runBlocking {
+        val uri = workspaceRoot.resolve("Rename.groovy").toUri().toString()
+        val javaUri = java.net.URI.create(uri)
+        documentProvider.put(javaUri, content)
+        compilationService.compile(javaUri, content)
+        runCatching { renameProvider.providePrepareRename(uri, position) }
+    }
+
+    // FIXME(#2434): renaming a class leaves its constructor declarations unrenamed (`Service(String name)` below),
+    //   which no longer compile; this test pins today's text.
+    //   See: https://github.com/albertocavalcante/gvy/issues/2434
     @Test
-    fun `renaming a class that has constructors edits each new expression exactly once`(): Unit = runBlocking {
-        val content = """
-            class Service {
-                Service(String name) { }
-                Service(String name, int size) { }
-            }
-            def a = new Service('a')
-            def b = new Service('b', 1)
-            def c = new Service('c')
-        """.trimIndent()
+    fun `renaming a class with constructors renames the class and each new expression once`(): Unit = runBlocking {
+        val result = renameAndApply(serviceWithConstructors, Position(0, 7), "Worker")
 
-        val result = renameAndApply(content, Position(0, 7), "Worker")
+        val expected = "class Worker {\n    Service(String name) { }\n    Service(String name, int size) { }\n}\n" +
+            renamedServiceCalls
+        assertEquals(expected, result)
+    }
 
-        assertEquals(3, Regex("new Worker\\(").findAll(result).count(), result)
-        assertEquals(0, Regex("new Service").findAll(result).count(), result)
-        assertTrue(result.startsWith("class Worker {"), result)
+    // FIXME(#2434): the constructor declarations stay `Service`, as in the test above.
+    @Test
+    fun `renaming from the new keyword renames the type name and keeps the keyword`(): Unit = runBlocking {
+        val position = Position(4, serviceWithConstructors.lines()[4].indexOf("new"))
+
+        val result = renameAndApply(serviceWithConstructors, position, "Worker")
+
+        val expected = "class Worker {\n    Service(String name) { }\n    Service(String name, int size) { }\n}\n" +
+            renamedServiceCalls
+        assertEquals(expected, result)
+    }
+
+    @Test
+    fun `prepare rename on the new keyword offers no rename`(): Unit = runBlocking {
+        // Pins today's answer: rename works from `new`, but prepare answers null (not filed; see the report).
+        val position = Position(4, serviceWithConstructors.lines()[4].indexOf("new"))
+
+        assertEquals(Result.success(null), prepareRename(serviceWithConstructors, position))
+    }
+
+    @Test
+    fun `renaming from a constructor declaration is refused and prepare offers nothing`(): Unit = runBlocking {
+        // Pins today's behaviour: a constructor declaration is not a rename target (see FIXME(#2434) above).
+        val failure = runCatching { renameAndApply(serviceWithConstructors, Position(1, 4), "Worker") }
+            .exceptionOrNull()
+
+        assertTrue(failure is ResponseErrorException, "Got: $failure")
+        assertEquals(
+            "Source changed or is unavailable during rename: " +
+                workspaceRoot.resolve("Rename.groovy").toUri(),
+            failure?.message,
+        )
+        assertEquals(Result.success(null), prepareRename(serviceWithConstructors, Position(1, 4)))
     }
 
     @Test

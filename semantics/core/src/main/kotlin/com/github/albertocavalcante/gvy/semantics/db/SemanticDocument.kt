@@ -33,6 +33,14 @@ import java.net.URI
  *   - the property an accessor-shaped unattributed call may stand for, the other direction: `o.getTarget()`
  *     records `getTarget` and `target` (both the JavaBeans spelling, which keeps `URL`, and `uRL`).
  *
+ *   - the simple name of a source class for each `new T(...)` (and `this(...)`/`super(...)`) in it that was not
+ *     attributed to one of the class's constructors: ambiguous or no arity match, a named, spread or possible Map
+ *     argument, a transform-generated constructor, an enum or inner class, or the implicit default constructor.
+ *     Constructor references are incomplete by design: the class occurrence at the type name is always there, a
+ *     constructor occurrence only when exactly one declared constructor can take the call, and a consumer that
+ *     needs every use of a constructor of `T` must also treat each file with `T` here as a possible use.
+ *     Classpath classes and anonymous classes are not recorded; their constructors are never indexed.
+ *
  *   Bodies of trait methods and of anonymous classes are collected too (they get no symbols or occurrences);
  *   names the compiler generated (no source position, or a `$` name inside a trait helper) add nothing.
  */

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
  * the class's references keep finding `new T()`; the constructor's occurrence covers `new T` and so is the
  * innermost only where the cursor is on `new`.
  */
-class ConstructorIndexingTest : SymbolIdTestSupport() {
+open class ConstructorIndexingTest : SymbolIdTestSupport() {
 
     private fun SemanticDocument.constructors() = symbols.filter { it.kind == SymbolKind.CONSTRUCTOR }
 
@@ -191,9 +191,84 @@ class ConstructorIndexingTest : SymbolIdTestSupport() {
             """,
         )
 
-        assertTrue(doc.constructors().all { it.symbol == "Foo#<init>(String,int)." }, "Got: ${doc.constructors()}")
+        assertEquals(listOf("Foo#<init>(String,int)."), doc.constructors().map { it.symbol })
         assertEquals(emptyList<SymbolOccurrence>(), doc.constructorCalls())
         assertEquals(1, doc.classCalls("Foo#").size)
+    }
+
+    @Test
+    @DisplayName("@AutoClone with a copy constructor adds one that takes the call, so it is not attributed")
+    fun autoCloneCopyConstructorIsUnresolved() {
+        val doc = build(
+            """
+            @groovy.transform.AutoClone(style = groovy.transform.AutoCloneStyle.COPY_CONSTRUCTOR)
+            class P {
+                P(String s) { }
+                def run(P other) { new P(other) }
+            }
+            """,
+        )
+
+        assertEquals(emptyList<SymbolOccurrence>(), doc.constructorCalls())
+        assertTrue("P" in doc.unresolvedNames)
+    }
+
+    @Test
+    @DisplayName("@NamedVariant on a constructor adds a Map-taking one, so calls are not attributed")
+    fun namedVariantConstructorIsUnresolved() {
+        val doc = build(
+            """
+            class F {
+                F(String a) { }
+                @groovy.transform.NamedVariant
+                F(String a, int b) { }
+            }
+            class Use { def run(m) { new F(m) } }
+            """,
+        )
+
+        assertEquals(emptyList<SymbolOccurrence>(), doc.constructorCalls())
+    }
+
+    @Test
+    @DisplayName("a Map argument may set properties through the no-argument constructor, so it is not attributed")
+    fun mapArgumentIsNotAttributedWhenNoArgumentConstructorExists() {
+        val doc = build(
+            """
+            class R { String name; R() { }; R(String s) { } }
+            class Use {
+                def run() {
+                    def m = [name: 'x']
+                    [new R([name: 'x']), new R(m), new R('s'), new R(['a']), new R(null)]
+                }
+            }
+            """,
+        )
+
+        // A string or list literal is certainly not a Map; a map literal, a variable and `null` stay uncertain.
+        val calls = doc.constructorCalls().sortedBy { it.range.startColumn }
+        assertEquals(listOf("R#<init>(String).", "R#<init>(String)."), calls.map { it.symbol })
+        assertEquals(5, doc.classCalls("R#").size)
+    }
+
+    @Test
+    @DisplayName("a single argument is attributed when no constructor can take no arguments")
+    fun singleArgumentWithoutNoArgumentConstructor() {
+        val doc = build("class R { R(String s) { } }\nclass Use { def run(m) { new R(m) } }")
+
+        assertEquals(listOf("R#<init>(String)."), doc.constructorCalls().map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("each call left with the class is recorded as an uncertain use of the class name")
+    fun unattributedCallsAreRecorded() {
+        val ambiguous = build("class Foo { Foo(String a) { }; Foo(int a) { } }\nclass Use { def run() { new Foo(1) } }")
+        val attributed = build("class Foo { Foo(String a) { } }\nclass Use { def run() { new Foo('a') } }")
+        val classpath = build("class Use { def run() { new ArrayList() } }")
+
+        assertTrue("Foo" in ambiguous.unresolvedNames)
+        assertTrue("Foo" !in attributed.unresolvedNames)
+        assertTrue("ArrayList" !in classpath.unresolvedNames)
     }
 
     @Test
@@ -298,4 +373,9 @@ class ConstructorIndexingTest : SymbolIdTestSupport() {
 
         assertEquals(emptyList<SymbolOccurrence>(), doc.constructorCalls())
     }
+}
+
+/** The workspace indexer builds at SEMANTIC_ANALYSIS, before the transforms that add constructors have run. */
+class ConstructorIndexingAtSemanticAnalysisTest : ConstructorIndexingTest() {
+    override val phase: Int = Phases.SEMANTIC_ANALYSIS
 }

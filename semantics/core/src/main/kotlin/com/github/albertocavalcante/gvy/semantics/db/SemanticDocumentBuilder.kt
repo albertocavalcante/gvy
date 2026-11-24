@@ -577,14 +577,36 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * occurrence at [typeRange] and the innermost occurrence at the type name stays the class's.
          */
         private fun constructorCallOccurrence(call: ConstructorCallExpression, typeRange: Range): SymbolOccurrence? {
-            val symbolId = (constructors.resolve(call) as? CallOutcome.Resolved)?.symbolId ?: return null
+            val symbolId = attributedConstructor(call) ?: return null
+            val range = constructorCallRange(call, typeRange) ?: return null
+            return SymbolOccurrence(symbolId, range, OccurrenceRole.CALL)
+        }
+
+        /** The id of the constructor the call invokes; when not known, the class's name is recorded as uncertain. */
+        private fun attributedConstructor(call: ConstructorCallExpression): String? =
+            when (val outcome = constructors.resolve(call)) {
+                is CallOutcome.Resolved -> outcome.symbolId
+                is CallOutcome.Unresolved -> {
+                    // The class occurrence stands, but the constructor is not known: say so, keyed by the class.
+                    if (outcome.reason.isUncertainConstructorUse() && unresolved.isSource(call)) {
+                        unresolved.name(call.type.sourceSimpleName())
+                    }
+                    null
+                }
+            }
+
+        /** From the `new` keyword to the end of the type name; null when the type has no position of its own. */
+        private fun constructorCallRange(call: ConstructorCallExpression, typeRange: Range): Range? {
             val start = nodeToRange(call) ?: return null
             val starts = start.startLine < typeRange.startLine ||
                 start.startLine == typeRange.startLine && start.startColumn < typeRange.startColumn
-            if (!starts) return null // the type has no position of its own, so `typeRange` is the whole call
-            val range = Range(start.startLine, start.startColumn, typeRange.endLine, typeRange.endColumn)
-            return SymbolOccurrence(symbolId, range, OccurrenceRole.CALL)
+            if (!starts) return null
+            return Range(start.startLine, start.startColumn, typeRange.endLine, typeRange.endColumn)
         }
+
+        /** Uncertain, unless the class is not a source class (classpath) or the call makes a class of its own. */
+        private fun CallOutcome.Reason.isUncertainConstructorUse() =
+            this != CallOutcome.Reason.NOT_SOURCE_CLASS && this != CallOutcome.Reason.ANONYMOUS_CLASS
 
         override fun visitClassExpression(expression: ClassExpression) {
             val range = nodeToRange(expression)

@@ -103,4 +103,22 @@ class ConstructorReferencesTest {
 
         assertEquals(false, fixture.at(2, 40) in ofConstructors)
     }
+
+    @Test
+    fun `references on the new keyword answer for the class in the document and in the workspace`() {
+        val a = "class A {\n    A(String s) { }\n    A() { }\n    static make() { new A('x') }\n" +
+            "    static other() { new A() }\n}\n"
+        val b = "class B {\n    def run() { [new A('y'), new A()] }\n}\n"
+        val fixture = createWorkspace(a, b)
+        runBlocking { fixture.service.compile(fixture.declaration.toUri(), a) }
+        val onNew = Position(3, a.lines()[3].indexOf("new A('x')"))
+
+        val fromNew = fixture.references(fixture.declaration, onNew)
+        val fromClass = fixture.references(fixture.declaration, Position(0, 6))
+
+        assertEquals(fromClass.toSet(), fromNew.toSet())
+        assertEquals(4, fromNew.size, "both constructors' calls in this file and in B: $fromNew")
+        // The call in B of the other constructor is found too: the answer is for the class, not one constructor.
+        assertEquals(true, fixture.at(1, 21) in fromNew && fixture.at(1, 33) in fromNew, "$fromNew")
+    }
 }

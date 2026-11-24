@@ -628,8 +628,14 @@ sealed interface CallOutcome {
         /** More than one method or constructor that can take the arguments. */
         AMBIGUOUS,
 
-        /** A constructor call of a class whose constructors are not indexed: a classpath, enum or inner class. */
-        NOT_INDEXED_CLASS,
+        /** A constructor call of a class that is not a source class of this unit (a classpath class). */
+        NOT_SOURCE_CLASS,
+
+        /** A constructor call of an enum or a non-static inner class, whose constructors take hidden parameters. */
+        HIDDEN_PARAMETERS,
+
+        /** One argument that may be a Map, and a constructor that takes none: Groovy may use it for properties. */
+        MAP_ARGUMENT,
 
         /** `new T() { ... }` creates a class of its own. */
         ANONYMOUS_CLASS,
