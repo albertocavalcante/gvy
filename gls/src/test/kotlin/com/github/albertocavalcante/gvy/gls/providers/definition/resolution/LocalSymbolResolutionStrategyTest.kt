@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.test.assertFalse
 
 /**
  * Test for LocalSymbolResolutionStrategy to ensure it correctly handles cross-file class references.
@@ -91,7 +92,9 @@ class LocalSymbolResolutionStrategyTest {
             // Act: Request definition at the constructor call position
             // Line 4: "        Calculator calc = new Calculator(10)"
             //                                       ^-- char 30
-            val result = definitionResolver.findDefinitionAt(mainUri, Position(4, 30)).foundOrNull()
+            val lookup = definitionResolver.findDefinitionAt(mainUri, Position(4, 30))
+            assertFalse(lookup is DefinitionResolver.DefinitionLookup.Failed, "the lookup must not fail: $lookup")
+            val result = (lookup as? DefinitionResolver.DefinitionLookup.Found)?.result
 
             // Assert: Should resolve to Calculator.groovy, NOT Main.groovy
             // Note: Without WorkspaceSymbolIndex, it may return null (which is acceptable)

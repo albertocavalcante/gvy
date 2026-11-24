@@ -408,27 +408,25 @@ class DefinitionProvider(
             sourceNavigator,
             compilationService.getWorkspaceSymbolIndex(),
         )
-        // Exactly one telemetry event per request: the outcome, never a failure followed by "no definition".
-        try {
+        // Exactly one telemetry event per request, reported after the lookup's own try so a throwing sink or
+        // collector can neither add a second event nor have its exception swallowed as a definition failure.
+        val (event, location) = try {
             when (val lookup = resolver.findDefinitionAt(documentUri, position)) {
                 is DefinitionResolver.DefinitionLookup.Found -> {
                     val location = locationOf(lookup.result, context, documentUri)
                     logger.debug { "Found definition at ${location.uri}:${location.range}" }
-                    telemetrySink.report(DefinitionTelemetryEvent(uri = uri, status = DefinitionStatus.SUCCESS))
-                    emit(location)
+                    DefinitionTelemetryEvent(uri = uri, status = DefinitionStatus.SUCCESS) to location
                 }
 
                 is DefinitionResolver.DefinitionLookup.NotFound -> {
-                    logger.debug { "No definition found at position: ${lookup.reason}" }
-                    telemetrySink.report(DefinitionTelemetryEvent(uri = uri, status = DefinitionStatus.NO_DEFINITION))
+                    logger.debug { "No definition found at position: ${lookup.error.reason}" }
+                    DefinitionTelemetryEvent(uri = uri, status = DefinitionStatus.NO_DEFINITION) to null
                 }
 
                 is DefinitionResolver.DefinitionLookup.Failed -> {
                     val reason = failureReason(lookup.error)
                     logger.debug { "Definition resolution failed: $reason" }
-                    telemetrySink.report(
-                        DefinitionTelemetryEvent(uri, DefinitionStatus.RESOLUTION_FAILED, reason),
-                    )
+                    DefinitionTelemetryEvent(uri, DefinitionStatus.RESOLUTION_FAILED, reason) to null
                 }
             }
         } catch (e: CancellationException) {
@@ -444,8 +442,10 @@ class DefinitionProvider(
             throw e
         } catch (e: Exception) {
             logger.warn(e) { "Error during definition resolution: ${e.message}" }
-            telemetrySink.report(DefinitionTelemetryEvent(uri, DefinitionStatus.ERROR, failureReason(e)))
+            DefinitionTelemetryEvent(uri, DefinitionStatus.ERROR, failureReason(e)) to null
         }
+        telemetrySink.report(event)
+        location?.let { emit(it) }
     }
 
     private fun locationOf(
@@ -494,8 +494,13 @@ class DefinitionProvider(
     }
 }
 
-/** The failure's kind (its class) with its message, so telemetry and logs keep the real reason. */
-private fun failureReason(error: Throwable): String = "${error::class.simpleName}: ${error.message}"
+private const val MAX_REASON_LENGTH = 200
+
+/** The failure's kind (its class) with its message, capped, so telemetry and logs keep the real reason. */
+private fun failureReason(error: Throwable): String {
+    val reason = "${error::class.simpleName}: ${error.message ?: "no message"}"
+    return if (reason.length <= MAX_REASON_LENGTH) reason else reason.take(MAX_REASON_LENGTH - 1) + "…"
+}
 
 private fun spockDefinition(uri: URI, position: Position, snapshot: CompiledDocumentSnapshot?): Location? {
     snapshot ?: return null

@@ -16,6 +16,7 @@ import com.github.albertocavalcante.gvy.gls.providers.implementation.Implementat
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -155,7 +156,7 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        return runSuspendCatching {
+        return failingAsInternalError("finding references") {
             withCurrentOrigin(documentUri) {
                 // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
                 // Fixes #749: Race condition where target file may not be indexed yet
@@ -170,13 +171,6 @@ class CrossFileOperationsHandler(
                         .also { logger.debug { "Found ${it.size} references" } }
                 }
             }
-        }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
-            logException(e, "finding references")
-            // An error is not "no references": a failed scan must reach the client as a failed request.
-            throw ResponseErrorException(
-                ResponseError(ResponseErrorCode.InternalError, "Finding references failed: ${e.message}", null),
-            )
         }
     }
 

@@ -3,18 +3,16 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.definition
 
-import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.errors.InvalidPositionException
 import com.github.albertocavalcante.gvy.gls.errors.NodeNotFoundAtPositionException
 import io.mockk.every
-import io.mockk.mockk
 import io.mockk.spyk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import org.codehaus.groovy.ast.ClassNode
 import org.junit.jupiter.api.Test
+import java.io.IOException
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -43,26 +41,43 @@ class DefinitionLookupTest {
         assertIs<DefinitionResolver.DefinitionLookup.Found>(lookup)
     }
 
+    // An import of an unknown class reaches the classpath strategy, the last one tried.
+    private val position = Position(0, 22)
+
+    private fun missingClassResolver(classpath: (String) -> URI?): DefinitionResolver {
+        runBlocking { compilation.compile(uri, "import com.example.Missing\n") }
+        every { compilation.findClasspathClass(any()) } answers { classpath(firstArg()) }
+        val snapshot = checkNotNull(compilation.getCompiledSnapshot(uri))
+        return DefinitionResolver(
+            snapshot.parseResult.astModel,
+            snapshot.parseResult.symbolTable,
+            compilation,
+            null,
+            compilation.getWorkspaceSymbolIndex(),
+        )
+    }
+
     @Test
     fun `an unresolvable class is not found`(): Unit = runBlocking {
-        val position = Position(5, 10)
-        val model = mockk<GroovyAstModel>()
-        val missing = ClassNode("com.example.Missing", 0, null).apply {
-            lineNumber = 5
-            columnNumber = 10
-            lastLineNumber = 5
-            lastColumnNumber = 20
-        }
-        every { model.getNodeAt(uri, position) } returns missing
-        every { model.getAllClassNodes() } returns emptyList()
-        val service = mockk<GroovyCompilationService>(relaxed = true)
-        every { service.getAst(uri) } returns null
-        every { service.getAllSymbolStorages() } returns emptyMap()
-        every { service.findClasspathClass(any()) } returns null
-
-        val lookup = DefinitionResolver(model, mockk<SymbolTable>(), service).findDefinitionAt(uri, position)
+        val lookup = missingClassResolver { null }.findDefinitionAt(uri, position)
 
         assertIs<DefinitionResolver.DefinitionLookup.NotFound>(lookup)
+    }
+
+    @Test
+    fun `a strategy that throws fails the lookup with its own error`(): Unit = runBlocking {
+        val lookup = missingClassResolver { throw IOException("jar unreadable") }.findDefinitionAt(uri, position)
+
+        val failed = assertIs<DefinitionResolver.DefinitionLookup.Failed>(lookup)
+        assertIs<IOException>(failed.error)
+        assertEquals("jar unreadable", failed.error.message)
+    }
+
+    @Test
+    fun `a cancelled strategy stays cancelled instead of failing the lookup`(): Unit = runBlocking {
+        val resolver = missingClassResolver { throw CancellationException("cancelled") }
+
+        assertFailsWith<CancellationException> { resolver.findDefinitionAt(uri, position) }
     }
 
     @Test

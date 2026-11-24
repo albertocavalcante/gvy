@@ -88,8 +88,15 @@ fun interface SymbolResolutionStrategy {
         /**
          * Compose multiple strategies into a pipeline that short-circuits on first success.
          *
-         * Strategies are tried in order (priority). First [Either.Right] wins,
-         * remaining strategies are skipped. If all fail, returns the last error.
+         * Strategies are tried in order (priority). First [Either.Right] wins, remaining strategies are skipped.
+         *
+         * If none succeeds the result depends on whether any strategy threw: a strategy that threw is a failure
+         * of the lookup, not a miss, so the FIRST such failure is returned (a [ResolutionError] whose `cause` is
+         * the throwable and whose `source` is the strategy) and a later strategy's ordinary miss cannot hide it.
+         * With no throw, the last strategy's miss is returned. A [ResolutionError] with a `cause` therefore always
+         * means "a strategy threw"; strategies never set one for a miss.
+         *
+         * Cancellation and [Error]s propagate; they are never results.
          *
          * Prefer passing a list/sequence to avoid vararg spread operator overhead.
          *
@@ -100,6 +107,7 @@ fun interface SymbolResolutionStrategy {
         fun pipeline(strategies: Iterable<SymbolResolutionStrategy>): SymbolResolutionStrategy =
             SymbolResolutionStrategy { context ->
                 var result: ResolutionResult = ResolutionError("No strategies in pipeline", "pipeline").left()
+                var firstThrow: ResolutionError? = null
 
                 for (strategy in strategies) {
                     // Short-circuit: if we already have a Right (success), stop
@@ -112,20 +120,17 @@ fun interface SymbolResolutionStrategy {
                     } catch (e: Error) {
                         throw e
                     } catch (e: Exception) {
-                        // NOTE: This is intentionally a broad catch to keep definition resolution resilient.
-                        // TODO: Replace with strategy-specific error handling (or typed ResolutionError codes) so we
-                        // only catch known failure modes and let truly unexpected exceptions fail fast in tests.
-                        logger.debug(e) {
-                            "Resolution strategy ${strategy::class.simpleName ?: "unknown"} threw unexpectedly"
-                        }
-                        ResolutionError(
-                            "Strategy threw: ${e.message}",
-                            strategy::class.simpleName ?: "unknown",
-                        ).left()
+                        // Broad on purpose: any strategy bug is reported as a typed failure carrying the throwable,
+                        // never as "not found" and never swallowed.
+                        val name = strategy::class.simpleName ?: "unknown"
+                        logger.debug(e) { "Resolution strategy $name threw unexpectedly" }
+                        val thrown = ResolutionError("Strategy threw: ${e.message ?: e::class.simpleName}", name, e)
+                        if (firstThrow == null) firstThrow = thrown
+                        thrown.left()
                     }
                 }
 
-                result
+                if (result.isRight()) result else (firstThrow?.left() ?: result)
             }
 
         fun pipeline(vararg strategies: SymbolResolutionStrategy): SymbolResolutionStrategy =

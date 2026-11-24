@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.test.assertIs
 
 /**
  * Tests for DefinitionResolver fallback behavior and SourceNavigator integration.
@@ -93,7 +94,8 @@ class DefinitionResolverFallbackTest {
             )
 
             val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position).foundOrNull() }
+            val lookup = runBlocking { resolver.findDefinitionAt(documentUri, position) }
+            val result = assertIs<DefinitionResolver.DefinitionLookup.Found>(lookup).result
 
             // file: URI can be opened by VS Code
             assertTrue(result is DefinitionResolver.DefinitionResult.Binary)
@@ -156,13 +158,14 @@ class DefinitionResolverFallbackTest {
             val position = Position(10, 10)
 
             val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
+            val symbolTable = mockk<SymbolTable>(relaxed = true)
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
             val sourceNavigationService = mockk<SourceNavigator>()
 
             val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
             every { astVisitor.getAllClassNodes() } returns emptyList()
+            every { astVisitor.getUri(any()) } returns null
             every { compilationService.getAllSymbolStorages() } returns emptyMap()
             every { compilationService.getAst(documentUri) } returns null
 
@@ -179,12 +182,12 @@ class DefinitionResolverFallbackTest {
             )
 
             val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position).foundOrNull() }
+            val lookup = runBlocking { resolver.findDefinitionAt(documentUri, position) }
 
-            // Should fallback to returning null for jar: URI (since VS Code can't open it)
-            // Note: Current DefinitionResolver logic returns null for "jar" scheme in fallback block
+            // Should fallback to "not found" for jar: URI (since VS Code can't open it)
+            // Note: Current DefinitionResolver logic returns no definition for "jar" scheme in fallback block
             // See DefinitionResolver.kt:285
-            assertEquals(null, result)
+            assertIs<DefinitionResolver.DefinitionLookup.NotFound>(lookup, "lookup: $lookup")
         }
 
         @Test
@@ -193,13 +196,14 @@ class DefinitionResolverFallbackTest {
             val position = Position(10, 10)
 
             val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
+            val symbolTable = mockk<SymbolTable>(relaxed = true)
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
             val sourceNavigationService = mockk<SourceNavigator>()
 
             val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
             every { astVisitor.getAllClassNodes() } returns emptyList()
+            every { astVisitor.getUri(any()) } returns null
             every { compilationService.getAllSymbolStorages() } returns emptyMap()
             every { compilationService.getAst(documentUri) } returns null
 
@@ -212,10 +216,10 @@ class DefinitionResolverFallbackTest {
             } throws RuntimeException("Network error")
 
             val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position).foundOrNull() }
+            val lookup = runBlocking { resolver.findDefinitionAt(documentUri, position) }
 
             // Should catch exception and fallback
-            assertEquals(null, result)
+            assertIs<DefinitionResolver.DefinitionLookup.NotFound>(lookup, "lookup: $lookup")
         }
 
         @Test
@@ -224,12 +228,13 @@ class DefinitionResolverFallbackTest {
             val position = Position(10, 10)
 
             val astVisitor = mockk<GroovyAstModel>()
-            val symbolTable = mockk<SymbolTable>()
+            val symbolTable = mockk<SymbolTable>(relaxed = true)
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
 
             val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
             every { astVisitor.getAllClassNodes() } returns emptyList()
+            every { astVisitor.getUri(any()) } returns null
             every { compilationService.getAllSymbolStorages() } returns emptyMap()
             every { compilationService.getAst(documentUri) } returns null
 
@@ -239,11 +244,11 @@ class DefinitionResolverFallbackTest {
             // Null service - backward compatibility mode
             val resolver =
                 DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigator = null)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position).foundOrNull() }
+            val lookup = runBlocking { resolver.findDefinitionAt(documentUri, position) }
 
             // No source nav attempted, fall through to binary result
-            // Since it's a jar: URI, it returns null
-            assertEquals(null, result)
+            // Since it's a jar: URI, it is not found
+            assertIs<DefinitionResolver.DefinitionLookup.NotFound>(lookup, "lookup: $lookup")
         }
     }
 
@@ -284,7 +289,8 @@ class DefinitionResolverFallbackTest {
             every { otherAst.classes } returns listOf(dateHelperNode)
 
             val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService)
-            val result = runBlocking { resolver.findDefinitionAt(currentUri, position).foundOrNull() }
+            val lookup = runBlocking { resolver.findDefinitionAt(currentUri, position) }
+            val result = assertIs<DefinitionResolver.DefinitionLookup.Found>(lookup).result
 
             assertTrue(result is DefinitionResolver.DefinitionResult.Source)
             val sourceResult = result as DefinitionResolver.DefinitionResult.Source
@@ -340,7 +346,8 @@ class DefinitionResolverFallbackTest {
             )
 
             val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService)
-            val result = runBlocking { resolver.findDefinitionAt(documentUri, position).foundOrNull() }
+            val lookup = runBlocking { resolver.findDefinitionAt(documentUri, position) }
+            val result = assertIs<DefinitionResolver.DefinitionLookup.Found>(lookup).result
 
             assertTrue(result is DefinitionResolver.DefinitionResult.Binary)
             val binaryResult = result as DefinitionResolver.DefinitionResult.Binary

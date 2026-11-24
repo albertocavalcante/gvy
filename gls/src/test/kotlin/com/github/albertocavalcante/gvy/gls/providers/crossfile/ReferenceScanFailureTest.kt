@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.crossfile
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
@@ -59,9 +58,10 @@ class ReferenceScanFailureTest {
                 Range(Position(1, 4), Position(1, 20)),
                 Range(Position(1, 9), Position(1, 15)),
             )
-            assertFailsWith<GroovyLspException> {
+            val error = assertFailsWith<ResponseErrorException> {
                 CallHierarchyProvider(compilation).incomingCalls(CallHierarchyIncomingCallsParams(item))
             }
+            assertEquals(ResponseErrorCode.InternalError.value, error.responseError.code)
         }
     }
 

@@ -21,6 +21,7 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.Jenk
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.LocalSymbolResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.MethodResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.ResolutionContext
+import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.ResolutionError
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SemanticDBResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SymbolResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
@@ -114,14 +115,14 @@ class DefinitionResolver(
     sealed interface DefinitionLookup {
         data class Found(val result: DefinitionResult) : DefinitionLookup
 
-        /** No strategy resolved the symbol; [reason] is the last strategy's explanation. */
-        data class NotFound(val reason: String) : DefinitionLookup
+        /** No strategy resolved the symbol; [error] is the last strategy's miss. */
+        data class NotFound(val error: ResolutionError) : DefinitionLookup
 
-        /** The lookup could not be carried out; the [error] class says why (invalid position, no node, ...). */
-        data class Failed(val error: GroovyLspException) : DefinitionLookup
-
-        /** The definition when [Found], otherwise null; for callers that treat both other outcomes as "none". */
-        fun foundOrNull(): DefinitionResult? = (this as? Found)?.result
+        /**
+         * The lookup could not be carried out: [error] is a typed [GroovyLspException] (invalid position, no node,
+         * ...) or the throwable a resolution strategy raised. Its class says why.
+         */
+        data class Failed(val error: Throwable) : DefinitionLookup
     }
 
     /**
@@ -280,7 +281,8 @@ class DefinitionResolver(
         return resolutionPipeline.resolve(context).fold(
             ifLeft = { error ->
                 logger.debug { "Resolution failed [${error.source}]: ${error.reason}" }
-                DefinitionLookup.NotFound(error.reason)
+                // A cause means a strategy threw (see SymbolResolutionStrategy.pipeline): a failure, not a miss.
+                error.cause?.let { DefinitionLookup.Failed(it) } ?: DefinitionLookup.NotFound(error)
             },
             ifRight = { DefinitionLookup.Found(it) },
         )

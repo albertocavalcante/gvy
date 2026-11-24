@@ -49,7 +49,8 @@ enum class ReferenceScanPhase(val label: String) {
  */
 class ReferenceScanFailedException(val phase: ReferenceScanPhase, cause: Throwable) :
     SymbolResolutionException(
-        "Reference scan of ${phase.label} failed, so the references would be incomplete: ${cause.message}",
+        "Reference scan of ${phase.label} failed, so the references would be incomplete: " +
+            (cause.message ?: cause::class.simpleName),
         cause,
     )
 
