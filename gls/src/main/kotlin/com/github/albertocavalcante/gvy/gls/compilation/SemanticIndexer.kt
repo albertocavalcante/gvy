@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
@@ -46,7 +47,7 @@ class SemanticIndexer(
     },
 ) {
     /** [generation]: the [retireAllPublications] generation of the publication that stored it. */
-    private class Entry(val contentHash: String, val phase: Int, val generation: Long)
+    private class Entry(val contentHash: String, val phase: Int, val generation: AnalysisGeneration)
 
     private class State {
         @Volatile var entry: Entry? = null
@@ -62,7 +63,7 @@ class SemanticIndexer(
         /** Order in which publications began (callers read or capture their source around [begin]). */
         val ticket: Long,
         /** The [retireAllPublications] generation it began in; any later one makes it stale. */
-        val generation: Long,
+        val generation: AnalysisGeneration,
         private val finish: () -> Unit,
     ) : AutoCloseable {
         private val closed = AtomicBoolean()
@@ -86,7 +87,7 @@ class SemanticIndexer(
     private val tickets = AtomicLong()
 
     // Read under [swap]'s read lock, bumped under its write lock: see [retireAllPublications]
-    @Volatile private var generation = 0L
+    @Volatile private var generation = AnalysisGeneration.INITIAL
 
     /** Acquire before reading/enqueueing source. Removal invalidates every outstanding publication. */
     internal fun begin(uri: URI): Publication {
@@ -238,7 +239,7 @@ class SemanticIndexer(
      * again. Waits for in-flight writes, as [clear].
      */
     internal fun retireAllPublications() {
-        swap.write { generation++ }
+        swap.write { generation = generation.next() }
     }
 
     fun remove(uri: URI) {

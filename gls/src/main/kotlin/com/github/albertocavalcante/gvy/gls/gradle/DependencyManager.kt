@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.build.maven.MavenFailureAnalyzer
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -59,7 +60,7 @@ class DependencyManager(
     )
 
     private data class Attempt(
-        val generation: Long,
+        val generation: AnalysisGeneration,
         val request: Request,
         val enableFileWatching: Boolean,
         val cancellation: ResolutionCancellation = ResolutionCancellation(),
@@ -70,7 +71,7 @@ class DependencyManager(
     private val state = AtomicReference(State.NOT_STARTED)
     private val dependencies = AtomicReference<List<Path>>(emptyList())
     private val sourceDirs = AtomicReference<List<Path>>(emptyList())
-    private var generation = 0L
+    private var generation = AnalysisGeneration.INITIAL
 
     @Volatile
     private var currentAttempt: Attempt? = null
@@ -161,6 +162,8 @@ class DependencyManager(
     ): StartDecision = synchronized(lock) {
         if (currentAttempt !== expected) return@synchronized StartDecision.Retry
         if (expectedWatcher != null && watcherToken !== expectedWatcher) return@synchronized StartDecision.Stop
+        // Bumped before any mutation: next() throws on overflow, which must not leave the attempt half-installed.
+        generation = generation.next()
         // Invalidate the old watcher before publishing the new attempt, so a stale event cannot pair
         // its token with an attempt from another workspace.
         val watcher = if (currentWorkspaceRoot != request.workspaceRoot) detachWatcher() else null
@@ -169,7 +172,6 @@ class DependencyManager(
             sourceDirs.set(emptyList())
             currentBuildToolName = null
         }
-        generation++
         val previousJob = resolutionJob
         currentWorkspaceRoot = request.workspaceRoot
         state.set(State.IN_PROGRESS)
@@ -377,7 +379,7 @@ class DependencyManager(
             expected?.cancellation?.cancel()
             val effects = synchronized(lock) {
                 if (currentAttempt !== expected) return@synchronized null
-                generation++
+                generation = generation.next()
                 val oldJob = resolutionJob
                 resolutionJob = null
                 val watcher = detachWatcher()

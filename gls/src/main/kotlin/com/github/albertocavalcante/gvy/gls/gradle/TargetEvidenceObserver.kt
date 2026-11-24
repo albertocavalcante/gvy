@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.gradle
 import com.github.albertocavalcante.gvy.build.BuildTool
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import java.nio.file.Path
@@ -16,7 +17,7 @@ import java.nio.file.Path
  * cancellation should propagate. [generation] is the dependency attempt that requested it (#1235).
  */
 fun interface TargetEvidenceObserver {
-    suspend fun observe(tool: BuildTool, workspaceRoot: Path, generation: Long): TargetDependencyEvidence
+    suspend fun observe(tool: BuildTool, workspaceRoot: Path, generation: AnalysisGeneration): TargetDependencyEvidence
 }
 
 private val logger = KotlinLogging.logger {}
@@ -27,7 +28,7 @@ private const val NANOS_PER_MILLI = 1_000_000L
 internal suspend fun TargetEvidenceObserver.observeOrLegacy(
     tool: BuildTool,
     workspaceRoot: Path,
-    generation: Long,
+    generation: AnalysisGeneration,
 ): TargetDependencyEvidence {
     val started = System.nanoTime()
     val evidence = try {
@@ -51,7 +52,7 @@ internal suspend fun WorkspaceResolution.withObservedTargets(
     observer: TargetEvidenceObserver?,
     tool: BuildTool?,
     workspaceRoot: Path,
-    generation: Long,
+    generation: AnalysisGeneration,
 ): WorkspaceResolution {
     if (observer == null || tool == null || !isUsable) return this
     return copy(targetDependencies = observer.observeOrLegacy(tool, workspaceRoot, generation))

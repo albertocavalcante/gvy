@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.gvy.source.OwnershipEpoch
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
@@ -48,7 +49,7 @@ class ArtifactOwnership {
     /** Ownership of [uri]'s artifacts as of one generation. */
     class Ticket internal constructor(
         val uri: URI,
-        internal val epoch: Long,
+        internal val epoch: OwnershipEpoch,
         // Holds the file's state reachable for as long as this ticket is
         internal val state: FileState,
         internal val stamp: Long,
@@ -56,7 +57,7 @@ class ArtifactOwnership {
     )
 
     private val monitor = Any()
-    private var epoch = 0L
+    private var epoch = OwnershipEpoch.INITIAL
     private var lastStamp = 0L
 
     // Weak: an entry outlives its file's work only until the collector clears it (see the class KDoc)
@@ -138,7 +139,7 @@ class ArtifactOwnership {
     /** Makes every outstanding ticket stale, then runs [cleanup] before another ticket can be taken. */
     internal fun retireAll(cleanup: () -> Unit) {
         synchronized(monitor) {
-            epoch++
+            epoch = epoch.next()
             // Swapped, not cleared: O(1) under the monitor. The old epoch's tickets are stale by epoch already.
             states = HashMap()
             committedOrders = HashMap()

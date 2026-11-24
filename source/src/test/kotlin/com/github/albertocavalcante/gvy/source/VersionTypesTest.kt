@@ -26,4 +26,26 @@ class VersionTypesTest {
         assertNull(DocumentVersion.ofOrNull(null))
         assertEquals(DocumentVersion.of(0), DocumentVersion.ofOrNull(0))
     }
+
+    @Test
+    fun `generations start at the initial one and only move forward`() {
+        val first = AnalysisGeneration.INITIAL
+        val second = first.next()
+        assertEquals(AnalysisGeneration.INITIAL, first)
+        assertNotEquals(first, second)
+        assertTrue(first < second)
+        assertEquals(second, AnalysisGeneration.INITIAL.next())
+        assertEquals(1L, second.toLong())
+        assertEquals("AnalysisGeneration(1)", second.toString())
+    }
+
+    @Test
+    fun `epochs start at the initial one and only move forward`() {
+        val first = OwnershipEpoch.INITIAL
+        val second = first.next()
+        assertEquals(OwnershipEpoch.INITIAL, first)
+        assertNotEquals(first, second)
+        assertTrue(first < second)
+        assertEquals("OwnershipEpoch(1)", second.toString())
+    }
 }

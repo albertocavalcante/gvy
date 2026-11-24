@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -61,7 +62,7 @@ class DiagnosticsOrchestrator(
     private data class Runtime(
         val configuration: ServerConfiguration,
         val service: DiagnosticsService,
-        val generation: Long = 0,
+        val generation: AnalysisGeneration = AnalysisGeneration.INITIAL,
     )
 
     private class Run(
@@ -97,7 +98,7 @@ class DiagnosticsOrchestrator(
         val recipient = client()
         val (retiredJobs, retiredRuns) = documentProvider.withLifecycleLock {
             synchronized(publicationLock) {
-                runtime = Runtime(configuration, service, Math.incrementExact(runtime.generation))
+                runtime = Runtime(configuration, service, runtime.generation.next())
                 clearConfigurationNotices(
                     recipient,
                     null,
@@ -234,7 +235,7 @@ class DiagnosticsOrchestrator(
                 run.uri.toString(),
                 run.snapshot.version?.value,
                 run.id,
-                run.settings.generation,
+                run.settings.generation.toLong(),
                 allDiagnostics.take(run.settings.configuration.maxNumberOfProblems.coerceAtLeast(0)),
                 cohort,
                 collected.failures,
@@ -486,7 +487,7 @@ class DiagnosticsOrchestrator(
         val recipient = client()
         val (jobs, retiredRuns) = documentProvider.withLifecycleLock {
             synchronized(publicationLock) {
-                runtime = runtime.copy(generation = Math.incrementExact(runtime.generation))
+                runtime = runtime.copy(generation = runtime.generation.next())
                 clearConfigurationNotices(
                     recipient,
                     null,

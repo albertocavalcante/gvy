@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.build.DependencyProvenance
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyProducer
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -21,12 +22,15 @@ class GradleTargetObserver(
     private val producer: GradleScopedDependencyProducer,
     private val timeout: Duration = DEFAULT_TIMEOUT,
 ) : TargetEvidenceObserver {
-    override suspend fun observe(tool: BuildTool, workspaceRoot: Path, generation: Long): TargetDependencyEvidence =
-        if (tool is GradleBuildTool) {
-            producer.resolve(workspaceRoot, DependencyProvenance(PRODUCER, generation), timeout)
-        } else {
-            TargetDependencyEvidence.Legacy
-        }
+    override suspend fun observe(
+        tool: BuildTool,
+        workspaceRoot: Path,
+        generation: AnalysisGeneration,
+    ): TargetDependencyEvidence = if (tool is GradleBuildTool) {
+        producer.resolve(workspaceRoot, DependencyProvenance(PRODUCER, generation.toLong()), timeout)
+    } else {
+        TargetDependencyEvidence.Legacy
+    }
 
     companion object {
         /** The provenance producer name; generations are this manager's dependency attempts. */

@@ -7,9 +7,9 @@ package com.github.albertocavalcante.gvy.source
  * The version a client gave an open document, as sent in `textDocument/didOpen` and `didChange`.
  *
  * Versions grow within one open/close lifecycle of a document and may restart in the next, so an order
- * between two versions means something only for the same lifecycle. It is not a server-side generation or
- * an ownership epoch: those counters are planned as separate types (#2394) and will not compare or convert
- * into this one.
+ * between two versions means something only for the same lifecycle. It is not a server-side
+ * [AnalysisGeneration] or an [OwnershipEpoch]: those counters are separate types that do not compare or
+ * convert into this one.
  * The raw number enters and leaves only at the protocol boundary ([of], [value]); the protocol allows any
  * [Int], so there is no range check.
  */
