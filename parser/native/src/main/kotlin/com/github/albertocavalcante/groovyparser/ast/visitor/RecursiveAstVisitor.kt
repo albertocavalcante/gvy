@@ -183,7 +183,9 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         track(classNode) {
             visitAnnotations(classNode)
             // Track type references in the class header so navigation works for `extends` and `implements`.
-            classNode.superClass?.let {
+            // The unresolved superclass is the use in this header (resolved, it redirects to the class); the resolved
+            // one is the superclass's declaration, positioned in whichever file declares it, never this header.
+            classNode.unresolvedSuperClass?.let {
                 track(it) { /* no-op */ }
             }
             classNode.interfaces?.forEach { iface ->

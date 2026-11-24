@@ -279,22 +279,29 @@ class CrossFileRenameGuardTest {
         assertRefused(uri, b, "new A('x')", "'A'", "A.groovy", "not supported yet")
     }
 
-    // FIXME(#2438): renaming from a file whose class extends a class of another file fails
-    //   with ContentModified ("Source changed or is unavailable"), not the guard's refusal: the visitor tracks the
-    //   resolved superclass, whose positions are in the other file, as a type use in this one, and strict narrowing
-    //   cannot find the name there. Nothing is edited, so it is safe, but the reason is wrong. This test pins that.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
-    fun `a class renamed from a file that also subclasses it reports a changed source`() {
+    fun `a class renamed from a file that also subclasses it reports the guard's refusal`() {
         val uri = workspace(mapOf("A.groovy" to constructed, "B.groovy" to constructing), open = "B.groovy")
 
-        val error = runCatching {
-            runBlocking { provider.provideRename(uri.toString(), positionOf(constructing, "A('x', 1)"), "Z") }
-        }.exceptionOrNull()
+        for (needle in listOf("A('x', 1)", "A {\n    C()")) {
+            assertRefused(uri, constructing, needle, "'A'", "A.groovy", "not supported yet")
+        }
+    }
 
-        val response = assertNotNull(error as? ResponseErrorException, "expected an error, got $error").responseError
-        assertEquals(ResponseErrorCode.ContentModified.value, response.code)
-        assertEquals("Source changed or is unavailable during rename: $uri", response.message)
+    @Test
+    fun `a subclass's file tracks its supertype use at that use, never the other file's declaration`() {
+        val uri = workspace(mapOf("A.groovy" to constructed, "B.groovy" to constructing), open = "B.groovy")
+        val parsed = checkNotNull(service.getParseResult(uri))
+        val module = checkNotNull(parsed.ast)
+        val foreign = parsed.astModel.getNodes(uri).filterIsInstance<ClassNode>()
+            .filter { node -> node.redirect() === node && module.classes.none { it === node } }
+        val use = positionOf(constructing, "A {\n    C()")
+        val tracked = parsed.astModel.getNodeAt(uri, use.line, use.character)
+
+        assertEquals(emptyList(), foreign.map { "${it.name}@${it.lineNumber}:${it.columnNumber}" })
+        val supertype = assertNotNull(tracked as? ClassNode, "the supertype use at $use: $tracked")
+        assertEquals("A", supertype.redirect().name)
+        assertEquals(use.line + 1 to use.character + 1, supertype.lineNumber to supertype.columnNumber)
     }
 
     @Test

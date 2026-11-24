@@ -91,8 +91,35 @@ class GroovyTokenIndex private constructor(
 
     fun isInCommentOrString(offset: Int): Boolean = isInComment(offset) || isInString(offset)
 
+    /**
+     * Every place [source] spells [name] as a whole token the compiler reads as a name, in source order: each code
+     * token whose text is exactly [name] (context [TokenContext.Code]), and the name of each GString path segment
+     * (`"$x.name"`), which the lexer keeps as one `.name` token (context [TokenContext.GString], span after the dot).
+     * Spans are UTF-16 and half-open. Strings and comments never match. Null unless the lexer pass was complete, as
+     * an incomplete pass may have missed some. [source] must be the text this index was built from.
+     */
+    fun nameOccurrences(source: CharSequence, name: String): List<TokenSpan>? {
+        if (!complete || name.isEmpty()) return null
+        return diagnosticTokens.mapNotNull { token ->
+            when {
+                token.channel != Token.DEFAULT_CHANNEL -> null
+                token.context == TokenContext.Code && spells(source, name, token.start, token.end) ->
+                    TokenSpan(token.start, token.end, TokenContext.Code)
+                token.symbolicName == GSTRING_PATH_PART && source.getOrNull(token.start) == '.' &&
+                    spells(source, name, token.start + 1, token.end) ->
+                    TokenSpan(token.start + 1, token.end, TokenContext.GString)
+                else -> null
+            }
+        }
+    }
+
     companion object {
         private val logger = KotlinLogging.logger {}
+
+        private const val GSTRING_PATH_PART = "GStringPathPart"
+
+        private fun spells(source: CharSequence, name: String, start: Int, end: Int): Boolean =
+            end - start == name.length && end <= source.length && source.regionMatches(start, name, 0, name.length)
 
         private val LINE_COMMENT_NAMES = setOf("SINGLE_LINE_COMMENT", "SH_COMMENT")
         private val STRING_LITERAL_NAMES = setOf("StringLiteral", "SQ_STRING", "DQ_STRING", "TQS", "StringLiteralPart")

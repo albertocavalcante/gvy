@@ -54,8 +54,11 @@ class NavigationScenarioAssertionsTest {
     private fun response(locations: List<Location>): Either<List<Location>, List<LocationLink>> =
         Either.forLeft(locations)
 
+    /** Only scenarios still declaring an `xfail`; a fixed one keeps its assertions above and loses its block. */
     @TestFactory
-    fun `known navigation failures still match their declared xfail`(): List<DynamicTest> = cases.map { case ->
+    fun `known navigation failures still match their declared xfail`(): List<DynamicTest> = cases.filter { case ->
+        ScenarioAssertionFixture(case.file, workspaceRoot).definition.scenario.xfail != null
+    }.map { case ->
         dynamicTest("known navigation failures: ${case.file}") {
             val fixture = ScenarioAssertionFixture(case.file, workspaceRoot)
             val locations = if (case.file in wrongFileFailures) {
@@ -90,7 +93,6 @@ class NavigationScenarioAssertionsTest {
 
     companion object {
         private val wrongFileFailures = setOf(
-            "repro-definition-extends-imported.yaml",
             "repro-definition-parameter-type.yaml",
         )
         private val cases = listOf(

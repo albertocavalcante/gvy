@@ -55,6 +55,10 @@ internal object ClassRenameConstructors {
                 "Cannot rename '$name': the name of its constructor at line ${located.line} " +
                     "cannot be located exactly in the source",
             )
+            is ConstructorNames.Compact -> refuse(
+                "Cannot rename '$name': renaming a record with a compact constructor (line ${located.line}) " +
+                    "is not supported yet",
+            )
         }
     }
 
@@ -110,6 +114,9 @@ internal sealed interface ConstructorNames {
 
     /** A constructor, at 1-based [line], whose name cannot be located exactly; renaming would leave it stale. */
     data class Unlocatable(val line: Int) : ConstructorNames
+
+    /** A record's compact constructor, at 1-based [line]: the AST keeps no node for its name, so it is not edited. */
+    data class Compact(val line: Int) : ConstructorNames
 }
 
 /**
@@ -124,7 +131,8 @@ internal sealed interface ConstructorNames {
  * Constructors without a source position (the default constructor, ones `@TupleConstructor`, `@InheritConstructors`
  * and similar transforms add) have no text to edit and are skipped. A record's compact constructor (`Name { ... }`)
  * has no node at all: the parser folds its body into a `pre` closure of `@TupleConstructor` and drops the name, and
- * the transform keeps that member (emptied), so a record whose `@TupleConstructor` has `pre` is unlocatable.
+ * the transform keeps that member (emptied), so a record whose `@TupleConstructor` has `pre` is
+ * [ConstructorNames.Compact].
  */
 internal object ConstructorNameReader {
     fun locate(type: ClassNode, name: String, source: TextIndex, tokens: GroovyTokenIndex?): ConstructorNames {
@@ -133,7 +141,7 @@ internal object ConstructorNameReader {
         val code = tokens?.takeIf { it.hasCompleteLexicalCoverage }?.let { CodeText(source, it) }
         return when {
             hasCompactConstructor(primary) ->
-                ConstructorNames.Unlocatable(code?.compactConstructorLine(primary, name) ?: primary.lineNumber)
+                ConstructorNames.Compact(code?.compactConstructorLine(primary, name) ?: primary.lineNumber)
             positioned.isEmpty() -> ConstructorNames.Located(emptyList())
             code == null -> ConstructorNames.Unlocatable(positioned.first().lineNumber)
             else -> {

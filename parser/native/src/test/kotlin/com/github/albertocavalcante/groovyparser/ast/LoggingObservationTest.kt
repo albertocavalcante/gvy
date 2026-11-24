@@ -107,5 +107,11 @@ class LoggingObservationTest {
             hierarchyReads++
             throw NoClassDefFoundError("groovy/lang/GroovyObject")
         }
+
+        // The visitor reads the superclass as the header spells it; a lazily initialized node loads it there too.
+        override fun getUnresolvedSuperClass(useRedirect: Boolean): ClassNode {
+            hierarchyReads++
+            throw NoClassDefFoundError("groovy/lang/GroovyObject")
+        }
     }
 }
