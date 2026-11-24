@@ -7,8 +7,10 @@ import com.github.albertocavalcante.gvy.gls.services.ClassFileFixtures.ACC_MODUL
 import com.github.albertocavalcante.gvy.gls.services.ClassFileFixtures.ACC_PUBLIC_SUPER
 import com.github.albertocavalcante.gvy.gls.services.ClassFileFixtures.ACC_SYNTHETIC
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
@@ -190,5 +192,59 @@ class JvmClasspathIndexTest {
         val names = index(jar).names()
 
         assertThat(names).contains("demo.\uD835\uDD38", "demo.Caf\u00E9")
+    }
+
+    private fun symlinkOrSkip(link: Path, target: Path) {
+        try {
+            Files.createSymbolicLink(link, target)
+        } catch (e: UnsupportedOperationException) {
+            assumeTrue(false, "symbolic links are not supported: $e")
+        } catch (e: IOException) {
+            assumeTrue(false, "symbolic links are not permitted: $e")
+        }
+    }
+
+    @Test
+    fun `indexes a class directory reached through a symbolic link`() {
+        val real = Files.createDirectories(tempDir.resolve("real/demo"))
+        Files.write(real.resolve("Linked.class"), classOf("demo/Linked"))
+        val link = tempDir.resolve("link")
+        symlinkOrSkip(link, tempDir.resolve("real"))
+
+        assertThat(index(tempDir.resolve("real")).names()).contains("demo.Linked")
+        assertThat(index(link).names()).contains("demo.Linked")
+    }
+
+    @Test
+    fun `indexes a jar reached through a symbolic link`() {
+        val jar = jarOf("demo/Linked.class" to classOf("demo/Linked"))
+        val link = tempDir.resolve("linked.jar")
+        symlinkOrSkip(link, jar)
+
+        assertThat(index(link).names()).contains("demo.Linked")
+    }
+
+    @Test
+    fun `a broken symbolic link entry does not stop the index`() {
+        val broken = tempDir.resolve("broken")
+        symlinkOrSkip(broken, tempDir.resolve("nowhere"))
+        val good = jarOf("demo/Good.class" to classOf("demo/Good"))
+
+        assertThat(index(broken, good).names()).contains("demo.Good")
+    }
+
+    @Test
+    fun `rejects an entry whose path spells the package with dots`() {
+        val jar = jarOf(
+            "demo.Dotted.class" to classOf("demo/Dotted"),
+            "demo/Plain.class" to classOf("demo/Plain"),
+            "META-INF/versions/9/demo.Versioned.class" to classOf("demo/Versioned"),
+            "demo/Outer\$Nested.class" to classOf("demo/Outer\$Nested"),
+        )
+
+        val names = index(jar).names()
+
+        assertThat(names).contains("demo.Plain", "demo.Outer\$Nested")
+        assertThat(names).doesNotContain("demo.Dotted", "demo.Versioned")
     }
 }

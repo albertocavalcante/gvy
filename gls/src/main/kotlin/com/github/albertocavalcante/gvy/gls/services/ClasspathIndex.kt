@@ -90,7 +90,13 @@ class JvmClasspathIndex : ClasspathIndex {
         }
     }
 
-    private fun scanDirectory(root: Path, names: ClassNames) {
+    /**
+     * Walks the resolved root: `Files.walk` does not descend into a symbolic link given as the start, and build
+     * output directories are often reached through one. Links below the root are not followed, which also rules
+     * out link cycles.
+     */
+    private fun scanDirectory(linkOrRoot: Path, names: ClassNames) {
+        val root = linkOrRoot.toRealPath()
         Files.walk(root).use { paths ->
             paths.filter { Files.isRegularFile(it) }.forEach { file ->
                 try {
@@ -159,25 +165,10 @@ class JvmClasspathIndex : ClasspathIndex {
         }
 
         fun add(resource: String, declaredSize: Long, openClassFile: () -> InputStream) {
-            val fullName = classNameOf(resource) ?: return
+            val internalPath = classPathOf(resource) ?: return
+            val fullName = internalPath.replace('/', '.')
             if (fullName in found) return
-            if (declaredSize > MAX_CLASS_FILE_BYTES) return skip(SkipReason.OVERSIZED)
-            val expected = internalName(fullName) ?: return skip(SkipReason.NAME_MISMATCH)
-            val read = try {
-                openClassFile().use {
-                    readClassFile(ClassFileCursor(it, buffer, MAX_CLASS_FILE_BYTES), expected)
-                }
-            } catch (e: ClassFileTooLargeException) {
-                logger.debug(e) { "Oversized class $resource" }
-                return skip(SkipReason.OVERSIZED)
-            } catch (e: IOException) {
-                logger.debug(e) { "Unreadable class $resource" }
-                return skip(SkipReason.UNREADABLE)
-            } catch (e: UncheckedIOException) {
-                logger.debug(e) { "Unreadable class $resource" }
-                return skip(SkipReason.UNREADABLE)
-            }
-            when (read) {
+            when (val read = inspect(resource, internalPath, declaredSize, openClassFile)) {
                 is ClassFileRead.Rejected -> skip(read.reason)
                 is ClassFileRead.Accepted -> if (read.flags.isIndexable) {
                     // A nested class is listed by its own name, as `Map.Entry` is `Entry`.
@@ -186,11 +177,33 @@ class JvmClasspathIndex : ClasspathIndex {
             }
         }
 
+        private fun inspect(
+            resource: String,
+            internalPath: String,
+            declaredSize: Long,
+            openClassFile: () -> InputStream,
+        ): ClassFileRead {
+            if (declaredSize > MAX_CLASS_FILE_BYTES) return ClassFileRead.Rejected(SkipReason.OVERSIZED)
+            val expected = modifiedUtf8(internalPath) ?: return ClassFileRead.Rejected(SkipReason.NAME_MISMATCH)
+            return try {
+                openClassFile().use { readClassFile(ClassFileCursor(it, buffer, MAX_CLASS_FILE_BYTES), expected) }
+            } catch (e: ClassFileTooLargeException) {
+                logger.debug(e) { "Oversized class $resource" }
+                ClassFileRead.Rejected(SkipReason.OVERSIZED)
+            } catch (e: IOException) {
+                logger.debug(e) { "Unreadable class $resource" }
+                ClassFileRead.Rejected(SkipReason.UNREADABLE)
+            } catch (e: UncheckedIOException) {
+                logger.debug(e) { "Unreadable class $resource" }
+                ClassFileRead.Rejected(SkipReason.UNREADABLE)
+            }
+        }
+
         /** The name as the constant pool spells it, in modified UTF-8 (JVMS §4.4.7); null if it cannot be encoded. */
-        private fun internalName(fullName: String): ByteArray? {
+        private fun modifiedUtf8(internalPath: String): ByteArray? {
             val bytes = ByteArrayOutputStream()
             try {
-                DataOutputStream(bytes).writeUTF(fullName.replace('.', '/'))
+                DataOutputStream(bytes).writeUTF(internalPath)
             } catch (_: UTFDataFormatException) {
                 return null // longer than a constant pool entry can be, so no class has it
             }
@@ -217,18 +230,19 @@ class JvmClasspathIndex : ClasspathIndex {
         private val ARCHIVE_EXTENSIONS = setOf("jar", "zip")
 
         /**
-         * The qualified class name an archive resource path stands for, or null when it is not a class a Java
-         * program can load from this runtime: a descriptor, another META-INF resource, or a versioned copy for
-         * a release newer than the running one.
+         * The slash-separated internal name (no suffix) an archive resource path stands for, or null when it
+         * is not a class a Java program can load from this runtime: a descriptor, another META-INF resource, or a
+         * versioned copy for a release newer than the running one.
          */
-        internal fun classNameOf(resource: String): String? {
+        internal fun classPathOf(resource: String): String? {
             if (!resource.endsWith(CLASS_SUFFIX) || resource.substringAfterLast('/') in DESCRIPTOR_FILES) return null
             val path = when {
                 resource.startsWith(VERSIONS) -> versionedPath(resource) ?: return null
                 resource.startsWith(META_INF) -> return null
                 else -> resource
             }
-            return path.removeSuffix(CLASS_SUFFIX).replace('/', '.')
+            // Dots are kept: they are not legal in an internal name, so a dotted path fails the name check.
+            return path.removeSuffix(CLASS_SUFFIX)
         }
 
         private fun versionedPath(resource: String): String? {
