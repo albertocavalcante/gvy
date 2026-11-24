@@ -22,6 +22,12 @@ import java.net.URI
  */
 class NullSafetyRule : AbstractDiagnosticRule() {
 
+    private companion object {
+        // Matches: list.find { }.value  OR  list.findAll { }.name  OR  x.collect { }.size
+        private val UNSAFE_ACCESS_PATTERN =
+            Regex("""(\w+)\.(get|find|findAll|collect|first|last)\s*[{(].*?[})]\.(\w+)""")
+    }
+
     override val id = "groovy-null-safety"
 
     override val description = "Detect potentially unsafe null handling in Groovy code"
@@ -33,15 +39,11 @@ class NullSafetyRule : AbstractDiagnosticRule() {
     override val enabledByDefault = false // Disabled by default as it can be noisy
 
     override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
-        // Pattern: method calls or field access that might be on null values
-        // Look for cases where collection methods are chained without null-safe operators
-        // Matches: list.find { }.value  OR  list.findAll { }.name  OR  x.collect { }.size
-        val unsafeAccessPattern = Regex("""(\w+)\.(get|find|findAll|collect|first|last)\s*[{(].*?[})]\.(\w+)""")
-
+        // Method calls or field access on collection results that might be null
         // Build diagnostics for potentially unsafe access patterns
         return findPatternMatches(
             content = content,
-            pattern = unsafeAccessPattern,
+            pattern = UNSAFE_ACCESS_PATTERN,
             excludeComments = true,
             excludeStrings = true,
         ).map { lineMatch ->

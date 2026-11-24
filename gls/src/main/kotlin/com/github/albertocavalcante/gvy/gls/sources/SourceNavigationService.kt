@@ -36,6 +36,9 @@ class SourceNavigationService(
     private companion object {
         private const val MIN_MAVEN_COORDINATE_PARTS = 3
 
+        // Last dash followed by a version-like string: artifact-version[-classifier]
+        private val FILENAME_VERSION = Regex("-([0-9]+\\..*?)(-[a-zA-Z]+)?$")
+
         // URI scheme and prefix constants
         private const val SCHEME_JRT = "jrt"
         private const val JAR_FILE_PREFIX = "jar:file:"
@@ -467,8 +470,7 @@ class SourceNavigationService(
         val baseName = fileName.removeSuffix(".jar")
 
         // Find the last dash followed by a version-like string
-        val versionPattern = Regex("-([0-9]+\\..*?)(-[a-zA-Z]+)?$")
-        val match = versionPattern.find(baseName) ?: return null
+        val match = FILENAME_VERSION.find(baseName) ?: return null
 
         val version = match.groupValues[1]
         val artifactId = baseName.substringBefore("-$version")

@@ -11,6 +11,8 @@ import com.github.albertocavalcante.groovyparser.ast.groovydoc.GroovydocDescript
  * This bridges Phase 8 (GroovyDoc parser) with the hover/documentation system.
  */
 object GroovyDocAdapter {
+    private val SENTENCE_END = Regex("""[.?!](?:\s+|\s*$)""")
+
     /**
      * Converts a parsed Groovydoc to the Documentation model.
      *
@@ -113,8 +115,7 @@ object GroovyDocAdapter {
         val trimmed = description.trim()
 
         // Find first sentence ending (. ? !) followed by whitespace or end of string
-        val sentenceEndRegex = Regex("""[.?!](?:\s+|\s*$)""")
-        val sentenceEndMatch = sentenceEndRegex.find(trimmed)
+        val sentenceEndMatch = SENTENCE_END.find(trimmed)
 
         // Find first paragraph break
         val paragraphBreakIndex = trimmed.indexOf("\n\n")

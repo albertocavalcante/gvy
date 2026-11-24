@@ -491,6 +491,8 @@ private fun newJavaSourceParser(): JavaParser = JavaParser(
     },
 )
 
+private val WHITESPACE_RUN = Regex("\\s+")
+
 /** Unclosed markup is literal text; do not rescan its entire remaining suffix for each opening character. */
 private fun stripDocumentationMarkup(text: String): String = buildString(text.length) {
     var offset = 0
@@ -521,7 +523,7 @@ private fun extractFirstSentence(text: String): String {
     if (text.isBlank()) return ""
 
     val cleanText = stripDocumentationMarkup(text)
-        .replace(Regex("\\s+"), " ")
+        .replace(WHITESPACE_RUN, " ")
         .trim()
     val sentenceEnd = cleanText.indexOfFirst { it == '.' || it == '!' || it == '?' }
     return if (sentenceEnd > 0 && sentenceEnd < cleanText.length - 1) {

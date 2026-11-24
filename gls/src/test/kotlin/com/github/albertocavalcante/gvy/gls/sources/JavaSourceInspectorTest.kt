@@ -211,6 +211,29 @@ class JavaSourceInspectorTest {
         }
 
         @Test
+        fun `collapses whitespace across lines when extracting the Javadoc summary`() {
+            val javaFile = tempDir.resolve("com/example/Wrapped.java")
+            Files.createDirectories(javaFile.parent)
+            Files.writeString(
+                javaFile,
+                """
+                package com.example;
+
+                /**
+                 * First sentence that
+                 *   wraps   across lines. Second sentence.
+                 */
+                public class Wrapped {
+                }
+                """.trimIndent(),
+            )
+
+            val result = inspector.inspectClass(javaFile, "com.example.Wrapped")
+
+            assertEquals("First sentence that wraps across lines.", result!!.documentation.summary)
+        }
+
+        @Test
         fun `returns null for non-existent file`() {
             val result = inspector.inspectClass(tempDir.resolve("nonexistent.java"), "Foo")
             org.junit.jupiter.api.Assertions.assertNull(result)

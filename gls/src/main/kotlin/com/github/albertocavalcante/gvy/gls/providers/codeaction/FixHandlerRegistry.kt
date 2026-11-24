@@ -149,6 +149,12 @@ object FixHandlerRegistry {
 // Fix Handler Implementations
 // ============================================================================
 
+/** Zero-argument getter call, e.g. `getFoo()`. */
+private val GETTER_CALL = Regex("""^get([A-Z].*)?\(\)$""")
+
+/** Setter call with one argument, e.g. `setFoo(value)`. */
+private val SETTER_CALL = Regex("""^set([A-Z].*?)\((.+)\)$""")
+
 /**
  * Fix handler for TrailingWhitespace rule.
  * Removes trailing whitespace from the affected line.
@@ -525,8 +531,7 @@ private fun fixUnnecessaryGetter(context: FixContext): TextEdit? {
 
     // Parse the getter call to extract the property name
     // Expected format: "getXxx()" (zero-argument getter call only)
-    val getterPattern = Regex("""^get([A-Z].*)?\(\)$""")
-    val match = getterPattern.matchEntire(getterCall) ?: return null
+    val match = GETTER_CALL.matchEntire(getterCall) ?: return null
 
     val propertyPart = match.groupValues[1]
     if (propertyPart.isEmpty()) {
@@ -583,8 +588,7 @@ private fun fixUnnecessarySetter(context: FixContext): TextEdit? {
 
     // Parse the setter call to extract the property name and argument
     // Expected format: "setXxx(value)" where value can be any expression
-    val setterPattern = Regex("""^set([A-Z].*?)\((.+)\)$""")
-    val match = setterPattern.matchEntire(setterCall) ?: return null
+    val match = SETTER_CALL.matchEntire(setterCall) ?: return null
 
     val propertyPart = match.groupValues[1]
     val argumentValue = match.groupValues[2]
