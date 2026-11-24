@@ -3,6 +3,11 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.findFieldSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.hasCyclicSuperClassChain
+import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.methodsSafe
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode

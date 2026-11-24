@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassHelper

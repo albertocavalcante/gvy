@@ -3,7 +3,7 @@
 
 package com.github.albertocavalcante.gvy.semantics.delegation
 
-import com.github.albertocavalcante.gvy.semantics.db.methodsSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.methodsSafe
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ClosureExpression

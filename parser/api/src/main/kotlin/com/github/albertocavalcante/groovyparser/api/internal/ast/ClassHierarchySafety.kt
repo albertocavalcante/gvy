@@ -4,9 +4,10 @@
 /*
  * INTERNAL TO GVY - NOT PUBLIC API.
  *
- * Cycle-safe class hierarchy walks, shared by parser:core, parser:native, dsl:gdsl and gls (#1369, #1411). They live
- * in parser:api only because it is the one module all of those already depend on. Everything in the
- * `groovyparser.api.internal` packages may change or move without notice; do not use it from outside this repository.
+ * Cycle-safe class hierarchy walks, shared by parser:core, parser:native, dsl:gdsl, gls and semantics:core (#1369,
+ * #1411, #2401). They live in parser:api only because it is the one module all of those already depend on.
+ * Everything in the `groovyparser.api.internal` packages may change or move without notice; do not use it from outside
+ * this repository.
  */
 
 package com.github.albertocavalcante.groovyparser.api.internal.ast
@@ -89,9 +90,35 @@ fun ClassNode.methodsSafe(name: String): List<MethodNode> = if (hasCyclicSuperCl
 
 /**
  * Cycle-safe replacement for [ClassNode.implementsInterface]: true when [other] is among the interfaces of this
- * class, its superclasses or any super-interface (visited by identity, so interface cycles terminate).
+ * class, its superclasses or any super-interface (visited by identity, so interface cycles terminate). At most
+ * [MAX_HIERARCHY_NODES] classes and interfaces are visited; an interface beyond that is reported as not implemented.
  */
 fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean {
+    var found = false
+    walkInterfaces { iface ->
+        found = iface == other
+        !found
+    }
+    return found
+}
+
+/**
+ * Every interface of this class, its superclasses and their super-interfaces, each once, in discovery order. Bounded
+ * like [implementsInterfaceSafe]: once [MAX_HIERARCHY_NODES] classes and interfaces have been visited, no further
+ * one is expanded. The interfaces of the last expanded class are still added, so the set can exceed the bound by
+ * that class's fan-out.
+ */
+fun ClassNode.allInterfacesSafe(): Set<ClassNode> {
+    val found = LinkedHashSet<ClassNode>()
+    walkInterfaces { iface ->
+        found += iface
+        true
+    }
+    return found
+}
+
+/** Breadth-first walk over the interfaces reachable from this class; [visit] returns false to stop early. */
+private inline fun ClassNode.walkInterfaces(visit: (ClassNode) -> Boolean) {
     val seen = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
     val pending = ArrayDeque<ClassNode>()
     pending.add(this)
@@ -102,13 +129,14 @@ fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean {
         if (!seen.add(node)) continue
         visited++
         for (iface in node.interfaces.orEmpty()) {
-            if (iface == other) return true
+            if (!visit(iface)) return
             pending.add(iface)
         }
     }
-    return false
 }
 
 /** Default depth bound for [superClassChain] and [hasCyclicSuperClassChain]. */
 const val MAX_HIERARCHY_DEPTH = 256
-private const val MAX_HIERARCHY_NODES = 4096
+
+/** Bound on the classes and interfaces visited by an interface walk; pinned by ClassHierarchyBoundsTest. */
+internal const val MAX_HIERARCHY_NODES = 4096
