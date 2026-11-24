@@ -577,23 +577,26 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          * occurrence at [typeRange] and the innermost occurrence at the type name stays the class's.
          */
         private fun constructorCallOccurrence(call: ConstructorCallExpression, typeRange: Range): SymbolOccurrence? {
-            val symbolId = attributedConstructor(call) ?: return null
-            val range = constructorCallRange(call, typeRange) ?: return null
-            return SymbolOccurrence(symbolId, range, OccurrenceRole.CALL)
+            val outcome = constructors.resolve(call)
+            val occurrence = (outcome as? CallOutcome.Resolved)?.let { resolved ->
+                constructorCallRange(call, typeRange)
+                    ?.let { range -> SymbolOccurrence(resolved.symbolId, range, OccurrenceRole.CALL) }
+            }
+            // Certain only when the occurrence is kept: a class that gets no occurrences (an anonymous class body)
+            // discards it, as it does a method call's, and then the class's name is recorded as uncertain instead.
+            val kept = record && occurrence != null
+            if (!kept && outcome.isUncertainConstructorUse() && unresolved.isSource(call)) {
+                constructedClass(call)?.let { unresolved.name(it.sourceSimpleName()) }
+            }
+            return occurrence
         }
 
-        /** The id of the constructor the call invokes; when not known, the class's name is recorded as uncertain. */
-        private fun attributedConstructor(call: ConstructorCallExpression): String? =
-            when (val outcome = constructors.resolve(call)) {
-                is CallOutcome.Resolved -> outcome.symbolId
-                is CallOutcome.Unresolved -> {
-                    // The class occurrence stands, but the constructor is not known: say so, keyed by the class.
-                    if (outcome.reason.isUncertainConstructorUse() && unresolved.isSource(call)) {
-                        constructedClass(call)?.let { unresolved.name(it.sourceSimpleName()) }
-                    }
-                    null
-                }
-            }
+        /** Uncertain, unless the class is not a source class (classpath) or the call makes a class of its own. */
+        private fun CallOutcome.isUncertainConstructorUse() = when (this) {
+            is CallOutcome.Resolved -> true
+            is CallOutcome.Unresolved ->
+                reason != CallOutcome.Reason.NOT_SOURCE_CLASS && reason != CallOutcome.Reason.ANONYMOUS_CLASS
+        }
 
         /**
          * The class whose constructor [call] invokes. `this(...)` and `super(...)` carry the placeholder types
@@ -614,10 +617,6 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             if (!starts) return null
             return Range(start.startLine, start.startColumn, typeRange.endLine, typeRange.endColumn)
         }
-
-        /** Uncertain, unless the class is not a source class (classpath) or the call makes a class of its own. */
-        private fun CallOutcome.Reason.isUncertainConstructorUse() =
-            this != CallOutcome.Reason.NOT_SOURCE_CLASS && this != CallOutcome.Reason.ANONYMOUS_CLASS
 
         override fun visitClassExpression(expression: ClassExpression) {
             val range = nodeToRange(expression)

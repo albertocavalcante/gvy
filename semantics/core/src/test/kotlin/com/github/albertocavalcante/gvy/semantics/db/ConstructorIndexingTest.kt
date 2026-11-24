@@ -344,6 +344,58 @@ open class ConstructorIndexingTest : SymbolIdTestSupport() {
     }
 
     @Test
+    @DisplayName("a call in an anonymous class body has no retained occurrence, so its class is recorded as uncertain")
+    fun callsInDiscardedBodiesAreRecordedAsUncertain() {
+        val doc = build(
+            """
+            class T { T(String s) { } }
+            class U { def f() { new Object() { def g() { new T('x') } } } }
+            """,
+        )
+
+        assertEquals(emptyList<SymbolOccurrence>(), doc.constructorCalls())
+        assertEquals(emptyList<SymbolOccurrence>(), doc.classCalls("T#"))
+        assertTrue("T" in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+    }
+
+    @Test
+    @DisplayName("a call in a closure inside an anonymous class body is recorded as uncertain too")
+    fun callsInClosuresOfDiscardedBodiesAreRecordedAsUncertain() {
+        val doc = build(
+            """
+            class T { T(String s) { } }
+            class U { def f() { new Object() { def g() { [1].each { new T('x') } } } } }
+            """,
+        )
+
+        assertEquals(emptyList<SymbolOccurrence>(), doc.constructorCalls())
+        assertTrue("T" in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+    }
+
+    @Test
+    @DisplayName("a method call in an anonymous class body is already recorded as uncertain, as the constructor now is")
+    fun methodCallsInDiscardedBodiesAreRecordedAsUncertain() {
+        val doc = build(
+            """
+            class T { def m() { } }
+            class U { def f() { new Object() { def g(T t) { t.m() } } } }
+            """,
+        )
+
+        assertEquals(emptyList<SymbolOccurrence>(), doc.calls("m"))
+        assertTrue("m" in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+    }
+
+    @Test
+    @DisplayName("a call kept in a class body is attributed and adds no uncertain use")
+    fun keptCallsAddNoUncertainUse() {
+        val doc = build("class T { T(String s) { } }\nclass U { def f() { new T('x') } }")
+
+        assertEquals(listOf("T#<init>(String)."), doc.constructorCalls().map { it.symbol })
+        assertTrue("T" !in doc.unresolvedNames, "Got: ${doc.unresolvedNames}")
+    }
+
+    @Test
     @DisplayName("enum constructors take hidden compiler parameters, so enums have no constructor symbols")
     fun enumsAreNotIndexed() {
         val doc = build("enum Color {\n    RED(1)\n    Color(int v) { }\n}")
