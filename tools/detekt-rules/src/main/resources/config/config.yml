@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Default configuration of the gvy detekt rule set. detekt merges it under tools/lint/detekt.yml, and
+# `config: validation: true` accepts the `gvy` keys because they are declared here.
+gvy:
+  active: true
+  RegexInFunctionBody:
+    active: true

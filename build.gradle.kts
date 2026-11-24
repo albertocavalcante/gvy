@@ -143,6 +143,9 @@ subprojects {
     val libs = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
     dependencies {
         detektPlugins(libs.findLibrary("detekt-formatting").get())
+        // gvy's own syntactic rules (see tools/detekt-rules): they run in the same `detekt` task as the built-in
+        // rules, so `lint` enforces them without type resolution. The rule module lints itself with them too.
+        detektPlugins(project(":tools:detekt-rules"))
     }
 
     // Configure Java Toolchain for all subprojects to ensure hermetic builds

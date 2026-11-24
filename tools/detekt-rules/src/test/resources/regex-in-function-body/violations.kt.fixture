@@ -1,0 +1,109 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import java.util.regex.Pattern
+
+const val CONSTANT_PATTERN = "n+"
+private val PLAIN_PATTERN = "r+"
+
+fun constructor(input: String) = Regex("a+").matches(input) // FLAG
+fun constructorWithOption(input: String) = Regex("a+", RegexOption.IGNORE_CASE).matches(input) // FLAG
+fun qualifiedConstructor() = kotlin.text.Regex("a+") // FLAG
+fun toRegexOnLiteral(input: String) = "b+".toRegex().matches(input) // FLAG
+fun toRegexWithOption(input: String) = "c+".toRegex(RegexOption.IGNORE_CASE).containsMatchIn(input) // FLAG
+fun toRegexOnRawLiteral() = """d\+""".toRegex() // FLAG
+fun toRegexOnTrimmedLiteral() = """d+""".trimIndent().toRegex() // FLAG
+fun javaPattern(input: String) = Pattern.compile("e+").matcher(input).matches() // FLAG
+fun fullyQualifiedJavaPattern() = java.util.regex.Pattern.compile("e+") // FLAG
+fun fromLiteral() = Regex.fromLiteral("f.g") // FLAG
+fun toPatternOnLiteral() = "h+".toPattern() // FLAG
+fun concatenatedLiterals() = Regex("i" + "j") // FLAG
+fun parenthesised() = Regex(("k+")) // FLAG
+fun namedArgument() = Regex(pattern = "l+") // FLAG
+fun viaConstant() = Regex(CONSTANT_PATTERN) // FLAG
+fun viaPlainValue() = PLAIN_PATTERN.toRegex() // FLAG
+fun interpolatedConstant() = Regex("${CONSTANT_PATTERN}q") // FLAG
+fun expressionBody(): Regex { return Regex("s+") } // FLAG
+
+fun nestedFunction() {
+    fun inner() = Regex("t+") // FLAG
+    inner()
+}
+
+fun lambdaInFunction(inputs: List<String>) = inputs.filter { Regex("u+").matches(it) } // FLAG
+
+fun localLazyStillRunsPerCall() {
+    val matcher by lazy { Regex("v+") } // FLAG
+    matcher.pattern
+}
+
+val matcherLambda: (String) -> Boolean = { Regex("w+").matches(it) } // FLAG
+
+val propertyWithGetter: Regex
+    get() = Regex("x+") // FLAG
+
+class WithSetter {
+    var pattern: Regex? = null
+        set(value) {
+            field = value ?: Regex("y+") // FLAG
+        }
+}
+
+class WithInit {
+    init {
+        Regex("z+") // FLAG
+    }
+}
+
+class WithSecondaryConstructor(private val pattern: Regex) {
+    constructor() : this(Regex("A+")) // FLAG
+
+    constructor(flag: Boolean) : this(Regex("B+")) { // FLAG
+        println(flag)
+    }
+}
+
+fun anonymousObject() = object {
+    val pattern = Regex("C+") // FLAG
+}
+
+fun anonymousFunction() = fun(input: String) = Regex("D+").matches(input) // FLAG
+
+object Singleton {
+    fun method() = Regex("E+") // FLAG
+}
+
+class Holder {
+    companion object {
+        fun method() = Regex("F+") // FLAG
+    }
+}
+
+// A genuine file-level, object-level or companion-level constant is still a constant.
+object Constants {
+    const val OBJECT_PATTERN = "G+"
+    private val OBJECT_PLAIN = "H+"
+}
+
+fun viaObjectConstant() = Regex(OBJECT_PATTERN) // FLAG
+fun viaObjectPlainValue() = OBJECT_PLAIN.toRegex() // FLAG
+
+class WithCompanionConstant {
+    fun use() = Regex(COMPANION_PATTERN) // FLAG
+
+    companion object {
+        private val COMPANION_PATTERN = "I+"
+    }
+}
+
+// The safe call form is still a construction.
+fun safeCallOnLiteral() = "J+"?.toRegex() // FLAG
+fun safeCallWithOptionOnLiteral() = "K+"?.toRegex(RegexOption.MULTILINE) // FLAG
+
+// Only a direct argument of a run-once scope function or builder is one-shot; stored or mapped lambdas repeat.
+val viaMap = listOf(1).map { Regex("L+") } // FLAG
+val storedLambda: () -> Regex = { Regex("M+") } // FLAG
+val nestedStoredLambda = run { { Regex("N+") } } // FLAG
+fun runInsideFunction() = run { Regex("O+") } // FLAG

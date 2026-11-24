@@ -63,6 +63,8 @@ mordant = "3.0.2"
 [libraries]
 # Plugins (libraries for plugins block)
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+detekt-api = { module = "io.gitlab.arturbosch.detekt:detekt-api", version.ref = "detekt" }
+detekt-test = { module = "io.gitlab.arturbosch.detekt:detekt-test", version.ref = "detekt" }
 
 # Groovy
 groovy-core = { module = "org.apache.groovy:groovy", version.ref = "groovy" }

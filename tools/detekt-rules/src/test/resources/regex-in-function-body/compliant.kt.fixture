@@ -1,0 +1,160 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing here may be reported.
+package fixtures
+
+import java.util.regex.Pattern
+
+// File scope.
+private val FILE_REGEX = Regex("a+")
+private val FILE_TO_REGEX = "b+".toRegex()
+private val FILE_PATTERN: Pattern = Pattern.compile("c+")
+private val FILE_FROM_LITERAL = Regex.fromLiteral("d.e")
+val fileLazy by lazy { Regex("f+") }
+
+// Object and companion scope, including the object's own init block, which runs once.
+object Singleton {
+    private val regex = Regex("g+")
+    private val byLazy by lazy { "h+".toRegex() }
+
+    init {
+        Regex("i+")
+    }
+}
+
+class Holder {
+    private val perInstance = Regex("j+")
+    private val lazyPerInstance by lazy { Regex("k+") }
+    private val lazyWithMode by lazy(LazyThreadSafetyMode.NONE) { Pattern.compile("l+") }
+    private val lazyAsArgument = lazy({ Regex("m+") })
+
+    companion object {
+        private val SHARED = Regex("n+")
+        private val SHARED_LAZY by lazy { Regex("o+") }
+
+        init {
+            Regex("p+")
+        }
+    }
+
+    fun use(input: String) = SHARED.matches(input) && perInstance.matches(input)
+}
+
+// Patterns built from a runtime value cannot be hoisted, so they are not reported.
+fun fromParameter(pattern: String) = Regex(pattern)
+fun interpolated(name: String) = Regex("prefix-$name")
+fun interpolatedExpression(names: List<String>) = Regex("(${names.joinToString("|")})")
+fun interpolatedToRegex(name: String) = "$name+".toRegex()
+fun toRegexOnVariable(pattern: String) = pattern.toRegex()
+fun toRegexOnCall(names: List<String>) = names.joinToString("|").toRegex()
+fun toRegexWithoutReceiver(): Regex = toRegex()
+fun javaPatternFromVariable(pattern: String) = Pattern.compile(pattern)
+fun javaPatternFromQuote(literal: String) = Pattern.compile(Pattern.quote(literal))
+fun fromLiteralOnVariable(literal: String) = Regex.fromLiteral(literal)
+fun escaped(literal: String) = Regex(Regex.escape(literal))
+fun unknownReference() = Regex(OtherFile.PATTERN)
+fun mutableName() = Regex(mutablePattern)
+
+var mutablePattern = "q+"
+
+// Using an already compiled regex is the goal, not a violation.
+fun useCompiled(input: String) = FILE_REGEX.matches(input) && FILE_TO_REGEX.containsMatchIn(input)
+
+// Similar names that are not regex construction.
+fun lookalikes(input: String) {
+    input.toRegexOrNull()
+    Pattern.matches("r+", input)
+    Pattern.quote("s")
+    Regexp("t+")
+    Other.compile("u+")
+    RegexOption.IGNORE_CASE
+}
+
+// A file-level constant is hidden by every kind of local declaration of the same name.
+private const val SHADOWED = "z+"
+val name = "x"
+
+class Member {
+    val member = "m+"
+    val sharedName = computed()
+
+    fun fromClassMember() = Regex(member)
+}
+
+object OtherScope {
+    val sharedName = "y+"
+}
+
+fun shadowedByParameterOfOtherName(name: String) = Regex(name)
+fun ambiguousBetweenScopes() = Regex(sharedName)
+fun shadowedByParameter(SHADOWED: String) = Regex(SHADOWED)
+fun shadowedByLocal(): Regex {
+    val SHADOWED = readLine().orEmpty()
+    return Regex(SHADOWED)
+}
+fun shadowedByLocalVar(): Regex {
+    var SHADOWED = "a"
+    SHADOWED += readLine()
+    return Regex("$SHADOWED")
+}
+fun shadowedByLambdaParameter(items: List<String>) = items.map { SHADOWED -> Regex(SHADOWED) }
+fun shadowedByDestructuredLambdaParameter(pairs: List<Pair<String, String>>) =
+    pairs.map { (SHADOWED, _) -> Regex(SHADOWED) }
+fun shadowedByDestructuring(pair: Pair<String, String>): Regex {
+    val (SHADOWED, _) = pair
+    return Regex(SHADOWED)
+}
+fun shadowedByLoop(items: List<String>) {
+    for (SHADOWED in items) {
+        Regex(SHADOWED)
+    }
+}
+fun shadowedByDestructuredLoop(pairs: List<Pair<String, String>>) {
+    for ((SHADOWED, _) in pairs) {
+        Regex("$SHADOWED")
+    }
+}
+fun shadowedByCatch() {
+    try {
+        work()
+    } catch (SHADOWED: IllegalStateException) {
+        Regex("$SHADOWED")
+    }
+}
+fun shadowedByWhenSubject() {
+    when (val SHADOWED = readLine().orEmpty()) {
+        else -> Regex(SHADOWED)
+    }
+}
+class ShadowedByConstructorParameter(SHADOWED: String) {
+    fun use() = Regex(SHADOWED)
+}
+class ShadowedBySecondaryConstructor {
+    constructor(SHADOWED: String) {
+        Regex(SHADOWED)
+    }
+}
+
+// The safe call form on a runtime value is not reported either.
+fun safeCallOnVariable(pattern: String?) = pattern?.toRegex()
+
+// Direct arguments of run-once scope functions and builders at file, object and companion scope run once.
+val viaRun = run { Regex("a1+") }
+val viaLet = "x".let { Regex("a2+") }
+val viaAlso = "x".also { Regex("a3+") }
+val viaApply = StringBuilder().apply { Regex("a4+") }
+val viaWith = with("x") { Regex("a5+") }
+val viaBuildList = buildList { add(Regex("a6+")) }
+val viaBuildMap = buildMap { put("k", Regex("a7+")) }
+val viaBuildSet = buildSet { add(Regex("a8+")) }
+val viaBuildString = buildString { append(Regex("a9+").pattern) }
+
+object OneShot {
+    val viaRun = run { Regex("b1+") }
+}
+
+class OneShotCompanion {
+    companion object {
+        val viaApply = StringBuilder().apply { Regex("b2+") }
+    }
+}
