@@ -3,9 +3,11 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.HierarchyMembership
+import com.github.albertocavalcante.groovyparser.api.internal.ast.InterfaceWalk
+import com.github.albertocavalcante.groovyparser.api.internal.ast.allInterfacesChecked
 import com.github.albertocavalcante.groovyparser.api.internal.ast.findFieldSafe
-import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
-import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isSubtypeChecked
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper
@@ -319,11 +321,12 @@ internal object RuntimeReceivers {
         if (exact) return true
         val visible = type.isPrimaryClassNode || type.name.startsWith("java.")
         return visible && unitClasses.none {
-            it.isSubtypeOf(type) && (it.getDeclaredMethods(name).isNotEmpty() || GroovyDispatch.isDynamic(it))
+            it.mayBeSubtypeOf(type) && (it.getDeclaredMethods(name).isNotEmpty() || GroovyDispatch.isDynamic(it))
         }
     }
 
-    private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFromSafe(type) || implementsInterfaceSafe(type)
+    /** A hierarchy the bounded walk could not finish may reach [type], so only a definite "no" rules it out. */
+    private fun ClassNode.mayBeSubtypeOf(type: ClassNode) = isSubtypeChecked(type) != HierarchyMembership.NOT_MEMBER
 }
 
 /** The runtime class of a literal, or null: only literals whose JDK/Groovy class is certain. */
@@ -537,9 +540,17 @@ internal object GroovyDispatch {
     val classMethodNames: Set<String> by lazy { Class::class.java.methods.mapTo(HashSet()) { it.name } }
 
     /** A class whose property reads Groovy routes elsewhere: a Map (keys), or one handling them itself. */
-    fun interceptsProperties(type: ClassNode): Boolean =
-        type.name == MAP || type.implementsInterfaceSafe(ClassHelper.MAP_TYPE) ||
-            type.methods.any { it.name in propertyDispatchMethods }
+    fun interceptsProperties(type: ClassNode): Boolean = type.name == MAP || mayBeMap(type) ||
+        type.methods.any { it.name in propertyDispatchMethods }
+
+    /**
+     * Whether [type] declares Map among its interfaces, or a bound kept us from searching them all (only a definite
+     * "no" says it does not). Superclasses are the caller's to enumerate, as [TypeHierarchies.Hierarchy.classes] does.
+     */
+    private fun mayBeMap(type: ClassNode): Boolean = when (val walk = type.allInterfacesChecked()) {
+        is InterfaceWalk.Complete -> ClassHelper.MAP_TYPE in walk.interfaces
+        is InterfaceWalk.Truncated -> true
+    }
 
     private val propertyDispatchMethods = setOf("getProperty", "propertyMissing")
 
@@ -551,7 +562,7 @@ internal object GroovyDispatch {
      */
     fun dispatchesByItself(type: ClassNode): Boolean =
         (type.isPrimaryClassNode && (addsMethods(type) || isInterceptable(type))) ||
-            type.name == MAP || type.implementsInterfaceSafe(ClassHelper.MAP_TYPE) ||
+            type.name == MAP || mayBeMap(type) ||
             type.methods.any { it.name in selfDispatchMethods && (it.lineNumber > 0 || !isGeneratedMemberHook(type)) }
 
     /**

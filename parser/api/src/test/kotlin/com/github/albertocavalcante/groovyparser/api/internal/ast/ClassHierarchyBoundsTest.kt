@@ -103,28 +103,96 @@ class ClassHierarchyBoundsTest {
     /*
      * The walk visits the leaf and Object first, so the interface at chain depth d is found while expanding the
      * visit number d + 1 and needs d + 1 < MAX_HIERARCHY_NODES: the last depth found is MAX_HIERARCHY_NODES - 2.
+     * Past that the answer is unknown, not "no".
      */
     @Test
-    fun `an interface chain is found up to the node bound and not beyond`() {
+    fun `an interface chain is a member up to the node bound and unknown beyond`() {
         val atBound = interfaceChain(MAX_HIERARCHY_NODES - 2)
         val pastBound = interfaceChain(MAX_HIERARCHY_NODES - 1)
-        assertTrue(inTime { atBound.first.implementsInterfaceSafe(atBound.second) })
+        assertEquals(HierarchyMembership.MEMBER, inTime { atBound.first.implementsInterfaceChecked(atBound.second) })
+        assertEquals(
+            HierarchyMembership.UNKNOWN,
+            inTime { pastBound.first.implementsInterfaceChecked(pastBound.second) },
+        )
         assertFalse(inTime { pastBound.first.implementsInterfaceSafe(pastBound.second) })
     }
 
     @Test
-    fun `a wide two level interface graph is found up to the node bound and not beyond`() {
+    fun `a wide two level interface graph is a member up to the node bound and unknown beyond`() {
         val atBound = twoLevelFan(MAX_HIERARCHY_NODES - 2)
         val pastBound = twoLevelFan(MAX_HIERARCHY_NODES - 1)
-        assertTrue(inTime { atBound.first.implementsInterfaceSafe(atBound.second) })
-        assertFalse(inTime { pastBound.first.implementsInterfaceSafe(pastBound.second) })
+        assertEquals(HierarchyMembership.MEMBER, inTime { atBound.first.implementsInterfaceChecked(atBound.second) })
+        assertEquals(
+            HierarchyMembership.UNKNOWN,
+            inTime { pastBound.first.implementsInterfaceChecked(pastBound.second) },
+        )
     }
 
     @Test
-    fun `all interfaces of a long chain stop at the node bound`() {
+    fun `an interface that is not there is a definite no when the walk saw everything`() {
+        val (leaf, _) = interfaceChain(MAX_HIERARCHY_NODES / 2)
+        assertEquals(HierarchyMembership.NOT_MEMBER, inTime { leaf.implementsInterfaceChecked(iface("Other")) })
+        val cyclic = iface("I")
+        cyclic.interfaces = arrayOf(cyclic)
+        val cyclicLeaf = clazz("CyclicLeaf").apply { interfaces = arrayOf(cyclic) }
+        assertEquals(HierarchyMembership.NOT_MEMBER, inTime { cyclicLeaf.implementsInterfaceChecked(iface("Other")) })
+    }
+
+    @Test
+    fun `an interface behind a superclass chain cut by the depth bound is unknown`() {
+        val target = iface("Target")
+        val deepest = clazz("Deep").apply { interfaces = arrayOf(target) }
+        var top = deepest
+        repeat(MAX_HIERARCHY_DEPTH + 44) { top = clazz("S$it", top) }
+        val leaf = clazz("Leaf", top)
+        assertEquals(HierarchyMembership.UNKNOWN, inTime { leaf.implementsInterfaceChecked(target) })
+    }
+
+    @Test
+    fun `a superclass beyond the depth bound is unknown and a cycle is a definite no`() {
+        val base = clazz("Base")
+        var top = base
+        repeat(MAX_HIERARCHY_DEPTH + 44) { top = clazz("S$it", top) }
+        val leaf = clazz("Leaf", top)
+        assertEquals(HierarchyMembership.UNKNOWN, inTime { leaf.isDerivedFromChecked(base) })
+        assertEquals(HierarchyMembership.MEMBER, inTime { leaf.isDerivedFromChecked(top) })
+
+        val a = ClassNode("A", 1, ClassHelper.OBJECT_TYPE)
+        val b = ClassNode("B", 1, a)
+        a.superClass = b
+        assertEquals(HierarchyMembership.MEMBER, inTime { a.isDerivedFromChecked(b) })
+        assertEquals(HierarchyMembership.NOT_MEMBER, inTime { a.isDerivedFromChecked(clazz("Other")) })
+        assertEquals(
+            HierarchyMembership.NOT_MEMBER,
+            inTime {
+                superClassChainOf(MAX_HIERARCHY_DEPTH).isDerivedFromChecked(base)
+            },
+        )
+    }
+
+    @Test
+    fun `a subtype answer is unknown when either walk is unknown and no walk found it`() {
+        val (leaf, target) = interfaceChain(MAX_HIERARCHY_NODES * 2)
+        assertEquals(HierarchyMembership.UNKNOWN, inTime { leaf.isSubtypeChecked(target) })
+        assertEquals(HierarchyMembership.NOT_MEMBER, inTime { clazz("Plain").isSubtypeChecked(iface("Other")) })
+        val (direct, first) = interfaceChain(1)
+        assertEquals(HierarchyMembership.MEMBER, inTime { direct.isSubtypeChecked(first) })
+    }
+
+    @Test
+    fun `all interfaces of a long chain are truncated at the node bound`() {
         val (leaf, _) = interfaceChain(MAX_HIERARCHY_NODES * 2)
-        val all = inTime { leaf.allInterfacesSafe() }
-        assertEquals(MAX_HIERARCHY_NODES - 2 + 1, all.size)
+        val walk = inTime { leaf.allInterfacesChecked() }
+        assertTrue(walk is InterfaceWalk.Truncated, "expected Truncated but was $walk")
+        assertEquals(MAX_HIERARCHY_NODES, walk.interfaces.size)
+    }
+
+    @Test
+    fun `all interfaces of a short chain are complete`() {
+        val (leaf, _) = interfaceChain(3)
+        val walk = inTime { leaf.allInterfacesChecked() }
+        assertTrue(walk is InterfaceWalk.Complete, "expected Complete but was $walk")
+        assertEquals(4, walk.interfaces.size)
     }
 
     private companion object {

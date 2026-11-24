@@ -3,7 +3,8 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
-import com.github.albertocavalcante.groovyparser.api.internal.ast.allInterfacesSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.InterfaceWalk
+import com.github.albertocavalcante.groovyparser.api.internal.ast.allInterfacesChecked
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.Variable
@@ -69,7 +70,15 @@ internal object DispatchNames {
 
     private fun hasDispatchHook(type: ClassNode): Boolean {
         val chain = superclassChain(type) ?: return false
-        return (chain + chain.flatMap { it.allInterfacesSafe() }).any {
+        val supertypes = ArrayList(chain)
+        for (node in chain) {
+            when (val walk = node.allInterfacesChecked()) {
+                is InterfaceWalk.Complete -> supertypes += walk.interfaces
+                // A bound stopped the walk: a hook may sit in the part not searched, so the class may dispatch.
+                is InterfaceWalk.Truncated -> return true
+            }
+        }
+        return supertypes.any {
             it.name !in standardDispatchers && !isGenerated(it) && GroovyDispatch.dispatchesByItself(it)
         }
     }

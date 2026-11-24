@@ -3,8 +3,8 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
-import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe
-import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.HierarchyMembership
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isSubtypeChecked
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -113,21 +113,32 @@ internal class UnresolvedNames {
     /**
      * `receiver[index]`. On a Map, List or array the index is a key or a position, but on any other object Groovy
      * calls `getAt`/`putAt`, and `getAt(String)` reads the property of that name. An index that cannot be a
-     * String is not a name.
+     * String is not a name. A receiver whose hierarchy a bound kept us from searching may or may not be keyed, so
+     * the use is recorded as any name ([WILDCARD]) as well.
      */
     fun index(receiver: Expression, index: Expression, typeOf: (Expression) -> ClassNode?, access: Access) {
-        val keyed = receiver is ListExpression || receiver is MapExpression ||
-            typeOf(receiver)?.let(::isKeyedByIndex) == true
-        if (keyed) return
+        val keyed = if (receiver is ListExpression || receiver is MapExpression) {
+            HierarchyMembership.MEMBER
+        } else {
+            typeOf(receiver)?.let(::isKeyedByIndex) ?: HierarchyMembership.NOT_MEMBER
+        }
+        when (keyed) {
+            HierarchyMembership.MEMBER -> return
+            HierarchyMembership.UNKNOWN -> put(WILDCARD)
+            HierarchyMembership.NOT_MEMBER -> Unit
+        }
         if (access != Access.WRITE) put("getAt")
         if (access != Access.READ) put("putAt")
         if (!cannotBeName(index)) name(constantString(index))
     }
 
-    private fun isKeyedByIndex(type: ClassNode): Boolean = type.isArray ||
-        listOf(ClassHelper.MAP_TYPE, ClassHelper.LIST_TYPE).any {
-            type.name == it.name || type.isDerivedFromSafe(it) || type.implementsInterfaceSafe(it)
+    private fun isKeyedByIndex(type: ClassNode): HierarchyMembership = if (type.isArray) {
+        HierarchyMembership.MEMBER
+    } else {
+        listOf(ClassHelper.MAP_TYPE, ClassHelper.LIST_TYPE).fold(HierarchyMembership.NOT_MEMBER) { found, keyed ->
+            found.or { if (type.name == keyed.name) HierarchyMembership.MEMBER else type.isSubtypeChecked(keyed) }
         }
+    }
 
     private fun cannotBeName(index: Expression): Boolean = when (index) {
         is ConstantExpression -> index.value !is String
