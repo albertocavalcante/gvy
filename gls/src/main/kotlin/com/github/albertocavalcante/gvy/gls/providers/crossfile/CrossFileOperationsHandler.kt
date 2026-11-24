@@ -96,12 +96,8 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        return runSuspendCatching {
+        return failingAsInternalError("finding definitions") {
             withCurrentOrigin(documentUri) { findDefinitions(documentUri, position) }
-        }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
-            logException(e, "finding definitions")
-            Either.forLeft(emptyList())
         }
     }
 
@@ -120,17 +116,15 @@ class CrossFileOperationsHandler(
             return Either.forLeft(emptyList())
         }
 
-        // Try LocationLink format if supported
+        // One lookup per request: a link-capable client gets links, or an honest empty/failed answer, never a
+        // second resolution of the same position. A failed lookup is thrown to the response boundary.
         if (definitionLinkSupport()) {
-            val links = definitionProvider.provideDefinitionLinks(uri, position).toList()
-            if (links.isNotEmpty()) {
-                logger.debug { "Returning ${links.size} definition links (first=${links.first().targetUri})" }
-                return Either.forRight(links)
-            }
+            val links = definitionProvider.lookupDefinitionLinks(uri, position).getOrThrow()
+            logger.debug { "Returning ${links.size} definition links" }
+            return if (links.isEmpty()) Either.forLeft(emptyList()) else Either.forRight(links)
         }
 
-        // Fall back to Location format
-        val locations = definitionProvider.provideDefinitions(uri, position).toList()
+        val locations = definitionProvider.lookupDefinitions(uri, position).getOrThrow()
         logger.debug {
             if (locations.isNotEmpty()) {
                 "Returning ${locations.size} definition locations (first=${locations.first().uri})"
@@ -177,17 +171,25 @@ class CrossFileOperationsHandler(
     /**
      * Runs a request whose answer is computed from [uri]'s open buffer, and reports ContentModified instead of an
      * answer about text the client no longer shows: the origin buffer was edited, closed or reopened while the
-     * request ran. Retirements of other work (a configuration refresh, another file closing) are retried by the
+     * request ran. That holds for a failure too: a lookup that broke because the origin changed under it is
+     * ContentModified, not an InternalError the client would show; the original failure is logged at debug.
+     * A [ResponseErrorException] from [block] is already a deliberate answer and passes unchanged, as does
+     * cancellation. Retirements of other work (a configuration refresh, another file closing) are retried by the
      * compilation service and do not fail the request; clients drop ContentModified silently for definition and
      * references, so it must mean the origin really changed.
      */
     private suspend fun <T> withCurrentOrigin(uri: URI, block: suspend () -> T): T {
         val origin = documentProvider.getSnapshot(uri)
-        val result = block()
+        // runSuspendCatching is the response boundary's catch: it rethrows cancellation and Errors, so only an
+        // ordinary failure is held back here, to be judged against the origin below.
+        val result = runSuspendCatching { block() }
+        val failure = result.exceptionOrNull()
+        if (failure is ResponseErrorException) throw failure
         if (origin != null && documentProvider.getSnapshot(uri) !== origin) {
+            failure?.let { logger.debug { "Request failed after $uri changed: ${it.message}" } }
             throw contentModified("$uri changed during the request")
         }
-        return result
+        return result.getOrThrow()
     }
 
     private fun contentModified(message: String) =
@@ -209,7 +211,7 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        return runSuspendCatching {
+        return failingAsInternalError("finding implementations") {
             withCurrentOrigin(documentUri) {
                 val snapshot = acquireImplementationSnapshot(documentUri)
                 if (snapshot == null) {
@@ -222,10 +224,6 @@ class CrossFileOperationsHandler(
                         .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
                 }
             }
-        }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e
-            logException(e, "finding implementations")
-            Either.forLeft(emptyList())
         }
     }
 
@@ -300,18 +298,5 @@ class CrossFileOperationsHandler(
         // One captured snapshot, compiled under the shared retirement policy (no raw cancellation escapes).
         val snapshot = documentProvider.getSnapshot(uri) ?: return null
         return compilationService.ensureCompiled(uri, snapshot)
-    }
-
-    /**
-     * Helper function to log exceptions with appropriate context.
-     * Uses idiomatic `when` expression for type-based message selection.
-     */
-    private fun logException(e: Throwable, operation: String) {
-        val message = when (e) {
-            is IllegalArgumentException -> "Invalid arguments $operation"
-            is IllegalStateException -> "Invalid state $operation"
-            else -> "Unexpected error $operation"
-        }
-        logger.error(e) { message }
     }
 }

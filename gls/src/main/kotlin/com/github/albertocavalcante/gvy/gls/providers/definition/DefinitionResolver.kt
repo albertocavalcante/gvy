@@ -11,7 +11,7 @@ import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
-import com.github.albertocavalcante.gvy.gls.errors.SymbolNotFoundException
+import com.github.albertocavalcante.gvy.gls.errors.PositionException
 import com.github.albertocavalcante.gvy.gls.errors.invalidPosition
 import com.github.albertocavalcante.gvy.gls.errors.nodeNotFoundAtPosition
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
@@ -111,16 +111,20 @@ class DefinitionResolver(
 
     /**
      * Outcome of a definition lookup: a definition, an honest "nothing there", or a failure that keeps its type.
+     * The one result type for "definition lookup", shared by the LSP provider and the engine's service.
      */
     sealed interface DefinitionLookup {
         data class Found(val result: DefinitionResult) : DefinitionLookup
 
-        /** No strategy resolved the symbol; [error] is the last strategy's miss. */
+        /**
+         * Nothing to navigate to, and the lookup worked: no strategy resolved the symbol ([error] is the last
+         * strategy's miss), the cursor names no symbol, or the definition has no position.
+         */
         data class NotFound(val error: ResolutionError) : DefinitionLookup
 
         /**
-         * The lookup could not be carried out: [error] is a typed [GroovyLspException] (invalid position, no node,
-         * ...) or the throwable a resolution strategy raised. Its class says why.
+         * The lookup broke: [error] is the throwable a resolution strategy raised (or another typed
+         * [GroovyLspException]). Its class says why. A position that names no symbol is [NotFound], not this.
          */
         data class Failed(val error: Throwable) : DefinitionLookup
     }
@@ -128,9 +132,10 @@ class DefinitionResolver(
     /**
      * Find the definition of the symbol at the given position.
      *
-     * Expected failures of the request itself (invalid position, no node, definition without a position) come
-     * back as [DefinitionLookup.Failed]. Anything else, an unexpected exception above all, propagates unchanged:
-     * it is neither "not found" nor a typed failure, and cancellation must never be rewritten.
+     * A [PositionException] (invalid position, no node, definition without a position) is
+     * [DefinitionLookup.NotFound]; a typed failure of a strategy is [DefinitionLookup.Failed]. Anything else, an
+     * unexpected exception above all, propagates unchanged: it is neither "not found" nor a typed failure, and
+     * cancellation must never be rewritten.
      */
     suspend fun findDefinitionAt(uri: URI, position: Position): DefinitionLookup {
         logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
@@ -143,6 +148,10 @@ class DefinitionResolver(
                 validateDefinition(lookup.result.node, uri)
             }
             lookup
+        } catch (e: PositionException) {
+            // The cursor names no symbol, or the definition has no position: a miss, not a broken lookup.
+            logger.debug { "No navigable position: $e" }
+            DefinitionLookup.NotFound(ResolutionError(e.message.orEmpty(), "position"))
         } catch (e: GroovyLspException) {
             logger.debug { "Specific error finding definition: $e" }
             DefinitionLookup.Failed(e)
@@ -165,7 +174,7 @@ class DefinitionResolver(
      */
     private fun validatePosition(position: Position, uri: URI) {
         if (position.line < 0 || position.character < 0) {
-            handleValidationError("invalidPosition", uri, ValidationContext.PositionContext(position))
+            throw uri.invalidPosition(position.line, position.character, "Negative coordinates")
         }
     }
 
@@ -181,7 +190,7 @@ class DefinitionResolver(
             trackedNode == null && fallbackNode != null -> fallbackNode
             shouldPreferFallback(trackedNode, fallbackNode) -> fallbackNode!!
             else -> trackedNode
-        } ?: handleValidationError("nodeNotFound", uri, ValidationContext.PositionContext(position))
+        } ?: throw uri.nodeNotFoundAtPosition(position.line, position.character)
     }
 
     /**
@@ -295,7 +304,11 @@ class DefinitionResolver(
         // Make sure the definition has valid position information
         if (!definition.hasValidPosition()) {
             logger.debug { "Definition node has invalid position information" }
-            handleValidationError("invalidDefinitionPosition", uri, ValidationContext.NodeContext(definition))
+            throw uri.invalidPosition(
+                definition.lineNumber,
+                definition.columnNumber,
+                "Definition node has invalid position information",
+            )
         }
 
         logger.debug {
@@ -303,53 +316,6 @@ class DefinitionResolver(
                 "at ${definition.lineNumber}:${definition.columnNumber}"
         }
         return definition
-    }
-
-    /**
-     * Create a SymbolNotFoundException with consistent parameters.
-     */
-    private fun createSymbolNotFoundException(symbol: String, uri: URI, position: Position) =
-        SymbolNotFoundException(symbol, uri, position.line, position.character)
-
-    /**
-     * Validation context for different error scenarios.
-     */
-    private sealed class ValidationContext {
-        data class PositionContext(val position: Position) : ValidationContext()
-
-        data class NodeContext(val node: ASTNode) : ValidationContext()
-    }
-
-    /**
-     * Handle validation errors by throwing appropriate exceptions.
-     * Consolidates validation throws to reduce throw count.
-     */
-    @Suppress("ThrowsCount") // This method centralizes all throws to satisfy detekt
-    private fun handleValidationError(errorType: String, uri: URI, context: ValidationContext): Nothing =
-        when (context) {
-            is ValidationContext.PositionContext -> handlePositionValidationError(errorType, uri, context.position)
-            is ValidationContext.NodeContext -> handleNodeValidationError(errorType, uri, context.node)
-        }
-
-    private fun handlePositionValidationError(errorType: String, uri: URI, position: Position): Nothing =
-        when (errorType) {
-            "invalidPosition" -> throw uri.invalidPosition(position.line, position.character, "Negative coordinates")
-            "nodeNotFound" -> throw uri.nodeNotFoundAtPosition(position.line, position.character)
-            else -> throw createSymbolNotFoundException("unknown", uri, position)
-        }
-
-    private fun handleNodeValidationError(errorType: String, uri: URI, node: ASTNode): Nothing = when (errorType) {
-        "invalidDefinitionPosition" -> throw uri.invalidPosition(
-            node.lineNumber,
-            node.columnNumber,
-            "Definition node has invalid position information",
-        )
-
-        else -> throw createSymbolNotFoundException(
-            node.toString(),
-            uri,
-            Position(node.lineNumber, node.columnNumber),
-        )
     }
 
     /**

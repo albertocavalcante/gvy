@@ -5,8 +5,6 @@ package com.github.albertocavalcante.gvy.gls.providers.definition
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.errors.InvalidPositionException
-import com.github.albertocavalcante.gvy.gls.errors.NodeNotFoundAtPositionException
 import io.mockk.every
 import io.mockk.spyk
 import kotlinx.coroutines.CancellationException
@@ -81,17 +79,16 @@ class DefinitionLookupTest {
     }
 
     @Test
-    fun `negative coordinates fail as an invalid position`(): Unit = runBlocking {
+    fun `negative coordinates are not found, not a broken lookup`(): Unit = runBlocking {
         val lookup = resolver("def value = 1\n").findDefinitionAt(uri, Position(-1, 0))
-        val failed = assertIs<DefinitionResolver.DefinitionLookup.Failed>(lookup)
-        assertIs<InvalidPositionException>(failed.error)
+        assertIs<DefinitionResolver.DefinitionLookup.NotFound>(lookup, "lookup: $lookup")
     }
 
     @Test
-    fun `a string literal fails as no node at the position`(): Unit = runBlocking {
+    fun `a string literal is not found, not a broken lookup`(): Unit = runBlocking {
         val lookup = resolver("println \"literal\"\n").findDefinitionAt(uri, Position(0, 10))
-        val failed = assertIs<DefinitionResolver.DefinitionLookup.Failed>(lookup)
-        assertIs<NodeNotFoundAtPositionException>(failed.error)
+        val notFound = assertIs<DefinitionResolver.DefinitionLookup.NotFound>(lookup, "lookup: $lookup")
+        assertEquals("position", notFound.error.source)
     }
 
     @Test
