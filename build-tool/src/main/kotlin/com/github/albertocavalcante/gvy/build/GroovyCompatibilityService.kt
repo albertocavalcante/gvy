@@ -29,13 +29,59 @@ private data class CompatibilityMatrix(
 )
 
 /**
- * Result of a compatibility check.
+ * Result of a compatibility check between a Groovy version and a JDK.
  *
- * @property isFullyCompatible True if the Groovy version fully supports the JDK version
- * @property isPartiallyCompatible True if the Groovy version has partial/experimental support
- * @property message Human-readable explanation of the compatibility status
+ * "No data" is its own variant, [Unknown], so it cannot be read as compatible. Handle the variants with an
+ * exhaustive `when`; [message] is the one human-readable rendering of each variant.
  */
-data class CompatibilityResult(val isFullyCompatible: Boolean, val isPartiallyCompatible: Boolean, val message: String)
+sealed interface CompatibilityResult {
+    /** Human-readable explanation of the compatibility status. */
+    val message: String
+
+    /** The Groovy [line] (e.g. "5.0") is fully supported on [jdkVersion]. */
+    data class Compatible(val line: String, val jdkVersion: Int) : CompatibilityResult {
+        override val message: String get() = "Groovy $line is fully compatible with JDK $jdkVersion"
+    }
+
+    /**
+     * The Groovy [line] has partial or experimental support on [jdkVersion]; full support ends at
+     * [fullySupportedUpToJdk].
+     */
+    data class PartiallySupported(val line: String, val jdkVersion: Int, val fullySupportedUpToJdk: Int) :
+        CompatibilityResult {
+        override val message: String
+            get() = "Groovy $line has partial/experimental support for JDK $jdkVersion " +
+                "(fully supports up to JDK $fullySupportedUpToJdk)"
+    }
+
+    /** The Groovy [line] is known not to support [jdkVersion]. */
+    sealed interface Incompatible : CompatibilityResult {
+        val line: String
+        val jdkVersion: Int
+
+        /** [jdkVersion] is older than the oldest JDK [minimumJdk] the Groovy [line] supports. */
+        data class BelowMinimum(override val line: String, override val jdkVersion: Int, val minimumJdk: Int) :
+            Incompatible {
+            override val message: String
+                get() = "Groovy $line requires JDK $minimumJdk or later, but JDK $jdkVersion is being used"
+        }
+
+        /** [jdkVersion] is newer than the newest JDK [maxSupportedJdk] the Groovy [line] supports, even partially. */
+        data class AboveMaximum(override val line: String, override val jdkVersion: Int, val maxSupportedJdk: Int) :
+            Incompatible {
+            override val message: String
+                get() = "Groovy $line is not compatible with JDK $jdkVersion (max supported: JDK $maxSupportedJdk)"
+        }
+    }
+
+    /**
+     * There is no compatibility data for [groovyVersion], exactly as it was asked about: its line is not in the
+     * table, it could not be parsed, or the table failed to load. This says nothing about compatibility.
+     */
+    data class Unknown(val groovyVersion: String) : CompatibilityResult {
+        override val message: String get() = "Unknown Groovy version $groovyVersion - no compatibility data"
+    }
+}
 
 private val logger = KotlinLogging.logger {}
 
@@ -78,71 +124,25 @@ class GroovyCompatibilityService internal constructor(private val entriesSource:
      *
      * @param groovyVersion The Groovy version (e.g., "4.0.22", "5.0.0")
      * @param jdkVersion The JDK major version (e.g., 21, 25)
-     * @return CompatibilityResult with compatibility status and message
+     * @return the matching [CompatibilityResult] variant; [CompatibilityResult.Unknown] when the version's line is
+     *   not in the table (never matched to a neighbouring line), cannot be parsed, or the table failed to load
      */
     fun checkCompatibility(groovyVersion: String, jdkVersion: Int): CompatibilityResult {
-        val groovyMajor = parseGroovyMajorVersion(groovyVersion)
-
-        // Fail open: if we can't parse the version or don't have data, assume compatible
-        if (groovyMajor == null) {
-            return CompatibilityResult(
-                isFullyCompatible = true,
-                isPartiallyCompatible = false,
-                message = "Unknown Groovy version $groovyVersion - assuming compatible",
-            )
-        }
-
-        // Find the matching entry in the compatibility matrix
-        val entry = compatibilityEntries.find { it.groovy == groovyMajor }
-
-        // Fail open: if version not in matrix, assume compatible
-        if (entry == null) {
-            return CompatibilityResult(
-                isFullyCompatible = true,
-                isPartiallyCompatible = false,
-                message = "Unknown Groovy version $groovyMajor - assuming compatible",
-            )
-        }
+        val line = parseGroovyMajorVersion(groovyVersion)
+        val entry = line?.let { wanted -> compatibilityEntries.find { it.groovy == wanted } }
+            ?: return CompatibilityResult.Unknown(groovyVersion)
+        val partialMax = entry.jdkMaxPartial
 
         return when {
-            jdkVersion < entry.jdkMin -> {
-                val message = "Groovy $groovyMajor requires JDK ${entry.jdkMin} or later, " +
-                    "but JDK $jdkVersion is being used"
-                CompatibilityResult(
-                    isFullyCompatible = false,
-                    isPartiallyCompatible = false,
-                    message = message,
-                )
-            }
-
-            jdkVersion <= entry.jdkMax -> {
-                CompatibilityResult(
-                    isFullyCompatible = true,
-                    isPartiallyCompatible = false,
-                    message = "Groovy $groovyMajor is fully compatible with JDK $jdkVersion",
-                )
-            }
-
-            entry.jdkMaxPartial != null && jdkVersion <= entry.jdkMaxPartial -> {
-                val message = "Groovy $groovyMajor has partial/experimental support for JDK $jdkVersion " +
-                    "(fully supports up to JDK ${entry.jdkMax})"
-                CompatibilityResult(
-                    isFullyCompatible = false,
-                    isPartiallyCompatible = true,
-                    message = message,
-                )
-            }
-
-            else -> {
-                val maxSupported = entry.jdkMaxPartial ?: entry.jdkMax
-                val message = "Groovy $groovyMajor is not compatible with JDK $jdkVersion " +
-                    "(max supported: JDK $maxSupported)"
-                CompatibilityResult(
-                    isFullyCompatible = false,
-                    isPartiallyCompatible = false,
-                    message = message,
-                )
-            }
+            jdkVersion < entry.jdkMin -> CompatibilityResult.Incompatible.BelowMinimum(
+                entry.groovy,
+                jdkVersion,
+                entry.jdkMin,
+            )
+            jdkVersion <= entry.jdkMax -> CompatibilityResult.Compatible(entry.groovy, jdkVersion)
+            partialMax != null && jdkVersion <= partialMax ->
+                CompatibilityResult.PartiallySupported(entry.groovy, jdkVersion, entry.jdkMax)
+            else -> CompatibilityResult.Incompatible.AboveMaximum(entry.groovy, jdkVersion, partialMax ?: entry.jdkMax)
         }
     }
 
@@ -153,7 +153,9 @@ class GroovyCompatibilityService internal constructor(private val entriesSource:
      * order of the entries in the compatibility file.
      *
      * @param jdkVersion The JDK major version (e.g., 25)
-     * @return A suggested Groovy version string, or null if no specific suggestion
+     * @return a suggestion such as "Groovy 6.0", or `null` when no line in the table fully supports the JDK (older or
+     *   newer than every line) or the table failed to load. Callers treat both as "no suggestion", so they are not
+     *   told apart; a failed load is logged at error level by [loadBundledCompatibilityEntries].
      */
     fun suggestGroovyVersion(jdkVersion: Int): String? {
         val compatibleEntry = compatibilityEntries.firstOrNull { entry ->
