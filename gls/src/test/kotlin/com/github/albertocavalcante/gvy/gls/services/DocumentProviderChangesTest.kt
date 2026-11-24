@@ -113,7 +113,7 @@ class DocumentProviderChangesTest {
     fun `an equal snapshot or another documents snapshot cannot authorize a transition`() {
         val base = open()
         val other = URI.create("file:///workspace/Other.groovy")
-        documents.put(other, base.content, assertNotNull((base.version)))
+        documents.put(other, base.content, assertNotNull(base.version))
         val impostors = listOf(base.copy(), assertNotNull(documents.getSnapshot(other)))
         for (impostor in impostors) {
             assertEquals(
@@ -135,7 +135,7 @@ class DocumentProviderChangesTest {
         )
         assertNull(documents.getSnapshot(uri))
 
-        documents.put(uri, base.content, assertNotNull((base.version)))
+        documents.put(uri, base.content, assertNotNull(base.version))
         val reopened = assertNotNull(documents.getSnapshot(uri))
         assertEquals(base, reopened)
         assertEquals(
@@ -217,7 +217,7 @@ class DocumentProviderChangesTest {
         val incarnation = assertNotNull(documents.getIncarnation(uri))
         val result = withPausedBatch(base, listOf(insert(0, "discarded"))) {
             documents.remove(uri)
-            documents.put(uri, base.content, assertNotNull((base.version)))
+            documents.put(uri, base.content, assertNotNull(base.version))
         }
         assertEquals(BufferChangeResult.RetiredBase, result)
         assertEquals(base, documents.getSnapshot(uri))

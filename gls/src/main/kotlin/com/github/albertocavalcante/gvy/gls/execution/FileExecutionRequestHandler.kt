@@ -64,7 +64,7 @@ class FileExecutionRequestHandler(
             stop("Trust the workspace before execution.")
         } else {
             documentUri(params.uri).flatMap { uri ->
-                currentSnapshot(uri, params.version).flatMap { snapshot ->
+                currentSnapshot(uri, DocumentVersion.of(params.version)).flatMap { snapshot ->
                     documentPath(uri).flatMap { source -> checkSavedDocument(uri, source, snapshot) }
                 }
             }
@@ -76,11 +76,11 @@ class FileExecutionRequestHandler(
         stop("Save the document to a local file first.")
     }
 
-    private fun currentSnapshot(uri: URI, version: Int): ExecutionStep<DocumentSnapshot> {
+    private fun currentSnapshot(uri: URI, version: DocumentVersion): ExecutionStep<DocumentSnapshot> {
         val snapshot = documents.getSnapshot(uri)
         return when {
             snapshot == null -> stop("Open and save the document first.")
-            snapshot.version != DocumentVersion.of(version) -> stop("The document version changed; run again.")
+            snapshot.version != version -> stop("The document version changed; run again.")
             else -> ExecutionStep.Value(snapshot)
         }
     }

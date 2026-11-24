@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 import com.github.albertocavalcante.gvy.gls.compilation.contentHash
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.services.LanguageClient
@@ -108,7 +109,7 @@ internal data class ConfigurationPublicationState(
 internal fun publishCombined(
     recipient: LanguageClient?,
     uri: URI,
-    version: Int?,
+    version: DocumentVersion?,
     maxProblems: Int,
     state: ConfigurationPublicationState,
 ) {
@@ -117,7 +118,7 @@ internal fun publishCombined(
         Triple(it.range, it.code, it.message)
     }
     recipient.publishDiagnostics(
-        PublishDiagnosticsParams(uri.toString(), all.take(maxProblems.coerceAtLeast(0)), version),
+        PublishDiagnosticsParams(uri.toString(), all.take(maxProblems.coerceAtLeast(0)), version?.value),
     )
 }
 
@@ -142,6 +143,6 @@ internal fun clearConfigurationNotices(
         }
     }
     affected.forEach {
-        publishCombined(recipient, it, documentProvider.getSnapshot(it)?.version?.value, maxProblems, state)
+        publishCombined(recipient, it, documentProvider.getSnapshot(it)?.version, maxProblems, state)
     }
 }

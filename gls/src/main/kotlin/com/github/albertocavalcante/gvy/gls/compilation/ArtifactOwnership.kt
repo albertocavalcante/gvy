@@ -106,7 +106,9 @@ class ArtifactOwnership {
         val last = committedOrders[ticket.uri]
         if (last == null || last.incarnation !== order.incarnation || last.version <= order.version) return true
         if (!order.isCurrent()) return false
-        logger.debug { "${ticket.uri}: version ${order.version} after ${last.version}; accepting the current text" }
+        logger.debug {
+            "${ticket.uri}: version ${order.version.value} after ${last.version.value}; accepting the current text"
+        }
         return true
     }
 

@@ -52,7 +52,7 @@ abstract class VerifyCompileFailures
 
         @get:InputFile
         @get:PathSensitive(PathSensitivity.RELATIVE)
-        abstract val mixedUnits: RegularFileProperty
+        abstract val mixedFile: RegularFileProperty
 
         @get:Nested
         abstract val launcher: Property<JavaLauncher>
@@ -71,9 +71,9 @@ abstract class VerifyCompileFailures
                 throw GradleException("The well-typed control must compile:\n${control.output}")
             }
 
-            val mixedSource = mixedUnits.get().asFile
+            val mixedSource = mixedFile.get().asFile
             val mixed = compile(mixedSource, work.resolve("Mixed.kt"), work.resolve("mixed"))
-            if (mixed.exitCode == 0) throw GradleException("The mixed-units file compiled; units can be mixed")
+            if (mixed.exitCode == 0) throw GradleException("The mixed file compiled; the types it mixes can be mixed")
 
             val expectedLines =
                 mixedSource
@@ -142,7 +142,7 @@ val verifyCoordinateUnitCompileFailures =
         compilerClasspath.from(compileFailCompiler)
         consumerClasspath.from(sourceSets.main.map { it.output }, configurations.named("compileClasspath"))
         wellTyped.set(layout.projectDirectory.file("src/test/resources/compile-fail/WellTypedCoordinates.kt.txt"))
-        mixedUnits.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedCoordinateUnits.kt.txt"))
+        mixedFile.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedCoordinateUnits.kt.txt"))
         launcher.set(javaToolchains.launcherFor(java.toolchain))
         workDirectory.set(layout.buildDirectory.dir("compile-fail"))
     }
@@ -154,7 +154,7 @@ val verifyVersionKindCompileFailures =
         compilerClasspath.from(compileFailCompiler)
         consumerClasspath.from(sourceSets.main.map { it.output }, configurations.named("compileClasspath"))
         wellTyped.set(layout.projectDirectory.file("src/test/resources/compile-fail/WellTypedVersions.kt.txt"))
-        mixedUnits.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedVersionKinds.kt.txt"))
+        mixedFile.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedVersionKinds.kt.txt"))
         launcher.set(javaToolchains.launcherFor(java.toolchain))
         workDirectory.set(layout.buildDirectory.dir("compile-fail-versions"))
     }

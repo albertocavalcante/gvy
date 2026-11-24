@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.gvy.gls.providers.imports.TextReplacement
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.Position
@@ -18,7 +19,7 @@ import java.net.URI
 /** What the code action request is about: one document at one version, with the diagnostics the client sent. */
 internal data class ImportActionRequest(
     val uri: URI,
-    val version: Int?,
+    val version: DocumentVersion?,
     val content: String,
     val diagnostics: List<Diagnostic>,
 )
@@ -33,6 +34,6 @@ internal fun ImportActionRequest.versionedEdit(edits: List<TextReplacement>): Wo
     }
 
     val textEdits = edits.map { TextEdit(Range(position(it.start), position(it.end)), it.newText) }
-    val document = VersionedTextDocumentIdentifier(uri.toString(), version)
+    val document = VersionedTextDocumentIdentifier(uri.toString(), version?.value)
     return WorkspaceEdit(listOf(Either.forLeft(TextDocumentEdit(document, textEdits))))
 }

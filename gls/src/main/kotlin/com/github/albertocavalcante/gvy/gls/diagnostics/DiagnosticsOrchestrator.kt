@@ -348,7 +348,7 @@ class DiagnosticsOrchestrator(
                         publishCombined(
                             recipient,
                             it,
-                            documentProvider.getSnapshot(it)?.version?.value,
+                            documentProvider.getSnapshot(it)?.version,
                             runtime.configuration.maxNumberOfProblems,
                             configurationPublication,
                         )
@@ -408,7 +408,7 @@ class DiagnosticsOrchestrator(
                 publishCombined(
                     recipient,
                     uri,
-                    captured.version?.value,
+                    captured.version,
                     settings.configuration.maxNumberOfProblems,
                     configurationPublication,
                 )
@@ -443,7 +443,7 @@ class DiagnosticsOrchestrator(
                     publishCombined(
                         recipient,
                         run.uri,
-                        run.snapshot.version?.value,
+                        run.snapshot.version,
                         run.settings.configuration.maxNumberOfProblems,
                         configurationPublication,
                     )
@@ -454,7 +454,7 @@ class DiagnosticsOrchestrator(
                     publishCombined(
                         recipient,
                         it,
-                        documentProvider.getSnapshot(it)?.version?.value,
+                        documentProvider.getSnapshot(it)?.version,
                         run.settings.configuration.maxNumberOfProblems,
                         configurationPublication,
                     )

@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import org.codehaus.groovy.ast.ModuleNode
@@ -29,7 +30,7 @@ internal data class SpockTableRequest(
     val module: ModuleNode?,
     val selection: Range,
     val only: List<String>? = null,
-    val version: Int? = null,
+    val version: DocumentVersion? = null,
     /** True when the compile that produced [module] reported errors, so classes may be missing. */
     val isPartial: Boolean = false,
     /** Remembered verdicts for this document (#1387); null disables recording and recall. */
@@ -182,7 +183,7 @@ internal object SpockTableAction {
     }
 
     @Suppress("ReturnCount") // Each guard rejects an unsafe or unnecessary edit.
-    private fun createAction(uri: String, table: List<Row>, selection: Range, version: Int?): CodeAction? {
+    private fun createAction(uri: String, table: List<Row>, selection: Range, version: DocumentVersion?): CodeAction? {
         if (table.size < 2 || !table.first().isHeader) return null
         val header = table.first()
         if (table.any { it.cells.size != header.cells.size || it.separators != header.separators }) return null
@@ -198,7 +199,7 @@ internal object SpockTableAction {
         if (edits.map { it.newText } == table.map { it.original }) return null
         return CodeAction("Align Spock data table").apply {
             kind = CodeActionKind.RefactorRewrite
-            val document = VersionedTextDocumentIdentifier(uri, version)
+            val document = VersionedTextDocumentIdentifier(uri, version?.value)
             edit = WorkspaceEdit(listOf(Either.forLeft(TextDocumentEdit(document, edits))))
         }
     }
