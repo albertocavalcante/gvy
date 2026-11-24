@@ -100,28 +100,34 @@ class ClassHierarchyBoundsTest {
         assertFalse(inTime { leaf.implementsInterfaceSafe(iface("Other")) })
     }
 
+    /*
+     * The walk visits the leaf and Object first, so the interface at chain depth d is found while expanding the
+     * visit number d + 1 and needs d + 1 < MAX_HIERARCHY_NODES: the last depth found is MAX_HIERARCHY_NODES - 2.
+     */
     @Test
-    fun `an interface walk visits at most the node bound`() {
-        val below = interfaceChain(BELOW)
-        val between = interfaceChain(BETWEEN)
-        val above = interfaceChain(ABOVE)
-        assertTrue(inTime { below.first.implementsInterfaceSafe(below.second) })
-        assertFalse(inTime { between.first.implementsInterfaceSafe(between.second) }, "depth $BETWEEN")
-        assertFalse(inTime { above.first.implementsInterfaceSafe(above.second) })
+    fun `an interface chain is found up to the node bound and not beyond`() {
+        val atBound = interfaceChain(MAX_HIERARCHY_NODES - 2)
+        val pastBound = interfaceChain(MAX_HIERARCHY_NODES - 1)
+        assertTrue(inTime { atBound.first.implementsInterfaceSafe(atBound.second) })
+        assertFalse(inTime { pastBound.first.implementsInterfaceSafe(pastBound.second) })
     }
 
     @Test
-    fun `a wide two level interface graph is cut at the node bound`() {
-        val narrow = twoLevelFan(BELOW)
-        val wide = twoLevelFan(BETWEEN)
-        assertTrue(inTime { narrow.first.implementsInterfaceSafe(narrow.second) })
-        assertFalse(inTime { wide.first.implementsInterfaceSafe(wide.second) })
+    fun `a wide two level interface graph is found up to the node bound and not beyond`() {
+        val atBound = twoLevelFan(MAX_HIERARCHY_NODES - 2)
+        val pastBound = twoLevelFan(MAX_HIERARCHY_NODES - 1)
+        assertTrue(inTime { atBound.first.implementsInterfaceSafe(atBound.second) })
+        assertFalse(inTime { pastBound.first.implementsInterfaceSafe(pastBound.second) })
+    }
+
+    @Test
+    fun `all interfaces of a long chain stop at the node bound`() {
+        val (leaf, _) = interfaceChain(MAX_HIERARCHY_NODES * 2)
+        val all = inTime { leaf.allInterfacesSafe() }
+        assertEquals(MAX_HIERARCHY_NODES - 2 + 1, all.size)
     }
 
     private companion object {
         const val TIMEOUT_SECONDS = 20L
-        const val BELOW = 100
-        const val BETWEEN = 5_000
-        const val ABOVE = 70_000
     }
 }

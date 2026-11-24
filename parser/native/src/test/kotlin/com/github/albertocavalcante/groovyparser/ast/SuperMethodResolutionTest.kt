@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.EmptyStatement
@@ -42,12 +43,20 @@ class SuperMethodResolutionTest {
         override fun contains(ancestor: ASTNode, descendant: ASTNode): Boolean = false
     }
 
-    private fun method(owner: ClassNode, name: String) =
-        MethodNode(name, 1, ClassHelper.VOID_TYPE, Parameter.EMPTY_ARRAY, ClassNode.EMPTY_ARRAY, EmptyStatement())
-            .also { owner.addMethod(it) }
+    private fun method(owner: ClassNode, name: String, arity: Int = 0) = MethodNode(
+        name,
+        1,
+        ClassHelper.VOID_TYPE,
+        Array(arity) { Parameter(ClassHelper.OBJECT_TYPE, "p$it") },
+        ClassNode.EMPTY_ARRAY,
+        EmptyStatement(),
+    ).also { owner.addMethod(it) }
 
-    private fun superCall(name: String) =
-        MethodCallExpression(VariableExpression.SUPER_EXPRESSION, name, ArgumentListExpression.EMPTY_ARGUMENTS)
+    private fun superCall(name: String, arity: Int = 0) = MethodCallExpression(
+        VariableExpression.SUPER_EXPRESSION,
+        name,
+        ArgumentListExpression(List(arity) { ConstantExpression(it) }),
+    )
 
     private fun resolve(enclosing: ClassNode, call: MethodCallExpression, candidates: List<MethodNode>) =
         assertTimeoutPreemptively(Duration.ofSeconds(TIMEOUT_SECONDS)) {
@@ -76,6 +85,43 @@ class SuperMethodResolutionTest {
         val inherited = method(b, "m")
 
         assertSame(inherited, resolve(a, superCall("m"), listOf(a.methods.single(), inherited)))
+    }
+
+    /** `class C {}; class B extends C {}; class A extends B {}`, with `m` declared on the chosen classes. */
+    private fun chain(): Triple<ClassNode, ClassNode, ClassNode> {
+        val c = ClassNode("C", 1, ClassHelper.OBJECT_TYPE)
+        val b = ClassNode("B", 1, c)
+        return Triple(ClassNode("A", 1, b), b, c)
+    }
+
+    @Test
+    fun `super on an acyclic chain finds the method declared two levels up`() {
+        val (a, _, c) = chain()
+        val noArgs = method(c, "m")
+        val oneArg = method(c, "m", arity = 1)
+        val own = method(a, "m")
+        val candidates = listOf(own, noArgs, oneArg)
+
+        assertSame(noArgs, resolve(a, superCall("m"), candidates))
+        assertSame(oneArg, resolve(a, superCall("m", arity = 1), candidates))
+        // No overload with this arity: the first declaration of the nearest declaring class
+        assertSame(noArgs, resolve(a, superCall("m", arity = 2), candidates))
+    }
+
+    @Test
+    fun `super on an acyclic chain prefers the nearest declaring superclass`() {
+        val (a, b, c) = chain()
+        val farther = method(c, "m")
+        val nearer = method(b, "m")
+
+        assertSame(nearer, resolve(a, superCall("m"), listOf(farther, nearer)))
+    }
+
+    @Test
+    fun `super finds nothing when only the overriding class declares the method`() {
+        val (a, _, _) = chain()
+
+        assertNull(resolve(a, superCall("m"), listOf(method(a, "m"))))
     }
 
     private companion object {

@@ -4,9 +4,10 @@
 /*
  * INTERNAL TO GVY - NOT PUBLIC API.
  *
- * Cycle-safe class hierarchy walks, shared by parser:core, parser:native, dsl:gdsl and gls (#1369, #1411). They live
- * in parser:api only because it is the one module all of those already depend on. Everything in the
- * `groovyparser.api.internal` packages may change or move without notice; do not use it from outside this repository.
+ * Cycle-safe class hierarchy walks, shared by parser:core, parser:native, dsl:gdsl, gls and semantics:core (#1369,
+ * #1411, #2401). They live in parser:api only because it is the one module all of those already depend on.
+ * Everything in the `groovyparser.api.internal` packages may change or move without notice; do not use it from outside
+ * this repository.
  */
 
 package com.github.albertocavalcante.groovyparser.api.internal.ast
@@ -103,7 +104,9 @@ fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean {
 
 /**
  * Every interface of this class, its superclasses and their super-interfaces, each once, in discovery order. Bounded
- * like [implementsInterfaceSafe]: past [MAX_HIERARCHY_NODES] visited classes the rest is left out.
+ * like [implementsInterfaceSafe]: once [MAX_HIERARCHY_NODES] classes and interfaces have been visited, no further
+ * one is expanded. The interfaces of the last expanded class are still added, so the set can exceed the bound by
+ * that class's fan-out.
  */
 fun ClassNode.allInterfacesSafe(): Set<ClassNode> {
     val found = LinkedHashSet<ClassNode>()
