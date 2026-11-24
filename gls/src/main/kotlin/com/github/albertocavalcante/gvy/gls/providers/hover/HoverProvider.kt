@@ -75,35 +75,39 @@ class HoverProvider(
     private val documentProvider: DocumentProvider,
     private val contentGenerator: HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
+    /**
+     * The workspace-independent strategies, evaluated in order after any Jenkins ones; the first that handles a
+     * node and returns a hover wins. Built once and shared by every request, so they must hold no per-request
+     * state. The last one should be a fallback.
+     */
+    baseStrategies: List<HoverStrategy> = defaultHoverStrategies(),
 ) {
+    private val baseStrategies: List<HoverStrategy> = baseStrategies.toList()
+
     private val logger = KotlinLogging.logger {}
 
     // Documentation provider for extracting groovydoc - use shared instance for cache consistency
     private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
 
-    // Strategies for handling different node types (order matters - more specific first)
-    private val strategies: List<HoverStrategy>
+    /**
+     * The strategies for this request, most specific first.
+     *
+     * The Jenkins strategies come first and exist only when a Jenkins strategy is active. They capture the
+     * workspace's current [com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities] and server mode,
+     * both of which change after construction, so they are built per request (two objects at most). Every other
+     * strategy is stateless and shared: with no Jenkins project this returns [baseStrategies] itself.
+     */
+    internal val strategies: List<HoverStrategy>
         get() {
             val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+                ?: return baseStrategies
             val modeResolver = ModeResolver.fromConfig(compilationService.serverConfiguration, jenkinsCapabilities)
-            return listOfNotNull(
+            return listOf(
                 // Jenkins step hover has high priority for method calls in Jenkins files
-                jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
-                jenkinsCapabilities?.let { JenkinsParameterHoverStrategy(it, modeResolver) },
-                MethodDeclarationHoverStrategy(),
-                ClassDeclarationHoverStrategy(),
-                FieldDeclarationHoverStrategy(),
-                ImportHoverStrategy(),
-                DeclarationExpressionHoverStrategy(),
-                VariableExpressionHoverStrategy(),
-                MethodCallHoverStrategy(),
-                ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
-                PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
-                ClosureHoverStrategy(), // Phase 4: Closure expressions
-                LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
-                GenericHoverStrategy(), // Fallback - must be last
-            )
+                JenkinsStepHoverStrategy(jenkinsCapabilities, modeResolver),
+                JenkinsParameterHoverStrategy(jenkinsCapabilities, modeResolver),
+            ) + baseStrategies
         }
 
     /**
@@ -445,6 +449,22 @@ class HoverProvider(
         }
     }
 }
+
+/** The default workspace-independent hover strategies (order matters: more specific first, fallback last). */
+internal fun defaultHoverStrategies(): List<HoverStrategy> = listOf(
+    MethodDeclarationHoverStrategy(),
+    ClassDeclarationHoverStrategy(),
+    FieldDeclarationHoverStrategy(),
+    ImportHoverStrategy(),
+    DeclarationExpressionHoverStrategy(),
+    VariableExpressionHoverStrategy(),
+    MethodCallHoverStrategy(),
+    ConstructorCallHoverStrategy(),
+    PropertyExpressionHoverStrategy(),
+    ClosureHoverStrategy(),
+    LiteralHoverStrategy(),
+    GenericHoverStrategy(),
+)
 
 /** Whether this class or member is declared in a module other than [current]. */
 private fun ASTNode.isDeclaredInAnotherModule(current: ModuleNode?): Boolean {
