@@ -204,7 +204,7 @@ class DocumentVersionStepTest {
         ChangeDocumentStepExecutor().execute(ScenarioStep.ChangeDocument(path = "A.groovy"), context)
         val snapshot = documents.getSnapshot(URI.create(context.workspace.resolveUri("A.groovy")))
         assertThat(snapshot?.content).isEqualTo("first")
-        assertThat(snapshot?.version).isEqualTo(DEFAULT_OPEN_VERSION + 1)
+        assertThat(snapshot?.version).isEqualTo(DocumentVersion.of(DEFAULT_OPEN_VERSION + 1))
     }
 
     @Test
