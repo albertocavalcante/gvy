@@ -20,6 +20,8 @@ composeMaterialIcons = "1.7.3"
 groovy = "4.0.33"
 ivy = "2.5.3"
 lsp4j = "0.24.0"
+# lsp4j declares gson as a version range; pinned so no Maven version listing is requested (#1908).
+gson = "2.13.2"
 codenarc = "3.7.0-groovy-4.0"
 gmetrics = "2.1.0"
 gradleTooling = "9.8.2"
@@ -76,6 +78,9 @@ ivy = { module = "org.apache.ivy:ivy", version.ref = "ivy" }
 # LSP
 lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }
 lsp4j-jsonrpc = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc", version.ref = "lsp4j" }
+
+# Read by the gson pin in build.gradle.kts (Renovate tracks the version through this library entry).
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 
 # SCIP / Protobuf
 wire-runtime = { module = "com.squareup.wire:wire-runtime", version.ref = "wire" }
