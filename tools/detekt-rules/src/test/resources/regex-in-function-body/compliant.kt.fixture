@@ -1,0 +1,71 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing here may be reported.
+package fixtures
+
+import java.util.regex.Pattern
+
+// File scope.
+private val FILE_REGEX = Regex("a+")
+private val FILE_TO_REGEX = "b+".toRegex()
+private val FILE_PATTERN: Pattern = Pattern.compile("c+")
+private val FILE_FROM_LITERAL = Regex.fromLiteral("d.e")
+val fileLazy by lazy { Regex("f+") }
+
+// Object and companion scope, including the object's own init block, which runs once.
+object Singleton {
+    private val regex = Regex("g+")
+    private val byLazy by lazy { "h+".toRegex() }
+
+    init {
+        Regex("i+")
+    }
+}
+
+class Holder {
+    private val perInstance = Regex("j+")
+    private val lazyPerInstance by lazy { Regex("k+") }
+    private val lazyWithMode by lazy(LazyThreadSafetyMode.NONE) { Pattern.compile("l+") }
+    private val lazyAsArgument = lazy({ Regex("m+") })
+
+    companion object {
+        private val SHARED = Regex("n+")
+        private val SHARED_LAZY by lazy { Regex("o+") }
+
+        init {
+            Regex("p+")
+        }
+    }
+
+    fun use(input: String) = SHARED.matches(input) && perInstance.matches(input)
+}
+
+// Patterns built from a runtime value cannot be hoisted, so they are not reported.
+fun fromParameter(pattern: String) = Regex(pattern)
+fun interpolated(name: String) = Regex("prefix-$name")
+fun interpolatedExpression(names: List<String>) = Regex("(${names.joinToString("|")})")
+fun interpolatedToRegex(name: String) = "$name+".toRegex()
+fun toRegexOnVariable(pattern: String) = pattern.toRegex()
+fun toRegexOnCall(names: List<String>) = names.joinToString("|").toRegex()
+fun toRegexWithoutReceiver(): Regex = toRegex()
+fun javaPatternFromVariable(pattern: String) = Pattern.compile(pattern)
+fun javaPatternFromQuote(literal: String) = Pattern.compile(Pattern.quote(literal))
+fun fromLiteralOnVariable(literal: String) = Regex.fromLiteral(literal)
+fun escaped(literal: String) = Regex(Regex.escape(literal))
+fun unknownReference() = Regex(OtherFile.PATTERN)
+fun mutableName() = Regex(mutablePattern)
+
+var mutablePattern = "q+"
+
+// Using an already compiled regex is the goal, not a violation.
+fun useCompiled(input: String) = FILE_REGEX.matches(input) && FILE_TO_REGEX.containsMatchIn(input)
+
+// Similar names that are not regex construction.
+fun lookalikes(input: String) {
+    input.toRegexOrNull()
+    Pattern.matches("r+", input)
+    Pattern.quote("s")
+    Regexp("t+")
+    Other.compile("u+")
+    RegexOption.IGNORE_CASE
+}

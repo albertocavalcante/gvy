@@ -106,6 +106,20 @@ formatting:
   ArgumentListWrapping:
     active: true
     autoCorrect: true
+gvy:
+  active: true
+  RegexInFunctionBody:
+    active: true
+    excludes:
+    - '**/src/test/**'
+    - '**/src/jmh/**'
+    # Modules whose regexes are not hoisted yet. Remove a line in the same pull request that hoists that module;
+    # the rule then guards it. Never add a line here (or a baseline entry) for a module that is clean. See #2420.
+    - '**/build-tool/src/**'
+    - '**/diagnostics/codenarc/src/**'
+    - '**/jenkins/src/**'
+    - '**/parser/core/src/**'
+    - '**/semantics/core/src/**'
 naming:
   active: true
   ClassNaming:

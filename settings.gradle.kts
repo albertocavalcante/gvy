@@ -67,6 +67,8 @@ include("jupyter:kernel-core")
 include("jupyter:kernels:groovy")
 include("repl")
 include("tools:jenkins-extractor")
+// Custom detekt rules that run in the same `lint` task as the built-in ones (no type resolution needed).
+include("tools:detekt-rules")
 include("viz:ast-model")
 include("viz:desktop")
 include("semantics:core")
