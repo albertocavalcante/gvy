@@ -4,7 +4,9 @@
 package com.github.albertocavalcante.gvy.build
 
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -12,7 +14,9 @@ import kotlin.time.Duration.Companion.seconds
  * Runs a short-lived build-tool command with a bounded wait.
  *
  * Standard input is closed immediately (so prompts cannot block), stderr is merged into the captured
- * output, and on timeout the whole process tree is killed so wrapper scripts cannot leave orphans.
+ * output, and on timeout or interrupt the whole process tree is killed so wrapper scripts cannot leave orphans.
+ * [run] returns (or throws) only after the killed processes have exited, because `destroyForcibly` merely
+ * requests the kill: a caller that checks right afterwards would otherwise see a process that is still dying.
  *
  * Captured output is bounded: the first [HEAD_CHARS] and last [TAIL_CHARS] characters are kept and the middle
  * is replaced by a truncation marker, so a chatty command cannot grow memory or logs without limit.
@@ -22,6 +26,9 @@ internal object BoundedProcessRunner {
     data class Result(val exitCode: Int?, val output: String, val timedOut: Boolean)
 
     private val READER_JOIN_TIMEOUT = 5.seconds
+
+    /** How long to wait for the operating system to complete a kill; a SIGKILL normally lands within milliseconds. */
+    private val EXIT_WAIT_TIMEOUT = 10.seconds
 
     internal const val HEAD_CHARS = 16 * 1024
     internal const val TAIL_CHARS = 48 * 1024
@@ -100,8 +107,33 @@ internal object BoundedProcessRunner {
 
     private fun killTree(process: Process) {
         // Snapshot descendants before killing the parent, which would reparent them.
-        process.descendants().forEach { it.destroyForcibly() }
+        val descendants = process.descendants().toList()
+        descendants.forEach { it.destroyForcibly() }
         process.destroyForcibly()
+        awaitExit(process, descendants)
+    }
+
+    /** Waits a bounded time for the kill to complete; a restored interrupt ends the wait early. */
+    private fun awaitExit(process: Process, descendants: List<ProcessHandle>) {
+        val deadline = System.nanoTime() + EXIT_WAIT_TIMEOUT.inWholeNanoseconds
+        try {
+            process.waitFor(EXIT_WAIT_TIMEOUT.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+            descendants.forEach { descendant -> awaitHandle(descendant, deadline) }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /** Waits for [handle] until [deadlineNanos]; running out of time or an abnormal completion is not an error. */
+    private fun awaitHandle(handle: ProcessHandle, deadlineNanos: Long) {
+        val remaining = maxOf(deadlineNanos - System.nanoTime(), 0L)
+        try {
+            handle.onExit().get(remaining, TimeUnit.NANOSECONDS)
+        } catch (ignored: TimeoutException) {
+            // Still dying after the budget: report what we have rather than block the caller further.
+        } catch (ignored: ExecutionException) {
+            // The handle's completion is not a failure of the kill; the process is gone either way.
+        }
     }
 }
 

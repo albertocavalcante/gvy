@@ -25,6 +25,8 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 import kotlin.time.measureTimedValue
 
+private const val CASE_TIMEOUT_SECONDS = 60L
+
 /**
  * Imports the same Maven workspace in-process ([MavenBuildTool]) and over the Build Server Protocol
  * ([BspBuildTool] launching the standalone `maven-bsp` server as a child process over stdio), then checks
@@ -34,10 +36,13 @@ import kotlin.time.measureTimedValue
  * A known divergence stays executable: the case pins today's result next to the oracle with a `FIXME(#n)`,
  * so fixing the defect fails the test until the pin is removed.
  *
- * Network: none is needed. Every artifact comes from a generated local repository, and the in-process
- * import's Maven CLI fallback is replaced by a wrapper that refuses to run.
+ * Network: none is needed. Every artifact comes from a generated local repository, the server runs with
+ * `--offline` so an artifact that is not there (the reactor sibling, #2291) fails at once instead of waiting on
+ * Maven Central, and the in-process import's Maven CLI fallback is replaced by a wrapper that refuses to run.
+ * A case takes about two seconds; the timeout is far below Bazel's 300 s target limit so a stall fails here,
+ * by name, instead of as an anonymous target timeout.
  */
-@Timeout(value = 5, unit = TimeUnit.MINUTES)
+@Timeout(value = CASE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
 class MavenBspEquivalenceTest {
 
     @TempDir

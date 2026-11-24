@@ -223,7 +223,8 @@ internal class MavenEquivalenceWorkspace private constructor(
 
         /**
          * The argv matches the file `MavenBspConnectionJson` generates (`java -jar <server> <workspace>`), except for
-         * an absolute JVM, a heap cap for this shared test JVM's child, and the local repository both imports use.
+         * an absolute JVM, a heap cap for this shared test JVM's child, the local repository both imports use and
+         * `--offline`, so no import can wait on a remote repository.
          */
         private fun writeConnectionFile(root: Path, localRepository: Path) {
             val javaName = if (BuildExecutableResolver.isWindows) "java.exe" else "java"
@@ -234,6 +235,9 @@ internal class MavenEquivalenceWorkspace private constructor(
                 MavenBspHarnessInputs.serverJar.toString(),
                 "--local-repo",
                 localRepository.toString(),
+                // Without it the multi-module case asks Maven Central for the reactor sibling (#2291), and the
+                // import's duration depends on that service's latency.
+                "--offline",
                 root.toString(),
             )
             val connection = buildJsonObject {

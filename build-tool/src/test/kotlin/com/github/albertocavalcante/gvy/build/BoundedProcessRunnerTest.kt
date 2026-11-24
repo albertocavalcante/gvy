@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import java.io.InputStream
 import java.io.InterruptedIOException
@@ -24,6 +25,8 @@ import kotlin.io.path.readText
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
+// Every test spawns or interrupts a process, so a hang must fail this test by name long before Bazel's 300 s limit.
+@Timeout(60)
 class BoundedProcessRunnerTest {
 
     @TempDir
@@ -118,6 +121,85 @@ class BoundedProcessRunnerTest {
         assertTrue(process.destroyed, "the process must be killed")
         assertTrue(process.streamClosed, "a reader that does not drain must have its stream closed")
         assertTrue(process.readerInterrupted.await(10, TimeUnit.SECONDS), "a blocked reader must be interrupted")
+    }
+
+    @Test
+    fun `interrupt returns only after the killed process has exited`() {
+        // destroyForcibly only requests the kill: the process is still alive for a moment afterwards, as on a loaded
+        // machine. A caller that checks right after run() returns must already see it dead.
+        val process = LingeringProcess(dyingMillis = 500)
+        val failure = AtomicReference<Throwable>()
+        val aliveOnReturn = AtomicReference<Boolean>()
+        val runner = Thread {
+            try {
+                BoundedProcessRunner.run(listOf("lingering"), tempDir, 120.seconds, 200.milliseconds) { _, _ ->
+                    process
+                }
+            } catch (e: InterruptedException) {
+                failure.set(e)
+            } finally {
+                aliveOnReturn.set(process.isAlive)
+            }
+        }
+        runner.start()
+        assertTrue(process.running.await(20, TimeUnit.SECONDS), "run() never started waiting for the process")
+        runner.interrupt()
+        runner.join(30_000)
+
+        assertFalse(runner.isAlive, "run() must return after an interrupt")
+        assertTrue(failure.get() is InterruptedException)
+        assertFalse(aliveOnReturn.get(), "run() returned while the killed process was still alive")
+    }
+
+    @Test
+    fun `timeout returns only after the killed process has exited`() {
+        val process = LingeringProcess(dyingMillis = 500)
+
+        val result = BoundedProcessRunner.run(listOf("lingering"), tempDir, 100.milliseconds, 200.milliseconds) {
+                _,
+                _,
+            ->
+            process
+        }
+
+        assertTrue(result.timedOut)
+        assertFalse(process.isAlive, "run() returned while the killed process was still alive")
+    }
+
+    /** A process that dies [dyingMillis] after it is asked to, like a kill that the kernel has not yet completed. */
+    private class LingeringProcess(private val dyingMillis: Long) : Process() {
+        val running = CountDownLatch(1)
+
+        @Volatile private var diesAtNanos = Long.MAX_VALUE
+
+        override fun isAlive(): Boolean = System.nanoTime() < diesAtNanos
+
+        override fun getOutputStream(): OutputStream = OutputStream.nullOutputStream()
+
+        override fun getInputStream(): InputStream = InputStream.nullInputStream()
+
+        override fun getErrorStream(): InputStream = InputStream.nullInputStream()
+
+        override fun waitFor(): Int = throw UnsupportedOperationException()
+
+        override fun waitFor(timeout: Long, unit: TimeUnit): Boolean {
+            running.countDown()
+            val limit = System.nanoTime() + unit.toNanos(timeout)
+            while (isAlive && System.nanoTime() < limit) Thread.sleep(10)
+            return !isAlive
+        }
+
+        override fun exitValue(): Int = if (isAlive) throw IllegalThreadStateException() else KILLED
+
+        override fun destroy() {
+            diesAtNanos = minOf(diesAtNanos, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(dyingMillis))
+        }
+
+        override fun descendants(): Stream<ProcessHandle> = Stream.empty()
+
+        private companion object {
+            const val KILLED = 137
+        }
     }
 
     /** A process that never exits and whose output stream blocks until it is interrupted. */
