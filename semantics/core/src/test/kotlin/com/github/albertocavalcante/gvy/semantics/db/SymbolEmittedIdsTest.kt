@@ -116,6 +116,27 @@ class SymbolEmittedIdsTest : SymbolIdTestSupport() {
     }
 
     @Test
+    fun `methods named with separators are emitted escaped and read back whole`() {
+        val document = build(
+            """
+            package com.example
+            class Odd {
+                def "fixes #12"() { 1 }
+                def "a.b(c)"() { 2 }
+                def "back\\slash"(int n) { n }
+            }
+            """,
+        )
+        listOf(
+            Expected("com/example/Odd#fixes \\#12().", "com/example/Odd", "fixes #12", ""),
+            Expected("com/example/Odd#a\\.b\\(c\\)().", "com/example/Odd", "a.b(c)", ""),
+            Expected("com/example/Odd#back\\\\slash(int).", "com/example/Odd", "back\\slash", "int"),
+        ).forEach { assertParts(document, it) }
+        assertEquals(0, Symbol("com/example/Odd#a\\.b\\(c\\)().").arity)
+        assertEquals(emptyList<String>(), Symbol("com/example/Odd#a\\.b\\(c\\)().").parameterTypes)
+    }
+
+    @Test
     fun `a script method has no class part, so owner and member read the whole id`() {
         val id = "scriptMethod(int)."
         assertParts(defaultPackage, Expected(id, id, id, "int"))

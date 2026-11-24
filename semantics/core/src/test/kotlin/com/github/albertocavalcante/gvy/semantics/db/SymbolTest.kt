@@ -271,6 +271,16 @@ class SymbolTest {
     }
 
     @Test
+    fun `escaped ids are written exactly`() {
+        val owner = Symbol.ofClass("a.B")
+        assertEquals("a/B#a\\.b().", Symbol.ofMethod(owner, "a.b", "").id)
+        assertEquals("a/B#f\\(x\\)().", Symbol.ofMethod(owner, "f(x)", "").id)
+        assertEquals("a/B#back\\\\slash(int).", Symbol.ofMethod(owner, "back\\slash", "int").id)
+        assertEquals("a/B#a\\.b\\(c\\)().", Symbol.ofMethod(owner, "a.b(c)", "").id)
+        assertEquals("a/B#\\`q\\`.", Symbol.ofField(owner, "`q`").id)
+    }
+
+    @Test
     fun `method names containing separators round-trip`() {
         val names = listOf(
             "fixes #12",

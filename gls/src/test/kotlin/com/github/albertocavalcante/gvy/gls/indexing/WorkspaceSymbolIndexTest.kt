@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.Range
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
+import com.github.albertocavalcante.gvy.semantics.db.Symbol
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
@@ -424,6 +425,34 @@ class WorkspaceSymbolIndexTest {
             val method2 = index.findMethod("com/example/MyClass", "myMethod", 2)
             assertNotNull(method2)
             assertEquals("com/example/MyClass#myMethod(String,int).", method2?.symbolId)
+        }
+
+        @Test
+        fun `findMethods matches arity zero for a name containing separators`() {
+            val owner = Symbol.ofClass("com.example.OddNames")
+            val classSymbol = SymbolInfo(
+                symbol = owner.id,
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "OddNames",
+                owner = null,
+            )
+            val methods = listOf("fixes #12", "a.b(c)").mapIndexed { row, name ->
+                SymbolInfo(
+                    symbol = Symbol.ofMethod(owner, name, "").id,
+                    kind = SymbolKind.METHOD,
+                    range = Range(row + 1, 4, row + 1, 20),
+                    name = name,
+                    owner = owner.id,
+                )
+            }
+            index.updateDocument(testUri1, SemanticDocument(testUri1, listOf(classSymbol) + methods, emptyList()))
+
+            listOf("fixes #12", "a.b(c)").forEach { name ->
+                val found = index.findMethods("com/example/OddNames", name, 0)
+                assertEquals(1, found.size, "arity 0 overloads of '$name'")
+                assertEquals(0, index.findMethods("com/example/OddNames", name, 1).size, "arity 1 of '$name'")
+            }
         }
 
         @Test

@@ -16,13 +16,19 @@ package com.github.albertocavalcante.gvy.semantics.db
  * import           import#com/example/MyClass                (static: import#com/example/MyClass.member)
  * ```
  *
+ * Escaping is gvy's own (a backslash before a reserved character); it is not SemanticDB's backtick quoting. Only
+ * member names are escaped. Class and owner names are written as they are and are assumed to hold none of `#`,
+ * `(`, `)`, `\` or a `.` in the simple name; Groovy source cannot declare such a class (not verified for
+ * bytecode-only classes).
+ *
  * A class name is written with `/` for packages and `$` for nesting. The descriptor lists the erased simple
  * parameter type names; generics may appear in ids built elsewhere, so commas inside `<...>` do not separate.
  *
- * Parsing is total: every string is a [Symbol] and no accessor fails. An accessor answers what the callers that
- * parsed ids before this type existed got for the same text, including for text no formatter produces, so a
+ * Parsing is total: every string is a [Symbol] and no accessor fails. For an id without a backslash an accessor
+ * answers what the callers that parsed ids before this type existed got for the same text, including for text no
+ * formatter produces; a backslash is now an escape, so ids containing one read differently from those parsers. A
  * malformed id yields a fallback (documented per accessor), never an exception or a null that says "invalid".
- * [owner] splits at the first `#`; [member] reads after the last one.
+ * [owner] splits at the first unescaped `#`; [member] reads after the last unescaped one.
  *
  * Names are escaped: Groovy and Spock allow method names that contain `#`, `.` or `(` (`def "fixes #12"()`). The
  * formatters write a backslash before each of `\`, `#`, `.`, `(`, `)` and the backtick in a member name
@@ -34,8 +40,8 @@ package com.github.albertocavalcante.gvy.semantics.db
 value class Symbol(val id: String) {
 
     /**
-     * The class part: the text before the first `#` (`com/example/MyClass`), or the whole id when it has none.
-     * For an import id this is `import`.
+     * The class part: the text before the first unescaped `#` (`com/example/MyClass`), or the whole id when it
+     * has none. For an import id this is `import`.
      */
     val owner: String
         get() = indexOfUnescaped(id, '#').let { if (it < 0) id else id.substring(0, it) }
@@ -45,9 +51,10 @@ value class Symbol(val id: String) {
         get() = owner.replace('/', '.')
 
     /**
-     * The simple name of the member, read after the last `#`: `` `<init>` `` is `<init>`; otherwise the text before
-     * the first `(`, else before the first `.`, else the rest. A class id has the empty member; a parameter or a
-     * local reads as its method. The name is unescaped. The whole id when there is no `#`.
+     * The simple name of the member, read after the last unescaped `#`: `` `<init>` `` is `<init>`; otherwise the
+     * text before the first unescaped `(`, else before the first unescaped `.`, else the rest. A class id has the
+     * empty member; a parameter or a local reads as its method. The name is unescaped. The whole id when there is
+     * no `#`.
      */
     val member: String
         get() {
@@ -69,8 +76,8 @@ value class Symbol(val id: String) {
         }
 
     /**
-     * The text between the first `(` and the first `)`, or null when the id has no such pair in that order.
-     * Empty for a method without parameters.
+     * The text between the first unescaped `(` and the first unescaped `)`, or null when the id has no such pair
+     * in that order. Empty for a method without parameters.
      */
     val descriptor: String?
         get() {
