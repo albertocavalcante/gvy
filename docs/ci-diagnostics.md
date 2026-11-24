@@ -272,7 +272,8 @@ The in-process Kotlin compiler is the main consumer of that metaspace (#1603). W
 `kotlin.compiler.execution.strategy=in-process`, Kotlin Gradle Plugin 2.3's legacy runner creates a new compiler class
 loader for every compile task, so a cold build (about 70 compiles) loaded over 800k classes and reached the 2 GiB limit,
 which makes Gradle print "running out of JVM Metaspace". `kotlin.compiler.runViaBuildToolsApi=true` in gradle.properties
-makes the in-process strategy reuse one cached compiler class loader. Do not raise the limit or accept the message instead.
+makes the in-process strategy use the Build Tools API runner, which caches the compiler class loader. Do not raise the
+limit or accept the message instead.
 The E2E job records the same memory observation as the unit job.
 
 Hosted Linux main-build producers also require bounded numeric daemon memory observations in each invocation's
