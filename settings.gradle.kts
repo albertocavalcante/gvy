@@ -65,19 +65,14 @@ include("test-utils")
 include("ext:junit")
 include("jupyter:kernel-core")
 include("jupyter:kernels:groovy")
-include("jupyter:kernels:jenkins")
 include("repl")
 include("tools:jenkins-extractor")
 include("viz:ast-model")
 include("viz:desktop")
 include("semantics:core")
-include("semantics:dsl")
 // Use non-colliding name to avoid conflict with parser:native
 include("semantics-native")
 project(":semantics-native").projectDir = file("semantics/native")
-// OpenRewrite adapter for semantics layer
-include("semantics-openrewrite")
-project(":semantics-openrewrite").projectDir = file("semantics/openrewrite")
 
 // OpenRewrite CodeNarc auto-fix recipes
 include("refactor:openrewrite:rewrite-codenarc")

@@ -131,9 +131,7 @@ semantics/
 │       ├── SemanticType.kt            # Unified type representation
 │       ├── TypeLub.kt                 # Least upper bound computation
 │       └── delegation/                 # Groovy delegation support
-├── dsl/            # DSL-specific semantic extensions
-├── native/         # Native (GraalVM) integration
-└── openrewrite/    # OpenRewrite type mapping
+└── native/         # Native (GraalVM) integration
 ```
 
 ## Data Model

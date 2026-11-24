@@ -36,7 +36,7 @@ The following groups describe the components in the current checkout.
 | Path                                                    | Responsibility                               |
 | ------------------------------------------------------- | -------------------------------------------- |
 | [editors/code/](../editors/code/)                       | VS Code and compatible-editor extension      |
-| [jupyter/](../jupyter/)                                 | Groovy and Jenkins Jupyter kernels           |
+| [jupyter/](../jupyter/)                                 | Groovy Jupyter kernel                        |
 | [repl/](../repl/)                                       | Groovy REPL support                          |
 | [viz/](../viz/)                                         | AST model and desktop visualizer             |
 | [tools/jenkins-extractor/](../tools/jenkins-extractor/) | Jenkins metadata extraction                  |

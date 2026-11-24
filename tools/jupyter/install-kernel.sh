@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 #
-# Install the Groovy Jupyter kernel (Standard or Jenkins variant)
+# Install the Groovy Jupyter kernel
 #
 # Usage:
-#   ./install-kernel.sh [--user] [--variant <groovy|jenkins>]
+#   ./install-kernel.sh [--user] [--variant <groovy>]
 #
 # Options:
 #   --user     Install for current user only (default: system-wide if root, else user)
-#   --variant  Kernel variant to install: 'groovy' (default) or 'jenkins'
+#   --variant  Kernel variant to install: 'groovy' (default)
 #
 
 set -euo pipefail
@@ -82,14 +82,8 @@ configure_variant() {
         KERNEL_NAME="groovy"
         SRC_KERNEL_JSON="jupyter/kernels/groovy/src/main/resources/kernel/kernel.json"
         BUILD_LIBS_DIR="jupyter/kernels/groovy/build/libs"
-    elif [[ "${VARIANT}" == "jenkins" ]]; then
-        GRADLE_MODULE_PATH="jupyter:kernels:jenkins"
-        JAR_NAME="jenkins-kernel-all.jar"
-        KERNEL_NAME="jenkins-groovy"
-        SRC_KERNEL_JSON="jupyter/kernels/jenkins/src/main/resources/kernel/kernel.json"
-        BUILD_LIBS_DIR="jupyter/kernels/jenkins/build/libs"
     else
-        log_error "Unknown variant: ${VARIANT}. Supported variants: groovy, jenkins"
+        log_error "Unknown variant: ${VARIANT}. Supported variants: groovy"
         exit 1
     fi
 
