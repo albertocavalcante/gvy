@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Compile-fail proof for the typed versions in :source (issue #2394). This file must NOT compile:
-// every statement in mixKinds mixes a document version with a raw number.
+// every statement in mixKinds mixes a version kind with another kind or with a raw number.
 // The .txt suffix keeps it out of every source set and formatter.
 //
 // `./gradlew :source:verifyVersionKindCompileFailures` (part of `:source:check`) compiles it with the
@@ -10,9 +10,11 @@
 // constructors are invisible as they are to every consumer. It requires an error on every line
 // marked `// <n>:` and on no other line, and requires WellTypedVersions.kt.txt to compile.
 
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.gvy.source.OwnershipEpoch
 
-fun mixKinds(version: DocumentVersion, other: DocumentVersion) {
+fun mixKinds(version: DocumentVersion, generation: AnalysisGeneration, epoch: OwnershipEpoch) {
     val e1: DocumentVersion = 3 // 1: a raw number is not a version; name where it came from with DocumentVersion.of
     val e2: Int = version // 2: reading a version needs .value
     val e3 = version < 3 // 3: a version does not compare with a raw number
@@ -20,4 +22,17 @@ fun mixKinds(version: DocumentVersion, other: DocumentVersion) {
     val e5: DocumentVersion = DocumentVersion(3) // 5: the constructor is private
     val e6: DocumentVersion = version + 1 // 6: no arithmetic on versions
     val e7: Long = version // 7: nor widening
+    val e8 = version < generation // 8: a document version does not compare with a generation
+    val e9 = generation < epoch // 9: nor a generation with an epoch
+    val e10 = epoch == version // 10: equality across kinds does not compile either
+    val e11: AnalysisGeneration = epoch // 11: an epoch is not a generation
+    val e12: OwnershipEpoch = generation // 12: nor a generation an epoch
+    val e13: DocumentVersion = generation // 13: nor a generation a version
+    val e14: Long = generation // 14: reading a generation's count needs toLong()
+    val e15 = generation < 3L // 15: a generation does not compare with a raw number
+    val e16 = epoch == 0L // 16: nor is an epoch equal to one
+    val e17: OwnershipEpoch = OwnershipEpoch(1L) // 17: the constructor is private
+    val e18: AnalysisGeneration = AnalysisGeneration(1L) // 18: nor can a generation be built from a number
+    val e19: AnalysisGeneration = generation + 1 // 19: no arithmetic; a generation advances only with next()
+    val e20: OwnershipEpoch = epoch + 1 // 20: nor an epoch
 }

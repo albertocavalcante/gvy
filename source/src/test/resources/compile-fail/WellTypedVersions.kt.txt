@@ -5,9 +5,11 @@
 // compile with the same command, so a failure of the other file is caused by the kinds, not by the
 // classpath or imports.
 
+import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.gvy.source.OwnershipEpoch
 
-fun matchKinds(version: DocumentVersion, other: DocumentVersion) {
+fun matchKinds(version: DocumentVersion, other: DocumentVersion, generation: AnalysisGeneration, epoch: OwnershipEpoch) {
     val c1: DocumentVersion = DocumentVersion.of(3)
     val c2: Int = version.value
     val c3 = version < other
@@ -15,4 +17,11 @@ fun matchKinds(version: DocumentVersion, other: DocumentVersion) {
     val c5: DocumentVersion? = DocumentVersion.ofOrNull(null)
     val c6: Boolean = version <= DocumentVersion.of(3)
     val c7: Long = version.value.toLong()
+    val c8 = generation < generation.next()
+    val c9 = generation == AnalysisGeneration.INITIAL
+    val c10: AnalysisGeneration = generation.next()
+    val c11: Long = generation.toLong()
+    val c12 = epoch < epoch.next()
+    val c13 = epoch == OwnershipEpoch.INITIAL
+    val c14: OwnershipEpoch = epoch.next()
 }

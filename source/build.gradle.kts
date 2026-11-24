@@ -149,7 +149,7 @@ val verifyCoordinateUnitCompileFailures =
 
 val verifyVersionKindCompileFailures =
     tasks.register<VerifyCompileFailures>("verifyVersionKindCompileFailures") {
-        description = "Prove that document versions and raw numbers do not mix at compile time"
+        description = "Prove that document versions, generations and epochs do not mix at compile time"
         group = "verification"
         compilerClasspath.from(compileFailCompiler)
         consumerClasspath.from(sourceSets.main.map { it.output }, configurations.named("compileClasspath"))
