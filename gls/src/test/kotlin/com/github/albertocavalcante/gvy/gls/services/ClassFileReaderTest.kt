@@ -18,7 +18,10 @@ import java.util.Random
 class ClassFileReaderTest {
 
     private fun read(bytes: ByteArray, name: String, limit: Long = 1L shl 20): ClassFileRead =
-        readClassFile(ClassFileCursor(bytes.inputStream(), ByteArray(64), limit), name.toByteArray())
+        read(bytes.inputStream(), name, limit)
+
+    private fun read(input: InputStream, name: String, limit: Long = 1L shl 20): ClassFileRead =
+        readClassFile(ClassFileCursor(input, ByteArray(64), limit), name.toByteArray())
 
     private fun accepted(bytes: ByteArray, name: String): ClassAccessFlags =
         (read(bytes, name) as ClassFileRead.Accepted).flags
@@ -130,6 +133,18 @@ class ClassFileReaderTest {
         assertThatThrownBy {
             readClassFile(ClassFileCursor(endless, ByteArray(64), 4096), "x/Y".toByteArray())
         }.isInstanceOf(ClassFileTooLargeException::class.java)
+    }
+
+    @Test
+    @Timeout(10)
+    fun `treats a read that returns no bytes as the end of the stream`() {
+        val silent = object : InputStream() {
+            override fun read(): Int = 0
+
+            override fun read(b: ByteArray, off: Int, len: Int): Int = 0
+        }
+
+        assertThatThrownBy { read(silent, "x/Y") }.isInstanceOf(EOFException::class.java)
     }
 
     @Test

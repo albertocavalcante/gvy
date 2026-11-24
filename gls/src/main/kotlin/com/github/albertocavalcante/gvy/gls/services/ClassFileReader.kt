@@ -31,9 +31,11 @@ internal class ClassFileTooLargeException(limit: Long) : IOException("Class file
  * Reads bytes from [input] through one caller-owned [buffer], never more than [limit] in total, so a stream that
  * lies about its size cannot make the reader work for long. Running out of input throws [EOFException].
  *
- * Reading through our own buffer, instead of wrapping each class in a fresh `BufferedInputStream`, keeps the index
- * build to one 8 KiB allocation however many classes it visits; the sources (zip inflater, file channel, module
- * reader) are not buffered themselves, so byte-wise reads straight from them would be slow.
+ * Reading through our own buffer, instead of wrapping each class in a fresh `BufferedInputStream` (which would
+ * allocate its own 8 KiB per class), shares one read buffer across the whole index build; the sources (zip
+ * inflater, file channel, module reader) are not buffered themselves, so byte-wise reads straight from them would
+ * be slow. [readClassFile] still allocates a pool-count sized `IntArray` and `BitSet` per class (at most about
+ * 300 KiB, typically a few KiB), which become garbage as soon as the class is read.
  */
 internal class ClassFileCursor(private val input: InputStream, private val buffer: ByteArray, private val limit: Long) {
     private var position = 0
@@ -44,7 +46,8 @@ internal class ClassFileCursor(private val input: InputStream, private val buffe
         val room = minOf(buffer.size.toLong(), limit - consumed).toInt()
         if (room <= 0) throw ClassFileTooLargeException(limit)
         val count = input.read(buffer, 0, room)
-        if (count < 0) throw EOFException()
+        // A read of zero bytes for a non-zero request is treated as the end, or skipping would never finish.
+        if (count <= 0) throw EOFException()
         position = 0
         end = count
         consumed += count

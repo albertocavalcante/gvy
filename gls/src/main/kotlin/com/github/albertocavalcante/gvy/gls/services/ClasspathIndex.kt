@@ -4,8 +4,11 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.UTFDataFormatException
 import java.io.UncheckedIOException
 import java.lang.module.ModuleReader
 import java.lang.module.ModuleReference
@@ -36,12 +39,13 @@ interface ClasspathIndex {
  * first completion request, where ClassGraph used several threads; see the commit that introduced this for timings.
  *
  * Differences from the ClassGraph scan it replaces:
- * - Names are simple names of nested classes (`java.util.Map$Entry` is listed as `Entry`), as before.
+ * - Nested classes are listed by their own name (`java.util.Map$Entry` is `Entry`), exactly as before.
  * - An entry counts only when the class's own `this_class` equals its path, so `BOOT-INF/classes/...` entries and
  *   stray paths are skipped, as ClassGraph did.
  * - Classes under `META-INF/versions/N/` are listed under their real name when N is at most the running feature
- *   release; a base copy and a versioned copy of one name count once, the first readable public copy winning
- *   (so an unreadable or non-public first copy now yields to a later one).
+ *   release. A base copy and versioned copies of one name count once, and the first copy in archive order wins, not
+ *   the highest N; the `Multi-Release` manifest attribute is not consulted. An unreadable or non-public first copy
+ *   yields to a later one.
  * - Only `.jar` and `.zip` archives and directories are read; nested jars (`BOOT-INF/lib`), `.war`, and jars that
  *   are only named by another jar's manifest `Class-Path` are not.
  * - `java.lang.Object` is listed, which ClassGraph left out.
@@ -89,8 +93,13 @@ class JvmClasspathIndex : ClasspathIndex {
     private fun scanDirectory(root: Path, names: ClassNames) {
         Files.walk(root).use { paths ->
             paths.filter { Files.isRegularFile(it) }.forEach { file ->
-                val size = Files.size(file)
-                names.add(file.relativeTo(root).joinToString("/"), size) { Files.newInputStream(file) }
+                try {
+                    val size = Files.size(file)
+                    names.add(file.relativeTo(root).joinToString("/"), size) { Files.newInputStream(file) }
+                } catch (e: IOException) {
+                    logger.debug(e) { "Unreadable class file $file" }
+                    names.skip(SkipReason.UNREADABLE)
+                }
             }
         }
     }
@@ -153,9 +162,10 @@ class JvmClasspathIndex : ClasspathIndex {
             val fullName = classNameOf(resource) ?: return
             if (fullName in found) return
             if (declaredSize > MAX_CLASS_FILE_BYTES) return skip(SkipReason.OVERSIZED)
+            val expected = internalName(fullName) ?: return skip(SkipReason.NAME_MISMATCH)
             val read = try {
                 openClassFile().use {
-                    readClassFile(ClassFileCursor(it, buffer, MAX_CLASS_FILE_BYTES), internalName(fullName))
+                    readClassFile(ClassFileCursor(it, buffer, MAX_CLASS_FILE_BYTES), expected)
                 }
             } catch (e: ClassFileTooLargeException) {
                 logger.debug(e) { "Oversized class $resource" }
@@ -176,7 +186,16 @@ class JvmClasspathIndex : ClasspathIndex {
             }
         }
 
-        private fun internalName(fullName: String): ByteArray = fullName.replace('.', '/').toByteArray(Charsets.UTF_8)
+        /** The name as the constant pool spells it, in modified UTF-8 (JVMS §4.4.7); null if it cannot be encoded. */
+        private fun internalName(fullName: String): ByteArray? {
+            val bytes = ByteArrayOutputStream()
+            try {
+                DataOutputStream(bytes).writeUTF(fullName.replace('.', '/'))
+            } catch (_: UTFDataFormatException) {
+                return null // longer than a constant pool entry can be, so no class has it
+            }
+            return bytes.toByteArray().copyOfRange(UTF_LENGTH_PREFIX, bytes.size())
+        }
     }
 
     internal companion object {
@@ -190,6 +209,7 @@ class JvmClasspathIndex : ClasspathIndex {
 
         private const val UNKNOWN_SIZE = -1L
         private const val BUFFER_BYTES = 8192
+        private const val UTF_LENGTH_PREFIX = 2
         private const val CLASS_SUFFIX = ".class"
         private const val META_INF = "META-INF/"
         private const val VERSIONS = "META-INF/versions/"

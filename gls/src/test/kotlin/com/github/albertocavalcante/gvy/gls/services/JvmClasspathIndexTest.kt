@@ -178,4 +178,17 @@ class JvmClasspathIndexTest {
     fun `skips an entry that does not exist`() {
         assertThat(index(tempDir.resolve("missing.jar")).names()).contains("java.lang.String")
     }
+
+    @Test
+    fun `matches class names that are not plain ASCII`() {
+        val supplementary = "demo/\uD835\uDD38" // U+1D538, two surrogates in modified UTF-8
+        val jar = jarOf(
+            "$supplementary.class" to classOf(supplementary),
+            "demo/Caf\u00E9.class" to classOf("demo/Caf\u00E9"),
+        )
+
+        val names = index(jar).names()
+
+        assertThat(names).contains("demo.\uD835\uDD38", "demo.Caf\u00E9")
+    }
 }
