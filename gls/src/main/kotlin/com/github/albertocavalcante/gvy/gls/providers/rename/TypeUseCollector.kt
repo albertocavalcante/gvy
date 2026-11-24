@@ -36,6 +36,7 @@ import org.codehaus.groovy.control.SourceUnit
 internal class TypeUseCollector : ClassCodeVisitorSupport() {
     private val types = TypeUseRecorder()
     val uses: List<TypeUseSite> get() = types.uses
+    val typeParameters: List<TypeParameterSite> get() = types.typeParameters
     val otherNames = mutableListOf<OtherNameSite>()
 
     override fun getSourceUnit(): SourceUnit? = null
@@ -145,11 +146,16 @@ internal class TypeUseCollector : ClassCodeVisitorSupport() {
 /** The use sites of one walk; see [TypeUseCollector]. */
 private class TypeUseRecorder {
     val uses = mutableListOf<TypeUseSite>()
+    val typeParameters = mutableListOf<TypeParameterSite>()
 
     fun parameter(parameter: Parameter) = type(parameter.originType, TypeUseKind.PARAMETER)
 
     fun generic(generic: GenericsType) {
-        if (!generic.isPlaceholder && !generic.isWildcard) type(generic.type, TypeUseKind.TYPE_ARGUMENT)
+        if (generic.isPlaceholder) {
+            typeParameters += TypeParameterSite(generic.name, generic)
+        } else if (!generic.isWildcard) {
+            type(generic.type, TypeUseKind.TYPE_ARGUMENT)
+        }
         generic.upperBounds.orEmpty().forEach { type(it, TypeUseKind.TYPE_PARAMETER_BOUND) }
         generic.lowerBound?.let { type(it, TypeUseKind.TYPE_PARAMETER_BOUND) }
     }
@@ -162,10 +168,13 @@ private class TypeUseRecorder {
             return
         }
         val declared = node.redirect()
-        if (node !== declared && !node.isGenericsPlaceHolder) {
+        if (node.isGenericsPlaceHolder) {
+            // `T` redirects to its bound (`<T extends Service>`) but spells only its own name.
+            typeParameters += TypeParameterSite(node.unresolvedName, node)
+        } else if (node !== declared) {
             uses += TypeUseSite(declared, kind, node)
             generateSequence(declared.outerClass) { it.outerClass }.forEach {
-                uses += TypeUseSite(it, TypeUseKind.OUTER_QUALIFIER, node)
+                uses += TypeUseSite(it, TypeUseKind.OUTER_QUALIFIER, node, nested = declared)
             }
         }
         node.genericsTypes.orEmpty().forEach(::generic)

@@ -31,9 +31,18 @@ internal enum class TypeUseKind(val label: String) {
 
 /**
  * A node the AST attributes to a use of [type] (a class as declared, never a use-site node) at [kind]; the use spells
- * the name of [type] somewhere in the source range of [node].
+ * the name of [type] somewhere in the source range of [node]. For [TypeUseKind.OUTER_QUALIFIER], [node] is a use of
+ * [nested], a class nested in [type], and only the part before the name of [nested] can spell [type].
  */
-internal class TypeUseSite(val type: ClassNode, val kind: TypeUseKind, val node: ASTNode)
+internal class TypeUseSite(
+    val type: ClassNode,
+    val kind: TypeUseKind,
+    val node: ASTNode,
+    val nested: ClassNode? = null,
+)
+
+/** A node spelling the type parameter [name]: its declaration (`T extends Service`) or a use (`T item`). */
+internal class TypeParameterSite(val name: String, val node: ASTNode)
 
 /**
  * A name the AST attributes to something that is not a class: a variable, a called method, a declared method. It is
@@ -47,13 +56,17 @@ internal class OtherNameSite(
 )
 
 /** The positioned uses of classes, and other declared or called names, of one module, found by walking its AST. */
-internal class TypeUseSites private constructor(val uses: List<TypeUseSite>, val otherNames: List<OtherNameSite>) {
+internal class TypeUseSites private constructor(
+    val uses: List<TypeUseSite>,
+    val otherNames: List<OtherNameSite>,
+    val typeParameters: List<TypeParameterSite>,
+) {
     companion object {
         fun of(module: ModuleNode): TypeUseSites {
             val collector = TypeUseCollector()
             module.classes.forEach(collector::visitClass)
             module.statementBlock?.visit(collector)
-            return TypeUseSites(collector.uses, collector.otherNames)
+            return TypeUseSites(collector.uses, collector.otherNames, collector.typeParameters)
         }
     }
 }

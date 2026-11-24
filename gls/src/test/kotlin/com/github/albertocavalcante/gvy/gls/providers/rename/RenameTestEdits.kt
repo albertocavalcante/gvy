@@ -47,6 +47,8 @@ internal class SingleFileRename(workspace: Path) {
     fun parsedClass(name: String): ClassNode =
         checkNotNull(compilation.getParseResult(uri)?.ast?.classes?.single { it.nameWithoutPackage == name })
 
+    fun parsedClasses(): List<ClassNode> = checkNotNull(compilation.getParseResult(uri)?.ast).classes
+
     /** The text after renaming at [position]; the rename's failure if it fails. */
     suspend fun apply(content: String, position: Position, newName: String): Result<String> {
         open(content)

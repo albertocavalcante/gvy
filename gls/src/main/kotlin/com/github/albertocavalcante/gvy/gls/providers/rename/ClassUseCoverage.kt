@@ -45,46 +45,65 @@ internal class NameAccount(
 
 /**
  * Decides whether a class rename covers the document: an edit for every use of the class, each exactly once, and
- * nothing else. Each window of a use site is narrowed to the single occurrence it contains once the occurrences of
- * the smaller windows inside it are set aside (a type argument inside its type, a bound inside a type parameter);
- * a window holding two is refused, as which one is the use cannot be told. Any occurrence that ends up neither an
- * edit nor proven to be something else's name refuses the rename: that is what makes a partial edit impossible for
- * kinds of use no scan knows yet.
+ * nothing else. The windows of every type use, of the renamed class and of other classes spelled alike, are narrowed
+ * together, smallest first: each takes the single occurrence left once the occurrences of the smaller windows inside
+ * it are set aside (a type argument inside its type, a bound inside a type parameter), so no larger window can take
+ * an occurrence a smaller one gave to another class (`Inner<java.util.Date>` spans its argument). A window holding
+ * two is refused, as which one it spells cannot be told; so is an occurrence two windows give to different classes.
+ * Any occurrence that ends up neither an edit nor proven to be something else's name refuses the rename: that is
+ * what makes a partial edit impossible for kinds of use no scan knows yet.
  */
 internal object ClassUseCoverage {
     fun check(account: NameAccount, lineOf: (Int) -> Int): ClassUses {
         val occurrences = account.occurrences.toSet()
         val stray = account.located.firstOrNull { it !in occurrences }
         if (stray != null) return refused(account, "the edit at line ${lineOf(stray.start)} is not on the name in code")
-        return when (val narrowed = narrow(account.uses, occurrences)) {
+        val windows = account.uses.map { Claim(it, renamed = true) } +
+            account.otherUses.map { Claim(it, renamed = false) }
+        return when (val narrowed = narrow(windows, occurrences)) {
             is Narrowed.Ambiguous -> with(narrowed.window) {
                 refused(account, "the ${kind.label} at line $line cannot be located exactly in the source")
             }
-            is Narrowed.Uses -> classify(account, occurrences, account.located.toSet() + narrowed.spans, lineOf)
+            is Narrowed.Contested -> refused(
+                account,
+                "the name at line ${lineOf(narrowed.span.start)} is spelled by uses of two different classes",
+            )
+            is Narrowed.Claimed -> classify(
+                account,
+                occurrences,
+                account.located.toSet() + narrowed.uses,
+                account.others.filterTo(narrowed.others.toMutableSet()) { it in occurrences },
+                lineOf,
+            )
         }
     }
 
-    /** The occurrence each use window holds, smallest window first, outside the ones smaller windows took. */
-    private fun narrow(windows: List<NameWindow>, occurrences: Set<NameSpan>): Narrowed {
-        val claimedBy = HashMap<NameSpan, Int>()
-        for (window in windows.sortedWith(compareBy(NameWindow::size, NameWindow::start))) {
-            val candidates = occurrences.filter { it in window && (claimedBy[it] ?: Int.MAX_VALUE) >= window.size }
+    /** The occurrence each window holds, smallest window first, outside the ones smaller windows took. */
+    private fun narrow(windows: List<Claim>, occurrences: Set<NameSpan>): Narrowed {
+        val claims = HashMap<NameSpan, Claim>()
+        for (claim in windows.sortedWith(compareBy({ it.window.size }, { it.window.start }))) {
+            val window = claim.window
+            val candidates = occurrences.filter { it in window && !claimedInside(claims[it], window) }
             if (candidates.size > 1) return Narrowed.Ambiguous(window)
-            candidates.singleOrNull()?.let { claimedBy.putIfAbsent(it, window.size) }
+            val span = candidates.singleOrNull() ?: continue
+            val earlier = claims.putIfAbsent(span, claim)
+            if (earlier != null && earlier.renamed != claim.renamed) return Narrowed.Contested(span)
         }
-        return Narrowed.Uses(claimedBy.keys)
+        val (uses, others) = claims.entries.partition { it.value.renamed }
+        return Narrowed.Claimed(uses.mapTo(mutableSetOf()) { it.key }, others.mapTo(mutableSetOf()) { it.key })
     }
+
+    /** Whether [claim] took its occurrence for a window smaller than [window], so nested inside it. */
+    private fun claimedInside(claim: Claim?, window: NameWindow): Boolean =
+        claim != null && claim.window.size < window.size
 
     private fun classify(
         account: NameAccount,
         occurrences: Set<NameSpan>,
         edits: Set<NameSpan>,
+        others: Set<NameSpan>,
         lineOf: (Int) -> Int,
     ): ClassUses {
-        val others = account.others.filterTo(mutableSetOf()) { it in occurrences }
-        account.otherUses.forEach { window ->
-            occurrences.filter { it in window && it !in edits }.singleOrNull()?.let(others::add)
-        }
         val conflict = edits.firstOrNull { it in others }
         val unexplained = occurrences.sortedBy(NameSpan::start).firstOrNull { it !in edits && it !in others }
         return when {
@@ -102,9 +121,14 @@ internal object ClassUseCoverage {
 
     private fun refused(account: NameAccount, why: String) = ClassUses.Refused("Cannot rename '${account.name}': $why")
 
+    /** A window of a use of the renamed class ([renamed]) or of another class spelled alike. */
+    private class Claim(val window: NameWindow, val renamed: Boolean)
+
     private sealed interface Narrowed {
-        data class Uses(val spans: Set<NameSpan>) : Narrowed
+        data class Claimed(val uses: Set<NameSpan>, val others: Set<NameSpan>) : Narrowed
 
         data class Ambiguous(val window: NameWindow) : Narrowed
+
+        data class Contested(val span: NameSpan) : Narrowed
     }
 }

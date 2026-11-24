@@ -24,8 +24,11 @@ import java.net.URI
  */
 internal object ClassRenameUses {
     /**
-     * The edits renaming [type], declared in [compiled]'s module, makes in [documentUri]: [located] (what the reference
-     * scan and the constructor reader found) plus every other use the AST positions, each name once.
+     * The edits renaming [type], declared in [compiled]'s module, makes in [documentUri]: [located] plus every other
+     * use the AST positions, each name once. [located] is what the reference scan and the constructor reader found:
+     * the declaration's name, constructor names, and the references the scan reports, among them every class
+     * expression (`Service.NAME`, `Service.class`, `Service::new`, `@Ann(Service)`), whose type node has no position
+     * of its own, so no use-site window covers it; the coverage check only verifies each is a name token in code.
      */
     fun covering(
         type: ClassNode,
@@ -59,20 +62,31 @@ internal object ClassRenameUses {
     }
 
     /**
-     * The class declared in [compiled]'s module that a type use spells at UTF-16 [offset] when the code token there is
-     * that class's name (the innermost use: `Service` in `List<Service>`); null anywhere else.
+     * What a rename at UTF-16 [offset] renames when the code token there is the name a type use spells (the innermost
+     * use: `Date` in `Inner<java.util.Date>`): the class, whether this module declares it or not, or a refusal for a
+     * type parameter (`T`, which redirects to its bound). Null on any other token.
      */
-    fun classNamedAt(compiled: CompiledDocumentSnapshot, offset: Int): ClassNode? {
+    fun classAt(compiled: CompiledDocumentSnapshot, offset: Int): ClassAtCursor? {
         val module = compiled.parseResult.ast ?: return null
         val tokens = compiled.parseResult.tokenIndex ?: return null
-        val source = TextIndex(compiled.sourceText)
-        return DocumentNames(module, source, tokens).usesAt(offset)
-            .filter { declaredIn(it.type, compiled) }
-            .firstOrNull { site ->
-                tokens.nameOccurrences(compiled.sourceText, site.type.sourceSimpleName()).orEmpty()
-                    .any { it.start <= offset && offset < it.end }
-            }?.type
+        val names = DocumentNames(module, TextIndex(compiled.sourceText), tokens)
+        fun spelledAtCursor(name: String) = tokens.nameOccurrences(compiled.sourceText, name).orEmpty()
+            .any { it.start <= offset && offset < it.end }
+        val parameter = names.typeParametersAt(offset).firstOrNull { spelledAtCursor(it.name) }
+        val site = names.usesAt(offset).firstOrNull { spelledAtCursor(it.type.sourceSimpleName()) }
+        return when {
+            parameter != null -> ClassAtCursor.Refused(
+                "Cannot rename '${parameter.name}': renaming a type parameter is not supported yet",
+            )
+            site == null -> null
+            declaredIn(site.type, compiled) -> ClassAtCursor.Declared(site.type)
+            else -> ClassAtCursor.Foreign(site.type)
+        }
     }
+
+    /** The refusal of a class rename this file cannot complete, as the class is declared in another file. */
+    fun declaredElsewhere(name: String): String =
+        "Cannot rename '$name': it is not declared in this file, and renaming across files is not supported yet"
 
     /** Whether [type] (any node of it) is a class [compiled]'s own module declares. */
     fun declaredIn(type: ClassNode, compiled: CompiledDocumentSnapshot): Boolean {
@@ -82,6 +96,16 @@ internal object ClassRenameUses {
 
     private fun refuse(message: String): Nothing =
         throw RenameRefusedException(ResponseError(ResponseErrorCode.RequestFailed, message, null))
+}
+
+/** The class a rename at a cursor on a type use renames, or why it is refused there. */
+internal sealed interface ClassAtCursor {
+    data class Declared(val type: ClassNode) : ClassAtCursor
+
+    /** A class declared in another file or a dependency, whose rename this file cannot complete. */
+    data class Foreign(val type: ClassNode) : ClassAtCursor
+
+    data class Refused(val reason: String) : ClassAtCursor
 }
 
 /** Where the AST places names in one module's source, as windows of UTF-16 offsets. */
@@ -114,9 +138,25 @@ private class DocumentNames(
         .sortedBy { (_, window) -> window.size }
         .map { (site, _) -> site }
 
+    /** The type parameter sites whose node contains [offset]. */
+    fun typeParametersAt(offset: Int): List<TypeParameterSite> = sites.typeParameters.filter { site ->
+        val start = start(site.node)
+        val end = end(site.node)
+        start != null && end != null && start <= offset && offset < end
+    }
+
+    /**
+     * The part of the source [site] can spell its class in: its node, or for an outer qualifier (`Outer.Inner`) the
+     * part before the nested class's own name, as the node also spans the type arguments (`Inner<Outer>`).
+     */
     private fun window(site: TypeUseSite): NameWindow? {
         val start = start(site.node) ?: return null
-        val end = end(site.node) ?: return null
+        val nodeEnd = end(site.node) ?: return null
+        val end = when (val nested = site.nested) {
+            null -> nodeEnd
+            else -> tokens.nameOccurrences(source.text, nested.sourceSimpleName()).orEmpty()
+                .firstOrNull { it.start >= start && it.end <= nodeEnd }?.start ?: return null
+        }
         return NameWindow(start, end, site.kind, source.positionOf(start).line + 1).takeIf { start < end }
     }
 

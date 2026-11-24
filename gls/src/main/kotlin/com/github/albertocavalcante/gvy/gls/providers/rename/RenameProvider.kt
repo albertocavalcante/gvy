@@ -130,7 +130,9 @@ class RenameProvider private constructor(
 
         val sources = RenameSourceSnapshots(documentSource)
         val target = captureTarget(uri, position, sources)
-        if (!target.declaredHere) refuseIfUsedElsewhere(target)
+        if (!target.declaredHere) {
+            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, declaredHere = false)
+        }
         if (target.oldName == newName) {
             throw createError(ResponseErrorCode.InvalidRequest, "New name is the same as the current name")
         }
@@ -139,7 +141,7 @@ class RenameProvider private constructor(
         if (ClassRenameConstructors.startsOnName(target.node) && target.nameAt(position, nameLocations) == null) {
             throw createError(ResponseErrorCode.InvalidRequest, "No name to rename at the cursor")
         }
-        refuseIfUsedElsewhere(target)
+        refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, target.declaredHere)
         sources.validate()
         return buildWorkspaceEdit(target.definition, newName, nameLocations, target.definitionLocation, sources)
     }
@@ -148,12 +150,14 @@ class RenameProvider private constructor(
     suspend fun providePrepareRename(uri: String, position: Position): PrepareRenameResult? = try {
         val sources = RenameSourceSnapshots(documentSource)
         val target = captureTarget(uri, position, sources)
-        if (!target.declaredHere) refuseIfUsedElsewhere(target)
+        if (!target.declaredHere) {
+            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, declaredHere = false)
+        }
         val location = target.nameAt(position, collectNameLocations(target, sources))
         if (location == null) {
             null
         } else {
-            refuseIfUsedElsewhere(target)
+            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, target.declaredHere)
             sources.validate()
             PrepareRenameResult(location.range, target.oldName)
         }
@@ -176,13 +180,11 @@ class RenameProvider private constructor(
      * declare is declared in a file that spells its name, or in a dependency: the guard names the other file, and a
      * class it lets through is refused all the same. Such a class is checked before its uses here are collected.
      */
-    private suspend fun refuseIfUsedElsewhere(target: RenameTarget) {
-        val uses = crossFileUses.usesOutside(target.documentUri, target.definition, target.oldName)
+    private suspend fun refuseIfUsedElsewhere(uri: URI, definition: ASTNode, name: String, declaredHere: Boolean) {
+        val uses = crossFileUses.usesOutside(uri, definition, name)
         val message = when {
-            !uses.isEmpty -> uses.message(target.oldName)
-            !target.declaredHere ->
-                "Cannot rename '${target.oldName}': it is not declared in this file, and renaming across files is " +
-                    "not supported yet"
+            !uses.isEmpty -> uses.message(name)
+            !declaredHere -> ClassRenameUses.declaredElsewhere(name)
             else -> return
         }
         throw RenameRefusedException(ResponseError(ResponseErrorCode.RequestFailed, message, null))
@@ -222,13 +224,27 @@ class RenameProvider private constructor(
         val visitor = compiled.parseResult.astModel
 
         // On a class name a type use spells (a parameter type, a type argument), the rename is the class's.
-        val targetNode = ClassRenameUses.classNamedAt(compiled, TextIndex(original.content).offsetOf(position))
+        val atCursor = ClassRenameUses.classAt(compiled, TextIndex(original.content).offsetOf(position))
+        when (atCursor) {
+            is ClassAtCursor.Refused ->
+                throw RenameRefusedException(ResponseError(ResponseErrorCode.RequestFailed, atCursor.reason, null))
+            // Always refused: by the guard when another file spells the name, else as declared elsewhere.
+            is ClassAtCursor.Foreign ->
+                refuseIfUsedElsewhere(documentUri, atCursor.type, atCursor.type.declaredName().orEmpty(), false)
+            is ClassAtCursor.Declared, null -> Unit
+        }
+        val targetNode = (atCursor as? ClassAtCursor.Declared)?.type
             ?: visitor.getNodeAt(documentUri, groovyPosition)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "No symbol found at position")
 
         // Resolve to definition
         val parameterOrigins = ParameterOrigins(visitor, documentUri)
         val definition = resolveDefinition(targetNode, compiled, parameterOrigins)
+        if (definition is ClassNode && definition.isGenericsPlaceHolder) {
+            // A type parameter redirects to its bound; renaming it must never rename the bound.
+            val reason = "Cannot rename '${definition.unresolvedName}': renaming a type parameter is not supported yet"
+            throw RenameRefusedException(ResponseError(ResponseErrorCode.RequestFailed, reason, null))
+        }
 
         // Check if definition is in workspace or dependency
         val definitionLocation = definition.toLspLocation(visitor)
