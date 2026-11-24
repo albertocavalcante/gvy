@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.UnusedImportDiagnosticProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -47,7 +48,7 @@ class UnusedImportFixActionTest {
 
     /** Opens [content] at [version], compiles it, and returns the diagnostics gvy would publish for it. */
     private fun open(content: String, version: Int = 3): List<Diagnostic> = runBlocking {
-        documents.put(uri, content, version)
+        documents.put(uri, content, DocumentVersion.of(version))
         compilationService.compile(uri, content)
         diagnosticProvider.provideDiagnostics(uri, content).toList()
     }
@@ -210,7 +211,7 @@ class UnusedImportFixActionTest {
     fun `withholds the fix when the buffer moved on since the compile`() {
         val content = "import java.util.ArrayList\nint x = 1\n"
         val diagnostics = open(content)
-        assertNotNull(documents.update(uri, "int y = 2\n$content", 4))
+        assertNotNull(documents.update(uri, "int y = 2\n$content", DocumentVersion.of(4)))
 
         assertTrue(quickFixes(diagnostics).isEmpty())
     }

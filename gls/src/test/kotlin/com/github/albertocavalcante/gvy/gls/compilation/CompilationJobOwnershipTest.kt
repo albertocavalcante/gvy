@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.every
@@ -75,10 +76,10 @@ class CompilationJobOwnershipTest {
     @Test
     fun `reopening identical content and version does not reuse the prior document job`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler))
-        fixture.documents.put(fixture.uri, fixture.content, 1)
+        fixture.documents.put(fixture.uri, fixture.content, DocumentVersion.of(1))
         val first = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
         fixture.documents.remove(fixture.uri)
-        fixture.documents.put(fixture.uri, fixture.content, 1)
+        fixture.documents.put(fixture.uri, fixture.content, DocumentVersion.of(1))
 
         val reopened = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
 
@@ -139,9 +140,9 @@ class CompilationJobOwnershipTest {
     @Test
     fun `ensureCompiled uses the current open snapshot instead of an older active result`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler))
-        fixture.documents.put(fixture.uri, "class Before {}", 1)
+        fixture.documents.put(fixture.uri, "class Before {}", DocumentVersion.of(1))
         val first = fixture.orchestrator.compileAsync(this, fixture.uri, "class Before {}")
-        fixture.documents.update(fixture.uri, fixture.content, 2)
+        fixture.documents.update(fixture.uri, fixture.content, DocumentVersion.of(2))
 
         val current = async(start = CoroutineStart.UNDISPATCHED) {
             fixture.orchestrator.ensureCompiled(fixture.uri)
@@ -180,7 +181,7 @@ class CompilationJobOwnershipTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val owner = CoroutineScope(SupervisorJob() + dispatcher)
         val fixture = Fixture(dispatcher)
-        fixture.documents.put(fixture.uri, fixture.content, 1)
+        fixture.documents.put(fixture.uri, fixture.content, DocumentVersion.of(1))
         val abandoned = fixture.orchestrator.compileAsync(owner, fixture.uri, fixture.content)
         val waiter = async(start = CoroutineStart.UNDISPATCHED) {
             fixture.orchestrator.ensureCompiled(fixture.uri)
@@ -262,7 +263,7 @@ class CompilationJobOwnershipTest {
     @Test
     fun `closed acquisition cannot adopt requested text that mismatched the captured open buffer`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler), uri = URI.create("untitled:Mismatched.groovy"))
-        fixture.documents.put(fixture.uri, "class NewerBuffer {}", 2)
+        fixture.documents.put(fixture.uri, "class NewerBuffer {}", DocumentVersion.of(2))
         val retired = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
         fixture.documents.remove(fixture.uri)
 
@@ -275,7 +276,7 @@ class CompilationJobOwnershipTest {
     @Test
     fun `unmanaged work cannot share a mismatched open buffer request after close`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler))
-        fixture.documents.put(fixture.uri, "class NewerBuffer {}", 2)
+        fixture.documents.put(fixture.uri, "class NewerBuffer {}", DocumentVersion.of(2))
         val retired = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
         fixture.documents.remove(fixture.uri)
 
@@ -291,7 +292,7 @@ class CompilationJobOwnershipTest {
     fun `closing during scheduling cannot reclassify an open request as unmanaged`(): Unit = runTest {
         val documents = spyk(DocumentProvider())
         val fixture = Fixture(StandardTestDispatcher(testScheduler), documents, URI.create("untitled:Retired.groovy"))
-        documents.put(fixture.uri, fixture.content, 1)
+        documents.put(fixture.uri, fixture.content, DocumentVersion.of(1))
         val captured = documents.getBuffer(fixture.uri)
         var reads = 0
         every { documents.getBuffer(fixture.uri) } answers {

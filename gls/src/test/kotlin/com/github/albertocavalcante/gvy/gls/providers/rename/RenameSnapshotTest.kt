@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockkObject
@@ -64,7 +65,11 @@ class RenameSnapshotTest {
             fixture().use { fixture ->
                 val stale = assertNotNull(fixture.compilation.ensureCompiled(fixture.uri))
                 coEvery { fixture.compilation.ensureCompiled(fixture.uri) } returns stale
-                fixture.documents.put(fixture.uri, "def total = 1\n// total must stay\nprintln total\n", 42)
+                fixture.documents.put(
+                    fixture.uri,
+                    "def total = 1\n// total must stay\nprintln total\n",
+                    DocumentVersion.of(42),
+                )
 
                 val error = assertFailsWith<ResponseErrorException> {
                     fixture.endpoint(this).rename(fixture.params()).await()
@@ -79,7 +84,11 @@ class RenameSnapshotTest {
     fun `public rename accepts a refreshed current buffer and preserves its comment`(): Unit = runBlocking {
         supervisorScope {
             fixture().use { fixture ->
-                fixture.documents.put(fixture.uri, "def total = 1\n// total must stay\nprintln total\n", 42)
+                fixture.documents.put(
+                    fixture.uri,
+                    "def total = 1\n// total must stay\nprintln total\n",
+                    DocumentVersion.of(42),
+                )
 
                 val result = fixture.endpoint(this).rename(fixture.params()).await()
                 val edits = result.documentChanges.single().left
@@ -97,7 +106,7 @@ class RenameSnapshotTest {
             fixture().use { fixture ->
                 coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
                     fixture.acquireCompilation().also {
-                        fixture.documents.put(fixture.uri, fixture.source, 42)
+                        fixture.documents.put(fixture.uri, fixture.source, DocumentVersion.of(42))
                     }
                 }
 
@@ -351,7 +360,7 @@ class RenameSnapshotTest {
     ): Fixture {
         val uri = workspace.resolve(filename).toUri()
         Files.writeString(Path.of(uri), source)
-        val documents = DocumentProvider().apply { put(uri, source, 41) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(41)) }
         val compilation = GroovyCompilationService(documentProvider = documents)
         compilation.workspaceManager.initializeWorkspace(workspace)
         val result = compilation.compile(uri, source)

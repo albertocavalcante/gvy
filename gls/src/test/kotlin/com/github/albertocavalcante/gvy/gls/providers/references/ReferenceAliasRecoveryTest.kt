@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
@@ -36,8 +37,8 @@ class ReferenceAliasRecoveryTest {
             Files.writeString(declaration, source)
             Files.writeString(caller, callerSource)
             val documents = DocumentProvider().apply {
-                put(declaration.toUri(), source, 1)
-                put(caller.toUri(), callerSource, 1)
+                put(declaration.toUri(), source, DocumentVersion.of(1))
+                put(caller.toUri(), callerSource, DocumentVersion.of(1))
             }
             val compilation = GroovyCompilationService(documentProvider = documents)
             compilation.workspaceManager.initializeWorkspace(workspace)

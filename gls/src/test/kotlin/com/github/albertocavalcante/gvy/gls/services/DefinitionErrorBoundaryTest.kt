@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
@@ -107,7 +108,7 @@ class DefinitionErrorBoundaryTest {
 
     @Test
     fun `a stack overflow fails only its own definition request`() {
-        documents.put(boom, "class Boom {}", 1)
+        documents.put(boom, "class Boom {}", DocumentVersion.of(1))
         assertOnlyFirstRequestFails { definition("1", boom, 0, 6) }
     }
 
@@ -115,7 +116,7 @@ class DefinitionErrorBoundaryTest {
     fun `a stack overflow inside a definition strategy fails only its own request`() {
         armed.set(false)
         val imports = URI.create("file:///boundary/Imports.groovy")
-        documents.put(imports, "import java.util.ArrayList\n\nclass Imports {}\n", 1)
+        documents.put(imports, "import java.util.ArrayList\n\nclass Imports {}\n", DocumentVersion.of(1))
         navigatorArmed.set(true)
         assertOnlyFirstRequestFails { definition("1", imports, 0, IMPORTED_CLASS_COLUMN) }
         assertFalse(navigatorArmed.get(), "the request never reached the overflowing strategy")
@@ -123,7 +124,7 @@ class DefinitionErrorBoundaryTest {
 
     /** [first] must fail with an internal error; a following request is served, and nothing else is hurt. */
     private fun assertOnlyFirstRequestFails(first: () -> ResponseMessage) {
-        documents.put(ok, okSource, 1)
+        documents.put(ok, okSource, DocumentVersion.of(1))
         val uncaught = CopyOnWriteArrayList<Throwable>()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { _, e -> uncaught += e }

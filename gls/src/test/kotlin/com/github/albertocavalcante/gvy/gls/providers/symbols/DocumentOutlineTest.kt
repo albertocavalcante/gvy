@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +47,7 @@ class DocumentOutlineTest {
 
     private fun request(text: String): List<Either<SymbolInformation, DocumentSymbol>> {
         compilation.onDocumentOpened(uri)
-        documents.put(uri, text, 1)
+        documents.put(uri, text, DocumentVersion.of(1))
         return service.documentSymbol(DocumentSymbolParams(TextDocumentIdentifier(uri.toString())))
             .get(WAIT_SECONDS, TimeUnit.SECONDS)
     }

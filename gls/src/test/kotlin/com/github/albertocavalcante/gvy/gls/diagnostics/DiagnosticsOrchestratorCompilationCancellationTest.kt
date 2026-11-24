@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -39,7 +40,7 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
     private class Fixture(scope: CoroutineScope, uri: URI, content: String) {
         val compilation = mockk<GroovyCompilationService>()
         val diagnostics = mockk<DiagnosticsService>()
-        val documents = DocumentProvider().apply { put(uri, content, 3) }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(3)) }
         val publications = mutableListOf<PublishDiagnosticsParams>()
         val orchestrator: DiagnosticsOrchestrator
 
@@ -121,7 +122,7 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
         fixture.orchestrator.trigger(uri, content)
         runCurrent()
 
-        fixture.documents.update(uri, "class Changed {}", 4)
+        fixture.documents.update(uri, "class Changed {}", DocumentVersion.of(4))
         shared.cancel()
         advanceUntilIdle()
 

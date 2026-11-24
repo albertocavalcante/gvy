@@ -19,6 +19,7 @@ import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
@@ -56,7 +57,9 @@ class RequestCancellationTest {
 
     private val uri = URI.create("file:///Cancelled.groovy")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val documents = DocumentProvider().apply { put(uri, "class Cancelled { def m() { m() } }", 1) }
+    private val documents = DocumentProvider().apply {
+        put(uri, "class Cancelled { def m() { m() } }", DocumentVersion.of(1))
+    }
     private val compilation = spyk(GroovyCompilationService(documentProvider = documents))
 
     @AfterEach

@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CompletableDeferred
@@ -80,7 +81,7 @@ class RetirementWakeTest {
 
     private fun open(text: String) {
         service.onDocumentOpened(uri)
-        documents.put(uri, text, 1)
+        documents.put(uri, text, DocumentVersion.of(1))
     }
 
     private suspend fun awaitParse() =
@@ -131,7 +132,8 @@ class RetirementWakeTest {
 
         val error = assertFailsWith<ResponseErrorException> {
             repeat(MAX_RESOLUTIONS) { round ->
-                documents.put(uri, "class Held${round + 2} {}", round + 2) // the waiter's own document changed
+                // the waiter's own document changed
+                documents.put(uri, "class Held${round + 2} {}", DocumentVersion.of(round + 2))
                 service.compilationCacheService.invalidate(uri) // job cancelled, ticket still current
                 if (round < MAX_RESOLUTIONS - 1) awaitParse()
             }

@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -233,7 +234,7 @@ class CrossFileMethodReturnTypeTest {
             }
         """.trimIndent()
         val appUri = write("demo/app/App.groovy", source)
-        val documents = DocumentProvider().also { it.put(appUri, source, 1) }
+        val documents = DocumentProvider().also { it.put(appUri, source, DocumentVersion.of(1)) }
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         try {
             val service = GroovyTextDocumentService(

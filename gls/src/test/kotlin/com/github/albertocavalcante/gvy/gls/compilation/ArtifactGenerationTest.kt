@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerCapabilities
 import com.github.albertocavalcante.gvy.gls.worker.WorkerConnector
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
@@ -159,14 +160,14 @@ class ArtifactGenerationTest {
         val untitled = URI.create("untitled:Scratch")
         gate.disarm()
         service.onDocumentOpened(untitled)
-        documents.put(untitled, "class Original {}", 1)
+        documents.put(untitled, "class Original {}", DocumentVersion.of(1))
         service.compile(untitled, "class Original {}")
 
         documents.remove(untitled)
         val closed = assertNotNull(service.onClosedSourceChanged(untitled), "a closed buffer retires its parse")
 
         service.onDocumentOpened(untitled)
-        documents.put(untitled, reopenedText, 1)
+        documents.put(untitled, reopenedText, DocumentVersion.of(1))
         service.compile(untitled, reopenedText)
         // The cleanup scheduled by the close runs only now.
         service.symbolIndexingService.refreshAfterClose(untitled, closed)
@@ -178,7 +179,7 @@ class ArtifactGenerationTest {
 
     @Test
     fun `closing an open buffer again is refused while it is open`() {
-        documents.put(uri, content, 1)
+        documents.put(uri, content, DocumentVersion.of(1))
         assertNull(service.onClosedSourceChanged(uri), "an open buffer keeps its parse")
     }
 

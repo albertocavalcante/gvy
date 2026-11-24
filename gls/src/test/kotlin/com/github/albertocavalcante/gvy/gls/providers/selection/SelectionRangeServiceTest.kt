@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -115,7 +116,7 @@ class SelectionRangeServiceTest {
             val uri = URI.create("file:///SelectionPartial.groovy")
             val index = TextIndex(source)
             val offset = source.indexOf("fresh")
-            val documents = DocumentProvider().apply { put(uri, source, 7) }
+            val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(7)) }
             val compilation = GroovyCompilationService()
             val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
             try {

@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
@@ -69,7 +70,7 @@ class UnparseableBufferTest {
 
     private fun open(content: String) {
         service.onDocumentOpened(broken)
-        documents.put(broken, content, 1)
+        documents.put(broken, content, DocumentVersion.of(1))
     }
 
     private fun navigate(times: Int) = runBlocking { repeat(times) { ensurer.ensureAllCompiled() } }
@@ -102,7 +103,7 @@ class UnparseableBufferTest {
         navigate(2)
 
         val edited = "$malformed\n// still broken\n"
-        documents.put(broken, edited, 2)
+        documents.put(broken, edited, DocumentVersion.of(2))
         navigate(2)
 
         assertEquals(1, parsesOf(malformed))
@@ -137,7 +138,7 @@ class UnparseableBufferTest {
         navigate(2)
         assertEquals(1, service.symbolIndexingService.unparseable.size)
         val edited = "$malformed\n// edited\n"
-        documents.put(broken, edited, 2)
+        documents.put(broken, edited, DocumentVersion.of(2))
         navigate(2)
         assertEquals(1, service.symbolIndexingService.unparseable.size, "an edit replaces the marker")
 
@@ -154,7 +155,7 @@ class UnparseableBufferTest {
         navigate(2)
 
         val fixed = "class Broken {\n    def x() {}\n}\n"
-        documents.put(broken, fixed, 2)
+        documents.put(broken, fixed, DocumentVersion.of(2))
         navigate(3)
 
         assertNotNull(service.getAst(broken), "the fixed buffer parses")

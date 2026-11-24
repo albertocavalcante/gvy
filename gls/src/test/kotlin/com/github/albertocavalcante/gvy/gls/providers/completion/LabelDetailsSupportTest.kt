@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,7 +67,7 @@ class LabelDetailsSupportTest {
     }
 
     private suspend fun complete(labelDetailsSupport: Boolean): List<CompletionItem> {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         val service = GroovyTextDocumentService(
             scope,
             compilation,

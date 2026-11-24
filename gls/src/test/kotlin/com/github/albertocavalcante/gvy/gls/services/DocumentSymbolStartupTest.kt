@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
@@ -54,7 +55,7 @@ class DocumentSymbolStartupTest {
         service.updateHierarchicalDocumentSymbolSupport(true)
         try {
             compilation.onDocumentOpened(uri)
-            documents.put(uri, "class AfterGdsl { String hello() { 'hello' } }", 1)
+            documents.put(uri, "class AfterGdsl { String hello() { 'hello' } }", DocumentVersion.of(1))
             val response = service.documentSymbol(DocumentSymbolParams(TextDocumentIdentifier(uri.toString())))
             assertTrue(parsing.await(WAIT_SECONDS, TimeUnit.SECONDS), "Symbol request did not begin parsing")
 
@@ -86,9 +87,9 @@ class DocumentSymbolStartupTest {
         service.updateHierarchicalDocumentSymbolSupport(true)
         try {
             compilation.onDocumentOpened(uri)
-            documents.put(uri, "class Before {}", 1)
+            documents.put(uri, "class Before {}", DocumentVersion.of(1))
             compilation.ensureCompiled(uri)
-            documents.update(uri, "class After {}", 2)
+            documents.update(uri, "class After {}", DocumentVersion.of(2))
 
             val response = service.documentSymbol(DocumentSymbolParams(TextDocumentIdentifier(uri.toString())))
             val symbols = response.get(WAIT_SECONDS, TimeUnit.SECONDS)

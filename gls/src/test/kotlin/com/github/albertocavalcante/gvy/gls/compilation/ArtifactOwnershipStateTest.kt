@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -53,12 +54,12 @@ class ArtifactOwnershipStateTest {
         // #1383's guard must survive collection: a ticket taken later can carry a snapshot captured earlier
         val lifecycle = Any()
         run {
-            val newer = ownership.acquire(uri(0), BufferOrder(lifecycle, 2) { true }) {}.first
+            val newer = ownership.acquire(uri(0), BufferOrder(lifecycle, DocumentVersion.of(2)) { true }) {}.first
             assertTrue(ownership.commit(newer) {})
         } // the newer compile is finished and unreferenced
         ownership.clearUnreferencedStateForTesting(uri(0))
 
-        val older = ownership.acquire(uri(0), BufferOrder(lifecycle, 1) { false }) {}.first
+        val older = ownership.acquire(uri(0), BufferOrder(lifecycle, DocumentVersion.of(1)) { false }) {}.first
 
         assertFalse(ownership.commit(older) {}, "version 1, no longer current, must not overwrite version 2")
     }

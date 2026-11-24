@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
@@ -56,7 +57,7 @@ class ClearCachesCancellationTest {
     @OptIn(InternalCoroutinesApi::class)
     @Test
     fun `a retired pending compile is cancelled outside the fence`() {
-        documents.put(uri, "class Pending {}", 1)
+        documents.put(uri, "class Pending {}", DocumentVersion.of(1))
         val job = service.compileAsync(scope, uri, "class Pending {}")
         assertTrue(parsing.await(WAIT_SECONDS, TimeUnit.SECONDS), "the compile never started parsing")
 

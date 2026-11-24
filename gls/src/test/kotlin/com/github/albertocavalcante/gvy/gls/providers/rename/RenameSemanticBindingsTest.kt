@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.Fallback
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
@@ -279,7 +280,7 @@ class RenameSemanticBindingsTest {
         if (layout == Layout.UNLISTED_BROKEN) Files.writeString(broken, "class Broken { void m( }")
         val uri = workspace.resolve("Target.groovy").toUri()
         Files.writeString(Path.of(uri), source)
-        documents.put(uri, source, 41)
+        documents.put(uri, source, DocumentVersion.of(41))
         val endpoint = GroovyTextDocumentService(
             this,
             compilation,

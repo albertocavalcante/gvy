@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.CodeActionKind
@@ -106,7 +107,7 @@ class SpockTableActionTest {
             GroovyParserFacade().parse(ParseRequest(uri, content, compilePhase = Phases.CONVERSION)).ast,
             range,
             only,
-            version = 7,
+            version = DocumentVersion.of(7),
         ),
     )
 }

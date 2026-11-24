@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
@@ -78,7 +79,7 @@ class ReferenceSemanticBindingsTest {
     ) {
         val uri = workspace.resolve("Uses.groovy").toUri()
         Files.writeString(Path.of(uri), source)
-        val documents = DocumentProvider().apply { put(uri, source, 41) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(41)) }
         val compilation = GroovyCompilationService(
             parentClassLoader = javaClass.classLoader,
             documentProvider = documents,

@@ -1,0 +1,23 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Compile-fail proof for the typed versions in :source (issue #2394). This file must NOT compile:
+// every statement in mixKinds mixes a document version with a raw number.
+// The .txt suffix keeps it out of every source set and formatter.
+//
+// `./gradlew :source:verifyVersionKindCompileFailures` (part of `:source:check`) compiles it with the
+// project's Kotlin compiler against the :source main classes as a separate module, so private
+// constructors are invisible as they are to every consumer. It requires an error on every line
+// marked `// <n>:` and on no other line, and requires WellTypedVersions.kt.txt to compile.
+
+import com.github.albertocavalcante.gvy.source.DocumentVersion
+
+fun mixKinds(version: DocumentVersion, other: DocumentVersion) {
+    val e1: DocumentVersion = 3 // 1: a raw number is not a version; name where it came from with DocumentVersion.of
+    val e2: Int = version // 2: reading a version needs .value
+    val e3 = version < 3 // 3: a version does not compare with a raw number
+    val e4 = version == 3 // 4: nor is it equal to one
+    val e5: DocumentVersion = DocumentVersion(3) // 5: the constructor is private
+    val e6: DocumentVersion = version + 1 // 6: no arithmetic on versions
+    val e7: Long = version // 7: nor widening
+}

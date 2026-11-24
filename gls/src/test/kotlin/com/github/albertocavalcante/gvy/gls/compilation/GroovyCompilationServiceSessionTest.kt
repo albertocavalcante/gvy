@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.engine.EngineFactory
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.HoverParams
@@ -53,7 +54,7 @@ class GroovyCompilationServiceSessionTest {
 
     @Test
     fun `legacy core alias session provides Native method hover`(): Unit = runBlocking {
-        documents.put(uri, content, 1)
+        documents.put(uri, content, DocumentVersion.of(1))
         assertTrue(compilation.compile(uri, content).isSuccess)
         val session = engine.createSession(ParseRequest(uri, content))
         val params = HoverParams(TextDocumentIdentifier(uri.toString()), Position(1, 8))

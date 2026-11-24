@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -231,7 +232,7 @@ class DiagnosticsOrchestrator(
         run.result.complete(
             DiagnosticsRunResult(
                 run.uri.toString(),
-                run.snapshot.version,
+                run.snapshot.version?.value,
                 run.id,
                 run.settings.generation,
                 allDiagnostics.take(run.settings.configuration.maxNumberOfProblems.coerceAtLeast(0)),
@@ -263,7 +264,9 @@ class DiagnosticsOrchestrator(
     suspend fun awaitCurrentDiagnostics(uri: URI, version: Int? = null): DiagnosticsRunResult {
         val run = runs[uri]
             ?: throw DiagnosticsRunUnavailableException("No current diagnostics run for $uri")
-        checkCurrentRun((version == null || run.snapshot.version == version) && isCurrentRun(run)) {
+        checkCurrentRun(
+            (version == null || run.snapshot.version == DocumentVersion.ofOrNull(version)) && isCurrentRun(run),
+        ) {
             "Requested diagnostics are not current for $uri at version $version"
         }
         val result = run.result.await()

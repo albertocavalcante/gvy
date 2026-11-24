@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerato
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
@@ -70,7 +71,7 @@ class VarargsDisplayTest {
 
     @Test
     fun `hover and signature help show varargs as written`(): Unit = runBlocking {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         assertTrue(compilation.compile(uri, source).isSuccess)
 
         val hover = assertNotNull(

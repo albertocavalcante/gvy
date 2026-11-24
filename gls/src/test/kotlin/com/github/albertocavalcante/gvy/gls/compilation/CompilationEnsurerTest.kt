@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.SourceAnnotationIndex
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -41,7 +42,7 @@ class CompilationEnsurerTest {
     private fun open(vararg uris: URI) {
         every { documents.getAllUris() } returns uris.toSet()
         uris.forEach { uri ->
-            val snapshot = DocumentSnapshot("class ${uri.path.drop(1).substringBefore('.')} {}", 1)
+            val snapshot = DocumentSnapshot("class ${uri.path.drop(1).substringBefore('.')} {}", DocumentVersion.of(1))
             snapshots[uri] = snapshot
             every { documents.getSnapshot(uri) } returns snapshot
         }

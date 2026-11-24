@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassHelper
@@ -113,7 +114,7 @@ class PropertyHoverTypeTest {
 
     private suspend fun withProperty(source: String, verify: suspend (PropertyFixture) -> Unit) {
         val uri = URI("file:///PropertyHover.groovy")
-        val documents = DocumentProvider().apply { put(uri, source, 1) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(1)) }
         val compiler = GroovyCompilationService(documentProvider = documents)
         var parsed: ParseResult? = null
         try {

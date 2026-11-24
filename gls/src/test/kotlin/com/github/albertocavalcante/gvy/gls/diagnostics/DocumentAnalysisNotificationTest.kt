@@ -14,6 +14,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisLanguageCli
 import com.github.albertocavalcante.gvy.gls.services.DocumentAnalysisNotification
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.google.gson.Gson
 import io.mockk.Runs
@@ -46,7 +47,7 @@ class DocumentAnalysisNotificationTest {
     fun `source model limitations share the terminal Problems and status snapshot`() = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val content = "class A {}"
-        val documents = DocumentProvider().apply { put(uri, content, 3, "session") }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(3), "session") }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val result = CompilationResult(
@@ -96,7 +97,7 @@ class DocumentAnalysisNotificationTest {
     ) = runTest {
         val uri = root.resolve("Source.groovy").toUri()
         val content = "class Source {}"
-        val documents = DocumentProvider().apply { put(uri, content, 3, "session") }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(3), "session") }
         val configs = listOf(root.resolve(".codenarc"), root.resolve("codenarc.groovy"))
         val literal = Range(Position(0, 18), Position(0, 38))
         val configDiagnostics = configs.map { configDiagnostic(it, literal) }
@@ -150,7 +151,7 @@ class DocumentAnalysisNotificationTest {
     fun `reopened document reports its own session and monotonic run identity`() = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val content = "class A {}"
-        val documents = DocumentProvider().apply { put(uri, content, 1, "old-session") }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(1), "old-session") }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val result = mockk<CompilationResult>()
@@ -179,7 +180,7 @@ class DocumentAnalysisNotificationTest {
         orchestrator.trigger(uri, content)
         orchestrator.awaitDiagnostics(uri)
         orchestrator.close(uri)
-        documents.put(uri, content, 1, "new-session")
+        documents.put(uri, content, DocumentVersion.of(1), "new-session")
         orchestrator.trigger(uri, content)
         orchestrator.awaitDiagnostics(uri)
 
@@ -192,7 +193,7 @@ class DocumentAnalysisNotificationTest {
     @Test
     fun `client capability gates notification`() = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
-        val documents = DocumentProvider().apply { put(uri, "class A {}", 1, "session") }
+        val documents = DocumentProvider().apply { put(uri, "class A {}", DocumentVersion.of(1), "session") }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val result = mockk<CompilationResult>()
@@ -220,7 +221,7 @@ class DocumentAnalysisNotificationTest {
     fun `legacy client can complete analysis when capability is enabled`() = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val content = "class A {}"
-        val documents = DocumentProvider().apply { put(uri, content, 1, "session") }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(1), "session") }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
         val result =

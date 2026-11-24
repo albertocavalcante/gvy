@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Position
@@ -66,7 +67,7 @@ class HoverTokenCoordinatesTest {
             val source = "// 😀😀\nString value = ''"
             val uri = URI.create("untitled:HoverTokenCoordinates.groovy")
             val documents = DocumentProvider()
-            documents.put(uri, source, 1)
+            documents.put(uri, source, DocumentVersion.of(1))
             val compilation = GroovyCompilationService(
                 documentProvider = documents,
                 engineConfig = EngineConfiguration(EngineType.Native),

@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
@@ -73,7 +74,7 @@ class AstRequestHandlerTest {
             assertTrue(parseResult.sourceUnit.isPhaseComplete)
             assertNotNull(parseResult.ast)
 
-            documents.put(URI.create(uri), source, 1)
+            documents.put(URI.create(uri), source, DocumentVersion.of(1))
             coEvery { compilationService.compileTransient(URI.create(uri), source, Phases.CANONICALIZATION) } returns
                 parseResult
             val handler = AstRequestHandler(
@@ -113,7 +114,7 @@ class AstRequestHandlerTest {
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
         assertNotNull(parsed.ast)
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
         val realHandler =
             AstRequestHandler(
@@ -142,7 +143,7 @@ class AstRequestHandlerTest {
         val parsed = GroovyParserFacade().parse(
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
-        documents.put(uri, source, 7)
+        documents.put(uri, source, DocumentVersion.of(7))
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
         val handler = AstRequestHandler(
             compilationService,
@@ -169,10 +170,10 @@ class AstRequestHandlerTest {
         val parsed = GroovyParserFacade().parse(
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
             documents.remove(uri)
-            documents.put(uri, source, 1)
+            documents.put(uri, source, DocumentVersion.of(1))
             parsed
         }
         val handler = AstRequestHandler(
@@ -191,7 +192,7 @@ class AstRequestHandlerTest {
     @Test
     fun `AST rejects mismatched hashes and invalid inputs`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
-        documents.put(uri, "class Fresh {}", 1)
+        documents.put(uri, "class Fresh {}", DocumentVersion.of(1))
         val handler = AstRequestHandler(
             compilationService,
             coreConverter,
@@ -222,7 +223,7 @@ class AstRequestHandlerTest {
         val started = CompletableDeferred<Unit>()
         val blocked = CompletableDeferred<ParseResult>()
         val cancelled = CompletableDeferred<Unit>()
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
             started.complete(Unit)
             try {
@@ -255,9 +256,9 @@ class AstRequestHandlerTest {
         val parsed = GroovyParserFacade().parse(
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
-            documents.update(uri, "class Newer {}", 2)
+            documents.update(uri, "class Newer {}", DocumentVersion.of(2))
             parsed
         }
         val handler = AstRequestHandler(
@@ -280,11 +281,11 @@ class AstRequestHandlerTest {
         val parsed = GroovyParserFacade().parse(
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
         val dto = CoreAstNodeDto("node", "Module", null, emptyList(), emptyMap())
         every { nativeConverter.convert(any(), source) } answers {
-            documents.update(uri, "class Newer {}", 2)
+            documents.update(uri, "class Newer {}", DocumentVersion.of(2))
             dto
         }
         val handler = AstRequestHandler(
@@ -309,7 +310,7 @@ class AstRequestHandlerTest {
         val other = parser.parse(
             ParseRequest(URI("file:///Other.groovy"), "class Other {}", compilePhase = Phases.CANONICALIZATION),
         )
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         val handler = AstRequestHandler(
             compilationService,
             coreConverter,
@@ -360,13 +361,17 @@ class AstRequestHandlerTest {
         OwnedParseFixture(directory, javaClass.classLoader).use { fixture ->
             val compiled = fixture.compile(uri, source)
             val parsed = if (completion == LoaderCompletion.UNAVAILABLE_AST) compiled.copy(ast = null) else compiled
-            documents.put(uri, source, 1)
+            documents.put(uri, source, DocumentVersion.of(1))
             coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
                 // TODO(#2063): Investigate pinned jqwik/Platform discovery of coroutine enum dispatch.
                 //   Recheck anonymous enum helpers when qualifying the supported dependency stack.
                 //   See: https://github.com/albertocavalcante/gvy/issues/2063
                 if (completion == LoaderCompletion.POST_PARSE_CANCELLATION) requestOwner.cancel()
-                if (completion == LoaderCompletion.STALE_SOURCE) documents.update(uri, "class Edited {}", 2)
+                if (completion ==
+                    LoaderCompletion.STALE_SOURCE
+                ) {
+                    documents.update(uri, "class Edited {}", DocumentVersion.of(2))
+                }
                 parsed
             }
             val conversionFailure = IllegalStateException("controlled projection failure")

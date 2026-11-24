@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.spyk
 import kotlinx.coroutines.CancellationException
@@ -119,7 +120,7 @@ class PrepareRenameTest {
                 assertNull(provider.providePrepareRename(it.uri.toString(), position))
                 assertEquals(2, reads)
                 assertEquals(source, it.documents.get(it.uri))
-                assertEquals(41, it.documents.getSnapshot(it.uri)?.version)
+                assertEquals(DocumentVersion.of(41), it.documents.getSnapshot(it.uri)?.version)
             }
         }
     }
@@ -145,7 +146,7 @@ class PrepareRenameTest {
     private suspend fun CoroutineScope.fixture(source: String): Fixture {
         val uri = workspace.resolve("Target.groovy").toUri()
         Files.writeString(Path.of(uri), source)
-        val documents = DocumentProvider().apply { put(uri, source, 41) }
+        val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(41)) }
         val compilation = GroovyCompilationService(
             parentClassLoader = javaClass.classLoader,
             documentProvider = documents,
@@ -182,7 +183,7 @@ class PrepareRenameTest {
             assertEquals(Range(index.positionOf(offset), index.positionOf(offset + name.length)), prepared.range)
             assertEquals(source, documents.get(uri))
             assertEquals(source, Files.readString(Path.of(uri)))
-            assertEquals(41, documents.getSnapshot(uri)?.version)
+            assertEquals(DocumentVersion.of(41), documents.getSnapshot(uri)?.version)
         }
 
         override fun close() = compilation.clearCaches()

@@ -31,7 +31,7 @@ tasks.test {
 }
 
 /**
- * Compiles a well-typed control and a file that mixes coordinate units against the main classes,
+ * Compiles a well-typed control and a file that mixes coordinate units or version kinds against the main classes,
  * as a separate module (so internal constructors are invisible). The control must compile; the
  * mixed file must fail with an error on every line marked `// <n>:` and on no other line.
  */
@@ -52,7 +52,7 @@ abstract class VerifyCompileFailures
 
         @get:InputFile
         @get:PathSensitive(PathSensitivity.RELATIVE)
-        abstract val mixedUnits: RegularFileProperty
+        abstract val mixedFile: RegularFileProperty
 
         @get:Nested
         abstract val launcher: Property<JavaLauncher>
@@ -71,9 +71,9 @@ abstract class VerifyCompileFailures
                 throw GradleException("The well-typed control must compile:\n${control.output}")
             }
 
-            val mixedSource = mixedUnits.get().asFile
+            val mixedSource = mixedFile.get().asFile
             val mixed = compile(mixedSource, work.resolve("Mixed.kt"), work.resolve("mixed"))
-            if (mixed.exitCode == 0) throw GradleException("The mixed-units file compiled; units can be mixed")
+            if (mixed.exitCode == 0) throw GradleException("The mixed file compiled; the types it mixes can be mixed")
 
             val expectedLines =
                 mixedSource
@@ -95,7 +95,7 @@ abstract class VerifyCompileFailures
                     "Expected errors on lines $expectedLines of ${mixedSource.name}, got $errorLines:\n${mixed.output}",
                 )
             }
-            logger.lifecycle("Coordinate units do not mix: ${expectedLines.size} statements fail, the control compiles")
+            logger.lifecycle("Compile-fail check: ${expectedLines.size} statements fail, the control compiles")
         }
 
         private class Compilation(
@@ -142,11 +142,23 @@ val verifyCoordinateUnitCompileFailures =
         compilerClasspath.from(compileFailCompiler)
         consumerClasspath.from(sourceSets.main.map { it.output }, configurations.named("compileClasspath"))
         wellTyped.set(layout.projectDirectory.file("src/test/resources/compile-fail/WellTypedCoordinates.kt.txt"))
-        mixedUnits.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedCoordinateUnits.kt.txt"))
+        mixedFile.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedCoordinateUnits.kt.txt"))
         launcher.set(javaToolchains.launcherFor(java.toolchain))
         workDirectory.set(layout.buildDirectory.dir("compile-fail"))
     }
 
+val verifyVersionKindCompileFailures =
+    tasks.register<VerifyCompileFailures>("verifyVersionKindCompileFailures") {
+        description = "Prove that document versions and raw numbers do not mix at compile time"
+        group = "verification"
+        compilerClasspath.from(compileFailCompiler)
+        consumerClasspath.from(sourceSets.main.map { it.output }, configurations.named("compileClasspath"))
+        wellTyped.set(layout.projectDirectory.file("src/test/resources/compile-fail/WellTypedVersions.kt.txt"))
+        mixedFile.set(layout.projectDirectory.file("src/test/resources/compile-fail/MixedVersionKinds.kt.txt"))
+        launcher.set(javaToolchains.launcherFor(java.toolchain))
+        workDirectory.set(layout.buildDirectory.dir("compile-fail-versions"))
+    }
+
 tasks.check {
-    dependsOn(verifyCoordinateUnitCompileFailures)
+    dependsOn(verifyCoordinateUnitCompileFailures, verifyVersionKindCompileFailures)
 }

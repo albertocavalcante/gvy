@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
@@ -102,7 +103,7 @@ class RetiredWaiterTest {
         val file = tempDir.resolve("Closed.groovy").also { Files.writeString(it, "class OnDisk {}") }
         val uri = file.toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Unsaved {}", 1)
+        documents.put(uri, "class Unsaved {}", DocumentVersion.of(1))
 
         val owner = service.compileAsync(scope, uri, "class Unsaved {}")
         assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS))
@@ -128,7 +129,7 @@ class RetiredWaiterTest {
     fun `cancelling one waiting request does not retire the compile another waiter shares`(): Unit = runBlocking {
         val uri = tempDir.resolve("Shared.groovy").toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Shared {}", 1)
+        documents.put(uri, "class Shared {}", DocumentVersion.of(1))
 
         val first = async(start = CoroutineStart.UNDISPATCHED) { service.ensureCompiled(uri) }
         assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "the first request never started compiling")
@@ -146,7 +147,7 @@ class RetiredWaiterTest {
     fun `a waiter whose compile is invalidated once gets a current result`(): Unit = runBlocking {
         val uri = tempDir.resolve("Open.groovy").toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Open {}", 1)
+        documents.put(uri, "class Open {}", DocumentVersion.of(1))
         armed.set(false)
         val invalidations = AtomicInteger()
         afterParse = { if (invalidations.getAndIncrement() == 0) service.invalidateCache(uri) }
@@ -161,7 +162,7 @@ class RetiredWaiterTest {
     fun `a waiter invalidated on every attempt is told the content changed, not cancelled`(): Unit = runBlocking {
         val uri = tempDir.resolve("Churn.groovy").toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Churn {}", 1)
+        documents.put(uri, "class Churn {}", DocumentVersion.of(1))
         armed.set(false)
         afterParse = { service.invalidateCache(uri) }
 
@@ -313,7 +314,7 @@ class RetiredWaiterTest {
     fun `owner cancellations of a shared compile do not exhaust a co-waiter's retries (#1343)`(): Unit = runBlocking {
         val uri = tempDir.resolve("Hover.groovy").toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Hover {}", 1)
+        documents.put(uri, "class Hover {}", DocumentVersion.of(1))
         val owners = gatedOwners(uri) { "class Hover {}" }
         owners.start()
         val waiter = waitOn(uri)
@@ -333,11 +334,11 @@ class RetiredWaiterTest {
             val uri = tempDir.resolve("Typing.groovy").toUri()
             service.onDocumentOpened(uri)
             var version = 1
-            documents.put(uri, "class Typing1 {}", version)
+            documents.put(uri, "class Typing1 {}", DocumentVersion.of(version))
             // The waiter's own document changes with every superseded owner, before the waiter re-resolves
             val owners = gatedOwners(uri, beforeReplacement = {
                 version++
-                documents.put(uri, "class Typing$version {}", version)
+                documents.put(uri, "class Typing$version {}", DocumentVersion.of(version))
             }) { documents.getSnapshot(uri)!!.content }
             owners.start()
             val waiter = waitOn(uri)
@@ -356,7 +357,7 @@ class RetiredWaiterTest {
     fun `owner cancellations are bounded so a waiter never loops forever`(): Unit = runBlocking {
         val uri = tempDir.resolve("Endless.groovy").toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Endless {}", 1)
+        documents.put(uri, "class Endless {}", DocumentVersion.of(1))
         val owners = gatedOwners(uri) { "class Endless {}" }
         owners.start()
         val waiter = waitOn(uri)
@@ -380,7 +381,7 @@ class RetiredWaiterTest {
         runBlocking {
             val uri = tempDir.resolve("Loaded.groovy").toUri()
             service.onDocumentOpened(uri)
-            documents.put(uri, "class Loaded {}", 1)
+            documents.put(uri, "class Loaded {}", DocumentVersion.of(1))
             val owners = gatedOwners(uri, beforeReplacement = { Thread.sleep(SLOW_SUCCESSOR_MILLIS) }) {
                 "class Loaded {}"
             }
@@ -401,7 +402,7 @@ class RetiredWaiterTest {
     fun `a cancelled request stops re-resolving after an owner cancellation`(): Unit = runBlocking {
         val uri = tempDir.resolve("Gone.groovy").toUri()
         service.onDocumentOpened(uri)
-        documents.put(uri, "class Gone {}", 1)
+        documents.put(uri, "class Gone {}", DocumentVersion.of(1))
         val owners = gatedOwners(uri) { "class Gone {}" }
         owners.start()
         val waiter = waitOn(uri)

@@ -45,6 +45,7 @@ import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -399,7 +400,12 @@ class GroovyTextDocumentService(
         val content = params.textDocument.text
         // Fence work of the previous lifecycle before the buffer becomes visible to it.
         compilationService.onDocumentOpened(uri)
-        documentProvider.put(uri, content, params.textDocument.version, documentAnalysisSession(uri))
+        documentProvider.put(
+            uri,
+            content,
+            DocumentVersion.of(params.textDocument.version),
+            documentAnalysisSession(uri),
+        )
         diagnosticsOrchestrator.documentChanged(uri)
 
         diagnosticsOrchestrator.trigger(uri, content)
@@ -413,7 +419,7 @@ class GroovyTextDocumentService(
             logger.warn { "Ignoring ranged change for full-sync document: ${params.textDocument.uri}" }
             return
         }
-        val version = params.textDocument.version ?: return
+        val version = DocumentVersion.ofOrNull(params.textDocument.version) ?: return
         val uri = URI.create(params.textDocument.uri)
         val snapshot = documentProvider.update(uri, params.contentChanges.lastOrNull()?.text, version) ?: return
         diagnosticsOrchestrator.documentChanged(uri)

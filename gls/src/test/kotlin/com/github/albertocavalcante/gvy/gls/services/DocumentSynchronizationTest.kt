@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.DiagnosticConfig
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -65,7 +66,7 @@ class DocumentSynchronizationTest {
         fixture.service.didChange(change(5, "obsolete"))
 
         assertEquals("latest", fixture.documents.get(uri))
-        assertEquals(DocumentSnapshot("latest", 8), fixture.documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("latest", DocumentVersion.of(8)), fixture.documents.getSnapshot(uri))
     }
 
     @Test
@@ -95,18 +96,18 @@ class DocumentSynchronizationTest {
         fixture.service.didChange(change(4, "intermediate", "final"))
 
         assertEquals("final", fixture.documents.get(uri))
-        assertEquals(DocumentSnapshot("final", 4), fixture.documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("final", DocumentVersion.of(4)), fixture.documents.getSnapshot(uri))
     }
 
     @Test
     fun `open and empty change retain the client version`(): Unit = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.service.didOpen(open("initial", -2))
-        assertEquals(DocumentSnapshot("initial", -2), fixture.documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("initial", DocumentVersion.of(-2)), fixture.documents.getSnapshot(uri))
 
         fixture.service.didChange(change(7))
 
-        assertEquals(DocumentSnapshot("initial", 7), fixture.documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("initial", DocumentVersion.of(7)), fixture.documents.getSnapshot(uri))
     }
 
     @Test
@@ -123,7 +124,7 @@ class DocumentSynchronizationTest {
             ),
         )
 
-        assertEquals(DocumentSnapshot("initial", 3), fixture.documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("initial", DocumentVersion.of(3)), fixture.documents.getSnapshot(uri))
     }
 
     @Test
@@ -137,7 +138,7 @@ class DocumentSynchronizationTest {
             ),
         )
 
-        assertEquals(DocumentSnapshot("initial", 3), fixture.documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("initial", DocumentVersion.of(3)), fixture.documents.getSnapshot(uri))
     }
 
     @Test
@@ -179,7 +180,7 @@ class DocumentSynchronizationTest {
 
         coVerify(exactly = 1) { compilation.compileAsync(any(), uri, "current buffer") }
         coVerify(exactly = 0) { compilation.compileAsync(any(), uri, "stale client save text") }
-        assertEquals(DocumentSnapshot("current buffer", 4), documents.getSnapshot(uri))
+        assertEquals(DocumentSnapshot("current buffer", DocumentVersion.of(4)), documents.getSnapshot(uri))
         assertEquals(1, publications.size)
         assertEquals(4, publications.single().version)
         assertTrue(publications.single().diagnostics.isEmpty())
@@ -254,7 +255,10 @@ class DocumentSynchronizationTest {
             fixture.service.didSave(DidSaveTextDocumentParams(TextDocumentIdentifier(uri.toString())))
             runCurrent()
             coVerify(exactly = 1) { fixture.compilation.compileAsync(any(), uri, fixture.repairedContent) }
-            assertEquals(DocumentSnapshot(fixture.repairedContent, 2), fixture.documents.getSnapshot(uri))
+            assertEquals(
+                DocumentSnapshot(fixture.repairedContent, DocumentVersion.of(2)),
+                fixture.documents.getSnapshot(uri),
+            )
             assertEquals(1, fixture.publications.size, "Save must publish before the debounce expires")
             assertEquals(2, fixture.publications.single().version)
             assertTrue(fixture.publications.single().diagnostics.isEmpty())

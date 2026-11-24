@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallMetadataResolver
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
@@ -63,7 +64,7 @@ class ClasspathVarargsDisplayTest {
     }
 
     private suspend fun compiled(): Pair<Int, Int> {
-        documents.put(uri, source, 1)
+        documents.put(uri, source, DocumentVersion.of(1))
         assertTrue(compilation.compile(uri, source).isSuccess)
         val line = source.lines().indexOfFirst { "String.format" in it }
         return line to source.lines()[line].indexOf("format")

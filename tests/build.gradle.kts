@@ -66,6 +66,7 @@ testing {
 
             dependencies {
                 implementation(project(":gls"))
+                implementation(project(":source"))
                 implementation(project(":fmt"))
                 implementation(project(":jenkins"))
 

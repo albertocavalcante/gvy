@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionStatu
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionTelemetryEvent
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -38,7 +39,7 @@ class LookupFailureResponseTest {
     private val onCall = Position(1, 19)
     private val onLiteral = Position(3, 10)
     private val onMissingImport = Position(0, 22)
-    private val documents = DocumentProvider().apply { put(uri, text, 1) }
+    private val documents = DocumentProvider().apply { put(uri, text, DocumentVersion.of(1)) }
     private val compilation = spyk(GroovyCompilationService(documentProvider = documents))
     private val events = mutableListOf<DefinitionTelemetryEvent>()
 
@@ -108,7 +109,7 @@ class LookupFailureResponseTest {
     @Test
     fun `a request cancelled after its origin was edited stays cancelled`(): Unit = runBlocking {
         coEvery { compilation.ensureCompiled(uri) } coAnswers {
-            documents.update(uri, text.replace("call()", "other()"), 2)
+            documents.update(uri, text.replace("call()", "other()"), DocumentVersion.of(2))
             throw CancellationException("cancelled after the edit")
         }
         assertFailsWith<CancellationException> { handler().getDefinitions(uri.toString(), onCall) }
@@ -116,7 +117,7 @@ class LookupFailureResponseTest {
 
     @Test
     fun `a request cancelled while a strategy runs ends cancelled with one cancelled event`(): Unit = runBlocking {
-        documents.update(uri, "import com.example.Missing\n", 2)
+        documents.update(uri, "import com.example.Missing\n", DocumentVersion.of(2))
         lateinit var request: Deferred<*>
         every { compilation.findClasspathClass(any()) } answers {
             request.cancel()
@@ -165,7 +166,7 @@ class LookupFailureResponseTest {
 
     /** Installs a seam whose first call edits the origin buffer and then throws, as a failure the edit caused. */
     private fun editThenFail(install: (() -> Nothing) -> Unit) = install {
-        documents.update(uri, text.replace("call()", "other()"), 2)
+        documents.update(uri, text.replace("call()", "other()"), DocumentVersion.of(2))
         error("lookup broke after the edit")
     }
 

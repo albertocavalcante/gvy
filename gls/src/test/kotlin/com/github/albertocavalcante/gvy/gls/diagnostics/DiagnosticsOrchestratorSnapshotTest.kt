@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -56,7 +57,7 @@ class DiagnosticsOrchestratorSnapshotTest {
     private val content = "class Example {}"
 
     private class Fixture(scope: CoroutineScope, val uri: URI, content: String, version: Int = 7) {
-        val documents = DocumentProvider().apply { put(uri, content, version) }
+        val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(version)) }
         val compilation = mockk<GroovyCompilationService>()
         val diagnostics = mockk<DiagnosticsService>()
         val publications = mutableListOf<PublishDiagnosticsParams>()
@@ -156,7 +157,7 @@ class DiagnosticsOrchestratorSnapshotTest {
     fun `parser publication rejects an edit accepted during client lookup`(): Unit = runTest {
         val fixture = Fixture(this, uri, content)
         fixture.beforeClientLookup = { lookup ->
-            if (lookup == 1) fixture.documents.update(uri, "class Changed {}", 8)
+            if (lookup == 1) fixture.documents.update(uri, "class Changed {}", DocumentVersion.of(8))
         }
 
         fixture.orchestrator.trigger(uri, content)
@@ -169,7 +170,7 @@ class DiagnosticsOrchestratorSnapshotTest {
     fun `merged publication rejects an edit accepted after parser publication`(): Unit = runTest {
         val fixture = Fixture(this, uri, content)
         fixture.beforeClientLookup = { lookup ->
-            if (lookup == 2) fixture.documents.update(uri, "class Changed {}", 8)
+            if (lookup == 2) fixture.documents.update(uri, "class Changed {}", DocumentVersion.of(8))
         }
 
         fixture.orchestrator.trigger(uri, content)
@@ -196,7 +197,7 @@ class DiagnosticsOrchestratorSnapshotTest {
         fixture.beforeClientLookup = { lookup ->
             if (lookup == 1) {
                 fixture.documents.remove(uri)
-                fixture.documents.put(uri, content, 7)
+                fixture.documents.put(uri, content, DocumentVersion.of(7))
             }
         }
 
@@ -222,7 +223,7 @@ class DiagnosticsOrchestratorSnapshotTest {
         val fixture = Fixture(this, uri, content)
 
         fixture.orchestrator.trigger(uri, content)
-        fixture.documents.update(uri, "class Changed {}", 8)
+        fixture.documents.update(uri, "class Changed {}", DocumentVersion.of(8))
         advanceUntilIdle()
 
         assertTrue(fixture.publications.isEmpty())
@@ -231,7 +232,7 @@ class DiagnosticsOrchestratorSnapshotTest {
     @Test
     fun `an obsolete text trigger cannot attach its result to the current version`(): Unit = runTest {
         val fixture = Fixture(this, uri, content)
-        fixture.documents.update(uri, "class Changed {}", 8)
+        fixture.documents.update(uri, "class Changed {}", DocumentVersion.of(8))
 
         fixture.orchestrator.trigger(uri, content)
         advanceUntilIdle()
@@ -336,7 +337,7 @@ class DiagnosticsOrchestratorSnapshotTest {
         fixture.beforeClientLookup = {
             if (editOnLookup) {
                 editOnLookup = false
-                fixture.documents.update(uri, "class Edited {}", 2)
+                fixture.documents.update(uri, "class Edited {}", DocumentVersion.of(2))
             }
         }
 
@@ -416,7 +417,7 @@ class DiagnosticsOrchestratorSnapshotTest {
             assertTrue(resolvingClient.await(10, TimeUnit.SECONDS))
 
             val update = executor.submit {
-                fixture.documents.update(uri, "class Changed {}", 8)
+                fixture.documents.update(uri, "class Changed {}", DocumentVersion.of(8))
                 fixture.orchestrator.updateConfiguration(
                     ServerConfiguration(maxNumberOfProblems = 0),
                     fixture.diagnostics,

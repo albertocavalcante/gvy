@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertFalse
@@ -15,7 +16,7 @@ class ArtifactOwnershipOrderTest {
     private val lifecycle = Any()
 
     private fun order(version: Int, current: Boolean = false, incarnation: Any = lifecycle) =
-        BufferOrder(incarnation, version) { current }
+        BufferOrder(incarnation, DocumentVersion.of(version)) { current }
 
     private fun commits(order: BufferOrder?) = ownership.commit(ownership.acquire(uri, order) {}.first) {}
 
