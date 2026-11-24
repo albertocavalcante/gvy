@@ -130,6 +130,7 @@ class RenameProvider private constructor(
 
         val sources = RenameSourceSnapshots(documentSource)
         val target = captureTarget(uri, position, sources)
+        if (!target.declaredHere) refuseIfUsedElsewhere(target)
         if (target.oldName == newName) {
             throw createError(ResponseErrorCode.InvalidRequest, "New name is the same as the current name")
         }
@@ -147,6 +148,7 @@ class RenameProvider private constructor(
     suspend fun providePrepareRename(uri: String, position: Position): PrepareRenameResult? = try {
         val sources = RenameSourceSnapshots(documentSource)
         val target = captureTarget(uri, position, sources)
+        if (!target.declaredHere) refuseIfUsedElsewhere(target)
         val location = target.nameAt(position, collectNameLocations(target, sources))
         if (location == null) {
             null
@@ -169,13 +171,21 @@ class RenameProvider private constructor(
         null
     }
 
-    /** Only this file is edited, so a target other files use would be silently broken. */
+    /**
+     * Only this file is edited, so a target other files use would be silently broken. A class this file does not
+     * declare is declared in a file that spells its name, or in a dependency: the guard names the other file, and a
+     * class it lets through is refused all the same. Such a class is checked before its uses here are collected.
+     */
     private suspend fun refuseIfUsedElsewhere(target: RenameTarget) {
         val uses = crossFileUses.usesOutside(target.documentUri, target.definition, target.oldName)
-        if (!uses.isEmpty) {
-            val error = ResponseError(ResponseErrorCode.RequestFailed, uses.message(target.oldName), null)
-            throw RenameRefusedException(error)
+        val message = when {
+            !uses.isEmpty -> uses.message(target.oldName)
+            !target.declaredHere ->
+                "Cannot rename '${target.oldName}': it is not declared in this file, and renaming across files is " +
+                    "not supported yet"
+            else -> return
         }
+        throw RenameRefusedException(ResponseError(ResponseErrorCode.RequestFailed, message, null))
     }
 
     private data class RenameTarget(
@@ -187,6 +197,10 @@ class RenameProvider private constructor(
         val definitionLocation: Location,
         val oldName: String,
     ) {
+        /** False for a class declared in another file or a dependency, whose rename this file cannot complete. */
+        val declaredHere: Boolean
+            get() = (definition as? ClassNode)?.let { ClassRenameUses.declaredIn(it, compiled) } ?: true
+
         fun nameAt(cursor: Position, locations: List<Location>): Location? =
             ClassRenameConstructors.nameAtCursor(node, documentUri, compiled.sourceText, locations, cursor)
     }
@@ -207,7 +221,9 @@ class RenameProvider private constructor(
         // Get the node at the position (now guaranteed to be in cache)
         val visitor = compiled.parseResult.astModel
 
-        val targetNode = visitor.getNodeAt(documentUri, groovyPosition)
+        // On a class name a type use spells (a parameter type, a type argument), the rename is the class's.
+        val targetNode = ClassRenameUses.classNamedAt(compiled, TextIndex(original.content).offsetOf(position))
+            ?: visitor.getNodeAt(documentUri, groovyPosition)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "No symbol found at position")
 
         // Resolve to definition
@@ -276,8 +292,14 @@ class RenameProvider private constructor(
             target.documentUri,
             target.oldName,
         )
-        return (nameLocations + constructorNames).distinctBy {
+        val located = (nameLocations + constructorNames).distinctBy {
             Triple(it.uri, it.range.start.line, it.range.start.character)
+        }
+        val type = (target.definition as? ClassNode)?.redirect()
+        return if (type != null && target.declaredHere) {
+            ClassRenameUses.covering(type, target.compiled, target.documentUri, located, target.oldName)
+        } else {
+            located
         }
     }
 

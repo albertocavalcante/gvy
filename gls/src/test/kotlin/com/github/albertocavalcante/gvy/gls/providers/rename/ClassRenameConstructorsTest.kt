@@ -207,17 +207,13 @@ class ClassRenameConstructorsTest {
             assertEquals(expected, result)
         }
 
-    // FIXME(#2438): a class rename does not rename method or constructor parameter types
-    //   (`RecursiveAstVisitor.visitParameter` does not track them, see #865), so `Worker(Service other)` below no
-    //   longer compiles. The constructor name is renamed once, as #2434 requires; this test pins the rest.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
-    fun `renaming a class renames a constructor taking its own type but not the parameter type`(): Unit = runBlocking {
+    fun `renaming a class renames a constructor taking its own type and every parameter type`(): Unit = runBlocking {
         val content = "class Service {\n    Service(Service other) { }\n    void take(Service s) { }\n}\n"
 
         val result = renameAndApply(content, Position(0, 7), "Worker")
 
-        assertEquals("class Worker {\n    Worker(Service other) { }\n    void take(Service s) { }\n}\n", result)
+        assertEquals("class Worker {\n    Worker(Worker other) { }\n    void take(Worker s) { }\n}\n", result)
     }
 
     @Test
@@ -311,10 +307,6 @@ class ClassRenameConstructorsTest {
         assertEquals(expected, result)
     }
 
-    // FIXME(#2438): a class rename does not rename `extends Base` of a subclass in the same
-    //   file (the visitor tracks the resolved superclass, which is the declaration itself), so the subclass below no
-    //   longer compiles. This test pins that; the constructors, `this(...)` and `super(...)` are as #2434 requires.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `renaming a class keeps this and super calls and renames its constructors`(): Unit = runBlocking {
         val content = """
@@ -334,15 +326,13 @@ class ClassRenameConstructorsTest {
                 Root(String name) { }
                 Root() { this('default') }
             }
-            class Derived extends Base {
+            class Derived extends Root {
                 Derived() { super('d') }
             }
         """.trimIndent()
         assertEquals(expected, result)
     }
 
-    // FIXME(#2438): `extends Point` stays, as in the test above.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
     fun `renaming a class with generated constructors edits only the source`(): Unit = runBlocking {
         val content = """
@@ -361,7 +351,7 @@ class ClassRenameConstructorsTest {
         val point = renameAndApply(content, Position(3, 7), "Place")
         val spot = renameAndApply(content, Position(7, 7), "Mark")
 
-        assertEquals(content.replace("class Point", "class Place").replace("new Point", "new Place"), point)
+        assertEquals(content.replace("Point", "Place"), point)
         assertEquals(content.replace("Spot", "Mark"), spot)
     }
 
@@ -381,28 +371,27 @@ class ClassRenameConstructorsTest {
     }
 
     @Test
-    fun `renaming a record with a compact constructor is refused, as its name has no node to edit`(): Unit =
-        runBlocking {
-            val content = """
+    fun `renaming a record with a compact constructor is refused as not supported yet`(): Unit = runBlocking {
+        val content = """
                 record Interval(int from, int to) {
                     Interval {
                         assert from <= to
                     }
                 }
                 def r = new Interval(1, 2)
-            """.trimIndent()
+        """.trimIndent()
 
-            val rename = runCatching { renameAndApply(content, Position(0, 8), "Span") }.exceptionOrNull()
-            val prepare = prepareRename(content, Position(0, 8)).exceptionOrNull()
+        val rename = runCatching { renameAndApply(content, Position(0, 8), "Span") }.exceptionOrNull()
+        val prepare = prepareRename(content, Position(0, 8)).exceptionOrNull()
 
-            val reason = "Cannot rename 'Interval': the name of its constructor at line 2 cannot be located exactly " +
-                "in the source"
-            for (failure in listOf(rename, prepare)) {
-                val refused = assertInstanceOf(RenameRefusedException::class.java, failure)
-                assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code)
-                assertEquals(reason, refused.message)
-            }
+        val reason = "Cannot rename 'Interval': renaming a record with a compact constructor (line 2) " +
+            "is not supported yet"
+        for (failure in listOf(rename, prepare)) {
+            val refused = assertInstanceOf(RenameRefusedException::class.java, failure)
+            assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code)
+            assertEquals(reason, refused.message)
         }
+    }
 
     @Test
     fun `renaming a trait renames its uses`(): Unit = runBlocking {
@@ -418,12 +407,8 @@ class ClassRenameConstructorsTest {
         assertEquals(content.replace("Greeter", "Welcomer"), result)
     }
 
-    // FIXME(#2438): a class rename does not rename `new Service('a') { ... }` of an anonymous
-    //   subclass (the call's type is the anonymous class), so the result below no longer compiles. This test pins
-    //   that; the constructor is renamed as #2434 requires.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
-    fun `renaming a class renames its constructor but not an anonymous subclass's new`(): Unit = runBlocking {
+    fun `renaming a class renames its constructor and an anonymous subclass's new`(): Unit = runBlocking {
         val content = """
             class Service {
                 Service(String name) { }
@@ -439,7 +424,7 @@ class ClassRenameConstructorsTest {
                 Worker(String name) { }
                 String run() { 'x' }
             }
-            def s = new Service('a') { String run() { 'y' } }
+            def s = new Worker('a') { String run() { 'y' } }
         """.trimIndent()
         assertEquals(expected, result)
     }

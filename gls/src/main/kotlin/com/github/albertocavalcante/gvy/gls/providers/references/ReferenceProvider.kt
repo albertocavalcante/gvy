@@ -385,6 +385,8 @@ class ReferenceProvider(
      * All three are different objects but share the same accessedVariable reference!
      */
     private suspend fun ProducerScope<Location>.processNode(params: ProcessNodeParams) {
+        // A type parameter (`T` of `<T extends Service>`) redirects to its bound but spells only its own name.
+        if (params.node is ClassNode && params.node.isGenericsPlaceHolder) return
         val nodeDefinition = params.node.resolveToDefinition(params.visitor, params.symbolTable, strict = false)
 
         // Simple and robust matching using .equals() like fork-groovy-language-server

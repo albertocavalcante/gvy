@@ -91,21 +91,18 @@ class ConstructorNameLocationTest {
 
         assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code)
         assertEquals(
-            "Cannot rename 'Point': the name of its constructor at line 3 cannot be located exactly in the source",
+            "Cannot rename 'Point': renaming a record with a compact constructor (line 3) is not supported yet",
             refused.message,
         )
     }
 
-    // FIXME(#2438): a class rename does not rename a type-parameter bound (`<T extends Service>`), so the result
-    //   below no longer compiles. The constructor name after the type parameters is renamed, as #2434 requires.
-    //   See: https://github.com/albertocavalcante/gvy/issues/2438
     @Test
-    fun `a constructor with type parameters is renamed, not the bound spelled like the class`() {
+    fun `a constructor with type parameters is renamed with the bound spelled like the class`() {
         val content = "class Service {\n    public <T extends Service> Service(T t) { }\n}\n"
 
         val result = renamed(content, Position(0, 7))
 
-        assertEquals("class Worker {\n    public <T extends Service> Worker(T t) { }\n}\n", result)
+        assertEquals("class Worker {\n    public <T extends Worker> Worker(T t) { }\n}\n", result)
     }
 
     @Test
