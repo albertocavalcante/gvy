@@ -102,9 +102,6 @@ dependencies {
     implementation(libs.clikt)
     implementation(libs.mordant)
 
-    // Classpath Scanning - For indexing all classes in the project and dependencies
-    implementation(libs.classgraph)
-
     // Java Source Parsing - For extracting Javadoc and line numbers from Java source files
     implementation(libs.javaparser.core)
 
