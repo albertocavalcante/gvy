@@ -116,8 +116,8 @@ consumer with sibling substitutions disabled. Do not publish every helper as a s
 | `common`, `markdown`                                                                      | Move source primitives, Groovy helpers and rendering to their owners; keep tiny helpers private               |
 | `parser:api`, `parser:native`, `parser:core`                                              | Analysis contract/compiler adapter; Core transitional until real/public consumers migrate                     |
 | `semantics:core`, `semantics-native`                                                      | Owned semantic values/queries plus typed compiler extraction; consolidate duplicate implementations           |
-| `parser:rewrite`, `semantics-openrewrite`, `fmt`, `refactor:openrewrite:rewrite-codenarc` | Optional formatting/refactoring family; retire unconsumed semantic wrapper after verification                 |
-| `semantics:dsl`, `dsl:dsld`                                                               | Park outside the default graph or implement only against a real consumer                                      |
+| `parser:rewrite`, `semantics-openrewrite`, `fmt`, `refactor:openrewrite:rewrite-codenarc` | Optional formatting/refactoring family; `semantics-openrewrite` removed (#2397); rest stays                      |
+| `semantics:dsl`, `dsl:dsld`                                                               | `semantics:dsl` removed (#2397); park `dsl:dsld` or implement it only against a real consumer                 |
 | `indexer:core`, `indexer:scip`, `indexer:lsif`                                            | Authoritative fact projection plus format codecs; honest partial/failure results                              |
 | `diagnostics:api`, `diagnostics:sarif`, `diagnostics:codenarc`                            | Shared findings, SARIF adapter, optional compiler-aware CodeNarc adapter                                      |
 | `build-tool`                                                                              | Build import/model, test planning and explicit host watching/execution                                        |
@@ -125,7 +125,7 @@ consumer with sibling substitutions disabled. Do not publish every helper as a s
 | `reports:api`, `reports:coverage`, `reports:results`, `schemas`                           | One consumed contract, pure codecs and explicit IO/source mapping; retire duplicate unused generation         |
 | `jenkins`, `dsl:gdsl`, `tools:jenkins-extractor`                                          | Jenkins catalog SDK; GDSL reader stays Groovy-owned; optional catalog bridge and separate extractor CLI       |
 | `ext:testing`, `ext:spock`, `ext:junit`                                                   | Neutral inventory, Groovy detector API and inward-dependent framework adapters; injected registry             |
-| `repl`, `jupyter:kernel-core`, `jupyter:kernels:groovy`, `jupyter:kernels:jenkins`        | Isolated execution adapter, neutral kernel runtime and honest separate apps; park placeholder                 |
+| `repl`, `jupyter:kernel-core`, `jupyter:kernels:groovy`, `jupyter:kernels:jenkins`        | Isolated execution adapter, neutral kernel runtime and honest separate apps; `jupyter:kernels:jenkins` placeholder removed (#2397)|
 | `viz:ast-model`, `viz:desktop`                                                            | Pure tree model, parser converters and viewer product; general SDK publication requires a real consumer       |
 | `tests`, `test-utils`                                                                     | Product regressions and owner-local fixtures; generic black-box capabilities converge toward existing harness |
 
