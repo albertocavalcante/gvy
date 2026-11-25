@@ -773,6 +773,8 @@ jobs:
       # Now runs with intelligent parallel forks (2-3 based on runner OS)
       - name: Run E2E Tests
         timeout-minutes: 15
+        env:
+          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
         run: |
           args=(:tests:e2eTest --parallel --max-workers=2 --build-cache --stacktrace "-Dgroovy.lsp.e2e.shard=${{ matrix.shard }}/3")
           if [[ -n "${TEST_LOG_FLAG}" ]]; then
