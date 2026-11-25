@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isTypedByTypeParameter
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import com.github.albertocavalcante.gvy.semantics.toSemanticType
 import org.codehaus.groovy.ast.ASTNode
@@ -555,7 +556,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             // name of an aliased constructor. Attribute only the compiler's type span.
             val range = nodeToRange(call.type) ?: nodeToRange(call)
             // Only a class the compiler resolved: a bare name would be guessed into this package.
-            if (range == null || !resolver.isResolved(call.type)) return super.visitConstructorCallExpression(call)
+            // A type parameter's placeholder redirects to its bound: `new T()` is not a use of a class named `T`.
+            if (range == null || isTypedByTypeParameter(call) || !resolver.isResolved(call.type)) {
+                return super.visitConstructorCallExpression(call)
+            }
 
             val typeName = resolver.resolveTypeName(call.type)
             // The class stays attributed at the type name: references to the class include its `new` expressions.
@@ -620,7 +624,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitClassExpression(expression: ClassExpression) {
             val range = nodeToRange(expression)
-            if (range != null && resolver.isResolved(expression.type)) {
+            // Likewise `T.class`, `T.foo()` and `x instanceof T` of a type parameter `T` name no class.
+            if (range != null && !isTypedByTypeParameter(expression) && resolver.isResolved(expression.type)) {
                 occurrences.add(
                     SymbolOccurrence(
                         Symbol.ofClass(resolver.resolveTypeName(expression.type)).id,
