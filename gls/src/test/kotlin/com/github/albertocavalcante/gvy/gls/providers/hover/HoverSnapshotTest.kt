@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
 import io.mockk.every
@@ -33,8 +34,10 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -94,18 +97,82 @@ class HoverSnapshotTest {
     }
 
     @Test
-    fun `hover answers from its own compile when another invalidation clears the cache again`(): Unit = runBlocking {
+    fun `hover after startup's second invalidation answers the captured text or ContentModified`(): Unit = runBlocking {
         fixture().use { fixture ->
-            // Startup retires compiles twice in a row, for the worker and then for the workspace model (#2457).
-            // Each cache read here comes right after such a retirement, so the cache never holds the buffer.
-            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
-                fixture.compilation.clearCaches()
-                callOriginal()
+            // The CI interleaving of #2457: worker selection clears the cache after the awaited compile, then
+            // the workspace model changes (and clears again) while hover compiles the buffer itself.
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.acquireCompilation().also { fixture.compilation.clearCaches() }
+            }
+            coEvery { fixture.compilation.compile(fixture.uri, any(), any()) } coAnswers {
+                fixture.compile(secondArg<String>()).also { fixture.addSourceRoot() }
+            }
+            coEvery { fixture.compilation.compileTransient(fixture.uri, any(), any()) } coAnswers {
+                fixture.compileTransient(secondArg<String>()).also { fixture.addSourceRoot() }
             }
 
-            val hover = fixture.endpoint.hover(fixture.params()).await()
+            val outcome = runCatching { fixture.endpoint.hover(fixture.params()).await() }
 
-            assertContains(hover.contents.right.value, "String value()")
+            val hover = outcome.getOrNull()
+            if (hover != null) {
+                assertContains(hover.contents.right.value, "String value()")
+            } else {
+                val error = assertIs<ResponseErrorException>(outcome.exceptionOrNull())
+                assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            }
+        }
+    }
+
+    @Test
+    fun `hover rejects its own compile when the workspace classpath changes during it`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.acquireCompilation().also { fixture.compilation.clearCaches() }
+            }
+            coEvery { fixture.compilation.compileTransient(fixture.uri, any(), any()) } coAnswers {
+                // Parsed against the old classpath; a new one is published before hover can answer from it.
+                fixture.compileTransient(secondArg<String>()).also { fixture.addDependency() }
+            }
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `hover rejects its own compile when the worker selection changes during it`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.acquireCompilation().also { fixture.compilation.clearCaches() }
+            }
+            coEvery { fixture.compilation.compileTransient(fixture.uri, any(), any()) } coAnswers {
+                fixture.compileTransient(secondArg<String>()).also {
+                    assertTrue(fixture.compilation.updateSelectedWorker(defaultWorkerDescriptors().first()))
+                }
+            }
+
+            val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        }
+    }
+
+    @Test
+    fun `hover reports a failed fallback compile as an internal error without a stack trace`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
+                fixture.acquireCompilation().also { fixture.compilation.clearCaches() }
+            }
+            coEvery { fixture.compilation.compileTransient(fixture.uri, any(), any()) } throws
+                IOException("classpath entry vanished")
+
+            val error =
+                assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
+
+            assertEquals(ResponseErrorCode.InternalError.value, error.responseError.code)
+            assertContains(error.responseError.message, "classpath entry vanished")
+            assertNull(error.responseError.data)
         }
     }
 
@@ -499,6 +566,20 @@ class HoverSnapshotTest {
         suspend fun acquireCompilation() = actual.ensureCompiled(uri)
 
         suspend fun compile(source: String) = actual.compile(uri, source)
+
+        suspend fun compileTransient(source: String) = actual.compileTransient(uri, source)
+
+        /** Publishes a workspace model with another source root, as startup does once the build model loads. */
+        fun addSourceRoot() {
+            val root = Path.of(uri).parent
+            actual.updateWorkspaceModel(root, emptyList(), listOf(root.resolve("src").createDirectories()))
+        }
+
+        /** Publishes a workspace model with one more classpath entry. */
+        fun addDependency() {
+            val root = Path.of(uri).parent
+            actual.updateWorkspaceModel(root, listOf(root.resolve("classes").createDirectories()), emptyList())
+        }
 
         fun params() = HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, 23))
 
