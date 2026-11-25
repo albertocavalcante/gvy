@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.eclipse.lsp4j.Hover
@@ -45,12 +46,20 @@ internal class HoverRequestHandler(
         if (hasNoCurrentAst(uri, input, acquired)) return null
 
         return compilation.getCompiledSnapshot(uri) ?: input?.let { snapshot ->
-            // Worker selection can invalidate an awaited compilation during initialization.
-            // Compile the captured open buffer directly once rather than returning a missing-cache placeholder.
-            val retried = compilation.compile(uri, snapshot.content)
+            // Startup retires compiles more than once (worker selection, then the workspace model), so a cache
+            // entry written now can be gone again before it is read (#2457). Hover keeps the parse it compiled
+            // for the captured buffer instead of rereading the cache; text without an AST still answers nothing.
+            // The ticket is taken before the compile reads its model and worker: a change to either retires it,
+            // and a parse of retired inputs is ContentModified rather than an answer from the old classpath.
+            val ownership = compilation.compilationCacheService.ownership
+            val ticket = ownership.begin(uri)
+            val parsed = failingAsInternalError("compiling $uri for hover") {
+                compilation.compileTransient(uri, snapshot.content)
+            }
             currentCoroutineContext().ensureActive()
             requireUnchanged(uri, input)
-            if (hasNoCurrentAst(uri, input, retried)) null else compilation.getCompiledSnapshot(uri)
+            if (!ownership.isCurrent(ticket)) throw contentModified(uri)
+            parsed.takeIf { it.ast != null }?.let { CompiledDocumentSnapshot(snapshot.content, it) }
         }
     }
 
