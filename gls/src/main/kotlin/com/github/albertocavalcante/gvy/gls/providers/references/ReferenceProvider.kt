@@ -86,12 +86,21 @@ class ReferenceProvider(
         val emittedLocations = mutableSetOf<String>()
         var symbolName: String? = null
         var isLocal = false
+        var isTypeParameterTarget = false
 
         // First, try same-file AST-based reference finding
         scanning(logger, ReferenceScanPhase.DOCUMENT) {
             val context = createReferenceContext(uri, position)
             if (context != null) {
                 val definition = resolveTargetDefinition(context)
+                val target = context.targetNode
+                isTypeParameterTarget =
+                    (target is ClassNode && target.isGenericsPlaceHolder) ||
+                    isTypedByTypeParameter(target) ||
+                    (definition is ClassNode && definition.isGenericsPlaceHolder)
+                // A placeholder redirects to its bound, and its omitted index occurrence can expose an enclosing
+                // method instead. Neither scan can answer a type-parameter request as a request for that symbol.
+                if (isTypeParameterTarget) return@scanning
                 symbolName = definition?.declaredName()
                 // Locals and parameters never cross files, and the index gives every local of a
                 // class one symbol id (shared with a same-named field), so it must not be searched.
@@ -120,7 +129,7 @@ class ReferenceProvider(
         }
 
         // Second, search workspace-wide using SemanticDB
-        workspaceSymbolIndex?.takeUnless { isLocal }?.let { index ->
+        workspaceSymbolIndex?.takeUnless { isLocal || isTypeParameterTarget }?.let { index ->
             scanning(logger, ReferenceScanPhase.WORKSPACE) {
                 findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
             }
@@ -176,8 +185,13 @@ class ReferenceProvider(
         val origin = index.getDocumentSnapshot(URI.create(uri))
         val originText = origin?.sourceText?.let(::TextIndex)
         val cursor = originText?.codePointPosition(position)
-        if (origin == null || cursor == null) {
-            logger.debug { "No semantic document found for $uri" }
+        // These tokens name a type parameter, whose class occurrence is intentionally absent from the index.
+        // Do not select a containing method or class declaration in its place.
+        if (origin == null ||
+            cursor == null ||
+            origin.document.typeParameterUses.any { it.contains(cursor.line, cursor.character) }
+        ) {
+            logger.debug { "No indexed target found for $uri at ${position.line}:${position.character}" }
             return
         }
 

@@ -49,6 +49,7 @@ import java.util.IdentityHashMap
 class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val uri: URI) {
     private val symbols = mutableListOf<SymbolInfo>()
     private val occurrences = mutableListOf<SymbolOccurrence>()
+    private val typeParameterUses = mutableListOf<Range>()
     private val unresolved = UnresolvedNames()
 
     // Assignment targets: false for a plain write (`x = 1`), true for a read-modify-write (`x += 1`, `x++`).
@@ -77,7 +78,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         if (DispatchNames.dispatchesDynamically(moduleNode.classes)) unresolved.dispatch(UnresolvedNames.WILDCARD)
         unresolved.annotations(AnnotationMembers.declared(moduleNode))
 
-        return SemanticDocument(uri, symbols, occurrences, unresolved.toSet())
+        return SemanticDocument(uri, symbols, occurrences, unresolved.toSet(), typeParameterUses.toList())
     }
 
     /**
@@ -552,12 +553,19 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
+            if (isTypedByTypeParameter(call)) {
+                // The call range includes its arguments, which can contain genuine references to other symbols.
+                nodeToRange(call.type)?.let { typeRange ->
+                    typeParameterUses.add(constructorCallRange(call, typeRange) ?: typeRange)
+                }
+                return super.visitConstructorCallExpression(call)
+            }
             // The call can contain other class names in its arguments, including the canonical
             // name of an aliased constructor. Attribute only the compiler's type span.
             val range = nodeToRange(call.type) ?: nodeToRange(call)
             // Only a class the compiler resolved: a bare name would be guessed into this package.
             // A type parameter's placeholder redirects to its bound: `new T()` is not a use of a class named `T`.
-            if (range == null || isTypedByTypeParameter(call) || !resolver.isResolved(call.type)) {
+            if (range == null || !resolver.isResolved(call.type)) {
                 return super.visitConstructorCallExpression(call)
             }
 
@@ -625,7 +633,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitClassExpression(expression: ClassExpression) {
             val range = nodeToRange(expression)
             // Likewise `T.class`, `T.foo()` and `x instanceof T` of a type parameter `T` name no class.
-            if (range != null && !isTypedByTypeParameter(expression) && resolver.isResolved(expression.type)) {
+            if (isTypedByTypeParameter(expression)) {
+                range?.let(typeParameterUses::add)
+                return super.visitClassExpression(expression)
+            }
+            if (range != null && resolver.isResolved(expression.type)) {
                 occurrences.add(
                     SymbolOccurrence(
                         Symbol.ofClass(resolver.resolveTypeName(expression.type)).id,

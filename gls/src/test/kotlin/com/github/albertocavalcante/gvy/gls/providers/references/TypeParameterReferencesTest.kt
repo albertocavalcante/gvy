@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.references
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -37,5 +38,19 @@ class TypeParameterReferencesTest {
         // FIXME(#2459): expected (2, 24) too, the qualified bound `pkg.T`, which the scan does not report.
         // The class literals of the parameter must not be reported either way.
         assertEquals(listOf(1 to 6), referencesOfClassT(content))
+    }
+
+    @Test
+    fun `references requested on a type parameter constructor never resolve to its bound class`() = runBlocking {
+        val content = "package pkg\nclass T {}\n" +
+            "class Box<T extends pkg.T> { def m() { new T() } }\n" +
+            "class Real { def m() { new T() } }\n"
+        service.compile(uri, content)
+        val position = Position(2, content.lines()[2].indexOf("new T") + "new ".length)
+
+        assertEquals(
+            emptyList<Location>(),
+            ReferenceProvider(service).provideReferences(uri.toString(), position, includeDeclaration = true).toList(),
+        )
     }
 }

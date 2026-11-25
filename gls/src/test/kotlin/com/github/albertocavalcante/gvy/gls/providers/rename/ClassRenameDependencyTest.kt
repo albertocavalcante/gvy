@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -83,15 +84,25 @@ class ClassRenameDependencyTest {
         assertDependency("String.valueOf", 0, "java.lang.String")
 
     @Test
-    fun `a dependency class is named as written in source, whatever its name contains`() {
-        assertEquals("java.util.Map.Entry", ClassRenameUses.dependencyName(ClassHelper.make(Map.Entry::class.java)))
-        // A class the compiler has not resolved keeps its name, `$` included, rather than having it mangled.
+    fun `naming a dependency class never loads it into the language server`() {
+        // A resolved dependency node would load its class through getTypeClass: a jar class with a missing
+        // transitive dependency throws an Error there, and project code must never be loaded for this.
+        val dependency = object : ClassNode(Map.Entry::class.java) {
+            override fun getTypeClass(): Class<*> = throw AssertionError("the dependency class was loaded")
+        }
+
+        assertEquals("java.util.Map\$Entry", ClassRenameUses.dependencyName(dependency))
+    }
+
+    @Test
+    fun `a dependency class is named as the compiler names it, whatever its name contains`() {
+        assertEquals("java.util.Map\$Entry", ClassRenameUses.dependencyName(ClassHelper.make(Map.Entry::class.java)))
         assertEquals("pkg.Dollar\$Named", ClassRenameUses.dependencyName(ClassHelper.make("pkg.Dollar\$Named")))
     }
 
     @Test
-    fun `a nested JDK type is named as written in source, not by its binary name`() =
-        assertDependency("Map.Entry", "Map.".length, "java.util.Map.Entry")
+    fun `a nested JDK type is refused as a dependency and named by its binary name`() =
+        assertDependency("Map.Entry", "Map.".length, "java.util.Map\$Entry")
 
     @Test
     fun `a class another workspace file declares keeps the refusal that names the file`() {

@@ -96,6 +96,7 @@ class GroovySemanticDB {
             symbols = Collections.unmodifiableList(doc.symbols.map { it.copy(type = it.type?.let(freezer::freeze)) }),
             occurrences = Collections.unmodifiableList(doc.occurrences.toList()),
             unresolvedNames = Collections.unmodifiableSet(doc.unresolvedNames.toSet()),
+            typeParameterUses = Collections.unmodifiableList(doc.typeParameterUses.toList()),
         )
         val facts = ImplementationFacts.freeze(implementations)
         lock.write {

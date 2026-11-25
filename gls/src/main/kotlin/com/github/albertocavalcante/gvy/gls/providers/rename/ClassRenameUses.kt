@@ -99,11 +99,12 @@ internal object ClassRenameUses {
 
     /**
      * What a dependency refusal names for [definition] when it is a class the compiler read no source for (a JDK or
-     * classpath class), as written in source (`java.util.Map.Entry`); null for any other symbol.
+     * classpath class): its name as the compiler has it, binary for a nested class (`java.util.Map$Entry`); null for
+     * any other symbol. Never `typeClass` or `Class.forName`: a dependency node is decompiled, and asking it for its
+     * class would load dependency code into the server, which fails with an Error on a missing transitive class.
      */
-    fun dependencyName(definition: ASTNode): String? = (definition as? ClassNode)?.redirect()
-        ?.takeUnless { it.isPrimaryClassNode }
-        ?.let { type -> if (type.isResolved) type.typeClass.canonicalName ?: type.name else type.name }
+    fun dependencyName(definition: ASTNode): String? =
+        (definition as? ClassNode)?.redirect()?.takeUnless { it.isPrimaryClassNode }?.name
 
     /** Whether [type] (any node of it) is a class [compiled]'s own module declares. */
     fun declaredIn(type: ClassNode, compiled: CompiledDocumentSnapshot): Boolean {

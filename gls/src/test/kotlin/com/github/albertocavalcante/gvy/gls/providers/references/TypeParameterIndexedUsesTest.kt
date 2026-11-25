@@ -5,12 +5,16 @@ package com.github.albertocavalcante.gvy.gls.providers.references
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameProvider
+import com.github.albertocavalcante.gvy.gls.providers.rename.RenameRefusedException
 import com.github.albertocavalcante.gvy.gls.providers.rename.applyTextEdits
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -91,7 +95,58 @@ class TypeParameterIndexedUsesTest {
     fun `rename with the index present refuses the class literal and call receiver of the parameter`() {
         val result = renameClassT(mapOf("Box.groovy" to box))
 
-        assertEquals("refused", result.fold({ "renamed:\n$it" }, { "refused" }), "$result")
+        val refused = assertInstanceOf(RenameRefusedException::class.java, result.exceptionOrNull(), "$result")
+        assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code)
+        assertEquals("Cannot rename 'T': a use at line 4 could not be classified", refused.responseError.message)
+    }
+
+    @Test
+    fun `references on an indexed type parameter constructor never fall back to the enclosing method`() = runBlocking {
+        val text = "package pkg\nclass T {}\n" +
+            "class Box<T extends pkg.T> { def m() { new T() } }\n" +
+            "class Real { def m() { new T() } }\n"
+        val file = indexed(mapOf("Box.groovy" to text)).getValue("Box.groovy")
+        val callColumn = text.lines()[2].indexOf("new T")
+        for (column in listOf(callColumn, callColumn + "new ".length)) {
+            assertEquals(
+                emptyList<Location>(),
+                ReferenceProvider(service, service.getWorkspaceSymbolIndex())
+                    .provideReferences(
+                        file.toUri().toString(),
+                        Position(2, column),
+                        includeDeclaration = true,
+                    ).toList(),
+            )
+        }
+    }
+
+    @Test
+    fun `an indexed type parameter constructor does not hide references inside its arguments`() = runBlocking {
+        val text = "package pkg\nclass T {}\n" +
+            "class Box<T extends pkg.T> { def m() { new T(new Real()) } }\nclass Real {}\n"
+        val file = indexed(mapOf("Box.groovy" to text)).getValue("Box.groovy")
+        val column = text.lines()[2].indexOf("Real")
+
+        val references = ReferenceProvider(service, service.getWorkspaceSymbolIndex())
+            .provideReferences(file.toUri().toString(), Position(2, column), includeDeclaration = true)
+            .toList().map { it.range.start.line to it.range.start.character }.sortedBy { it.first }
+
+        assertEquals(listOf(2 to column, 3 to 6), references)
+    }
+
+    @Test
+    fun `an indexed method name equal to its return type still finds its callers`() = runBlocking {
+        val text = "class Kind {}\nclass Factory { Kind Kind() { null } }\n" +
+            "class Caller { def m() { new Factory().Kind() } }\n"
+        val file = indexed(mapOf("Factory.groovy" to text)).getValue("Factory.groovy")
+        val methodColumn = text.lines()[1].lastIndexOf("Kind")
+        val callColumn = text.lines()[2].indexOf("Kind")
+
+        val references = ReferenceProvider(service, service.getWorkspaceSymbolIndex())
+            .provideReferences(file.toUri().toString(), Position(1, methodColumn), includeDeclaration = false)
+            .toList().map { it.range.start.line to it.range.start.character }
+
+        assertEquals(listOf(2 to callColumn), references)
     }
 
     @Test

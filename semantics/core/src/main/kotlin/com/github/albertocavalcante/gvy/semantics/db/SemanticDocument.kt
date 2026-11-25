@@ -50,6 +50,8 @@ data class SemanticDocument(
     val symbols: List<SymbolInfo>,
     val occurrences: List<SymbolOccurrence>,
     val unresolvedNames: Set<String> = emptySet(),
+    /** Exact compiler ranges of placeholder-typed expression names; these never denote the bound class. */
+    val typeParameterUses: List<Range> = emptyList(),
 ) {
     /**
      * Find a symbol by its unique ID
