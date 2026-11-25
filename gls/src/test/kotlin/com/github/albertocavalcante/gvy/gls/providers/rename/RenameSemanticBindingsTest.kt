@@ -18,8 +18,10 @@ import kotlinx.coroutines.supervisorScope
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.control.Phases
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.RenameParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
@@ -30,6 +32,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
 
 class RenameSemanticBindingsTest {
@@ -212,14 +215,32 @@ class RenameSemanticBindingsTest {
     }
 
     @Test
-    fun `rename rejects a conversion phase cache entry before resolving bindings`(): Unit = runBlocking {
+    fun `rename upgrades conversion before editing the field binding`(): Unit = runBlocking {
         supervisorScope {
-            fixture(fieldSource(), phase = Phases.CONVERSION).use { fixture ->
+            val source = fieldSource()
+            fixture(source, phase = Phases.CONVERSION).use { fixture ->
+                assertEquals(Phases.CONVERSION, fixture.parsed.outcome.requestedPhase)
                 assertEquals(Phases.CONVERSION, fixture.parsed.outcome.achievedPhase)
 
-                val error = assertFailsWith<ResponseErrorException> { fixture.renameField() }
+                val documentChange = fixture.renameField().documentChanges.single()
 
-                assertEquals(ResponseErrorCode.InvalidRequest.value, error.responseError.code)
+                val upgraded = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
+                assertNotSame(fixture.parsed, upgraded.parseResult)
+                assertEquals(source, upgraded.sourceText)
+                assertEquals(Phases.CANONICALIZATION, upgraded.parseResult.outcome.requestedPhase)
+                assertEquals(Phases.CANONICALIZATION, upgraded.parseResult.outcome.achievedPhase)
+
+                assertTrue(documentChange.isLeft)
+                val change = documentChange.left
+                assertEquals(fixture.uri.toString(), change.textDocument.uri)
+                assertEquals(41, change.textDocument.version)
+                val index = TextIndex(source)
+                val field = source.indexOf("value")
+                val fieldUse = source.indexOf("value", source.indexOf("def read()"))
+                val expected = listOf(field, fieldUse).map { offset ->
+                    TextEdit(Range(index.positionOf(offset), index.positionOf(offset + "value".length)), "renamed")
+                }
+                assertEquals(expected, change.edits.sortedBy { index.offsetOf(it.range.start) })
             }
         }
     }
@@ -233,7 +254,14 @@ class RenameSemanticBindingsTest {
 
                 val error = assertFailsWith<ResponseErrorException> { fixture.renameField() }
 
+                val retried = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
+                assertNotSame(fixture.parsed, retried.parseResult)
+                assertEquals(fixture.source, retried.sourceText)
+                assertEquals(Phases.CANONICALIZATION, retried.parseResult.outcome.requestedPhase)
+                assertEquals(Phases.CONVERSION, retried.parseResult.outcome.achievedPhase)
+                assertEquals(Fallback.COMPILATION_FAILED, retried.parseResult.outcome.fallback)
                 assertEquals(ResponseErrorCode.InvalidRequest.value, error.responseError.code)
+                assertEquals("Rename requires completed semantic analysis", error.responseError.message)
             }
         }
     }

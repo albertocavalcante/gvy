@@ -75,6 +75,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val waiterScope = dependencies.waiterScope
     private val shadowed = dependencies.shadowed
     private val ownership = cacheService.ownership
+    internal val snapshots = SnapshotAcquirer(dependencies) { uri, workspace ->
+        getWorkspaceSourcesForCompilation(uri, workspace)
+    }
 
     private val logger = KotlinLogging.logger {}
 
@@ -167,7 +170,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             val configFingerprint = context.fingerprint
 
             // Check cache first - validates both content AND configuration fingerprint
-            val cachedResult = cacheService.getCached(uri, content, configFingerprint)
+            val cachedResult = cacheService.getForCompile(
+                uri,
+                content,
+                configFingerprint,
+                compilePhase,
+                ParseMode.WORKSPACE,
+            )
             if (cachedResult != null) {
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
@@ -233,7 +242,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = workspace.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = openSourcesFor(uri),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                locatorCandidates = compilationLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
                 checkCancelled = checkCancelled,
@@ -252,7 +261,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // index, as one commit that a retired compile cannot make (#1184)
             val fingerprint = compileContext.fingerprint
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
+            val entry = CachedParse(content, parseResult, fingerprint, parseMode)
+            val published = cacheService.publishCompile(claim.ticket, entry, claim.isValid) {
                 symbolIndexer.install(uri, symbols)
             }
 
@@ -305,7 +315,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = workspace.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = openSourcesFor(uri),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                locatorCandidates = compilationLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 checkCancelled = checkCancelled,
             ),
@@ -539,10 +549,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
 }
 
-private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
+internal fun compilationLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
     val candidates = mutableSetOf<String>()
     candidates += uri.toString()
-    candidates += uri.path
+    uri.path?.let(candidates::add)
     sourcePath?.let { path ->
         candidates += path.toString()
         candidates += path.toAbsolutePath().toString()
@@ -605,7 +615,7 @@ private sealed interface Awaited {
  * index: an exact qualified-name match only, so a same-named class in another package is never added, and never
  * [self]. Before startup indexing has run the index is empty and nothing is found, as before #1425.
  */
-private fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
+internal fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
     findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
         .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
         .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }

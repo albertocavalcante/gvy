@@ -249,6 +249,21 @@ class CompilationJobOwnershipTest {
     }
 
     @Test
+    fun `reusing earlier unversioned work selects it for closed-file resolution`(): Unit = runTest {
+        val fixture = Fixture(StandardTestDispatcher(testScheduler))
+        val first = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
+        val other = fixture.orchestrator.compileAsync(this, fixture.uri, "class Other {}")
+        val again = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
+
+        assertSame(first, again)
+        assertSame(first, fixture.cache.getActiveCompilation(fixture.uri))
+        val current = fixture.orchestrator.ensureCompiled(fixture.uri)
+        assertEquals(fixture.content, assertNotNull(current).sourceText)
+        assertSame(first.await(), current)
+        assertEquals("class Other {}", other.await().sourceText)
+    }
+
+    @Test
     fun `ensureCompiled preserves pending unversioned work without an open buffer`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler))
         val work = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)

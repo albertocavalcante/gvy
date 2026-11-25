@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
 import java.net.URI
 
@@ -10,7 +11,16 @@ import java.net.URI
  * Cache entry storing content, parse result, and configuration fingerprint.
  * The fingerprint ensures cache coherency when workspace configuration changes (Issue #743).
  */
-private data class CacheEntry(val content: String, val parseResult: ParseResult, val configFingerprint: String)
+internal data class CachedParse(
+    val content: String,
+    val parseResult: ParseResult,
+    val configFingerprint: String,
+    val mode: ParseMode?,
+    val owned: OwnedSnapshot? = null,
+)
+
+/** Context-owned and legacy parses share a single LRU budget, but only legacy publication writes global indexes. */
+private data class CacheKey(val uri: URI, val owned: Boolean = false)
 
 /**
  * In-memory cache of compilation results, bounded by an LRU policy.
@@ -44,8 +54,35 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
      * Returns null if not cached or if either content or fingerprint has changed.
      */
     fun get(uri: URI, content: String, configFingerprint: String): ParseResult? = synchronized(lock) {
-        val entry = entries[uri] ?: return null
+        val entry = entries[CacheKey(uri)] ?: return null
         if (entry.content == content && entry.configFingerprint == configFingerprint) entry.parseResult else null
+    }
+
+    internal fun getForCompile(
+        uri: URI,
+        content: String,
+        fingerprint: String,
+        phase: Int,
+        mode: ParseMode,
+    ): ParseResult? = synchronized(lock) {
+        entries[CacheKey(uri)]?.takeIf {
+            it.content == content && it.configFingerprint == fingerprint && it.mode == mode &&
+                it.parseResult.outcome.requestedPhase == phase && it.parseResult.outcome.achievedPhase >= phase
+        }?.parseResult
+    }
+
+    internal fun getOwned(uri: URI): OwnedSnapshot? = synchronized(lock) {
+        entries[CacheKey(uri, owned = true)]?.owned
+    }
+
+    /** A slower producer cannot evict a newer result that arrived since its initial cache lookup. */
+    internal fun storeSnapshot(value: OwnedSnapshot, previous: OwnedSnapshot?): Boolean = synchronized(lock) {
+        val capture = value.capture
+        val key = CacheKey(capture.uri, owned = true)
+        if (entries[key]?.owned !== previous) return@synchronized false
+        val parsed = value.snapshot.parseResult
+        store(key, CachedParse(capture.content, parsed, capture.context.fingerprint, capture.mode, value))
+        true
     }
 
     /**
@@ -53,18 +90,22 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
      * For readers without the current text; the entry itself must be retired when that text changes.
      */
     fun getWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? = synchronized(lock) {
-        entries[uri]?.takeIf { it.configFingerprint == configFingerprint }?.let { it.content to it.parseResult }
+        entries[CacheKey(uri)]?.takeIf { it.configFingerprint == configFingerprint }
+            ?.let { it.content to it.parseResult }
     }
 
     /**
      * Stores a parse result with its content and configuration fingerprint.
      */
     fun put(uri: URI, content: String, parseResult: ParseResult, configFingerprint: String) {
-        store(uri, CacheEntry(content, parseResult, configFingerprint))
+        putForCompile(uri, CachedParse(content, parseResult, configFingerprint, null))
     }
 
     fun invalidate(uri: URI) {
-        synchronized(lock) { entries.remove(uri) }
+        synchronized(lock) {
+            entries.remove(CacheKey(uri))
+            entries.remove(CacheKey(uri, owned = true))
+        }
     }
 
     fun clear() {
@@ -73,7 +114,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     }
 
     /** Snapshot of the cached URIs, least recently used first. */
-    fun keys(): Set<URI> = synchronized(lock) { LinkedHashSet(entries.keys) }
+    fun keys(): Set<URI> = synchronized(lock) { entries.keys.mapTo(LinkedHashSet()) { it.uri } }
 
     /** Changes the cap and evicts immediately if the cache is now over it. */
     fun resize(newMaxEntries: Int) {
@@ -91,26 +132,26 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         )
     }
 
-    private fun store(uri: URI, entry: CacheEntry) {
-        synchronized(lock) {
-            entries[uri] = entry
-            // Never evict what was just stored: callers read it back right away (e.g. go-to-definition
-            // compiles a closed file, then fetches its AST), and when open documents fill the cap the
-            // new entry would otherwise be the only candidate.
-            evictOverflow(keep = uri)
-        }
+    internal fun putForCompile(uri: URI, entry: CachedParse) = synchronized(lock) {
+        store(CacheKey(uri), entry)
+    }
+
+    /** Keep the newest result available even when open legacy results already fill the cache. */
+    private fun store(key: CacheKey, entry: CachedParse) {
+        entries[key] = entry
+        evictOverflow(keep = key)
     }
 
     /**
      * Must be called holding the monitor. Evicts closed entries other than [keep], least recently used
      * first. The cap is soft: open documents and [keep] are never evicted, even if they exceed it.
      */
-    private fun evictOverflow(keep: URI?) {
+    private fun evictOverflow(keep: CacheKey?) {
         if (entries.size <= maxEntries) return
         val candidates = entries.keys.iterator()
         while (entries.size > maxEntries && candidates.hasNext()) {
             val uri = candidates.next()
-            if (uri != keep && !isOpen(uri)) {
+            if (uri != keep && (uri.owned || !isOpen(uri.uri))) {
                 candidates.remove()
                 evictions++
             }
@@ -124,5 +165,5 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         private const val LOAD_FACTOR = 0.75f
     }
 
-    private fun newEntries() = LinkedHashMap<URI, CacheEntry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
+    private fun newEntries() = LinkedHashMap<CacheKey, CachedParse>(INITIAL_CAPACITY, LOAD_FACTOR, true)
 }

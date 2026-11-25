@@ -53,8 +53,13 @@ class ArtifactOwnership {
         // Holds the file's state reachable for as long as this ticket is
         internal val state: FileState,
         internal val stamp: Long,
+        internal val lastRetirement: Long,
         internal val order: BufferOrder? = null,
-    )
+    ) {
+        /** Query captures may share only when both observed the same file and workspace input retirements. */
+        internal fun sharesInputs(other: Ticket): Boolean = state === other.state && stamp == other.stamp &&
+            epoch == other.epoch && lastRetirement == other.lastRetirement
+    }
 
     private val monitor = Any()
     private var epoch = OwnershipEpoch.INITIAL
@@ -88,6 +93,15 @@ class ArtifactOwnership {
     internal fun isCurrent(ticket: Ticket): Boolean = synchronized(monitor) { isCurrentLocked(ticket) }
 
     /**
+     * The native compiler can resolve a source by name under a source root without reporting its path back
+     * to the caller. A contextual result therefore conservatively observes every URI retirement, including
+     * a watched file that has never owned a ticket. Per-file artifacts still use [isCurrent].
+     */
+    internal fun inputsCurrent(ticket: Ticket): Boolean = synchronized(monitor) {
+        ticket.epoch == epoch && ticket.lastRetirement == lastStamp
+    }
+
+    /**
      * Runs [write] only while [ticket] is current and, for buffer work, while no newer version of the same
      * buffer lifecycle has already been written: the newest version wins whatever the completion order
      * (#1383). The buffer's current text always commits, so a client whose versions go backwards falls back
@@ -119,8 +133,8 @@ class ArtifactOwnership {
      */
     internal fun retire(uri: URI, cleanup: () -> Unit = {}): Ticket = synchronized(monitor) {
         expungeLocked()
-        // Without a live state no ticket for [uri] is outstanding, so there is nothing to fence
-        liveStateLocked(uri)?.let { it.stamp = ++lastStamp }
+        ++lastStamp
+        liveStateLocked(uri)?.stamp = lastStamp
         committedOrders.remove(uri)
         cleanup()
         ticketFor(uri)
@@ -167,7 +181,7 @@ class ArtifactOwnership {
     private fun ticketFor(uri: URI, order: BufferOrder? = null): Ticket {
         expungeLocked()
         val state = liveStateLocked(uri) ?: FileState().also { states[uri] = StateReference(uri, it, collected) }
-        return Ticket(uri, epoch, state, state.stamp, order)
+        return Ticket(uri, epoch, state, state.stamp, lastStamp, order)
     }
 
     private fun liveStateLocked(uri: URI): FileState? = states[uri]?.get()
