@@ -27,6 +27,7 @@ internal enum class TypeUseKind(val label: String) {
     ANNOTATION("annotation"),
     IMPORT("import"),
     OUTER_QUALIFIER("qualifier of a nested type"),
+    TYPE_PARAMETER("type parameter"),
 }
 
 /**

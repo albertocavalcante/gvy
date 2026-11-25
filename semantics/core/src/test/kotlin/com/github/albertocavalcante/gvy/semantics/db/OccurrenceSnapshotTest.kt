@@ -78,6 +78,18 @@ class OccurrenceSnapshotTest {
     }
 
     @Test
+    fun `type parameter ranges are detached and immutable in a published document`() {
+        val ranges = mutableListOf(Range(0, 0, 0, 1), Range(0, 2, 0, 3))
+        database.updateDocument(uri, document(4).copy(typeParameterUses = ranges), sourceText = "T T greet()")
+        val stored = checkNotNull(database.getDocument(uri))
+
+        ranges.clear()
+
+        assertEquals(listOf(Range(0, 0, 0, 1), Range(0, 2, 0, 3)), stored.typeParameterUses)
+        assertFailsWith<UnsupportedOperationException> { (stored.typeParameterUses as MutableList<Range>).clear() }
+    }
+
+    @Test
     fun `reference documents retain import bindings and text across replacement and removal`() {
         val binding = SymbolInfo("import#A", SymbolKind.IMPORT, Range(0, 0, 0, 17), "OldAlias", null)
         val old = document(4).copy(symbols = listOf(binding))

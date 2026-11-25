@@ -88,6 +88,24 @@ internal object ClassRenameUses {
     fun declaredElsewhere(name: String): String =
         "Cannot rename '$name': it is not declared in this file, and renaming across files is not supported yet"
 
+    /** The refusal of a symbol declared in a dependency, which is not workspace source; [where] says which. */
+    fun refuseDependency(where: String): Nothing = throw RenameRefusedException(
+        ResponseError(
+            ResponseErrorCode.InvalidRequest,
+            "Cannot rename symbols defined in dependencies (read-only): $where",
+            null,
+        ),
+    )
+
+    /**
+     * What a dependency refusal names for [definition] when it is a class the compiler read no source for (a JDK or
+     * classpath class): its name as the compiler has it, binary for a nested class (`java.util.Map$Entry`); null for
+     * any other symbol. Never `typeClass` or `Class.forName`: a dependency node is decompiled, and asking it for its
+     * class would load dependency code into the server, which fails with an Error on a missing transitive class.
+     */
+    fun dependencyName(definition: ASTNode): String? =
+        (definition as? ClassNode)?.redirect()?.takeUnless { it.isPrimaryClassNode }?.name
+
     /** Whether [type] (any node of it) is a class [compiled]'s own module declares. */
     fun declaredIn(type: ClassNode, compiled: CompiledDocumentSnapshot): Boolean {
         val declared = type.redirect()
@@ -120,6 +138,8 @@ private class DocumentNames(
         val sameNamed = module.classes.filter { it !== type && it.sourceSimpleName() == name }
         val otherUses = sites.uses.filter { it.type !== type && it.type.sourceSimpleName() == name }
         val otherNames = sites.otherNames.filter { it.name == name }
+        // The compiler resolves a name inside a generic declaration to its type parameter, which shadows the class.
+        val typeParameters = sites.typeParameters.filter { it.name == name }
         val others = otherNames.mapNotNull { single(occurrences, otherNameWindow(it)) } +
             sameNamed.flatMap { declaredNames(it, name, occurrences) }
         return NameAccount(
@@ -128,7 +148,8 @@ private class DocumentNames(
             located,
             uses = sites.uses.filter { it.type === type }.mapNotNull(::window),
             others = others,
-            otherUses = otherUses.mapNotNull(::window),
+            otherUses = otherUses.mapNotNull(::window) +
+                typeParameters.mapNotNull { nodeWindow(it.node, TypeUseKind.TYPE_PARAMETER) },
         )
     }
 
@@ -158,6 +179,13 @@ private class DocumentNames(
                 .firstOrNull { it.start >= start && it.end <= nodeEnd }?.start ?: return null
         }
         return NameWindow(start, end, site.kind, source.positionOf(start).line + 1).takeIf { start < end }
+    }
+
+    /** The whole source range of [node], or null when the AST gives it none (the occurrence stays unexplained). */
+    private fun nodeWindow(node: ASTNode, kind: TypeUseKind): NameWindow? {
+        val start = start(node) ?: return null
+        val end = end(node) ?: return null
+        return NameWindow(start, end, kind, source.positionOf(start).line + 1).takeIf { start < end }
     }
 
     /** The part of a name site's node after its [OtherNameSite.after] nodes and before its [OtherNameSite.until]. */

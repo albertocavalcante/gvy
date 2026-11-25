@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import org.codehaus.groovy.ast.ClassNode
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PrepareRenameResult
@@ -38,9 +39,10 @@ internal class SingleFileRename(workspace: Path) {
     private val documents = DocumentProvider()
     private val provider = RenameProvider(compilation) { documents.get(it) }
     val uri: URI = workspace.resolve("Rename.groovy").toUri()
+    private var opened = 0
 
     suspend fun open(content: String) {
-        documents.put(uri, content)
+        documents.put(uri, content, DocumentVersion.of(++opened))
         compilation.compile(uri, content)
     }
 

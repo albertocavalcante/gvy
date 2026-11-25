@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.references
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isTypedByTypeParameter
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
@@ -85,12 +86,21 @@ class ReferenceProvider(
         val emittedLocations = mutableSetOf<String>()
         var symbolName: String? = null
         var isLocal = false
+        var isTypeParameterTarget = false
 
         // First, try same-file AST-based reference finding
         scanning(logger, ReferenceScanPhase.DOCUMENT) {
             val context = createReferenceContext(uri, position)
             if (context != null) {
                 val definition = resolveTargetDefinition(context)
+                val target = context.targetNode
+                isTypeParameterTarget =
+                    (target is ClassNode && target.isGenericsPlaceHolder) ||
+                    isTypedByTypeParameter(target) ||
+                    (definition is ClassNode && definition.isGenericsPlaceHolder)
+                // A placeholder redirects to its bound, and its omitted index occurrence can expose an enclosing
+                // method instead. Neither scan can answer a type-parameter request as a request for that symbol.
+                if (isTypeParameterTarget) return@scanning
                 symbolName = definition?.declaredName()
                 // Locals and parameters never cross files, and the index gives every local of a
                 // class one symbol id (shared with a same-named field), so it must not be searched.
@@ -119,7 +129,7 @@ class ReferenceProvider(
         }
 
         // Second, search workspace-wide using SemanticDB
-        workspaceSymbolIndex?.takeUnless { isLocal }?.let { index ->
+        workspaceSymbolIndex?.takeUnless { isLocal || isTypeParameterTarget }?.let { index ->
             scanning(logger, ReferenceScanPhase.WORKSPACE) {
                 findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
             }
@@ -175,8 +185,13 @@ class ReferenceProvider(
         val origin = index.getDocumentSnapshot(URI.create(uri))
         val originText = origin?.sourceText?.let(::TextIndex)
         val cursor = originText?.codePointPosition(position)
-        if (origin == null || cursor == null) {
-            logger.debug { "No semantic document found for $uri" }
+        // These tokens name a type parameter, whose class occurrence is intentionally absent from the index.
+        // Do not select a containing method or class declaration in its place.
+        if (origin == null ||
+            cursor == null ||
+            origin.document.typeParameterUses.any { it.contains(cursor.line, cursor.character) }
+        ) {
+            logger.debug { "No indexed target found for $uri at ${position.line}:${position.character}" }
             return
         }
 
@@ -387,6 +402,9 @@ class ReferenceProvider(
     private suspend fun ProducerScope<Location>.processNode(params: ProcessNodeParams) {
         // A type parameter (`T` of `<T extends Service>`) redirects to its bound but spells only its own name.
         if (params.node is ClassNode && params.node.isGenericsPlaceHolder) return
+        // Likewise a class literal or call receiver (`T.class`, `T.foo()`, `new T()`) typed by a type parameter: the
+        // placeholder redirects to the bound, which may be the class itself, but the use is the parameter's.
+        if (isTypedByTypeParameter(params.node)) return
         val nodeDefinition = params.node.resolveToDefinition(params.visitor, params.symbolTable, strict = false)
 
         // Simple and robust matching using .equals() like fork-groovy-language-server
