@@ -48,6 +48,7 @@ class CompilationOrchestratorTest {
 
         val requestSlot = slot<ParseRequest>()
         val workerSessionManager = mockk<WorkerSessionManager>()
+        workerSessionManager.delegateCapturedSessionToParseStub()
         val parseResult = ParseResult(
             ast = null,
             compilationUnit = mockk(relaxed = true),
@@ -98,6 +99,7 @@ class CompilationOrchestratorTest {
 
         var parseCallCount = 0
         val workerSessionManager = mockk<WorkerSessionManager>()
+        workerSessionManager.delegateCapturedSessionToParseStub()
         val parseResult = ParseResult(
             ast = mockk(relaxed = true),
             compilationUnit = mockk(relaxed = true),
@@ -162,6 +164,7 @@ class CompilationOrchestratorTest {
 
         val requestSlot = slot<ParseRequest>()
         val workerSessionManager = mockk<WorkerSessionManager>()
+        workerSessionManager.delegateCapturedSessionToParseStub()
         val parseResult = ParseResult(
             ast = null,
             compilationUnit = mockk(relaxed = true),
@@ -232,6 +235,7 @@ class CompilationOrchestratorTest {
 
         val requestSlot = slot<ParseRequest>()
         val workerSessionManager = mockk<WorkerSessionManager>()
+        workerSessionManager.delegateCapturedSessionToParseStub()
         val parseResult = ParseResult(
             ast = null,
             compilationUnit = mockk(relaxed = true),
@@ -291,6 +295,7 @@ class CompilationOrchestratorTest {
 
         val requestSlot = slot<ParseRequest>()
         val workerSessionManager = mockk<WorkerSessionManager>()
+        workerSessionManager.delegateCapturedSessionToParseStub()
         val parseResult = ParseResult(
             ast = null,
             compilationUnit = mockk(relaxed = true),

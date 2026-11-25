@@ -7,6 +7,7 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import java.util.Spliterator
 import java.util.stream.BaseStream
 import kotlin.coroutines.CoroutineContext
 
@@ -19,10 +20,16 @@ internal sealed interface SnapshotAcquisition {
         suspend fun <T> query(compute: suspend (CompiledDocumentSnapshot) -> T): SnapshotQuery<T> {
             val caller = currentCoroutineContext()
             caller.ensureActive()
-            if (!isCurrent()) return SnapshotQuery.Stale
+            if (!currentFor(caller)) return SnapshotQuery.Stale
             val result = compute(snapshot)
             requireEagerResult(result, caller)
-            return if (isCurrent()) SnapshotQuery.Answer(result, this is Partial) else SnapshotQuery.Stale
+            return if (currentFor(caller)) SnapshotQuery.Answer(result, this is Partial) else SnapshotQuery.Stale
+        }
+
+        private fun currentFor(caller: CoroutineContext): Boolean {
+            val current = isCurrent()
+            caller.ensureActive()
+            return current
         }
     }
 
@@ -53,7 +60,7 @@ private fun requireEagerResult(result: Any?, caller: CoroutineContext) {
     }
     caller.ensureActive()
     when (result) {
-        is Flow<*>, is Sequence<*>, is Iterator<*> -> error(LAZY_QUERY_RESULT)
+        is Flow<*>, is Sequence<*>, is Iterator<*>, is Spliterator<*> -> error(LAZY_QUERY_RESULT)
         is Iterable<*> -> check(result is Collection<*>) { LAZY_QUERY_RESULT }
     }
 }

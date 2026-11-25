@@ -33,6 +33,7 @@ internal class PendingWork<I, T : Any>(
     val identity: I,
     val deferred: Deferred<T>,
     val ticket: ArtifactOwnership.Ticket,
+    val delivery: PendingDelivery? = null,
 ) {
     /**
      * Completed by the service when it retires this job, after the job can no longer be selected (#1429). A
@@ -82,7 +83,7 @@ private class ActiveJobs<I, T : Any>(val members: List<PendingWork<I, T>>, val s
     override fun retire() = members.forEach { it.retire() }
 }
 
-internal class PendingRegistry<I, T : Any> {
+internal class PendingRegistry<I, T : Any>(private val deliveryFor: ((I) -> PendingDelivery)? = null) {
     @Volatile private var jobs = ConcurrentHashMap<URI, ActiveJobs<I, T>>()
 
     operator fun get(uri: URI): PendingWork<I, T>? = jobs[uri]?.selected
@@ -97,6 +98,7 @@ internal class PendingRegistry<I, T : Any> {
         create: () -> Deferred<T>,
     ): PendingWork<I, T> {
         val map = jobs
+        val delivery = deliveryFor?.invoke(identity)
         while (true) {
             val previous = map[uri]
             // Membership is immutable. Inspect every live producer outside the map lock, newest first,
@@ -107,10 +109,12 @@ internal class PendingRegistry<I, T : Any> {
             map.compute(uri) { _, current ->
                 if (current !== previous) return@compute current
                 if (compatible != null && compatible.isPending) {
+                    compatible.delivery?.enroll()
                     reused = compatible
                     return@compute checkNotNull(current).select(compatible)
                 }
-                val replacement = PendingWork(identity, create(), ticket)
+                val replacement = PendingWork(identity, create(), ticket, delivery)
+                delivery?.enroll()
                 created = replacement
                 if (replacement.isPending) {
                     ActiveJobs(listOf(replacement) + current?.members.orEmpty(), replacement)
@@ -122,6 +126,8 @@ internal class PendingRegistry<I, T : Any> {
             created?.let { job ->
                 job.deferred.invokeOnCompletion {
                     map.computeIfPresent(uri) { _, active -> active.without(job) }
+                    // A racing join either enrolled under the URI lock or selected a different producer.
+                    job.delivery?.finishEnrollment()
                 }
                 return job
             }

@@ -27,7 +27,7 @@ class CompilationCacheService(
 
     // Context-owned work stays separate from background compilations that publish the workspace's global indexes.
     private val compilationJobs = PendingRegistry<CompilationIdentity, CompilationResult>()
-    internal val snapshotJobs = PendingRegistry<CapturedCompilation, SnapshotAcquisition>()
+    internal val snapshotJobs = PendingRegistry<CapturedCompilation, SnapshotAcquisition>(CapturedCompilation::delivery)
 
     /**
      * Gets cached ParseResult if content AND configuration fingerprint match.
@@ -42,8 +42,13 @@ class CompilationCacheService(
     fun getCached(uri: URI, content: String, configFingerprint: String): ParseResult? =
         cache.get(uri, content, configFingerprint)
 
-    internal fun getForCompile(uri: URI, content: String, fingerprint: String, phase: Int, mode: ParseMode) =
-        cache.getForCompile(uri, content, fingerprint, phase, mode)
+    internal fun getForCompile(
+        uri: URI,
+        content: String,
+        requester: CompilationRequestContext,
+        phase: Int,
+        mode: ParseMode,
+    ) = cache.getForCompile(uri, content, requester, phase, mode)
 
     /**
      * Gets the cached content and ParseResult, if they were compiled under [configFingerprint].

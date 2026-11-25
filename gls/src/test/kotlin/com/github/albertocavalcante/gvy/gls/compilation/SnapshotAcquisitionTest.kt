@@ -18,14 +18,17 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
@@ -190,14 +193,50 @@ class SnapshotAcquisitionTest {
         documents.put(uri, source, DocumentVersion.of(1))
         release.countDown()
         assertIs<SnapshotAcquisition.Ready>(service.acquireSnapshot(uri))
-        val cancelled = Job().apply { cancel() }
+        var reachedQuery = false
         var queried = false
-
-        assertFailsWith<CancellationException> {
-            withContext(cancelled) { service.querySnapshot(uri) { queried = true } }
+        val cancelled = async {
+            currentCoroutineContext().cancel()
+            reachedQuery = true
+            assertFailsWith<CancellationException> { service.querySnapshot(uri) { queried = true } }
         }
+        assertFailsWith<CancellationException> { cancelled.await() }
+        assertTrue(reachedQuery)
         assertFalse(queried)
     }
+
+    @ParameterizedTest
+    @CsvSource("1, true", "1, false", "2, true", "2, false")
+    fun `cancellation during freshness cannot compute or return a query`(cancelAt: Int, stillCurrent: Boolean): Unit =
+        runBlocking {
+            service.onDocumentOpened(uri)
+            documents.put(uri, source, DocumentVersion.of(1))
+            release.countDown()
+            val parsed = assertIs<SnapshotAcquisition.Ready>(service.acquireSnapshot(uri)).snapshot
+            var computed = false
+            var cancellationObserved = false
+            val request = async {
+                val caller = currentCoroutineContext()
+                var checks = 0
+                val available = SnapshotAcquisition.Ready(parsed) {
+                    checks++
+                    if (checks == cancelAt) caller.cancel()
+                    checks != cancelAt || stillCurrent
+                }
+                try {
+                    available.query {
+                        computed = true
+                        emptyList<String>()
+                    }
+                } catch (_: CancellationException) {
+                    cancellationObserved = true
+                }
+            }
+            assertFailsWith<CancellationException> { request.await() }
+            request.join()
+            assertTrue(cancellationObserved)
+            assertEquals(cancelAt == 2, computed)
+        }
 
     @Test
     fun `a closed companion change cannot allow old work to replace the newer result`(): Unit = runBlocking {
@@ -562,7 +601,7 @@ class SnapshotAcquisitionTest {
                 emptyList<String>()
             }
         }
-        entered.await()
+        withTimeout(5_000) { entered.await() }
 
         service.clearCaches()
         proceed.complete(Unit)

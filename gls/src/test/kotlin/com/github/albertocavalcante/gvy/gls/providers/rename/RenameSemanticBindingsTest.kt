@@ -33,6 +33,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class RenameSemanticBindingsTest {
@@ -249,17 +250,18 @@ class RenameSemanticBindingsTest {
     fun `rename rejects an automatic conversion fallback from a broken source root`(): Unit = runBlocking {
         supervisorScope {
             fixture(fieldSource(withBroken = true), layout = Layout.UNLISTED_BROKEN).use { fixture ->
+                assertEquals(Phases.CANONICALIZATION, fixture.parsed.outcome.requestedPhase)
                 assertEquals(Fallback.COMPILATION_FAILED, fixture.parsed.outcome.fallback)
                 assertEquals(Phases.CONVERSION, fixture.parsed.outcome.achievedPhase)
 
                 val error = assertFailsWith<ResponseErrorException> { fixture.renameField() }
 
-                val retried = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
-                assertNotSame(fixture.parsed, retried.parseResult)
-                assertEquals(fixture.source, retried.sourceText)
-                assertEquals(Phases.CANONICALIZATION, retried.parseResult.outcome.requestedPhase)
-                assertEquals(Phases.CONVERSION, retried.parseResult.outcome.achievedPhase)
-                assertEquals(Fallback.COMPILATION_FAILED, retried.parseResult.outcome.fallback)
+                val retained = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
+                assertSame(fixture.parsed, retained.parseResult)
+                assertEquals(fixture.source, retained.sourceText)
+                assertEquals(Phases.CANONICALIZATION, retained.parseResult.outcome.requestedPhase)
+                assertEquals(Phases.CONVERSION, retained.parseResult.outcome.achievedPhase)
+                assertEquals(Fallback.COMPILATION_FAILED, retained.parseResult.outcome.fallback)
                 assertEquals(ResponseErrorCode.InvalidRequest.value, error.responseError.code)
                 assertEquals("Rename requires completed semantic analysis", error.responseError.message)
             }

@@ -357,6 +357,7 @@ class CompilationJobOwnershipTest {
 
         init {
             val worker = mockk<WorkerSessionManager>()
+            worker.delegateCapturedSessionToParseStub()
             every { worker.parse(any()) } answers {
                 val request = firstArg<ParseRequest>()
                 requests += request

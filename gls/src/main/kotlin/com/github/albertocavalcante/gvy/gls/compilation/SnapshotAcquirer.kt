@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -16,6 +18,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.CompilationFailedException
+import java.io.Closeable
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
@@ -38,10 +41,58 @@ internal class OwnedSnapshot(val capture: CapturedCompilation, val snapshot: Com
     }
 }
 
+/** Owns an uncached loader until a waiter receives it, or all possible recipients have gone. */
+internal class PendingDelivery(private val uri: URI) {
+    private var waiters = 0
+    private var enrollmentClosed = false
+    private var undelivered: Closeable? = null
+
+    /** Called under the registry's URI lock; only increments the reservation count. */
+    @Synchronized
+    fun enroll() {
+        check(!enrollmentClosed)
+        waiters++
+    }
+
+    @Synchronized
+    fun hold(loader: Closeable) {
+        check(undelivered == null && !enrollmentClosed)
+        undelivered = loader
+    }
+
+    fun finishEnrollment() = update { enrollmentClosed = true }
+
+    fun leave(delivered: Boolean) = update {
+        check(waiters > 0)
+        waiters--
+        if (delivered) undelivered = null
+    }
+
+    private fun update(change: () -> Unit) {
+        val discarded = synchronized(this) {
+            change()
+            if (enrollmentClosed && waiters == 0) undelivered.also { undelivered = null } else null
+        }
+        try {
+            discarded?.close()
+        } catch (error: IOException) {
+            // Cleanup can run in a deferred completion handler or while a caller's cancellation is unwinding.
+            logger.warn(error) { "Failed to close unpublished compilation loader for $uri" }
+        }
+    }
+
+    private companion object {
+        val logger = KotlinLogging.logger {}
+    }
+}
+
 /** Take the retirement fence before reading any editor, workspace or disk source. */
-internal class SnapshotSource(private val dependencies: CompilationOrchestratorDependencies, val uri: URI) {
-    val ticket = dependencies.cacheService.ownership.begin(uri)
-    val workspace = dependencies.workspaceManager.current()
+internal class SnapshotSource(
+    val dependencies: CompilationOrchestratorDependencies,
+    val uri: URI,
+    val ticket: ArtifactOwnership.Ticket = dependencies.cacheService.ownership.begin(uri),
+    val workspace: WorkspaceModel = dependencies.workspaceManager.current(),
+) {
     private val provider = dependencies.documentProvider
     private val buffers = provider?.withLifecycleLock { provider.getBuffer(uri) to provider.snapshotIdentities() }
     val buffer = buffers?.first
@@ -66,23 +117,23 @@ internal class SnapshotSource(private val dependencies: CompilationOrchestratorD
  * Disk inputs use the owning fence's conservative retirement check, including implicit source-root reads.
  */
 internal class CapturedCompilation(
-    private val dependencies: CompilationOrchestratorDependencies,
     private val selectSources: (URI, WorkspaceModel) -> List<Path>,
     private val source: SnapshotSource,
     val content: String,
     val phase: Int,
     val mode: ParseMode,
+    resolvedContext: DocumentCompileContext? = null,
 ) {
+    private val dependencies = source.dependencies
     val uri: URI get() = source.uri
+    val delivery = PendingDelivery(uri)
     val ticket: ArtifactOwnership.Ticket get() = source.ticket
     private val workspace = source.workspace
     private val ownership = dependencies.cacheService.ownership
     private val sourcePath = UriPathConverter.toPath(uri)
     private val workspaceManager = dependencies.workspaceManager
     private val session = dependencies.workerSessionManager.current()
-    val context = workspaceManager.compileContextFor(uri, content, workspace).let {
-        it.copy(classpath = it.classpath.toList())
-    }
+    val context = resolvedContext ?: workspaceManager.compileContextFor(uri, content, workspace).captureClasspath()
     private val sources = selectSources(uri, workspace)
     private val locator = dependencies.symbolIndexer.classLocator(sourcePath)
     private val lookups = ConcurrentHashMap<String, List<Path>>()
@@ -101,12 +152,18 @@ internal class CapturedCompilation(
             dependencies.workerSessionManager.current() === session && source.isCurrent()
     }
 
+    /** A current fallback still belongs to the workspace, retirement and classpath its requester selected. */
+    fun canServe(requester: CompilationRequestContext): Boolean = workspace === requester.workspace &&
+        ticket.sharesInputs(requester.ticket) &&
+        context == requester.document &&
+        isCurrent()
+
     /** Reuse the original producer, including the retirement stamp and resolver answers it actually observed. */
     fun canShare(producer: CapturedCompilation): Boolean = phase == producer.phase && mode == producer.mode &&
         content == producer.content && source.matches(producer.source) && context == producer.context &&
         session === producer.session && sources == producer.sources && producer.isCurrent()
 
-    suspend fun parse(): OwnedSnapshot {
+    suspend fun parse(): ParseResult {
         val job = currentCoroutineContext()
         job.ensureActive()
         val request = ParseRequest(
@@ -122,7 +179,7 @@ internal class CapturedCompilation(
             checkCancelled = { job.ensureActive() },
             workspaceClassLocator = if (mode == ParseMode.MINIMAL) ::locate else null,
         )
-        return OwnedSnapshot(this, CompiledDocumentSnapshot(content, session.parse(request)))
+        return session.parse(request)
     }
 }
 
@@ -149,22 +206,36 @@ internal class SnapshotAcquirer(
             return source.unlessRetired(SnapshotAcquisition.Failure(error))
         }
         if (content == null) return source.unlessRetired(SnapshotAcquisition.Missing)
-        return resolve(CapturedCompilation(dependencies, selectSources, source, content, phase, mode))
+        return resolve(CapturedCompilation(selectSources, source, content, phase, mode))
     }
 
     private suspend fun resolve(capture: CapturedCompilation): SnapshotAcquisition {
         currentCoroutineContext().ensureActive()
-        if (!capture.isCurrent()) return SnapshotAcquisition.Stale
+        if (!capture.isCurrent()) return checked(SnapshotAcquisition.Stale)
         val previous = cache.getOwned(capture.uri)
         if (previous != null && capture.canShare(previous.capture)) {
             val outcome = previous.outcome()
-            return if (capture.isCurrent()) outcome else SnapshotAcquisition.Stale
+            return checked(if (capture.isCurrent()) outcome else SnapshotAcquisition.Stale)
         }
         val pending = cache.snapshotJobs.register(capture.uri, capture, capture.ticket, capture::canShare) {
             dependencies.waiterScope.async(dependencies.ioDispatcher, start = CoroutineStart.LAZY) {
                 compile(capture, previous)
             }
         }
+        var answer: SnapshotAcquisition? = null
+        try {
+            answer = awaitCurrent(capture, pending)
+            return answer
+        } finally {
+            // After this final checked handoff the caller may use the parser, even if it is cancelled later.
+            pending.identity.delivery.leave(answer is SnapshotAcquisition.Available)
+        }
+    }
+
+    private suspend fun awaitCurrent(
+        capture: CapturedCompilation,
+        pending: PendingWork<CapturedCompilation, SnapshotAcquisition>,
+    ): SnapshotAcquisition {
         // Registration may have raced the global map swap after the producer took its input ticket.
         if (!pending.identity.ticketsCurrent()) pending.retire()
         pending.deferred.start()
@@ -178,11 +249,14 @@ internal class SnapshotAcquirer(
             null
         }
         currentCoroutineContext().ensureActive()
-        return if (capture.isCurrent() && pending.identity.isCurrent()) {
-            outcome ?: SnapshotAcquisition.Stale
-        } else {
-            SnapshotAcquisition.Stale
-        }
+        val current = capture.isCurrent() && pending.identity.isCurrent()
+        return checked(if (current && outcome != null) outcome else SnapshotAcquisition.Stale)
+    }
+
+    /** Strategy and source freshness lookups can run caller code or block before an answer is delivered. */
+    private suspend fun checked(answer: SnapshotAcquisition): SnapshotAcquisition {
+        currentCoroutineContext().ensureActive()
+        return answer
     }
 
     private suspend fun compile(capture: CapturedCompilation, previous: OwnedSnapshot?): SnapshotAcquisition {
@@ -194,7 +268,7 @@ internal class SnapshotAcquirer(
         } catch (error: CompilationFailedException) {
             return failure(capture, error)
         }
-        return publish(result, previous)
+        return publish(OwnedSnapshot(capture, CompiledDocumentSnapshot(capture.content, result)), previous)
     }
 
     /** The worker transfers its unpublished native loader here. Published results may outlive this job. */
@@ -206,10 +280,9 @@ internal class SnapshotAcquirer(
             job.ensureActive()
             transferred = cache.storeSnapshot(result, previous)
             val outcome = result.outcome()
-            if (!transferred && outcome != SnapshotAcquisition.Stale) {
-                // Another policy won the cache slot. This deferred alone will publish the current result;
-                // cancellation before it completes leaves the native loader exclusively ours to close.
-                job.invokeOnCompletion { failure -> if (failure != null) loader.close() }
+            if (!transferred && outcome is SnapshotAcquisition.Available) {
+                // Another policy won the cache slot. Enrollment protects a possible delivery after this job completes.
+                result.capture.delivery.hold(loader)
                 transferred = true
             }
             return outcome

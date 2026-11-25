@@ -22,6 +22,8 @@ import org.junit.jupiter.params.provider.ValueSource
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Spliterator
+import java.util.Spliterators
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -160,7 +162,7 @@ class SnapshotWaiterContractTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["sequence", "iterator", "stream", "iterable"])
+    @ValueSource(strings = ["sequence", "iterator", "stream", "iterable", "spliterator"])
     fun `a query cannot return a deferred traversal`(kind: String): Unit = runBlocking {
         val service = service()
         try {
@@ -170,6 +172,10 @@ class SnapshotWaiterContractTest {
                         "sequence" -> sequence { yield(snapshot.sourceText) }
                         "iterator" -> iterator { yield(snapshot.sourceText) }
                         "iterable" -> sequence { yield(snapshot.sourceText) }.asIterable()
+                        "spliterator" -> Spliterators.spliteratorUnknownSize(
+                            iterator { yield(snapshot.sourceText) },
+                            Spliterator.ORDERED,
+                        )
                         else -> Stream.generate { snapshot.sourceText }
                     }
                 }
