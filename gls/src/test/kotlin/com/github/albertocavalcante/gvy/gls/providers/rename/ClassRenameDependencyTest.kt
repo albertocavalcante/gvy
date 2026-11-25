@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ClassHelper
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -80,6 +81,13 @@ class ClassRenameDependencyTest {
     @Test
     fun `a JDK class named by a static call is refused the same way`() =
         assertDependency("String.valueOf", 0, "java.lang.String")
+
+    @Test
+    fun `a dependency class is named as written in source, whatever its name contains`() {
+        assertEquals("java.util.Map.Entry", ClassRenameUses.dependencyName(ClassHelper.make(Map.Entry::class.java)))
+        // A class the compiler has not resolved keeps its name, `$` included, rather than having it mangled.
+        assertEquals("pkg.Dollar\$Named", ClassRenameUses.dependencyName(ClassHelper.make("pkg.Dollar\$Named")))
+    }
 
     @Test
     fun `a nested JDK type is named as written in source, not by its binary name`() =

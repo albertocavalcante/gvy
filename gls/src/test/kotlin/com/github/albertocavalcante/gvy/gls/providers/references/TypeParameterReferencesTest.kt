@@ -34,7 +34,8 @@ class TypeParameterReferencesTest {
         val content = "package pkg\nclass T {}\n" +
             "class Box<T extends pkg.T> { def k() { T.class }; def j() { T.foo() }; def <T> void m() { T.class } }\n"
 
-        // The qualified bound `pkg.T` is not reported by the scan either way; the class literals must not be.
+        // FIXME(#2459): expected (2, 24) too, the qualified bound `pkg.T`, which the scan does not report.
+        // The class literals of the parameter must not be reported either way.
         assertEquals(listOf(1 to 6), referencesOfClassT(content))
     }
 }

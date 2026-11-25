@@ -102,7 +102,8 @@ internal object ClassRenameUses {
      * classpath class), as written in source (`java.util.Map.Entry`); null for any other symbol.
      */
     fun dependencyName(definition: ASTNode): String? = (definition as? ClassNode)?.redirect()
-        ?.takeUnless { it.isPrimaryClassNode }?.name?.replace('$', '.')
+        ?.takeUnless { it.isPrimaryClassNode }
+        ?.let { type -> if (type.isResolved) type.typeClass.canonicalName ?: type.name else type.name }
 
     /** Whether [type] (any node of it) is a class [compiled]'s own module declares. */
     fun declaredIn(type: ClassNode, compiled: CompiledDocumentSnapshot): Boolean {

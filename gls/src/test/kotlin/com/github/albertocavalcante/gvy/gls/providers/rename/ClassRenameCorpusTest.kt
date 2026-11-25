@@ -228,7 +228,8 @@ class ClassRenameCorpusTest {
             """,
                 mapOf(
                     "Outer" to renamed,
-                    // `T.class` of the parameter spells the class's name and nothing proves it is not the class.
+                    // FIXME(#2459): expected renamed with `T.class` of the parameter untouched; refused until the
+                    // position-less placeholder of a class literal can be proven to be the parameter.
                     "Outer\$T" to Outcome.Refused(Reason.UNCLASSIFIED_USE),
                     "Outer\$Box" to renamed,
                 ),

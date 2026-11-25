@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -28,7 +29,7 @@ class ClassRenamePlaceholderUsesTest {
         /** The whole text after the rename. */
         data class Text(val text: String) : Expected
 
-        /** A refusal, for no edit at all is better than a wrong one. */
+        /** A refusal because a use of the name cannot be proven to be another name: better than a wrong edit. */
         data object Refusal : Expected
     }
 
@@ -49,7 +50,10 @@ class ClassRenamePlaceholderUsesTest {
             is Expected.Text -> assertEquals(expected.text, result.getOrThrow())
             Expected.Refusal -> {
                 val refused = assertInstanceOf(RenameRefusedException::class.java, result.exceptionOrNull(), "$result")
-                assertTrue(refused.message.orEmpty().startsWith("Cannot rename 'T'"), refused.message)
+                assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code)
+                val message = refused.responseError.message
+                val reason = Regex("""Cannot rename 'T': a use at line \d+ could not be classified""")
+                assertTrue(reason.matches(message), message)
             }
         }
     }
@@ -90,6 +94,8 @@ class ClassRenamePlaceholderUsesTest {
         private class Form(val name: String, val body: String, val refusedBounded: Boolean, val refusedFree: Boolean)
 
         private val forms = listOf(
+            // FIXME(#2459): the position-less placeholder of `T.class` / `T.foo()` cannot be proven to be
+            // the parameter, so these refuse; expected: the class renamed and the parameter untouched.
             Form("a class literal", "T x; def k() { T.class }; def <T> void m() { T.class }", true, true),
             Form("a static call", "def k() { T.foo() }", true, true),
             Form("a constructor call", "def k() { new T() }", false, false),
@@ -128,6 +134,7 @@ class ClassRenamePlaceholderUsesTest {
                     ),
                 )
             }
+            // FIXME(#2459): expected renamed, `T.class` of the parameter untouched; refused until proven.
             val nested =
                 "class Outer { static class T {}; static class Box<T extends Outer.T> { def k() { T.class } } }\n"
             add(Case("bounded by a nested class: a class literal", nested, Expected.Refusal))

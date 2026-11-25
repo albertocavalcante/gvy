@@ -254,11 +254,7 @@ class RenameProvider private constructor(
             ?: ClassRenameUses.dependencyName(definition)?.let(ClassRenameUses::refuseDependency)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine definition location")
 
-        if (!isInWorkspace(
-                definitionLocation.uri,
-                documentUri,
-            )
-        ) {
+        if (!isInWorkspace(definitionLocation.uri, documentUri)) {
             ClassRenameUses.refuseDependency(definitionLocation.uri)
         }
 
