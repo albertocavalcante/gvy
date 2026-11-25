@@ -387,6 +387,9 @@ class ReferenceProvider(
     private suspend fun ProducerScope<Location>.processNode(params: ProcessNodeParams) {
         // A type parameter (`T` of `<T extends Service>`) redirects to its bound but spells only its own name.
         if (params.node is ClassNode && params.node.isGenericsPlaceHolder) return
+        // Likewise a class literal or call receiver (`T.class`, `T.foo()`, `new T()`) typed by a type parameter: the
+        // placeholder redirects to the bound, which may be the class itself, but the use is the parameter's.
+        if (params.node.isTypedByPlaceholder()) return
         val nodeDefinition = params.node.resolveToDefinition(params.visitor, params.symbolTable, strict = false)
 
         // Simple and robust matching using .equals() like fork-groovy-language-server
@@ -616,4 +619,11 @@ private fun searchTarget(
         ?: return (symbolName ?: symbol?.name)?.let { occurrence.symbol to it }
     val target = if (occurrence.role == OccurrenceRole.DEFINITION) occurrence.symbol else constructor.owner
     return target?.let { it to constructor.name }
+}
+
+/** A class literal or constructor call whose type is a type parameter: the placeholder redirects to its bound. */
+private fun ASTNode.isTypedByPlaceholder(): Boolean = when (this) {
+    is ClassExpression -> type.isGenericsPlaceHolder
+    is ConstructorCallExpression -> type.isGenericsPlaceHolder
+    else -> false
 }

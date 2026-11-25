@@ -89,13 +89,20 @@ internal object ClassRenameUses {
         "Cannot rename '$name': it is not declared in this file, and renaming across files is not supported yet"
 
     /** The refusal of a symbol declared in a dependency, which is not workspace source; [where] says which. */
-    fun inDependency(where: String): String = "Cannot rename symbols defined in dependencies (read-only): $where"
+    fun refuseDependency(where: String): Nothing = throw RenameRefusedException(
+        ResponseError(
+            ResponseErrorCode.InvalidRequest,
+            "Cannot rename symbols defined in dependencies (read-only): $where",
+            null,
+        ),
+    )
 
     /**
-     * Whether the compiler read [type]'s declaration from source (this module's or another file's), as it never does
-     * for a JDK or classpath class: such a class has no source in the workspace to rename.
+     * What a dependency refusal names for [definition] when it is a class the compiler read no source for (a JDK or
+     * classpath class), as written in source (`java.util.Map.Entry`); null for any other symbol.
      */
-    fun hasSource(type: ClassNode): Boolean = type.redirect().isPrimaryClassNode
+    fun dependencyName(definition: ASTNode): String? = (definition as? ClassNode)?.redirect()
+        ?.takeUnless { it.isPrimaryClassNode }?.name?.replace('$', '.')
 
     /** Whether [type] (any node of it) is a class [compiled]'s own module declares. */
     fun declaredIn(type: ClassNode, compiled: CompiledDocumentSnapshot): Boolean {

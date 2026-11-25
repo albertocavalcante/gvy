@@ -63,9 +63,9 @@ class ClassRenameCorpusTest {
                 "renaming $simpleName in ${fixture.name} threw $failure",
             )
             assertEquals(ResponseErrorCode.RequestFailed.value, refused.responseError.code, refused.message)
-            val reason = Reason.entries.firstOrNull { it.fragment in refused.responseError.message }
+            val reason = Reason.of(refused.responseError.message)
             Outcome.Refused(
-                checkNotNull(reason) { "renaming $simpleName in ${fixture.name}: unknown reason: ${refused.message}" },
+                checkNotNull(reason) { "renaming $simpleName in ${fixture.name}: no one reason: ${refused.message}" },
             )
         },
     )
@@ -104,19 +104,25 @@ class ClassRenameCorpusTest {
         data class Refused(val reason: Reason) : Outcome
     }
 
-    /** The categories of refusal a class rename gives; each is a fragment of the refusal message. */
-    enum class Reason(val fragment: String) {
-        UNREADABLE_TOKENS("cannot be read as complete tokens"),
-        EDIT_OUTSIDE_DOCUMENT("is outside the document being renamed"),
-        EDIT_NOT_ON_NAME("is not on the name in code"),
-        AMBIGUOUS_USE("cannot be located exactly in the source"),
-        CONTESTED_NAME("is spelled by uses of two different classes"),
-        NAME_CONFLICT("is both a use of the class and another name"),
-        UNCLASSIFIED_USE("could not be classified"),
-        TYPE_PARAMETER("renaming a type parameter is not supported"),
-        COMPACT_CONSTRUCTOR("renaming a record with a compact constructor"),
-        DECLARED_ELSEWHERE("it is not declared in this file"),
-        CROSS_FILE("renaming across files is not supported"),
+    /** The categories of refusal a class rename gives; each owns the messages [matches] recognises, and no other. */
+    enum class Reason(private val matches: (String) -> Boolean) {
+        UNREADABLE_TOKENS({ "cannot be read as complete tokens" in it }),
+        EDIT_OUTSIDE_DOCUMENT({ "is outside the document being renamed" in it }),
+        EDIT_NOT_ON_NAME({ "is not on the name in code" in it }),
+        AMBIGUOUS_USE({ "cannot be located exactly in the source" in it }),
+        CONTESTED_NAME({ "is spelled by uses of two different classes" in it }),
+        NAME_CONFLICT({ "is both a use of the class and another name" in it }),
+        UNCLASSIFIED_USE({ "could not be classified" in it }),
+        TYPE_PARAMETER({ "renaming a type parameter is not supported" in it }),
+        COMPACT_CONSTRUCTOR({ "renaming a record with a compact constructor" in it }),
+        DECLARED_ELSEWHERE({ "it is not declared in this file" in it }),
+        CROSS_FILE({ "renaming across files is not supported" in it && "it is not declared in this file" !in it }),
+        ;
+
+        companion object {
+            /** The one reason [message] belongs to; null when none or more than one does. */
+            fun of(message: String): Reason? = entries.filter { it.matches(message) }.singleOrNull()
+        }
     }
 
     /** One corpus source and the outcome pinned for each class it declares, by binary name. */
@@ -191,6 +197,40 @@ class ClassRenameCorpusTest {
                     "Box" to renamed,
                     "Pair" to renamed,
                     "Util" to renamed,
+                ),
+            ),
+            Fixture(
+                "a type parameter T next to a class T: scoping",
+                """
+                class T { }
+                class Box<T> { static class In { T s }; static T sm() { null }; class Member { T m } }
+                class Shadow<T extends Comparable<T>> { T x; def <T> T id(T v) { v } }
+                class Anon { def <T> Object make() { new Object() { T s } } }
+                class Out { T z }
+            """,
+                mapOf(
+                    "T" to renamed,
+                    "Box" to renamed,
+                    "Box\$In" to renamed,
+                    "Box\$Member" to renamed,
+                    "Shadow" to renamed,
+                    "Anon" to renamed,
+                    "Out" to renamed,
+                ),
+            ),
+            Fixture(
+                "a type parameter bounded by the class of the same name",
+                """
+                class Outer {
+                    static class T { }
+                    static class Box<T extends Outer.T> { T x; def k() { T.class }; def <T> void m() { T.class } }
+                }
+            """,
+                mapOf(
+                    "Outer" to renamed,
+                    // `T.class` of the parameter spells the class's name and nothing proves it is not the class.
+                    "Outer\$T" to Outcome.Refused(Reason.UNCLASSIFIED_USE),
+                    "Outer\$Box" to renamed,
                 ),
             ),
             Fixture(

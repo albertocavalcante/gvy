@@ -231,10 +231,7 @@ class RenameProvider private constructor(
             // Always refused: as a dependency when no source declares it, else by the guard when another file
             // spells the name, else as declared elsewhere.
             is ClassAtCursor.Foreign -> {
-                if (!ClassRenameUses.hasSource(atCursor.type)) {
-                    val reason = ClassRenameUses.inDependency(atCursor.type.redirect().name)
-                    throw RenameRefusedException(ResponseError(ResponseErrorCode.InvalidRequest, reason, null))
-                }
+                ClassRenameUses.dependencyName(atCursor.type)?.let(ClassRenameUses::refuseDependency)
                 refuseIfUsedElsewhere(documentUri, atCursor.type, atCursor.type.declaredName().orEmpty(), false)
             }
             is ClassAtCursor.Declared, null -> Unit
@@ -254,10 +251,15 @@ class RenameProvider private constructor(
 
         // Check if definition is in workspace or dependency
         val definitionLocation = definition.toLspLocation(visitor)
+            ?: ClassRenameUses.dependencyName(definition)?.let(ClassRenameUses::refuseDependency)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine definition location")
 
-        if (!isInWorkspace(definitionLocation.uri, documentUri)) {
-            throw createError(ResponseErrorCode.InvalidRequest, ClassRenameUses.inDependency(definitionLocation.uri))
+        if (!isInWorkspace(
+                definitionLocation.uri,
+                documentUri,
+            )
+        ) {
+            ClassRenameUses.refuseDependency(definitionLocation.uri)
         }
 
         // Get symbol name

@@ -8,7 +8,6 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
@@ -51,42 +50,40 @@ class ClassRenameDependencyTest {
         return Position(before.count { it == '\n' }, index - (before.lastIndexOf('\n') + 1))
     }
 
-    private val greeter = "class Greeter {\n    String name\n}\n"
+    private val greeter =
+        "class Greeter {\n    String name\n    def k() { String.valueOf(1) }\n    Map.Entry entry\n}\n"
     private val mentioningString = "class Other {\n    String other\n}\n"
 
-    @Test
-    fun `renaming a JDK type is refused as declared in a dependency without scanning the workspace`() {
+    /** Rename and prepareRename at [needle] (+[offset]) both refuse as a dependency, without a workspace scan. */
+    private fun assertDependency(needle: String, offset: Int, where: String) {
         val uri = workspace(mapOf("Greeter.groovy" to greeter, "Other.groovy" to mentioningString), "Greeter.groovy")
-        val position = positionOf(greeter, "String")
+        val position = positionOf(greeter, needle).let { Position(it.line, it.character + offset) }
+        val rename = runCatching { runBlocking { provider.provideRename(uri.toString(), position, "Text") } }
+        val prepare = runCatching { runBlocking { provider.providePrepareRename(uri.toString(), position) } }
 
-        val failure = runCatching { runBlocking { provider.provideRename(uri.toString(), position, "Text") } }
-            .exceptionOrNull()
-
-        val refused = assertInstanceOf(ResponseErrorException::class.java, failure, "rename: $failure")
-        assertEquals(ResponseErrorCode.InvalidRequest.value, refused.responseError.code)
-        assertEquals(
-            "Cannot rename symbols defined in dependencies (read-only): java.lang.String",
-            refused.responseError.message,
-        )
-        assertEquals(0, walks.walks, "the workspace must not be scanned for uses of a dependency type")
+        for ((what, failure) in listOf("rename" to rename.exceptionOrNull(), "prepare" to prepare.exceptionOrNull())) {
+            val refused = assertInstanceOf(RenameRefusedException::class.java, failure, "$what at $needle: $failure")
+            assertEquals(ResponseErrorCode.InvalidRequest.value, refused.responseError.code, what)
+            assertEquals(
+                "Cannot rename symbols defined in dependencies (read-only): $where",
+                refused.responseError.message,
+                what,
+            )
+        }
+        assertEquals(0, walks.walks, "the workspace must not be scanned for uses of a dependency symbol")
     }
 
     @Test
-    fun `preparing a rename of a JDK type gives the same refusal without scanning the workspace`() {
-        val uri = workspace(mapOf("Greeter.groovy" to greeter, "Other.groovy" to mentioningString), "Greeter.groovy")
-        val position = positionOf(greeter, "String")
+    fun `a JDK type used as a type is refused as a dependency without scanning the workspace`() =
+        assertDependency("String name", 0, "java.lang.String")
 
-        val failure = runCatching { runBlocking { provider.providePrepareRename(uri.toString(), position) } }
-            .exceptionOrNull()
+    @Test
+    fun `a JDK class named by a static call is refused the same way`() =
+        assertDependency("String.valueOf", 0, "java.lang.String")
 
-        val refused = assertInstanceOf(ResponseErrorException::class.java, failure, "prepare: $failure")
-        assertEquals(ResponseErrorCode.InvalidRequest.value, refused.responseError.code)
-        assertEquals(
-            "Cannot rename symbols defined in dependencies (read-only): java.lang.String",
-            refused.responseError.message,
-        )
-        assertEquals(0, walks.walks, "the workspace must not be scanned for uses of a dependency type")
-    }
+    @Test
+    fun `a nested JDK type is named as written in source, not by its binary name`() =
+        assertDependency("Map.Entry", "Map.".length, "java.util.Map.Entry")
 
     @Test
     fun `a class another workspace file declares keeps the refusal that names the file`() {
