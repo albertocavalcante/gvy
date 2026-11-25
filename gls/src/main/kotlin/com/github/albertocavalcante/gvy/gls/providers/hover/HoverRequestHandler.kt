@@ -45,12 +45,13 @@ internal class HoverRequestHandler(
         if (hasNoCurrentAst(uri, input, acquired)) return null
 
         return compilation.getCompiledSnapshot(uri) ?: input?.let { snapshot ->
-            // Worker selection can invalidate an awaited compilation during initialization.
-            // Compile the captured open buffer directly once rather than returning a missing-cache placeholder.
-            val retried = compilation.compile(uri, snapshot.content)
+            // Startup retires compiles more than once (worker selection, then the workspace model), so a cache
+            // entry written now can be gone again before it is read (#2457). Hover keeps the parse it compiled
+            // for the captured buffer instead of rereading the cache; text without an AST still answers nothing.
+            val parsed = compilation.compileTransient(uri, snapshot.content)
             currentCoroutineContext().ensureActive()
             requireUnchanged(uri, input)
-            if (hasNoCurrentAst(uri, input, retried)) null else compilation.getCompiledSnapshot(uri)
+            parsed.takeIf { it.ast != null }?.let { CompiledDocumentSnapshot(snapshot.content, it) }
         }
     }
 

@@ -94,6 +94,22 @@ class HoverSnapshotTest {
     }
 
     @Test
+    fun `hover answers from its own compile when another invalidation clears the cache again`(): Unit = runBlocking {
+        fixture().use { fixture ->
+            // Startup retires compiles twice in a row, for the worker and then for the workspace model (#2457).
+            // Each cache read here comes right after such a retirement, so the cache never holds the buffer.
+            every { fixture.compilation.getCompiledSnapshot(fixture.uri) } answers {
+                fixture.compilation.clearCaches()
+                callOriginal()
+            }
+
+            val hover = fixture.endpoint.hover(fixture.params()).await()
+
+            assertContains(hover.contents.right.value, "String value()")
+        }
+    }
+
+    @Test
     fun `native hover reads the accepted buffer before debounced compilation`(): Unit = runBlocking {
         fixture(EngineType.Native).use { fixture ->
             fixture.change(CURRENT_SOURCE, 42)
