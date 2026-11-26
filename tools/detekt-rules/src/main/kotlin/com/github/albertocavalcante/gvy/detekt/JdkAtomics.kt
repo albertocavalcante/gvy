@@ -14,7 +14,9 @@ import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtUserType
 
 /**
@@ -48,17 +50,17 @@ internal class JdkAtomics(config: Config = Config.empty) : Rule(config) {
     override fun visitDotQualifiedExpression(expression: KtDotQualifiedExpression) {
         super.visitDotQualifiedExpression(expression)
         val selector = expression.selectorExpression
-        if (selector == null || expression.receiverExpression.text.withoutWhitespace() != PACKAGE) return
+        if (selector == null || expression.receiverExpression.qualifiedName() != PACKAGE) return
         // An import's path is itself a qualified expression; the import directive is reported instead.
         if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
         // Name the type, not the whole call: `AtomicLong`, not `AtomicLong(initial)`.
         val type = (selector as? KtCallExpression)?.calleeExpression ?: selector
-        reportAt(expression, "$PACKAGE.${type.text.withoutWhitespace()}")
+        reportAt(expression, "$PACKAGE.${type.qualifiedName() ?: type.text.filterNot(Char::isWhitespace)}")
     }
 
     override fun visitUserType(type: KtUserType) {
         super.visitUserType(type)
-        if (type.qualifier?.text?.withoutWhitespace() == PACKAGE) reportAt(type, "$PACKAGE.${type.referencedName}")
+        if (type.qualifier?.qualifiedName() == PACKAGE) reportAt(type, "$PACKAGE.${type.referencedName}")
     }
 
     private fun reportAt(element: PsiElement, name: String) {
@@ -74,7 +76,22 @@ internal class JdkAtomics(config: Config = Config.empty) : Rule(config) {
 
     private fun inPackage(name: String): Boolean = name == PACKAGE || name.startsWith("$PACKAGE.")
 
-    private fun String.withoutWhitespace(): String = filterNot(Char::isWhitespace)
+    // Names come from PSI segments, so whitespace, comments and backticks between them do not matter.
+    private fun KtExpression.qualifiedName(): String? = when (this) {
+        is KtNameReferenceExpression -> getReferencedName()
+        is KtDotQualifiedExpression -> {
+            val receiver = receiverExpression.qualifiedName()
+            val selector = selectorExpression?.qualifiedName()
+            if (receiver != null && selector != null) "$receiver.$selector" else null
+        }
+        else -> null
+    }
+
+    private fun KtUserType.qualifiedName(): String? {
+        val name = referencedName ?: return null
+        val outer = qualifier ?: return name
+        return outer.qualifiedName()?.let { "$it.$name" }
+    }
 
     private companion object {
         const val PACKAGE = "java.util.concurrent.atomic"

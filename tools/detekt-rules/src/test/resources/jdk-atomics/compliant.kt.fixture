@@ -13,6 +13,7 @@ class Mentions {
     val text = "java.util.concurrent.atomic.AtomicLong"
     val map = ConcurrentHashMap<String, Int>()
     val unrelated: java.util.concurrent.atomicity.Unrelated? = null
+    val unrelatedCall = java.util.concurrent.atomicity.Unrelated()
 
     /** Replaces [java.util.concurrent.atomic.AtomicLong]: a KDoc link is not a use. */
     val count = 0

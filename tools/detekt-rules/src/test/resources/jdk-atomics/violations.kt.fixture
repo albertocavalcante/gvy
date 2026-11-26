@@ -28,3 +28,9 @@ class Forms {
     val none = emptyList<java.util.concurrent.atomic.AtomicLong>() // FLAG
     val text = "${java.util.concurrent.atomic.AtomicLong()}" // FLAG
 }
+
+class Spellings {
+    val escaped = java.util.concurrent.`atomic`.AtomicLong() // FLAG
+    val commented = java.util.concurrent./* between */atomic.AtomicLong() // FLAG
+    val escapedType: java.util.concurrent.`atomic`.AtomicLong? = null // FLAG
+}
