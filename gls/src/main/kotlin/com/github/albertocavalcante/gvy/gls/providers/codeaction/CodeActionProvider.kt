@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
@@ -12,7 +13,11 @@ import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
 import java.net.URI
+import java.nio.ByteBuffer
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.NotDirectoryException
+import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.Path
 
 /**
@@ -48,43 +53,66 @@ class CodeActionProvider(
      * nested source roots cannot misplace it.
      */
     private fun packageFileSet(path: String, packageName: String): String? {
-        val directory = runCatching { Path.of(path).parent }.getOrNull()?.let(::real) ?: return null
+        val directory = try {
+            Path.of(path).parent?.let(::real)
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return null
         val packagePath = packageName.split('.').filter(String::isNotEmpty)
         val roots = compilationService.workspaceManager.getSourceRoots().map(::real)
-        val directories = (roots.map { root -> packagePath.fold(root) { dir, part -> dir.resolve(part) } } + directory)
+        val directories = (roots.map { root -> packagePath.fold(root) { dir, part -> dir.resolve(part) } } + listOf(directory))
             .map { it.normalize() }
             .distinct()
-        val onDisk = directories.map { listSources(it) ?: return null }.flatten()
+        val onDisk = directories.flatMap(::listSources)
         val open = documentProvider.getAllUris()
-            .mapNotNull { uri -> runCatching { real(Path.of(uri)) }.getOrNull() }
+            .mapNotNull { uri ->
+                try {
+                    real(Path.of(uri))
+                } catch (_: IllegalArgumentException) {
+                    null
+                }
+            }
             .filter { it.parent in directories && isSourceFile(it) }
         return (onDisk + open).map(Path::toString).toSortedSet().joinToString(",")
     }
 
-    /** The source files directly in [directory]; empty when it does not exist, null when it cannot be read. */
-    private fun listSources(directory: Path): List<Path>? = when {
-        !Files.isDirectory(directory) -> emptyList()
-        else -> runCatching {
-            Files.list(directory).use { entries ->
-                entries.filter { Files.isRegularFile(it) && isSourceFile(it) }.map(::real).toList()
-            }
-        }.getOrNull()
+    /** A missing package directory is empty; unexpected filesystem errors reach the query boundary. */
+    private fun listSources(directory: Path): List<Path> = try {
+        Files.list(directory).use { entries ->
+            entries.filter { isSourceFile(it) && Files.readAttributes(it, BasicFileAttributes::class.java).isRegularFile }
+                .map(::real).toList()
+        }
+    } catch (_: NoSuchFileException) {
+        emptyList()
+    } catch (_: NotDirectoryException) {
+        emptyList()
     }
 
-    /** The real path when it exists, else the absolute normalized path, so roots and sources compare alike. */
-    private fun real(path: Path): Path =
-        runCatching { path.toRealPath() }.getOrElse { path.toAbsolutePath().normalize() }
+    private fun real(path: Path): Path = try {
+        path.toRealPath()
+    } catch (_: NoSuchFileException) {
+        path.toAbsolutePath().normalize()
+    }
 
     private fun isSourceFile(path: Path): Boolean =
         path.fileName.toString().let { it.endsWith(".groovy") || it.endsWith(".java") }
 
-    /** A source's current text by normalized path: the open buffer when there is one, else the file. */
+    /** The open text or a bounded disk read; missing and oversized files cannot prove a verdict. */
     private fun currentSourceText(path: String): String? {
-        val file = runCatching { Path.of(path) }.getOrNull() ?: return null
+        val file = try {
+            Path.of(path)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
         documentProvider.getSnapshot(file.toUri())?.let { return it.content }
-        return runCatching {
-            file.takeIf { Files.isRegularFile(it) && Files.size(it) <= MAX_SOURCE_BYTES }?.let(Files::readString)
-        }.getOrNull()
+        return try {
+            val attributes = Files.readAttributes(file, BasicFileAttributes::class.java)
+            if (!attributes.isRegularFile || attributes.size() > MAX_SOURCE_BYTES) return null
+            val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_SOURCE_BYTES + 1) }
+            if (bytes.size > MAX_SOURCE_BYTES) null else Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+        } catch (_: NoSuchFileException) {
+            null
+        }
     }
     private val lintFixAction = LintFixAction()
 
@@ -102,11 +130,32 @@ class CodeActionProvider(
             return emptyList()
         }
 
-        val content = snapshot.content
-        val actions = buildList {
-            addAll(spockActions(uri, params, snapshot))
+        val compiled = compilationService.getCompiledSnapshot(uri)
+        return generateActions(params, snapshot, compiled, supportsAnalysisRemedies())
+    }
 
-            if (supportsAnalysisRemedies()) {
+    internal fun capture(params: CodeActionParams) =
+        CodeActionRequest(params, compilationService, documentProvider, supportsAnalysisRemedies)
+
+    internal suspend fun provideCodeActions(request: CodeActionRequest): List<CodeAction> =
+        request.deliver { document, held ->
+            generateActions(request.params, document, held, request.analysisRemedies, request)
+        }
+
+    private fun generateActions(
+        params: CodeActionParams,
+        snapshot: DocumentSnapshot,
+        compiled: CompiledDocumentSnapshot?,
+        analysisRemedies: Boolean,
+        request: CodeActionRequest? = null,
+    ): List<CodeAction> {
+        val uri = URI.create(params.textDocument.uri)
+        val content = snapshot.content
+        val matching = compiled?.takeIf { it.sourceText == content }
+        val actions = buildList {
+            addAll(spockActions(params, snapshot, matching, request))
+
+            if (analysisRemedies) {
                 addAll(
                     AnalysisRemedyAction.create(
                         params.textDocument.uri,
@@ -121,20 +170,20 @@ class CodeActionProvider(
 
             // Add import actions for missing symbols
             addAll(
-                importAction.createImportActions(
-                    params.textDocument.uri,
-                    params.context.diagnostics,
-                    content,
-                ),
+                if (request == null) {
+                    importAction.createImportActions(params.textDocument.uri, params.context.diagnostics, content)
+                } else {
+                    importAction.createImportActions(params.textDocument.uri, params.context.diagnostics, content, request::findCandidates)
+                },
             )
 
             // Import hygiene: quick fixes for gvy's own unused-import diagnostic, and Organize Imports
             val importRequest = ImportActionRequest(uri, snapshot.version, content, params.context.diagnostics)
             if (allowsKind(CodeActionKind.QuickFix, params.context.only)) {
-                addAll(unusedImportFixAction.createActions(importRequest))
+                matching?.let { addAll(unusedImportFixAction.createActions(importRequest, it.parseResult)) }
             }
             if (allowsKind(CodeActionKind.SourceOrganizeImports, params.context.only)) {
-                organizeImportsAction.createAction(importRequest)?.let(::add)
+                matching?.let { organizeImportsAction.createAction(importRequest, it.parseResult) }?.let(::add)
             }
 
             // Add lint fix actions for deterministic CodeNarc fixes
@@ -152,9 +201,27 @@ class CodeActionProvider(
         return filtered
     }
 
-    private fun spockActions(uri: URI, params: CodeActionParams, snapshot: DocumentSnapshot): List<CodeAction> {
-        val compiled = compilationService.getCompiledSnapshot(uri) ?: return emptyList()
-        if (compiled.sourceText != snapshot.content) return emptyList()
+    private fun spockActions(
+        params: CodeActionParams,
+        snapshot: DocumentSnapshot,
+        compiled: CompiledDocumentSnapshot?,
+        request: CodeActionRequest?,
+    ): List<CodeAction> {
+        compiled ?: return emptyList()
+        val uri = params.textDocument.uri
+        val verdicts = verdictMemory.access(
+            uri,
+            request?.fingerprint ?: compilationService.workspaceManager.fingerprintFor(URI.create(uri)),
+            compiled.parseResult.outcome,
+            readSource = { path ->
+                if (request == null) currentSourceText(path) else request.observe { currentSourceText(path) }
+            },
+            listPackage = { path, name ->
+                if (request == null) packageFileSet(path, name) else request.observe { packageFileSet(path, name) }
+            },
+            compiler = SpockVerdictMemory.Compiler(compiled.referenceProducer, request),
+        )
+        request?.verdicts = verdicts
         return SpockTableAction.createActions(
             SpockTableRequest(
                 params.textDocument.uri,
@@ -164,16 +231,11 @@ class CodeActionProvider(
                 params.context.only,
                 snapshot.version,
                 isPartial = !compiled.parseResult.isSuccessful,
-                verdicts = verdictMemory.access(
-                    params.textDocument.uri,
-                    compilationService.workspaceManager.fingerprintFor(uri),
-                    compiled.parseResult.outcome,
-                    ::currentSourceText,
-                    ::packageFileSet,
-                ),
+                verdicts = verdicts,
+                onSource = { request?.compilerInput(it) },
             ),
         )
     }
 }
 
-private const val MAX_SOURCE_BYTES = 1_000_000L
+private const val MAX_SOURCE_BYTES = 1_000_000

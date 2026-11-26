@@ -10,9 +10,9 @@ import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRuleset
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.compilation.deliverSignatureOrCompletion
 import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.deliverSignatureOrCompletion
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
@@ -44,13 +44,13 @@ import com.github.albertocavalcante.gvy.gls.providers.symbols.flattenOutline
 import com.github.albertocavalcante.gvy.gls.providers.typedefinition.heldTypeDefinitions
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
-import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseMode
 import io.github.oshai.kotlinlogging.KotlinLogging
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -325,13 +325,6 @@ class GroovyTextDocumentService(
         )
     }
 
-    private val semanticTypeResolver by lazy {
-        SemanticTypeResolver(
-            compilationService.classpathService.getTypeSolver(),
-            compilationService.getWorkspaceSymbolIndex(),
-        )
-    }
-
     private val semanticTokensHandler by lazy {
         SemanticTokensHandler(compilationService, documentProvider)
     }
@@ -359,7 +352,12 @@ class GroovyTextDocumentService(
 
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> {
         val captured = runCatching {
-            SignatureCompletionRequest(compilationService, documentProvider, URI.create(params.textDocument.uri), params.position)
+            SignatureCompletionRequest(
+                compilationService,
+                documentProvider,
+                URI.create(params.textDocument.uri),
+                params.position,
+            )
         }
         return coroutineScope.future {
             captured.deliverSignatureOrCompletion { SignatureHelpProvider.provideSignatureHelp(it) }
@@ -461,7 +459,13 @@ class GroovyTextDocumentService(
 
     override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> {
         val captured = runCatching {
-            SignatureCompletionRequest(compilationService, documentProvider, URI.create(params.textDocument.uri), params.position, completion = true)
+            SignatureCompletionRequest(
+                compilationService,
+                documentProvider,
+                URI.create(params.textDocument.uri),
+                params.position,
+                completion = true,
+            )
         }
         val labels = labelDetailsSupport
         val snippets = snippetSupport
@@ -630,18 +634,14 @@ class GroovyTextDocumentService(
         }
     }
 
-    override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> =
-        coroutineScope.future {
-            logger.debug {
-                "Code action requested for ${params.textDocument.uri} at " +
-                    "${params.range.start.line}:${params.range.start.character}"
+    override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> {
+        val request = runCatching { codeActionProvider.capture(params) }
+        return coroutineScope.future {
+            failingAsInternalError("computing code actions") {
+                codeActionProvider.provideCodeActions(request.getOrThrow()).map { Either.forRight<Command, CodeAction>(it) }
             }
-
-            val actions = codeActionProvider.provideCodeActions(params)
-            logger.debug { "Returning ${actions.size} code actions" }
-
-            actions.map { Either.forRight<Command, CodeAction>(it) }
         }
+    }
 
     override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> {
         val request = runCatching {

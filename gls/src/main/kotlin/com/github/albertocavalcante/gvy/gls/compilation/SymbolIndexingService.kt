@@ -64,6 +64,9 @@ class SymbolIndexingService(
 
     /** An index together with the hash of the content it was built from, built before it is committed. */
     internal class Prepared(val contentHash: String, val index: SymbolIndex) {
+        constructor(contentHash: String, astModel: GroovyAstModel) :
+            this(contentHash, SymbolIndex().buildFromVisitor(astModel))
+
         /** Classes this file declares; feeds the class-name lookup (#861). */
         val classes: List<Symbol.Class> by lazy {
             index.getUris().flatMap(index::getSymbols).filterIsInstance<Symbol.Class>()
@@ -84,7 +87,7 @@ class SymbolIndexingService(
     fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
 
     /** Builds the index of [astModel], compiled from [content], without storing it: see [install]. */
-    internal fun prepare(content: String, astModel: GroovyAstModel): Prepared = build(contentHash(content), astModel)
+    internal fun prepare(content: String, astModel: GroovyAstModel): Prepared = Prepared(contentHash(content), astModel)
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
@@ -115,7 +118,7 @@ class SymbolIndexingService(
             return stored.index.takeIf { ownership.isCurrent(ticket) }
         }
         val astModel = astModelProvider() ?: return null
-        val prepared = build(hash, astModel)
+        val prepared = Prepared(hash, astModel)
         return prepared.index.takeIf { ownership.commit(ticket) { install(ticket.uri, prepared) } }
     }
 
@@ -252,9 +255,6 @@ class SymbolIndexingService(
 
     // Private helper methods
 
-    private fun build(contentHash: String, astModel: GroovyAstModel) =
-        Prepared(contentHash, SymbolIndex().buildFromVisitor(astModel))
-
     /**
      * Applies a disk-derived [write] while [ticket] is current and no buffer is open, checked under the same
      * fence that a reopen advances through: it never replaces or removes an open buffer's facts.
@@ -299,7 +299,7 @@ class SymbolIndexingService(
         )
 
         // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
-        val prepared = build(hash, parseResult.astModel)
+        val prepared = Prepared(hash, parseResult.astModel)
         if (commitFromDisk(ticket) { install(uri, prepared) }) {
             logger.debug { "Indexed workspace file: $uri" }
             prepared.index

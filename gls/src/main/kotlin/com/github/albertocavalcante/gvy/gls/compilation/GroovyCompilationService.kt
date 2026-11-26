@@ -203,6 +203,10 @@ class GroovyCompilationService internal constructor(
         requestCurrent: () -> Boolean,
     ): SourceAcquisition = orchestrator.snapshots.acquireHover(source, Phases.CANONICALIZATION, requestCurrent)
 
+    /** Retain the original producer through qualification and publication of derived editor state. */
+    internal suspend fun acquireEditorSnapshot(source: SnapshotSource): SnapshotAcquisition =
+        orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, null)
+
     internal suspend fun <T> queryCapturedSnapshot(
         source: SnapshotSource,
         phase: Int,

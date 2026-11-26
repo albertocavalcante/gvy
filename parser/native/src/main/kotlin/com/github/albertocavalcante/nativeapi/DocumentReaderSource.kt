@@ -11,7 +11,7 @@ import org.codehaus.groovy.control.io.URLReaderSource
 import java.net.URI
 
 /** Preserve the input URI independently of Groovy's source name and data URI. */
-internal class DocumentReaderSource(val documentUri: URI, text: String, configuration: CompilerConfiguration) :
+internal class DocumentReaderSource(val documentUri: URI, val text: String, configuration: CompilerConfiguration) :
     StringReaderSource(text, configuration)
 
 /** Original editor URI or file input selected by this compiler. Synthetic stubs have no document. */

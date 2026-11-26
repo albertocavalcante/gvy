@@ -3,8 +3,11 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
+import com.github.albertocavalcante.gvy.gls.compilation.ReferenceProducer
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
+import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
+import com.github.albertocavalcante.nativeapi.NativeSourceMembership
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import groovyjarjarantlr4.v4.runtime.CharStreams
 import groovyjarjarantlr4.v4.runtime.Token
@@ -49,10 +52,8 @@ import java.util.IdentityHashMap
  *
  * Known limits: the recalled verdict assumes the broken base still extends what its prelude says, so an edit
  * that changes spec identity outside the prelude, for example through a base's own base in a jar, is not
- * seen until the base compiles again. The compile result does not keep other sources' text, so the base is
- * read when the record is written rather than when it was compiled; a prelude whose `extends` disagrees
- * with the compiled AST is not recorded (and so denies), but an edit elsewhere in the prelude between the
- * compile and the record is hashed as if compiled. When a base's file stops lexing after the base's header,
+ * seen until the base compiles again. A remote prelude is recorded only when its text matches the physical
+ * source read by the compiler. When a base's file stops lexing after the base's header,
  * only the class names before that point are known: a class added after the lex error, say one shadowing
  * `Specification`, cannot deny reuse until the file lexes again, so the recall may disagree with what the
  * fixed file will mean. Written names compare with `$` unified to `.`, so a top-level class literally named
@@ -79,6 +80,9 @@ internal class SpockVerdictMemory {
 
     private class Record(
         val fingerprint: String,
+        val environment: ReferenceProducer?,
+        val membership: NativeSourceMembership?,
+        val wireQualified: Boolean,
         val module: WeakReference<ModuleNode>,
         val classes: Map<String, Remembered>,
     )
@@ -87,6 +91,8 @@ internal class SpockVerdictMemory {
     private val lock = Any()
     private val records = HashMap<String, Record>()
     private val epochs = HashMap<String, Long>()
+
+    class Compiler(val producer: ReferenceProducer?, val wire: CodeActionRequest?)
 
     /**
      * Starts one request for [uri]. By a source's normalized path, [readSource] reads its current text and
@@ -99,7 +105,10 @@ internal class SpockVerdictMemory {
         outcome: ParseOutcome,
         readSource: (String) -> String?,
         listPackage: (source: String, packageName: String) -> String?,
-    ): Access = Access(uri, fingerprint, outcome, readSource, listPackage, synchronized(lock) { epochs[uri] ?: 0L })
+        compiler: Compiler = Compiler(null, null),
+    ): Access = synchronized(lock) {
+        Access(uri, fingerprint, outcome, readSource, listPackage, epochs[uri] ?: 0L, compiler)
+    }
 
     fun forget(uri: String) {
         synchronized(lock) {
@@ -116,19 +125,39 @@ internal class SpockVerdictMemory {
         private val readSource: (String) -> String?,
         private val listPackage: (source: String, packageName: String) -> String?,
         private val epoch: Long,
+        private val compiler: Compiler,
     ) {
+        // Access is created under lock, so the epoch and the record belong to one observation.
+        private val observed = records[uri]
+        private var consulted = false
+        private var pending: Record? = null
+
+        /** Compare the exact record read by this request before publishing its qualified replacement. */
+        fun commit(): Boolean = synchronized(lock) {
+            if (!consulted) return@synchronized true
+            if ((epochs[uri] ?: 0L) != epoch) return@synchronized false
+            if (records[uri] !== observed) {
+                // Clean verdicts use only the current AST. Keep the winner's record. A degraded
+                // answer depends on the particular historical record it observed (including an absence).
+                return@synchronized !isDegraded(outcome)
+            }
+            pending?.let { records[uri] = it }
+            true
+        }
+
         /**
          * A clean compile refreshes the record and recalls nothing. A degraded compile returns the names of
          * UNCERTAIN classes whose remembered SPECIFICATION still applies (see the class docs).
          */
         fun exchange(module: ModuleNode, source: SpockSourceContext.Available): Set<String> {
+            consulted = true
             if (!isDegraded(outcome)) {
                 refresh(module, source)
                 return emptySet()
             }
-            val record = synchronized(lock) { records[uri] }
-            if (record == null || record.fingerprint != fingerprint) {
-                decide { if (record == null) "no record" else "fingerprint changed" }
+            val record = observed
+            if (record == null || !sameEnvironment(record) || !matchesMembership(record)) {
+                decide { if (record == null) "no record" else "compiler environment changed" }
                 return emptySet()
             }
             val imports = importsOf(module)
@@ -170,8 +199,8 @@ internal class SpockVerdictMemory {
         }
 
         private fun refresh(module: ModuleNode, source: SpockSourceContext.Available) {
-            val current = synchronized(lock) { records[uri] }
-            if (current?.fingerprint == fingerprint && current.module.get() === module) return
+            val current = observed
+            if (current != null && sameEnvironment(current) && current.module.get() === module) return
             val imports = importsOf(module)
             val classes = source.classes.filter { it.status == SpecificationStatus.SPECIFICATION }
                 .associate { context ->
@@ -179,9 +208,22 @@ internal class SpockVerdictMemory {
                     context.classNode.name to
                         Remembered(declaration(context.classNode, imports), chain.bases, chain.jvm)
                 }
-            synchronized(lock) {
-                if ((epochs[uri] ?: 0L) == epoch) records[uri] = Record(fingerprint, WeakReference(module), classes)
-            }
+            pending = Record(
+                fingerprint, compiler.producer?.environment(), compiler.wire?.consultedMembership,
+                compiler.wire != null, WeakReference(module), classes,
+            )
+            if (compiler.wire == null) commit()
+        }
+
+        private fun sameEnvironment(record: Record): Boolean {
+            if (record.fingerprint != fingerprint || (compiler.wire != null && !record.wireQualified)) return false
+            val producer = compiler.producer ?: return compiler.wire == null && record.environment == null
+            return producer.sameEnvironment(record.environment)
+        }
+
+        private fun matchesMembership(record: Record): Boolean {
+            val wire = compiler.wire ?: return true
+            return record.membership?.let(wire::canRecall) ?: true
         }
 
         private fun sameBaseDegraded(remembered: Remembered): Boolean {
@@ -234,12 +276,15 @@ internal class SpockVerdictMemory {
                         link = link.superClass?.redirect()
                     }
                     else -> {
-                        val sourceKey = link.module?.context?.name?.let(::sourceKey)
-                        // The text is read now, not when the compile ran: keep it only if its `extends` still
-                        // names the superclass this compile saw, so an edit in between cannot be hashed in.
+                        val owner = link.module
+                        val input = owner?.let { compiler.wire?.compilerInput(it) ?: CompiledDocumentInput.of(it) }
+                        val sourceKey = input?.uri?.toString()?.let(::sourceKey)
+                            ?: owner?.context?.name?.let(::sourceKey)
+                        val name = link.name
                         val written = link.getUnresolvedSuperClass(false)?.unresolvedName
-                        val prelude = sourceKey?.let(readSource)?.let { preludeOf(it, link.name) }
-                            ?.takeIf { it.extendsMatches(written) }?.hash
+                        val text = sourceKey?.let(readSource)
+                        val prelude = text?.takeIf { input?.matchesText(it) == true }
+                            ?.let { preludeOf(it, name) }?.takeIf { it.extendsMatches(written) }?.hash
                         val packageName = link.packageName.orEmpty()
                         val files = sourceKey?.let { listPackage(it, packageName) }
                         bases += Base(sourceKey, link.name, prelude, files, null, packageName)

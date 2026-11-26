@@ -35,20 +35,38 @@ class CompletionGdkSnapshotControlTest {
                 override fun parse(request: ParseRequest): ParseResult = delegate.parse(request).also { result ->
                     val literal = result.astModel.getNodes(uri).filterIsInstance<ConstantExpression>()
                         .singleOrNull { it.value == "hello" }
-                    selectedString.set(request.compilePhase == Phases.CANONICALIZATION &&
-                        literal?.type?.redirect()?.let { it.isResolved && !it.isPrimaryClassNode && it.name == "java.lang.String" } == true)
+                    selectedString.set(
+                        request.compilePhase == Phases.CANONICALIZATION &&
+                            literal?.type?.redirect()?.let {
+                                it.isResolved && !it.isPrimaryClassNode &&
+                                    it.name == "java.lang.String"
+                            } ==
+                            true,
+                    )
                 }
             }
         })
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         try {
             val service = GroovyTextDocumentService(scope, compilation)
-            val answer = service.completion(CompletionParams(TextDocumentIdentifier(uri.toString()), Position(0, text.length))).await()
+            val answer = service.completion(
+                CompletionParams(TextDocumentIdentifier(uri.toString()), Position(0, text.length)),
+            ).await()
             assertTrue(selectedString.get(), "literal in the actual dummy parse must bind java.lang.String")
             val items = if (answer.isLeft) answer.left else answer.right.items
             val overloads = items.filter { it.label == "center" }.map { it.detail }
-            assertTrue(overloads.any { it?.contains("Number") == true && !it.contains(",") }, "missing one-argument center: $overloads")
-            assertTrue(overloads.any { it?.contains("Number") == true && it.contains(",") }, "missing padded center: $overloads")
+            assertTrue(
+                overloads.any {
+                    it?.contains("Number") == true && !it.contains(",")
+                },
+                "missing one-argument center: $overloads",
+            )
+            assertTrue(
+                overloads.any {
+                    it?.contains("Number") == true && it.contains(",")
+                },
+                "missing padded center: $overloads",
+            )
         } finally {
             scope.cancel()
             compilation.shutdown()

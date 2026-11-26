@@ -16,6 +16,8 @@ import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
+import com.github.albertocavalcante.nativeapi.NativeSourceMembership
 import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import com.github.albertocavalcante.nativeapi.ExcludedSource
 import com.github.albertocavalcante.nativeapi.Fallback
@@ -566,7 +568,16 @@ class GroovyParserFacade internal constructor(
                 lookup.buffers,
             )
 
-            val failure = compileCatching(compilationUnit, request)
+            classLoader.beginSourceSearch(request.sourceRoots)
+            val failure = try {
+                compileCatching(compilationUnit, request)
+            } finally {
+                classLoader.finishSourceSearch()?.let { membership ->
+                    compilationUnit.ast.modules.forEach { module ->
+                        module.putNodeMetaData(NativeSourceMembership::class.java, membership)
+                    }
+                }
+            }
             observeCompilation?.invoke(compilationUnit)
             lookup.onCompileFailure(failure)
             val compilationFailed = failure != null
@@ -673,6 +684,7 @@ class GroovyParserFacade internal constructor(
             CompilerConfiguration.GROOVYDOC to true,
         )
         sourceEncoding = "UTF-8"
+        pluginFactory = CompiledDocumentInput.capture(pluginFactory)
 
         // Scan and disable external AST transformations to prevent classloader conflicts
         val externalTransforms = scanForAstTransformations(classpath)
