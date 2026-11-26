@@ -28,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import java.io.IOException
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Collections
@@ -151,15 +152,7 @@ class HoverTokensDeliveryFailureTest {
         val model = manager.current()
         val fingerprint = model.fingerprint
         try {
-            val outcome = runCatching {
-                if (endpoint == "hover") {
-                    HoverRequestHandler(service, docs).getHover(
-                        HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, 1)),
-                    )
-                } else {
-                    SemanticTokensHandler(service, docs).getSemanticTokens(uri)
-                }
-            }
+            val outcome = deliveryAttempt(endpoint, service, docs, uri)
             assertTrue(read.get() && qualified.get(), "Compiler qualification must follow vars consumption")
             assertEquals(1, changes.get(), "The final vars read must switch classpath exactly once")
             assertEquals(listOf(listOf(classpathA)), requests)
@@ -170,6 +163,21 @@ class HoverTokensDeliveryFailureTest {
             assertEquals(ResponseErrorCode.ContentModified.value, failure.responseError.code)
         } finally {
             service.shutdown()
+        }
+    }
+
+    private suspend fun deliveryAttempt(
+        endpoint: String,
+        service: GroovyCompilationService,
+        docs: DocumentProvider,
+        uri: URI,
+    ): Result<Any?> = runCatching {
+        if (endpoint == "hover") {
+            HoverRequestHandler(service, docs).getHover(
+                HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, 1)),
+            )
+        } else {
+            SemanticTokensHandler(service, docs).getSemanticTokens(uri)
         }
     }
 

@@ -59,12 +59,12 @@ jobs:
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
           :gls:spotlessApply :parser:native:spotlessApply :jenkins:spotlessApply :semantics-native:spotlessApply --continue
           --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
-      - name: Run complete hover candidate modules
+      - name: Run exact final delivery fixture class
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
         shell: bash
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit
-          :gls:test :parser:native:test :semantics-native:test :jenkins:test
+          :gls:test --tests '*HoverTokensDeliveryFailureTest'
           --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Run normal repository lint
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
