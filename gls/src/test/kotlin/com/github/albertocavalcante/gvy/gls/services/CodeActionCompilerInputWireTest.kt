@@ -73,7 +73,8 @@ class CodeActionCompilerInputWireTest {
             assertEquals(project.next, held.sourceText)
             val owner = assertNotNull(held.parseResult.ast?.classes?.singleOrNull { it.name == "TableSpec" })
             assertEquals("spock.lang.Specification", owner.superClass.redirect().superClass.redirect().name)
-            val failure = assertThrows<ExecutionException> { service.codeAction(project.params).get(10, TimeUnit.SECONDS) }
+            val failure =
+                assertThrows<ExecutionException> { service.codeAction(project.params).get(10, TimeUnit.SECONDS) }
             assertEquals(
                 ResponseErrorCode.ContentModified.value,
                 assertIs<ResponseErrorException>(failure.cause).responseError.code,

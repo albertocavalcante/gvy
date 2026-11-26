@@ -25,8 +25,8 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.future.await
@@ -64,7 +64,8 @@ class AstRequestHandlerTest {
     private val nativeConverter = mockk<NativeAstConverter>()
     private val documents = DocumentProvider()
     private val worker = mockk<WorkerSession>()
-    private val compilationService = GroovyCompilationService(documentProvider = documents, workerSessionDecorator = { worker })
+    private val compilationService =
+        GroovyCompilationService(documentProvider = documents, workerSessionDecorator = { worker })
 
     @AfterEach
     fun closeCompiler() {

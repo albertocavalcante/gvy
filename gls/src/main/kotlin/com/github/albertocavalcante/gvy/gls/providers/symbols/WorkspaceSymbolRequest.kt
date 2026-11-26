@@ -66,7 +66,9 @@ internal class WorkspaceSymbolRequest(
         if (!deliveryInputsCurrent(::identitiesCurrent) {
                 checks.all { it() } && hidden == index.hiddenRows()
             }
-        ) changed()
+        ) {
+            changed()
+        }
         return result.getOrThrow()
     }
 

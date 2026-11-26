@@ -45,13 +45,17 @@ class CodeActionSpockInputsWireTest {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val pause = AtomicBoolean(false)
-        val service = project.service(scope, compilation, Formatter { text ->
-            if (pause.get()) {
-                entered.countDown()
-                check(release.await(10, TimeUnit.SECONDS))
-            }
-            text
-        })
+        val service = project.service(
+            scope,
+            compilation,
+            Formatter { text ->
+                if (pause.get()) {
+                    entered.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                }
+                text
+            },
+        )
         try {
             project.open(compilation)
             val compiled = assertNotNull(compilation.getCompiledSnapshot(uri))

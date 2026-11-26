@@ -40,7 +40,8 @@ class ParseResultAccessorTest {
     @BeforeTest
     fun setup() {
         cacheService = mockk(relaxed = true)
-        workerSessionManager = mockk<WorkerSessionManager>(relaxed = true).apply { delegateCapturedSessionToParseStub() }
+        workerSessionManager =
+            mockk<WorkerSessionManager>(relaxed = true).apply { delegateCapturedSessionToParseStub() }
         workspaceManager = mockk(relaxed = true)
         symbolIndexer = mockk(relaxed = true)
 

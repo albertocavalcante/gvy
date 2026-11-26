@@ -12,10 +12,10 @@ import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
-import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
-import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.deliverSignatureOrCompletion
+import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
+import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
@@ -50,8 +50,8 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
-import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseMode
@@ -469,7 +469,9 @@ class GroovyTextDocumentService(
                 val extras = service.collectCliDiagnostics(uri, content, parsed)
                 if (!deliveryInputsCurrent(::current, ruleInputs::isCurrent)) changed()
                 val failures = consolidateProviderFailures(emptyList(), extras.failures)
-                (parserDiagnostics + extras.diagnostics + failures).take(configuration.maxNumberOfProblems.coerceAtLeast(0))
+                (parserDiagnostics + extras.diagnostics + failures).take(
+                    configuration.maxNumberOfProblems.coerceAtLeast(0),
+                )
             }
         }
         if (!currentCoroutineContext().inputsCurrent(::current)) changed()
@@ -632,36 +634,35 @@ class GroovyTextDocumentService(
     }
 
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun renameResult(operation: suspend () -> WorkspaceEdit): WorkspaceEdit =
-        try {
-            operation()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: RenameRefusedException) {
-            logger.info { "Rename refused: ${e.message}" }
-            throw e
-        } catch (e: ResponseErrorException) {
-            logger.error { "Rename failed: ${e.message}" }
-            throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments for rename" }
-            throw ResponseErrorException(
-                ResponseError(
-                    ResponseErrorCode.InvalidParams,
-                    e.message ?: "Invalid arguments for rename",
-                    null,
-                ),
-            )
-        } catch (e: Exception) {
-            logger.error(e) { "Unexpected error during rename" }
-            throw ResponseErrorException(
-                ResponseError(
-                    ResponseErrorCode.InternalError,
-                    e.message ?: "Unexpected error during rename",
-                    null,
-                ),
-            )
-        }
+    private suspend fun renameResult(operation: suspend () -> WorkspaceEdit): WorkspaceEdit = try {
+        operation()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: RenameRefusedException) {
+        logger.info { "Rename refused: ${e.message}" }
+        throw e
+    } catch (e: ResponseErrorException) {
+        logger.error { "Rename failed: ${e.message}" }
+        throw e
+    } catch (e: IllegalArgumentException) {
+        logger.error(e) { "Invalid arguments for rename" }
+        throw ResponseErrorException(
+            ResponseError(
+                ResponseErrorCode.InvalidParams,
+                e.message ?: "Invalid arguments for rename",
+                null,
+            ),
+        )
+    } catch (e: Exception) {
+        logger.error(e) { "Unexpected error during rename" }
+        throw ResponseErrorException(
+            ResponseError(
+                ResponseErrorCode.InternalError,
+                e.message ?: "Unexpected error during rename",
+                null,
+            ),
+        )
+    }
 
     override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> {
         val request = runCatching { codeActionProvider.capture(params) }

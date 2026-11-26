@@ -55,7 +55,12 @@ class WorkspaceSymbolDeliveryTest {
         val documents = DocumentProvider()
         val compilation = GroovyCompilationService(documentProvider = documents)
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val text = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = documents))
+        val text =
+            GroovyTextDocumentService(
+                scope,
+                compilation,
+                GroovyTextDocumentServiceOptions(documentProvider = documents),
+            )
         val workspace = GroovyWorkspaceService(compilation, compilation.symbolIndexingService, scope, text)
         val projected = CompletableFuture<SymbolInformation>()
         val release = CountDownLatch(1)
@@ -88,7 +93,10 @@ class WorkspaceSymbolDeliveryTest {
                             assertTrue(original !== documents.getSnapshot(uri))
                         }
                         Finish.INDEX_PUBLICATION -> {
-                            val file = Files.writeString(root.resolve("Other.groovy"), "class Other { void uniqueMethod() {} }")
+                            val file = Files.writeString(
+                                root.resolve("Other.groovy"),
+                                "class Other { void uniqueMethod() {} }",
+                            )
                             assertNotNull(runBlocking { compilation.symbolIndexingService.indexFile(file.toUri()) })
                         }
                         Finish.CLASSPATH -> {
@@ -107,7 +115,10 @@ class WorkspaceSymbolDeliveryTest {
                     assertEquals(expected, result.location.range)
                 } else {
                     val failure = assertFailsWith<ExecutionException> { pending.get(30, TimeUnit.SECONDS) }
-                    assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(failure.cause).responseError.code)
+                    assertEquals(
+                        ResponseErrorCode.ContentModified.value,
+                        assertIs<ResponseErrorException>(failure.cause).responseError.code,
+                    )
                 }
             }
         } finally {

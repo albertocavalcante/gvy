@@ -134,12 +134,16 @@ private object AstFinish {
         AstProducerRetirementTest.Finish.CURRENT -> suspend {
             val response = pending.await()
             val dto = Json.decodeFromString<AstNodeDto>(response.ast)
-            assertTrue(dto.children.single { it.properties["name"] == "Inspection" }
-                .children.any { it.properties["name"] == "currentName" })
+            assertTrue(
+                dto.children.single { it.properties["name"] == "Inspection" }
+                    .children.any { it.properties["name"] == "currentName" },
+            )
             assertEquals(contentHash, response.sourceHash)
             assertEquals(7, response.documentVersion)
         }
-        AstProducerRetirementTest.Finish.CANCELLED -> suspend { assertFailsWith<CancellationException> { pending.await() } }
+        AstProducerRetirementTest.Finish.CANCELLED -> suspend {
+            assertFailsWith<CancellationException> { pending.await() }
+        }
         else -> suspend {
             val stale = assertFailsWith<ResponseErrorException> { pending.await() }
             assertEquals(ResponseErrorCode.ContentModified.value, stale.responseError.code)

@@ -41,7 +41,8 @@ class SymbolIndexingServiceTest {
 
     @BeforeTest
     fun setup() {
-        workerSessionManager = mockk<WorkerSessionManager>(relaxed = true).apply { delegateCapturedSessionToParseStub() }
+        workerSessionManager =
+            mockk<WorkerSessionManager>(relaxed = true).apply { delegateCapturedSessionToParseStub() }
         workspaceManager = mockk(relaxed = true)
 
         // Default mocking for workspace manager

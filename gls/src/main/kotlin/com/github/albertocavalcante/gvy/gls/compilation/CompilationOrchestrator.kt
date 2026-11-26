@@ -207,7 +207,8 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
                     // Semantics follow the symbol commit: published only when this ticket's index is current
                     val inputs = cached.symbolInputs
-                    val indexed = symbolIndexer.ensureIndexed(claim.ticket, content, inputs) { cachedResult.astModel } != null
+                    val indexed =
+                        symbolIndexer.ensureIndexed(claim.ticket, content, inputs) { cachedResult.astModel } != null
                     cachedResult.ast?.takeIf { indexed }?.let {
                         publication?.let { token ->
                             semanticIndexer?.publish(

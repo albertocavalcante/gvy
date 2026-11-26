@@ -427,8 +427,10 @@ internal class SnapshotAcquirer(
         if (!capture.isCurrent()) return Resolution(checked(SnapshotAcquisition.Stale))
         val previous = cache.getOwned(capture.uri)
         if (previous != null && capture.canShare(previous.capture) &&
-            (!checkCachedInputs || RequestParseInputs(previous.snapshot.parseResult)
-                .isCurrent(capture.source, capture.content, caller::ensureActive))
+            (
+                !checkCachedInputs || RequestParseInputs(previous.snapshot.parseResult)
+                    .isCurrent(capture.source, capture.content, caller::ensureActive)
+                )
         ) {
             val outcome = previous.outcome()
             val answer = checked(if (capture.isCurrent()) outcome else SnapshotAcquisition.Stale)
