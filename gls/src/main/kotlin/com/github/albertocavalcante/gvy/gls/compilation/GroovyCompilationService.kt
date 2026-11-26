@@ -271,28 +271,43 @@ class GroovyCompilationService internal constructor(
     }
 
     /** Compute suites against the current source. Only compiler and index work is shared across requests. */
-    internal suspend fun <T> queryUncachedTestDiscovery(uri: URI, extract: (ParseResult) -> T): T? {
+    internal suspend fun <T> queryUncachedTestDiscovery(uri: URI, extract: (ParseResult) -> T): SnapshotQuery<T?> {
         val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
         return publication.use {
             val source = orchestrator.snapshots.capture(uri, ticket)
             val acquired = orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, ParseMode.WORKSPACE) {
                 logger.warn(it) { "Failed to read $uri for test discovery" }
             }
-            if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
-            if (acquired !is SnapshotAcquisition.Available) return null
-            val result = acquired.query { snapshot ->
-                val structure = discoveryStructure(source, snapshot) ?: return@query null
-                if (!currentCoroutineContext().inputsCurrent(acquired.isCurrent)) return@query null
-                if (snapshot.parseResult.ast != null) {
-                    publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+            when (acquired) {
+                is SnapshotAcquisition.Available -> queryPreparedDiscovery(source, publication, acquired, extract)
+                SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+                SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+                is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
+            }
+        }
+    }
+
+    private suspend fun <T> queryPreparedDiscovery(
+        source: SnapshotSource,
+        publication: SemanticIndexer.Publication,
+        acquired: SnapshotAcquisition.Available,
+        extract: (ParseResult) -> T,
+    ): SnapshotQuery<T?> {
+        val prepared = acquired.query { snapshot -> discoveryStructure(source, snapshot) }
+        return when (prepared) {
+            is SnapshotQuery.Answer -> {
+                // A shared job can be detached even if its requesting source has not changed.
+                val structure = prepared.value ?: return SnapshotQuery.Stale
+                acquired.query { snapshot ->
+                    if (snapshot.parseResult.ast != null) {
+                        publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                    }
+                    structure.parsed?.let(extract)
                 }
-                structure.parsed?.let(extract)
             }
-            when (result) {
-                is SnapshotQuery.Answer -> result.value
-                is SnapshotQuery.Failure -> throw result.cause
-                SnapshotQuery.Missing, SnapshotQuery.Stale -> null
-            }
+            SnapshotQuery.Missing -> SnapshotQuery.Missing
+            SnapshotQuery.Stale -> SnapshotQuery.Stale
+            is SnapshotQuery.Failure -> prepared
         }
     }
 

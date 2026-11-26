@@ -4,10 +4,14 @@
 package com.github.albertocavalcante.gvy.gls.providers.testing
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.testing.api.TestItemKind
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
 
 /**
@@ -58,8 +62,17 @@ class TestDiscoveryProvider(
         return testSuites
     }
 
-    private suspend fun discoverTestsForFile(uri: URI): List<TestSuite> =
-        compilationService.queryUncachedTestDiscovery(uri) { parsed -> extractSuites(uri, parsed) }.orEmpty()
+    private suspend fun discoverTestsForFile(uri: URI): List<TestSuite> {
+        val result = compilationService.queryUncachedTestDiscovery(uri) { parsed -> extractSuites(uri, parsed) }
+        return when (result) {
+            is SnapshotQuery.Answer -> result.value.orEmpty()
+            SnapshotQuery.Missing -> emptyList()
+            SnapshotQuery.Stale -> throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.ContentModified, "Inputs changed during test discovery for $uri", null),
+            )
+            is SnapshotQuery.Failure -> throw result.cause
+        }
+    }
 
     private fun extractSuites(uri: URI, parseResult: ParseResult): List<TestSuite> {
         val ast = parseResult.ast
