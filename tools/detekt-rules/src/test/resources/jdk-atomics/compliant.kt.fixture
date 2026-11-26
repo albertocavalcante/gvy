@@ -1,0 +1,22 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing here may be reported.
+package fixtures
+
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomicity.Unrelated
+import kotlin.concurrent.atomics.AtomicInt
+
+/** Mentions of java.util.concurrent.atomic.AtomicBoolean in KDoc are not uses. */
+class Mentions {
+    // java.util.concurrent.atomic.AtomicLong in a line comment
+    val text = "java.util.concurrent.atomic.AtomicLong"
+    val map = ConcurrentHashMap<String, Int>()
+    val unrelated: java.util.concurrent.atomicity.Unrelated? = null
+}
+
+class Suppressed {
+    // A field updater needs the JDK type itself.
+    @Suppress("JdkAtomics")
+    val updater = java.util.concurrent.atomic.AtomicIntegerFieldUpdater.newUpdater(Suppressed::class.java, "count")
+}

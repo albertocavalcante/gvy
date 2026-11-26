@@ -118,8 +118,8 @@ State that several threads read and write needs a primitive that says what it is
 - Do not add `@Volatile` fields. They make single reads and writes visible, but not `x++`, check-then-act or a read of
   two related fields. detekt's `VolatileProperty` rule reports them (#2474).
 - Use `kotlin.concurrent.atomics` only inside `:common:concurrent`; detekt's `ForbiddenImport` enforces this. The API is
-  experimental, and confining it keeps an upstream change to one module. Prefer the gvy types over
-  `java.util.concurrent.atomic` in new code too.
+  experimental, and confining it keeps an upstream change to one module. Use the gvy types rather than
+  `java.util.concurrent.atomic` too; detekt's `JdkAtomics` rule reports it outside tests.
 - Modules published on their own, without other gvy modules (`bsp/bsp-core`, `bsp/maven-bsp`), use
   `java.util.concurrent.atomic` instead, so their published dependencies do not include an unpublished module.
 - `SharedValue.update` can run its transform more than once under contention, so the transform must not have side

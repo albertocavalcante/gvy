@@ -1,0 +1,16 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import java.util.concurrent.atomic.AtomicBoolean // FLAG
+import java.util.concurrent.atomic.AtomicReference as Ref // FLAG
+import java.util.concurrent.atomic.* // FLAG
+
+class Qualified {
+    val counter = java.util.concurrent.atomic.AtomicLong() // FLAG
+    val holder: java.util.concurrent.atomic.AtomicInteger? = null // FLAG
+    fun next(): Long = java.util.concurrent.atomic.AtomicLong(1).incrementAndGet() // FLAG
+}
+
+fun typed(flags: List<java.util.concurrent.atomic.AtomicBoolean>) = flags.size // FLAG

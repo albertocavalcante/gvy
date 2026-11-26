@@ -124,6 +124,28 @@ gvy:
     active: true
     # Every linted module is guarded; no module is excluded (#2474). Kotlin outside src/main and src/test, such as
     # tests/e2e, is not linted unless its module sets detekt.source (#2480).
+  JdkAtomics:
+    active: true
+    excludes:
+    # Permanent: tests, the facade itself, and modules published on their own, which must not depend on the unpublished
+    # :common:concurrent. tools/ci/detekt-ratchet-excludes.test.mjs knows these patterns.
+    - '**/src/test/**'
+    - '**/src/jvmTest/**'
+    - '**/src/commonTest/**'
+    - '**/src/jmh/**'
+    - '**/common/concurrent/**'
+    - '**/bsp/**'
+    - '**/parser/core/**'
+    # Modules still to migrate (#2474). Remove a line in the pull request that migrates that module; the guard test
+    # fails on a line whose module no longer uses java.util.concurrent.atomic in its main sources.
+    - '**/build-tool/src/**'
+    - '**/ext/testing/src/**'
+    - '**/fmt/src/**'
+    - '**/gls/src/**'
+    - '**/indexer/lsif/src/**'
+    - '**/jenkins/src/**'
+    - '**/semantics/core/src/**'
+    - '**/viz/desktop/src/**'
 naming:
   active: true
   ClassNaming:

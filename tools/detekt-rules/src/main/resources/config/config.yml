@@ -9,3 +9,5 @@ gvy:
     active: true
   VolatileProperty:
     active: true
+  JdkAtomics:
+    active: true
