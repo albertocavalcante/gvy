@@ -57,7 +57,7 @@ testing {
 
             sources {
                 kotlin {
-                    setSrcDirs(listOf("e2e/kotlin", "lsp-client/kotlin"))
+                    setSrcDirs(listOf("e2e/kotlin", "lsp-client/kotlin", "shadow-e2e/kotlin"))
                 }
                 resources {
                     setSrcDirs(listOf("e2e/resources", "lsp-client/resources"))

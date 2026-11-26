@@ -1404,3 +1404,5 @@ tasks.register<SmokeShadowJarTask>("smokeProguardJar") {
     jarFile.set(proguardOutJar)
     smokeDir.set(layout.buildDirectory.dir("tmp/smoke-proguard"))
 }
+
+apply(from = rootProject.file("gradle/packaged-groovy-sdk.gradle.kts"))
