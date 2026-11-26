@@ -24,6 +24,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseMode
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -258,16 +259,56 @@ class GroovyCompilationService internal constructor(
             if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
             if (acquired !is SnapshotAcquisition.Ready) return
             acquired.query { snapshot ->
-                val parsed = snapshot.parseResult
-                semanticIndexer.publish(
-                    publication,
-                    snapshot.sourceText,
-                    checkNotNull(parsed.ast),
-                    parsed.outcome.achievedPhase,
-                    SemanticPublicationSource(fromBuffer = false, producer = checkNotNull(snapshot.referenceProducer)),
-                )
+                publishSnapshot(publication, snapshot, fromBuffer = false)
             }
         }
+    }
+
+    /** Discover from the exact open buffer or disk read whose original compiler also supplies the index. */
+    internal suspend fun <T> queryUncachedTestDiscovery(uri: URI, extract: (ParseResult) -> T): T? {
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
+        return publication.use {
+            val source = orchestrator.snapshots.capture(uri, ticket)
+            val acquired = orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, ParseMode.WORKSPACE) {
+                logger.warn(it) { "Failed to read $uri for test discovery" }
+            }
+            if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
+            if (acquired !is SnapshotAcquisition.Available) return null
+            val result = acquired.query { snapshot ->
+                val parsed = snapshot.parseResult
+                if (parsed.ast != null) {
+                    symbolIndexer.ensureIndexed(ticket, snapshot.sourceText) { parsed.astModel }
+                    publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                }
+                if (parseAccessor.isSuspiciousScript(uri, parsed)) {
+                    val classpath = workspaceManager.getClasspathForFile(uri, snapshot.sourceText, source.workspace)
+                    val recovered = parseAccessor.parseScriptAtConversion(uri, snapshot.sourceText, classpath)
+                    recovered.compilationUnit.classLoader.use { extract(recovered) }
+                } else {
+                    extract(parsed)
+                }
+            }
+            when (result) {
+                is SnapshotQuery.Answer -> result.value
+                is SnapshotQuery.Failure -> throw result.cause
+                SnapshotQuery.Missing, SnapshotQuery.Stale -> null
+            }
+        }
+    }
+
+    private fun publishSnapshot(
+        publication: SemanticIndexer.Publication,
+        snapshot: CompiledDocumentSnapshot,
+        fromBuffer: Boolean,
+    ) {
+        val parsed = snapshot.parseResult
+        semanticIndexer.publish(
+            publication,
+            snapshot.sourceText,
+            checkNotNull(parsed.ast),
+            parsed.outcome.achievedPhase,
+            SemanticPublicationSource(fromBuffer, checkNotNull(snapshot.referenceProducer)),
+        )
     }
 
     internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(

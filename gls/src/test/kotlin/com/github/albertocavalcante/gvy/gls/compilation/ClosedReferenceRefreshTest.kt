@@ -182,6 +182,7 @@ class ClosedReferenceRefreshTest {
         private val source = "class Origin { def target() {}; def caller() { target() } }"
         val callColumn = source.lastIndexOf("target")
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
         @Volatile
         private var armed = false
         val compilation = GroovyCompilationService(

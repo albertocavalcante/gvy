@@ -229,8 +229,12 @@ internal class SnapshotAcquirer(
         return fresh.takeIf(original::canRetryWith)
     }
 
-    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition =
-        whileCallerActive { acquireCurrent(source, phase, mode) }
+    suspend fun acquireSource(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode?,
+        onUnreadableSource: ((Exception) -> Unit)? = null,
+    ): SnapshotAcquisition = whileCallerActive { acquireCurrent(source, phase, mode, onUnreadableSource) }
 
     private suspend inline fun whileCallerActive(acquire: () -> SnapshotAcquisition): SnapshotAcquisition {
         val caller = currentCoroutineContext()
@@ -242,7 +246,12 @@ internal class SnapshotAcquirer(
         return result.getOrThrow()
     }
 
-    private suspend fun acquireCurrent(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition {
+    private suspend fun acquireCurrent(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode?,
+        onUnreadableSource: ((Exception) -> Unit)? = null,
+    ): SnapshotAcquisition {
         if (!source.isCurrent()) return SnapshotAcquisition.Stale
         val content = try {
             source.buffer?.snapshot?.content ?: UriPathConverter.toPath(source.uri)?.let { path ->
@@ -251,7 +260,13 @@ internal class SnapshotAcquirer(
         } catch (_: NoSuchFileException) {
             null
         } catch (error: IOException) {
-            return source.unlessRetired(SnapshotAcquisition.Failure(error))
+            if (onUnreadableSource == null) return source.unlessRetired(SnapshotAcquisition.Failure(error))
+            onUnreadableSource(error)
+            null
+        } catch (error: SecurityException) {
+            if (onUnreadableSource == null) throw error
+            onUnreadableSource(error)
+            null
         }
         return if (content == null) {
             source.unlessRetired(SnapshotAcquisition.Missing)
