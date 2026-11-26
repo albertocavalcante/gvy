@@ -159,5 +159,10 @@ class DocumentProvider {
 
     fun snapshot(): Map<URI, String> = documents.mapValues { it.value.snapshot.content }
 
+    /** Captures reference identities so a changed-and-restored companion is still detectable. */
+    internal fun snapshotIdentities(): Map<URI, DocumentSnapshot> = synchronized(lifecycleLock) {
+        documents.mapValues { it.value.snapshot }
+    }
+
     fun getAllUris(): Set<URI> = documents.keys.toSet()
 }

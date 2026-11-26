@@ -216,7 +216,7 @@ class RetirementWakeTest {
         val seen = AtomicReference<Any?>(NOT_SIGNALLED)
         pending.retired.invokeOnCompletion { seen.set(cache.getActiveCompilation(uri)) }
 
-        cache.cancelDetached(cache.detach())
+        cache.detach().retire()
 
         assertNotSame(NOT_SIGNALLED, seen.get(), "the clear never signalled the retirement")
         assertNull(seen.get(), "a woken waiter could still select the retired job")

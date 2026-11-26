@@ -894,6 +894,17 @@ and compiler phases only inside the adapter. Unmigrated callers remain explicitl
 “sole” means the entire legacy service/store scope has one verified effective semantic environment, not merely one
 membership for the queried file. M2.4 enforces that boundary before mixed-context activation.
 
+**Acquisition foundation — #2461:** internal snapshot acquisition retains the exact source, parse and original producer.
+Reuse qualifies the open-buffer incarnation, observed retirement generation, effective workspace/classpath, worker,
+phase, parsing policy and consumed source-resolution inputs. A query checks cancellation and freshness around eager
+computation; current partial syntax, missing source, stale work and expected compilation failure stay distinct.
+Compatible waiters share work without one cancelled caller cancelling the producer. Rejected traversal streams and
+exclusively owned unpublished native loaders are closed.
+
+This foundation does not publish legacy semantic indexes or migrate handlers. Handler-specific engine, metadata and
+index inputs still need qualification, and M2.1–M2.4 remain open. Filesystem freshness depends on observed retirements;
+checking regular-file attributes before reading does not make the subsequent open atomic with external replacements.
+
 **Fail-first test and gate:** delayed A cannot publish as B after target/config/companion changes without a text edit;
 close/reopen and phase upgrade cannot reuse the wrong result. One real query consumes the captured request throughout;
 no handler rereads mutable global workspace state mid-request. This is a single-query gate, not an all-feature claim.

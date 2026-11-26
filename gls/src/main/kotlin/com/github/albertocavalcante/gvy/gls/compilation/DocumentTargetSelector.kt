@@ -123,4 +123,7 @@ internal class DocumentTargetSelector(
  * [WorkspaceModel] snapshot, so a compile can never pair one configuration's classpath with another's
  * fingerprint or target facts.
  */
-data class DocumentCompileContext(val classpath: List<Path>, val fingerprint: String, val selection: TargetSelection)
+data class DocumentCompileContext(val classpath: List<Path>, val fingerprint: String, val selection: TargetSelection) {
+    /** A strategy may retain and mutate the list it returned after the request resolved its context. */
+    internal fun captureClasspath(): DocumentCompileContext = copy(classpath = classpath.toList())
+}

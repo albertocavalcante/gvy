@@ -3,10 +3,10 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.Deferred
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Service for managing compilation result caching and async compilation job tracking.
@@ -25,12 +25,9 @@ class CompilationCacheService(
 ) {
     private val cache = CompilationCache(maxEntries, isOpen)
 
-    /*
-     * Swapped by [detach] (#1342). A registration racing a swap may land in the old map: such a job was claimed
-     * before the global retirement, so its old-epoch ticket can never commit, and it is at most wasted work. Each
-     * job's own cleanup re-reads this field and removes only itself, so it never touches a newer job.
-     */
-    @Volatile private var compilationJobs = ConcurrentHashMap<URI, PendingCompilation>()
+    // Context-owned work stays separate from background compilations that publish the workspace's global indexes.
+    private val compilationJobs = PendingRegistry<CompilationIdentity, CompilationResult>()
+    internal val snapshotJobs = PendingRegistry<CapturedCompilation, SnapshotAcquisition>(CapturedCompilation::delivery)
 
     /**
      * Gets cached ParseResult if content AND configuration fingerprint match.
@@ -44,6 +41,14 @@ class CompilationCacheService(
      */
     fun getCached(uri: URI, content: String, configFingerprint: String): ParseResult? =
         cache.get(uri, content, configFingerprint)
+
+    internal fun getForCompile(
+        uri: URI,
+        content: String,
+        requester: CompilationRequestContext,
+        phase: Int,
+        mode: ParseMode,
+    ) = cache.getForCompile(uri, content, requester, phase, mode)
 
     /**
      * Gets the cached content and ParseResult, if they were compiled under [configFingerprint].
@@ -65,22 +70,26 @@ class CompilationCacheService(
      * @param content The content that was compiled
      * @param parseResult The result of compilation
      * @param configFingerprint The workspace configuration fingerprint at compilation time
-     * @param isValid What else must still hold, checked under the same fence (e.g. the buffer is still open)
      * @param alongside Short, non-suspending writes of artifacts derived from the same compile
      */
-    @Suppress("LongParameterList") // one atomic write: what was compiled, under which ticket, and its guards
     internal fun publish(
         ticket: ArtifactOwnership.Ticket,
         content: String,
         parseResult: ParseResult,
         configFingerprint: String,
-        isValid: () -> Boolean = { true },
         alongside: () -> Unit = {},
+    ): Boolean = publishCompile(ticket, CachedParse(content, parseResult, configFingerprint, null), { true }, alongside)
+
+    internal fun publishCompile(
+        ticket: ArtifactOwnership.Ticket,
+        entry: CachedParse,
+        isValid: () -> Boolean,
+        alongside: () -> Unit,
     ): Boolean {
         var stored = false
         ownership.commit(ticket) {
             if (isValid()) {
-                cache.put(ticket.uri, content, parseResult, configFingerprint)
+                cache.putForCompile(ticket.uri, entry)
                 alongside()
                 stored = true
             }
@@ -99,26 +108,17 @@ class CompilationCacheService(
         /** The fence ticket a newly created job runs under; a selected existing job keeps its own. */
         ticket: ArtifactOwnership.Ticket,
         create: () -> Deferred<CompilationResult>,
-    ): PendingCompilation {
-        var created = false
-        var selected: PendingCompilation? = null
-        compilationJobs.compute(uri) { _, existing ->
-            if (existing != null && existing.isPending && existing.identity.matches(identity)) {
-                selected = existing
-                existing
-            } else {
-                val replacement = PendingCompilation(identity, create(), ticket)
-                selected = replacement
-                created = true
-                // An already cancelled creator must not evict another caller's live work.
-                replacement.takeIf { it.isPending } ?: existing?.takeIf { it.isPending }
-            }
+    ): PendingCompilation = compilationJobs.register(uri, identity, ticket, identity::matches, create)
+
+    internal fun getOwned(uri: URI) = cache.getOwned(uri)
+
+    internal fun storeSnapshot(snapshot: OwnedSnapshot, previous: OwnedSnapshot?): Boolean {
+        if (!snapshot.capture.isCurrent()) return false
+        var admitted = false
+        ownership.commit(snapshot.capture.ticket) {
+            if (snapshot.capture.ticketsCurrent()) admitted = cache.storeSnapshot(snapshot, previous)
         }
-        val compilation = checkNotNull(selected)
-        if (created) {
-            compilation.deferred.invokeOnCompletion { compilationJobs.remove(uri, compilation) }
-        }
-        return compilation
+        return admitted
     }
 
     /**
@@ -148,7 +148,7 @@ class CompilationCacheService(
      * @param uri The URI to invalidate
      */
     fun invalidate(uri: URI) {
-        detach(uri)?.retire()
+        detach(uri, allInputsRetired = false).retire()
     }
 
     /**
@@ -156,31 +156,36 @@ class CompilationCacheService(
      * once it holds no lock: a waiter can resume inline and must not re-resolve inside a fence's cleanup (#1429).
      * Removed before its waiters wake, so none can select it again.
      */
-    internal fun detach(uri: URI): PendingCompilation? {
+    internal fun detach(uri: URI, allInputsRetired: Boolean = true): RetiredCompilations {
         cache.invalidate(uri)
-        return compilationJobs.remove(uri)
+        val compile = compilationJobs.detach(uri)
+        val snapshot = if (allInputsRetired) snapshotJobs.detach() else snapshotJobs.detach(uri)
+        return RetiredCompilations {
+            compile?.retire()
+            snapshot?.retire()
+        }
     }
 
     /**
      * Clears all cached data and cancels every compilation job.
      * Used when workspace configuration changes significantly.
      */
-    fun clear() = cancelDetached(detach())
+    fun clear() = detach().retire()
 
     /**
-     * Drops all cached data and the pending jobs in O(1), returning the detached job map itself for the caller to
-     * pass to [cancelDetached]. A global clear calls this inside the fence and cancels after it, so neither the
+     * Drops all cached data and pending work in O(1), returning both detached registries for the caller to
+     * retire once it releases the fence. A global clear cancels outside the fence, so neither the
      * jobs' iteration nor their cancellation handlers run while the fence is held (#1342).
      */
-    internal fun detach(): Map<URI, PendingCompilation> {
+    internal fun detach(): RetiredCompilations {
         cache.clear()
-        val detached = compilationJobs
-        compilationJobs = ConcurrentHashMap()
-        return detached
+        val compile = compilationJobs.detach()
+        val snapshot = snapshotJobs.detach()
+        return RetiredCompilations {
+            compile.retire()
+            snapshot.retire()
+        }
     }
-
-    /** Wakes the waiters of the jobs [detach] returned, then cancels them; call it holding no lock (#1429). */
-    internal fun cancelDetached(detached: Map<URI, PendingCompilation>) = detached.values.forEach { it.retire() }
 
     /**
      * Gets cache statistics for monitoring and debugging.
@@ -189,7 +194,7 @@ class CompilationCacheService(
      */
     fun getStatistics(): Map<String, Any> = buildMap {
         putAll(cache.getStatistics())
-        put("activeCompilations", compilationJobs.size)
+        put("activeCompilations", compilationJobs.size + snapshotJobs.size)
     }
 
     /**

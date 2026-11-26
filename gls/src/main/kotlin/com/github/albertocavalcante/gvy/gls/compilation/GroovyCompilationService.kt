@@ -23,6 +23,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.nativeapi.ParseMode
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -168,6 +169,28 @@ class GroovyCompilationService internal constructor(
     suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION) =
         orchestrator.compileTransient(uri, content, compilePhase)
 
+    internal suspend fun acquireSnapshot(
+        uri: URI,
+        phase: Int = Phases.CANONICALIZATION,
+        mode: ParseMode = ParseMode.WORKSPACE,
+    ): SnapshotAcquisition = orchestrator.snapshots.acquire(uri, phase, mode)
+
+    /**
+     * Materialize the entire answer inside [query], before its final freshness check. The boundary rejects
+     * standard top-level lazy carriers. Callers must also consume lazy values inside custom objects or collections.
+     */
+    internal suspend fun <T> querySnapshot(
+        uri: URI,
+        phase: Int = Phases.CANONICALIZATION,
+        mode: ParseMode = ParseMode.WORKSPACE,
+        query: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> = when (val acquisition = acquireSnapshot(uri, phase, mode)) {
+        is SnapshotAcquisition.Available -> acquisition.query(query)
+        SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+        SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+        is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
+    }
+
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)
 
     suspend fun ensureCompiled(uri: URI) = orchestrator.ensureCompiled(uri)
@@ -298,7 +321,7 @@ class GroovyCompilationService internal constructor(
 
     /** Retires every ticket and the compiled results, running [alsoUnderFence] before another ticket is taken. */
     private fun retireAll(alsoUnderFence: () -> Unit) {
-        var retired: Map<URI, PendingCompilation> = emptyMap()
+        var retired: RetiredCompilations? = null
         semanticSnapshotGuard.invalidate {
             // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
             ownership.retireAll {
@@ -309,7 +332,7 @@ class GroovyCompilationService internal constructor(
         }
         // Woken and cancelled once no lock is held and the class loader is gone: a waiter may resume inline and
         // re-resolve at once (#1429). A retired job still running is only wasted work: its ticket cannot commit.
-        cacheService.cancelDetached(retired)
+        retired?.retire()
     }
 
     /**
@@ -326,15 +349,15 @@ class GroovyCompilationService internal constructor(
     fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
         val change = workspaceManager.applySourceChanges(created, deleted)
         if (change.changed) {
+            shadows.refresh() // publish spellings before retiring work that used the previous listing
             clearCompileCaches()
-            shadows.refresh() // on the source queue: the next request finds the new listing's spellings ready
         }
         return change
     }
 
     /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */
     fun invalidateCache(uri: URI) {
-        var retired: PendingCompilation? = null
+        var retired: RetiredCompilations? = null
         semanticSnapshotGuard.invalidate {
             ownership.retire(uri) {
                 retired = cacheService.detach(uri)
@@ -352,8 +375,13 @@ class GroovyCompilationService internal constructor(
      * cleanup) can no longer publish. The cached facts stay; content-keyed reads still reuse them.
      */
     fun onDocumentOpened(uri: URI) {
-        ownership.advance(uri)
-        shadows.opened(uri)
+        var retired: RetiredCompilations? = null
+        ownership.retire(uri) { retired = cacheService.snapshotJobs.detach() }
+        try {
+            shadows.opened(uri)
+        } finally {
+            retired?.retire()
+        }
     }
 
     /**
@@ -374,11 +402,11 @@ class GroovyCompilationService internal constructor(
         }
         // Only that comparison needs the fingerprint: a watcher batch skips it for every event (#1428).
         val fingerprint = disk?.let { workspaceManager.fingerprintFor(uri) }
-        var retired: PendingCompilation? = null
+        var retired: RetiredCompilations? = null
         val ticket = ownership.retireClosed(uri, isOpen) {
             val unchanged = disk != null && fingerprint != null &&
                 cacheService.getCachedWithContent(uri, fingerprint)?.first == disk
-            if (!unchanged) retired = cacheService.detach(uri)
+            retired = if (unchanged) cacheService.snapshotJobs.detach() else cacheService.detach(uri)
             semanticIndexer.retirePublications(uri)
         }
         // Woken after the fence, as [invalidateCache] does (#1429)
@@ -420,8 +448,8 @@ class GroovyCompilationService internal constructor(
             // The published model's classpath: the same snapshot every compile now reads
             classpathService.updateClasspath(workspaceManager.current().classpath)
             gdkProvider.initialize()
+            shadows.refresh() // publish spellings before retiring work that used the previous roots
             clearCaches()
-            shadows.refresh() // off the request path: open buffers are spelled against the new roots now
         }
     }
 

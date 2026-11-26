@@ -44,6 +44,7 @@ class CompilationPublicationTest {
             val manager = WorkspaceManager().also { it.initializeWorkspace(workspace) }
             val parser = GroovyParserFacade()
             val worker = mockk<WorkerSessionManager>()
+            worker.delegateCapturedSessionToParseStub()
             every { worker.parse(any()) } answers {
                 parser.parse(firstArg())
                     .let { if (emitAst) it else it.copy(ast = null) }

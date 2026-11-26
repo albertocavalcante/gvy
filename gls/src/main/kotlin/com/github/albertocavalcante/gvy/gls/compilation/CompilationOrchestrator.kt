@@ -60,7 +60,14 @@ data class CompilationOrchestratorDependencies(
     val shadowed: () -> Set<URI> = { emptySet() },
 )
 
-class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
+/** Inputs the legacy caller has already selected before it checks the result cache. */
+internal class CompilationRequestContext(
+    val ticket: ArtifactOwnership.Ticket,
+    val workspace: WorkspaceModel,
+    val document: DocumentCompileContext,
+)
+
+class CompilationOrchestrator(private val dependencies: CompilationOrchestratorDependencies) {
     private val cacheService = dependencies.cacheService
     private val workerSessionManager = dependencies.workerSessionManager
     private val workspaceManager = dependencies.workspaceManager
@@ -75,6 +82,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val waiterScope = dependencies.waiterScope
     private val shadowed = dependencies.shadowed
     private val ownership = cacheService.ownership
+    internal val snapshots = SnapshotAcquirer(dependencies) { uri, workspace ->
+        getWorkspaceSourcesForCompilation(uri, workspace)
+    }
 
     private val logger = KotlinLogging.logger {}
 
@@ -163,11 +173,16 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // the claim; a retirement in between rejects the publication (#1184).
             val workspace = workspaceManager.current()
             // This document's classpath and key from that one model: a selected target's own (#1235)
-            val context = workspaceManager.compileContextFor(uri, content, workspace)
-            val configFingerprint = context.fingerprint
+            val context = workspaceManager.compileContextFor(uri, content, workspace).captureClasspath()
 
-            // Check cache first - validates both content AND configuration fingerprint
-            val cachedResult = cacheService.getCached(uri, content, configFingerprint)
+            val requester = CompilationRequestContext(claim.ticket, workspace, context)
+            val cachedResult = cacheService.getForCompile(
+                uri,
+                content,
+                requester,
+                compilePhase,
+                ParseMode.WORKSPACE,
+            )
             if (cachedResult != null) {
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
@@ -212,36 +227,18 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         context: DocumentCompileContext? = null,
     ): CompilationResult {
         val (uri, content, claim) = input
-        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-
-        // File-specific classpath and its cache key, from the same workspace as roots and sources (#1235)
-        val compileContext = context ?: workspaceManager.compileContextFor(uri, content, workspace)
-        val classpath = compileContext.classpath
-
-        // Use bounded workspace selection when dependency info is available (Issue #743)
-        // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, logBounded = true)
-
-        // Parse the source code; the compile aborts between phases if this coroutine is cancelled
-        val checkCancelled = cancellationCheck()
-        val locator = symbolIndexer.classLocator(sourcePath)
-        val parseResult = workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = classpath,
-                sourceRoots = workspace.sourceRoots,
-                workspaceSources = workspaceSources,
-                openSources = openSourcesFor(uri),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                compilePhase = compilePhase,
-                parseMode = parseMode,
-                checkCancelled = checkCancelled,
-                // MINIMAL adds no workspace sources; the class index still finds a class declared in a file
-                // named otherwise, one file per name the resolver asks for (#1425).
-                workspaceClassLocator = locator.takeIf { parseMode == ParseMode.MINIMAL },
-            ),
+        // The retained fallback proof must describe this worker invocation, including the ticket from before
+        // the original read. A later request cannot establish freshness by capturing a new ticket for an old parse.
+        val source = SnapshotSource(dependencies, uri, claim.ticket, workspace)
+        val capture = CapturedCompilation(
+            { target, model -> getWorkspaceSourcesForCompilation(target, model, logBounded = true) },
+            source,
+            content,
+            compilePhase,
+            parseMode,
+            context,
         )
+        val parseResult = capture.parse()
 
         logIfDegraded(uri, parseResult)
 
@@ -250,9 +247,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         if (ast != null) {
             // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
             // index, as one commit that a retired compile cannot make (#1184)
-            val fingerprint = compileContext.fingerprint
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
+            val outcome = parseResult.outcome
+            val fallback = capture.takeIf { outcome.typesUnresolved && outcome.fallback != null }
+            val entry = CachedParse(content, parseResult, capture.context.fingerprint, parseMode, fallback = fallback)
+            val published = cacheService.publishCompile(claim.ticket, entry, claim.isValid) {
                 symbolIndexer.install(uri, symbols)
             }
 
@@ -305,7 +304,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 sourceRoots = workspace.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = openSourcesFor(uri),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                locatorCandidates = compilationLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 checkCancelled = checkCancelled,
             ),
@@ -539,10 +538,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
 }
 
-private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
+internal fun compilationLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
     val candidates = mutableSetOf<String>()
     candidates += uri.toString()
-    candidates += uri.path
+    uri.path?.let(candidates::add)
     sourcePath?.let { path ->
         candidates += path.toString()
         candidates += path.toAbsolutePath().toString()
@@ -605,7 +604,7 @@ private sealed interface Awaited {
  * index: an exact qualified-name match only, so a same-named class in another package is never added, and never
  * [self]. Before startup indexing has run the index is empty and nothing is found, as before #1425.
  */
-private fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
+internal fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
     findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
         .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
         .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }

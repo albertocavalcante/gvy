@@ -33,5 +33,7 @@ class WorkerSessionManager(
         activeSession.set(session)
     }
 
-    fun parse(request: ParseRequest): ParseResult = activeSession.get().parse(request)
+    internal fun current(): WorkerSession = activeSession.get()
+
+    fun parse(request: ParseRequest): ParseResult = current().parse(request)
 }
