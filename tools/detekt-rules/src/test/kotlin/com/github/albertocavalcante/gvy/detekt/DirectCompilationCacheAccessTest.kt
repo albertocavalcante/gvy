@@ -357,6 +357,116 @@ class DirectCompilationCacheAccessTest {
         }
     }
 
+    @Test
+    fun `cache service getCached calls and references read cached parses`() {
+        assertMarked(
+            """
+                package com.github.albertocavalcante.gvy.gls.services
+                import com.github.albertocavalcante.gvy.gls.compilation.CompilationCacheService
+                import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+                import java.net.URI
+                interface OtherCache { fun getCached(uri: URI, content: String, fp: String): String? }
+                fun read(wire: GroovyCompilationService, typed: CompilationCacheService, other: OtherCache, uri: URI) {
+                    wire.compilationCacheService.getCached(uri, "source", "fingerprint") // FLAG
+                    val reader = wire.compilationCacheService::getCached // FLAG
+                    val store = wire.compilationCacheService
+                    val aliasReader = store::getCached // FLAG
+                    typed.getCached(uri, "source", "fingerprint") // FLAG
+                    other.getCached(uri, "source", "fingerprint")
+                    val unrelated = other::getCached
+                }
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `compiler session acquisition uses cached source`() {
+        assertMarked(
+            """
+                package com.github.albertocavalcante.gvy.gls.services
+                import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+                import java.net.URI
+                interface SessionStore { fun getSession(uri: URI): String? }
+                fun handle(wire: GroovyCompilationService, other: SessionStore, uri: URI) {
+                    wire.getSession(uri) // FLAG
+                    val read = wire::getSession // FLAG
+                    other.getSession(uri)
+                    val unrelated = other::getSession
+                }
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `same file type aliases identify only compiler acquisitions`() {
+        assertMarked(
+            """
+                package com.github.albertocavalcante.gvy.gls.services
+                import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+                import java.net.URI
+                private typealias Compiler = GroovyCompilationService
+                private typealias Indirect = Compiler
+                private typealias Other = LocalCompiler
+                interface LocalCompiler { fun compile(uri: URI, text: String) }
+                private suspend fun handle(wire: Compiler, chained: Indirect?, other: Other, uri: URI, text: String) {
+                    wire.compile(uri, text) // FLAG
+                    val read = wire::compile // FLAG
+                    chained?.compile(uri, text) // FLAG
+                    other.compile(uri, text)
+                    val unrelated = other::compile
+                }
+            """.trimIndent(),
+        )
+        // Incomplete code with a cycle has no provable receiver type.
+        val cyclic = """
+            package com.github.albertocavalcante.gvy.gls.services
+            private typealias A = B
+            private typealias B = A
+            fun handle(wire: A) = wire::compile
+        """.trimIndent()
+        assertThat(DirectCompilationCacheAccess().lint(cyclic)).isEmpty()
+    }
+
+    @Test
+    fun `loop range sees outer compiler before the loop variable enters scope`() {
+        assertMarked(
+            """
+                package com.github.albertocavalcante.gvy.gls.services
+                import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+                import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
+                import java.net.URI
+                import org.codehaus.groovy.ast.ASTNode
+                private fun choose(rules: List<RuleContext>, read: (URI) -> ASTNode?) = rules
+                fun handle(context: GroovyCompilationService, rules: List<RuleContext>) {
+                    for (context: RuleContext in choose(rules, context::getAst)) { // FLAG
+                        context.getAst()
+                        val local = context::getAst
+                    }
+                }
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `plain class sees a file compiler unless a nearer member supplies the name`() {
+        assertMarked(
+            """
+                package com.github.albertocavalcante.gvy.gls.services
+                import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+                import java.net.URI
+                private lateinit var wire: GroovyCompilationService
+                interface LocalCompiler { fun compile(uri: URI, text: String) }
+                class Handler {
+                    suspend fun handle(uri: URI, text: String) = wire.compile(uri, text) // FLAG
+                    fun read() = wire::compile // FLAG
+                }
+                class Own(private val wire: LocalCompiler) { fun read() = wire::compile }
+                open class Base(val wire: LocalCompiler)
+                class Inherited(local: LocalCompiler) : Base(local) { fun read() = wire::compile }
+            """.trimIndent(),
+        )
+    }
+
     private companion object {
         const val COMPILER_FILE =
             "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/GroovyCompilationService.kt"
