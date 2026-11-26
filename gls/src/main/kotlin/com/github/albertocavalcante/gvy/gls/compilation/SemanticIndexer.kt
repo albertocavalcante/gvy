@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import java.lang.ref.WeakReference
 import java.net.URI
 import java.security.MessageDigest
@@ -31,7 +32,13 @@ internal data class ReferencePublication(
     val phase: Int,
     val diskConfirmed: Boolean,
     val producer: ReferenceProducer?,
-)
+) {
+    fun covers(indexed: SemanticDocument): Boolean =
+        document === indexed && producer?.complete == true && phase >= Phases.SEMANTIC_ANALYSIS
+}
+
+/** The origin and compiler inputs of the AST being installed. */
+internal data class SemanticPublicationSource(val fromBuffer: Boolean = true, val producer: ReferenceProducer? = null)
 
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
@@ -64,7 +71,10 @@ class SemanticIndexer(
         val producer: ReferenceProducer?,
         // The graph owns this document. Keep its identity without retaining a displaced graph.
         val stored: WeakReference<SemanticDocument>? = null,
-    )
+    ) {
+        fun matchesDisk(hash: String, activeGeneration: AnalysisGeneration, current: (ReferenceProducer) -> Boolean) =
+            generation == activeGeneration && contentHash == hash && producer?.let(current) != false
+    }
 
     private class State {
         @Volatile var entry: Entry? = null
@@ -84,7 +94,7 @@ class SemanticIndexer(
         private val finish: () -> Unit,
     ) : AutoCloseable {
         private val closed = AtomicBoolean()
-        val isClosed: Boolean get() = closed.get()
+        fun isActiveIn(current: AnalysisGeneration): Boolean = generation == current && !closed.get()
 
         override fun close() {
             if (closed.compareAndSet(false, true)) finish()
@@ -135,7 +145,7 @@ class SemanticIndexer(
      * reached; [fromBuffer]: the text of an editor buffer rather than the file on disk).
      */
     fun update(uri: URI, content: String, ast: ModuleNode, phase: Int, fromBuffer: Boolean = true) {
-        begin(uri).use { publish(it, content, ast, phase, fromBuffer) }
+        begin(uri).use { publish(it, content, ast, phase, SemanticPublicationSource(fromBuffer)) }
     }
 
     /** A built document with the implementation facts stored alongside it, or null when building failed. */
@@ -151,16 +161,15 @@ class SemanticIndexer(
         content: String,
         ast: ModuleNode,
         phase: Int,
-        fromBuffer: Boolean = true,
-        producer: ReferenceProducer? = null,
+        source: SemanticPublicationSource = SemanticPublicationSource(),
     ) {
         val uri = publication.uri
         val candidate = Entry(
             contentHash(content),
             phase,
             publication.generation,
-            diskConfirmed = !fromBuffer,
-            producer = producer,
+            diskConfirmed = !source.fromBuffer,
+            producer = source.producer,
         )
         if (!replaces(entries[uri], publication, candidate)) return
         val built = buildOrNull(ast, uri)
@@ -178,11 +187,7 @@ class SemanticIndexer(
 
     /** Different bindings, like different source, replace only in publication order. */
     private fun replaces(state: State?, publication: Publication, candidate: Entry): Boolean {
-        if (state == null ||
-            state !== publication.identity ||
-            publication.generation != generation ||
-            publication.isClosed
-        ) {
+        if (state == null || state !== publication.identity || !publication.isActiveIn(generation)) {
             return false
         }
         if (candidate.diskConfirmed && isOpen(publication.uri)) return false
@@ -259,11 +264,7 @@ class SemanticIndexer(
         var confirmed = false
         entries.computeIfPresent(uri) { _, state ->
             val entry = state.entry
-            if (entry != null &&
-                entry.generation == generation &&
-                entry.contentHash == hash &&
-                entry.producer?.let(current) != false
-            ) {
+            if (entry != null && entry.matchesDisk(hash, generation, current)) {
                 if (!entry.diskConfirmed) state.entry = entry.copy(diskConfirmed = true)
                 confirmed = true
             }

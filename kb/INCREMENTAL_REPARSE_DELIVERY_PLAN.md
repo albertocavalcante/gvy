@@ -916,6 +916,27 @@ retry one stale acquisition against a fresh producer only when the worker change
 workspace still match; a stale answer during construction is never retried. Focused tests also cover worker replacement
 with concurrent cache clearing. This evidence applies to the tested routes, not all semantic entry points.
 
+Highlights and call-hierarchy requests capture the original source authority before dispatch. Prepared and returned
+items carry that source's lifecycle identity; closed-source identities also include the actual captured bytes. Wire
+round trips accept the LSP4J string representation and reject unsupported item data. The hierarchy adapter certifies
+local declaration identity, restricts script fallback to implicit receivers, and refuses unqualified foreign targets.
+
+Incoming calls use one immutable reference graph. Every consulted document must be the exact frozen document installed
+by its semantic producer, with the original worker, classpath, selected sources and observed lookup inputs still valid.
+A same-text replacement cannot borrow older producer evidence. Origin and caller parses must reach the requested
+canonicalization phase without recovery degradation. Ambiguous selected target IDs in distinct visible files and
+incomplete workspace coverage return unavailable; retired inputs return ContentModified. Current partial syntax remains
+useful for local highlights and prepare, and unexpected provider failures propagate rather than becoming empty results.
+Cancellation takes precedence over ordinary failures even when a freshness callback throws; fatal errors retain
+identity.
+
+Reference proofs keep weak model/worker/document identities and compact source projections rather than retaining entire
+producer capture graphs. Warm qualification enumerates the visible source inventory and stats closed paths; it does not
+read every closed body. Unconfirmed closed origin bytes may require one read. Two preparation passes each have a
+cooperative 30-second cap, while origin/caller acquisition and final traversal have no end-to-end deadline. Concurrent
+requests share compatible per-file compilations, not a whole preparation pass. Stale unrelated closed entries may remain
+unavailable until ordinary refresh. These are workload limits, not a proven latency bound.
+
 Owned acquisition does not publish legacy semantic indexes. Other handler-specific engine, metadata and index inputs
 still need qualification, and M2.1–M2.4 remain open. Filesystem freshness depends on observed retirements; checking
 regular-file attributes before reading does not make the subsequent open atomic with external replacements.

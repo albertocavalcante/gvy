@@ -121,9 +121,8 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } answers { currentFingerprint }
         workspaceManager.delegateCompileContextToLegacyStubs()
-        every { workspaceManager.current() } answers {
-            testWorkspace(currentFingerprint, sourceRoots = emptyList(), sources = emptyList())
-        }
+        var currentWorkspace = testWorkspace(currentFingerprint, sourceRoots = emptyList(), sources = emptyList())
+        every { workspaceManager.current() } answers { currentWorkspace }
 
         val orchestrator = CompilationOrchestrator(
             CompilationOrchestratorDependencies(
@@ -150,6 +149,7 @@ class CompilationOrchestratorTest {
 
         // Change fingerprint (simulates dependency change)
         currentFingerprint = "fingerprint-v2"
+        currentWorkspace = testWorkspace(currentFingerprint, sourceRoots = emptyList(), sources = emptyList())
 
         // Third compile with different fingerprint - should re-parse (Issue #743)
         orchestrator.compile(uri, content)

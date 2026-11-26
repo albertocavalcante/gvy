@@ -18,12 +18,62 @@ import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
+import java.io.IOException
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ReferenceCancellationTest {
+    @ParameterizedTest
+    @ValueSource(booleans = [true, false])
+    fun `producer cancellation wins over a readiness callback failure`(repair: Boolean): Unit = runBlocking {
+        val origin = URI.create("file:///Example.groovy")
+        val text = "class Example {}"
+        val source = mockk<SnapshotSource> {
+            every { uri } returns origin
+            every { documents } returns mapOf(origin to DocumentSnapshot(text, null))
+            every { workspace } returns mockk { every { sources } returns emptyList() }
+            every { isCurrent() } returns true
+        }
+        var observed = false
+        var invoked = false
+        val request = async {
+            val caller = currentCoroutineContext()
+            val index = WorkspaceSymbolIndex(GroovySemanticDB())
+            val stored = index.storeDocument(
+                origin, SemanticDocument(origin, emptyList(), emptyList()), text, ImplementationFacts.empty,
+            )
+            val producer = mockk<ReferenceProducer> {
+                every { complete } returns true
+                every { isCurrent(source, any(), any(), any()) } answers {
+                    invoked = true
+                    caller.cancel()
+                    throw IOException("cancelled producer callback")
+                }
+            }
+            val readiness = ReferenceReadiness(
+                source, index,
+                currentPublication = { ReferencePublication(stored, Phases.SEMANTIC_ANALYSIS, false, producer) },
+                selectSources = { _, model -> model.sources },
+            )
+            try {
+                if (repair) {
+                    readiness.prepareOpenSources(mockk())
+                } else {
+                    readiness.query { error("cancelled coverage must not compute") }
+                }
+            } catch (_: CancellationException) {
+                observed = true
+            }
+        }
+        assertFailsWith<CancellationException> { request.await() }
+        request.join()
+        assertTrue(invoked)
+        assertTrue(observed, "callback cancellation must win before returning to its caller")
+    }
+
     @ParameterizedTest
     @CsvSource("1, true", "1, false", "2, true", "2, false", "3, true", "3, false")
     fun `cancellation in a shadow check wins over stale and current results`(stage: Int, stillCurrent: Boolean): Unit =

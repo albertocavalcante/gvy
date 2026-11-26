@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -44,9 +45,9 @@ internal sealed interface SnapshotQuery<out T> {
 /** Freshness suppliers may call strategies and shadow lookups, both of which can cancel their caller. */
 internal fun CoroutineContext.inputsCurrent(check: () -> Boolean): Boolean {
     ensureActive()
-    val current = check()
+    val current = runSuspendCatching(check)
     ensureActive()
-    return current
+    return current.getOrThrow()
 }
 
 /** Validate on both sides of eager computation, including cancellation inside either freshness check. */
@@ -57,9 +58,10 @@ internal suspend fun <T> queryCurrentSnapshot(
 ): SnapshotQuery<T> {
     val caller = currentCoroutineContext()
     if (!caller.inputsCurrent(isCurrent)) return SnapshotQuery.Stale
-    val result = compute()
-    requireEagerResult(result, caller)
-    return if (caller.inputsCurrent(isCurrent)) SnapshotQuery.Answer(result, partial) else SnapshotQuery.Stale
+    val result = runSuspendCatching { compute() }
+    result.onSuccess { requireEagerResult(it, caller) }
+    if (!caller.inputsCurrent(isCurrent)) return SnapshotQuery.Stale
+    return SnapshotQuery.Answer(result.getOrThrow(), partial)
 }
 
 private const val LAZY_QUERY_RESULT = "Consume traversal results inside the snapshot query"

@@ -12,6 +12,7 @@ import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import kotlin.io.path.writeText
@@ -59,7 +60,7 @@ class WorkspaceCompilerTest {
         workspaceManager.initializeWorkspace(tempDir)
         val index = WorkspaceSymbolIndex(GroovySemanticDB())
         val indexer = SemanticIndexer(index)
-        val worker = mockk<WorkerSessionManager>()
+        val worker = mockk<WorkerSessionManager>().apply { delegateCapturedSessionToParseStub() }
         coEvery { worker.parse(any()) } coAnswers {
             val result = parser.parse(firstArg())
             Files.delete(file)
@@ -70,6 +71,8 @@ class WorkspaceCompilerTest {
 
         compiler.compileWorkspace()
 
+        verify(exactly = 1) { worker.parse(any()) }
+        assertFalse(Files.exists(file), "the parse callback must actually delete the source")
         assertNull(index.getDocument(file.toUri()), "in-flight results must not resurrect deleted records")
     }
 
@@ -80,7 +83,7 @@ class WorkspaceCompilerTest {
         workspaceManager.initializeWorkspace(tempDir)
         val index = WorkspaceSymbolIndex(GroovySemanticDB())
         val indexer = SemanticIndexer(index)
-        val worker = mockk<WorkerSessionManager>()
+        val worker = mockk<WorkerSessionManager>().apply { delegateCapturedSessionToParseStub() }
         coEvery { worker.parse(any()) } coAnswers {
             val result = parser.parse(firstArg())
             indexer.clear()
@@ -90,6 +93,7 @@ class WorkspaceCompilerTest {
 
         compiler.compileWorkspace()
 
+        verify(exactly = 1) { worker.parse(any()) }
         assertNull(index.getDocument(file.toUri()), "in-flight results must not undo cache invalidation")
     }
 
@@ -237,7 +241,7 @@ class WorkspaceCompilerTest {
         val source = Files.createDirectories(tempDir.resolve("src")).resolve("Invalid.groovy")
         source.writeText("class Invalid {}")
         workspaceManager.initializeWorkspace(tempDir)
-        val worker = mockk<WorkerSessionManager>()
+        val worker = mockk<WorkerSessionManager>().apply { delegateCapturedSessionToParseStub() }
         coEvery { worker.parse(any()) } coAnswers {
             parser.parse(firstArg()).copy(
                 diagnostics = listOf(ParserDiagnostic(range = ParserRange.point(0, 0), message = "semantic error")),

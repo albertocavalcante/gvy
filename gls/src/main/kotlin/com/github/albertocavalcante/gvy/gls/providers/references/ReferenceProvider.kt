@@ -8,7 +8,6 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
@@ -22,8 +21,8 @@ import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
-import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
@@ -40,7 +39,6 @@ import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
-import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -83,8 +81,11 @@ class ReferenceProvider(
      * [ReferenceScanFailedException] when a scan phase fails, never completing with a partial list.
      */
     fun provideReferences(uri: String, position: Position, includeDeclaration: Boolean): Flow<Location> = channelFlow {
-        collectReferences(uri, position, includeDeclaration, { createReferenceContext(uri, position) },
-            workspaceSymbolIndex?.let(::LiveReferences))
+        collectReferences(
+            ReferenceRequest(uri, position, includeDeclaration),
+            { createReferenceContext(uri, position) },
+            workspaceSymbolIndex?.let(::LiveReferences),
+        )
     }
 
     internal fun provideCapturedReferences(
@@ -93,17 +94,21 @@ class ReferenceProvider(
         compiled: CompiledDocumentSnapshot,
         references: CapturedWorkspaceReferences,
     ): Flow<Location> = channelFlow {
-        collectReferences(uri.toString(), position, false, { createReferenceContext(uri, position, compiled) },
-            FrozenReferences(references))
+        collectReferences(
+            ReferenceRequest(uri.toString(), position, includeDeclaration = false),
+            { referenceCursor(uri, position, compiled) },
+            FrozenReferences(references),
+        )
     }
 
+    private data class ReferenceRequest(val uri: String, val position: Position, val includeDeclaration: Boolean)
+
     private suspend fun ProducerScope<Location>.collectReferences(
-        uri: String,
-        position: Position,
-        includeDeclaration: Boolean,
-        contextProvider: () -> ReferenceContext?,
+        request: ReferenceRequest,
+        contextProvider: () -> ReferenceCursor?,
         references: ReferenceLookup?,
     ) {
+        val (uri, position, includeDeclaration) = request
         logger.debug { "Finding references for $uri at ${position.line}:${position.character}" }
 
         val emittedLocations = mutableSetOf<String>()
@@ -115,7 +120,7 @@ class ReferenceProvider(
         scanning(logger, ReferenceScanPhase.DOCUMENT) {
             val context = contextProvider()
             if (context != null) {
-                val definition = resolveTargetDefinition(context)
+                val definition = context.definition(logger)
                 val target = context.targetNode
                 isTypeParameterTarget =
                     (target is ClassNode && target.isGenericsPlaceHolder) ||
@@ -154,7 +159,7 @@ class ReferenceProvider(
         // Second, search workspace-wide using SemanticDB
         references?.takeUnless { isLocal || isTypeParameterTarget }?.let { index ->
             scanning(logger, ReferenceScanPhase.WORKSPACE) {
-                findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
+                findWorkspaceReferences(request, index, emittedLocations, symbolName)
             }
         }
     }
@@ -187,24 +192,14 @@ class ReferenceProvider(
         )
     }
 
-    /**
-     * Find references across the workspace using the SemanticDB index.
-     *
-     * @param uri The document URI
-     * @param position The cursor position
-     * @param includeDeclaration Whether to include declaration occurrences
-     * @param index The workspace symbol index
-     * @param emittedLocations Set of already emitted location keys for deduplication
-     */
+    /** Find references to the requested position in the workspace index, skipping locations already emitted. */
     private suspend fun ProducerScope<Location>.findWorkspaceReferences(
-        uri: String,
-        position: Position,
-        includeDeclaration: Boolean,
+        request: ReferenceRequest,
         index: ReferenceLookup,
         emittedLocations: MutableSet<String>,
         symbolName: String?,
     ) {
-        // Get SemanticDocument for current file
+        val (uri, position, includeDeclaration) = request
         val origin = index.getDocumentSnapshot(URI.create(uri))
         val originText = origin?.sourceText?.let(::TextIndex)
         val cursor = originText?.codePointPosition(position)
@@ -276,20 +271,6 @@ class ReferenceProvider(
     }
 
     /**
-     * Context for reference resolution.
-     */
-    private data class ReferenceContext(
-        val documentUri: URI,
-        val compiled: CompiledDocumentSnapshot,
-        val source: TextIndex,
-        val targetNode: ASTNode,
-    ) {
-        val visitor get() = compiled.parseResult.astModel
-        val symbolTable get() = compiled.parseResult.symbolTable
-        val parameterOrigins = ParameterOrigins(visitor, documentUri)
-    }
-
-    /**
      * Parameters for processing a node reference.
      */
     private data class ProcessNodeParams(
@@ -322,84 +303,10 @@ class ReferenceProvider(
     /**
      * Create reference context from URI and position.
      */
-    private fun createReferenceContext(uri: String, position: Position): ReferenceContext? {
+    private fun createReferenceContext(uri: String, position: Position): ReferenceCursor? {
         val documentUri = URI.create(uri)
         val compiled = compilationService.getCompiledSnapshot(documentUri) ?: return null
-        return createReferenceContext(documentUri, position, compiled)
-    }
-
-    private fun createReferenceContext(
-        documentUri: URI,
-        position: Position,
-        compiled: CompiledDocumentSnapshot,
-    ): ReferenceContext? {
-        val source = TextIndex(compiled.sourceText)
-        val groovyPosition = source.codePointPosition(position)?.toGroovyPosition() ?: return null
-        return compiled.parseResult.astModel.getNodeAt(documentUri, groovyPosition)
-            ?.takeIf { it.isReferenceableSymbol() }
-            ?.let { ReferenceContext(documentUri, compiled, source, it) }
-    }
-
-    /**
-     * Resolve the target node to its definition.
-     */
-    private fun resolveTargetDefinition(context: ReferenceContext): ASTNode? {
-        // INSIGHT from fork-groovy-language-server: Get definition directly from the target node
-        // For VariableExpression, this should return accessedVariable which unifies all references
-        val definition = context.targetNode.resolveToDefinition(context.visitor, context.symbolTable, strict = false)
-
-        // CRITICAL FIX: If position finder returned ClassNode but we have a VariableExpression nearby,
-        // we might need to find the actual VariableExpression we're looking for
-        val adjustedDefinition = when {
-            // If we get a ClassNode but the context suggests we're looking for a variable
-            context.targetNode is ClassNode &&
-                definition is ClassNode -> {
-                // Try to find a VariableExpression at the same position that might be the real target
-                val targetLineNumber = context.targetNode.lineNumber
-                val targetColumnNumber = context.targetNode.columnNumber
-
-                if (targetLineNumber > 0 && targetColumnNumber > 0) {
-                    // Look for VariableExpression nodes at or near this position
-                    val allNodes = context.visitor.getAllNodes()
-                    val variableAtPosition = allNodes
-                        .filterIsInstance<VariableExpression>()
-                        .find { varNode ->
-                            varNode.lineNumber > 0 && varNode.columnNumber > 0 &&
-                                varNode.lineNumber == targetLineNumber &&
-                                kotlin.math.abs(varNode.columnNumber - targetColumnNumber) <= 2
-                        }
-
-                    // If we found a VariableExpression, use its definition instead
-                    variableAtPosition?.resolveToDefinition(
-                        context.visitor,
-                        context.symbolTable,
-                        strict = false,
-                    ) ?: definition
-                } else {
-                    definition
-                }
-            }
-
-            else -> definition
-        }
-
-        if (adjustedDefinition == null) {
-            logger.debug { "Could not resolve definition for node" }
-            return null
-        }
-        return if (adjustedDefinition is Parameter) {
-            context.sourceParameterOrIdentity(adjustedDefinition)
-        } else {
-            adjustedDefinition
-        }
-    }
-
-    /** Public reads can follow a compiler-owned binding even when no source declaration can be proved. */
-    private fun ReferenceContext.sourceParameterOrIdentity(parameter: Parameter): Parameter = try {
-        parameterOrigins.source(parameter)
-    } catch (e: IllegalStateException) {
-        rethrowIfCancellationOrError(e)
-        parameter
+        return referenceCursor(documentUri, position, compiled)
     }
 
     /**
@@ -534,34 +441,6 @@ class ReferenceProvider(
      * Check if this node has valid position information for LSP.
      */
     private fun ASTNode.hasValidPosition(): Boolean = lineNumber > 0 && columnNumber > 0
-
-    /**
-     * Check if this node represents a referenceable symbol.
-     * Groups related node types to reduce cyclomatic complexity.
-     */
-    private fun ASTNode.isReferenceableSymbol(): Boolean {
-        val referenceableTypes = setOf(
-            // Variable-related nodes
-            VariableExpression::class,
-            DeclarationExpression::class,
-            Parameter::class,
-            Variable::class,
-            // Method and field nodes
-            MethodCallExpression::class,
-            MethodNode::class,
-            FieldNode::class,
-            PropertyNode::class,
-            PropertyExpression::class,
-            // Class-related nodes
-            ClassNode::class,
-            ClassExpression::class,
-            ConstructorCallExpression::class,
-            // Import nodes
-            ImportNode::class,
-        )
-        // Nested classes are InnerClassNode, a ClassNode subclass the exact-class set would miss.
-        return referenceableTypes.contains(this::class) || this is ClassNode
-    }
 
     /**
      * Emit a location for this node if it hasn't been seen before.

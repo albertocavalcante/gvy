@@ -214,7 +214,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                                 content,
                                 it,
                                 cachedResult.outcome.achievedPhase,
-                                producer = cached.referenceProducer,
+                                source = SemanticPublicationSource(producer = cached.referenceProducer),
                             )
                         }
                     }
@@ -284,8 +284,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                         content,
                         ast,
                         parseResult.outcome.achievedPhase,
-                        fromBuffer = claim.origin != Origin.DISK,
-                        producer = producer,
+                        source = SemanticPublicationSource(claim.origin != Origin.DISK, producer),
                     )
                 }
             } else {
@@ -322,7 +321,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
 
         // Use bounded workspace selection when available (Issue #743)
         val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace)
-        val checkCancelled = cancellationCheck()
+        val job = currentCoroutineContext()[Job]
 
         return workerSessionManager.parse(
             ParseRequest(
@@ -334,15 +333,9 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                 openSources = openSourcesFor(uri),
                 locatorCandidates = compilationLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
-                checkCancelled = checkCancelled,
+                checkCancelled = { job?.ensureActive() },
             ),
         )
-    }
-
-    /** A hook that throws [CancellationException] once the calling coroutine is cancelled. */
-    private suspend fun cancellationCheck(): () -> Unit {
-        val job = currentCoroutineContext()[Job]
-        return { job?.ensureActive() }
     }
 
     /**
