@@ -87,7 +87,8 @@ class CliDiagnoseDeliveryTest {
         val owner = SupervisorJob()
         val scope = CoroutineScope(owner + Dispatchers.Default)
         val configuration = ServerConfiguration(diagnosticConfig = DiagnosticConfig(disabledProviders = DISABLED))
-        val endpoint = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(serverConfiguration = configuration))
+        val options = GroovyTextDocumentServiceOptions(serverConfiguration = configuration)
+        val endpoint = GroovyTextDocumentService(scope, compilation, options)
         try {
             val pending = scope.async { endpoint.diagnose(uri, source) }
             try {
@@ -130,7 +131,10 @@ class CliDiagnoseDeliveryTest {
         try {
             val pending = scope.async { endpoint.diagnose(uri, SOURCE) }
             try {
-                assertTrue(selected.await(30, TimeUnit.SECONDS), "request did not select the registered unused-import provider")
+                assertTrue(
+                    selected.await(30, TimeUnit.SECONDS),
+                    "request did not select the registered unused-import provider",
+                )
                 assertTrue(compilation.compile(neighbor, "class Neighbor {}").isSuccess)
                 assertNotNull(compilation.getCompiledSnapshot(neighbor))
                 assertNull(compilation.getCompiledSnapshot(uri), "target must be unavailable through the legacy cache")
@@ -189,7 +193,9 @@ private object DiagnosticFinish {
         assertExactUnusedImport: (Diagnostic) -> Unit,
     ): suspend () -> Unit = when (finish) {
         CliDiagnoseDeliveryTest.Finish.CURRENT -> suspend { assertExactUnusedImport(pending.await().single()) }
-        CliDiagnoseDeliveryTest.Finish.PROVIDER_CANCELLED -> suspend { assertFailsWith<CancellationException> { pending.await() } }
+        CliDiagnoseDeliveryTest.Finish.PROVIDER_CANCELLED -> suspend {
+            assertFailsWith<CancellationException> { pending.await() }
+        }
         else -> suspend {
             val failure = assertFailsWith<ResponseErrorException> { pending.await() }
             assertEquals(ResponseErrorCode.ContentModified.value, failure.responseError.code)
