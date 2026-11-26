@@ -1,46 +1,35 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { inventory } from './artifacts.mjs';
+import { mkdir } from 'node:fs/promises';
+import { loadArchive, runContext } from './archive.mjs';
 import { compareGraph } from './graph.mjs';
-import { base, historicalHash, json, policy, versions } from './io.mjs';
+import { historicalHash, json, policy, versions } from './io.mjs';
+import { verifyRow } from './receipts.mjs';
 
-// Usage: node compare.mjs <directory containing unpacked row artifact directories> <new result.json>
-const [root, resultFile] = process.argv.slice(2);
-const read = async (dir, name) => JSON.parse(await readFile(join(dir, name)));
+// Requires a clean reviewed source checkout and GitHub read access. Verified
+// archives are downloaded once and retained for independent replay.
+const [root, resultFile, run, attempt] = process.argv.slice(2);
+assert(root && resultFile && run && attempt, 'usage: compare.mjs ARCHIVE_DIR REPORT_JSON RUN_ID ATTEMPT');
+await mkdir(root, { recursive: true });
+const ctx = runContext(run, attempt);
+const identity = { head: ctx.head, tree: ctx.tree, run, attempt, conclusion: ctx.conclusion };
 const rows = new Map();
 const problems = [];
-let identity;
-for (const item of await readdir(root, { withFileTypes: true })) {
-  if (!item.isDirectory()) continue;
-  const dir = join(root, item.name);
-  try {
-    const source = await read(dir, 'source.json');
-    assert.equal(source.base, base);
-    assert(Object.hasOwn(versions, source.version) && Object.hasOwn(policy, source.mode));
-    assert(['Linux', 'macOS'].includes(source.os));
-    const run = [source.head, source.run, source.attempt, source.sourceTreeWithoutProbeSha256];
-    if (!identity) identity = run;
-    assert.deepEqual(run, identity, 'mixed run, attempt or source');
-    assert.deepEqual(await read(dir, 'manifest.json'), await inventory(dir), 'receipt mismatch');
-    const key = [source.os, source.version, source.mode].join('/');
-    assert(!rows.has(key), 'duplicate row');
-    const graph = await read(dir, 'graph.json');
-    const result = await read(dir, 'graph-result.json');
-    assert.equal(result.historicalReferenceSha256, historicalHash);
-    assert.equal(result.resolverSha256, versions[source.version]);
-    assert.equal(result.checksum, policy[source.mode]);
-    const row = { graph, result, key };
-    rows.set(key, row);
-    if (source.mode === 'permissive') {
-      const cases = await read(dir, 'fixtures/results.json');
-      assert.deepEqual(cases.map(c => c.kind), ['valid', 'missing', 'malformed', 'mismatch', 'permissive-missing']);
-      for (const c of cases) if (c.verdict !== 'pass') problems.push({ key, case: c.kind, verdict: c.verdict });
+const archives = {};
+for (const os of ['Linux', 'macOS']) {
+  for (const version of Object.keys(versions)) {
+    for (const mode of Object.keys(policy)) {
+      const key = [os, version, mode].join('/');
+      const name = ['coursier', os, version, mode, run, attempt].join('-');
+      try {
+        const { files, id, digest } = await loadArchive(root, ctx, name);
+        archives[key] = { id, digest };
+        rows.set(key, { key, ...await verifyRow(files, ctx, os, version, mode) });
+      } catch (error) {
+        problems.push({ key, verdict: 'inconclusive-or-failed', reason: String(error) });
+      }
     }
-  } catch (error) {
-    problems.push({ directory: item.name, verdict: 'inconclusive', reason: String(error) });
   }
 }
 const comparisons = [];
@@ -54,8 +43,10 @@ function compare(leftKey, rightKey) {
   const diff = compareGraph(left.graph, right.graph);
   const targetsMatch = left.result.targetsSha256 === right.result.targetsSha256;
   const lockBytesMatch = left.result.lockSha256 === right.result.lockSha256;
+  const inputsMatch = JSON.stringify(left.inputs) === JSON.stringify(right.inputs);
   const equal = !(diff.added.length || diff.removed.length || diff.conflictsChanged) && targetsMatch && lockBytesMatch;
-  comparisons.push({ leftKey, rightKey, verdict: equal ? 'pass' : 'different', targetsMatch, lockBytesMatch, diff });
+  if (!inputsMatch) problems.push({ leftKey, rightKey, verdict: 'inconclusive', reason: 'different effective resolver inputs' });
+  comparisons.push({ leftKey, rightKey, verdict: !inputsMatch ? 'inconclusive' : equal ? 'pass' : 'different', inputsMatch, targetsMatch, lockBytesMatch, diff });
 }
 for (const os of ['Linux', 'macOS']) {
   for (const version of Object.keys(versions)) {
@@ -69,8 +60,8 @@ for (const os of ['Linux', 'macOS']) {
 const history = [...rows.values()].map(({ key, result }) => ({
   key, historicalReference: historicalHash, observed: result.historicalAlgorithmSha256, matches: result.historicalMatch,
 }));
-const verdict = problems.length ? 'incomplete-or-failed-controls' : comparisons.some(c => c.verdict !== 'pass') ? 'different' :
+const verdict = problems.length || ctx.conclusion !== 'success' ? 'incomplete-or-failed-controls' : comparisons.some(c => c.verdict !== 'pass') ? 'different' :
   history.some(h => !h.matches) ? 'historical-drift' : 'pass';
-await json(resultFile, { source: identity, verdict, history, comparisons, problems });
+await json(resultFile, { source: identity, archives, verdict, history, comparisons, problems });
 console.log(JSON.stringify({ verdict, rows: rows.size, comparisons: comparisons.length, problems: problems.length }));
 if (verdict !== 'pass') process.exitCode = 1;

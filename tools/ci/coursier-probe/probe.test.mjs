@@ -54,4 +54,9 @@ test('fixture rejects generic failures, timeouts and missed sidecars as evidence
   assert.equal(fixtureVerdict('mismatch', rejected, [], false), 'inconclusive');
   assert.equal(fixtureVerdict('mismatch', { code: 0, signal: null }, requests, true), 'fail');
   assert.equal(fixtureVerdict('valid', { code: 0, signal: null }, requests, false), 'inconclusive');
+  assert.equal(fixtureVerdict('missing', { code: 0, signal: null }, requests.slice(0, 1), true), 'fail');
+  for (const sep of ['\n', '\r']) {
+    const stderr = 'downloaded probe-1.jar' + sep + 'wrong checksum: probe-1.pom';
+    assert.equal(fixtureVerdict('mismatch', { ...rejected, stderr }, requests, false), 'inconclusive');
+  }
 });

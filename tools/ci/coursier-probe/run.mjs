@@ -90,6 +90,14 @@ async function captureGraph(repo) {
   const list = historical(paths);
   assert(list.length);
   await writeFile(join(out, 'historical-file-list.txt'), list);
+  const cacheEntries = [];
+  for (const path of paths.sort()) {
+    cacheEntries.push({ path, sha256: await fileHash(join(hostRoot, path)) });
+  }
+  await json(join(out, 'cache-files.json'), cacheEntries);
+  await json(join(out, 'resolver-binaries.json'), {
+    releaseSha256: await fileHash(binary), installedSha256: await fileHash(join(repo, 'coursier')),
+  });
   const kinds = (await readFile(join(out, 'query', 'stdout.txt'), 'utf8')).trim().split('\n').filter(line => line.includes(' rule ')).sort();
   assert(kinds.length && kinds.some(line => line.includes('//:pin')));
   await writeFile(join(out, 'targets.txt'), kinds.join('\n') + '\n');

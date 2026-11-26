@@ -19,7 +19,7 @@ const diagnostic = {
   mismatch: /wrong checksum/i,
 };
 
-function serve(path, kind) {
+export function serve(path, kind) {
   const match = /^(.*\.(?:jar|pom))(?:\.(sha1|md5))?$/.exec(path);
   if (!match || ![jarPath, basePath + '.pom'].includes(match[1])) return null;
   const artifact = match[1] === jarPath ? jar : pom;
@@ -37,16 +37,16 @@ export function fixtureVerdict(kind, result, requests, bytesMatch) {
   if (result.signal || result.code == null) return 'inconclusive';
   const got = (path, status) => requests.some(r => r.path === path && r.method === 'GET' && r.status === status);
   if (!got(jarPath, 200)) return 'inconclusive';
+  const expectSuccess = kind === 'valid' || kind === 'permissive-missing';
+  if (!expectSuccess && result.code === 0 && bytesMatch) return 'fail';
   const missing = kind === 'missing' || kind === 'permissive-missing';
   if (!got(jarPath + '.sha1', missing ? 404 : 200)) return 'inconclusive';
   if (missing && !got(jarPath + '.md5', 404)) return 'inconclusive';
-  const expectSuccess = kind === 'valid' || kind === 'permissive-missing';
   if (result.code === 0) return bytesMatch ? (expectSuccess ? 'pass' : 'fail') : 'inconclusive';
-  if (expectSuccess) {
-    const checksumFailure = /(?:wrong checksum|checksum (?:errors|not found|format error))/i.test(result.stderr);
-    return checksumFailure && result.stderr.includes('probe-1.jar') ? 'fail' : 'inconclusive';
-  }
-  return diagnostic[kind].test(result.stderr) && result.stderr.includes('probe-1.jar') ? 'pass' : 'inconclusive';
+  const matches = regex => result.stderr.split(/[\r\n]+/).some(line =>
+    regex.test(line) && /probe-1\.jar(?:\b|$)/.test(line) && !line.includes('probe-1.pom'));
+  if (expectSuccess) return matches(/(?:wrong checksum|checksum (?:errors|not found|format error))/i) ? 'fail' : 'inconclusive';
+  return matches(diagnostic[kind]) ? 'pass' : 'inconclusive';
 }
 
 export async function fixtures(coursier, out, temp) {
@@ -71,13 +71,16 @@ export async function fixtures(coursier, out, temp) {
         'http://127.0.0.1:' + server.address().port, '--cache', cache, '--checksum', checksum, 'fixture:probe:1'];
       const result = await invoke(dir, 'java', args, 60_000, { ...process.env, COURSIER_CACHE: cache });
       let bytesMatch = false;
+      let observed = null;
       if (result.code === 0) {
         const paths = (await readFile(join(dir, 'stdout.txt'), 'utf8')).trim().split(/\r?\n/);
         if (paths.length === 1 && paths[0].startsWith(cache + '/') && paths[0].endsWith('/probe-1.jar')) {
-          bytesMatch = await fileHash(paths[0]) === hash(jar);
+          observed = { path: paths[0], sha256: await fileHash(paths[0]) };
+          bytesMatch = observed.sha256 === hash(jar);
         }
       }
       const stderr = await readFile(join(dir, 'stderr.txt'), 'utf8');
+      await json(join(dir, 'output-file.json'), observed);
       rows.push({ kind, checksum, ...result, bytesMatch, verdict: fixtureVerdict(kind, { ...result, stderr }, requests, bytesMatch) });
     } finally {
       await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
