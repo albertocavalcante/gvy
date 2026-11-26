@@ -5,8 +5,9 @@ package com.github.albertocavalcante.gvy.gls.providers.symbols
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
-import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.IndexedSourceText
+import com.github.albertocavalcante.gvy.gls.compilation.IndexedTextRead
 import com.github.albertocavalcante.gvy.gls.compilation.RequestParseInputs
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
@@ -20,9 +21,6 @@ import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
-import java.nio.file.Files
-import java.nio.file.NoSuchFileException
-import java.nio.file.attribute.BasicFileAttributes
 
 /** The source/index view consumed by one workspace/symbol request, including misses in its ordered scan. */
 @Suppress("DEPRECATION") // SymbolInformation is the existing protocol response.
@@ -82,60 +80,51 @@ internal class WorkspaceSymbolRequest(
         row: SymbolIndexingService.Prepared,
         checkCancelled: () -> Unit,
     ): Row? {
+        val open = source.buffer?.snapshot?.content
+        val observed = row.sourceText.read(source.uri, open, allowReplacement = true, checkCancelled)
+        val text = when (observed) {
+            IndexedTextRead.Missing -> {
+                checks.add {
+                    checkCancelled()
+                    !IndexedSourceText.isPresent(source.uri, open) && source.isCurrent()
+                }
+                return null
+            }
+            IndexedTextRead.Changed -> changed()
+            is IndexedSourceText -> observed
+        }
+        checks.add { text.matches(source.uri, open, checkCancelled) && source.isCurrent() }
         val inputs = row.inputs
-        if (inputs != null) {
+        if (text === row.sourceText && inputs != null && inputs.producerCurrent(source)) {
             val current = {
-                rowCurrent(source, row.content, inputs.physical, checkCancelled) { inputs.producerCurrent(source) }
+                inputs.physical.isCurrent(source, text.content, checkCancelled) &&
+                    inputs.producerCurrent(source) && source.workerCurrent() && source.isCurrent()
             }
             if (current()) {
                 checks.add(current)
-                return Row(row.content, row.index)
+                return Row(text.content, row.index)
             }
         }
-        // A retained physical declaration may predate a cache clear. Rebuild only a scanned, unqualified row
-        // from its current source. Never use new text to translate coordinates produced by the old index.
-        return when (val acquisition = compilation.acquireSymbolRow(source)) {
+        return rebuild(source, text, checkCancelled)
+    }
+
+    /** The rebuild must use the text already read within the original row's budget. */
+    private suspend fun rebuild(source: SnapshotSource, text: IndexedSourceText, checkCancelled: () -> Unit): Row =
+        when (val acquisition = compilation.acquireSymbolRow(source, text)) {
             is SnapshotAcquisition.Available -> {
                 val held = acquisition.snapshot
                 val physical = RequestParseInputs(held.parseResult)
                 val current = {
-                    rowCurrent(source, held.sourceText, physical, checkCancelled, acquisition.isCurrent)
+                    held.sourceText == text.content && physical.isCurrent(source, text.content, checkCancelled) &&
+                        acquisition.isCurrent() && source.workerCurrent() && source.isCurrent()
                 }
                 if (!current()) changed()
                 checks.add(current)
-                Row(held.sourceText, SymbolIndex().buildFromVisitor(held.parseResult.astModel))
+                Row(text.content, SymbolIndex().buildFromVisitor(held.parseResult.astModel))
             }
-            SnapshotAcquisition.Missing -> {
-                checks.add { currentText(source) == null && source.isCurrent() }
-                null
-            }
-            SnapshotAcquisition.Stale -> changed()
+            SnapshotAcquisition.Missing, SnapshotAcquisition.Stale -> changed()
             is SnapshotAcquisition.Failure -> throw acquisition.cause
         }
-    }
-
-    private fun rowCurrent(
-        source: SnapshotSource,
-        text: String,
-        inputs: RequestParseInputs,
-        checkCancelled: () -> Unit,
-        producerCurrent: () -> Boolean,
-    ): Boolean {
-        val contentCurrent = currentText(source) == text && inputs.isCurrent(source, text, checkCancelled)
-        if (!contentCurrent) return false
-        return producerCurrent() && source.workerCurrent() && source.isCurrent()
-    }
-
-    private fun currentText(source: SnapshotSource): String? {
-        source.buffer?.let { return it.snapshot.content }
-        val path = UriPathConverter.toPath(source.uri) ?: return null
-        return try {
-            val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
-            if (attributes.isRegularFile) Files.readString(path) else null
-        } catch (_: NoSuchFileException) {
-            null
-        }
-    }
 
     private fun changed(): Nothing = throw ResponseErrorException(
         ResponseError(ResponseErrorCode.ContentModified, "Workspace changed during symbol search", null),

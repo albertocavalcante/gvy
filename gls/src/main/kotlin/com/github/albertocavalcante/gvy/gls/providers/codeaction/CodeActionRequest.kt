@@ -3,12 +3,10 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
-import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
-import com.github.albertocavalcante.gvy.gls.compilation.contentHash
 import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -26,9 +24,6 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
-import java.nio.file.Files
-import java.nio.file.NoSuchFileException
-import java.nio.file.attribute.BasicFileAttributes
 import java.util.IdentityHashMap
 
 /** Inputs captured at dispatch, plus the publications and source facts actually consulted by the providers. */
@@ -62,24 +57,13 @@ internal class CodeActionRequest(
         publications += current
         val index = compilation.getWorkspaceSymbolIndex()
         val shadows = index?.referenceShadows().orEmpty()
-        val visible = selected.sourceHashes.filterKeys { it !in shadows }
+        val visible = selected.sources.filterKeys { it !in shadows }
         checks += {
             index === compilation.getWorkspaceSymbolIndex() && shadows == index?.referenceShadows().orEmpty() &&
-                visible.all { (uri, hash) -> hasIndexedText(uri, hash) }
+                visible.all { (uri, text) -> text.matches(uri, source.documents[uri]?.content, checkCancelled) }
         }
         return selected.classes.filter { it.uri !in shadows }.map { it.fullyQualifiedName }
             .filter { it.contains('.') }.distinct()
-    }
-
-    private fun hasIndexedText(uri: URI, hash: String): Boolean {
-        source.documents[uri]?.let { return it.contentHash == hash }
-        val path = UriPathConverter.toPath(uri) ?: return false
-        return try {
-            Files.readAttributes(path, BasicFileAttributes::class.java).isRegularFile &&
-                contentHash(Files.readString(path)) == hash
-        } catch (_: NoSuchFileException) {
-            false
-        }
     }
 
     fun compilerInput(module: ModuleNode): CompiledDocumentInput = compilerSources.getOrPut(module) {

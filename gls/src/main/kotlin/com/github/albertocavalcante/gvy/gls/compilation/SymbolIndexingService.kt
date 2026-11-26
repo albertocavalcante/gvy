@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Service for indexing Groovy source files to extract symbols for resolution.
  *
- * Holds one [SymbolIndex] per file, stamped with a hash of the content it was built from. A caller that
+ * Holds one [SymbolIndex] per file, paired with the exact content it was built from. A caller that
  * has the current content ([ensureIndexed], [indexFile]) therefore never gets an index of older content,
  * and every compile - including a compile cache hit - can restore an index that is missing.
  *
@@ -64,9 +64,9 @@ class SymbolIndexingService(
         private const val INDEXING_BATCH_SIZE = 10
     }
 
-    /** An index together with the hash of the content it was built from, built before it is committed. */
-    internal class Prepared(val content: String, val index: SymbolIndex, val inputs: Inputs? = null) {
-        val contentHash: String = contentHash(content)
+    /** An index together with the exact content it was built from, built before it is committed. */
+    internal class Prepared(content: String, val index: SymbolIndex, val inputs: Inputs? = null) {
+        val sourceText = IndexedSourceText(content)
 
         /** Classes this file declares; feeds the class-name lookup (#861). */
         val classes: List<Symbol.Class> by lazy {
@@ -102,7 +102,7 @@ class SymbolIndexingService(
     }
 
     /** Whether the stored index of [uri] was built from exactly [snapshot]'s text; older text is not current. */
-    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.contentHash == snapshot.contentHash
+    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.sourceText?.content == snapshot.content
 
     /** Text known not to parse, so readiness checks skip it (#1344); removed with this file's index. */
     internal val unparseable = UnparseableTexts(ownership)
@@ -118,8 +118,7 @@ class SymbolIndexingService(
         inputs: Inputs? = null,
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
-        val hash = contentHash(content)
-        entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { stored ->
+        entries[ticket.uri]?.takeIf { it.sourceText.content == content }?.let { stored ->
             // A matching index answers only a current ticket, so a non-null result always means "committed or
             // already current for this ticket" (#1399)
             return stored.index.takeIf { ownership.isCurrent(ticket) }
@@ -148,21 +147,21 @@ class SymbolIndexingService(
     fun findClasses(query: ClassNameQuery): List<Symbol.Class> =
         classNames.files(query).sorted().flatMap { entries[it]?.classes.orEmpty() }.filter(query::matches)
 
-    internal class ClassNameSelection(val classes: List<Symbol.Class>, val sourceHashes: Map<URI, String>)
+    internal class ClassNameSelection(val classes: List<Symbol.Class>, val sources: Map<URI, IndexedSourceText>)
 
     internal fun captureClasses(query: ClassNameQuery): Pair<ClassNameSelection, () -> Boolean> = classNames.read {
-        val hashes = mutableMapOf<URI, String>()
+        val sources = mutableMapOf<URI, IndexedSourceText>()
         val matches = buildList {
             for (owner in classNames.files(query).sorted()) {
                 val entry = entries[owner] ?: continue
                 val declarations = entry.classes.filter { it.uri == owner && query.matches(it) }
                 if (declarations.isNotEmpty()) {
                     addAll(declarations)
-                    hashes[owner] = entry.contentHash
+                    sources[owner] = entry.sourceText
                 }
             }
         }
-        ClassNameSelection(matches, hashes)
+        ClassNameSelection(matches, sources)
     }
 
     /**
@@ -189,8 +188,8 @@ class SymbolIndexingService(
             }
             null
         } else {
-            indexFileFromDisk(uri, path, logger, cached = { hash ->
-                entries[uri]?.takeIf { it.contentHash == hash }?.index
+            indexFileFromDisk(uri, path, logger, cached = { content ->
+                entries[uri]?.takeIf { it.sourceText.content == content }?.index
             }) { content ->
                 // Parse the source code for indexing
                 // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
@@ -321,7 +320,7 @@ private inline fun indexFileFromDisk(
     index: (String) -> SymbolIndex?,
 ): SymbolIndex? = runSuspendCatching {
     val content = Files.readString(path)
-    cached(contentHash(content))?.also { logger.debug { "File already indexed: $uri" } } ?: index(content)
+    cached(content)?.also { logger.debug { "File already indexed: $uri" } } ?: index(content)
 }.getOrElse { error ->
     if (error !is Exception) throw error
     logger.warn(error) { "Failed to index workspace file: $uri" }

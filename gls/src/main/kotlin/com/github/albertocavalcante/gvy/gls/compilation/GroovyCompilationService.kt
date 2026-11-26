@@ -246,8 +246,8 @@ class GroovyCompilationService internal constructor(
     ): SnapshotQuery<T> = orchestrator.snapshots.queryDiagnostics(source, content, query)
 
     /** A retained symbol row can outlive a physical companion edit without any LSP notification. */
-    internal suspend fun acquireSymbolRow(source: SnapshotSource): SnapshotAcquisition =
-        orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, mode = null, checkCachedInputs = true)
+    internal suspend fun acquireSymbolRow(source: SnapshotSource, text: IndexedSourceText): SnapshotAcquisition =
+        orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, mode = null, indexedText = text)
 
     /** Preserve startup symbol requests when worker selection retires acquisition, never the query itself. */
     internal suspend fun <T> querySymbolsWithWorkerRetry(

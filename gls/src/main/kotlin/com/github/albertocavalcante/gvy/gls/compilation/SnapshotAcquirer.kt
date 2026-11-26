@@ -378,8 +378,8 @@ internal class SnapshotAcquirer(
         source: SnapshotSource,
         phase: Int,
         mode: ParseMode?,
-        checkCachedInputs: Boolean = false,
-    ): SnapshotAcquisition = whileCallerActive { acquireCurrent(source, phase, mode, checkCachedInputs) }
+        indexedText: IndexedSourceText? = null,
+    ): SnapshotAcquisition = whileCallerActive { acquireCurrent(source, phase, mode, indexedText) }
 
     private suspend inline fun whileCallerActive(acquire: () -> SnapshotAcquisition): SnapshotAcquisition {
         val caller = currentCoroutineContext()
@@ -395,16 +395,11 @@ internal class SnapshotAcquirer(
         source: SnapshotSource,
         phase: Int,
         mode: ParseMode?,
-        checkCachedInputs: Boolean = false,
+        indexedText: IndexedSourceText? = null,
     ): SnapshotAcquisition {
         if (!source.isCurrent()) return SnapshotAcquisition.Stale
         val content = try {
-            source.buffer?.snapshot?.content ?: UriPathConverter.toPath(source.uri)?.let { path ->
-                withContext(dependencies.ioDispatcher) {
-                    val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
-                    if (attributes.isRegularFile) Files.readString(path) else null
-                }
-            }
+            indexedText?.content ?: source.buffer?.snapshot?.content ?: readSourceFile(source.uri)
         } catch (_: NoSuchFileException) {
             null
         } catch (error: IOException) {
@@ -415,7 +410,15 @@ internal class SnapshotAcquirer(
         } else {
             val selectedMode = mode ?: if (source.buffer != null) ParseMode.WORKSPACE else ParseMode.MINIMAL
             val capture = CapturedCompilation(selectSources, source, content, phase, selectedMode)
-            resolve(capture, checkCachedInputs).outcome
+            resolve(capture, checkCachedInputs = indexedText != null).outcome
+        }
+    }
+
+    private suspend fun readSourceFile(uri: URI): String? {
+        val path = UriPathConverter.toPath(uri) ?: return null
+        return withContext(dependencies.ioDispatcher) {
+            val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+            if (attributes.isRegularFile) Files.readString(path) else null
         }
     }
 

@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
@@ -32,6 +33,7 @@ internal class SignatureCompletionRequest(
     private val classpathCurrent = compilation.classpathService.captureGeneration()
     private val jenkins = if (completion) JenkinsQuerySnapshot.capture(compilation, uri) else null
     private var jenkinsFacts: JenkinsQueryFacts? = null
+    private lateinit var checkCancelled: () -> Unit
     private val inputs = mutableListOf<() -> Boolean>()
     private val publications = mutableListOf<() -> Boolean>()
     private val consultedMembers = mutableListOf<HoverMemberLookup>()
@@ -55,9 +57,9 @@ internal class SignatureCompletionRequest(
         if (!current()) throw changed()
     }
 
-    fun observeInputs(current: () -> Boolean) {
-        inputs.add(current)
-        if (!current()) throw changed()
+    fun observeInputs(current: (() -> Unit) -> Boolean) {
+        inputs.add { current(checkCancelled) }
+        if (!current(checkCancelled)) throw changed()
     }
 
     suspend fun completionJenkins(): JenkinsQueryFacts =
@@ -65,7 +67,9 @@ internal class SignatureCompletionRequest(
             .also { jenkinsFacts = it }
 
     suspend fun <T> deliver(compute: suspend () -> T): T {
-        if (!currentCoroutineContext().inputsCurrent(::current)) throw changed()
+        val caller = currentCoroutineContext()
+        checkCancelled = caller::ensureActive
+        if (!caller.inputsCurrent(::current)) throw changed()
         val result = runSuspendCatching { compute() }
         val qualified = deliveryInputsCurrent(::current) {
             inputs.all { it() } && consultedMembers.all { it.isCurrent() } && jenkinsFacts?.isCurrent() != false
