@@ -11,6 +11,8 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerConnector
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.gvy.spock.SpecificationStatus
+import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
@@ -18,8 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import com.github.albertocavalcante.gvy.spock.SpecificationStatus
-import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
@@ -75,7 +75,14 @@ class CodeActionVerdictWorkerWireTest {
         )
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val service = GroovyTextDocumentService(
-            scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = documents, formatter = Formatter { it }),
+            scope,
+            compilation,
+            GroovyTextDocumentServiceOptions(
+                documentProvider = documents,
+                formatter = Formatter {
+                    it
+                },
+            ),
         )
         try {
             fun jar(type: Class<*>) = Path.of(type.protectionDomain.codeSource.location.toURI())
@@ -102,7 +109,10 @@ class CodeActionVerdictWorkerWireTest {
                 val compiled = assertNotNull(compilation.getCompiledSnapshot(uri))
                 assertTrue(compiled.parseResult.outcome.isDegraded)
                 val module = assertNotNull(compiled.parseResult.ast)
-                val owner = SpockSourceContext.from(module, isPartial = true).classes.single { it.classNode.name == "TableSpec" }
+                val owner = SpockSourceContext.from(module, isPartial = true).classes.single {
+                    it.classNode.name ==
+                        "TableSpec"
+                }
                 assertEquals(SpecificationStatus.UNCERTAIN, owner.status)
             }
             assertDegraded()

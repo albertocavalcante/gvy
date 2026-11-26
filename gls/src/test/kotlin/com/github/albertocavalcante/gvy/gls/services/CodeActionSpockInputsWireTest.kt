@@ -116,7 +116,10 @@ class CodeActionSpockInputsWireTest {
             Files.writeString(base, "import spock.lang.*\nabstract class BaseSpec extends Object {}\n")
             release.countDown()
             val error = assertThrows<ExecutionException> { answer.get(10, TimeUnit.SECONDS) }
-            assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(error.cause).responseError.code)
+            assertEquals(
+                ResponseErrorCode.ContentModified.value,
+                assertIs<ResponseErrorException>(error.cause).responseError.code,
+            )
         } finally {
             release.countDown()
             scope.cancel()

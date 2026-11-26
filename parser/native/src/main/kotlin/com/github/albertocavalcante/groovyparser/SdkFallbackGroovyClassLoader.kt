@@ -26,10 +26,18 @@ internal open class SdkFallbackGroovyClassLoader(parent: ClassLoader) : GroovyCl
         // Keep the default extension probe inside any later workspace filters. An explicit filter may
         // deliberately exclude a present source; a failed default probe establishes no such decision.
         val original = super.getResourceLoader()
-        super.setResourceLoader(GroovyResourceLoader { name ->
-            val recorder = sourceSearch
-            if (recorder == null) original.loadGroovySource(name) else recorder.scriptSearch { original.loadGroovySource(name) }
-        })
+        super.setResourceLoader(
+            GroovyResourceLoader { name ->
+                val recorder = sourceSearch
+                if (recorder ==
+                    null
+                ) {
+                    original.loadGroovySource(name)
+                } else {
+                    recorder.scriptSearch { original.loadGroovySource(name) }
+                }
+            },
+        )
     }
 
     fun selectSdkFallback() {
@@ -56,7 +64,9 @@ internal open class SdkFallbackGroovyClassLoader(parent: ClassLoader) : GroovyCl
 
     /** Install after source filters, and release the mutable recorder as soon as compilation returns. */
     fun beginSourceSearch(sourceRoots: List<Path>) {
-        val directories = getURLs().filter { it.protocol == "file" && it.path.endsWith("/") }.map { Path.of(it.toURI()) }
+        val directories = getURLs().filter {
+            it.protocol == "file" && it.path.endsWith("/")
+        }.map { Path.of(it.toURI()) }
         val recorder = SourceMembershipRecorder(
             (directories + sourceRoots).map { it.toAbsolutePath().normalize() }.distinct(),
             localLoader = parent == null || parent === ClassLoader.getPlatformClassLoader(),

@@ -45,12 +45,12 @@ import com.github.albertocavalcante.gvy.gls.providers.typedefinition.heldTypeDef
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseMode
 import io.github.oshai.kotlinlogging.KotlinLogging
-import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -638,7 +638,9 @@ class GroovyTextDocumentService(
         val request = runCatching { codeActionProvider.capture(params) }
         return coroutineScope.future {
             failingAsInternalError("computing code actions") {
-                codeActionProvider.provideCodeActions(request.getOrThrow()).map { Either.forRight<Command, CodeAction>(it) }
+                codeActionProvider.provideCodeActions(request.getOrThrow()).map {
+                    Either.forRight<Command, CodeAction>(it)
+                }
             }
         }
     }

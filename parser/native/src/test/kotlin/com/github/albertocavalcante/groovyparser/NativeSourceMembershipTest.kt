@@ -54,6 +54,20 @@ class NativeSourceMembershipTest {
     }
 
     @Test
+    fun `a selected first directory does not depend on a hidden later file`() {
+        val first = Files.createDirectories(root.resolve("first"))
+        val second = Files.createDirectories(root.resolve("second"))
+        val selected = Files.writeString(first.resolve("Shadow.groovy"), "class Shadow {}")
+        val recorder = SourceMembershipRecorder(listOf(first, second))
+        recorder.scriptSearch { recorder.resource("Shadow.groovy") { selected.toUri().toURL() } }
+        val membership = recorder.finish()
+        Files.writeString(second.resolve("Shadow.groovy"), "class Shadow {}")
+        assertEquals(Status.CURRENT, membership.check {})
+        Files.delete(selected)
+        assertEquals(Status.CHANGED, membership.check {})
+    }
+
+    @Test
     fun `selection bypassing an earlier present file is ambiguous`() {
         val first = Files.createDirectories(root.resolve("first"))
         val second = Files.createDirectories(root.resolve("second"))

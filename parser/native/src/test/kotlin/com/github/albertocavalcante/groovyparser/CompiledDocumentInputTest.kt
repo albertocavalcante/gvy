@@ -16,6 +16,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CompiledDocumentInputTest {
@@ -33,12 +34,27 @@ class CompiledDocumentInputTest {
             assertEquals("Base", base.name)
             val module = assertNotNull(base.module)
             assertIs<FileReaderSource>(module.context.source)
+            assertFalse(parsed.outcome.isDegraded)
             val selected = assertNotNull(CompiledDocumentInput.of(module))
+            assertTrue(Files.isSameFile(file, Path.of(selected.uri)))
             assertTrue(selected.matchesText(text))
             assertFalse(selected.matchesText("\uFEFF$text"))
             assertTrue(selected.matchesCurrentText(null) {})
             Files.writeString(file, "\uFEFF" + text.replace("😀", "🙃"))
             assertFalse(selected.matchesCurrentText(null) {})
+        }
+    }
+
+    @Test
+    fun `a rejected file does not lend its identity to a synthetic replacement`() {
+        val file = Files.writeString(root.resolve("Base.groovy"), "class Base { void broken( }")
+        val parsed = GroovyParserFacade().parse(request().copy(workspaceSources = listOf(file)))
+        parsed.compilationUnit.classLoader.use {
+            assertTrue(parsed.outcome.excludedSources.any { it.source == file.toString() })
+            assertTrue("Base" in parsed.outcome.stubbedClasses)
+            val base = assertNotNull(parsed.ast?.classes?.singleOrNull { it.name == "Child" }?.superClass?.redirect())
+            assertEquals("Base", base.name)
+            assertNull(CompiledDocumentInput.of(assertNotNull(base.module)))
         }
     }
 

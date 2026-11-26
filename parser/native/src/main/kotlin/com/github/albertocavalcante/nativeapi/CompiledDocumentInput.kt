@@ -91,7 +91,8 @@ class CompiledDocumentInput private constructor(
             val uri = unit.inputDocumentUri()
             if (original is DocumentReaderSource) {
                 return parser.buildAST(unit, loader, cst).also { module ->
-                    val witness = CompiledDocumentInput(original.documentUri, original, original.text.length.toLong(), null)
+                    val witness =
+                        CompiledDocumentInput(original.documentUri, original, original.text.length.toLong(), null)
                     module.putNodeMetaData(CompiledDocumentInput::class.java, witness)
                 }
             }

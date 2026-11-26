@@ -232,7 +232,11 @@ class SignatureHelpProvider(
 
         // Determine the type of the object the method is being called on
         val receiverType = resolveReceiverType(
-            methodCall, inputs.symbolTable, inputs.astVisitor, inputs.moduleNode, semanticResolver,
+            methodCall,
+            inputs.symbolTable,
+            inputs.astVisitor,
+            inputs.moduleNode,
+            semanticResolver,
         )
         val targetType = receiverType.substringBefore("<")
 

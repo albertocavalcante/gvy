@@ -48,10 +48,16 @@ class CodeActionPublicationDeliveryTest {
             val failure = assertFailsWith<ResponseErrorException> {
                 request.deliver { document, _ ->
                     val actions = ImportAction(compilation).createImportActions(
-                        uri.toString(), request.params.context.diagnostics, document.content, request::findCandidates,
+                        uri.toString(),
+                        request.params.context.diagnostics,
+                        document.content,
+                        request::findCandidates,
                     )
                     val action = actions.single()
-                    assertEquals("import example.Widget\n", action.edit.changes.getValue(uri.toString()).single().newText)
+                    assertEquals(
+                        "import example.Widget\n",
+                        action.edit.changes.getValue(uri.toString()).single().newText,
+                    )
                     assertEquals(6, action.diagnostics.single().range.end.character)
                     compilation.symbolIndexingService.invalidate(declaration)
                     assertTrue(compilation.symbolIndexingService.findClasses(ClassNameQuery.Exact("Widget")).isEmpty())

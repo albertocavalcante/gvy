@@ -209,8 +209,12 @@ internal class SpockVerdictMemory {
                         Remembered(declaration(context.classNode, imports), chain.bases, chain.jvm)
                 }
             pending = Record(
-                fingerprint, compiler.producer?.environment(), compiler.wire?.consultedMembership,
-                compiler.wire != null, WeakReference(module), classes,
+                fingerprint,
+                compiler.producer?.environment(),
+                compiler.wire?.consultedMembership,
+                compiler.wire != null,
+                WeakReference(module),
+                classes,
             )
             if (compiler.wire == null) commit()
         }

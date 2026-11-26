@@ -71,7 +71,8 @@ class CodeActionSnapshotWireTest {
         fun offset(position: Position) = index.offsetOf(position.line, position.character)
         var result = text
         for (edit in edits.sortedByDescending { offset(it.range.start) }) {
-            result = result.substring(0, offset(edit.range.start)) + edit.newText + result.substring(offset(edit.range.end))
+            result =
+                result.substring(0, offset(edit.range.start)) + edit.newText + result.substring(offset(edit.range.end))
         }
         return result
     }
@@ -105,7 +106,10 @@ class CodeActionSnapshotWireTest {
 
     private fun assertModified(answer: CompletableFuture<*>) {
         val error = assertThrows<ExecutionException> { answer.get(10, TimeUnit.SECONDS) }
-        assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(error.cause).responseError.code)
+        assertEquals(
+            ResponseErrorCode.ContentModified.value,
+            assertIs<ResponseErrorException>(error.cause).responseError.code,
+        )
     }
 
     private class Fixture(private val pause: Boolean = false) : AutoCloseable {
@@ -152,7 +156,14 @@ class CodeActionSnapshotWireTest {
             assertEquals(source, snapshot.sourceText)
             assertNotNull(snapshot.parseResult.ast)
             assertTrue(snapshot.parseResult.outcome.achievedPhase >= Phases.CANONICALIZATION)
-            assertTrue(synchronized(requests) { requests.any { it.content == source && it.compilePhase == Phases.CANONICALIZATION } })
+            assertTrue(
+                synchronized(requests) {
+                    requests.any {
+                        it.content == source &&
+                            it.compilePhase == Phases.CANONICALIZATION
+                    }
+                },
+            )
             val diagnostics = UnusedImportDiagnosticProvider(compilation).provideDiagnostics(uri, source).toList()
             assertEquals(1, diagnostics.size)
             diagnostics

@@ -100,7 +100,9 @@ internal class CodeActionRequest(
             NativeSourceMembership.Status.UNAVAILABLE -> throw unavailable()
         }
 
-    fun canRecall(membership: NativeSourceMembership): Boolean = observe { membershipCurrent(membership, checkCancelled) }
+    fun canRecall(membership: NativeSourceMembership): Boolean = observe {
+        membershipCurrent(membership, checkCancelled)
+    }
 
     fun <T> observe(read: () -> T): T = read().also { value -> checks += { read() == value } }
 
@@ -134,7 +136,9 @@ internal class CodeActionRequest(
                     caller.ensureActive()
                     if (!identitiesCurrent() || verdicts?.commit() == false) throw changed()
                 }
-            ) throw changed()
+            ) {
+                throw changed()
+            }
         }
         return actions
     }

@@ -17,8 +17,8 @@ import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.NotDirectoryException
-import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 
 /**
  * Main provider for code actions (quick fixes) in Groovy files.
@@ -60,7 +60,10 @@ class CodeActionProvider(
         } ?: return null
         val packagePath = packageName.split('.').filter(String::isNotEmpty)
         val roots = compilationService.workspaceManager.getSourceRoots().map(::real)
-        val directories = (roots.map { root -> packagePath.fold(root) { dir, part -> dir.resolve(part) } } + listOf(directory))
+        val directories = (
+            roots.map { root -> packagePath.fold(root) { dir, part -> dir.resolve(part) } } +
+                listOf(directory)
+            )
             .map { it.normalize() }
             .distinct()
         val onDisk = directories.flatMap(::listSources)
@@ -79,7 +82,9 @@ class CodeActionProvider(
     /** A missing package directory is empty; unexpected filesystem errors reach the query boundary. */
     private fun listSources(directory: Path): List<Path> = try {
         Files.list(directory).use { entries ->
-            entries.filter { isSourceFile(it) && Files.readAttributes(it, BasicFileAttributes::class.java).isRegularFile }
+            entries.filter {
+                isSourceFile(it) && Files.readAttributes(it, BasicFileAttributes::class.java).isRegularFile
+            }
                 .map(::real).toList()
         }
     } catch (_: NoSuchFileException) {
@@ -109,7 +114,13 @@ class CodeActionProvider(
             val attributes = Files.readAttributes(file, BasicFileAttributes::class.java)
             if (!attributes.isRegularFile || attributes.size() > MAX_SOURCE_BYTES) return null
             val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_SOURCE_BYTES + 1) }
-            if (bytes.size > MAX_SOURCE_BYTES) null else Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+            if (bytes.size >
+                MAX_SOURCE_BYTES
+            ) {
+                null
+            } else {
+                Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+            }
         } catch (_: NoSuchFileException) {
             null
         }
@@ -173,7 +184,12 @@ class CodeActionProvider(
                 if (request == null) {
                     importAction.createImportActions(params.textDocument.uri, params.context.diagnostics, content)
                 } else {
-                    importAction.createImportActions(params.textDocument.uri, params.context.diagnostics, content, request::findCandidates)
+                    importAction.createImportActions(
+                        params.textDocument.uri,
+                        params.context.diagnostics,
+                        content,
+                        request::findCandidates,
+                    )
                 },
             )
 
