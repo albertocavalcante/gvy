@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
@@ -70,8 +71,7 @@ class WorkspaceManager internal constructor(
     private val updateLock = Any()
 
     // Project strategy registry for project-type-specific functionality
-    @Volatile
-    private var strategyRegistry: ProjectStrategyRegistry? = null
+    private val strategyRegistry = SharedValue<ProjectStrategyRegistry?>(null)
 
     /** The current workspace configuration: one consistent snapshot of root, classpath, roots and sources. */
     fun current(): WorkspaceModel = model.get()
@@ -81,14 +81,14 @@ class WorkspaceManager internal constructor(
      * The registry manages project-type-specific strategies (Jenkins, Gradle, etc.).
      */
     fun setStrategyRegistry(registry: ProjectStrategyRegistry) {
-        this.strategyRegistry = registry
+        strategyRegistry.set(registry)
         logger.info { "Strategy registry set with ${registry.activeStrategies.size} strategies" }
     }
 
     /**
      * Gets the project strategy registry.
      */
-    fun getStrategyRegistry(): ProjectStrategyRegistry? = strategyRegistry
+    fun getStrategyRegistry(): ProjectStrategyRegistry? = strategyRegistry.value
 
     /**
      * Gets Jenkins capabilities from the strategy registry.
@@ -96,7 +96,7 @@ class WorkspaceManager internal constructor(
      *
      * @return JenkinsCapabilities if a Jenkins strategy is active, null otherwise
      */
-    fun getJenkinsCapabilities(): JenkinsCapabilities? = strategyRegistry?.findCapability<JenkinsCapabilities>()
+    fun getJenkinsCapabilities(): JenkinsCapabilities? = strategyRegistry.value?.findCapability<JenkinsCapabilities>()
 
     fun initializeWorkspace(workspaceRoot: Path) {
         logger.info { "Initializing workspace (non-blocking): $workspaceRoot" }
@@ -280,7 +280,7 @@ class WorkspaceManager internal constructor(
 
     /** One model's [Spelling] and its listed sources by key: models are immutable, so it is keyed by identity. */
     private fun listedIndexFor(workspace: WorkspaceModel): ListedIndex =
-        listedIndex?.takeIf { it.spells(workspace) } ?: ListedIndex(workspace).also { listedIndex = it }
+        listedIndex.value?.takeIf { it.spells(workspace) } ?: ListedIndex(workspace).also { listedIndex.set(it) }
 
     /**
      * An identity that changes exactly when [listedSpellings] may answer differently: a new root, source roots or
@@ -292,15 +292,14 @@ class WorkspaceManager internal constructor(
         val spelling = Spelling(workspace.sourceRoots.map { it.toAbsolutePath().normalize() }, workspace.root)
 
         // The last model found to spell alike: each model is compared once, structurally, then by identity.
-        @Volatile
-        private var agreed: WorkspaceModel = workspace
+        private val agreed = SharedValue(workspace)
 
         /** Whether [next] spells paths as this did: the same root, source roots and listing, by value. */
         fun spells(next: WorkspaceModel): Boolean {
-            if (next === agreed) return true
+            if (next === agreed.value) return true
             val same = next.root == workspace.root && next.sourceRoots == workspace.sourceRoots &&
                 next.sources == workspace.sources
-            if (same) agreed = next
+            if (same) agreed.set(next)
             return same
         }
 
@@ -318,8 +317,9 @@ class WorkspaceManager internal constructor(
             if (direct) translated else listed[spelling.key(translated)] ?: translated
     }
 
-    @Volatile
-    private var listedIndex: ListedIndex? = null
+    // A memo: racing callers may each build an index. Either answers listedSpellings alike, but spellingGeneration()
+    // returns the index itself, so a lost race changes that identity once more.
+    private val listedIndex = SharedValue<ListedIndex?>(null)
 
     /** The probe for [root], run on its [canonical] directory; cached only once the root exists. */
     private fun isCaseInsensitive(root: Path, canonical: Path): Boolean = caseInsensitiveRoots[root]
@@ -650,7 +650,7 @@ class WorkspaceManager internal constructor(
         }
 
         // Add source roots from active strategies
-        strategyRegistry?.activeStrategies?.forEach { strategy ->
+        strategyRegistry.value?.activeStrategies?.forEach { strategy ->
             strategy.getSourceRoots().forEach { sourceRoot ->
                 if (Files.exists(sourceRoot) && Files.isDirectory(sourceRoot)) {
                     sourceRoots.add(sourceRoot)
@@ -771,7 +771,7 @@ class WorkspaceManager internal constructor(
         compileContextFor(uri, content, workspace).classpath
 
     private fun overridingStrategy(uri: URI): ProjectStrategy? =
-        strategyRegistry?.activeStrategies?.firstOrNull { it.overridesClasspath(uri) }
+        strategyRegistry.value?.activeStrategies?.firstOrNull { it.overridesClasspath(uri) }
 
     private fun documentPath(uri: URI): Path? =
         if (uri.scheme == "file") runCatching { Path.of(uri) }.getOrNull() else null

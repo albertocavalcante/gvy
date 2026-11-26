@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import kotlinx.coroutines.CompletableDeferred
@@ -84,7 +85,8 @@ private class ActiveJobs<I, T : Any>(val members: List<PendingWork<I, T>>, val s
 }
 
 internal class PendingRegistry<I, T : Any>(private val deliveryFor: ((I) -> PendingDelivery)? = null) {
-    @Volatile private var jobs = ConcurrentHashMap<URI, ActiveJobs<I, T>>()
+    private val publishedJobs = SharedValue(ConcurrentHashMap<URI, ActiveJobs<I, T>>())
+    private val jobs: ConcurrentHashMap<URI, ActiveJobs<I, T>> get() = publishedJobs.value
 
     operator fun get(uri: URI): PendingWork<I, T>? = jobs[uri]?.selected
 
@@ -137,8 +139,8 @@ internal class PendingRegistry<I, T : Any>(private val deliveryFor: ((I) -> Pend
     fun detach(uri: URI): RetiredCompilations? = jobs.remove(uri)
 
     fun detach(): RetiredCompilations {
-        val retired = jobs
-        jobs = ConcurrentHashMap()
+        // Callers hold ArtifactOwnership's monitor; one atomic swap keeps this correct without it as well.
+        val retired = publishedJobs.exchange(ConcurrentHashMap())
         return RetiredCompilations { retired.values.forEach { it.retire() } }
     }
 }

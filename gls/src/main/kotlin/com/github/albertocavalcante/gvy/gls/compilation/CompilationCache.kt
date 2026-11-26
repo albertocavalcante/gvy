@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
 import java.net.URI
@@ -40,9 +41,11 @@ private data class CacheKey(val uri: URI, val owned: Boolean = false)
  * [put], which scans from the LRU end past open entries to find victims.
  */
 class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen: (URI) -> Boolean = { false }) {
-    @Volatile
-    var maxEntries: Int = maxEntries.coerceAtLeast(1)
-        private set
+    private val cap = SharedValue(maxEntries.coerceAtLeast(1))
+
+    /** The cap on cached entries; changed by [resize] under the cache lock and read without it. */
+    val maxEntries: Int
+        get() = cap.value
 
     // access-ordered: iteration runs from least to most recently used
     // Every access holds [lock] (not the map itself, which [clear] replaces), so a swap is never observed midway
@@ -134,7 +137,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     /** Changes the cap and evicts immediately if the cache is now over it. */
     fun resize(newMaxEntries: Int) {
         synchronized(lock) {
-            maxEntries = newMaxEntries.coerceAtLeast(1)
+            cap.set(newMaxEntries.coerceAtLeast(1))
             evictOverflow(keep = null)
         }
     }
