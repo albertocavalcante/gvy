@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+# Kotlin Multiplatform module: Bazel builds its common sources for the JVM, as for //viz/ast-model. The Gradle build
+# also compiles them for native targets, which is what keeps JVM-only APIs out of commonMain.
+kt_library(
+    name = "concurrent",
+    srcs = glob(["src/commonMain/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+)
+
+kt_test(
+    name = "concurrent_test",
+    timeout = "short",
+    srcs = glob([
+        "src/commonTest/kotlin/**/*.kt",
+        "src/jvmTest/kotlin/**/*.kt",
+    ]),
+    associates = [":concurrent"],
+    test_packages = ["com.github.albertocavalcante.gvy.concurrent"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        # TODO(#1601): Required annotation metadata; jdeps reports it unused after typealias erasure.
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
+    ],
+)

@@ -102,6 +102,29 @@ Idiomatic Kotlin also includes ordinary `if`, `for`, local variables, and explic
 - Choose eager versus lazy initialization for lifecycle, cost, and concurrency semantics. `lazy`, `apply`, and `also`
   are not universal improvements over an explicit declaration or initialization block.
 
+## Shared mutable state
+
+State that several threads read and write needs a primitive that says what it is for. Use the types in
+[`:common:concurrent`](../common/concurrent/README.md):
+
+| State                                                                         | Use                                                      |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------- |
+| A one-way transition: closed, shut down, started                              | `OnceFlag`; guard the work with `if (!flag.trySet())`    |
+| A value replaced as a whole: configuration, a snapshot, a map `clear()` swaps | `SharedValue<T>`; derive the next value with `update {}` |
+| A count: calls, attempts, tickets                                             | `Counter`                                                |
+| A value computed once, on first use                                           | `lazy`                                                   |
+| Several fields that change together                                           | One immutable value in a `SharedValue`, or one lock      |
+
+- Do not add `@Volatile` fields. They make single reads and writes visible, but not `x++`, check-then-act or a read of
+  two related fields. The remaining sites are being migrated (#2474).
+- Use `kotlin.concurrent.atomics` only inside `:common:concurrent`; detekt's `ForbiddenImport` enforces this. The API is
+  experimental, and confining it keeps an upstream change to one module. Prefer the gvy types over
+  `java.util.concurrent.atomic` in new code too.
+- `SharedValue.update` can run its transform more than once under contention, so the transform must not have side
+  effects. Reading `value` and then calling `set` can lose a concurrent change.
+- Coroutine code can instead confine state to one coroutine or guard it with a `Mutex`; see Kotlin's
+  [shared mutable state guide](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html).
+
 ## Preserve behavior while improving style
 
 Keep evaluation order, short-circuiting, null behavior, exception types, validation order, lazy error messages, and

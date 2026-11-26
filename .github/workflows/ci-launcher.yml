@@ -226,7 +226,9 @@ jobs:
           node --test --test-concurrency=1 tools/ci/windows-private-root.test.mjs
           tools/ci/native-provisioning.windows.test.mjs
 
-      - name: Test and link native launcher
+      # This is the only job that provisions Kotlin/Native, so it also tests the other native-capable modules.
+      # :common:concurrent's native targets are what keep JVM-only APIs out of its common code (#2474).
+      - name: Test native modules and link native launcher
         env:
           NATIVE_TEST_TASK: ${{ matrix.test-task }}
           NATIVE_LINK_TASK: ${{ matrix.link-task }}
@@ -235,7 +237,7 @@ jobs:
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/launcher-gradle-evidence" --producer "$NATIVE_PRODUCER"
           --native-provisioning "$NATIVE_TARGET"
-          ":launcher:$NATIVE_TEST_TASK" ":launcher:$NATIVE_LINK_TASK"
+          ":common:concurrent:$NATIVE_TEST_TASK" ":launcher:$NATIVE_TEST_TASK" ":launcher:$NATIVE_LINK_TASK"
           --no-daemon --no-parallel --build-cache --stacktrace --max-workers=2
           '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'
           -Pkotlin.native.jvmArgs=-Xmx1536m

@@ -45,6 +45,8 @@ include("parser:native")
 include("parser:core")
 include("parser:rewrite")
 include("common")
+// Thread-safe state primitives; the only module that opts into the stdlib's experimental atomics (#2474).
+include("common:concurrent")
 include("source")
 include("gls")
 include("launcher")
