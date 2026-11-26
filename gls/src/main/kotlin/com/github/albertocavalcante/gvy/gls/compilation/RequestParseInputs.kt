@@ -6,12 +6,15 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.gvy.common.ast.stubSourceName
 import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.NativeArtifactStamp
+import com.github.albertocavalcante.nativeapi.NativeRetryInputs
 import com.github.albertocavalcante.nativeapi.NativeSourceMembership
 import com.github.albertocavalcante.nativeapi.ParseResult
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.nio.file.InvalidPathException
+import java.nio.file.Path
 
 /** Receipts produced by this parser invocation, kept independently of its cache entry. */
 internal class RequestParseInputs(parsed: ParseResult) {
@@ -21,7 +24,8 @@ internal class RequestParseInputs(parsed: ParseResult) {
     private val memberships: List<NativeSourceMembership?>
     private val mainModulePresent: Boolean
     private val excluded = parsed.outcome.excludedSources.map { it.source }
-    private val stubbed = parsed.outcome.stubbedClasses.isNotEmpty()
+    private val recovered = parsed.outcome.fallback != null || parsed.outcome.stubbedClasses.isNotEmpty()
+    private val retry = if (classpath == null) null else NativeRetryInputs.of(parsed)
     private val resolvedTypes = parsed.outcome.requestedPhase >= Phases.SEMANTIC_ANALYSIS
 
     init {
@@ -46,17 +50,7 @@ internal class RequestParseInputs(parsed: ParseResult) {
         }
 
         checkCancelled()
-        if (excluded.isNotEmpty()) {
-            // The final compilation no longer owns the excluded reader. Open inputs are immutable in the
-            // original inventory, while the earlier failure of a physical file has no decoded-input receipt.
-            val originalBuffers = source.documents.keys.mapTo(mutableSetOf()) { it.toString() }
-            if (excluded.any { it !in originalBuffers }) unavailable("Excluded disk source cannot be verified")
-        }
-        if (stubbed && classpath?.sourceRoots?.isNotEmpty() == true) {
-            // The synthetic module stands in for a failed lookup in an earlier attempt. Its successful
-            // parse cannot qualify the earlier lookup under a physical source root.
-            unavailable("Earlier source lookup for a generated stub cannot be verified")
-        }
+        if (!discardedInputsCurrent(source, checkCancelled)) return false
         if (mainModulePresent && main == null) unavailable("Compiler did not identify its primary source")
         if (main != null && (main.uri != source.uri || !main.matchesText(content))) {
             unavailable("Requested source does not belong to this parse")
@@ -83,6 +77,32 @@ internal class RequestParseInputs(parsed: ParseResult) {
             }
         }
         return true
+    }
+
+    private fun discardedInputsCurrent(source: SnapshotSource, checkCancelled: () -> Unit): Boolean {
+        if (excluded.isEmpty() && !recovered && retry?.hasDiscarded != true) return true
+        val open = source.documents.keys.mapTo(mutableSetOf()) { it.toString() }
+        val excludedDisk = excluded.filterNot(open::contains).mapTo(mutableSetOf()) { name ->
+            try {
+                val path = Path.of(name)
+                if (!path.isAbsolute) unavailable("Compiler did not identify an excluded disk source")
+                path.normalize()
+            } catch (_: InvalidPathException) {
+                unavailable("Compiler did not identify an excluded disk source")
+            }
+        }
+        val physicalSearch = classpath?.sourceRoots?.isNotEmpty() == true || classpath?.classpath?.isNotEmpty() == true
+        val history = retry
+        if ((excludedDisk.isNotEmpty() || (recovered && physicalSearch)) && history?.hasDiscarded != true) {
+            unavailable("Earlier compiler inputs could not be verified")
+        }
+        if (history == null) return true
+        val status = history.check(excludedDisk, { source.documents[it]?.content }, checkCancelled)
+        return when (status) {
+            NativeSourceMembership.Status.CURRENT -> true
+            NativeSourceMembership.Status.CHANGED -> false
+            NativeSourceMembership.Status.UNAVAILABLE -> unavailable("Earlier compiler inputs could not be verified")
+        }
     }
 
     private fun unavailable(message: String): Nothing =

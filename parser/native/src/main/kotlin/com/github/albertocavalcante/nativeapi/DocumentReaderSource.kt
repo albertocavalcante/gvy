@@ -15,6 +15,12 @@ import java.nio.charset.Charset
 
 /** Preserve the input URI independently of Groovy's source name and data URI. */
 internal class DocumentReaderSource(val documentUri: URI, val text: String, configuration: CompilerConfiguration) :
+    StringReaderSource(text, configuration) {
+    internal var attempts: NativeRetryInputs? = null
+}
+
+/** A generated missing-class substitute has no physical source identity. */
+internal class GeneratedStubReaderSource(text: String, configuration: CompilerConfiguration) :
     StringReaderSource(text, configuration)
 
 /** GROOVY-12539: Groovy 4.0.33's FileReaderSource checks EF BB FF when opening a UTF-8 file. */

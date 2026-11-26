@@ -5,10 +5,13 @@ package com.github.albertocavalcante.nativeapi
 
 import org.apache.groovy.parser.antlr4.Antlr4ParserPlugin
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.ParserPlugin
 import org.codehaus.groovy.control.ParserPluginFactory
 import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.control.io.FileReaderSource
 import org.codehaus.groovy.control.io.ReaderSource
+import org.codehaus.groovy.control.io.URLReaderSource
 import org.codehaus.groovy.syntax.Reduction
 import java.io.FileNotFoundException
 import java.io.Reader
@@ -69,7 +72,34 @@ class CompiledDocumentInput private constructor(
         return current.finish().contentEquals(hash)
     }
 
+    /** A retired reader's decoder and digest. This retains no compiler configuration, loader or AST. */
+    internal class DiskRead(
+        val uri: URI,
+        private val decoder: Class<out ReaderSource>,
+        private val encoding: String,
+        private val chars: Long,
+        private val hash: ByteArray,
+    ) {
+        fun matches(editorText: String?, checkCancelled: () -> Unit): Boolean {
+            checkCancelled()
+            val config = CompilerConfiguration().also { it.sourceEncoding = encoding }
+            val reader = when (decoder) {
+                WorkspaceFileReaderSource::class.java -> WorkspaceFileReaderSource(Path.of(uri).toFile(), config)
+                FileReaderSource::class.java -> FileReaderSource(Path.of(uri).toFile(), config)
+                URLReaderSource::class.java -> URLReaderSource(uri.toURL(), config)
+                else -> error("Unrecognized captured reader ${decoder.name}")
+            }
+            return CompiledDocumentInput(uri, reader, chars, hash).matchesCurrentText(editorText, checkCancelled)
+        }
+    }
+
     companion object {
+        private val DISK_DECODERS = setOf<Class<out ReaderSource>>(
+            WorkspaceFileReaderSource::class.java,
+            FileReaderSource::class.java,
+            URLReaderSource::class.java,
+        )
+
         /** Module identity comes directly from buildAST, including implicit source-root and locator loads. */
         fun of(module: ModuleNode): CompiledDocumentInput? {
             val unit = module.context ?: return null
@@ -78,16 +108,27 @@ class CompiledDocumentInput private constructor(
                 ?.takeIf { it.reader === reader }
         }
 
-        internal fun capture(factory: ParserPluginFactory): ParserPluginFactory = object : ParserPluginFactory() {
+        internal fun capture(
+            factory: ParserPluginFactory,
+            attempt: AttemptInputs,
+        ): ParserPluginFactory = object : ParserPluginFactory() {
             override fun createParserPlugin(): ParserPlugin {
                 val parser = factory.createParserPlugin()
                 // This parser consumes the decoded reader in buildAST; another plugin may parse in parseCST.
-                return if (parser is Antlr4ParserPlugin) CapturingParser(parser) else parser
+                return if (parser is Antlr4ParserPlugin) {
+                    CapturingParser(parser, attempt)
+                } else {
+                    attempt.record(null)
+                    parser
+                }
             }
         }
     }
 
-    private class CapturingParser(private val parser: ParserPlugin) : ParserPlugin by parser {
+    private class CapturingParser(
+        private val parser: ParserPlugin,
+        private val attempt: AttemptInputs,
+    ) : ParserPlugin by parser {
         override fun buildAST(unit: SourceUnit, loader: ClassLoader, cst: Reduction?): ModuleNode {
             val original = unit.source
             val uri = unit.inputDocumentUri()
@@ -98,18 +139,33 @@ class CompiledDocumentInput private constructor(
                     module.putNodeMetaData(CompiledDocumentInput::class.java, witness)
                 }
             }
-            if (uri == null) return parser.buildAST(unit, loader, cst)
+            if (uri == null) {
+                if (original !is GeneratedStubReaderSource) attempt.record(null)
+                return parser.buildAST(unit, loader, cst)
+            }
+            val encoding = unit.configuration.sourceEncoding
             val input = AstReader(original)
             unit.source = input
+            var module: ModuleNode? = null
             return try {
-                parser.buildAST(unit, loader, cst).also { module ->
-                    input.complete?.let { digest ->
-                        val witness = CompiledDocumentInput(uri, original, digest.chars, digest.finish())
-                        module.putNodeMetaData(CompiledDocumentInput::class.java, witness)
-                    }
-                }
+                parser.buildAST(unit, loader, cst).also { module = it }
             } finally {
                 unit.source = original
+                val digest = input.complete
+                val hash = digest?.finish()
+                val knownReader = original.javaClass in DISK_DECODERS
+                val read = if (knownReader && digest != null && hash != null) {
+                    DiskRead(uri, original.javaClass, encoding, digest.chars, hash)
+                } else {
+                    null
+                }
+                attempt.record(read)
+                if (digest != null && hash != null) {
+                    module?.putNodeMetaData(
+                        CompiledDocumentInput::class.java,
+                        CompiledDocumentInput(uri, original, digest.chars, hash),
+                    )
+                }
             }
         }
     }
