@@ -3,8 +3,13 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -12,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -21,6 +27,7 @@ import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -31,6 +38,14 @@ import kotlin.test.assertTrue
 
 class ReferenceRetentionOrderingTest {
     enum class Window { CURRENT, RETIRED, REPLACED }
+
+    @Test
+    fun `newest disk publication installs its document after an intervening failed build clears the graph`(
+        @TempDir root: Path,
+    ) {
+        val path = Files.writeString(root.resolve("Subject.groovy"), "class Subject { void current() {} }")
+        PublicationBuildInterleave(path).use { it.verify() }
+    }
 
     @ParameterizedTest
     @EnumSource(Window::class)
@@ -234,5 +249,94 @@ private object RetentionExpectations {
             ReferenceRetentionOrderingTest.Window.RETIRED -> assertNotSame(original, kept)
             ReferenceRetentionOrderingTest.Window.REPLACED -> assertSame(replacement, kept)
         }
+    }
+}
+
+/** Deliver the failed middle publication once, during either replay planning or the latest document build. */
+private class PublicationBuildInterleave(path: Path) : AutoCloseable {
+    private val uri = path.toUri()
+    private val text = Files.readString(path)
+    private val otherText = "class Subject { void obsolete() {} }"
+    private val worker = InProcessWorkerSession(GroovyParserFacade())
+    private val workspace = WorkspaceManager().current()
+    private val sources = ReferenceSources(
+        workspace, ArtifactOwnership().begin(uri), Any(), ParseMode.WORKSPACE, emptyList(), emptyMap(),
+    )
+    private val onDiskCheck = AtomicReference<(() -> Unit)?>()
+    private val onReplayOrBuild = AtomicReference<(() -> Unit)?>()
+    private val observedPaths = ComparedClasspath(emptyList()) { onReplayOrBuild.getAndSet(null)?.invoke() }
+    private val first = parse(text, observedPaths)
+    private val middle = parse(otherText)
+    private val latest = parse(text)
+    private val index = WorkspaceSymbolIndex(GroovySemanticDB())
+    private var failedBuilds = 0
+    private val indexer = SemanticIndexer(index, isOpen = {
+        onDiskCheck.getAndSet(null)?.invoke()
+        false
+    }) { ast, file ->
+        if (ast === middle.ast) {
+            failedBuilds++
+            error("Middle semantic document failed to build")
+        }
+        if (ast === latest.ast) onReplayOrBuild.getAndSet(null)?.invoke()
+        SemanticDocumentBuilder(ast, file).build()
+    }
+
+    fun verify() {
+        val firstProducer = ReferenceProducer(observedPaths, worker, sources, complete = true)
+        val latestProducer = ReferenceProducer(emptyList(), worker, sources, complete = true)
+        indexer.begin(uri).use { firstTicket ->
+            indexer.begin(uri).use { middleTicket ->
+                indexer.begin(uri).use { latestTicket ->
+                    onDiskCheck.set {
+                        publish(firstTicket, text, first, SemanticPublicationSource(producer = firstProducer))
+                        val installed = assertNotNull(indexer.currentReferencePublication(uri))
+                        assertSame(firstProducer, installed.producer)
+                        assertSame(installed.document, index.getDocument(uri))
+                        onReplayOrBuild.set {
+                            publish(middleTicket, otherText, middle, SemanticPublicationSource())
+                            assertNull(index.getDocument(uri))
+                            assertNull(indexer.currentReferencePublication(uri))
+                        }
+                    }
+                    publish(latestTicket, text, latest, SemanticPublicationSource(false, latestProducer))
+                }
+            }
+        }
+        assertEquals(1, failedBuilds, "The middle build must have removed the first document")
+        val stored = assertNotNull(index.getDocumentSnapshot(uri), "The newest disk publication lost its document")
+        val publication = assertNotNull(indexer.currentReferencePublication(uri))
+        assertEquals(text, stored.sourceText)
+        assertSame(stored.document, publication.document)
+        assertSame(latestProducer, publication.producer)
+        assertTrue(publication.diskConfirmed && publication.covers(stored.document))
+    }
+
+    private fun parse(content: String, classpath: List<Path> = emptyList()) = worker.parse(
+        ParseRequest(uri, content, classpath, compilePhase = Phases.CANONICALIZATION),
+    ).also {
+        assertTrue(it.isSuccessful && !it.outcome.isDegraded)
+        assertEquals(Phases.CANONICALIZATION, it.outcome.achievedPhase)
+    }
+
+    private fun publish(
+        ticket: SemanticIndexer.Publication,
+        content: String,
+        parsed: ParseResult,
+        source: SemanticPublicationSource,
+    ) = indexer.publish(ticket, content, assertNotNull(parsed.ast), parsed.outcome.achievedPhase, source)
+
+    override fun close() {
+        listOf(first, middle, latest).forEach { it.compilationUnit.classLoader.close() }
+    }
+
+    private class ComparedClasspath(private val paths: List<Path>, private val onCompare: () -> Unit) :
+        List<Path> by paths {
+        override fun equals(other: Any?): Boolean {
+            onCompare()
+            return paths == other
+        }
+
+        override fun hashCode(): Int = paths.hashCode()
     }
 }

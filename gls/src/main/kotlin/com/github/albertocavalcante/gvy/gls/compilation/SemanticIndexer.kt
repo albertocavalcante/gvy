@@ -51,6 +51,8 @@ internal data class SemanticPublicationSource(val fromBuffer: Boolean = true, va
  * - for the same content and phase, a document begun after [retireAllPublications] replaces one stored
  *   before it: the inputs besides the text (the source list, the classpath) changed, so the kept document
  *   may resolve names the newer one resolves differently;
+ * - a current replay of the same binding settles its publication ticket while keeping the original document;
+ *   an authoritative disk replay of equivalent phase and coverage can also confirm its source bytes;
  * - a weaker parse in a different mode can keep a stronger document only after validating its original inputs;
  * - a document from disk never replaces the one built from an open editor buffer ([isOpen]);
  * - for different content, a publication begun earlier never lands after one begun later, even if that
@@ -85,19 +87,30 @@ class SemanticIndexer internal constructor(
         }
 
         /** A different policy may leave a better document installed only under its own live producer proof. */
-        fun keepsCoverageOver(candidate: Entry, current: (ReferenceProducer, SemanticDocument) -> Boolean): Boolean {
+        fun keepsCoverageOver(candidate: Entry): Boolean {
             val previous = producer ?: return false
             val weaker = candidate.producer?.complete != true || candidate.phase < phase
             return weaker && previous.complete && phase >= Phases.SEMANTIC_ANALYSIS &&
                 contentHash == candidate.contentHash && generation == candidate.generation &&
                 (diskConfirmed || !candidate.diskConfirmed) &&
-                previous.sharesInputsAcrossModes(candidate.producer) &&
-                stored?.get()?.let { current(previous, it) } == true
+                previous.sharesInputsAcrossModes(candidate.producer)
+        }
+
+        fun canRetain(
+            decision: Decision,
+            candidate: Entry,
+            current: (ReferenceProducer, SemanticDocument) -> Boolean,
+        ): Boolean {
+            val original = producer ?: return false
+            val document = stored?.get() ?: return false
+            return (decision == Decision.REPLAY || keepsCoverageOver(candidate)) && current(original, document)
         }
 
         fun matchesDisk(hash: String, activeGeneration: AnalysisGeneration, current: (ReferenceProducer) -> Boolean) =
             generation == activeGeneration && contentHash == hash && producer?.let(current) != false
     }
+
+    private enum class Decision { REJECT, REPLAY, WRITE }
 
     private class State {
         @Volatile var entry: Entry? = null
@@ -105,6 +118,30 @@ class SemanticIndexer internal constructor(
         /** Highest ticket that reached a decision; kept when the entry is upgraded or dropped. */
         @Volatile var highestTicket = 0L
         var publications = 0
+
+        fun decision(publication: Publication, candidate: Entry): Decision {
+            val stored = entry
+            val newer = publication.ticket > highestTicket
+            if (stored == null ||
+                stored.contentHash != candidate.contentHash ||
+                candidate.producer?.matches(stored.producer) == false
+            ) {
+                return if (newer) Decision.WRITE else Decision.REJECT
+            }
+            if (candidate.improves(stored)) return Decision.WRITE
+            val replay = newer && candidate.generation == stored.generation && candidate.producer != null
+            return if (replay) Decision.REPLAY else Decision.REJECT
+        }
+
+        fun retain(original: Entry, installed: SemanticDocument?, diskReceipt: Entry?): Boolean {
+            if (installed == null || original.stored?.get() !== installed) return false
+            if (!original.diskConfirmed && diskReceipt?.diskConfirmed == true &&
+                original.phase == diskReceipt.phase && original.producer?.complete == diskReceipt.producer?.complete
+            ) {
+                entry = original.copy(diskConfirmed = true)
+            }
+            return true
+        }
     }
 
     internal class Publication(
@@ -198,15 +235,27 @@ class SemanticIndexer internal constructor(
         do {
             val state = entries[uri]
             val existing = state?.entry
-            if (!replaces(state, publication, candidate)) return
+            val decision = decision(state, publication, candidate)
+            if (decision == Decision.REJECT) return
             // Compiler strategies and source lookups can re-enter publication. Run them outside the index locks.
-            val keep = existing?.keepsCoverageOver(candidate) { producer, document ->
+            val retain = existing?.canRetain(decision, candidate) { producer, document ->
                 currentProducer(uri, content, producer) && index.getDocument(uri) === document
             } == true
-            val document = if (keep) null else built
+            val write = decision == Decision.WRITE && !retain
+            val document = if (write) built else null
             val decided = decideIfUnchanged(publication, existing, candidate) { current ->
-                if (!keep) {
-                    current.entry = store(uri, document, content)?.let { candidate.copy(stored = WeakReference(it)) }
+                when {
+                    retain -> current.retain(
+                        checkNotNull(existing),
+                        index.getDocument(uri),
+                        diskReceipt = candidate.takeIf { decision == Decision.REPLAY },
+                    )
+                    write -> {
+                        val stored = store(uri, document, content)
+                        current.entry = stored?.let { candidate.copy(stored = WeakReference(it)) }
+                        true
+                    }
+                    else -> false
                 }
             }
             if (decided) return
@@ -218,13 +267,12 @@ class SemanticIndexer internal constructor(
         publication: Publication,
         existing: Entry?,
         candidate: Entry,
-        update: (State) -> Unit,
+        update: (State) -> Boolean,
     ): Boolean = swap.read {
         var unchanged = true
         entries.computeIfPresent(publication.uri) { _, state ->
             unchanged = state.entry === existing
-            if (unchanged && replaces(state, publication, candidate)) {
-                update(state)
+            if (unchanged && decision(state, publication, candidate) != Decision.REJECT && update(state)) {
                 state.highestTicket = maxOf(state.highestTicket, publication.ticket)
             }
             state
@@ -232,20 +280,12 @@ class SemanticIndexer internal constructor(
         unchanged
     }
 
-    /** Different bindings, like different source, replace only in publication order. */
-    private fun replaces(state: State?, publication: Publication, candidate: Entry): Boolean {
+    private fun decision(state: State?, publication: Publication, candidate: Entry): Decision {
         if (state == null || state !== publication.identity || !publication.isActiveIn(generation)) {
-            return false
+            return Decision.REJECT
         }
-        if (candidate.diskConfirmed && isOpen(publication.uri)) return false
-        val existing = state.entry
-        if (existing == null ||
-            existing.contentHash != candidate.contentHash ||
-            candidate.producer?.matches(existing.producer) == false
-        ) {
-            return publication.ticket > state.highestTicket
-        }
-        return candidate.improves(existing)
+        if (candidate.diskConfirmed && isOpen(publication.uri)) return Decision.REJECT
+        return state.decision(publication, candidate)
     }
 
     /**

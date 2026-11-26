@@ -75,11 +75,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return listOfNotNull(createCallHierarchyItem(declaration, uri, source.index))
     }
 
-    private fun resolveDeclaration(
-        node: ASTNode,
-        astModel: GroovyAstModel,
-        symbolTable: SymbolTable,
-    ): ASTNode {
+    private fun resolveDeclaration(node: ASTNode, astModel: GroovyAstModel, symbolTable: SymbolTable): ASTNode {
         val parent = astModel.getParent(node)
         val call = when {
             node is MethodCallExpression -> node
@@ -356,11 +352,7 @@ private fun receiverClass(call: MethodCallExpression, lexicalOwner: ClassNode?):
 }
 
 /** Keep the original declaration selected by Groovy, including when it omits default arguments. */
-internal fun selectCallMethod(
-    call: MethodCallExpression,
-    model: GroovyAstModel,
-    enclosing: ASTNode?,
-): MethodNode? {
+internal fun selectCallMethod(call: MethodCallExpression, model: GroovyAstModel, enclosing: ASTNode?): MethodNode? {
     val ancestors = generateSequence<ASTNode>(call, model::getParent).takeWhile { it !== enclosing }
     val delegated = call.isImplicitThis && ancestors.any { it is ClosureExpression }
     val lexicalOwner = when (enclosing) {
