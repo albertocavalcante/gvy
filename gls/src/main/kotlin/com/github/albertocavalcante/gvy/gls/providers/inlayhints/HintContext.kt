@@ -74,16 +74,15 @@ data class HintContext(
 /** A workspace method lookup key: the method's name and its declaring class's simple name. */
 data class WorkspaceMethodKey(val name: String, val ownerSimpleName: String)
 
-internal fun GroovyAstModel.reassignedLocals(): Set<Variable> =
-    getAllNodes().asSequence()
-        .filterIsInstance<BinaryExpression>()
-        .filter { it !is DeclarationExpression && Types.isAssignment(it.operation.type) }
-        .flatMap { assignment ->
-            // `(u, v) = [...]` assigns every variable of the tuple on the left.
-            when (val left = assignment.leftExpression) {
-                is TupleExpression -> left.expressions.asSequence()
-                else -> sequenceOf(left)
-            }
+internal fun GroovyAstModel.reassignedLocals(): Set<Variable> = getAllNodes().asSequence()
+    .filterIsInstance<BinaryExpression>()
+    .filter { it !is DeclarationExpression && Types.isAssignment(it.operation.type) }
+    .flatMap { assignment ->
+        // `(u, v) = [...]` assigns every variable of the tuple on the left.
+        when (val left = assignment.leftExpression) {
+            is TupleExpression -> left.expressions.asSequence()
+            else -> sequenceOf(left)
         }
-        .mapNotNull { (it as? VariableExpression)?.accessedVariable }
-        .toSet()
+    }
+    .mapNotNull { (it as? VariableExpression)?.accessedVariable }
+    .toSet()

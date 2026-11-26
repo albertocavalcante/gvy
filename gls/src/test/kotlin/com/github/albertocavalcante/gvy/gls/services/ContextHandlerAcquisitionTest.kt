@@ -68,7 +68,10 @@ class ContextHandlerAcquisitionTest {
 
     private fun assertModified(answer: CompletableFuture<*>) {
         val failure = assertThrows<ExecutionException> { answer.get(10, TimeUnit.SECONDS) }
-        assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(failure.cause).responseError.code)
+        assertEquals(
+            ResponseErrorCode.ContentModified.value,
+            assertIs<ResponseErrorException>(failure.cause).responseError.code,
+        )
     }
 
     private class Fixture(private val route: Route, val source: String) : AutoCloseable {
@@ -85,17 +88,19 @@ class ContextHandlerAcquisitionTest {
                     override fun parse(request: ParseRequest): ParseResult {
                         val parsed = delegate.parse(request)
                         val model = parsed.astModel
-                        return parsed.copy(astModel = object : GroovyAstModel by model {
-                            override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
-                                if (route == Route.TYPE_DEFINITION) hold()
-                                return model.getNodeAt(uri, position)
-                            }
+                        return parsed.copy(
+                            astModel = object : GroovyAstModel by model {
+                                override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
+                                    if (route == Route.TYPE_DEFINITION) hold()
+                                    return model.getNodeAt(uri, position)
+                                }
 
-                            override fun getAllNodes(): List<ASTNode> {
-                                if (route == Route.INLAY_HINT) hold()
-                                return model.getAllNodes()
-                            }
-                        })
+                                override fun getAllNodes(): List<ASTNode> {
+                                    if (route == Route.INLAY_HINT) hold()
+                                    return model.getAllNodes()
+                                }
+                            },
+                        )
                     }
                 }
             },

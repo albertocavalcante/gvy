@@ -42,7 +42,9 @@ class NativeTypeDefinitionAliasTest {
         val compilation = GroovyCompilationService(documentProvider = docs)
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         try {
-            val parsed = assertIs<SnapshotAcquisition.Ready>(compilation.acquireEditorSnapshot(uri)).snapshot.parseResult
+            val parsed = assertIs<SnapshotAcquisition.Ready>(
+                compilation.acquireEditorSnapshot(uri),
+            ).snapshot.parseResult
             val classes = assertNotNull(parsed.ast).classes
             val product = classes.single { it.name == "Product" }
             val run = classes.single { it.name == "Client" }.getDeclaredMethods("run").single()
@@ -52,7 +54,13 @@ class NativeTypeDefinitionAliasTest {
             assertSame(input, assertIs<VariableExpression>(initialization.rightExpression).accessedVariable)
             assertSame(product, input.type.redirect())
             val line = text.lineSequence().elementAt(4)
-            val params = TypeDefinitionParams(TextDocumentIdentifier(uri.toString()), Position(4, line.indexOf("alias") + 1))
+            val params = TypeDefinitionParams(
+                TextDocumentIdentifier(uri.toString()),
+                Position(
+                    4,
+                    line.indexOf("alias") + 1,
+                ),
+            )
             val location = GroovyTextDocumentService(scope, compilation).typeDefinition(params)
                 .get(15, TimeUnit.SECONDS).left.single()
             assertEquals(uri.toString(), location.uri)

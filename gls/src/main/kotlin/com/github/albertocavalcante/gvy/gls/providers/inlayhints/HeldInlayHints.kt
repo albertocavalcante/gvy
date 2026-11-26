@@ -67,9 +67,10 @@ private class HeldInlayCandidates(private val query: NativeQueryContext) {
         val count = arguments.expressions.size
         return hints(arguments, {
             when {
-                sourceDeclaration(receiver) -> receiver.declaredConstructors
-                    .filter { it.parameters.size == count }
-                    .map { InlayHintsTypes.toSignature(it.parameters.asList()) }
+                sourceDeclaration(receiver) ->
+                    receiver.declaredConstructors
+                        .filter { it.parameters.size == count }
+                        .map { InlayHintsTypes.toSignature(it.parameters.asList()) }
                 binaryDeclaration(receiver) -> reflection.loadClass(receiver.name)?.let {
                     InlayHintsCandidates.classpathConstructorSignatures(it, count)
                 }.orEmpty()

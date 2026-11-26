@@ -190,6 +190,7 @@ class GroovyLanguageServerTest {
             DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, "def count = 42")),
         )
         mockClient.awaitSuccessfulCompilation(uri)
+        mockClient.awaitMessageMatching { it.message.startsWith("Dependencies loaded:") }
 
         val result = assertNotNull(
             server.textDocumentService.hover(HoverParams(TextDocumentIdentifier(uri), Position(0, 5)))

@@ -544,11 +544,7 @@ internal object InlayHintsTypes {
         return score
     }
 
-    private fun matchScore(
-        parameterType: String,
-        argumentType: String,
-        loadClass: (String) -> Class<*>?,
-    ): Int {
+    private fun matchScore(parameterType: String, argumentType: String, loadClass: (String) -> Class<*>?): Int {
         val normalizedParam = normalizeTypeName(parameterType)
         val normalizedArg = normalizeTypeName(argumentType)
         val paramKey = normalizePrimitiveAlias(normalizedParam)

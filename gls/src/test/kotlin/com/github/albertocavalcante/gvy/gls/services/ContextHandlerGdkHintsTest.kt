@@ -54,7 +54,10 @@ class ContextHandlerGdkHintsTest {
                 GroovyTextDocumentServiceOptions(documentProvider = documents),
             )
             val hints = service.inlayHint(
-                InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length))),
+                InlayHintParams(
+                    TextDocumentIdentifier(uri.toString()),
+                    Range(Position(0, 0), Position(0, text.length)),
+                ),
             ).get(15, TimeUnit.SECONDS).filter { it.kind == InlayHintKind.Parameter }
             assertEquals(listOf(Position(0, text.indexOf("2")) to label), hints.map { it.position to it.label.left })
         } finally {

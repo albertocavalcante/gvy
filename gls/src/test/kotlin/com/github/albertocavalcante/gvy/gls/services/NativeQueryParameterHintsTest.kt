@@ -51,8 +51,10 @@ class NativeQueryParameterHintsTest {
             compilation.onDocumentOpened(uri)
             docs.put(uri, text)
             runBlocking { compilation.compile(path.toUri(), peer) }
-            val service = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = docs))
-            val params = InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length)))
+            val service =
+                GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = docs))
+            val params =
+                InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length)))
             return service.inlayHint(params).get(15, TimeUnit.SECONDS)
                 .filter { it.kind == InlayHintKind.Parameter }.sortedBy { it.position.character }.map { it.label.left }
         } finally {

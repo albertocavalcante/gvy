@@ -33,17 +33,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.DocumentHighlightParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.TypeDefinitionParams
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import com.github.albertocavalcante.groovyparser.ast.types.Position as ParserPosition
 
 /**
@@ -146,19 +150,35 @@ class RequestCancellationTest {
 
     @Test
     fun `a cancelled type definition ends cancelled instead of empty`(): Unit = runBlocking {
-        every { compilation.createContextWithSource(uri) } throws CancellationException("lookup cancelled")
-        val service =
-            GroovyTextDocumentService(
-                scope,
-                compilation,
-                GroovyTextDocumentServiceOptions(documentProvider = documents),
+        val queried = AtomicBoolean()
+        val cancelling = GroovyCompilationService(
+            documentProvider = documents,
+            workerSessionDecorator = { delegate ->
+                object : WorkerSession {
+                    override fun parse(request: ParseRequest): ParseResult {
+                        val parsed = delegate.parse(request)
+                        val model = object : GroovyAstModel by parsed.astModel {
+                            override fun getNodeAt(uri: URI, position: ParserPosition): ASTNode? {
+                                queried.set(true)
+                                throw CancellationException("lookup cancelled")
+                            }
+                        }
+                        return parsed.copy(astModel = model)
+                    }
+                }
+            },
+        )
+        try {
+            val service = GroovyTextDocumentService(scope, cancelling)
+            val typeDefinition = service.typeDefinition(
+                TypeDefinitionParams(TextDocumentIdentifier(uri.toString()), Position(0, 7)),
             )
 
-        val typeDefinition = service.typeDefinition(
-            org.eclipse.lsp4j.TypeDefinitionParams(TextDocumentIdentifier(uri.toString()), Position(0, 7)),
-        )
-
-        assertFailsWith<CancellationException> { typeDefinition.await() }
+            assertFailsWith<CancellationException> { typeDefinition.await() }
+            assertTrue(queried.get(), "the request must reach the held type-definition lookup")
+        } finally {
+            cancelling.shutdown()
+        }
     }
 
     @Test

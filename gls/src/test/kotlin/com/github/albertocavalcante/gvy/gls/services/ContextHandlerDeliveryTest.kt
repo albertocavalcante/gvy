@@ -55,12 +55,14 @@ class ContextHandlerDeliveryTest {
                         override fun parse(request: ParseRequest): ParseResult {
                             val parsed = delegate.parse(request)
                             val model = parsed.astModel
-                            return parsed.copy(astModel = object : GroovyAstModel by model {
-                                override fun getAllNodes(): List<ASTNode> {
-                                    if (armed.get()) traversed.set(true)
-                                    return model.getAllNodes()
-                                }
-                            })
+                            return parsed.copy(
+                                astModel = object : GroovyAstModel by model {
+                                    override fun getAllNodes(): List<ASTNode> {
+                                        if (armed.get()) traversed.set(true)
+                                        return model.getAllNodes()
+                                    }
+                                },
+                            )
                         }
                     }
                 },
@@ -83,7 +85,10 @@ class ContextHandlerDeliveryTest {
                 )
                 armed.set(true)
                 val answer = service.inlayHint(
-                    InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length))),
+                    InlayHintParams(
+                        TextDocumentIdentifier(uri.toString()),
+                        Range(Position(0, 0), Position(0, text.length)),
+                    ),
                 )
                 val result = runCatching { answer.get(15, TimeUnit.SECONDS) }
                 assertTrue(traversed.get(), "the actual inlay traversal must execute")

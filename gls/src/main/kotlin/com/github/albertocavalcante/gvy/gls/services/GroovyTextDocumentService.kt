@@ -520,7 +520,9 @@ class GroovyTextDocumentService(
         val request = runCatching {
             nativeQueries.capture(URI.create(params.textDocument.uri), params.position.copyCoordinates())
         }
-        return coroutineScope.future { Either.forLeft(nativeQueries.query(request.getOrThrow(), ::heldTypeDefinitions)) }
+        return coroutineScope.future {
+            Either.forLeft(nativeQueries.query(request.getOrThrow(), ::heldTypeDefinitions))
+        }
     }
 
     override fun implementation(

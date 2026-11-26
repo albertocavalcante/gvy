@@ -5,9 +5,7 @@ package com.github.albertocavalcante.gvy.gls.types
 
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
-import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import kotlinx.coroutines.CoroutineScope
@@ -212,7 +210,7 @@ class CrossFileMethodReturnTypeTest {
 
     @Test
     fun `an inlay hint on a def initialised from another file shows the declared type`() = runBlocking<Unit> {
-        compile(
+        val libUri = write(
             "demo/lib/Lib.groovy",
             """
             package demo.lib
@@ -234,14 +232,15 @@ class CrossFileMethodReturnTypeTest {
             }
         """.trimIndent()
         val appUri = write("demo/app/App.groovy", source)
-        val documents = DocumentProvider().also { it.put(appUri, source, DocumentVersion.of(1)) }
+        compilationService.initializeWorkspace(root)
+        compilationService.onDocumentOpened(appUri)
+        compilationService.documents.put(appUri, source, DocumentVersion.of(1))
+        val publication = compilationService.getWorkspaceCompiler().compileWorkspace()
+        assertThat(publication.errors.filter { it.uri == libUri }).isEmpty()
+        assertThat(publication.modules).containsKey(libUri)
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         try {
-            val service = GroovyTextDocumentService(
-                scope,
-                compilationService,
-                GroovyTextDocumentServiceOptions(documentProvider = documents),
-            )
+            val service = GroovyTextDocumentService(scope, compilationService)
             val hints = service.inlayHint(
                 InlayHintParams(
                     TextDocumentIdentifier(appUri.toString()),

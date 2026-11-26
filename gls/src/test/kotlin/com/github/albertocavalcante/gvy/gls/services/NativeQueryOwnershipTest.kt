@@ -59,7 +59,10 @@ class NativeQueryOwnershipTest {
             val locations = service.typeDefinition(TypeDefinitionParams(input, Position(2, last.lastIndex)))
                 .get(15, TimeUnit.SECONDS).left
             assertEquals(listOf(uri.toString()), locations.map { it.uri })
-            assertEquals(Range(Position(0, 0), Position(0, text.lineSequence().first().length)), locations.single().range)
+            assertEquals(
+                Range(Position(0, 0), Position(0, text.lineSequence().first().length)),
+                locations.single().range,
+            )
             val hints = service.inlayHint(InlayHintParams(input, Range(Position(2, 0), Position(2, last.length))))
                 .get(15, TimeUnit.SECONDS)
             assertTrue(hints.any { it.position == Position(2, last.indexOf('2')) && it.label.left == "number:" })
@@ -144,14 +147,18 @@ class NativeQueryOwnershipTest {
                 context
             }
             val service = GroovyTextDocumentService(scope, compilation)
-            val params = InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length)))
+            val params =
+                InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length)))
             assertTrue(service.inlayHint(params).get(15, TimeUnit.SECONDS).any { it.label.left == ": String" })
             assertTrue(consulted.get(), "the semantic resolver must have qualified the actual peer")
             consulted.set(false)
             armed.set(true)
             val failure = assertThrows<ExecutionException> { service.inlayHint(params).get(15, TimeUnit.SECONDS) }
             assertTrue(replaced.get(), "post-computation caller validation must follow the peer read")
-            assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(failure.cause).responseError.code)
+            assertEquals(
+                ResponseErrorCode.ContentModified.value,
+                assertIs<ResponseErrorException>(failure.cause).responseError.code,
+            )
         } finally {
             scope.cancel()
             compilation.shutdown()

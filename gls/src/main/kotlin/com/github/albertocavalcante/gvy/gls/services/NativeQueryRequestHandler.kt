@@ -34,14 +34,12 @@ internal class NativeQueryRequestHandler(
         return Request(source, compilation.captureHoverEngine(), input)
     }
 
-    suspend fun <P, T> query(
-        request: Request<P>,
-        compute: suspend (NativeQueryContext, URI, P) -> List<T>,
-    ): List<T> {
+    suspend fun <P, T> query(request: Request<P>, compute: suspend (NativeQueryContext, URI, P) -> List<T>): List<T> {
         val source = request.source
         var members: HoverMemberLookup? = null
-        fun current() = source.isCurrent() && source.workerCurrent() && compilation.isHoverEngineCurrent(request.engine) &&
-            members?.isDatabaseCurrent() != false
+        fun current() =
+            source.isCurrent() && source.workerCurrent() && compilation.isHoverEngineCurrent(request.engine) &&
+                members?.isDatabaseCurrent() != false
         if (!currentCoroutineContext().inputsCurrent(::current)) throw changed(source.uri)
         val result = runSuspendCatching {
             compilation.queryCapturedSnapshot(source, Phases.CANONICALIZATION, null) { held ->

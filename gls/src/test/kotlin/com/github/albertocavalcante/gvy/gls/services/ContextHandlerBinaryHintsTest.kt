@@ -49,7 +49,12 @@ class ContextHandlerBinaryHintsTest {
                 compilation.symbolIndexingService.indexFile(peer)
                 val methods = compilation.getAllSymbolStorages().values.flatMap { it.symbols.values.flatten() }
                     .filterIsInstance<Symbol.Method>()
-                assertTrue(methods.any { it.uri == peer && it.name == "substring" && it.parameters.single().name == "wrong" })
+                assertTrue(
+                    methods.any {
+                        it.uri == peer && it.name == "substring" &&
+                            it.parameters.single().name == "wrong"
+                    },
+                )
                 assertNotNull(compilation.getWorkspaceSymbolIndex()?.getDocument(peer))
                 val held = assertIs<SnapshotAcquisition.Ready>(compilation.acquireEditorSnapshot(uri)).snapshot
                 val call = held.parseResult.astModel.getAllNodes().filterIsInstance<MethodCallExpression>()
@@ -67,9 +72,18 @@ class ContextHandlerBinaryHintsTest {
                     GroovyTextDocumentServiceOptions(documentProvider = documents),
                 )
                 val hints = service.inlayHint(
-                    InlayHintParams(TextDocumentIdentifier(uri.toString()), Range(Position(0, 0), Position(0, text.length))),
+                    InlayHintParams(
+                        TextDocumentIdentifier(uri.toString()),
+                        Range(Position(0, 0), Position(0, text.length)),
+                    ),
                 ).get(15, TimeUnit.SECONDS).filter { it.kind == InlayHintKind.Parameter }
-                assertEquals(listOf(Position(0, text.indexOf("1")) to "$parameter:"), hints.map { it.position to it.label.left })
+                assertEquals(
+                    listOf(Position(0, text.indexOf("1")) to "$parameter:"),
+                    hints.map {
+                        it.position to
+                            it.label.left
+                    },
+                )
             } finally {
                 scope.cancel()
                 compilation.shutdown()
