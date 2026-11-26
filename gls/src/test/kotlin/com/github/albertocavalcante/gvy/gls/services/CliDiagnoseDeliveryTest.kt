@@ -125,7 +125,8 @@ class CliDiagnoseDeliveryTest {
         }
         val scope = CoroutineScope(owner + Dispatchers.Default)
         val config = ServerConfiguration(diagnosticConfig = DiagnosticConfig(disabledProviders = disabled))
-        val endpoint = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(serverConfiguration = config))
+        val options = GroovyTextDocumentServiceOptions(serverConfiguration = config)
+        val endpoint = GroovyTextDocumentService(scope, compilation, options)
         try {
             val pending = scope.async { endpoint.diagnose(uri, SOURCE) }
             try {
