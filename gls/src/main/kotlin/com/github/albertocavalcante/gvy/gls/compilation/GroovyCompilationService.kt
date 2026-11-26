@@ -247,6 +247,10 @@ class GroovyCompilationService internal constructor(
     internal fun referenceReadiness(uri: URI): ReferenceReadiness =
         referenceReadiness(orchestrator.snapshots.referenceSource(uri))
 
+    internal suspend fun refreshClosedReferences(path: Path, mode: ParseMode) {
+        orchestrator.compileFromDisk(path, path.toUri(), mode)
+    }
+
     internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(
         source,
         workspaceSymbolIndex,

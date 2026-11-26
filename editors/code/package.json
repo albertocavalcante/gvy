@@ -1171,7 +1171,7 @@
     "test": "node --test tools/tests/*.test.js && mocha",
     "test:watch": "mocha --watch",
     "compile:tests": "tsc -b --force client/tsconfig.json",
-    "test:integration": "pnpm run compile:tests && vscode-test",
+    "test:integration": "pnpm run compile:tests && node --test tools/qualification/editor-hosts.test.js && vscode-test",
     "test:all": "pnpm run test && pnpm run test:integration",
     "check-tools": "tsc --project tools/tsconfig.json && eslint --config tools/eslint.config.mjs tools",
     "prepare-runtime": "node tools/prepare-runtime.js"

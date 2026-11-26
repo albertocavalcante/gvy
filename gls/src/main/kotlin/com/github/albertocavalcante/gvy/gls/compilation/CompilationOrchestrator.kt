@@ -491,35 +491,28 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
             logger.debug { "Compiling from disk on-demand: $uri" }
-            // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
-            val claim = claim(uri, Origin.DISK)
-            // Read the model again now the ticket is taken, as the buffer path does: a change published
-            // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
-            val compileWorkspace = workspaceManager.current()
-            return Awaited.Done(
-                claim.publication.use {
-                    try {
-                        val content = withContext(ioDispatcher) {
-                            Files.readString(path)
-                        }
-                        // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                        performCompilation(
-                            CompilationInput(uri, content, claim),
-                            compileWorkspace,
-                            parseMode = ParseMode.MINIMAL,
-                        )
-                    } catch (e: CancellationException) {
-                        throw e // the request was cancelled; not a failure to compile
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
-                        null
-                    }
-                },
-            )
+            return Awaited.Done(compileFromDisk(path, uri, ParseMode.MINIMAL))
         }
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return Awaited.Done(null)
+    }
+
+    /** Rebuild a retired disk publication from a physical read under its own ticket and compiler policy. */
+    internal suspend fun compileFromDisk(path: Path, uri: URI, mode: ParseMode): CompilationResult? {
+        val claim = claim(uri, Origin.DISK)
+        return claim.publication.use {
+            val workspace = workspaceManager.current()
+            try {
+                val content = withContext(ioDispatcher) { Files.readString(path) }
+                performCompilation(CompilationInput(uri, content, claim), workspace, parseMode = mode)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to compile from disk for $uri" }
+                null
+            }
+        }
     }
 
     internal fun referenceSources(uri: URI, workspace: WorkspaceModel): List<Path> =

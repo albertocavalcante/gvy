@@ -32,7 +32,7 @@ internal class ReferenceReadiness(
 
     suspend fun inputsCurrent(): Boolean = currentCoroutineContext().inputsCurrent(source::isCurrent)
 
-    /** Readiness may rebuild open entries whose unchanged text was indexed against an earlier companion set. */
+    /** An unchanged source can still need a new compiler invocation after its companion buffers change. */
     suspend fun prepareOpenSources(compilation: GroovyCompilationService) {
         withTimeoutOrNull(CompilationEnsurer.DEFAULT_TIMEOUT_MS) {
             for ((uri, buffer) in source.documents) {
@@ -44,6 +44,20 @@ internal class ReferenceReadiness(
                     }
                 ) {
                     compilation.ensureCompiled(uri, buffer)
+                }
+            }
+            for (path in source.workspace.sources) {
+                ensureActive()
+                if (!inputsCurrent()) return@withTimeoutOrNull
+                val uri = path.toUri()
+                if (uri in source.documents || uri in hidden) continue
+                val publication = currentPublication(uri) ?: continue
+                val producer = publication.producer ?: continue
+                val mode = producer.mode ?: continue
+                if (publication.diskConfirmed &&
+                    !producer.ownsWindow(source.workspace, source.ticket, source.inventory.identity)
+                ) {
+                    compilation.refreshClosedReferences(path, mode)
                 }
             }
         }

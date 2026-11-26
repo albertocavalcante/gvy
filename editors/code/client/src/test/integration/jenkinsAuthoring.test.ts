@@ -3,8 +3,8 @@
 
 import * as assert from "assert";
 import { createHash } from "crypto";
-import { existsSync, readFileSync, realpathSync } from "fs";
-import { mkdtemp, rm, stat, writeFile } from "fs/promises";
+import { existsSync, readFileSync, realpathSync, rmSync } from "fs";
+import { mkdtemp, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import * as path from "path";
 import * as vscode from "vscode";
@@ -12,15 +12,37 @@ import { runWithFixtureCleanup } from "../support/fixtureCleanup";
 
 suite("Jenkins parameter authoring evidence", () => {
   let serverSha256: string;
+  let fixtureRoot: string;
 
   suiteSetup(async function () {
     this.timeout(60000);
+    const runnerRoot = process.env.GVY_JENKINS_FIXTURE_ROOT;
+    assert.ok(
+      runnerRoot && path.isAbsolute(runnerRoot),
+      "Jenkins authoring requires its isolated test host",
+    );
+    if (existsSync(runnerRoot)) {
+      fixtureRoot = runnerRoot;
+    } else {
+      // Test Explorer can launch a configuration after the discovery CLI has exited.
+      const root = await mkdtemp(path.join(tmpdir(), "gvy-jenkins-authoring-"));
+      fixtureRoot = root;
+      process.once("exit", () => {
+        rmSync(root, {
+          recursive: true,
+          force: true,
+          maxRetries: 8,
+          retryDelay: 100,
+        });
+      });
+    }
+
     const extension = vscode.extensions.getExtension("albertocavalcante.gvy");
     assert.ok(extension);
     if (process.env.GVY_TEST_EXTENSION_ROOT) {
       assert.strictEqual(
         realpathSync(extension.extensionUri.fsPath),
-        realpathSync(process.env.GVY_TEST_EXTENSION_ROOT),
+        realpathSync(vscode.Uri.file(process.env.GVY_TEST_EXTENSION_ROOT).fsPath),
       );
     }
     const candidate =
@@ -68,9 +90,7 @@ suite("Jenkins parameter authoring evidence", () => {
     const offset = marked.indexOf(marker);
     assert.ok(offset >= 0 && offset === marked.lastIndexOf(marker));
     const source = marked.replace(marker, "");
-    const directory = await mkdtemp(
-      path.join(tmpdir(), "gvy-jenkins-authoring-"),
-    );
+    const directory = await mkdtemp(path.join(fixtureRoot, "fixture-"));
     let fixtureUri: vscode.Uri | undefined;
     await runWithFixtureCleanup(async () => {
       const uri = vscode.Uri.file(path.join(directory, "Jenkinsfile"));
@@ -107,16 +127,6 @@ suite("Jenkins parameter authoring evidence", () => {
             "workbench.action.revertAndCloseActiveEditor",
           );
         }
-      },
-      async () => {
-        // Windows may retain an editor or watcher handle briefly after close.
-        // Bound retries so a persistent cleanup failure still fails the scenario.
-        await rm(directory, {
-          recursive: true,
-          force: true,
-          maxRetries: 8,
-          retryDelay: 100,
-        });
       },
     ]);
   }
