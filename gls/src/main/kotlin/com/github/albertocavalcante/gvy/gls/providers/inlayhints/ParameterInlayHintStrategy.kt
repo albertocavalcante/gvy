@@ -71,43 +71,6 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
     }
 
     /**
-     * Create inlay hints for the given arguments using the resolved parameter names.
-     *
-     * @param arguments The argument list expression
-     * @param parameterNames The resolved parameter names
-     * @return A list of inlay hints for the arguments
-     */
-    private fun createHintsForArguments(
-        arguments: ArgumentListExpression,
-        parameterNames: List<String>,
-    ): List<InlayHint> {
-        if (parameterNames.isEmpty()) {
-            return emptyList()
-        }
-
-        return arguments.expressions.mapIndexedNotNull { index, arg ->
-            if (index >= parameterNames.size) return@mapIndexedNotNull null
-
-            val paramName = parameterNames[index]
-
-            // Skip if argument is a closure (they provide their own context)
-            if (arg is ClosureExpression) {
-                return@mapIndexedNotNull null
-            }
-
-            val position = Position(
-                arg.lineNumber - 1,
-                arg.columnNumber - 1,
-            )
-
-            InlayHint(position, Either.forLeft("$paramName:")).apply {
-                kind = InlayHintKind.Parameter
-                paddingRight = true
-            }
-        }
-    }
-
-    /**
      * Resolve parameter names for a method call.
      *
      * Resolution stages:
@@ -137,7 +100,7 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
         // 4. Classpath methods (fallback)
         val result = InlayHintsCandidates.resolveFromCandidates(
             argumentTypes,
-            context.compilationService,
+            { type -> context.compilationService.classpathService.loadClass(type) },
             {
                 InlayHintsCandidates.findMethodCandidatesInAst(
                     context.astModel,
@@ -193,7 +156,7 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
 
         val result = InlayHintsCandidates.resolveFromCandidates(
             argumentTypes,
-            context.compilationService,
+            { type -> context.compilationService.classpathService.loadClass(type) },
             { InlayHintsCandidates.findConstructorCandidatesInAst(context.astModel, typeName, argCount) },
             {
                 InlayHintsCandidates.findWorkspaceConstructorCandidates(typeName, argCount, context)
@@ -207,5 +170,42 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
             },
         )
         return (result as? ResolutionResult.Match)?.parameterNames.orEmpty()
+    }
+}
+
+/**
+ * Create inlay hints for the given arguments using the resolved parameter names.
+ *
+ * @param arguments The argument list expression
+ * @param parameterNames The resolved parameter names
+ * @return A list of inlay hints for the arguments
+ */
+internal fun createHintsForArguments(
+    arguments: ArgumentListExpression,
+    parameterNames: List<String>,
+): List<InlayHint> {
+    if (parameterNames.isEmpty()) {
+        return emptyList()
+    }
+
+    return arguments.expressions.mapIndexedNotNull { index, arg ->
+        if (index >= parameterNames.size) return@mapIndexedNotNull null
+
+        val paramName = parameterNames[index]
+
+        // Skip if argument is a closure (they provide their own context)
+        if (arg is ClosureExpression) {
+            return@mapIndexedNotNull null
+        }
+
+        val position = Position(
+            arg.lineNumber - 1,
+            arg.columnNumber - 1,
+        )
+
+        InlayHint(position, Either.forLeft("$paramName:")).apply {
+            kind = InlayHintKind.Parameter
+            paddingRight = true
+        }
     }
 }

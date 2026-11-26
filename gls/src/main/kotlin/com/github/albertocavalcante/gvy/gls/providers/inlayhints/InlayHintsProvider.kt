@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.config.InlayHintsConfiguration
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.services.reflectSafely
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.TypeStringUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -174,11 +175,11 @@ class InlayHintsProvider(
 internal object InlayHintsCandidates {
     fun resolveFromCandidates(
         argumentTypes: List<String?>,
-        compilationService: GroovyCompilationService,
+        loadClass: (String) -> Class<*>?,
         vararg providers: () -> List<CallableSignature>,
     ): ResolutionResult {
         providers.forEach { provider ->
-            when (val result = InlayHintsTypes.selectBestCandidate(provider(), argumentTypes, compilationService)) {
+            when (val result = InlayHintsTypes.selectBestCandidate(provider(), argumentTypes, loadClass)) {
                 is ResolutionResult.Match -> return result
                 ResolutionResult.Ambiguous -> return result
                 ResolutionResult.NotFound -> Unit
@@ -284,7 +285,7 @@ internal object InlayHintsCandidates {
         semanticResolver: SemanticTypeResolver,
         moduleNode: ModuleNode?,
     ): List<String?> = arguments.map { arg ->
-        runCatching {
+        runSuspendCatching {
             val semanticType = semanticResolver.resolveType(arg, moduleNode)
             semanticResolver.formatSemanticType(semanticType)
         }.getOrNull()
@@ -294,7 +295,7 @@ internal object InlayHintsCandidates {
         expression: Expression,
         context: HintContext,
         contextDescription: String,
-    ): String? = runCatching {
+    ): String? = runSuspendCatching {
         val type = context.semanticResolver.resolveType(expression, context.moduleNode)
         context.semanticResolver.formatSemanticType(type)
     }
@@ -495,7 +496,7 @@ internal object InlayHintsTypes {
     fun selectBestCandidate(
         candidates: List<CallableSignature>,
         argumentTypes: List<String?>,
-        compilationService: GroovyCompilationService,
+        loadClass: (String) -> Class<*>?,
     ): ResolutionResult {
         if (candidates.isEmpty()) return ResolutionResult.NotFound
 
@@ -509,7 +510,7 @@ internal object InlayHintsTypes {
         }
 
         val scored = candidates.mapNotNull { candidate ->
-            val score = scoreCandidate(candidate, argumentTypes, compilationService)
+            val score = scoreCandidate(candidate, argumentTypes, loadClass)
             if (score < 0) null else candidate to score
         }
         if (scored.isEmpty()) return ResolutionResult.Ambiguous
@@ -527,14 +528,14 @@ internal object InlayHintsTypes {
     private fun scoreCandidate(
         candidate: CallableSignature,
         argumentTypes: List<String?>,
-        compilationService: GroovyCompilationService,
+        loadClass: (String) -> Class<*>?,
     ): Int {
         var score = 0
         argumentTypes.forEachIndexed { index, argType ->
             // Skip null or unknown types
             val nonNullArgType = argType?.takeUnless { isUnknownType(it) } ?: return@forEachIndexed
             val paramType = candidate.parameterTypes.getOrNull(index) ?: return -1
-            val matchScore = matchScore(paramType, nonNullArgType, compilationService)
+            val matchScore = matchScore(paramType, nonNullArgType, loadClass)
             if (matchScore < 0) {
                 return -1
             }
@@ -546,7 +547,7 @@ internal object InlayHintsTypes {
     private fun matchScore(
         parameterType: String,
         argumentType: String,
-        compilationService: GroovyCompilationService,
+        loadClass: (String) -> Class<*>?,
     ): Int {
         val normalizedParam = normalizeTypeName(parameterType)
         val normalizedArg = normalizeTypeName(argumentType)
@@ -557,8 +558,8 @@ internal object InlayHintsTypes {
             isDynamicType(normalizedParam) -> 1
             paramKey == argKey -> 2
             else -> {
-                val paramClass = resolveClass(normalizedParam, compilationService)
-                val argClass = resolveClass(normalizedArg, compilationService)
+                val paramClass = resolveClass(normalizedParam, loadClass)
+                val argClass = resolveClass(normalizedArg, loadClass)
                 if (paramClass != null && argClass != null && paramClass.isAssignableFrom(argClass)) 1 else -1
             }
         }
@@ -569,7 +570,7 @@ internal object InlayHintsTypes {
         return primitiveTypeAliases[simple] ?: simple
     }
 
-    private fun resolveClass(typeName: String, compilationService: GroovyCompilationService): Class<*>? {
+    private fun resolveClass(typeName: String, loadClass: (String) -> Class<*>?): Class<*>? {
         val normalized = normalizeTypeName(typeName)
         val aliased = primitiveTypeAliases[normalized] ?: normalized
         val lookupName = when {
@@ -577,7 +578,7 @@ internal object InlayHintsTypes {
             javaLangTypeAliases.containsKey(aliased) -> javaLangTypeAliases.getValue(aliased)
             else -> return null
         }
-        return compilationService.classpathService.loadClass(lookupName)
+        return loadClass(lookupName)
     }
 
     fun normalizeTypeName(typeName: String): String = typeName.substringBefore('<')

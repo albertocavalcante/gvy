@@ -123,6 +123,8 @@ internal class SnapshotSource(
         inventory.identity === (provider?.captureDocuments() ?: OpenDocuments.absent).identity &&
         dependencies.cacheService.ownership.inputsCurrent(ticket)
 
+    fun workerCurrent(): Boolean = dependencies.workerSessionManager.current() === worker
+
     fun unlessRetired(outcome: SnapshotAcquisition) = if (isCurrent()) outcome else SnapshotAcquisition.Stale
 }
 

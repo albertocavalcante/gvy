@@ -60,20 +60,7 @@ data class HintContext(
      * Local variables assigned anywhere after their declaration, including inside closures that capture
      * them, built once per request on first use. Their declared initializer no longer tells the type.
      */
-    val reassignedLocals: Set<Variable> by lazy {
-        astModel.getAllNodes().asSequence()
-            .filterIsInstance<BinaryExpression>()
-            .filter { it !is DeclarationExpression && Types.isAssignment(it.operation.type) }
-            .flatMap { assignment ->
-                // `(u, v) = [...]` assigns every variable of the tuple on the left.
-                when (val left = assignment.leftExpression) {
-                    is TupleExpression -> left.expressions.asSequence()
-                    else -> sequenceOf(left)
-                }
-            }
-            .mapNotNull { (it as? VariableExpression)?.accessedVariable }
-            .toSet()
-    }
+    val reassignedLocals: Set<Variable> by lazy { astModel.reassignedLocals() }
 
     /**
      * Whether [typeName] is a full class name to match exactly (#1374). A qualified name always is. A bare
@@ -86,3 +73,17 @@ data class HintContext(
 
 /** A workspace method lookup key: the method's name and its declaring class's simple name. */
 data class WorkspaceMethodKey(val name: String, val ownerSimpleName: String)
+
+internal fun GroovyAstModel.reassignedLocals(): Set<Variable> =
+    getAllNodes().asSequence()
+        .filterIsInstance<BinaryExpression>()
+        .filter { it !is DeclarationExpression && Types.isAssignment(it.operation.type) }
+        .flatMap { assignment ->
+            // `(u, v) = [...]` assigns every variable of the tuple on the left.
+            when (val left = assignment.leftExpression) {
+                is TupleExpression -> left.expressions.asSequence()
+                else -> sequenceOf(left)
+            }
+        }
+        .mapNotNull { (it as? VariableExpression)?.accessedVariable }
+        .toSet()

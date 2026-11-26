@@ -3,10 +3,10 @@
 
 package com.github.albertocavalcante.gvy.gls.engine.impl.native.features
 
-import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.HoverMemberLookup
+import com.github.albertocavalcante.gvy.gls.compilation.NativeQueryContext
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
@@ -16,8 +16,6 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HeldHoverProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
 import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallMetadataResolver
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
-import com.github.albertocavalcante.gvy.gls.services.JvmClasspathReflection
-import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
 import com.github.albertocavalcante.gvy.gls.services.heldGdkMethods
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.sources.documentationForSelectedBinary
@@ -75,10 +73,10 @@ class NativeHoverProvider(
         override suspend fun prepareHover(params: HoverParams): HeldHover {
             val facts = jenkins.materialize(forHover = true)
             require(held.parseResult === parseResult)
-            val loader = bytecodeOnlyClassLoader(parseResult.compilationUnit.classLoader)
-            val reflection = JvmClasspathReflection { loader }
             val members = HoverMemberLookup.forRequest(held) { compilationService.referenceReadiness(source) }
-            val types = SemanticTypeResolver(ReflectionTypeSolver(jreOnly = false, classLoader = loader), members)
+            val query = NativeQueryContext(held, members)
+            val reflection = query.reflection
+            val types = query.types
             val methods = MethodCallMetadataResolver(
                 reflection::getMethods,
                 reflection::loadClass,
@@ -103,7 +101,7 @@ class NativeHoverProvider(
                     }
                 }
             }
-            val answer = withContext(loader.context) {
+            val answer = withContext(query.binaryScope) {
                 provider.provideHover(source.uri.toString(), params.position, held)
             }
             return HeldHover(

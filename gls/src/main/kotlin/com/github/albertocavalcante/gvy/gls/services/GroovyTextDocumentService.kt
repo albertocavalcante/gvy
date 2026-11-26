@@ -8,7 +8,6 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
-import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
@@ -31,7 +30,7 @@ import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin.
 import com.github.albertocavalcante.gvy.gls.providers.folding.FoldingRangeRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
-import com.github.albertocavalcante.gvy.gls.providers.inlayhints.InlayHintsProvider
+import com.github.albertocavalcante.gvy.gls.providers.inlayhints.heldInlayHints
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameProvider
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameRefusedException
 import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceTextCache
@@ -40,7 +39,7 @@ import com.github.albertocavalcante.gvy.gls.providers.selection.SelectionRangePr
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.gvy.gls.providers.symbols.buildDocumentOutline
 import com.github.albertocavalcante.gvy.gls.providers.symbols.flattenOutline
-import com.github.albertocavalcante.gvy.gls.providers.typedefinition.TypeDefinitionProvider
+import com.github.albertocavalcante.gvy.gls.providers.typedefinition.heldTypeDefinitions
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
@@ -279,13 +278,7 @@ class GroovyTextDocumentService(
         return DiagnosticsService(providers, config)
     }
 
-    // Type definition provider - created lazily
-    private val typeDefinitionProvider by lazy {
-        TypeDefinitionProvider(
-            semanticResolver = semanticTypeResolver,
-            contextProvider = { uri -> compilationService.createContextWithSource(uri) },
-        )
-    }
+    private val nativeQueries by lazy { NativeQueryRequestHandler(compilationService, documentProvider) }
 
     private val signatureHelpProvider by lazy {
         SignatureHelpProvider(
@@ -345,10 +338,6 @@ class GroovyTextDocumentService(
         )
     }
 
-    private val inlayHintsProvider by lazy {
-        InlayHintsProvider(compilationService, semanticTypeResolver)
-    }
-
     private val semanticTokensHandler by lazy {
         SemanticTokensHandler(compilationService, documentProvider)
     }
@@ -380,22 +369,6 @@ class GroovyTextDocumentService(
                 "${params.position.line}:${params.position.character}"
         }
         signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
-    }
-
-    private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
-        compilationService.ensureCompiled(uri)?.let { return it }
-
-        // NOTE: Heuristic / tradeoff:
-        // The language client can send definition/references requests immediately after didOpen/didChange.
-        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation
-        // hasn't started yet (so ensureCompiled returns null). We compile on-demand using the in-memory
-        // document text to make these requests deterministic and avoid flaky e2e behavior.
-        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange
-        //   so ensureCompiled never returns null.
-        //   See: https://github.com/albertocavalcante/gvy/issues/564
-        // One captured snapshot, compiled under the shared retirement policy (no raw cancellation escapes).
-        val snapshot = documentProvider.getSnapshot(uri) ?: return null
-        return compilationService.ensureCompiled(uri, snapshot)
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
@@ -543,15 +516,11 @@ class GroovyTextDocumentService(
 
     override fun typeDefinition(
         params: TypeDefinitionParams,
-    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
-        logger.debug {
-            "Type definition requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}"
+    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+        val request = runCatching {
+            nativeQueries.capture(URI.create(params.textDocument.uri), params.position.copyCoordinates())
         }
-        // Like its siblings: a client cancel reaches the coroutine, and cancellation is never an empty answer.
-        val locations = typeDefinitionProvider.typeDefinitions(params)
-        logger.debug { "Found ${locations.size} type definitions" }
-        Either.forLeft(locations)
+        return coroutineScope.future { Either.forLeft(nativeQueries.query(request.getOrThrow(), ::heldTypeDefinitions)) }
     }
 
     override fun implementation(
@@ -774,19 +743,12 @@ class GroovyTextDocumentService(
         return coroutineScope.future { foldingRangeHandler.provide(request.getOrThrow()) }
     }
 
-    override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> = coroutineScope.future {
-        logger.debug { "Inlay hints requested for ${params.textDocument.uri}" }
-        val uri = URI.create(params.textDocument.uri)
-
-        // TODO(#566): Read dynamic configuration from client settings.
-        //  See: https://github.com/albertocavalcante/gvy/issues/566
-        val compilationResult = ensureCompiledOrCompileNow(uri)
-        if (compilationResult == null) {
-            logger.warn { "Document $uri not compiled, cannot provide inlay hints" }
-            return@future emptyList()
+    override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> {
+        val request = runCatching {
+            val range = Range(params.range.start.copyCoordinates(), params.range.end.copyCoordinates())
+            nativeQueries.capture(URI.create(params.textDocument.uri), range)
         }
-
-        inlayHintsProvider.provideInlayHints(params)
+        return coroutineScope.future { nativeQueries.query(request.getOrThrow(), ::heldInlayHints) }
     }
 
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> {
@@ -841,3 +803,5 @@ class GroovyTextDocumentService(
         }
     }
 }
+
+private fun Position.copyCoordinates() = Position(line, character)
