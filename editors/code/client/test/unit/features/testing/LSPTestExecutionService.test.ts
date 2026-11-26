@@ -373,13 +373,11 @@ describe("LSPTestExecutionService", () => {
           .returns({ dispose: sandbox.stub() }),
       };
 
-      // Setup default spawn mock
-      const stdout = new PassThrough();
-      const stderr = new PassThrough();
-      const proc = {
+      // Each spawn represents a distinct child process with its own output streams.
+      cpMock.spawn.callsFake(() => ({
         pid: 123,
-        stdout,
-        stderr,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
         on: sandbox
           .stub()
           .callsFake((event: string, callback: (code: number) => void) => {
@@ -388,8 +386,71 @@ describe("LSPTestExecutionService", () => {
             }
           }),
         kill: sandbox.stub(),
+      }));
+    });
+
+    it("uses distinct process streams for every test and report invocation", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
       };
-      cpMock.spawn.returns(proc);
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/gradlew",
+        args: ["test"],
+        cwd: "/workspace",
+        env: {},
+      });
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await service.runTestsWithCoverage(
+          { include: [testItem] },
+          tokenMock,
+          testControllerMock,
+          coverageServiceMock,
+        );
+      }
+
+      assert.strictEqual(cpMock.spawn.callCount, 4);
+      const processes = cpMock.spawn.returnValues;
+      assert.strictEqual(new Set(processes).size, 4);
+      assert.strictEqual(new Set(processes.map((proc) => proc.stdout)).size, 4);
+      assert.strictEqual(new Set(processes.map((proc) => proc.stderr)).size, 4);
+    });
+
+    it("does not emit listener warnings during repeated coverage runs", async () => {
+      const testItem = {
+        id: "com.example.MySpec",
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      testServiceMock.getTestCommand.resolves({
+        executable: "/path/to/gradlew",
+        args: ["test"],
+        cwd: "/workspace",
+        env: {},
+      });
+      const warnings: Error[] = [];
+      const onWarning = (warning: Error) => {
+        if (warning.name === "MaxListenersExceededWarning")
+          warnings.push(warning);
+      };
+      process.on("warning", onWarning);
+      try {
+        for (let attempt = 0; attempt < 6; attempt++) {
+          await service.runTestsWithCoverage(
+            { include: [testItem] },
+            tokenMock,
+            testControllerMock,
+            coverageServiceMock,
+          );
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.strictEqual(cpMock.spawn.callCount, 12);
+        assert.deepStrictEqual(warnings, []);
+      } finally {
+        process.off("warning", onWarning);
+      }
     });
 
     it("should append jacocoTestReport for Gradle projects", async () => {
