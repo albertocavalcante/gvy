@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -129,8 +130,13 @@ class DocumentSymbolStartupTest {
             try {
                 val symbols = answer.get(WAIT_SECONDS, TimeUnit.SECONDS)
                 assertTrue(count.get() >= 2, "an answer requires a new producer")
-                assertTrue(symbols.any { it.isLeft && it.left.name == "Current" })
-                assertFalse(symbols.any { it.isLeft && it.left.name == "Retired" })
+                // Keep the flat response and exact worker markers without a deprecated name accessor.
+                val gson = MessageJsonHandler(emptyMap()).gson
+                val names = symbols.filter { it.isLeft }.map {
+                    gson.toJsonTree(it.left).asJsonObject.get("name").asString
+                }
+                assertTrue("Current" in names)
+                assertFalse("Retired" in names)
             } catch (error: ExecutionException) {
                 assertEquals(
                     ResponseErrorCode.ContentModified.value,

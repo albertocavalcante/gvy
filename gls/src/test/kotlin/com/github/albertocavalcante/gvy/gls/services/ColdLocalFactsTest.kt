@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancel
 import org.eclipse.lsp4j.CodeLensParams
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -75,7 +76,12 @@ class ColdLocalFactsTest {
                 assertTrue(lenses.any { it.command.command == "groovy.runFile" })
             } else {
                 val symbols = service.documentSymbol(DocumentSymbolParams(identifier)).get(20, TimeUnit.SECONDS)
-                assertTrue(symbols.any { it.isLeft && it.left.name == "Sample" })
+                // Assert the flat protocol name: LSP4J deprecates the SymbolInformation.name accessor.
+                val gson = MessageJsonHandler(emptyMap()).gson
+                val names = symbols.filter { it.isLeft }.map {
+                    gson.toJsonTree(it.left).asJsonObject.get("name").asString
+                }
+                assertTrue("Sample" in names)
             }
             val (mode, compiledFiles) = assertNotNull(observed.get())
             assertEquals(ParseMode.MINIMAL, mode)
