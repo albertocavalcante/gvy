@@ -14,6 +14,12 @@ import {
   State,
 } from "vscode-languageclient/node";
 import {
+  type DocumentSymbolParams,
+  DocumentSymbolRequest,
+  LSPErrorCodes,
+  ResponseError,
+} from "vscode-languageserver-protocol";
+import {
   validateJava,
   showJavaError,
   getJavaExecutable,
@@ -433,9 +439,14 @@ function getTraceOutputChannel(): vscode.LogOutputChannel {
 
 function createClientOptions(
   fileWatcher: vscode.FileSystemWatcher,
+  isCurrentClient: () => boolean,
   outputChannel?: vscode.LogOutputChannel,
 ): LanguageClientOptions {
   const pendingSessions = new Map<string, string[]>();
+  const symbolRequests = new WeakMap<
+    vscode.CancellationToken,
+    { uri: string; token: vscode.CancellationToken; isCurrent: () => boolean }
+  >();
   const clientOptions: LanguageClientOptions = {
     // Register the server for Groovy and Jenkinsfile documents
     documentSelector: [
@@ -450,6 +461,61 @@ function createClientOptions(
     },
     initializationOptions: buildInitializationOptions(),
     middleware: {
+      provideDocumentSymbols: async (document, token, next) => {
+        const version = document.version;
+        const isCurrent = () =>
+          isCurrentClient() &&
+          !token.isCancellationRequested &&
+          !document.isClosed &&
+          document.version === version &&
+          workspace.textDocuments.includes(document);
+        // The SDK awaits document sync before invoking transport middleware.
+        // It passes this token through unchanged, even for concurrent requests.
+        const requestToken: vscode.CancellationToken = {
+          get isCancellationRequested() {
+            return token.isCancellationRequested;
+          },
+          get onCancellationRequested() {
+            return token.onCancellationRequested;
+          },
+        };
+        symbolRequests.set(requestToken, {
+          uri: toProtocolUri(document.uri.toString()),
+          token,
+          isCurrent,
+        });
+        try {
+          const result = await next(document, requestToken);
+          return isCurrent() ? result : null;
+        } finally {
+          symbolRequests.delete(requestToken);
+        }
+      },
+      sendRequest: async (type, params, token, next) => {
+        const method = typeof type === "string" ? type : type.method;
+        if (method !== DocumentSymbolRequest.method)
+          return next(type, params, token);
+        const request = token && symbolRequests.get(token);
+        const uri = (params as DocumentSymbolParams | undefined)?.textDocument
+          ?.uri;
+        if (!request || request.uri !== uri) return next(type, params, token);
+        try {
+          return await next(type, params, request.token);
+        } catch (error) {
+          // The SDK turns ContentModified into an empty outline. Give the same
+          // open document one new server request before that result is cached.
+          if (
+            !(error instanceof ResponseError) ||
+            error.code !== LSPErrorCodes.ContentModified ||
+            !request.isCurrent()
+          ) {
+            throw error;
+          }
+          const result = await next(type, params, request.token);
+          if (!request.isCurrent()) throw error;
+          return result;
+        }
+      },
       didOpen: (document, next) => {
         const experimental = client?.initializeResult?.capabilities
           ?.experimental as { groovyDocumentAnalysis?: unknown } | undefined;
@@ -569,7 +635,11 @@ async function doStart(): Promise<void> {
 
   try {
     const { serverOptions, launch } = await createServerOptions();
-    const clientOptions = createClientOptions(fileWatcher, serverOutputChannel);
+    const clientOptions = createClientOptions(
+      fileWatcher,
+      () => client === created && created.isRunning(),
+      serverOutputChannel,
+    );
     let abandoned = false;
     let defaultErrorHandler: ErrorHandler | undefined;
     clientOptions.errorHandler = abandonableErrorHandler(

@@ -52,6 +52,8 @@ import com.github.albertocavalcante.nativeapi.ParseMode
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.ast.ModuleNode
@@ -741,15 +743,7 @@ class GroovyTextDocumentService(
                 val parsed = held.parseResult
                 val testLenses = testCodeLensProvider.provideCodeLenses(uri, parsed, detectors)
                 val executionLenses = executionCodeLenses(uri, parsed.ast)
-                if (!testCodeLensProvider.detectorsCurrent(detectors)) {
-                    throw ResponseErrorException(
-                        ResponseError(
-                            ResponseErrorCode.ContentModified,
-                            "Test frameworks changed during discovery",
-                            null,
-                        ),
-                    )
-                }
+                requireCurrentTestDetectors(detectors)
                 testLenses + executionLenses
             }
             val result = compilationService.queryCapturedSnapshot(
@@ -759,7 +753,11 @@ class GroovyTextDocumentService(
                 query,
             )
             when (result) {
-                is SnapshotQuery.Answer -> result.value
+                is SnapshotQuery.Answer -> {
+                    requireCurrentTestDetectors(detectors)
+                    currentCoroutineContext().ensureActive()
+                    result.value
+                }
                 SnapshotQuery.Missing -> emptyList()
                 SnapshotQuery.Stale -> throw ResponseErrorException(
                     ResponseError(
@@ -770,6 +768,16 @@ class GroovyTextDocumentService(
                 )
                 is SnapshotQuery.Failure -> throw result.cause
             }
+        }
+    }
+
+    private fun requireCurrentTestDetectors(
+        detectors: List<com.github.albertocavalcante.gvy.testing.api.TestFrameworkDetector>,
+    ) {
+        if (!testCodeLensProvider.detectorsCurrent(detectors)) {
+            throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.ContentModified, "Test frameworks changed during discovery", null),
+            )
         }
     }
 
