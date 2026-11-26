@@ -29,6 +29,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
@@ -275,24 +277,77 @@ class GroovyCompilationService internal constructor(
             if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
             if (acquired !is SnapshotAcquisition.Available) return null
             val result = acquired.query { snapshot ->
-                val parsed = snapshot.parseResult
-                if (parsed.ast != null) {
-                    symbolIndexer.ensureIndexed(ticket, snapshot.sourceText) { parsed.astModel }
-                    publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
-                }
-                if (parseAccessor.isSuspiciousScript(uri, parsed)) {
-                    val classpath = workspaceManager.getClasspathForFile(uri, snapshot.sourceText, source.workspace)
-                    val recovered = parseAccessor.parseScriptAtConversion(uri, snapshot.sourceText, classpath)
-                    recovered.compilationUnit.classLoader.use { extract(recovered) }
-                } else {
-                    extract(parsed)
-                }
+                extractDiscovery(source, publication, snapshot, extract)
             }
             when (result) {
                 is SnapshotQuery.Answer -> result.value
                 is SnapshotQuery.Failure -> throw result.cause
                 SnapshotQuery.Missing, SnapshotQuery.Stale -> null
             }
+        }
+    }
+
+    private suspend fun <T> extractDiscovery(
+        source: SnapshotSource,
+        publication: SemanticIndexer.Publication,
+        snapshot: CompiledDocumentSnapshot,
+        extract: (ParseResult) -> T,
+    ): T? {
+        val parsed = snapshot.parseResult
+        val recovered = if (parseAccessor.isSuspiciousScript(source.uri, parsed)) {
+            checkNotNull(snapshot.referenceProducer).withCompilerInputs { worker, classpath ->
+                worker.parse(parseAccessor.scriptConversionRequest(source.uri, snapshot.sourceText, classpath))
+            } ?: return null
+        } else {
+            null
+        }
+        var retainedRecovery = false
+        try {
+            if (parsed.ast != null) {
+                val forSymbols = recovered?.takeIf { it.ast != null } ?: parsed
+                if (!installDiscoverySymbols(source, snapshot, forSymbols)) return null
+                retainedRecovery = forSymbols === recovered
+                publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+            }
+            return extract(recovered ?: parsed)
+        } finally {
+            if (!retainedRecovery) recovered?.compilationUnit?.classLoader?.close()
+        }
+    }
+
+    private suspend fun installDiscoverySymbols(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+        parsed: ParseResult,
+    ): Boolean {
+        val prepared = symbolIndexer.prepare(snapshot.sourceText, parsed.astModel)
+        val caller = currentCoroutineContext()
+        val producer = checkNotNull(snapshot.referenceProducer)
+        val current = caller.inputsCurrent {
+            producer.isCurrent(source, source.uri, snapshot.sourceText, orchestrator::referenceSources)
+        }
+        if (!current) return false
+        val buffer = source.buffer
+        val version = buffer?.snapshot?.version
+        val ticket = if (buffer != null && version != null) {
+            source.ticket.orderedBy(BufferOrder(buffer.incarnation, version) {
+                documents.getSnapshot(source.uri) === buffer.snapshot
+            })
+        } else {
+            source.ticket
+        }
+        // The build can run across didChange. Serialize the short install against both edits and compiler writes.
+        return documents.withLifecycleLock {
+            if (documents.captureDocuments() !== source.inventory) return@withLifecycleLock false
+            var installed = false
+            ownership.commit(ticket) {
+                caller.ensureActive()
+                if (ownership.inputsCurrent(ticket)) {
+                    symbolIndexer.install(source.uri, prepared)
+                    installed = true
+                }
+            }
+            installed
         }
     }
 

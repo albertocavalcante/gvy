@@ -154,7 +154,7 @@ class ParseResultAccessor(
             // over an open, unsaved buffer that the entry describes.
             val content = cachedContent
             val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
-            val parseResult = parseScriptAtConversion(uri, content, classpath)
+            val parseResult = workerSessionManager.parse(scriptConversionRequest(uri, content, classpath))
 
             // Replace the cached result and its symbol index together, unless they were retired meanwhile
             if (parseResult.ast != null) {
@@ -178,23 +178,21 @@ class ParseResultAccessor(
     }
 
     /** Discovery can recover a suspicious Script from the exact source it already acquired. */
-    internal fun parseScriptAtConversion(uri: URI, content: String, classpath: List<Path>): ParseResult {
+    internal fun scriptConversionRequest(uri: URI, content: String, classpath: List<Path>): ParseRequest {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         logger.info {
             "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
         }
-        return workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = classpath,
-                // Don't add source roots - prevents classloader from finding .groovy file
-                sourceRoots = emptyList(),
-                // Don't add other sources - causes Script fallback
-                workspaceSources = emptyList(),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                compilePhase = Phases.CONVERSION,
-            ),
+        return ParseRequest(
+            uri = uri,
+            content = content,
+            classpath = classpath,
+            // Don't add source roots - prevents classloader from finding .groovy file
+            sourceRoots = emptyList(),
+            // Don't add other sources - causes Script fallback
+            workspaceSources = emptyList(),
+            locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+            compilePhase = Phases.CONVERSION,
         )
     }
 

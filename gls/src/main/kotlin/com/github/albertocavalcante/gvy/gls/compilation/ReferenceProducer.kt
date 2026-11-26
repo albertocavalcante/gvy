@@ -74,6 +74,10 @@ internal class ReferenceProducer(
     fun ownsWindow(workspace: WorkspaceModel, ticket: ArtifactOwnership.Ticket, inventory: Any): Boolean =
         sources?.ownsWindow(workspace, ticket, inventory) == true
 
+    /** A follow-up compiler pass can use only the worker and ordered classpath of this invocation. */
+    fun <T> withCompilerInputs(action: (WorkerSession, List<Path>) -> T): T? =
+        session.get()?.let { worker -> action(worker, classpath) }
+
     fun matches(paths: List<Path>, worker: WorkerSession): Boolean = worker === session.get() && paths == classpath
 
     fun sameEnvironment(other: ReferenceProducer?): Boolean {
