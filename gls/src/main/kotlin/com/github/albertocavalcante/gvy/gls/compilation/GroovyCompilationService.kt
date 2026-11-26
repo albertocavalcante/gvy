@@ -26,11 +26,15 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
@@ -267,37 +271,88 @@ class GroovyCompilationService internal constructor(
     }
 
     /** Compute suites against the current source. Only compiler and index work is shared across requests. */
-    internal suspend fun <T> queryUncachedTestDiscovery(uri: URI, extract: (ParseResult) -> T): T? {
+    internal suspend fun <T> queryUncachedTestDiscovery(
+        uri: URI,
+        window: DiscoveryWindow,
+        extract: (ParseResult) -> T,
+    ): SnapshotQuery<T?> {
         val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
         return publication.use {
             val source = orchestrator.snapshots.capture(uri, ticket)
-            val acquired = orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, ParseMode.WORKSPACE) {
-                logger.warn(it) { "Failed to read $uri for test discovery" }
-            }
-            if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
-            if (acquired !is SnapshotAcquisition.Available) return null
-            val result = acquired.query { snapshot ->
-                extractDiscovery(source, publication, snapshot, extract)
-            }
-            when (result) {
-                is SnapshotQuery.Answer -> result.value
-                is SnapshotQuery.Failure -> throw result.cause
-                SnapshotQuery.Missing, SnapshotQuery.Stale -> null
+            val acquired = orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, ParseMode.WORKSPACE)
+            when (acquired) {
+                is SnapshotAcquisition.Available -> {
+                    window.retain(acquired.isCurrent)
+                    queryPreparedDiscovery(source, publication, acquired, extract)
+                }
+                SnapshotAcquisition.Missing -> {
+                    window.retain(source::isCurrent)
+                    SnapshotQuery.Missing
+                }
+                SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+                is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
             }
         }
     }
 
-    private suspend fun <T> extractDiscovery(
+    private suspend fun <T> queryPreparedDiscovery(
         source: SnapshotSource,
         publication: SemanticIndexer.Publication,
-        snapshot: CompiledDocumentSnapshot,
+        acquired: SnapshotAcquisition.Available,
         extract: (ParseResult) -> T,
-    ): T? {
-        val indexed = snapshot.indexedDiscovery
-        if (indexed != null && indexed.symbols === symbolIndexer.getSymbolIndex(source.uri)) {
-            publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
-            return extract(indexed.parsed)
+    ): SnapshotQuery<T?> {
+        val prepared = acquired.query { snapshot -> discoveryStructure(source, snapshot) }
+        return when (prepared) {
+            is SnapshotQuery.Answer -> {
+                // A shared job can be detached even if its requesting source has not changed.
+                val structure = prepared.value ?: return SnapshotQuery.Stale
+                acquired.query { snapshot ->
+                    if (snapshot.parseResult.ast != null) {
+                        publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                    }
+                    structure.parsed?.let(extract)
+                }
+            }
+            SnapshotQuery.Missing -> SnapshotQuery.Missing
+            SnapshotQuery.Stale -> SnapshotQuery.Stale
+            is SnapshotQuery.Failure -> prepared
         }
+    }
+
+    private fun installedDiscovery(uri: URI, snapshot: CompiledDocumentSnapshot): PreparedDiscovery? {
+        val indexed = snapshot.indexedDiscovery ?: return null
+        return indexed.structure.takeIf { indexed.symbols === symbolIndexer.getSymbolIndex(uri) }
+    }
+
+    private suspend fun discoveryStructure(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+    ): PreparedDiscovery? {
+        installedDiscovery(source.uri, snapshot)?.let { return it }
+        val scope = source.dependencies.waiterScope
+        val pending = cacheService.discoveryJobs.register(source.uri, snapshot, source.ticket, { it === snapshot }) {
+            scope.async(start = CoroutineStart.LAZY) {
+                // Preserve the exact failure and suppressed cleanup errors across the deferred handoff.
+                runCatching { installedDiscovery(source.uri, snapshot) ?: prepareDiscovery(source, snapshot) }
+            }
+        }
+        if (!ownership.inputsCurrent(source.ticket)) pending.retire()
+        pending.deferred.start()
+        val outcome = try {
+            pending.awaitUnlessRetired()
+        } catch (cancelled: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            if (!scope.isActive || !pending.retired.isCompleted) throw cancelled
+            null
+        }
+        currentCoroutineContext().ensureActive()
+        return outcome?.getOrThrow()
+    }
+
+    private suspend fun prepareDiscovery(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+    ): PreparedDiscovery? {
         val parsed = snapshot.parseResult
         val recovered = if (parseAccessor.isSuspiciousScript(source.uri, parsed)) {
             checkNotNull(snapshot.referenceProducer).withCompilerInputs { worker, classpath ->
@@ -311,21 +366,21 @@ class GroovyCompilationService internal constructor(
         val unpublished = AutoCloseable { if (!retainedRecovery) recovered?.compilationUnit?.classLoader?.close() }
         return unpublished.use {
             val selected = recovered ?: parsed
+            val structure = PreparedDiscovery(selected.takeIf { it.ast != null })
             if (parsed.ast != null) {
-                if (!installDiscoverySymbols(source, snapshot, selected)) return null
-                retainedRecovery = recovered?.ast != null
-                publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                if (!installDiscoverySymbols(source, snapshot, structure)) return null
+                retainedRecovery = recovered != null && structure.parsed === recovered
             }
-            extract(selected)
+            structure
         }
     }
 
     private suspend fun installDiscoverySymbols(
         source: SnapshotSource,
         snapshot: CompiledDocumentSnapshot,
-        selected: ParseResult,
+        structure: PreparedDiscovery,
     ): Boolean {
-        val forSymbols = if (selected.ast != null) selected else snapshot.parseResult
+        val forSymbols = structure.parsed ?: snapshot.parseResult
         val prepared = symbolIndexer.prepare(snapshot.sourceText, forSymbols.astModel)
         val caller = currentCoroutineContext()
         val producer = checkNotNull(snapshot.referenceProducer)
@@ -336,9 +391,11 @@ class GroovyCompilationService internal constructor(
         val buffer = source.buffer
         val version = buffer?.snapshot?.version
         val ticket = if (buffer != null && version != null) {
-            source.ticket.orderedBy(BufferOrder(buffer.incarnation, version) {
-                documents.getSnapshot(source.uri) === buffer.snapshot
-            })
+            source.ticket.orderedBy(
+                BufferOrder(buffer.incarnation, version) {
+                    documents.getSnapshot(source.uri) === buffer.snapshot
+                },
+            )
         } else {
             source.ticket
         }
@@ -350,7 +407,9 @@ class GroovyCompilationService internal constructor(
                 caller.ensureActive()
                 if (ownership.inputsCurrent(ticket)) {
                     symbolIndexer.install(source.uri, prepared)
-                    if (selected === forSymbols) snapshot.indexedDiscovery = IndexedDiscovery(prepared.index, selected)
+                    if (structure.parsed != null) {
+                        snapshot.indexedDiscovery = IndexedDiscovery(prepared.index, structure)
+                    }
                     installed = true
                 }
             }
@@ -565,7 +624,7 @@ class GroovyCompilationService internal constructor(
      */
     fun onDocumentOpened(uri: URI) {
         var retired: RetiredCompilations? = null
-        ownership.retire(uri) { retired = cacheService.snapshotJobs.detach() }
+        ownership.retire(uri) { retired = cacheService.detachSnapshotJobs() }
         try {
             shadows.opened(uri)
         } finally {
@@ -595,7 +654,7 @@ class GroovyCompilationService internal constructor(
         val ticket = ownership.retireClosed(uri, isOpen) {
             val unchanged = disk != null && fingerprint != null &&
                 cacheService.getCachedWithContent(uri, fingerprint)?.first == disk
-            retired = if (unchanged) cacheService.snapshotJobs.detach() else cacheService.detach(uri)
+            retired = if (unchanged) cacheService.detachSnapshotJobs() else cacheService.detach(uri)
             semanticIndexer.retirePublications(uri)
         }
         // Woken after the fence, as [invalidateCache] does (#1429)

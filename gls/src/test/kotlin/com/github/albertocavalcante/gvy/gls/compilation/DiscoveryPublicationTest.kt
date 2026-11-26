@@ -37,8 +37,8 @@ import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DiscoveryPublicationTest {
@@ -65,7 +65,10 @@ class DiscoveryPublicationTest {
             try {
                 compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
                 compilation.onDocumentOpened(uri)
-                val discovery = async(Dispatchers.Default) { compilation.queryUncachedTestDiscovery(uri) { "old" } }
+                val window = DiscoveryWindow(compilation.captureSnapshotSource(root.toUri()))
+                val discovery = async(Dispatchers.Default) {
+                    compilation.queryUncachedTestDiscovery(uri, window) { "old" }
+                }
                 assertTrue(entered.await(10, TimeUnit.SECONDS), "Older symbol construction must reach the barrier")
                 val options = GroovyTextDocumentServiceOptions(documentProvider = documents)
                 GroovyTextDocumentService(scope, compilation, options).didChange(
@@ -81,7 +84,7 @@ class DiscoveryPublicationTest {
                 assertTrue(symbols.isIndexed(uri, current))
                 assertEquals(listOf(path), symbols.classLocator(null)("After"))
                 release.countDown()
-                assertNull(withTimeout(10_000) { discovery.await() }, "The original discovery must retire")
+                assertIs<SnapshotQuery.Stale>(withTimeout(10_000) { discovery.await() })
                 assertTrue(symbols.isIndexed(uri, current), "The stale index build overwrote the current buffer")
                 assertEquals(listOf(path), symbols.classLocator(null)("After"))
                 assertTrue(symbols.classLocator(null)("Before").isEmpty())

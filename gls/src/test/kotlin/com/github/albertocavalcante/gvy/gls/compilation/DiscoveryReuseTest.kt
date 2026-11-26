@@ -135,24 +135,22 @@ class DiscoveryReuseTest {
         }
     }
 
-    private fun discoveryService(
-        scriptFallback: Boolean,
-        inspect: (ParseRequest, ParseResult) -> ParseResult,
-    ) = GroovyCompilationService(
-        DiscoveryReuseTest::class.java.classLoader,
-        workerSessionDecorator = { worker ->
-            object : WorkerSession {
-                override fun parse(request: ParseRequest): ParseResult {
-                    val input = if (scriptFallback && request.compilePhase == Phases.CANONICALIZATION) {
-                        request.copy(content = "def placeholder() {}")
-                    } else {
-                        request
+    private fun discoveryService(scriptFallback: Boolean, inspect: (ParseRequest, ParseResult) -> ParseResult) =
+        GroovyCompilationService(
+            DiscoveryReuseTest::class.java.classLoader,
+            workerSessionDecorator = { worker ->
+                object : WorkerSession {
+                    override fun parse(request: ParseRequest): ParseResult {
+                        val input = if (scriptFallback && request.compilePhase == Phases.CANONICALIZATION) {
+                            request.copy(content = "def placeholder() {}")
+                        } else {
+                            request
+                        }
+                        return inspect(request, worker.parse(input))
                     }
-                    return inspect(request, worker.parse(input))
                 }
-            }
-        },
-    )
+            },
+        )
 
     private fun observeSymbolBuild(parsed: ParseResult, beforeBuild: () -> Unit): ParseResult {
         val model = parsed.astModel

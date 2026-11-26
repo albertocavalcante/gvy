@@ -25,7 +25,33 @@ internal data class CompiledDocumentSnapshot(
     var indexedDiscovery: IndexedDiscovery? = null
 }
 
-internal class IndexedDiscovery(val symbols: SymbolIndex, val parsed: ParseResult)
+/** The workspace list and per-file compiler inputs that must still own the assembled discovery response. */
+internal class DiscoveryWindow(private val workspace: SnapshotSource) {
+    private val files = mutableListOf<() -> Boolean>()
+
+    fun retain(isCurrent: () -> Boolean) {
+        files += isCurrent
+    }
+
+    suspend fun <T> query(compute: suspend () -> T): SnapshotQuery<T> {
+        val caller = currentCoroutineContext()
+        return queryCurrentSnapshot({ isCurrent(caller) }, compute = compute)
+    }
+
+    private fun isCurrent(caller: CoroutineContext): Boolean {
+        if (!caller.inputsCurrent(workspace::isCurrent)) return false
+        for (checkFile in files) {
+            if (!caller.inputsCurrent(checkFile)) return false
+        }
+        // A per-file classpath or source-selection callback may itself retire the workspace.
+        return caller.inputsCurrent(workspace::isCurrent)
+    }
+}
+
+/** A null parse here means the source was inspected and yielded no test AST. */
+internal class PreparedDiscovery(val parsed: ParseResult?)
+
+internal class IndexedDiscovery(val symbols: SymbolIndex, val structure: PreparedDiscovery)
 
 /** Result of acquiring source and parser facts under one ownership fence. */
 internal sealed interface SnapshotAcquisition {

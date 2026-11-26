@@ -60,19 +60,12 @@ jobs:
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
           :gls:spotlessApply :tests:spotlessApply
           --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
-      - name: Run discovery, ownership and packaged controls
+      - name: Run full GLS and the exact packaged controls
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
         shell: bash
         run: >-
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-focused
-          :gls:test
-          --tests '*DiscoveryReuseTest'
-          --tests '*DiscoveryPublicationTest'
-          --tests '*TestDiscoveryReferenceTest'
-          --tests '*TestDiscoveryProviderTest'
-          --tests '*ClosedReferenceRefreshTest'
-          --tests '*ClosedReferenceInventoryTest'
-          :tests:test --tests '*PackagedEditorInventoryTest'
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-full
+          :gls:test :tests:e2eTest --tests '*PackagedEditorInventoryTest' -Pe2eParallelForks=1
           --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Run normal lint on the formatted candidate
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
@@ -101,5 +94,6 @@ jobs:
             ${{ runner.temp }}/g6-evidence/**
             ${{ runner.temp }}/g6-source/**
             gls/build/test-results/test/*.xml
-            tests/build/test-results/test/*.xml
+            tests/build/test-results/e2eTest/*.xml
+            tests/build/reports/tests/e2eTest/**
             gls/build/reports/tests/test/**

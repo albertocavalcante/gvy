@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.testing
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
@@ -267,8 +268,10 @@ class TestDiscoveryProviderTest {
         val workspace = mockk<WorkspaceManager>()
         every { service.workspaceManager } returns workspace
         every { workspace.getWorkspaceSourceUris() } returns listOf(uri)
-        coEvery { service.queryUncachedTestDiscovery(uri, any<(ParseResult) -> List<TestSuite>>()) } answers {
-            secondArg<(ParseResult) -> List<TestSuite>>().invoke(parsed)
+        every { service.captureSnapshotSource(any()) } returns mockk { every { isCurrent() } returns true }
+        coEvery { service.queryUncachedTestDiscovery(uri, any(), any<(ParseResult) -> List<TestSuite>>()) } answers {
+            val suites = thirdArg<(ParseResult) -> List<TestSuite>>().invoke(parsed)
+            SnapshotQuery.Answer(suites, partial = false)
         }
         return TestDiscoveryProvider(service, registry)
     }
