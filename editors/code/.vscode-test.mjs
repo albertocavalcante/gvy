@@ -40,6 +40,7 @@ export default defineConfig([
     ...runtime,
     workspaceFolder: "client/src/test/gdsl-workspace",
     launchArgs: [
+      "--log=trace",
       `--user-data-dir=${fileURLToPath(new URL(".vscode-test/gdsl-user-data", import.meta.url))}`,
     ],
     mocha: { ui: "tdd", timeout: 30000 },

@@ -15,6 +15,7 @@ suite("GDSL cold startup", () => {
   const previousUpdates = config.inspect<boolean>(
     "update.checkOnStartup",
   )?.globalValue;
+  const previousTrace = config.inspect<string>("trace.server")?.globalValue;
 
   suiteTeardown(async () => {
     await config.update(
@@ -30,6 +31,11 @@ suite("GDSL cold startup", () => {
     await config.update(
       "update.checkOnStartup",
       previousUpdates,
+      vscode.ConfigurationTarget.Global,
+    );
+    await config.update(
+      "trace.server",
+      previousTrace,
       vscode.ConfigurationTarget.Global,
     );
     await vscode.commands.executeCommand(
@@ -112,6 +118,11 @@ suite("GDSL cold startup", () => {
     await config.update(
       "server.path",
       server,
+      vscode.ConfigurationTarget.Global,
+    );
+    await config.update(
+      "trace.server",
+      "verbose",
       vscode.ConfigurationTarget.Global,
     );
     const document = await vscode.workspace.openTextDocument({
