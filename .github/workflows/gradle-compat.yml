@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           git rev-parse HEAD
           git status --porcelain
-          git diff 6e70b4e6f16a7e5f9675e9c866dc022981b5f4cb --stat
+          git cat-file -p HEAD
           java -version
       - name: Run the frozen discovery baseline
         shell: bash
