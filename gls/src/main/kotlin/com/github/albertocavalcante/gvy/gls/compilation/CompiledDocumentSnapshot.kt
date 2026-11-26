@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.currentCoroutineContext
@@ -18,7 +19,39 @@ internal data class CompiledDocumentSnapshot(
     val parseResult: ParseResult,
     val referenceProducer: ReferenceProducer? = null,
     val sourceIdentity: String? = null,
-)
+) {
+    /** Structural parse for discovery, reusable only while its exact symbol index is still installed. */
+    @Volatile
+    var indexedDiscovery: IndexedDiscovery? = null
+}
+
+/** The workspace list and per-file compiler inputs that must still own the assembled discovery response. */
+internal class DiscoveryWindow(private val workspace: SnapshotSource) {
+    private val files = mutableListOf<() -> Boolean>()
+
+    fun retain(isCurrent: () -> Boolean) {
+        files += isCurrent
+    }
+
+    suspend fun <T> query(compute: suspend () -> T): SnapshotQuery<T> {
+        val caller = currentCoroutineContext()
+        return queryCurrentSnapshot({ isCurrent(caller) }, compute = compute)
+    }
+
+    private fun isCurrent(caller: CoroutineContext): Boolean {
+        if (!caller.inputsCurrent(workspace::isCurrent)) return false
+        for (checkFile in files) {
+            if (!caller.inputsCurrent(checkFile)) return false
+        }
+        // A per-file classpath or source-selection callback may itself retire the workspace.
+        return caller.inputsCurrent(workspace::isCurrent)
+    }
+}
+
+/** A null parse here means the source was inspected and yielded no test AST. */
+internal class PreparedDiscovery(val parsed: ParseResult?)
+
+internal class IndexedDiscovery(val symbols: SymbolIndex, val structure: PreparedDiscovery)
 
 /** Result of acquiring source and parser facts under one ownership fence. */
 internal sealed interface SnapshotAcquisition {

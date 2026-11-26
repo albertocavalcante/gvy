@@ -153,23 +153,8 @@ class ParseResultAccessor(
             // Re-parse the text this entry was compiled from. Reading the disk instead would publish the file
             // over an open, unsaved buffer that the entry describes.
             val content = cachedContent
-            val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-            logger.info {
-                "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
-            }
-            val parseResult = workerSessionManager.parse(
-                ParseRequest(
-                    uri = uri,
-                    content = content,
-                    classpath = workspaceManager.getClasspathForFile(uri, content, workspace),
-                    // Don't add source roots - prevents classloader from finding .groovy file
-                    sourceRoots = emptyList(),
-                    // Don't add other sources - causes Script fallback
-                    workspaceSources = emptyList(),
-                    locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                    compilePhase = Phases.CONVERSION,
-                ),
-            )
+            val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
+            val parseResult = workerSessionManager.parse(scriptConversionRequest(uri, content, classpath))
 
             // Replace the cached result and its symbol index together, unless they were retired meanwhile
             if (parseResult.ast != null) {
@@ -190,6 +175,25 @@ class ParseResultAccessor(
         }
 
         return cachedResult
+    }
+
+    /** Discovery can recover a suspicious Script from the exact source it already acquired. */
+    internal fun scriptConversionRequest(uri: URI, content: String, classpath: List<Path>): ParseRequest {
+        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+        logger.info {
+            "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
+        }
+        return ParseRequest(
+            uri = uri,
+            content = content,
+            classpath = classpath,
+            // Don't add source roots - prevents classloader from finding .groovy file
+            sourceRoots = emptyList(),
+            // Don't add other sources - causes Script fallback
+            workspaceSources = emptyList(),
+            locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+            compilePhase = Phases.CONVERSION,
+        )
     }
 
     private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {

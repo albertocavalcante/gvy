@@ -60,6 +60,9 @@ class ArtifactOwnership {
         // A closed navigation item can outlive all tickets for its URI and the weak file state.
         internal val sourceIdentity: String get() = "${state.ownerIdentity}:$epoch:$lastRetirement:$uri"
 
+        /** Attach the captured buffer order without taking a new retirement fence after reading the source. */
+        internal fun orderedBy(order: BufferOrder): Ticket = Ticket(uri, epoch, state, stamp, lastRetirement, order)
+
         /** Query captures may share only when both observed the same file and workspace input retirements. */
         internal fun sharesInputs(other: Ticket): Boolean = state === other.state && stamp == other.stamp &&
             epoch == other.epoch && lastRetirement == other.lastRetirement

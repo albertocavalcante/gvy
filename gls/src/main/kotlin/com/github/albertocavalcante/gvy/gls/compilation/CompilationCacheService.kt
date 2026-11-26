@@ -28,6 +28,7 @@ class CompilationCacheService(
     // Context-owned work stays separate from background compilations that publish the workspace's global indexes.
     private val compilationJobs = PendingRegistry<CompilationIdentity, CompilationResult>()
     internal val snapshotJobs = PendingRegistry<CapturedCompilation, SnapshotAcquisition>(CapturedCompilation::delivery)
+    internal val discoveryJobs = PendingRegistry<CompiledDocumentSnapshot, Result<PreparedDiscovery?>>()
 
     /**
      * Gets cached ParseResult if content AND configuration fingerprint match.
@@ -159,10 +160,10 @@ class CompilationCacheService(
     internal fun detach(uri: URI, allInputsRetired: Boolean = true): RetiredCompilations {
         cache.invalidate(uri)
         val compile = compilationJobs.detach(uri)
-        val snapshot = if (allInputsRetired) snapshotJobs.detach() else snapshotJobs.detach(uri)
+        val snapshots = detachSnapshotJobs(if (allInputsRetired) null else uri)
         return RetiredCompilations {
             compile?.retire()
-            snapshot?.retire()
+            snapshots.retire()
         }
     }
 
@@ -180,10 +181,10 @@ class CompilationCacheService(
     internal fun detach(): RetiredCompilations {
         cache.clear()
         val compile = compilationJobs.detach()
-        val snapshot = snapshotJobs.detach()
+        val snapshots = detachSnapshotJobs()
         return RetiredCompilations {
             compile.retire()
-            snapshot.retire()
+            snapshots.retire()
         }
     }
 
@@ -194,7 +195,7 @@ class CompilationCacheService(
      */
     fun getStatistics(): Map<String, Any> = buildMap {
         putAll(cache.getStatistics())
-        put("activeCompilations", compilationJobs.size + snapshotJobs.size)
+        put("activeCompilations", compilationJobs.size + snapshotJobs.size + discoveryJobs.size)
     }
 
     /**
@@ -206,4 +207,14 @@ class CompilationCacheService(
 
     /** Changes the maximum number of cached results (open documents are exempt from eviction). */
     fun resize(maxEntries: Int) = cache.resize(maxEntries)
+}
+
+/** Test discovery's structural pass follows the same source retirements as its canonical parse. */
+internal fun CompilationCacheService.detachSnapshotJobs(uri: URI? = null): RetiredCompilations {
+    val snapshots = if (uri == null) snapshotJobs.detach() else snapshotJobs.detach(uri)
+    val discoveries = if (uri == null) discoveryJobs.detach() else discoveryJobs.detach(uri)
+    return RetiredCompilations {
+        snapshots?.retire()
+        discoveries?.retire()
+    }
 }

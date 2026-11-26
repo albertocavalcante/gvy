@@ -24,10 +24,17 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseMode
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
@@ -258,16 +265,171 @@ class GroovyCompilationService internal constructor(
             if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
             if (acquired !is SnapshotAcquisition.Ready) return
             acquired.query { snapshot ->
-                val parsed = snapshot.parseResult
-                semanticIndexer.publish(
-                    publication,
-                    snapshot.sourceText,
-                    checkNotNull(parsed.ast),
-                    parsed.outcome.achievedPhase,
-                    SemanticPublicationSource(fromBuffer = false, producer = checkNotNull(snapshot.referenceProducer)),
-                )
+                publishSnapshot(publication, snapshot, fromBuffer = false)
             }
         }
+    }
+
+    /** Compute suites against the current source. Only compiler and index work is shared across requests. */
+    internal suspend fun <T> queryUncachedTestDiscovery(
+        uri: URI,
+        window: DiscoveryWindow,
+        extract: (ParseResult) -> T,
+    ): SnapshotQuery<T?> {
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
+        return publication.use {
+            val source = orchestrator.snapshots.capture(uri, ticket)
+            val acquired = orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, ParseMode.WORKSPACE)
+            when (acquired) {
+                is SnapshotAcquisition.Available -> {
+                    window.retain(acquired.isCurrent)
+                    queryPreparedDiscovery(source, publication, acquired, extract)
+                }
+                SnapshotAcquisition.Missing -> {
+                    window.retain(source::isCurrent)
+                    SnapshotQuery.Missing
+                }
+                SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+                is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
+            }
+        }
+    }
+
+    private suspend fun <T> queryPreparedDiscovery(
+        source: SnapshotSource,
+        publication: SemanticIndexer.Publication,
+        acquired: SnapshotAcquisition.Available,
+        extract: (ParseResult) -> T,
+    ): SnapshotQuery<T?> {
+        val prepared = acquired.query { snapshot -> discoveryStructure(source, snapshot) }
+        return when (prepared) {
+            is SnapshotQuery.Answer -> {
+                // A shared job can be detached even if its requesting source has not changed.
+                val structure = prepared.value ?: return SnapshotQuery.Stale
+                acquired.query { snapshot ->
+                    if (snapshot.parseResult.ast != null) {
+                        publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                    }
+                    structure.parsed?.let(extract)
+                }
+            }
+            SnapshotQuery.Missing -> SnapshotQuery.Missing
+            SnapshotQuery.Stale -> SnapshotQuery.Stale
+            is SnapshotQuery.Failure -> prepared
+        }
+    }
+
+    private fun installedDiscovery(uri: URI, snapshot: CompiledDocumentSnapshot): PreparedDiscovery? {
+        val indexed = snapshot.indexedDiscovery ?: return null
+        return indexed.structure.takeIf { indexed.symbols === symbolIndexer.getSymbolIndex(uri) }
+    }
+
+    private suspend fun discoveryStructure(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+    ): PreparedDiscovery? {
+        installedDiscovery(source.uri, snapshot)?.let { return it }
+        val scope = source.dependencies.waiterScope
+        val pending = cacheService.discoveryJobs.register(source.uri, snapshot, source.ticket, { it === snapshot }) {
+            scope.async(start = CoroutineStart.LAZY) {
+                // Preserve the exact failure and suppressed cleanup errors across the deferred handoff.
+                runCatching { installedDiscovery(source.uri, snapshot) ?: prepareDiscovery(source, snapshot) }
+            }
+        }
+        if (!ownership.inputsCurrent(source.ticket)) pending.retire()
+        pending.deferred.start()
+        val outcome = try {
+            pending.awaitUnlessRetired()
+        } catch (cancelled: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            if (!scope.isActive || !pending.retired.isCompleted) throw cancelled
+            null
+        }
+        currentCoroutineContext().ensureActive()
+        return outcome?.getOrThrow()
+    }
+
+    private suspend fun prepareDiscovery(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+    ): PreparedDiscovery? {
+        val parsed = snapshot.parseResult
+        val recovered = if (parseAccessor.isSuspiciousScript(source.uri, parsed)) {
+            checkNotNull(snapshot.referenceProducer).withCompilerInputs { worker, classpath ->
+                worker.parse(parseAccessor.scriptConversionRequest(source.uri, snapshot.sourceText, classpath))
+            } ?: return null
+        } else {
+            null
+        }
+        var retainedRecovery = false
+        // A published model owns its loader. On rejection, use preserves any primary failure during close.
+        val unpublished = AutoCloseable { if (!retainedRecovery) recovered?.compilationUnit?.classLoader?.close() }
+        return unpublished.use {
+            val selected = recovered ?: parsed
+            val structure = PreparedDiscovery(selected.takeIf { it.ast != null })
+            if (parsed.ast != null) {
+                if (!installDiscoverySymbols(source, snapshot, structure)) return null
+                retainedRecovery = recovered != null && structure.parsed === recovered
+            }
+            structure
+        }
+    }
+
+    private suspend fun installDiscoverySymbols(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+        structure: PreparedDiscovery,
+    ): Boolean {
+        val forSymbols = structure.parsed ?: snapshot.parseResult
+        val prepared = symbolIndexer.prepare(snapshot.sourceText, forSymbols.astModel)
+        val caller = currentCoroutineContext()
+        val producer = checkNotNull(snapshot.referenceProducer)
+        val current = caller.inputsCurrent {
+            producer.isCurrent(source, source.uri, snapshot.sourceText, orchestrator::referenceSources)
+        }
+        if (!current) return false
+        val buffer = source.buffer
+        val version = buffer?.snapshot?.version
+        val ticket = if (buffer != null && version != null) {
+            source.ticket.orderedBy(
+                BufferOrder(buffer.incarnation, version) {
+                    documents.getSnapshot(source.uri) === buffer.snapshot
+                },
+            )
+        } else {
+            source.ticket
+        }
+        // The build can run across didChange. Serialize the short install against both edits and compiler writes.
+        return documents.withLifecycleLock {
+            if (documents.captureDocuments() !== source.inventory) return@withLifecycleLock false
+            var installed = false
+            ownership.commit(ticket) {
+                caller.ensureActive()
+                if (ownership.inputsCurrent(ticket)) {
+                    symbolIndexer.install(source.uri, prepared)
+                    if (structure.parsed != null) {
+                        snapshot.indexedDiscovery = IndexedDiscovery(prepared.index, structure)
+                    }
+                    installed = true
+                }
+            }
+            installed
+        }
+    }
+
+    private fun publishSnapshot(
+        publication: SemanticIndexer.Publication,
+        snapshot: CompiledDocumentSnapshot,
+        fromBuffer: Boolean,
+    ) {
+        val parsed = snapshot.parseResult
+        semanticIndexer.publish(
+            publication,
+            snapshot.sourceText,
+            checkNotNull(parsed.ast),
+            parsed.outcome.achievedPhase,
+            SemanticPublicationSource(fromBuffer, checkNotNull(snapshot.referenceProducer)),
+        )
     }
 
     internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(
@@ -462,7 +624,7 @@ class GroovyCompilationService internal constructor(
      */
     fun onDocumentOpened(uri: URI) {
         var retired: RetiredCompilations? = null
-        ownership.retire(uri) { retired = cacheService.snapshotJobs.detach() }
+        ownership.retire(uri) { retired = cacheService.detachSnapshotJobs() }
         try {
             shadows.opened(uri)
         } finally {
@@ -492,7 +654,7 @@ class GroovyCompilationService internal constructor(
         val ticket = ownership.retireClosed(uri, isOpen) {
             val unchanged = disk != null && fingerprint != null &&
                 cacheService.getCachedWithContent(uri, fingerprint)?.first == disk
-            retired = if (unchanged) cacheService.snapshotJobs.detach() else cacheService.detach(uri)
+            retired = if (unchanged) cacheService.detachSnapshotJobs() else cacheService.detach(uri)
             semanticIndexer.retirePublications(uri)
         }
         // Woken after the fence, as [invalidateCache] does (#1429)
