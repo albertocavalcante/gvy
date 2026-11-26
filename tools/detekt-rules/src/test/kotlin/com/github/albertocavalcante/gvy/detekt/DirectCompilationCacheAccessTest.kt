@@ -467,6 +467,66 @@ class DirectCompilationCacheAccessTest {
         )
     }
 
+    @Test
+    fun `converter alias colliding with cache member uses the matching receiver and signature`() {
+        val source = """
+            package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.compilation.CompilationCacheService
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+            import com.github.albertocavalcante.gvy.gls.converters.compiledTextOf as getCached
+            import java.net.URI
+            interface Other { fun getCached(target: String, uri: URI, text: String): String? }
+            private fun GroovyCompilationService.getCached(uri: URI): String = uri.toString()
+            private fun CompilationCacheService.getCached(uri: URI): String = uri.toString()
+            fun handle(wire: GroovyCompilationService, store: CompilationCacheService, other: Other, uri: URI) {
+                wire.getCached("target", uri, "source") // FLAG compiledTextOf
+                val convert: (String, URI, String) -> String? = wire::getCached // FLAG compiledTextOf
+                store.getCached(uri, "content", "fingerprint") // FLAG getCached
+                val cached: (URI, String, String) -> Any? = store::getCached // FLAG getCached
+                other.getCached("target", uri, "source")
+                val unrelated = other::getCached
+                wire.getCached(uri)
+                store.getCached(uri)
+            }
+        """.trimIndent()
+        val expected = source.lines().mapIndexedNotNull { index, line ->
+            if ("// FLAG " in line) (index + 1) to line.substringAfter("// FLAG ") else null
+        }
+        val actual = DirectCompilationCacheAccess().lint(source).map {
+            it.entity.location.source.line to it.message.substringAfterLast(": ")
+        }
+        assertThat(actual).isEqualTo(expected)
+    }
+
+    @Test
+    fun `local type declarations see their position while file and member types see the whole scope`() {
+        assertMarked(
+            """
+                package com.github.albertocavalcante.gvy.gls.services
+                import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+                import java.net.URI
+                private suspend fun handle(input: Compiler, uri: URI, text: String) {
+                    val wire: Compiler = input
+                    wire.compile(uri, text) // FLAG
+                    val before = wire::compile // FLAG
+                    class Compiler {
+                        fun compile(uri: URI, text: String) = text
+                        fun sameType(other: Compiler) = other::compile
+                    }
+                    val stillBound = wire::compile // FLAG
+                    val local: Compiler = Compiler()
+                    local.compile(uri, text)
+                    val unrelated = local::compile
+                }
+                private typealias Compiler = GroovyCompilationService
+                private class Container {
+                    fun separate(other: Compiler) = other::compile
+                    class Compiler { fun compile(uri: URI, text: String) = text }
+                }
+            """.trimIndent(),
+        )
+    }
+
     private companion object {
         const val COMPILER_FILE =
             "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/GroovyCompilationService.kt"
