@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -62,10 +63,7 @@ class CodeActionSpockInputsWireTest {
             assertEquals(project.source, compiled.sourceText)
             assertTrue(compiled.parseResult.outcome.achievedPhase >= Phases.CANONICALIZATION)
             val module = assertNotNull(compiled.parseResult.ast)
-            val baseNode = assertNotNull(module.classes.firstOrNull { it.name == "TableSpec" }?.superClass?.redirect())
-            assertEquals("BaseSpec", baseNode.name)
-            assertFalse(baseNode.isResolved, "a resolved JVM base does not read the source witness")
-            assertNotNull(baseNode.module?.context?.name, "the source base must have a locator")
+            assertSourceBase(module)
             val params = project.params
             val control = service.codeAction(params).get(10, TimeUnit.SECONDS)
             assertTrue(control.any { it.right.title == "Align Spock data table" }, "table action precondition")
@@ -92,5 +90,12 @@ class CodeActionSpockInputsWireTest {
             scope.cancel()
             compilation.shutdown()
         }
+    }
+
+    private fun assertSourceBase(module: ModuleNode) {
+        val baseNode = assertNotNull(module.classes.firstOrNull { it.name == "TableSpec" }?.superClass?.redirect())
+        assertEquals("BaseSpec", baseNode.name)
+        assertFalse(baseNode.isResolved, "a resolved JVM base does not read the source witness")
+        assertNotNull(baseNode.module?.context?.name, "the source base must have a locator")
     }
 }

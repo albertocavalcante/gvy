@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -183,7 +184,9 @@ class SymbolIndexingService(
 
         if (!Files.isRegularFile(path)) {
             logger.debug { "File does not exist or is not a regular file: $uri" }
-            commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
+            ownership.commitFromDisk(ticket, isOpen) {
+                classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes }
+            }
             return null
         }
 
@@ -205,7 +208,7 @@ class SymbolIndexingService(
 
         logger.info { "Starting workspace indexing: ${uris.size} files" }
         val total = uris.size
-        val indexed = AtomicInteger(0)
+        val progress = IndexingProgress(total, onProgress)
 
         // Index files in parallel batches
         // NOTE: Batch size balances parallelism with resource usage
@@ -215,13 +218,13 @@ class SymbolIndexingService(
                 batch.forEach { uri ->
                     @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
                     launch(ioDispatcher) {
-                        indexFileWithProgress(uri, indexed, total, onProgress)
+                        progress.track(uri) { indexFile(uri) }
                     }
                 }
             }
         }
 
-        logger.info { "Workspace indexing complete: ${indexed.get()}/$total files indexed" }
+        logger.info { "Workspace indexing complete: ${progress.completed}/$total files indexed" }
     }
 
     /**
@@ -244,7 +247,9 @@ class SymbolIndexingService(
     suspend fun refreshAfterClose(uri: URI, ticket: ArtifactOwnership.Ticket = ownership.begin(uri)) {
         unparseable.remove(uri) // the closed buffer's text is gone; a reopen starts over
         if (UriPathConverter.toPath(uri) == null) {
-            commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
+            ownership.commitFromDisk(ticket, isOpen) {
+                classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes }
+            }
         } else {
             indexFile(uri, ticket)
         }
@@ -273,21 +278,6 @@ class SymbolIndexingService(
         return {
             workspaceManager.current() === workspace && workerSessionManager.current() === worker && inputsCurrent()
         }
-    }
-
-    /**
-     * Applies a disk-derived [write] while [ticket] is current and no buffer is open, checked under the same
-     * fence that a reopen advances through: it never replaces or removes an open buffer's facts.
-     */
-    private fun commitFromDisk(ticket: ArtifactOwnership.Ticket, write: () -> Unit): Boolean {
-        var applied = false
-        ownership.commit(ticket) {
-            if (!isOpen(ticket.uri)) {
-                write()
-                applied = true
-            }
-        }
-        return applied
     }
 
     /**
@@ -325,7 +315,7 @@ class SymbolIndexingService(
                 ownership.isCurrent(ticket) && source.buffer == null
         }
         val prepared = prepare(content, parseResult.astModel, inputs)
-        if (commitFromDisk(ticket) { install(uri, prepared) }) {
+        if (ownership.commitFromDisk(ticket, isOpen) { install(uri, prepared) }) {
             logger.debug { "Indexed workspace file: $uri" }
             prepared.index
         } else {
@@ -337,29 +327,41 @@ class SymbolIndexingService(
         logger.warn(e) { "Failed to index workspace file: $uri" }
         null
     }
+}
 
-    /**
-     * Indexes a single file and reports progress atomically.
-     */
-    @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
-    private suspend fun indexFileWithProgress(
-        uri: URI,
-        indexed: AtomicInteger,
-        total: Int,
-        onProgress: (Int, Int) -> Unit,
-    ) {
+/** Keep per-file progress and failure isolation local to this batch. */
+private class IndexingProgress(private val total: Int, private val onProgress: (Int, Int) -> Unit) {
+    private val indexed = AtomicInteger()
+    val completed: Int get() = indexed.get()
+
+    suspend fun track(uri: URI, index: suspend () -> Unit) {
         try {
-            indexFile(uri)
-        } catch (e: CancellationException) {
-            throw e // Re-throw cancellation
-        } catch (e: Exception) {
-            // Catch all to prevent batch failure from stopping entire indexing
-            logger.warn(e) { "Failed to index file: $uri" }
+            runSuspendCatching { index() }.onFailure { error ->
+                if (error !is Exception) throw error
+                indexingLogger.warn(error) { "Failed to index file: $uri" }
+            }
         } finally {
-            val currentCount = indexed.incrementAndGet()
-            onProgress(currentCount, total)
+            onProgress(indexed.incrementAndGet(), total)
         }
     }
+}
+
+private val indexingLogger = KotlinLogging.logger {}
+
+/** Commit a disk read inside the ticket fence, provided a buffer has not reopened the file. */
+private fun ArtifactOwnership.commitFromDisk(
+    ticket: ArtifactOwnership.Ticket,
+    isOpen: (URI) -> Boolean,
+    write: () -> Unit,
+): Boolean {
+    var applied = false
+    commit(ticket) {
+        if (!isOpen(ticket.uri)) {
+            write()
+            applied = true
+        }
+    }
+    return applied
 }
 
 /** Every spelling under which the parser may locate [uri]'s source. Pure; needs no service state. */

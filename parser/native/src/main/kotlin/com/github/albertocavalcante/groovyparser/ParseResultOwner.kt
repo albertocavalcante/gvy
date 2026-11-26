@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.nativeapi.NativeRetryInputs
 import com.github.albertocavalcante.nativeapi.ParseResult
 
 /** Owns only an unpublished compile; recovery retires it after all required observations are detached. */
@@ -14,11 +15,13 @@ internal class ParseResultOwner(initial: ParseResult) : AutoCloseable {
     fun replaceWith(compile: () -> ParseResult): ParseResult {
         check(owned)
         // Mark retired first: a close or replacement failure must never close the old loader twice.
+        val previous = NativeRetryInputs.of(result)
         owned = false
         result.compilationUnit.classLoader.close()
         return compile().also {
             result = it
             owned = true
+            NativeRetryInputs.retainDiscarded(previous, it)
         }
     }
 

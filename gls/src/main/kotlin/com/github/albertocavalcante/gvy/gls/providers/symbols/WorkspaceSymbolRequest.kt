@@ -20,7 +20,6 @@ import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.attribute.BasicFileAttributes
@@ -52,14 +51,18 @@ internal class WorkspaceSymbolRequest(
             buildList {
                 for ((uri, row) in rows.toSortedMap()) {
                     caller.ensureActive()
-                    if (uri in hidden) continue
-                    val source = compilation.captureSnapshotSource(uri)
-                    val selected = select(source, row, caller::ensureActive) ?: continue
-                    val hits = searchWorkspaceSymbols(mapOf(uri to selected.index), query, limit - size) {
-                        selected.content
+                    val selected = if (uri in hidden) {
+                        null
+                    } else {
+                        select(compilation.captureSnapshotSource(uri), row, caller::ensureActive)
                     }
-                    addAll(hits)
-                    if (size >= limit) break
+                    if (selected != null) {
+                        val hits = searchWorkspaceSymbols(mapOf(uri to selected.index), query, limit - size) {
+                            selected.content
+                        }
+                        addAll(hits)
+                        if (size >= limit) break
+                    }
                 }
             }
         }
@@ -82,8 +85,7 @@ internal class WorkspaceSymbolRequest(
         val inputs = row.inputs
         if (inputs != null) {
             val current = {
-                currentText(source) == row.content && inputs.physical.isCurrent(source, row.content, checkCancelled) &&
-                    inputs.producerCurrent(source) && source.workerCurrent() && source.isCurrent()
+                rowCurrent(source, row.content, inputs.physical, checkCancelled) { inputs.producerCurrent(source) }
             }
             if (current()) {
                 checks.add(current)
@@ -97,9 +99,7 @@ internal class WorkspaceSymbolRequest(
                 val held = acquisition.snapshot
                 val physical = RequestParseInputs(held.parseResult)
                 val current = {
-                    currentText(source) == held.sourceText &&
-                        physical.isCurrent(source, held.sourceText, checkCancelled) &&
-                        acquisition.isCurrent() && source.workerCurrent() && source.isCurrent()
+                    rowCurrent(source, held.sourceText, physical, checkCancelled, acquisition.isCurrent)
                 }
                 if (!current()) changed()
                 checks.add(current)
@@ -112,6 +112,18 @@ internal class WorkspaceSymbolRequest(
             SnapshotAcquisition.Stale -> changed()
             is SnapshotAcquisition.Failure -> throw acquisition.cause
         }
+    }
+
+    private fun rowCurrent(
+        source: SnapshotSource,
+        text: String,
+        inputs: RequestParseInputs,
+        checkCancelled: () -> Unit,
+        producerCurrent: () -> Boolean,
+    ): Boolean {
+        val contentCurrent = currentText(source) == text && inputs.isCurrent(source, text, checkCancelled)
+        if (!contentCurrent) return false
+        return producerCurrent() && source.workerCurrent() && source.isCurrent()
     }
 
     private fun currentText(source: SnapshotSource): String? {

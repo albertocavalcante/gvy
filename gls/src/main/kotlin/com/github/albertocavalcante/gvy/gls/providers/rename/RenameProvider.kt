@@ -101,18 +101,6 @@ class RenameProvider private constructor(
 
     internal fun capture(uri: String, position: Position): RenameRequest = queries.capture(uri, position)
 
-    // Groovy keywords that cannot be used as identifiers
-    private val groovyKeywords = setOf(
-        "abstract", "as", "assert", "boolean", "break", "byte", "case", "catch",
-        "char", "class", "const", "continue", "def", "default", "do", "double",
-        "else", "enum", "extends", "final", "finally", "float", "for", "goto",
-        "if", "implements", "import", "in", "instanceof", "int", "interface",
-        "long", "native", "new", "null", "package", "private", "protected",
-        "public", "return", "short", "static", "strictfp", "super", "switch",
-        "synchronized", "this", "throw", "throws", "trait", "transient", "try",
-        "void", "volatile", "while", "true", "false",
-    )
-
     /**
      * Perform a rename operation at the given position.
      *
@@ -128,7 +116,7 @@ class RenameProvider private constructor(
         if (!queries.inputsCurrent(request)) renameChanged(request.source.uri)
         validateNewName(newName)
         return queries.query(request) { compiled, sources ->
-            requireSemanticPhase(compiled)
+            requireSemanticPhase(request.source.uri, compiled)
             rename(captureTarget(request, compiled, sources), request.position, newName, sources)
         }
     }
@@ -157,6 +145,8 @@ class RenameProvider private constructor(
     /** Preparation proves eligibility against held source without constructing or applying edits. */
     suspend fun providePrepareRename(uri: String, position: Position): PrepareRenameResult? = try {
         providePrepareRename(capture(uri, position))
+    } catch (refused: RenameRefusedException) {
+        throw refused
     } catch (e: ResponseErrorException) {
         // The legacy text-supplier API represents a changed caller-owned source as an unavailable offer.
         when (e.responseError.code) {
@@ -171,9 +161,11 @@ class RenameProvider private constructor(
 
     internal suspend fun providePrepareRename(request: RenameRequest): PrepareRenameResult? =
         queries.query(request) { compiled, sources ->
-            requireSemanticPhase(compiled)
+            requireSemanticPhase(request.source.uri, compiled)
             try {
                 prepare(captureTarget(request, compiled, sources), request.position, sources)
+            } catch (refused: RenameRefusedException) {
+                throw refused
             } catch (e: ResponseErrorException) {
                 when (e.responseError.code) {
                     ResponseErrorCode.InvalidParams.value,
@@ -385,27 +377,6 @@ class RenameProvider private constructor(
     }
 
     /**
-     * Validate the new name for the symbol.
-     */
-    @Suppress("ThrowsCount")
-    private fun validateNewName(newName: String) {
-        when {
-            newName.isBlank() -> throw createError(
-                ResponseErrorCode.InvalidParams,
-                "New name cannot be empty or blank",
-            )
-            newName in groovyKeywords -> throw createError(
-                ResponseErrorCode.InvalidParams,
-                "'$newName' is a Groovy keyword and cannot be used as an identifier",
-            )
-            !isJavaIdentifier(newName) -> throw createError(
-                ResponseErrorCode.InvalidParams,
-                "'$newName' is not a valid identifier",
-            )
-        }
-    }
-
-    /**
      * Check if a URI is editable: inside any workspace folder (not a dependency). Without any folder
      * (single-file mode) only the document being renamed and other open buffers qualify.
      */
@@ -542,6 +513,28 @@ class RenameProvider private constructor(
     }
 }
 
+// Groovy keywords that cannot be used as identifiers
+private val groovyKeywords = setOf(
+    "abstract", "as", "assert", "boolean", "break", "byte", "case", "catch",
+    "char", "class", "const", "continue", "def", "default", "do", "double",
+    "else", "enum", "extends", "final", "finally", "float", "for", "goto",
+    "if", "implements", "import", "in", "instanceof", "int", "interface",
+    "long", "native", "new", "null", "package", "private", "protected",
+    "public", "return", "short", "static", "strictfp", "super", "switch",
+    "synchronized", "this", "throw", "throws", "trait", "transient", "try",
+    "void", "volatile", "while", "true", "false",
+)
+
+private fun validateNewName(newName: String) {
+    val error = when {
+        newName.isBlank() -> "New name cannot be empty or blank"
+        newName in groovyKeywords -> "'$newName' is a Groovy keyword and cannot be used as an identifier"
+        !isJavaIdentifier(newName) -> "'$newName' is not a valid identifier"
+        else -> return
+    }
+    createError(ResponseErrorCode.InvalidParams, error)
+}
+
 private fun isJavaIdentifier(name: String): Boolean {
     val first = name.codePointAt(0)
     return Character.isJavaIdentifierStart(first) &&
@@ -552,7 +545,10 @@ private fun isJavaIdentifier(name: String): Boolean {
 
 private fun Location.isSameAs(other: Location) = uri == other.uri && range == other.range
 
-private fun requireSemanticPhase(compiled: CompiledDocumentSnapshot) {
+private fun requireSemanticPhase(uri: URI, compiled: CompiledDocumentSnapshot) {
+    if (compiled.parseResult.ast == null) {
+        createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
+    }
     if (compiled.parseResult.outcome.achievedPhase < Phases.SEMANTIC_ANALYSIS) {
         createError(ResponseErrorCode.InvalidRequest, "Rename requires completed semantic analysis")
     }

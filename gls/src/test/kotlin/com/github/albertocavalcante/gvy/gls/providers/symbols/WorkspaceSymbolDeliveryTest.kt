@@ -70,15 +70,7 @@ class WorkspaceSymbolDeliveryTest {
             documents.put(uri, source, version)
             val original = assertNotNull(documents.getSnapshot(uri))
             val expected = Range(Position(1, line.indexOf("void")), Position(1, line.length))
-            mockkStatic(Symbol::toSymbolInformation) {
-                every { any<Symbol>().toSymbolInformation(any()) } answers {
-                    val result = callOriginal()
-                    if (result?.name == "uniqueMethod") {
-                        projected.complete(result)
-                        check(release.await(30, TimeUnit.SECONDS)) { "symbol conversion was never released" }
-                    }
-                    result
-                }
+            afterProjection(projected, release) {
                 val pending = workspace.symbol(WorkspaceSymbolParams("uniqueMethod"))
                 try {
                     val symbol = projected.get(30, TimeUnit.SECONDS)
@@ -92,13 +84,7 @@ class WorkspaceSymbolDeliveryTest {
                             documents.put(uri, source, version)
                             assertTrue(original !== documents.getSnapshot(uri))
                         }
-                        Finish.INDEX_PUBLICATION -> {
-                            val file = Files.writeString(
-                                root.resolve("Other.groovy"),
-                                "class Other { void uniqueMethod() {} }",
-                            )
-                            assertNotNull(runBlocking { compilation.symbolIndexingService.indexFile(file.toUri()) })
-                        }
+                        Finish.INDEX_PUBLICATION -> publishOther(root, compilation)
                         Finish.CLASSPATH -> {
                             val dependency = Files.createDirectory(root.resolve("dependency"))
                             compilation.updateWorkspaceModel(root, listOf(dependency), listOf(root))
@@ -109,22 +95,52 @@ class WorkspaceSymbolDeliveryTest {
                 } finally {
                     release.countDown()
                 }
-                if (finish == Finish.CURRENT) {
-                    val result = pending.get(30, TimeUnit.SECONDS).left.single()
-                    assertEquals(projected.get(), result)
-                    assertEquals(expected, result.location.range)
-                } else {
-                    val failure = assertFailsWith<ExecutionException> { pending.get(30, TimeUnit.SECONDS) }
-                    assertEquals(
-                        ResponseErrorCode.ContentModified.value,
-                        assertIs<ResponseErrorException>(failure.cause).responseError.code,
-                    )
-                }
+                assertDelivery(finish, projected.get(), expected) { pending.get(30, TimeUnit.SECONDS).left }
             }
         } finally {
             release.countDown()
             scope.cancel()
             compilation.shutdown()
+        }
+    }
+
+    private fun publishOther(root: Path, compilation: GroovyCompilationService) {
+        val file = Files.writeString(root.resolve("Other.groovy"), "class Other { void uniqueMethod() {} }")
+        assertNotNull(runBlocking { compilation.symbolIndexingService.indexFile(file.toUri()) })
+    }
+
+    private fun afterProjection(
+        projected: CompletableFuture<SymbolInformation>,
+        release: CountDownLatch,
+        verify: () -> Unit,
+    ) = mockkStatic(Symbol::toSymbolInformation) {
+        every { any<Symbol>().toSymbolInformation(any()) } answers {
+            val result = callOriginal()
+            if (result?.name == "uniqueMethod") {
+                projected.complete(result)
+                check(release.await(30, TimeUnit.SECONDS)) { "symbol conversion was never released" }
+            }
+            result
+        }
+        verify()
+    }
+
+    private fun assertDelivery(
+        finish: Finish,
+        projected: SymbolInformation,
+        expected: Range,
+        response: () -> List<SymbolInformation>,
+    ) {
+        if (finish == Finish.CURRENT) {
+            val result = response().single()
+            assertEquals(projected, result)
+            assertEquals(expected, result.location.range)
+        } else {
+            val failure = assertFailsWith<ExecutionException> { response() }
+            assertEquals(
+                ResponseErrorCode.ContentModified.value,
+                assertIs<ResponseErrorException>(failure.cause).responseError.code,
+            )
         }
     }
 }

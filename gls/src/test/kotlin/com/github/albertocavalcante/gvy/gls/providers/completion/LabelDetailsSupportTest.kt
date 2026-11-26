@@ -28,8 +28,8 @@ import kotlin.test.assertNull
 /** Overloads told apart only by package stay distinguishable whether or not the client renders labelDetails. */
 class LabelDetailsSupportTest {
     private val uri = URI.create("file:///Choose.groovy")
-    private val compilation = GroovyCompilationService()
     private val documents = DocumentProvider()
+    private val compilation = GroovyCompilationService(documentProvider = documents)
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val source = """
         class Greeter {
@@ -42,7 +42,7 @@ class LabelDetailsSupportTest {
     @AfterEach
     fun close() {
         scope.cancel()
-        compilation.clearCaches()
+        compilation.shutdown()
     }
 
     @Test

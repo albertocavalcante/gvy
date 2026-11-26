@@ -145,12 +145,6 @@ class HierarchicalRulesetResolver(
         private const val VARS_DIR = "vars"
         private const val SRC_DIR = "src"
 
-        /** `src/` children that are Gradle or Maven source sets, not shared library code. */
-        private val BUILD_SOURCE_SETS = setOf("main", "test", "integrationTest", "testFixtures")
-
-        /** Language directories that mark `src/<name>` as a source set ([isSourceSet]). */
-        private val SOURCE_LANGUAGES = listOf("groovy", "java", "kotlin")
-
         /** Root files and directories project detection reads; a change to any re-detects ([detect]). */
         private val DETECTION_INPUTS = listOf(
             "vars",
@@ -440,14 +434,6 @@ class HierarchicalRulesetResolver(
         return canonicalRoot.relativize(canonicalFile).map { it.toString() }
     }
 
-    /**
-     * `src/<name>` is a Gradle or Maven source set (`src/main`, `src/functionalTest`, `src/jmh`, Maven `src/it`),
-     * not shared library package code, when it is a known source set or holds a `groovy/`, `java/` or `kotlin/`
-     * language directory.
-     */
-    private fun isSourceSet(dir: Path): Boolean =
-        dir.fileName.toString() in BUILD_SOURCE_SETS || SOURCE_LANGUAGES.any { Files.isDirectory(dir.resolve(it)) }
-
     private fun loadDefault(projectType: ProjectType): ResolvedRuleset {
         // Try custom DSL rulesets first
         val customResourcePath = when (projectType) {
@@ -534,3 +520,17 @@ private fun referenceLocation(rejection: Result.Rejected): RulesetReferenceLocat
     if (endLine == line && endColumn < column) return null
     return RulesetReferenceLocation(line, column, endLine, endColumn)
 }
+
+/** `src/` children that are Gradle or Maven source sets, not shared library code. */
+private val BUILD_SOURCE_SETS = setOf("main", "test", "integrationTest", "testFixtures")
+
+/** Language directories that mark `src/<name>` as a source set ([isSourceSet]). */
+private val SOURCE_LANGUAGES = listOf("groovy", "java", "kotlin")
+
+/**
+ * `src/<name>` is a Gradle or Maven source set (`src/main`, `src/functionalTest`, `src/jmh`, Maven `src/it`),
+ * not shared library package code, when it is a known source set or holds a `groovy/`, `java/` or `kotlin/`
+ * language directory.
+ */
+private fun isSourceSet(dir: Path): Boolean =
+    dir.fileName.toString() in BUILD_SOURCE_SETS || SOURCE_LANGUAGES.any { Files.isDirectory(dir.resolve(it)) }

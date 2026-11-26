@@ -4,12 +4,20 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.RequestParseInputs
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
+import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -71,7 +79,10 @@ internal class RenameScanWitness(
     private val request: RenameRequest,
     private val compiled: CompiledDocumentSnapshot,
     private val sources: RenameSourceSnapshots,
+    private val compilation: GroovyCompilationService,
+    private val disk: WorkspaceTextCache,
 ) {
+    private var rebuiltRows = 0
     val references get() = request.references
 
     fun begin(walks: WorkspaceWalkCache) {
@@ -79,33 +90,78 @@ internal class RenameScanWitness(
         sources.observePublication(references.isCurrent)
     }
 
-    fun qualifies(
+    suspend fun qualifies(
         uri: URI,
         indexed: SemanticDocumentSnapshot,
-        disk: WorkspaceTextCache,
+        symbolId: String,
         budget: Long,
         consume: (Int) -> Unit,
     ): Boolean {
         val text = indexed.sourceText ?: return false
-        val buffer = request.buffers?.documents?.get(uri) ?: request.source.documents[uri]
-        val matches = if (buffer != null) {
-            buffer.content == text
-        } else {
-            val path = Path.of(uri)
-            val physical = realKey(path)
-            val observed = disk.readCurrent(path, budget)
-            if (observed is DiskText.Text) consume(observed.text.length)
-            sources.observe { realKey(path) == physical && disk.readCurrent(path, budget) == observed }
-            observed is DiskText.Text && observed.text == text
-        }
-        if (!matches) return false
+        if (!sourceMatches(uri, text, budget, consume)) return false
+        return publicationQualifies(uri, indexed) || rebuildUse(uri, text, symbolId)
+    }
 
-        val indexer = request.source.dependencies.semanticIndexer ?: return false
-        val publication = indexer.currentReferencePublication(uri) ?: return false
+    private fun sourceMatches(uri: URI, text: String, budget: Long, consume: (Int) -> Unit): Boolean {
+        val buffer = request.buffers?.documents?.get(uri) ?: request.source.documents[uri]
+        if (buffer != null) return buffer.content == text
+        val path = Path.of(uri)
+        val physical = realKey(path)
+        val observed = disk.readCurrent(path, budget)
+        if (observed is DiskText.Text) consume(observed.text.length)
+        sources.observe { realKey(path) == physical && disk.readCurrent(path, budget) == observed }
+        return observed is DiskText.Text && observed.text == text
+    }
+
+    private fun publicationQualifies(uri: URI, indexed: SemanticDocumentSnapshot): Boolean {
+        val indexer = request.source.dependencies.semanticIndexer
+        val publication = indexer?.currentReferencePublication(uri) ?: return false
         val proof = request.readiness.qualifyMember(uri, indexed, compiled) ?: return false
         sources.observe { proof() }
         sources.observePublication { indexer.currentReferencePublication(uri) == publication }
         return true
+    }
+
+    /** Opening an unchanged companion retires the old index producer. Confirm a reported use with current bindings. */
+    private suspend fun rebuildUse(uri: URI, text: String, symbolId: String): Boolean {
+        if (rebuiltRows >= MAX_REPORTED) return false
+        rebuiltRows++
+        val source = compilation.captureSnapshotSource(uri)
+        val acquired = compilation.acquireSnapshot(uri, Phases.SEMANTIC_ANALYSIS, ParseMode.WORKSPACE)
+        return when (acquired) {
+            is SnapshotAcquisition.Ready -> confirmsUse(acquired, source, text, symbolId)
+            is SnapshotAcquisition.Partial -> {
+                sources.observePublication(acquired.isCurrent)
+                false
+            }
+            SnapshotAcquisition.Missing, SnapshotAcquisition.Stale -> sources.changed(uri)
+            is SnapshotAcquisition.Failure -> throw acquired.cause
+        }
+    }
+
+    private suspend fun confirmsUse(
+        acquired: SnapshotAcquisition.Ready,
+        source: SnapshotSource,
+        text: String,
+        symbolId: String,
+    ): Boolean {
+        sources.observePublication { acquired.isCurrent() && source.workerCurrent() && source.isCurrent() }
+        val answer = acquired.query { held ->
+            if (held.sourceText != text) sources.changed(source.uri)
+            val physical = RequestParseInputs(held.parseResult)
+            sources.observe {
+                val caller = currentCoroutineContext()
+                physical.isCurrent(source, text, caller::ensureActive)
+            }
+            val module = checkNotNull(held.parseResult.ast)
+            compiled.referenceProducer?.sameEnvironment(held.referenceProducer) == true &&
+                SemanticDocumentBuilder(module, source.uri).build().findOccurrences(symbolId).isNotEmpty()
+        }
+        return when (answer) {
+            is SnapshotQuery.Answer -> answer.value
+            SnapshotQuery.Stale, SnapshotQuery.Missing -> sources.changed(source.uri)
+            is SnapshotQuery.Failure -> throw answer.cause
+        }
     }
 
     fun observe(check: suspend () -> Boolean) = sources.observe(check)

@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.nativeapi.AttemptInputs
 import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import com.github.albertocavalcante.nativeapi.ExcludedSource
@@ -132,12 +133,14 @@ private fun compileWithSourceMembership(
     classLoader: SdkFallbackGroovyClassLoader,
     compilationUnit: CompilationUnit,
     request: ParseRequest,
+    attempt: AttemptInputs,
 ): CompileFailure? {
     classLoader.beginSourceSearch()
     return try {
         compileCatching(compilationUnit, request)
     } finally {
         classLoader.finishSourceSearch()?.let { membership ->
+            attempt.membership = membership
             compilationUnit.ast.modules.forEach { module ->
                 module.putNodeMetaData(NativeSourceMembership::class.java, membership)
             }
@@ -573,7 +576,8 @@ class GroovyParserFacade internal constructor(
     ): ParseResult {
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
-        val config = createCompilerConfiguration(allClasspath, annotationCapture)
+        val attempt = AttemptInputs()
+        val config = createCompilerConfiguration(allClasspath, annotationCapture, attempt)
 
         val classLoader = createClassLoader(request, lookup.filter, lookup.buffers)
 
@@ -586,7 +590,9 @@ class GroovyParserFacade internal constructor(
                 lookup.buffers,
             )
 
-            val failure = compileWithSourceMembership(classLoader, compilationUnit, request)
+            val failure = compileWithSourceMembership(classLoader, compilationUnit, request, attempt)
+            val documentReader = sourceUnit.source as? DocumentReaderSource
+            documentReader?.attempts = attempt.finish()
             observeCompilation?.invoke(compilationUnit)
             lookup.onCompileFailure(failure)
             val compilationFailed = failure != null
@@ -686,6 +692,7 @@ class GroovyParserFacade internal constructor(
     private fun createCompilerConfiguration(
         classpath: List<Path>,
         annotationCapture: SourceAnnotationCapture,
+        attempt: AttemptInputs,
     ): CompilerConfiguration = CompilerConfiguration().apply {
         targetDirectory = null
         debug = true
@@ -693,7 +700,7 @@ class GroovyParserFacade internal constructor(
             CompilerConfiguration.GROOVYDOC to true,
         )
         sourceEncoding = "UTF-8"
-        pluginFactory = CompiledDocumentInput.capture(pluginFactory)
+        pluginFactory = CompiledDocumentInput.capture(pluginFactory, attempt)
 
         // Scan and disable external AST transformations to prevent classloader conflicts
         val externalTransforms = scanForAstTransformations(classpath)

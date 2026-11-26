@@ -32,7 +32,7 @@ internal data class ScanLimits(
 }
 
 /** Hits after which the scan stops: the message names this many files, so reading more would change nothing. */
-private const val MAX_REPORTED = 3
+internal const val MAX_REPORTED = 3
 
 /**
  * Finds uses of a rename target outside its own document. Workspace-wide rename is disabled until indexed
@@ -67,8 +67,7 @@ internal class CrossFileUseGuard(
     private val index: WorkspaceSymbolIndex,
     private val openBuffers: () -> Map<URI, String>,
     private val layout: WorkspaceLayout,
-    private val walks: WorkspaceWalkCache = WorkspaceWalkCache(),
-    private val diskText: WorkspaceTextCache = WorkspaceTextCache(),
+    private val caches: RenameCaches = RenameCaches(),
     private val limits: ScanLimits = ScanLimits(),
     private val witness: RenameScanWitness? = null,
 ) {
@@ -85,11 +84,11 @@ internal class CrossFileUseGuard(
             val context = currentCoroutineContext()
             val roots = layout.roots()
             val keys = FileKeys(roots)
-            diskText.rebind(roots)
+            caches.diskText.rebind(roots)
             val self = SelfKey(keys, documentUri)
             val known = sourcesKeyed(keys)
             // In the workspace: under a root, or a known source (e.g. a Gradle srcDir outside the roots).
-            witness?.begin(walks)
+            witness?.begin(caches.walks)
             witness?.observe { FileKeys(layout.roots()).rootKeys == keys.rootKeys }
             val references = witness?.references ?: index.captureReferences()
             val rows = references.findReferenceDocuments(symbolId).filterKeys { uri ->
@@ -99,11 +98,10 @@ internal class CrossFileUseGuard(
             val used = rows.filter { (uri, indexed) ->
                 context.ensureActive()
                 val budget = remainingChars
-                witness?.qualifies(uri, indexed, diskText, budget) { consumed -> remainingChars -= consumed } != false
+                witness?.qualifies(uri, indexed, symbolId, budget) { remainingChars -= it } != false
             }.keys.sortedBy { it.toString() }
             // An unqualified positive row must still refuse, even when a fresh text scan cannot name the binding.
             val unqualified = (rows.keys - used.toSet()).sortedBy { it.toString() }
-            if (unqualified.isNotEmpty()) return@withContext CrossFileUses(used = used, mentioned = unqualified)
             if (used.size >= MAX_REPORTED) return@withContext CrossFileUses(used = used, truncated = true)
 
             val buffers = openBuffers()
@@ -126,7 +124,9 @@ internal class CrossFileUseGuard(
                 }.toMap(),
                 buffers = buffers.entries.mapNotNull { (uri, text) -> keys.of(uri)?.let { it to text } }.toMap(),
             )
-            scan.run(candidates, used) { context.ensureActive() }
+            val scanned = scan.run(candidates, used) { context.ensureActive() }
+            val unaccounted = unqualified - scanned.mentioned.toSet() - scanned.unsaved.toSet()
+            scanned.copy(mentioned = (scanned.mentioned + unaccounted).sortedBy { it.toString() })
         }
     }
 
@@ -136,9 +136,9 @@ internal class CrossFileUseGuard(
         val request = listOf(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries)
         fun walk(checkActive: () -> Unit) =
             walkWorkspace(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries, checkActive)
-        val walked = walks.get(request) { walk(active) }
+        val walked = caches.walks.get(request) { walk(active) }
         witness?.observe {
-            if (walks.stillLists(request, walked)) {
+            if (caches.walks.stillLists(request, walked)) {
                 true
             } else {
                 val validation = currentCoroutineContext()
@@ -198,8 +198,8 @@ internal class CrossFileUseGuard(
         private fun examineDisk(path: Path): Boolean {
             val remaining = budget - chars
             val physical = witness?.let { realKey(path) }
-            val read = diskText.read(path, remaining)
-            witness?.observe { realKey(path) == physical && diskText.readCurrent(path, remaining) == read }
+            val read = caches.diskText.read(path, remaining)
+            witness?.observe { realKey(path) == physical && caches.diskText.readCurrent(path, remaining) == read }
             return when (read) {
                 is DiskText.Text -> {
                     chars += read.text.length

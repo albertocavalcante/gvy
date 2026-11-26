@@ -86,35 +86,14 @@ internal class RenameRequestQuery(
         // A direct provider may own an in-memory source outside the compilation service's document store.
         val supplied = if (documents == null) sources.capture(uri) else request.buffers?.documents?.get(uri)
         val compute: suspend (CompiledDocumentSnapshot) -> T = { compiled ->
-            val original = supplied ?: DocumentSnapshot(compiled.sourceText, null)
-            if (original.content != compiled.sourceText ||
-                request.context?.let { compiled.referenceProducer?.hasClasspath(it.classpath) != true } == true
-            ) {
-                sources.changed(uri)
-            }
-            if (documents != null && source.buffer != null && supplied == null) sources.changed(uri)
-            sources.hold(uri, original)
+            holdOriginal(request, supplied, compiled, sources)
             sources.guard = crossFileGuard(request, compiled, sources)
             val result = runSuspendCatching { answer(compiled, sources) }
             sources.validate()
             result.getOrThrow()
         }
         val result = runSuspendCatching {
-            if (source.buffer == null && supplied != null) {
-                compilationService.queryDerivedSnapshot(
-                    source,
-                    supplied.content,
-                    mode = ParseMode.WORKSPACE,
-                    query = compute,
-                )
-            } else {
-                when (val acquired = compilationService.acquireEditorSnapshot(source)) {
-                    is SnapshotAcquisition.Available -> acquired.query(compute)
-                    SnapshotAcquisition.Missing -> SnapshotQuery.Missing
-                    SnapshotAcquisition.Stale -> SnapshotQuery.Stale
-                    is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
-                }
-            }
+            acquire(source, supplied, compute)
         }
         if (!inputsCurrent(request)) sources.changed(uri)
         sources.validatePublications()
@@ -126,6 +105,46 @@ internal class RenameRequestQuery(
             )
             SnapshotQuery.Stale -> sources.changed(uri)
             is SnapshotQuery.Failure -> throw outcome.cause
+        }
+    }
+
+    private fun holdOriginal(
+        request: RenameRequest,
+        supplied: DocumentSnapshot?,
+        compiled: CompiledDocumentSnapshot,
+        sources: RenameSourceSnapshots,
+    ) {
+        val source = request.source
+        val uri = source.uri
+        val original = supplied ?: DocumentSnapshot(compiled.sourceText, null)
+        if (original.content != compiled.sourceText ||
+            request.context?.let { compiled.referenceProducer?.hasClasspath(it.classpath) != true } == true
+        ) {
+            sources.changed(uri)
+        }
+        if (documents != null && source.buffer != null && supplied == null) sources.changed(uri)
+        sources.hold(uri, original)
+    }
+
+    private suspend fun <T> acquire(
+        source: SnapshotSource,
+        supplied: DocumentSnapshot?,
+        compute: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> {
+        return if (source.buffer == null && supplied != null) {
+            compilationService.queryDerivedSnapshot(
+                source,
+                supplied.content,
+                mode = ParseMode.WORKSPACE,
+                query = compute,
+            )
+        } else {
+            when (val acquired = compilationService.acquireEditorSnapshot(source)) {
+                is SnapshotAcquisition.Available -> acquired.query(compute)
+                SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+                SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+                is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
+            }
         }
     }
 
@@ -143,10 +162,9 @@ internal class RenameRequestQuery(
                 roots = { sources.roots },
                 sourceRoots = { workspace.sourceRoots },
             ),
-            caches.walks,
-            caches.diskText,
+            caches,
             scanLimits,
-            RenameScanWitness(request, compiled, sources),
+            RenameScanWitness(request, compiled, sources, compilationService, caches.diskText),
         )
     }
 }

@@ -32,9 +32,9 @@ import org.eclipse.lsp4j.CompletionContext as LspCompletionContext
 
 class ColdLocalCompletionTest {
     private val uri = URI.create("file:///CompletionDogfood.groovy")
-    private val compilation = GroovyCompilationService()
-    private val resolver = SemanticTypeResolver(compilation.classpathService.getTypeSolver())
     private val documents = DocumentProvider()
+    private val compilation = GroovyCompilationService(documentProvider = documents)
+    private val resolver = SemanticTypeResolver(compilation.classpathService.getTypeSolver())
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val declarations = """
         class Greeter {
@@ -46,7 +46,7 @@ class ColdLocalCompletionTest {
     @AfterEach
     fun close() {
         scope.cancel()
-        compilation.clearCaches()
+        compilation.shutdown()
     }
 
     @Test

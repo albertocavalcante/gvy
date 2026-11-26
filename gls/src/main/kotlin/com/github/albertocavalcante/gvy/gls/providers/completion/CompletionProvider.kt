@@ -110,7 +110,7 @@ object CompletionProvider {
     }
 
     internal suspend fun getContextualCompletions(request: SignatureCompletionRequest): List<CompletionItem> {
-        val content = request.source.buffer?.snapshot?.content ?: return emptyList()
+        val content = request.source.buffer?.snapshot?.content ?: return getBasicCompletions()
         return try {
             CompletionCopies(request.uri, request.position, content, request.compilation) { copy, consume ->
                 request.derived(copy) { native ->

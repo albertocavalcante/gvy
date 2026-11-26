@@ -50,7 +50,7 @@ class CrossFileGuardInternalsTest {
                 },
                 roots = { listOf(tempDir) },
             ),
-            diskText = cache,
+            caches = RenameCaches(diskText = cache),
         )
         job = launch { outcome = guard.usesOutside(tempDir.resolve("A.groovy").toUri(), target(), "A") }
         job.join()

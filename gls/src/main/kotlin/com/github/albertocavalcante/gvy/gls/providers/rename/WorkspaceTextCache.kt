@@ -63,20 +63,22 @@ internal class WorkspaceTextCache(
     /** Validate the exact text consumed by a rename even when a rewrite preserved the file's timestamp and size. */
     fun readCurrent(path: Path, budgetChars: Long): DiskText = readFile(path, budgetChars, allowCache = false)
 
-    private fun readFile(path: Path, budgetChars: Long, allowCache: Boolean): DiskText {
-        val attributes = try {
-            Files.readAttributes(path, BasicFileAttributes::class.java)
-        } catch (_: NoSuchFileException) {
-            return DiskText.Missing
-        } catch (_: IOException) {
-            return DiskText.Unreadable
+    private fun readFile(path: Path, budgetChars: Long, allowCache: Boolean): DiskText = try {
+        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+        when {
+            !attributes.isRegularFile -> DiskText.Missing
+            attributes.size() > budgetChars -> DiskText.TooLarge
+            else -> {
+                val stamp = Stamp(attributes.lastModifiedTime(), attributes.size())
+                val recent = clock() - stamp.lastModified.toMillis() < RECENT_MILLIS
+                val hit = if (allowCache && !recent) cached(path, stamp) else null
+                hit?.let { DiskText.Text(it) } ?: load(path, stamp, budgetChars)
+            }
         }
-        if (!attributes.isRegularFile) return DiskText.Missing
-        val stamp = Stamp(attributes.lastModifiedTime(), attributes.size())
-        if (stamp.size > budgetChars) return DiskText.TooLarge
-        val recent = clock() - stamp.lastModified.toMillis() < RECENT_MILLIS
-        val hit = if (allowCache && !recent) cached(path, stamp) else null
-        return hit?.let { DiskText.Text(it) } ?: load(path, stamp, budgetChars)
+    } catch (_: NoSuchFileException) {
+        DiskText.Missing
+    } catch (_: IOException) {
+        DiskText.Unreadable
     }
 
     private fun cached(path: Path, stamp: Stamp): String? =
