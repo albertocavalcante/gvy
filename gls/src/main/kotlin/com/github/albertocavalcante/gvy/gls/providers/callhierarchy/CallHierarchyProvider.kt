@@ -8,13 +8,14 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
+import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
+import kotlinx.coroutines.flow.toList
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
@@ -37,7 +38,6 @@ import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
-import kotlinx.coroutines.flow.toList
 import java.net.URI
 
 class CallHierarchyProvider(private val compilationService: GroovyCompilationService) {
@@ -55,7 +55,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     ): List<CallHierarchyItem> = prepareCallHierarchy(
         uri,
         position,
-        CallSource(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, TextIndex(snapshot.sourceText)),
+        CallSource(snapshot),
     )
 
     private fun prepareCallHierarchy(uri: URI, position: Position, source: CallSource): List<CallHierarchyItem> {
@@ -63,11 +63,8 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
         val definition = resolveDefinitionWithFallback(node, source.visitor, source.symbolTable)
 
-        return when (definition) {
-            is MethodNode, is ClassNode -> listOfNotNull(createCallHierarchyItem(definition, uri, source.index))
-            else -> emptyList()
-            // TODO: Handle fields/variables if Call Hierarchy supports them? Usually restricted to callables.
-        }
+        val declaration = source.localDeclaration(definition, uri) ?: return emptyList()
+        return listOfNotNull(createCallHierarchyItem(declaration, uri, source.index))
     }
 
     private fun resolveDefinitionWithFallback(
@@ -78,18 +75,19 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         // Resolve definitions
         // If it's a call, we want the definition. If it's a def, we want itself.
         val resolved = node.resolveToDefinition(astModel, symbolTable, strict = false) ?: node
-        if (resolved !== node) {
-            return resolved
-        }
-
         // HEURISTIC: Fallback for script method calls.
         // In top-level scripts, method calls often appear as VariableExpression (dynamic) or ConstantExpression
         // (the method name leaf) when the parser can't fully resolve the implicit 'this' or script context.
         // The core resolveToDefinition might fail to link these to the script's MethodNode.
         // TODO(#564): Improve parser to resolve strict methods better.
         //   See: https://github.com/albertocavalcante/gvy/issues/564
-        val callNode = extractEnclosingMethodCall(node, astModel) ?: return node
-        return findScriptMethodFallback(callNode, astModel) ?: node
+        return if (resolved !== node) {
+            resolved
+        } else {
+            extractEnclosingMethodCall(node, astModel)
+                ?.takeIf { it.isImplicitThis }
+                ?.let { findScriptMethodFallback(it, astModel) } ?: node
+        }
     }
 
     private fun extractEnclosingMethodCall(node: ASTNode, astModel: GroovyAstModel): MethodCallExpression? {
@@ -107,7 +105,8 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return astModel.getAllNodes()
             .asSequence()
             .filterIsInstance<MethodNode>()
-            .firstOrNull { it.name == methodName }
+            .filter { it.name == methodName && it.declaringClass?.isScript == true }
+            .singleOrNull()
     }
 
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> =
@@ -120,25 +119,29 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         references: CapturedWorkspaceReferences,
         callerSnapshot: suspend (URI) -> CompiledDocumentSnapshot,
     ): List<CallHierarchyIncomingCall> {
-        val locations = ReferenceProvider(compilationService).provideCapturedReferences(uri, position, origin, references)
+        val locations = ReferenceProvider(
+            compilationService,
+        ).provideCapturedReferences(uri, position, origin, references)
             .toList()
-        val sources = mutableMapOf<URI, CallSource?>()
-        for (location in locations) {
-            val callerUri = URI.create(location.uri)
-            if (callerUri !in sources) {
-                val snapshot = callerSnapshot(callerUri)
-                sources[callerUri] = CallSource(
-                    snapshot.parseResult.astModel,
-                    snapshot.parseResult.symbolTable,
-                    TextIndex(snapshot.sourceText),
-                )
-            }
+        val originSource = CallSource(origin)
+        val selected = originSource.nodeAt(uri, position)?.let {
+            val definition = resolveDefinitionWithFallback(it, originSource.visitor, originSource.symbolTable)
+            originSource.localDeclaration(definition, uri)
+        } ?: IncomingCallTarget.unavailable()
+        val target = IncomingCallTarget(uri, selected, references.visibleDocuments)
+        val sources = locations.map { URI.create(it.uri) }.distinct().associateWith { callerUri ->
+            val snapshot = callerSnapshot(callerUri)
+            val indexed = references.getDocumentSnapshot(callerUri) ?: IncomingCallTarget.unavailable()
+            CallSource(snapshot) to target.methodSites(indexed.document)
         }
         val calls = mutableMapOf<String, CallHierarchyIncomingCall>()
         for (location in locations) {
-            val fromItem = caller(location, sources) ?: throw ResponseErrorException(
-                ResponseError(ResponseErrorCode.RequestFailed, "Cannot resolve an incoming caller", null),
-            )
+            val callerUri = URI.create(location.uri)
+            val (source, sites) = sources.getValue(callerUri)
+            val site = source.nodeAt(callerUri, location.range.start) ?: IncomingCallTarget.unavailable()
+            val enclosing = getEnclosingMethodOrClass(site, source.visitor) ?: IncomingCallTarget.unavailable()
+            target.requireBinding(site, enclosing, source.visitor, sites)
+            val fromItem = createCallHierarchyItem(enclosing, callerUri, source.index) ?: IncomingCallTarget.unavailable()
             val key = "${fromItem.uri}:${fromItem.range.start.line}:${fromItem.range.start.character}"
             val existing = calls[key]
             if (existing != null) {
@@ -180,10 +183,26 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return calls.values.toList()
     }
 
-    private data class CallSource(val visitor: GroovyAstModel, val symbolTable: SymbolTable, val index: TextIndex)
+    private data class CallSource(val visitor: GroovyAstModel, val symbolTable: SymbolTable, val index: TextIndex) {
+        constructor(snapshot: CompiledDocumentSnapshot) :
+            this(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, TextIndex(snapshot.sourceText))
+
+        private val classes by lazy { visitor.getAllClassNodes() }
+
+        fun nodeAt(uri: URI, position: Position): ASTNode? =
+            index.codePointPosition(position)?.toGroovyPosition()?.let { visitor.getNodeAt(uri, it) }
+
+        fun localDeclaration(node: ASTNode, uri: URI): ASTNode? = when (node) {
+            is ClassNode -> classes.firstOrNull { declaration ->
+                (declaration === node || declaration === node.redirect()) && visitor.getUri(declaration) == uri
+            }
+            is MethodNode -> node.takeIf { visitor.getUri(it) == uri }
+            else -> null
+        }
+    }
 
     private fun captureSource(uri: URI): CallSource? = compilationService.getCompiledSnapshot(uri)?.let {
-        CallSource(it.parseResult.astModel, it.parseResult.symbolTable, TextIndex(it.sourceText))
+        CallSource(it)
     }
 
     private fun caller(location: Location, sources: MutableMap<URI, CallSource?>): CallHierarchyItem? {
@@ -220,7 +239,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     ): List<CallHierarchyOutgoingCall> = outgoingCalls(
         uri,
         position,
-        CallSource(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, TextIndex(snapshot.sourceText)),
+        CallSource(snapshot),
     )
 
     private fun outgoingCalls(uri: URI, position: Position, source: CallSource): List<CallHierarchyOutgoingCall> {
@@ -244,9 +263,19 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     ) : CodeVisitorSupport() {
 
         private fun addCall(call: Expression) {
-            val callee = call.resolveToDefinition(source.visitor, source.symbolTable, strict = false)
+            val resolved = call.resolveToDefinition(source.visitor, source.symbolTable, strict = false)
             val range = call.toLspRange()?.let(source.index::utf16Range)
-            if (callee != null && range != null) {
+            if (resolved != null && range != null) {
+                val callee = source.localDeclaration(resolved, uri)
+                if (callee == null) {
+                    throw ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.RequestFailed,
+                            "Call target is not a captured local declaration",
+                            null,
+                        ),
+                    )
+                }
                 // Use a stable key for the callee.
                 // TODO(#564): Include URI once cross-file resolution is supported.
                 val calleeKey = "${callee.lineNumber}:${callee.columnNumber}"

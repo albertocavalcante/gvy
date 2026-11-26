@@ -11,7 +11,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -31,14 +30,16 @@ internal class ReferenceReadiness(
     val sourceIdentity: String get() = source.sourceIdentity
     private val hidden = index.referenceShadows()
 
+    suspend fun inputsCurrent(): Boolean = currentCoroutineContext().inputsCurrent(source::isCurrent)
+
     /** Readiness may rebuild open entries whose unchanged text was indexed against an earlier companion set. */
     suspend fun prepareOpenSources(compilation: GroovyCompilationService) {
         withTimeoutOrNull(CompilationEnsurer.DEFAULT_TIMEOUT_MS) {
             for ((uri, buffer) in source.documents) {
                 ensureActive()
-                if (!source.isCurrent()) return@withTimeoutOrNull
+                if (!inputsCurrent()) return@withTimeoutOrNull
                 val producer = currentPublication(uri)?.producer ?: continue
-                if (!producer.isCurrent(source, uri, buffer.content, selectSources)) {
+                if (!currentCoroutineContext().inputsCurrent { producer.isCurrent(source, uri, buffer.content, selectSources) }) {
                     compilation.ensureCompiled(uri, buffer)
                 }
             }
@@ -60,16 +61,15 @@ internal class ReferenceReadiness(
         }
         if (!caller.inputsCurrent(::isCurrent)) return SnapshotQuery.Stale
         val unavailable = firstUnavailable(references, producers)
-        if (unavailable != null) {
-            if (!caller.inputsCurrent(::isCurrent)) return SnapshotQuery.Stale
-            val error = ResponseError(
-                ResponseErrorCode.RequestFailed,
-                unavailable,
-                null,
+        return when {
+            unavailable == null -> queryCurrentSnapshot(::isCurrent) {
+                compute(QualifiedReferences(references, producers))
+            }
+            !caller.inputsCurrent(::isCurrent) -> SnapshotQuery.Stale
+            else -> SnapshotQuery.Failure(
+                ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, unavailable, null)),
             )
-            return SnapshotQuery.Failure(ResponseErrorException(error))
         }
-        return queryCurrentSnapshot(::isCurrent) { compute(QualifiedReferences(references, producers)) }
     }
 
     private suspend fun firstUnavailable(
@@ -90,11 +90,9 @@ internal class ReferenceReadiness(
             val content = indexed.sourceText ?: return@withContext unavailable(uri)
             val publication = currentPublication(uri) ?: return@withContext unavailable(uri)
             val producer = publication.producer ?: return@withContext unavailable(uri)
-            if (publication.document !== indexed.document ||
-                !producer.complete ||
-                publication.phase < Phases.SEMANTIC_ANALYSIS ||
+            if (!publication.covers(indexed.document) ||
                 !matchesSource(uri, content, publication) ||
-                !producer.isCurrent(source, uri, content, selectSources)
+                !currentCoroutineContext().inputsCurrent { producer.isCurrent(source, uri, content, selectSources) }
             ) {
                 return@withContext unavailable(uri)
             }
@@ -111,12 +109,16 @@ internal class ReferenceReadiness(
     private fun unavailable(uri: URI) = "Reference index unavailable for $uri"
 
     private fun matchesSource(uri: URI, indexed: String, publication: ReferencePublication): Boolean {
-        source.documents[uri]?.let { return indexed == it.content }
-        val path = UriPathConverter.toPath(uri) ?: return false
-        if (!Files.isRegularFile(path)) return false
+        val buffer = source.documents[uri]
+        if (buffer != null) return indexed == buffer.content
         // A watcher retires this evidence before refresh. Only the requested closed origin can fall back
         // to an exact body comparison. Reading every unrelated file here would make navigation workspace-sized IO.
-        return publication.diskConfirmed || (uri == source.uri && indexed == readOrigin(uri))
+        val path = UriPathConverter.toPath(uri)
+        return if (path != null && Files.isRegularFile(path)) {
+            publication.diskConfirmed || (uri == source.uri && indexed == readOrigin(uri))
+        } else {
+            false
+        }
     }
 }
 

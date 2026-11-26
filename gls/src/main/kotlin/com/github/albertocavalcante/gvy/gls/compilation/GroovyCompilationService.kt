@@ -128,8 +128,7 @@ class GroovyCompilationService internal constructor(
         semanticIndexer,
         dependencyGraph = dependencyGraph,
         ownership = ownership,
-        documentProvider = documents,
-        shadowed = shadows::shadowed,
+        sources = WorkspaceCompilerSources(documents, shadows::shadowed),
     )
 
     // Managers that handle complex lifecycle and orchestration
@@ -200,7 +199,7 @@ class GroovyCompilationService internal constructor(
     internal suspend fun <T> queryCapturedSnapshot(
         source: SnapshotSource,
         phase: Int,
-        mode: ParseMode,
+        mode: ParseMode?,
         query: suspend (CompiledDocumentSnapshot) -> T,
     ): SnapshotQuery<T> = when (val acquisition = orchestrator.snapshots.acquireSource(source, phase, mode)) {
         is SnapshotAcquisition.Available -> acquisition.query(query)
@@ -246,12 +245,14 @@ class GroovyCompilationService internal constructor(
 
     /** Capture source ownership before any reference-index readiness work. */
     internal fun referenceReadiness(uri: URI): ReferenceReadiness =
-        ReferenceReadiness(
-            orchestrator.snapshots.referenceSource(uri),
-            workspaceSymbolIndex,
-            semanticIndexer::currentReferencePublication,
-            orchestrator::referenceSources,
-        )
+        referenceReadiness(orchestrator.snapshots.referenceSource(uri))
+
+    internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(
+        source,
+        workspaceSymbolIndex,
+        semanticIndexer::currentReferencePublication,
+        orchestrator::referenceSources,
+    )
 
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)
 
