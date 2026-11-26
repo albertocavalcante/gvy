@@ -215,6 +215,19 @@ class GroovyCompilationService internal constructor(
         is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
     }
 
+    /**
+     * Query an unpublished parse owned by this source. The consumer must materialize protocol data
+     * here and must never return compiler objects, borrowed loaders, or deferred traversal of them.
+     * A partial parse may still supply recovery tokens and a useful answer.
+     */
+    internal suspend fun <T> queryDerivedSnapshot(
+        source: SnapshotSource,
+        content: String,
+        phase: Int = Phases.CANONICALIZATION,
+        mode: ParseMode = ParseMode.WORKSPACE,
+        query: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> = orchestrator.snapshots.queryDerived(source, content, phase, mode, query)
+
     /** Preserve startup symbol requests when worker selection retires acquisition, never the query itself. */
     internal suspend fun <T> querySymbolsWithWorkerRetry(
         source: SnapshotSource,

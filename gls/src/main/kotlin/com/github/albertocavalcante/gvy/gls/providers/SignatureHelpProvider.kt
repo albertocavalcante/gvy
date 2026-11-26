@@ -8,11 +8,15 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.safePosition
+import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
+import com.github.albertocavalcante.gvy.gls.compilation.NativeQueryContext
+import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.GdkExtensionMethod
+import com.github.albertocavalcante.gvy.gls.services.heldGdkMethods
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
@@ -60,13 +64,35 @@ class SignatureHelpProvider(
 ) {
 
     private val logger = KotlinLogging.logger {}
-    private val receiverTypeRefiner = ReceiverTypeRefiner(semanticResolver)
 
     suspend fun provideSignatureHelp(uri: String, position: Position): SignatureHelp {
         val documentUri = URI.create(uri)
         val snapshot = documentProvider.getSnapshot(documentUri)
         return snapshot?.let { provideForSnapshot(documentUri, position, it) }
             ?: provideFromCachedDocument(documentUri, position)
+    }
+
+    internal companion object {
+        /** Materialize the protocol result while each actual parser and its binary scope are still available. */
+        suspend fun provideSignatureHelp(request: SignatureCompletionRequest): SignatureHelp =
+            request.original(::emptySignatureHelp) { original ->
+                val content = original.held.sourceText
+                val position = request.position.toGroovyPosition(content)
+                fun resolve(context: NativeQueryContext, recovered: Boolean): SignatureHelp? {
+                    val provider = SignatureHelpProvider(request.compilation, request.compilation.documents, context.types)
+                    val found = provider.resolveSignatureContext(request.uri, position, context.held.parseResult, context)
+                        ?: return null
+                    val selected = if (recovered) found.copy(activeParameterOverride = 0) else found
+                    return provider.buildSignatureHelp(selected, position)
+                }
+                resolve(original, recovered = false) ?: run {
+                    val repaired = IncompleteCallRecovery.parsingCopy(
+                        content, request.position, original.held.parseResult.tokenIndex,
+                    )
+                    repaired?.let { request.derived(it) { parsed -> resolve(parsed, recovered = true) } }
+                        ?: emptySignatureHelp()
+                }
+            }
     }
 
     private suspend fun provideForSnapshot(
@@ -136,10 +162,11 @@ class SignatureHelpProvider(
         documentUri: URI,
         position: GroovyPosition,
         parseResult: ParseResult,
+        native: NativeQueryContext? = null,
     ): SignatureContext? {
         val inputs = resolveSignatureInputs(documentUri, position, parseResult) ?: return null
 
-        val signatures = collectSignatures(documentUri, inputs).distinctBy { it.label }
+        val signatures = collectSignatures(documentUri, inputs, native).distinctBy { it.label }
         if (signatures.isEmpty()) {
             logger.debug { "No signatures found for ${inputs.methodName}" }
             return null
@@ -177,7 +204,7 @@ class SignatureHelpProvider(
         )
     }
 
-    private fun collectSignatures(documentUri: URI, inputs: ResolvedSignatureInputs): List<SignatureInformation> =
+    private fun collectSignatures(documentUri: URI, inputs: ResolvedSignatureInputs, native: NativeQueryContext?): List<SignatureInformation> =
         buildList {
             // 1. Local Methods (Source)
             val declarations = inputs.symbolTable.registry.findMethodDeclarations(documentUri, inputs.methodName)
@@ -191,6 +218,7 @@ class SignatureHelpProvider(
                     inputs.symbolTable,
                     inputs.astVisitor,
                     inputs.moduleNode,
+                    native,
                 ),
             )
         }
@@ -201,11 +229,13 @@ class SignatureHelpProvider(
         symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
         moduleNode: ModuleNode,
+        native: NativeQueryContext?,
     ): List<SignatureInformation> {
+        if (native != null) return heldReceiverSignatures(methodCall, methodName, native)
         val signatures = mutableListOf<SignatureInformation>()
 
         // Determine the type of the object the method is being called on
-        val receiverType = resolveReceiverType(methodCall, symbolTable, astVisitor, moduleNode)
+        val receiverType = resolveReceiverType(methodCall, symbolTable, astVisitor, moduleNode, semanticResolver)
         val targetType = receiverType.substringBefore("<")
 
         // 2. Script Methods (Implicit 'this')
@@ -216,23 +246,51 @@ class SignatureHelpProvider(
         }
 
         // 3. GDK Extension Methods
-        val gdkMethods = compilationService.gdkProvider.getMethodsForType(targetType)
-            .filter { it.name == methodName }
+        val gdkMethods = compilationService.gdkProvider.getMethodsForType(targetType).filter { it.name == methodName }
         signatures.addAll(gdkMethods.map { it.toSignatureInformation() })
 
         // 4. Classpath Methods (includes java.lang.Object for explicit Object receivers)
-        val methods = compilationService.classpathService.getMethods(targetType)
+        val reflect = compilationService.classpathService::getMethods
+        val methods = reflect(targetType)
             .filter { it.name == methodName && it.isPublic }
         signatures.addAll(methods.map { it.toSignatureInformation() })
 
         // Fallback: Check Object methods for implicit this if nothing else found
         if (signatures.isEmpty() && methodCall.isImplicitThis) {
-            val objectMethods = compilationService.classpathService.getMethods("java.lang.Object")
+            val objectMethods = reflect("java.lang.Object")
                 .filter { it.name == methodName }
             signatures.addAll(objectMethods.map { it.toSignatureInformation() })
         }
 
         return signatures
+    }
+
+    private fun heldReceiverSignatures(call: MethodCallExpression, name: String, native: NativeQueryContext): List<SignatureInformation> {
+        val types = HeldReceiverTypes(native)
+        val expression = call.objectExpression
+        val receiver = when {
+            call.isImplicitThis -> types.lexicalOwner(call)
+            expression is VariableExpression && expression.isThisExpression -> types.lexicalOwner(call)
+            expression is VariableExpression -> types.bindingType(expression)
+            expression is MethodCallExpression -> expression.methodTarget?.returnType
+            else -> expression?.type?.takeUnless { it.isDynamic() }
+        }?.redirect()
+        return buildList {
+            if (call.isImplicitThis) {
+                native.reflection.loadClass("groovy.lang.Script")?.methods.orEmpty()
+                    .filter { it.name == name && Modifier.isPublic(it.modifiers) }
+                    .forEach { add(it.toMethodNode().toSignatureInformation()) }
+            }
+            if (receiver == null) return@buildList
+            if (types.isSource(receiver)) {
+                receiver.getDeclaredMethods(name).filter { it.isPublic }.forEach { add(it.toSignatureInformation()) }
+            }
+            for (binary in types.binaryAncestors(receiver)) {
+                heldGdkMethods(native.reflection, binary, name).forEach { add(it.display.toSignatureInformation()) }
+                native.reflection.getMethods(binary).filter { it.name == name && it.isPublic }
+                    .forEach { add(it.toSignatureInformation()) }
+            }
+        }
     }
 
     // TODO(#650): Consolidate with InlayHintsCandidates.resolveReceiverType() - similar logic.
@@ -242,6 +300,7 @@ class SignatureHelpProvider(
         symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
         moduleNode: ModuleNode,
+        resolver: SemanticTypeResolver,
     ): String {
         if (methodCall.isImplicitThis) {
             return resolveImplicitThisReceiverType(methodCall, astVisitor)
@@ -259,9 +318,9 @@ class SignatureHelpProvider(
         }
 
         // Only use SemanticTypeResolver for dynamic types that need inference
-        val semanticType = semanticResolver.resolveType(objExpr, moduleNode)
+        val semanticType = resolver.resolveType(objExpr, moduleNode)
         val type = formatSemanticTypeToFqn(semanticType)
-        return receiverTypeRefiner.refine(type, objExpr, astVisitor, symbolTable, moduleNode)
+        return ReceiverTypeRefiner(resolver).refine(type, objExpr, astVisitor, symbolTable, moduleNode)
     }
 
     /**
@@ -399,7 +458,7 @@ private class ReceiverTypeRefiner(private val semanticResolver: SemanticTypeReso
         if (initExpr is ConstructorCallExpression) {
             initExpr.type.name
         } else {
-            runCatching { semanticResolver.resolveType(initExpr, moduleNode) }
+            runSuspendCatching { semanticResolver.resolveType(initExpr, moduleNode) }
                 .getOrNull()
                 ?.let { SemanticTypeFormatter.formatToFqn(it) }
         }

@@ -10,6 +10,8 @@ import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRuleset
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.deliverSignatureOrCompletion
+import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
@@ -280,14 +282,6 @@ class GroovyTextDocumentService(
 
     private val nativeQueries by lazy { NativeQueryRequestHandler(compilationService, documentProvider) }
 
-    private val signatureHelpProvider by lazy {
-        SignatureHelpProvider(
-            compilationService = compilationService,
-            documentProvider = documentProvider,
-            semanticResolver = semanticTypeResolver,
-        )
-    }
-
     private val formattingService by lazy {
         GroovyFormattingService(formatter, documentProvider, client)
     }
@@ -363,12 +357,13 @@ class GroovyTextDocumentService(
         params: CallHierarchyOutgoingCallsParams,
     ): CompletableFuture<List<CallHierarchyOutgoingCall>> = editorFactHandler.callHierarchyOutgoingCalls(params)
 
-    override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {
-        logger.debug {
-            "Signature help requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}"
+    override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> {
+        val captured = runCatching {
+            SignatureCompletionRequest(compilationService, documentProvider, URI.create(params.textDocument.uri), params.position)
         }
-        signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
+        return coroutineScope.future {
+            captured.deliverSignatureOrCompletion { SignatureHelpProvider.provideSignatureHelp(it) }
+        }
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
@@ -464,30 +459,18 @@ class GroovyTextDocumentService(
         diagnosticsOrchestrator.refreshAll()
     }
 
-    override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> =
-        coroutineScope.future {
-            logger.debug {
-                "Completion requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}"
-            }
-
-            val uri = URI.create(params.textDocument.uri)
-            val content = documentProvider.get(uri) ?: ""
-
-            // Delegate all completion logic (Groovy, Jenkins, Spock) to CompletionProvider
-            // CompletionProvider now uses JenkinsContextDetector internally for context-aware filtering
-            val completions = CompletionProvider.getContextualCompletions(
-                params.textDocument.uri,
-                params.position.line,
-                params.position.character,
-                compilationService,
-                semanticResolver = semanticTypeResolver,
-                content,
-            )
-
-            logger.debug { "Returning ${completions.size} completions" }
-            Either.forLeft(completions.forClient(labelDetailsSupport, snippetSupport))
+    override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> {
+        val captured = runCatching {
+            SignatureCompletionRequest(compilationService, documentProvider, URI.create(params.textDocument.uri), params.position, completion = true)
         }
+        val labels = labelDetailsSupport
+        val snippets = snippetSupport
+        return coroutineScope.future {
+            captured.deliverSignatureOrCompletion { request ->
+                Either.forLeft(CompletionProvider.getContextualCompletions(request).forClient(labels, snippets))
+            }
+        }
+    }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
         CompletableFuture.completedFuture(unresolved)

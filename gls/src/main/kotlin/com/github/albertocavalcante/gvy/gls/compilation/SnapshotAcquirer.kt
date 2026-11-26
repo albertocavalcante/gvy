@@ -118,12 +118,12 @@ internal class SnapshotSource(
     fun canRetryWith(other: SnapshotSource): Boolean = buffer != null && worker !== other.worker &&
         sameSource(other) && other.isCurrent()
 
+    fun workerCurrent(): Boolean = dependencies.workerSessionManager.current() === worker
+
     fun isCurrent(): Boolean = dependencies.workspaceManager.current() === workspace &&
         provider?.getIncarnation(uri) === buffer?.incarnation &&
         inventory.identity === (provider?.captureDocuments() ?: OpenDocuments.absent).identity &&
         dependencies.cacheService.ownership.inputsCurrent(ticket)
-
-    fun workerCurrent(): Boolean = dependencies.workerSessionManager.current() === worker
 
     fun unlessRetired(outcome: SnapshotAcquisition) = if (isCurrent()) outcome else SnapshotAcquisition.Stale
 }
@@ -241,6 +241,48 @@ internal class SnapshotAcquirer(
         whileCallerActive { acquireCurrent(capture(uri), phase, mode) }
 
     fun capture(uri: URI): SnapshotSource = SnapshotSource(dependencies, uri)
+
+    /** Parse a request-local derived copy under its own producer, retaining its loader through eager use. */
+    suspend fun <T> queryDerived(
+        source: SnapshotSource,
+        content: String,
+        phase: Int,
+        mode: ParseMode,
+        query: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> {
+        val caller = currentCoroutineContext()
+        fun sourceCurrent() = source.isCurrent() && source.workerCurrent()
+        if (!caller.inputsCurrent(::sourceCurrent)) return SnapshotQuery.Stale
+        var captured: CapturedCompilation? = null
+        val answer = runSuspendCatching {
+            val producer = CapturedCompilation(selectSources, source, content, phase, mode)
+            captured = producer
+            if (!caller.inputsCurrent { producer.isCurrent() && sourceCurrent() }) return SnapshotQuery.Stale
+            val parsed = producer.parse()
+            parsed.compilationUnit.classLoader.use {
+                val held = CompiledDocumentSnapshot(
+                    content,
+                    parsed,
+                    referenceProducer = producer.referenceProducer(parsed),
+                    sourceIdentity = producer.sourceIdentity,
+                )
+                val partial = parsed.ast == null || !parsed.isSuccessful || parsed.outcome.isDegraded ||
+                    parsed.outcome.achievedPhase < phase
+                queryCurrentSnapshot({ producer.isCurrent() && sourceCurrent() }, partial) { query(held) }
+            }
+        }
+        // Closing this unpublished loader may itself run code or throw. Revalidate after cleanup and
+        // after any effectful producer checks, including when the worker or the consumer failed.
+        return runSuspendCatching {
+            if (deliveryInputsCurrent(::sourceCurrent) { captured?.isCurrent() != false }) {
+                answer.getOrThrow()
+            } else {
+                SnapshotQuery.Stale
+            }
+        }.getOrElse { cause ->
+            if (cause is Exception) SnapshotQuery.Failure(cause) else throw cause
+        }
+    }
 
     /** Retry only an unchanged open source after a real worker replacement, using a wholly fresh producer. */
     fun captureWorkerReplacement(original: SnapshotSource): SnapshotSource? {

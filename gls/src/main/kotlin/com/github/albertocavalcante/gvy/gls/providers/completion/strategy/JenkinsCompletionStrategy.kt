@@ -105,8 +105,7 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 if (!(isBlockLevel && blockContext.isStructuralDeclarativeBlock())) {
                     addJenkinsGlobalVariables(
                         metadata = metadata,
-                        jenkinsCapabilities = context.baseContext.compilationService
-                            .workspaceManager.getJenkinsCapabilities(),
+                        jenkinsCapabilities = context.jenkinsCapabilities,
                     )
                 }
 

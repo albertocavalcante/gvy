@@ -3,6 +3,9 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.services.ClassInfo
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
@@ -47,80 +50,44 @@ object AutoImportCompletionProvider {
     ): List<CompletionItem> {
         if (prefix.isBlank()) return emptyList()
 
-        // Extract import info: AST-based (deterministic) when available, heuristic fallback otherwise
-        val ast = compilationService.getAst(uri) as? ModuleNode
-        val (existingImports, importPosition) = ImportUtils.extractImportInfo(ast, content)
-
-        val candidates = mutableListOf<TypeCandidate>()
-
-        // Search workspace symbol index
-        collectWorkspaceCandidates(compilationService, prefix, existingImports, candidates)
-
-        // Search classpath
-        collectClasspathCandidates(classpathService, prefix, existingImports, candidates)
-
-        // Deduplicate by FQN (workspace takes precedence)
-        val deduplicated = candidates
-            .groupBy { it.fqn }
-            .mapValues { (_, list) -> list.firstOrNull { it.source == TypeSource.WORKSPACE } ?: list.first() }
-            .values
-            .sortedWith(compareBy({ it.source }, { it.simpleName }))
-            .take(MAX_RESULTS)
-
-        return deduplicated.map { candidate ->
-            candidate.toCompletionItem(importPosition, existingImports.contains(candidate.fqn))
-        }
-    }
-
-    private fun collectWorkspaceCandidates(
-        compilationService: GroovyCompilationService,
-        prefix: String,
-        existingImports: Set<String>,
-        candidates: MutableList<TypeCandidate>,
-    ) {
-        compilationService.symbolIndexingService.findClasses(ClassNameQuery.Prefix(prefix)).forEach { symbol ->
-            val fqn = symbol.fullyQualifiedName
-            if (fqn !in existingImports) {
-                candidates.add(
-                    TypeCandidate(
-                        simpleName = symbol.name,
-                        fqn = fqn,
-                        source = TypeSource.WORKSPACE,
-                    ),
-                )
-            }
-        }
-    }
-
-    /**
-     * Collects classpath type candidates matching the prefix.
-     *
-     * NOTE: ClasspathService.findClassesByPrefix may throw various runtime exceptions
-     * (ClassNotFoundException, NoClassDefFoundError, etc.) due to classloader issues.
-     * We catch all exceptions to prevent completion failure - this is intentional.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    private fun collectClasspathCandidates(
-        classpathService: ClasspathService,
-        prefix: String,
-        existingImports: Set<String>,
-        candidates: MutableList<TypeCandidate>,
-    ) {
-        try {
-            classpathService.findClassesByPrefix(prefix, MAX_RESULTS)
-                .filter { it.fullName !in existingImports }
-                .forEach { classInfo ->
-                    candidates.add(
-                        TypeCandidate(
-                            simpleName = classInfo.simpleName,
-                            fqn = classInfo.fullName,
-                            source = TypeSource.CLASSPATH,
-                        ),
-                    )
+        // This public convenience API also serves callers without an owned parsing copy.
+        val module = compilationService.getAst(uri) as? ModuleNode
+        return candidates(
+            content, module,
+            workspace = { compilationService.symbolIndexingService.findClasses(ClassNameQuery.Prefix(prefix)) },
+            classpath = {
+                runSuspendCatching { classpathService.findClassesByPrefix(prefix, MAX_RESULTS) }.getOrElse {
+                    logger.warn(it) { "Failed to search classpath for types" }
+                    emptyList()
                 }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to search classpath for types" }
+            },
+        )
+    }
+
+    internal fun getTypeCompletions(prefix: String, content: String, inputs: CompletionInputs): List<CompletionItem> {
+        if (prefix.isBlank()) return emptyList()
+        return candidates(
+            content, inputs.native.held.parseResult.ast,
+            workspace = { inputs.workspaceClasses(ClassNameQuery.Prefix(prefix)) },
+            classpath = { inputs.classNames(prefix, MAX_RESULTS) },
+        )
+    }
+
+    private fun candidates(
+        content: String,
+        module: ModuleNode?,
+        workspace: () -> List<Symbol.Class>,
+        classpath: () -> List<ClassInfo>,
+    ): List<CompletionItem> {
+        val (existingImports, position) = ImportUtils.extractImportInfo(module, content)
+        val candidates = buildList {
+            workspace().forEach { add(TypeCandidate(it.name, it.fullyQualifiedName, TypeSource.WORKSPACE)) }
+            classpath().forEach { add(TypeCandidate(it.simpleName, it.fullName, TypeSource.CLASSPATH)) }
         }
+        // A workspace declaration wins when both views expose the same name.
+        return candidates.filterNot { it.fqn in existingImports }.distinctBy { it.fqn }
+            .sortedWith(compareBy({ it.source }, { it.simpleName })).take(MAX_RESULTS)
+            .map { it.toCompletionItem(position) }
     }
 
     private data class TypeCandidate(val simpleName: String, val fqn: String, val source: TypeSource)
@@ -130,7 +97,7 @@ object AutoImportCompletionProvider {
         CLASSPATH,
     }
 
-    private fun TypeCandidate.toCompletionItem(importPosition: Position, alreadyImported: Boolean): CompletionItem {
+    private fun TypeCandidate.toCompletionItem(importPosition: Position): CompletionItem {
         val packageName = fqn.substringBeforeLast('.', "")
 
         return CompletionItem().apply {
@@ -145,15 +112,7 @@ object AutoImportCompletionProvider {
                 ),
             )
 
-            // Add import edit if not already imported
-            if (!alreadyImported) {
-                additionalTextEdits = listOf(
-                    TextEdit(
-                        Range(importPosition, importPosition),
-                        "import $fqn\n",
-                    ),
-                )
-            }
+            additionalTextEdits = listOf(TextEdit(Range(importPosition, importPosition), "import $fqn\n"))
 
             // Sort workspace types before classpath types
             sortText = when (source) {

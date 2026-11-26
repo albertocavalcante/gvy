@@ -33,6 +33,13 @@ internal class WorkspaceClassNames {
     // after a clear. Lock-free readers see the old or the new map (#1342).
     @Volatile private var files = ConcurrentSkipListMap<String, MutableSet<URI>>()
     private val lock = Any()
+    @Volatile private var publication = Any()
+
+    /** A name lookup and its retirement witness both see the same committed set of file entries. */
+    fun <T> read(lookup: () -> T): Pair<T, () -> Boolean> = synchronized(lock) {
+        val stamp = publication
+        lookup() to { publication === stamp }
+    }
 
     /**
      * Runs [write], which returns the classes [uri] declared before, and records [next] in their place.
@@ -40,6 +47,7 @@ internal class WorkspaceClassNames {
      * dropped names removed after it, so a re-install never hides a class it still declares.
      */
     fun replace(uri: URI, next: List<Symbol.Class>, write: () -> List<Symbol.Class>?) = synchronized(lock) {
+        publication = Any()
         val added = next.mapTo(mutableSetOf()) { key(it.name) }
         added.forEach { files.computeIfAbsent(it) { ConcurrentHashMap.newKeySet() }.add(uri) }
         val removed = write().orEmpty().mapTo(mutableSetOf()) { key(it.name) } - added
@@ -53,6 +61,7 @@ internal class WorkspaceClassNames {
 
     /** Runs [write] (the owner's own swap) and swaps in an empty name map, both under the lock: O(1) (#1342). */
     fun clear(write: () -> Unit) = synchronized(lock) {
+        publication = Any()
         write()
         files = ConcurrentSkipListMap()
     }

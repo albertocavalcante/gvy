@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.completion
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
+import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
@@ -23,11 +24,11 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.SpockC
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.jenkins.completion.JenkinsContextDetector
-import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
+import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserPosition
 import com.github.albertocavalcante.nativeapi.ParserSeverity
@@ -41,6 +42,8 @@ import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
+
+private typealias CompletionQuery = suspend (ParseResult, SemanticTypeResolver, CompletionInputs?) -> List<CompletionItem>?
 
 /**
  * Context for completion operations.
@@ -97,100 +100,80 @@ object CompletionProvider {
         compilationService: GroovyCompilationService,
         semanticResolver: SemanticTypeResolver,
         content: String,
-    ): List<CompletionItem> {
+    ): List<CompletionItem> = try {
+        val document = URI.create(uri)
+        CompletionCopies(document, Position(line, character), content, compilationService) { copy, consume ->
+            currentCoroutineContext().ensureActive()
+            val parsed = compilationService.compileTransient(document, copy)
+            parsed.compilationUnit.classLoader.use { consume(parsed, semanticResolver, null) }
+        }.items()
+    } catch (_: CompilationFailedException) {
+        buildFallbackCompletions(content, line, character, null, compilationService)
+    }
+
+    internal suspend fun getContextualCompletions(request: SignatureCompletionRequest): List<CompletionItem> {
+        val content = request.source.buffer?.snapshot?.content ?: return emptyList()
         return try {
-            val uriObj = URI.create(uri)
-
-            // Determine if we are inserting into an existing identifier
-            val isClean = CompletionContextDetector.isCleanInsertion(content, line, character)
-
-            // Strategy 1: Simple insertion (e.g. "myList.BrazilWorldCup2026")
-            val content1 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = false)
-            val parsed = compilationService.compileTransient(uriObj, content1)
-            val context = currentCoroutineContext()
-            val constructorCopy = if (parsed.ast == null) {
-                CompletionContextDetector.constructorCompletionCopy(TextIndex(content), Position(line, character)) {
-                    context.ensureActive()
+            CompletionCopies(request.uri, request.position, content, request.compilation) { copy, consume ->
+                request.derived(copy) { native ->
+                    consume(native.held.parseResult, native.types, CompletionInputs(request, native))
                 }
-            } else {
-                null
+            }.items()
+        } catch (_: CompilationFailedException) {
+            request.original({ emptyList() }) { original ->
+                buildFallbackCompletions(content, request.position.line, request.position.character, null,
+                    request.compilation, CompletionInputs(request, original))
             }
-            // Each transient compile is a full parse; stop between them once the request is cancelled.
-            context.ensureActive()
-            val result1 = constructorCopy?.let { compilationService.compileTransient(uriObj, it) }
-                ?.takeIf { it.ast != null } ?: parsed
-            val ast1 = result1.ast
-            val astModel1 = result1.astModel
+        }
+    }
 
-            // If simple insertion failed and it was a clean insertion, try adding 'def'.
-            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
-            // but "class Foo { BrazilWorldCup2026 }" is not.
-            // Retry only when an error touches the inserted dummy (a bare name in a class body or static
-            // scope). An error elsewhere, such as an unresolved type, fails both copies alike.
-            if (isClean && !result1.isSuccessful && dummyCausedError(result1.diagnostics, line, character)) {
-                context.ensureActive()
-                val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
-                val result2 = compilationService.compileTransient(uriObj, content2)
-                val ast2 = result2.ast
-                val astModel2 = result2.astModel
-                val defStrategyBetter = result2.isSuccessful || result2.diagnostics.size < result1.diagnostics.size
+    /** Keep each candidate inside its own producer while trying a more useful repair. */
+    private class CompletionCopies(
+        val uri: URI,
+        val position: Position,
+        val content: String,
+        val service: GroovyCompilationService,
+        val parse: suspend (String, CompletionQuery) -> List<CompletionItem>?,
+    ) {
+        private val line = position.line
+        private val character = position.character
 
-                // Use 'def' strategy if it produced a better result and has a valid AST
-                if (defStrategyBetter && ast2 != null) {
-                    return buildCompletionsList(
-                        CompletionContext(
-                            uri = uriObj,
-                            line = line,
-                            character = character,
-                            ast = ast2,
-                            astModel = astModel2,
-                            tokenIndex = result2.tokenIndex,
-                            compilationService = compilationService,
-                            content = content,
-                            semanticResolver = semanticResolver,
-                            moduleNode = ast2,
-                            workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
-                        ),
-                    )
+        suspend fun items(): List<CompletionItem> {
+            val dummy = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = false)
+            return parse(dummy) { first, resolver, inputs ->
+                val coroutine = currentCoroutineContext()
+                val constructor = if (first.ast == null) {
+                    CompletionContextDetector.constructorCompletionCopy(TextIndex(content), position) { coroutine.ensureActive() }
+                } else {
+                    null
                 }
-            }
+                constructor?.let { copy ->
+                    parse(copy) { repaired, types, selected ->
+                        if (repaired.ast == null) null else withDefRecovery(repaired, types, selected)
+                    }
+                } ?: withDefRecovery(first, resolver, inputs)
+            }.orEmpty()
+        }
 
-            // Fallback to result1 (simple insertion)
-            if (ast1 == null) {
-                return buildFallbackCompletions(
-                    content = content,
-                    line = line,
-                    character = character,
-                    tokenIndex = result1.tokenIndex,
-                    compilationService = compilationService,
-                )
-            } else {
-                buildCompletionsList(
-                    CompletionContext(
-                        uri = uriObj,
-                        line = line,
-                        character = character,
-                        ast = ast1,
-                        astModel = astModel1,
-                        tokenIndex = result1.tokenIndex,
-                        compilationService = compilationService,
-                        content = content,
-                        semanticResolver = semanticResolver,
-                        moduleNode = ast1,
-                        workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
-                    ),
-                )
+        private suspend fun withDefRecovery(parsed: ParseResult, resolver: SemanticTypeResolver, inputs: CompletionInputs?): List<CompletionItem> {
+            currentCoroutineContext().ensureActive()
+            val retry = !parsed.isSuccessful && CompletionContextDetector.isCleanInsertion(content, line, character) &&
+                dummyCausedError(parsed.diagnostics, line, character)
+            if (retry) {
+                val copy = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
+                parse(copy) { alternate, types, selected ->
+                    val better = alternate.isSuccessful || alternate.diagnostics.size < parsed.diagnostics.size
+                    if (alternate.ast != null && better) render(alternate, types, selected) else null
+                }?.let { return it }
             }
-        } catch (e: CompilationFailedException) {
-            // If AST analysis fails, log and return empty list
-            logger.debug { "AST analysis failed for completion at $line:$character: ${e.message}" }
-            buildFallbackCompletions(
-                content = content,
-                line = line,
-                character = character,
-                tokenIndex = null,
-                compilationService = compilationService,
-            )
+            return render(parsed, resolver, inputs)
+        }
+
+        private suspend fun render(parsed: ParseResult, resolver: SemanticTypeResolver, inputs: CompletionInputs?): List<CompletionItem> {
+            val ast = parsed.ast ?: return buildFallbackCompletions(content, line, character, parsed.tokenIndex, service, inputs)
+            val context = CompletionContext(uri, line, character, ast, parsed.astModel, parsed.tokenIndex, service, content,
+                resolver, ast, service.getWorkspaceSymbolIndex())
+            return buildCompletionsList(context, inputs)
         }
     }
 
@@ -217,6 +200,7 @@ object CompletionProvider {
         character: Int,
         tokenIndex: GroovyTokenIndex?,
         compilationService: GroovyCompilationService,
+        inputs: CompletionInputs? = null,
     ): List<CompletionItem> {
         val importContext = CompletionContextDetector.detectImportCompletionContext(
             content = content,
@@ -225,7 +209,7 @@ object CompletionProvider {
             tokenIndex = tokenIndex,
         )
         if (importContext != null) {
-            return completions { addImportCompletions(importContext, compilationService) }
+            return completions { addImportCompletions(importContext, compilationService, inputs) }
         }
         return completions {
             addKeywords()
@@ -233,7 +217,7 @@ object CompletionProvider {
         }
     }
 
-    private suspend fun buildCompletionsList(ctx: CompletionContext): List<CompletionItem> {
+    private suspend fun buildCompletionsList(ctx: CompletionContext, inputs: CompletionInputs?): List<CompletionItem> {
         ctx.moduleNode?.let { ctx.semanticResolver.semantics.inject(it) }
 
         // Extract symbol context
@@ -245,8 +229,9 @@ object CompletionProvider {
         )
 
         // Get Jenkins capabilities and create mode resolver
-        val jenkinsCapabilities = ctx.compilationService.workspaceManager.getJenkinsCapabilities()
-        val modeResolver = ModeResolver(
+        val facts = inputs?.jenkins()
+        val jenkinsCapabilities = if (facts != null) facts.capability else ctx.compilationService.workspaceManager.getJenkinsCapabilities()
+        val modeResolver = facts?.mode ?: ModeResolver(
             configuredMode = ctx.compilationService.serverConfiguration.groovyMode,
             jenkinsCapabilities = jenkinsCapabilities,
         )
@@ -261,7 +246,7 @@ object CompletionProvider {
             tokenIndex = ctx.tokenIndex,
         )
         if (importContext != null) {
-            return completions { addImportCompletions(importContext, ctx.compilationService) }
+            return completions { addImportCompletions(importContext, ctx.compilationService, inputs) }
         }
 
         // Detect completion context
@@ -294,11 +279,12 @@ object CompletionProvider {
             isJenkinsFile = isJenkinsFile,
             jenkinsMetadata = jenkinsMetadata,
             jenkinsBlockContext = jenkinsBlockContext,
+            jenkinsCapabilities = jenkinsCapabilities,
         )
 
         // Use strategies for general completions (call suspend function outside of completions builder)
-        val strategies = buildStrategies(mode, ctx.compilationService, ctx.workspaceSymbolIndex)
-        val strategyItems = CompletionStrategy.aggregate(strategies).complete(strategyContext).fold(
+        val strategies = buildStrategies(mode, ctx.compilationService, ctx.workspaceSymbolIndex, inputs)
+        val strategyItems = CompletionStrategy.aggregate(strategies, propagateFailures = inputs != null).complete(strategyContext).fold(
             ifLeft = { emptyList() },
             ifRight = { it },
         )
@@ -308,7 +294,7 @@ object CompletionProvider {
             strategyItems.forEach(::add)
 
             // Handle contextual completions (TypeParameter - keep existing)
-            if (handleContextualCompletions(completionContext, ctx, jenkinsMetadata)) {
+            if (handleContextualCompletions(completionContext, ctx, inputs)) {
                 return@completions
             }
         }.filterNot {
@@ -328,8 +314,9 @@ object CompletionProvider {
         mode: GroovyMode,
         compilationService: GroovyCompilationService,
         workspaceSymbolIndex: WorkspaceSymbolIndex?,
+        inputs: CompletionInputs? = null,
     ): List<CompletionStrategy> {
-        val memberAccessStrategy = MemberAccessCompletionStrategy(compilationService, workspaceSymbolIndex)
+        val memberAccessStrategy = MemberAccessCompletionStrategy(compilationService, workspaceSymbolIndex, inputs)
         val modeStrategies = when (mode) {
             GroovyMode.GROOVY -> groovyModeStrategies
             GroovyMode.JENKINS, GroovyMode.AUTO -> jenkinsAwareStrategies
@@ -368,19 +355,18 @@ object CompletionProvider {
     //   DSL consistency. Consider suppressing warnings or refactoring.
     //   See: https://github.com/albertocavalcante/gvy/issues/864
 
-    @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _metadata for Jenkins-specific completions
     private fun CompletionsBuilder.handleContextualCompletions(
         completionContext: ContextType?,
         ctx: CompletionContext,
-        _metadata: MergedJenkinsMetadata?,
+        inputs: CompletionInputs?,
     ): Boolean = when (completionContext) {
         // MemberAccess is handled via early return in buildCompletionsList
         is ContextType.MemberAccess -> false
         is ContextType.TypeParameter -> {
             logger.debug { "Adding type parameter classes for prefix '${completionContext.prefix}'" }
-            addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
+            addTypeParameterClasses(completionContext.prefix, ctx.compilationService, inputs)
             // Also add auto-import completions for unimported types
-            addAutoImportCompletions(completionContext.prefix, ctx.uri, ctx.content, ctx.compilationService)
+            addAutoImportCompletions(completionContext.prefix, ctx, inputs)
             false
         }
 
@@ -462,8 +448,9 @@ object CompletionProvider {
     private fun CompletionsBuilder.addImportCompletions(
         ctx: ImportCompletionContext,
         compilationService: GroovyCompilationService,
+        inputs: CompletionInputs?,
     ) {
-        val strategy = ImportCompletionStrategy(compilationService)
+        val strategy = ImportCompletionStrategy(compilationService, inputs)
         strategy.addImportCompletions(
             ImportCompletionStrategy.ImportContext(
                 prefix = ctx.prefix,
@@ -485,8 +472,9 @@ object CompletionProvider {
     private fun CompletionsBuilder.addTypeParameterClasses(
         prefix: String,
         compilationService: GroovyCompilationService,
+        inputs: CompletionInputs?,
     ) {
-        val classes =
+        val classes = inputs?.classNames(prefix, MAX_TYPE_COMPLETION_RESULTS) ?:
             compilationService.classpathService.findClassesByPrefix(prefix, maxResults = MAX_TYPE_COMPLETION_RESULTS)
         logger.debug { "Found ${classes.size} classes for prefix $prefix" }
 
@@ -505,17 +493,16 @@ object CompletionProvider {
      */
     private fun CompletionsBuilder.addAutoImportCompletions(
         prefix: String,
-        uri: URI,
-        content: String,
-        compilationService: GroovyCompilationService,
+        ctx: CompletionContext,
+        inputs: CompletionInputs?,
     ) {
-        val completions = AutoImportCompletionProvider.getTypeCompletions(
-            prefix = prefix,
-            uri = uri,
-            content = content,
-            compilationService = compilationService,
-            classpathService = compilationService.classpathService,
-        )
+        val completions = if (inputs == null) {
+            AutoImportCompletionProvider.getTypeCompletions(
+                prefix, ctx.uri, ctx.content, ctx.compilationService, ctx.compilationService.classpathService,
+            )
+        } else {
+            AutoImportCompletionProvider.getTypeCompletions(prefix, ctx.content, inputs)
+        }
 
         // Add pre-built completion items directly (they already have additionalTextEdits)
         addAll(completions)

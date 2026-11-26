@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
@@ -244,7 +245,7 @@ private fun resolveQualifier(
     val qualifierName = if (objectExpr is VariableExpression) objectExpr.name else null
 
     // Resolve type using semantic resolver (with safe fallback)
-    val resolvedType = runCatching { semanticResolver.resolveType(objectExpr, moduleNode) }
+    val resolvedType = runSuspendCatching { semanticResolver.resolveType(objectExpr, moduleNode) }
         .getOrNull()
 
     val qualifierType = when (resolvedType) {
@@ -281,7 +282,7 @@ private fun completionFromVariableExpression(
         val qualifierName = expression.name
 
         // Resolve type using semantic resolver (with safe fallback)
-        val resolvedType = runCatching { semanticResolver.resolveType(expression, moduleNode) }
+        val resolvedType = runSuspendCatching { semanticResolver.resolveType(expression, moduleNode) }
             .getOrNull()
 
         val qualifierType = when (resolvedType) {

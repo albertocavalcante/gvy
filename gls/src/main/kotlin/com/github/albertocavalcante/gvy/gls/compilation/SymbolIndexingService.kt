@@ -138,6 +138,23 @@ class SymbolIndexingService(
     fun findClasses(query: ClassNameQuery): List<Symbol.Class> =
         classNames.files(query).sorted().flatMap { entries[it]?.classes.orEmpty() }.filter(query::matches)
 
+    internal class ClassNameSelection(val classes: List<Symbol.Class>, val sourceHashes: Map<URI, String>)
+
+    internal fun captureClasses(query: ClassNameQuery): Pair<ClassNameSelection, () -> Boolean> = classNames.read {
+        val hashes = mutableMapOf<URI, String>()
+        val matches = buildList {
+            for (owner in classNames.files(query).sorted()) {
+                val entry = entries[owner] ?: continue
+                val declarations = entry.classes.filter { it.uri == owner && query.matches(it) }
+                if (declarations.isNotEmpty()) {
+                    addAll(declarations)
+                    hashes[owner] = entry.contentHash
+                }
+            }
+        }
+        ClassNameSelection(matches, hashes)
+    }
+
     /**
      * Indexes a single workspace file for symbol resolution.
      * Lightweight operation that parses and builds SymbolIndex without full compilation.

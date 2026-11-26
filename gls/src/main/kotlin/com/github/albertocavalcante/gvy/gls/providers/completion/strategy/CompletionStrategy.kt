@@ -62,7 +62,7 @@ internal fun interface CompletionStrategy {
          * @return A composite strategy that collects all completions
          */
         @Suppress("TooGenericExceptionCaught")
-        fun aggregate(strategies: List<CompletionStrategy>): CompletionStrategy = CompletionStrategy { context ->
+        fun aggregate(strategies: List<CompletionStrategy>, propagateFailures: Boolean = false): CompletionStrategy = CompletionStrategy { context ->
             val allItems = mutableListOf<CompletionItem>()
 
             for (strategy in strategies) {
@@ -73,6 +73,7 @@ internal fun interface CompletionStrategy {
                 } catch (e: Error) {
                     throw e
                 } catch (e: Exception) {
+                    if (propagateFailures) throw e
                     logger.debug(e) {
                         "Completion strategy ${strategy::class.simpleName ?: "unknown"} threw unexpectedly"
                     }

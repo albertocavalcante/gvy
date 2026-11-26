@@ -4,6 +4,9 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionInputs
+import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
+import com.github.albertocavalcante.nativeapi.inputDocumentUri
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
@@ -29,7 +32,10 @@ import java.lang.reflect.Modifier
  * This is a specialized strategy that is typically invoked early in the completion pipeline
  * when an import statement is detected.
  */
-internal class ImportCompletionStrategy(private val compilationService: GroovyCompilationService) {
+internal class ImportCompletionStrategy(
+    private val compilationService: GroovyCompilationService,
+    private val inputs: CompletionInputs? = null,
+) {
     /**
      * Adds import-specific completions (static keyword and matching class names).
      */
@@ -57,7 +63,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
         // If className is not found, fall through to normal class completion
         // (it's likely a package path, e.g., "import static org.junit.")
 
-        val candidates = if (prefix.contains('.')) {
+        val candidates = inputs?.classNames(prefix, MAX_IMPORT_COMPLETION_RESULTS, qualified = prefix.contains('.')) ?: if (prefix.contains('.')) {
             classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
         } else {
             classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
@@ -107,15 +113,21 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
             return false
         }
 
+        val workspace = findWorkspaceClassSymbols(staticClassName)
+        val selected = if (inputs == null) workspace else workspace.mapNotNull { heldStaticOwner(it, inputs) }
         val workspaceFound = addWorkspaceStaticMemberCompletions(
+            classSymbols = selected.distinctBy { it.fullyQualifiedName.ifBlank { it.name } },
             className = staticClassName,
             ctx = ctx,
             builder = builder,
             memberPrefix = staticMemberPrefix,
         )
 
-        val classpathService = compilationService.classpathService
-        val classpathFound = classpathService.loadClass(staticClassName) != null
+        val classpathFound = if (inputs == null) {
+            compilationService.classpathService.loadClass(staticClassName) != null
+        } else {
+            workspace.isEmpty() && inputs.native.reflection.loadClass(staticClassName) != null
+        }
         if (classpathFound) {
             addStaticMethodCompletions(staticClassName, ctx, staticMemberPrefix, builder)
             addStaticFieldCompletions(staticClassName, ctx, staticMemberPrefix, builder)
@@ -130,13 +142,12 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
      * @return true if any members were added.
      */
     private fun addWorkspaceStaticMemberCompletions(
+        classSymbols: List<Symbol.Class>,
         className: String,
         ctx: ImportContext,
         builder: CompletionsBuilder,
         memberPrefix: String?,
     ): Boolean {
-        val classSymbols = findWorkspaceClassSymbols(className)
-            .distinctBy { it.fullyQualifiedName.ifBlank { it.name } }
         if (classSymbols.isEmpty()) return false
 
         val range = Range(
@@ -162,6 +173,18 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
             }
         }
         return added
+    }
+
+    /** The name index supplies candidate owners. Member types come from the selected import in this parse. */
+    private fun heldStaticOwner(candidate: Symbol.Class, inputs: CompletionInputs): Symbol.Class? {
+        val module = inputs.native.held.parseResult.ast ?: return null
+        val declarations = module.staticImports.values + module.staticStarImports.values
+        val owners = declarations.mapNotNull { it.type?.redirect() }.filter {
+            it.name == candidate.fullyQualifiedName && it.module?.context?.inputDocumentUri() == candidate.uri
+        }
+        val owner = owners.firstOrNull() ?: return null
+        if (owners.any { it !== owner } || !HeldReceiverTypes(inputs.native).isSource(owner)) return null
+        return candidate.copy(node = owner, methods = owner.methods, fields = owner.fields, properties = owner.properties)
     }
 
     /**
@@ -278,7 +301,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
         memberPrefix: String?,
         builder: CompletionsBuilder,
     ) {
-        val methods = compilationService.classpathService.getMethods(className)
+        val methods = (inputs?.native?.reflection?.getMethods(className) ?: compilationService.classpathService.getMethods(className))
             .filter { it.isStatic && it.isPublic }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
 
@@ -309,7 +332,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
         memberPrefix: String?,
         builder: CompletionsBuilder,
     ) {
-        val fields = compilationService.classpathService.getFields(className)
+        val fields = (inputs?.native?.reflection?.getFields(className) ?: compilationService.classpathService.getFields(className))
             .filter { it.isStatic && it.isPublic }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
 
@@ -335,8 +358,8 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
      */
     private fun findWorkspaceClassSymbols(className: String): List<Symbol.Class> {
         val isFqn = className.contains('.')
-        return compilationService.symbolIndexingService
-            .findClasses(ClassNameQuery.Exact(className.substringAfterLast('.')))
+        val query = ClassNameQuery.Exact(className.substringAfterLast('.'))
+        return (inputs?.workspaceClasses(query) ?: compilationService.symbolIndexingService.findClasses(query))
             .filter { symbol -> !isFqn || symbol.fullyQualifiedName == className }
     }
 

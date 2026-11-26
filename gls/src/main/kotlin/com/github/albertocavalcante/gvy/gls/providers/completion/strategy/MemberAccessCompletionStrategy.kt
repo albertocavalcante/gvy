@@ -4,18 +4,23 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
+import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.MethodSignatureKey
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionInputs
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
 import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
+import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
+import com.github.albertocavalcante.gvy.gls.services.ReflectedField
+import com.github.albertocavalcante.gvy.gls.services.heldGdkMethods
 import com.github.albertocavalcante.gvy.gls.services.reflectSafely
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -37,6 +42,7 @@ import org.codehaus.groovy.ast.DynamicVariable
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -58,6 +64,7 @@ import org.eclipse.lsp4j.CompletionItemLabelDetails
 internal class MemberAccessCompletionStrategy(
     private val compilationService: GroovyCompilationService,
     private val workspaceSymbolIndex: WorkspaceSymbolIndex?,
+    private val inputs: CompletionInputs? = null,
 ) : CompletionStrategy {
 
     private val logger = KotlinLogging.logger {}
@@ -101,9 +108,13 @@ internal class MemberAccessCompletionStrategy(
     ) {
         val qualifierName = completionContext.qualifierName
         val module = ctx.baseContext.moduleNode
-        val staticType = staticClasspathReceiver(ctx, compilationService)
+        val staticType = staticClasspathReceiver(ctx) { name ->
+            if (inputs == null) compilationService.classpathService.loadClass(name) != null else inputs.native.reflection.loadClass(name) != null
+        }
         if (staticType != null) {
-            addStaticClasspathMembers(staticType, compilationService)
+            val methods = inputs?.native?.reflection?.getMethods(staticType) ?: compilationService.classpathService.getMethods(staticType)
+            val fields = inputs?.native?.reflection?.getFields(staticType) ?: compilationService.classpathService.getFields(staticType)
+            addStaticClasspathMembers(methods, fields)
             return
         }
         val receiverType = module?.let { explicitReceiverType(qualifierName, it, ctx.baseContext) }
@@ -126,6 +137,11 @@ internal class MemberAccessCompletionStrategy(
             return
         }
 
+        if (inputs != null) {
+            addHeldMembers(ctx, inputs)
+            return
+        }
+
         // Held declarations are authoritative for this buffer, including unsaved changes.
         val held = LocalCompletionMembers(module)
         val local = held.lookup(rawType)
@@ -145,6 +161,37 @@ internal class MemberAccessCompletionStrategy(
         // Facts are built only when a generic binary ancestor could need them (never for Object alone).
         val genericOverrides by lazy { walk.genericOverrides.flatMapTo(mutableSetOf()) { it.value } }
         walk.binaryTypes.forEach { type -> addQualifiedClasspathMethods(type) { genericOverrides } }
+    }
+
+    private fun CompletionsBuilder.addHeldMembers(ctx: CompletionStrategyContext, inputs: CompletionInputs) {
+        val anchor = ctx.nodeAtCursor ?: return
+        val types = HeldReceiverTypes(inputs.native)
+        val expression = receiverExpression(ctx)
+        val receiver = when {
+            expression is VariableExpression && expression.isThisExpression -> types.lexicalOwner(anchor)
+            expression is VariableExpression && expression.isSuperExpression -> types.lexicalOwner(anchor)?.superClass
+            expression is VariableExpression -> types.bindingType(expression)
+            expression is MethodCallExpression -> expression.methodTarget?.returnType
+            else -> expression?.type
+        }?.redirect() ?: return
+        val local = if (types.isSource(receiver)) {
+            LocalCompletionMembers(receiver.module, types).lookup(receiver)
+        } else {
+            null
+        }
+        local?.methods?.forEach { addCandidate(it) }
+        local?.fields?.let { addWorkspaceMembers(it) }
+        val binaries = types.binaryAncestors(receiver)
+        val extensions = binaries.flatMap { heldGdkMethods(inputs.native.reflection, it) }
+            .distinctBy { it.display.name to it.qualifiedParameters }
+        extensions.forEach { gdk ->
+            val method = gdk.display
+            addCandidate(MethodCandidate(method.name, method.returnType,
+                gdk.qualifiedParameters.zip(method.parameterTypes, ::CandidateParameter), method.doc))
+        }
+        binaries.forEach { name ->
+            addQualifiedClasspathMethods(name) { local?.genericOverrides?.value.orEmpty() }
+        }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
@@ -218,9 +265,9 @@ internal class MemberAccessCompletionStrategy(
         className: String,
         genericOverrides: () -> Set<Pair<String, List<String>>>,
     ) {
-        val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
+        val types = if (inputs == null) resolveDataTypes(className, compilationService).ifEmpty { listOf(className) } else listOf(className)
         types.forEach { type ->
-            val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
+            val reflected = (if (inputs == null) compilationService.classpathService.loadClass(type) else inputs.native.reflection.loadClass(type)) ?: return@forEach
             // Generic signatures may need types the (possibly closed) loader never loaded: keep what was added.
             reflectSafely({ "completion methods of $type" }, Unit) {
                 reflectedInstanceMethods(reflected).filterNot {
@@ -482,9 +529,11 @@ internal class MemberAccessCompletionStrategy(
     }
 }
 
-private fun CompletionsBuilder.addStaticClasspathMembers(type: String, compilationService: GroovyCompilationService) {
-    val classpath = compilationService.classpathService
-    classpath.getMethods(type).filter { it.isPublic && it.isStatic }.forEach { reflected ->
+private fun CompletionsBuilder.addStaticClasspathMembers(
+    methods: List<ReflectedMethod>,
+    fields: List<ReflectedField>,
+) {
+    methods.filter { it.isPublic && it.isStatic }.forEach { reflected ->
         val parameters = reflected.qualifiedParameters.zip(reflected.displayParameters, ::CandidateParameter)
         method(
             name = reflected.name,
@@ -494,16 +543,13 @@ private fun CompletionsBuilder.addStaticClasspathMembers(type: String, compilati
             signature = parameters.joinToString(",") { it.identity },
         )
     }
-    classpath.getFields(type).filter { it.isPublic && it.isStatic }.forEach { member ->
+    fields.filter { it.isPublic && it.isStatic }.forEach { member ->
         field(name = member.name, type = member.type)
     }
 }
 
 /** A class expression names the owner; its semantic type may instead be java.lang.Class. */
-private fun staticClasspathReceiver(
-    ctx: CompletionStrategyContext,
-    compilationService: GroovyCompilationService,
-): String? {
+private fun staticClasspathReceiver(ctx: CompletionStrategyContext, isBinary: (String) -> Boolean): String? {
     val module = ctx.baseContext.moduleNode ?: return null
     val receiver = receiverExpression(ctx) ?: return null
     val type = when (receiver) {
@@ -515,7 +561,7 @@ private fun staticClasspathReceiver(
     // A compiler-bound source declaration wins over a stale classpath binary of the same name.
     val sourceOwner = owner.isPrimaryClassNode && owner.module?.context?.name != null
     return owner.name.takeUnless { sourceOwner }?.takeIf { name ->
-        module.classes.none { it.name == name } && compilationService.classpathService.loadClass(name) != null
+        owner.isResolved && module.classes.none { it.name == name } && isBinary(name)
     }
 }
 
@@ -720,7 +766,7 @@ private fun ASTNode.contains(line: Int, column: Int): Boolean {
 }
 
 /** A request-local member view; it never writes shared semantic metadata. */
-private class LocalCompletionMembers(private val module: ModuleNode?) {
+private class LocalCompletionMembers(private val module: ModuleNode?, private val types: HeldReceiverTypes? = null) {
     private val classes = module?.classes.orEmpty().associateBy { it.name }
 
     // Request-local hierarchy facts of the held buffer, built only when a lookup needs them.
@@ -741,6 +787,10 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
     /** Members of held [type] and its held ancestors; [inherited] also hides [type]'s own private members. */
     fun lookup(type: String, inherited: Boolean = false): Result? {
         val first = heldClass(type) ?: return null
+        return lookup(first, inherited)
+    }
+
+    fun lookup(first: ClassNode, inherited: Boolean = false): Result {
         val pending = ArrayDeque<ClassNode>().apply { add(first) }
         val visited = mutableSetOf<String>()
         val methods = linkedMapOf<String, MethodCandidate>()
@@ -750,7 +800,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
         var externalSuperclass: String? = null
         while (pending.isNotEmpty()) {
             val next = pending.removeFirst()
-            val held = heldClass(next.name)
+            val held = if (types == null) heldClass(next.name) else next.redirect().takeIf(types::isSource)
             if (!visited.add(held?.name ?: next.name)) continue
             if (held == null) {
                 external.add(next.name)
