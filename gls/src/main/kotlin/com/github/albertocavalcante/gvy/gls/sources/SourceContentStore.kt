@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.sources
 
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -18,7 +19,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipFile
 
 private const val MAX_CACHED_ARCHIVES = 8
@@ -46,9 +46,9 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
     private val pendingIndexes = mutableMapOf<String, Pending<SourceArchiveIndex>>()
     private val pendingImports = mutableMapOf<String, Pending<VerifiedSourceArchive>>()
     private val pending = mutableMapOf<EntryKey, Pending<MaterializedSource>>()
-    private val indexCount = AtomicLong()
-    private val entryCount = AtomicLong()
-    private val importCount = AtomicLong()
+    private val indexCount = Counter()
+    private val entryCount = Counter()
+    private val importCount = Counter()
     private var closed = false
 
     suspend fun importArchive(input: SourceArchiveInput): VerifiedSourceArchive {
@@ -96,7 +96,7 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
 
     private suspend fun importUnshared(input: SourceArchiveInput): VerifiedSourceArchive =
         runInterruptible(Dispatchers.IO) { archives.importArchive(input) }.also { archive ->
-            importCount.incrementAndGet()
+            importCount.increment()
             synchronized(monitor) {
                 if (!closed) putBounded(importedArchives, archive.sha256, archive, MAX_CACHED_ARCHIVES)
             }
@@ -119,7 +119,7 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
                         cached
                     } else {
                         val source = materializeEntry(root.resolve("content"), archive, entryName, limits)
-                        entryCount.incrementAndGet()
+                        entryCount.increment()
                         synchronized(monitor) {
                             if (!closed) putBounded(entries, key, source, MAX_CACHED_ENTRIES)
                         }
@@ -137,7 +137,7 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
             permits.withPermit {
                 runInterruptible {
                     indexSourceArchive(archive, limits).also { index ->
-                        indexCount.incrementAndGet()
+                        indexCount.increment()
                         synchronized(monitor) {
                             if (!closed) putBounded(indexes, archive.sha256, index, MAX_CACHED_ARCHIVES)
                         }
@@ -171,9 +171,9 @@ class SourceContentStore(root: Path, private val limits: SourceStoreLimits = Sou
     }
 
     fun workCounts(): SourceStoreWorkCounts = SourceStoreWorkCounts(
-        archiveIndexes = indexCount.get(),
-        sourceMaterializations = entryCount.get(),
-        archiveImports = importCount.get(),
+        archiveIndexes = indexCount.value,
+        sourceMaterializations = entryCount.value,
+        archiveImports = importCount.value,
     )
 
     override fun close() {

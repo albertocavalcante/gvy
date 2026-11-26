@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.diagnostics
 
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
@@ -31,7 +32,6 @@ import org.eclipse.lsp4j.services.LanguageClient
 import java.io.IOException
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 
 /** Quiet period after the last edit before a debounced diagnostics run starts compiling. */
@@ -82,7 +82,7 @@ class DiagnosticsOrchestrator(
     }
 
     private val runs = ConcurrentHashMap<URI, Run>()
-    private val runIds = AtomicLong()
+    private val runIds = Counter()
 
     private val publicationLock = Any()
     private val configurationOwners = ConfigurationDiagnosticOwners()
@@ -139,7 +139,7 @@ class DiagnosticsOrchestrator(
     fun trigger(uri: URI, content: String, debounce: Boolean = false) {
         val buffer = documentProvider.getBuffer(uri) ?: return
         val captured = buffer.snapshot.takeIf { it.content == content } ?: return
-        val run = Run(uri, captured, runtime.value, runIds.incrementAndGet(), buffer.incarnation.analysisSessionId)
+        val run = Run(uri, captured, runtime.value, runIds.increment(), buffer.incarnation.analysisSessionId)
         // Register before starting; a fast completion must not leave a completed job in the active map.
         val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
             val currentJob = coroutineContext.job

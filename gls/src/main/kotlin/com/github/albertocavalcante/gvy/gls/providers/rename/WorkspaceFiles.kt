@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceScanner
 import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
@@ -16,7 +17,6 @@ import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.FileTime
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Identity of the file at [path]: its real path, resolved through the nearest existing ancestor when the file
@@ -222,36 +222,36 @@ internal class WorkspaceWalkCache(
     private val ttlMillis: Long = DEFAULT_TTL_MILLIS,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private class Entry(val key: Any, val at: Long, val generation: Int, val walked: Walked)
+    private class Entry(val key: Any, val at: Long, val generation: Long, val walked: Walked)
 
     private val entry = SharedValue<Entry?>(null)
-    private val generation = AtomicInteger()
-    private val walkCounter = AtomicInteger()
+    private val generation = Counter()
+    private val walkCounter = Counter()
 
     /** How many walks actually ran. */
-    val walks: Int get() = walkCounter.get()
+    val walks: Int get() = walkCounter.value.toInt()
 
     /** How many times the cache was invalidated. */
-    val invalidations: Int get() = generation.get()
+    val invalidations: Int get() = generation.value.toInt()
 
     fun get(key: Any, walk: () -> Walked): Walked {
         entry.value?.takeIf { isFresh(it, key) }?.let { return it.walked }
         // The generation is read before the walk and stored with it: an invalidation that lands at any later point,
         // even between the walk and the store, makes this entry stale on its first read.
-        val before = generation.get()
+        val before = generation.value
         val walked = walk()
-        walkCounter.incrementAndGet()
+        walkCounter.increment()
         entry.set(Entry(key, clock(), before, walked))
         return walked
     }
 
     fun invalidate() {
-        generation.incrementAndGet()
+        generation.increment()
         entry.set(null)
     }
 
     private fun isFresh(entry: Entry, key: Any): Boolean = entry.key == key &&
-        entry.generation == generation.get() &&
+        entry.generation == generation.value &&
         clock() - entry.at < ttlMillis &&
         directoriesUnchanged(entry)
 

@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.concurrent.Counter
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
@@ -15,8 +17,6 @@ import java.net.URI
 import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -72,11 +72,11 @@ class SemanticIndexer(
         val generation: AnalysisGeneration,
         private val finish: () -> Unit,
     ) : AutoCloseable {
-        private val closed = AtomicBoolean()
-        val isClosed: Boolean get() = closed.get()
+        private val closed = OnceFlag()
+        val isClosed: Boolean get() = closed.isSet
 
         override fun close() {
-            if (closed.compareAndSet(false, true)) finish()
+            if (closed.trySet()) finish()
         }
     }
 
@@ -91,7 +91,7 @@ class SemanticIndexer(
     private val publishedEntries = SharedValue(ConcurrentHashMap<URI, State>())
     private val entries: ConcurrentHashMap<URI, State> get() = publishedEntries.value
     private val swap = ReentrantReadWriteLock()
-    private val tickets = AtomicLong()
+    private val tickets = Counter()
 
     // Read under [swap]'s read lock and by [publish]'s lock-free pre-check, bumped under its write lock: see
     // [retireAllPublications]
@@ -107,7 +107,7 @@ class SemanticIndexer(
             )
             state to generation.value
         }
-        return Publication(uri, state, tickets.incrementAndGet(), began) {
+        return Publication(uri, state, tickets.increment(), began) {
             swap.read {
                 entries.computeIfPresent(uri) { _, current ->
                     if (current === state) {

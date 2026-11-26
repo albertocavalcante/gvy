@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
@@ -22,7 +23,6 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Service for indexing Groovy source files to extract symbols for resolution.
@@ -181,7 +181,7 @@ class SymbolIndexingService(
 
         logger.info { "Starting workspace indexing: ${uris.size} files" }
         val total = uris.size
-        val indexed = AtomicInteger(0)
+        val indexed = Counter()
 
         // Index files in parallel batches
         // NOTE: Batch size balances parallelism with resource usage
@@ -197,7 +197,7 @@ class SymbolIndexingService(
             }
         }
 
-        logger.info { "Workspace indexing complete: ${indexed.get()}/$total files indexed" }
+        logger.info { "Workspace indexing complete: ${indexed.value}/$total files indexed" }
     }
 
     /**
@@ -304,7 +304,7 @@ class SymbolIndexingService(
     @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
     private suspend fun indexFileWithProgress(
         uri: URI,
-        indexed: AtomicInteger,
+        indexed: Counter,
         total: Int,
         onProgress: (Int, Int) -> Unit,
     ) {
@@ -316,7 +316,7 @@ class SymbolIndexingService(
             // Catch all to prevent batch failure from stopping entire indexing
             logger.warn(e) { "Failed to index file: $uri" }
         } finally {
-            val currentCount = indexed.incrementAndGet()
+            val currentCount = indexed.increment().toInt()
             onProgress(currentCount, total)
         }
     }

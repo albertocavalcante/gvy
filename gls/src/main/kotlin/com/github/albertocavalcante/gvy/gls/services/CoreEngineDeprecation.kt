@@ -3,16 +3,16 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import io.github.oshai.kotlinlogging.KotlinLogging
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** One migration notice for a server's startup and subsequent configuration intake. */
 internal class CoreEngineDeprecation {
-    private val reported = AtomicBoolean(false)
+    private val reported = OnceFlag()
     private val logger = KotlinLogging.logger {}
 
     fun report(engine: String?) {
-        if (engine?.equals("core", ignoreCase = true) == true && reported.compareAndSet(false, true)) {
+        if (engine?.equals("core", ignoreCase = true) == true && reported.trySet()) {
             logger.warn {
                 "groovy.languageServer.engine=core is deprecated. " +
                     "Saved core values select native on startup or restart. " +

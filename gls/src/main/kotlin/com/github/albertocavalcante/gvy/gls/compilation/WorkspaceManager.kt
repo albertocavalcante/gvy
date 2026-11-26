@@ -23,7 +23,6 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 
@@ -65,7 +64,7 @@ class WorkspaceManager internal constructor(
 
     private val logger = KotlinLogging.logger {}
 
-    private val model = AtomicReference(emptyModel(null))
+    private val model = SharedValue(emptyModel(null))
 
     // Serializes writers; readers never take it.
     private val updateLock = Any()
@@ -74,7 +73,7 @@ class WorkspaceManager internal constructor(
     private val strategyRegistry = SharedValue<ProjectStrategyRegistry?>(null)
 
     /** The current workspace configuration: one consistent snapshot of root, classpath, roots and sources. */
-    fun current(): WorkspaceModel = model.get()
+    fun current(): WorkspaceModel = model.value
 
     /**
      * Sets the project strategy registry.
@@ -583,7 +582,7 @@ class WorkspaceManager internal constructor(
 
     /** Builds the next model outside any reader's view (including disk walks) and publishes it whole. */
     private inline fun update(next: (WorkspaceModel) -> WorkspaceModel) {
-        synchronized(updateLock) { model.set(next(model.get())) }
+        synchronized(updateLock) { model.set(next(model.value)) }
     }
 
     private fun model(
