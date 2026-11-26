@@ -25,7 +25,10 @@ internal data class CompiledDocumentSnapshot(
     var indexedDiscovery: IndexedDiscovery? = null
 }
 
-internal class IndexedDiscovery(val symbols: SymbolIndex, val parsed: ParseResult)
+/** A null parse here means the source was inspected and yielded no test AST. */
+internal class PreparedDiscovery(val parsed: ParseResult?)
+
+internal class IndexedDiscovery(val symbols: SymbolIndex, val structure: PreparedDiscovery)
 
 /** Result of acquiring source and parser facts under one ownership fence. */
 internal sealed interface SnapshotAcquisition {

@@ -26,11 +26,15 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
@@ -277,7 +281,12 @@ class GroovyCompilationService internal constructor(
             if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
             if (acquired !is SnapshotAcquisition.Available) return null
             val result = acquired.query { snapshot ->
-                extractDiscovery(source, publication, snapshot, extract)
+                val structure = discoveryStructure(source, snapshot) ?: return@query null
+                if (!currentCoroutineContext().inputsCurrent(acquired.isCurrent)) return@query null
+                if (snapshot.parseResult.ast != null) {
+                    publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                }
+                structure.parsed?.let(extract)
             }
             when (result) {
                 is SnapshotQuery.Answer -> result.value
@@ -287,17 +296,40 @@ class GroovyCompilationService internal constructor(
         }
     }
 
-    private suspend fun <T> extractDiscovery(
+    private fun installedDiscovery(uri: URI, snapshot: CompiledDocumentSnapshot): PreparedDiscovery? {
+        val indexed = snapshot.indexedDiscovery ?: return null
+        return indexed.structure.takeIf { indexed.symbols === symbolIndexer.getSymbolIndex(uri) }
+    }
+
+    private suspend fun discoveryStructure(
         source: SnapshotSource,
-        publication: SemanticIndexer.Publication,
         snapshot: CompiledDocumentSnapshot,
-        extract: (ParseResult) -> T,
-    ): T? {
-        val indexed = snapshot.indexedDiscovery
-        if (indexed != null && indexed.symbols === symbolIndexer.getSymbolIndex(source.uri)) {
-            publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
-            return extract(indexed.parsed)
+    ): PreparedDiscovery? {
+        installedDiscovery(source.uri, snapshot)?.let { return it }
+        val scope = source.dependencies.waiterScope
+        val pending = cacheService.discoveryJobs.register(source.uri, snapshot, source.ticket, { it === snapshot }) {
+            scope.async(start = CoroutineStart.LAZY) {
+                // Preserve the exact failure and suppressed cleanup errors across the deferred handoff.
+                runCatching { installedDiscovery(source.uri, snapshot) ?: prepareDiscovery(source, snapshot) }
+            }
         }
+        if (!ownership.inputsCurrent(source.ticket)) pending.retire()
+        pending.deferred.start()
+        val outcome = try {
+            pending.awaitUnlessRetired()
+        } catch (cancelled: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            if (!scope.isActive || !pending.retired.isCompleted) throw cancelled
+            null
+        }
+        currentCoroutineContext().ensureActive()
+        return outcome?.getOrThrow()
+    }
+
+    private suspend fun prepareDiscovery(
+        source: SnapshotSource,
+        snapshot: CompiledDocumentSnapshot,
+    ): PreparedDiscovery? {
         val parsed = snapshot.parseResult
         val recovered = if (parseAccessor.isSuspiciousScript(source.uri, parsed)) {
             checkNotNull(snapshot.referenceProducer).withCompilerInputs { worker, classpath ->
@@ -311,21 +343,21 @@ class GroovyCompilationService internal constructor(
         val unpublished = AutoCloseable { if (!retainedRecovery) recovered?.compilationUnit?.classLoader?.close() }
         return unpublished.use {
             val selected = recovered ?: parsed
+            val structure = PreparedDiscovery(selected.takeIf { it.ast != null })
             if (parsed.ast != null) {
-                if (!installDiscoverySymbols(source, snapshot, selected)) return null
-                retainedRecovery = recovered?.ast != null
-                publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+                if (!installDiscoverySymbols(source, snapshot, structure)) return null
+                retainedRecovery = recovered != null && structure.parsed === recovered
             }
-            extract(selected)
+            structure
         }
     }
 
     private suspend fun installDiscoverySymbols(
         source: SnapshotSource,
         snapshot: CompiledDocumentSnapshot,
-        selected: ParseResult,
+        structure: PreparedDiscovery,
     ): Boolean {
-        val forSymbols = if (selected.ast != null) selected else snapshot.parseResult
+        val forSymbols = structure.parsed ?: snapshot.parseResult
         val prepared = symbolIndexer.prepare(snapshot.sourceText, forSymbols.astModel)
         val caller = currentCoroutineContext()
         val producer = checkNotNull(snapshot.referenceProducer)
@@ -350,7 +382,9 @@ class GroovyCompilationService internal constructor(
                 caller.ensureActive()
                 if (ownership.inputsCurrent(ticket)) {
                     symbolIndexer.install(source.uri, prepared)
-                    if (selected === forSymbols) snapshot.indexedDiscovery = IndexedDiscovery(prepared.index, selected)
+                    if (structure.parsed != null) {
+                        snapshot.indexedDiscovery = IndexedDiscovery(prepared.index, structure)
+                    }
                     installed = true
                 }
             }
@@ -565,7 +599,7 @@ class GroovyCompilationService internal constructor(
      */
     fun onDocumentOpened(uri: URI) {
         var retired: RetiredCompilations? = null
-        ownership.retire(uri) { retired = cacheService.snapshotJobs.detach() }
+        ownership.retire(uri) { retired = cacheService.detachSnapshotJobs() }
         try {
             shadows.opened(uri)
         } finally {
@@ -595,7 +629,7 @@ class GroovyCompilationService internal constructor(
         val ticket = ownership.retireClosed(uri, isOpen) {
             val unchanged = disk != null && fingerprint != null &&
                 cacheService.getCachedWithContent(uri, fingerprint)?.first == disk
-            retired = if (unchanged) cacheService.snapshotJobs.detach() else cacheService.detach(uri)
+            retired = if (unchanged) cacheService.detachSnapshotJobs() else cacheService.detach(uri)
             semanticIndexer.retirePublications(uri)
         }
         // Woken after the fence, as [invalidateCache] does (#1429)
