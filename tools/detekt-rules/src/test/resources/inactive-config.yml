@@ -5,3 +5,5 @@ gvy:
   active: true
   RegexInFunctionBody:
     active: false
+  VolatileProperty:
+    active: false

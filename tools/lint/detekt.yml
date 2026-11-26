@@ -120,6 +120,19 @@ gvy:
     - '**/jenkins/src/**'
     - '**/parser/core/src/**'
     - '**/semantics/core/src/**'
+  VolatileProperty:
+    active: true
+    excludes:
+    # Modules that still have @Volatile fields, tests included. Remove a line in the same pull request that migrates
+    # that module; the rule then guards it. Never add a line here (or a baseline entry) for a clean module (#2474).
+    - '**/bsp/bsp-core/src/**'
+    - '**/bsp/maven-bsp/src/**'
+    - '**/build-tool/src/**'
+    - '**/gls/src/**'
+    - '**/jenkins/src/**'
+    - '**/jupyter/kernel-core/src/**'
+    - '**/tests/e2e/**'
+    - '**/viz/desktop/src/**'
 naming:
   active: true
   ClassNaming:

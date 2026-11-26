@@ -45,8 +45,7 @@ class RegexInFunctionBodyTest {
 
     private fun ruleFrom(resource: String): RegexInFunctionBody {
         val ruleSetConfig = yamlConfig(resource).subConfig("gvy")
-        val rule = GvyRuleSetProvider().instance(ruleSetConfig).rules.single()
-        return rule as RegexInFunctionBody
+        return GvyRuleSetProvider().instance(ruleSetConfig).rules.filterIsInstance<RegexInFunctionBody>().single()
     }
 
     @Test
@@ -64,9 +63,9 @@ class RegexInFunctionBodyTest {
     }
 
     @Test
-    fun `provider registers the rule under the gvy id`() {
+    fun `provider registers every rule under the gvy id`() {
         val ruleSet = GvyRuleSetProvider().instance(Config.empty)
         assertThat(ruleSet.id).isEqualTo("gvy")
-        assertThat(ruleSet.rules.map { it.ruleId }).containsExactly("RegexInFunctionBody")
+        assertThat(ruleSet.rules.map { it.ruleId }).containsExactly("RegexInFunctionBody", "VolatileProperty")
     }
 }
