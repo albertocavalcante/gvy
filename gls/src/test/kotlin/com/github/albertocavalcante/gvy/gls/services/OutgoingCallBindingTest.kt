@@ -248,7 +248,7 @@ class OutgoingCallBindingTest {
                 assertEquals(java.time.Instant::class.java, formal.typeClass)
                 val failure = assertFailsWith<MissingMethodException> { fixture.run() }
                 assertEquals("target", failure.method)
-                assertEquals(java.util.ArrayList::class.java, failure.arguments.single().javaClass)
+                assertEquals<Class<*>>(java.util.ArrayList::class.java, failure.arguments.single().javaClass)
             }
         }
 
