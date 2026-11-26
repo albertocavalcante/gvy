@@ -16,6 +16,7 @@ import com.github.groovylsp.bsp.model.BuildTargetCache
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.Closeable
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Main BSP session class that manages the lifecycle of a build server connection.
@@ -45,8 +46,9 @@ class BspSession(
 ) : Closeable {
     private val logger = KotlinLogging.logger {}
 
-    @Volatile
-    private var closed = false
+    // Claimed by the first close(), so racing closes run the cleanup once. This published module keeps
+    // java.util.concurrent rather than depending on :common:concurrent (#2474).
+    private val closed = AtomicBoolean(false)
 
     /**
      * Compile the specified build targets.
@@ -184,13 +186,16 @@ class BspSession(
     /**
      * Check if the session is still active.
      */
-    fun isActive(): Boolean = !closed && !connection.isClosed() && serverProcess.isAlive
+    fun isActive(): Boolean = !closed.get() && !connection.isClosed() && serverProcess.isAlive
 
+    /**
+     * Closes the connection and stops the server process. Only the first call cleans up; a concurrent or later call
+     * returns at once, without waiting for that cleanup to finish.
+     */
     override fun close() {
-        if (closed) return
+        if (!closed.compareAndSet(false, true)) return
 
         logger.info { "Closing BSP session" }
-        closed = true
         @Suppress("TooGenericExceptionCaught") // Cleanup resilience
         try {
             client.clearListeners()
@@ -204,7 +209,7 @@ class BspSession(
     }
 
     private fun ensureNotClosed() {
-        check(!closed) { "BspSession is closed" }
+        check(!closed.get()) { "BspSession is closed" }
         check(!connection.isClosed()) { "BuildServerConnection is closed" }
         check(serverProcess.isAlive) { "Build server process is not alive" }
     }

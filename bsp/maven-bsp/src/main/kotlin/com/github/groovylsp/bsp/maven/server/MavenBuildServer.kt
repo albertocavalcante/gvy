@@ -52,6 +52,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Maven Build Server Protocol implementation.
@@ -74,13 +76,13 @@ class MavenBuildServer(
     private var modules: List<MavenModuleInfo> = emptyList()
     private var client: BuildClient? = null
 
-    @Volatile
-    private var exitListener: (() -> Unit)? = null
+    // This published module keeps java.util.concurrent rather than depending on :common:concurrent (#2474).
+    private val exitListener = AtomicReference<(() -> Unit)?>(null)
+    private val shutdown = AtomicBoolean(false)
 
     /** True once `build/shutdown` was received; the standalone launcher maps it to the process exit code. */
-    @Volatile
-    var shutdownRequested: Boolean = false
-        private set
+    val shutdownRequested: Boolean
+        get() = shutdown.get()
 
     fun connect(client: BuildClient) {
         this.client = client
@@ -91,7 +93,7 @@ class MavenBuildServer(
      * the executable decides how and when to stop. A later call replaces the earlier listener.
      */
     fun onExit(listener: () -> Unit) {
-        exitListener = listener
+        exitListener.set(listener)
     }
 
     // === BSP Lifecycle ===
@@ -118,13 +120,13 @@ class MavenBuildServer(
 
     override fun buildShutdown(): CompletableFuture<Any> {
         logger.info { "Shutting down Maven BSP server" }
-        shutdownRequested = true
+        shutdown.set(true)
         return CompletableFuture.completedFuture(null)
     }
 
     override fun onBuildExit() {
         logger.info { "Maven BSP server exiting" }
-        exitListener?.invoke()
+        exitListener.get()?.invoke()
     }
 
     // === Workspace Operations ===

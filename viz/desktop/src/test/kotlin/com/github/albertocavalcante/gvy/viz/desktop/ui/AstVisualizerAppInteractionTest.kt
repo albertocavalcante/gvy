@@ -28,8 +28,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,24 +47,30 @@ class AstVisualizerAppInteractionTest {
         val opened = mutableListOf<String>()
         val saved = mutableListOf<String>()
 
-        @Volatile var allOnUiThread = true
+        // Threads other than the UI thread that opened a dialog or ran a UI dispatch. A queue only grows, so a racing
+        // call cannot erase a recorded violation the way a shared `allOnUiThread && ...` flag could.
+        val dialogsOffUiThread = ConcurrentLinkedQueue<String>()
         val uiDispatches = AtomicInteger()
-
-        @Volatile var allDispatchesOnUiThread = true
+        val dispatchesOffUiThread = ConcurrentLinkedQueue<String>()
 
         fun recordDispatch() {
-            allDispatchesOnUiThread = allDispatchesOnUiThread && Thread.currentThread() === uiThread
+            recordIfOffUiThread(dispatchesOffUiThread)
             uiDispatches.incrementAndGet()
         }
 
+        private fun recordIfOffUiThread(offenders: ConcurrentLinkedQueue<String>) {
+            val current = Thread.currentThread()
+            if (current !== uiThread) offenders.add(current.name)
+        }
+
         override fun openFile(initialDirectory: String): File? {
-            allOnUiThread = allOnUiThread && Thread.currentThread() === uiThread
+            recordIfOffUiThread(dialogsOffUiThread)
             opened.add(initialDirectory)
             return openResult
         }
 
         override fun saveFile(suggestedFileName: String): File? {
-            allOnUiThread = allOnUiThread && Thread.currentThread() === uiThread
+            recordIfOffUiThread(dialogsOffUiThread)
             saved.add(suggestedFileName)
             onSave()
             return saveResult
@@ -83,20 +91,19 @@ class AstVisualizerAppInteractionTest {
     private class Files : DesktopFileOperations {
         var contents = "class Original {}"
 
-        @Volatile var readFailure: String? = null
-
-        @Volatile var writeFailure: String? = null
+        val readFailure = AtomicReference<String?>(null)
+        val writeFailure = AtomicReference<String?>(null)
         val reads = Collections.synchronizedList(mutableListOf<File>())
         val writes = Collections.synchronizedList(mutableListOf<Pair<File, String>>())
 
         override suspend fun read(file: File): String {
             reads.add(file)
-            readFailure?.let { error(it) }
+            readFailure.get()?.let { error(it) }
             return contents
         }
 
         override suspend fun write(file: File, contents: String) {
-            writeFailure?.let { error(it) }
+            writeFailure.get()?.let { error(it) }
             writes.add(file to contents)
         }
     }
@@ -146,15 +153,18 @@ class AstVisualizerAppInteractionTest {
             assertEquals(selected.parent, model.lastDirectory)
         }
         runOnIdle {
-            files.readFailure = "read denied"
+            files.readFailure.set("read denied")
             dialogs.openResult = File("failed.groovy").absoluteFile
         }
         onNodeWithContentDescription("Browse").performSemanticsAction(SemanticsActions.OnClick) { it() }
         waitUntil(timeoutMillis = 10_000) { !model.isParsing && model.parseErrors.isNotEmpty() }
         onNodeWithText("Failed to load file: read denied", substring = true).assertExists()
-        assertTrue(dialogs.allOnUiThread)
+        assertTrue(dialogs.dialogsOffUiThread.isEmpty(), "Dialogs off the UI thread: ${dialogs.dialogsOffUiThread}")
         assertTrue(dialogs.uiDispatches.get() > 0)
-        assertTrue(dialogs.allDispatchesOnUiThread)
+        assertTrue(
+            dialogs.dispatchesOffUiThread.isEmpty(),
+            "UI dispatches off the UI thread: ${dialogs.dispatchesOffUiThread}",
+        )
     }
 
     @Test
@@ -190,7 +200,7 @@ class AstVisualizerAppInteractionTest {
         onNodeWithText("Saved result.json").assertExists()
         waitUntil(timeoutMillis = 10_000) { !model.isParsing && model.astTree != null }
         runOnIdle {
-            files.writeFailure = "disk full"
+            files.writeFailure.set("disk full")
             dialogs.saveResult = File("broken.json").absoluteFile
             dialogs.onSave = {}
         }
@@ -201,9 +211,12 @@ class AstVisualizerAppInteractionTest {
         }
         onNodeWithText("Failed to save broken.json: disk full").assertExists()
         assertEquals(listOf("ast.json", "ast.json", "ast.json"), dialogs.saved)
-        assertTrue(dialogs.allOnUiThread)
+        assertTrue(dialogs.dialogsOffUiThread.isEmpty(), "Dialogs off the UI thread: ${dialogs.dialogsOffUiThread}")
         assertTrue(dialogs.uiDispatches.get() > 0)
-        assertTrue(dialogs.allDispatchesOnUiThread)
+        assertTrue(
+            dialogs.dispatchesOffUiThread.isEmpty(),
+            "UI dispatches off the UI thread: ${dialogs.dispatchesOffUiThread}",
+        )
     }
 
     @Test
@@ -232,7 +245,7 @@ class AstVisualizerAppInteractionTest {
         assertTrue(files.writes.single().second.contains("digraph"))
         onNodeWithText("Saved result.dot").assertExists()
         runOnIdle {
-            files.writeFailure = "disk full"
+            files.writeFailure.set("disk full")
             dialogs.saveResult = File("broken.dot").absoluteFile
         }
         onNodeWithText("Export").performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -242,9 +255,12 @@ class AstVisualizerAppInteractionTest {
         }
         onNodeWithText("Failed to save broken.dot: disk full").assertExists()
         assertEquals(listOf("ast.dot", "ast.dot", "ast.dot"), dialogs.saved)
-        assertTrue(dialogs.allOnUiThread)
+        assertTrue(dialogs.dialogsOffUiThread.isEmpty(), "Dialogs off the UI thread: ${dialogs.dialogsOffUiThread}")
         assertTrue(dialogs.uiDispatches.get() > 0)
-        assertTrue(dialogs.allDispatchesOnUiThread)
+        assertTrue(
+            dialogs.dispatchesOffUiThread.isEmpty(),
+            "UI dispatches off the UI thread: ${dialogs.dispatchesOffUiThread}",
+        )
     }
 
     @Test

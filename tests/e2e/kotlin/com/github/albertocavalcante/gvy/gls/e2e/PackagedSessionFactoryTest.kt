@@ -1020,17 +1020,16 @@ class PackagedSessionFactoryTest {
         private val stdout = ByteArrayInputStream(byteArrayOf())
         private val stdin = ByteArrayOutputStream()
 
-        @Volatile
-        private var alive = true
+        private val destroyed = AtomicBoolean(false)
         override fun getInputStream(): InputStream = stdout
         override fun getOutputStream(): OutputStream = stdin
         override fun getErrorStream(): InputStream = observedStderr
-        override fun isAlive(): Boolean = alive
+        override fun isAlive(): Boolean = !destroyed.get()
         override fun exitValue(): Int = 0
         override fun waitFor(): Int = 0
-        override fun waitFor(timeout: Long, unit: TimeUnit): Boolean = !alive
+        override fun waitFor(timeout: Long, unit: TimeUnit): Boolean = destroyed.get()
         override fun destroy() {
-            alive = false
+            destroyed.set(true)
             onDestroy()
         }
     }
