@@ -69,11 +69,7 @@ class ReferenceRetentionOrderingTest {
                 assertNotNull(weak.ast)
                 assertTrue(weak.outcome.isDegraded)
                 val kept = assertNotNull(index.getDocument(uri))
-                when (window) {
-                    Window.CURRENT -> assertSame(original, kept, "The newer disk request must keep the original")
-                    Window.RETIRED -> assertNotSame(original, kept)
-                    Window.REPLACED -> assertSame(replacement, kept)
-                }
+                RetentionExpectations.verify(window, original, replacement, kept)
                 work.late.release()
                 val completed = late.await()
                 assertTrue(completed.isSuccess)
@@ -89,6 +85,54 @@ class ReferenceRetentionOrderingTest {
                 }
             } finally {
                 work.verifying.release()
+                work.late.release()
+                compilation.shutdown()
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Window::class)
+    fun `same mode disk replay settles its ticket before a late different text`(window: Window, @TempDir root: Path) {
+        val text = "class Subject { void current() {} }"
+        val path = Files.writeString(root.resolve("Subject.groovy"), text)
+        val uri = path.toUri()
+        val work = ObservedWork(uri, window)
+        val compilation = GroovyCompilationService(workerSessionDecorator = work::decorate)
+        val index = assertNotNull(compilation.getWorkspaceSymbolIndex())
+        runBlocking {
+            try {
+                compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
+                compilation.refreshClosedReferences(path, ParseMode.WORKSPACE)
+                val original = assertNotNull(index.getDocument(uri))
+                assertWorkspaceCoverage(compilation, uri, original)
+                val late = async(Dispatchers.IO) { compilation.compile(uri, LATE) }
+                work.late.awaitEntry()
+                if (window == Window.RETIRED) {
+                    assertNotNull(compilation.onClosedSourceChanged(uri, keepIfUnchanged = false))
+                }
+                compilation.refreshClosedReferences(path, ParseMode.WORKSPACE)
+                val replay = assertNotNull(index.getDocument(uri))
+                if (window == Window.RETIRED) assertNotSame(original, replay) else assertSame(original, replay)
+                assertEquals(Phases.CANONICALIZATION, compilation.semanticPhaseOf(uri))
+                assertWorkspaceCoverage(compilation, uri, replay)
+                val expected = if (window == Window.REPLACED) {
+                    Files.writeString(path, NEWEST)
+                    compilation.refreshClosedReferences(path, ParseMode.WORKSPACE)
+                    assertNotNull(index.getDocument(uri)).also { assertNotSame(replay, it) }
+                } else {
+                    replay
+                }
+
+                work.late.release()
+                val completed = late.await()
+                assertTrue(completed.isSuccess)
+                assertEquals(LATE, completed.sourceText)
+                val delivered = assertNotNull(index.getDocumentSnapshot(uri))
+                assertSame(expected, delivered.document, "The older text displaced a newer same-mode replay")
+                assertEquals(if (window == Window.REPLACED) NEWEST else text, delivered.sourceText)
+                assertWorkspaceCoverage(compilation, uri, expected)
+            } finally {
                 work.late.release()
                 compilation.shutdown()
             }
@@ -174,5 +218,21 @@ class ReferenceRetentionOrderingTest {
         const val DISK = "class Subject extends AuxiliaryBase { void current() {} }"
         const val LATE = "class Subject { void obsolete() {} }"
         const val NEWEST = "class Subject { void latest() {} }"
+    }
+}
+
+private object RetentionExpectations {
+    fun verify(
+        window: ReferenceRetentionOrderingTest.Window,
+        original: SemanticDocument,
+        replacement: SemanticDocument?,
+        kept: SemanticDocument,
+    ) {
+        when (window) {
+            ReferenceRetentionOrderingTest.Window.CURRENT ->
+                assertSame(original, kept, "The newer disk request must keep the original")
+            ReferenceRetentionOrderingTest.Window.RETIRED -> assertNotSame(original, kept)
+            ReferenceRetentionOrderingTest.Window.REPLACED -> assertSame(replacement, kept)
+        }
     }
 }

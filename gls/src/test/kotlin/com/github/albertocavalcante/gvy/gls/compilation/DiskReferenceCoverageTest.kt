@@ -5,22 +5,38 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
+import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
+import com.github.albertocavalcante.nativeapi.ParseMode
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
+import org.eclipse.lsp4j.CallHierarchyPrepareParams
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class DiskReferenceCoverageTest {
     @Test
@@ -47,18 +63,54 @@ class DiskReferenceCoverageTest {
         runBlocking {
             val origin = root.resolve("Origin.groovy").toUri()
             val other = root.resolve("Other.groovy")
-            val otherSource = "class Other {}"
+            val otherSource = "class Other { void caller(Origin origin) { origin.target() } }"
             Files.writeString(other, otherSource)
-            val source = "class Origin {}"
+            val source = "class Origin { void target() {} }"
             val documents = DocumentProvider().apply { put(origin, source) }
             val compilation = GroovyCompilationService(documentProvider = documents)
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             try {
                 compilation.compile(origin, source)
                 // Supplied text alone proves nothing about the current disk file.
                 compilation.compile(other.toUri(), otherSource)
                 val answer = compilation.referenceReadiness(origin).query { it.index.visibleDocuments }
                 assertIs<SnapshotQuery.Failure>(answer)
+                val index = assertNotNull(compilation.getWorkspaceSymbolIndex())
+                val supplied = assertNotNull(index.getDocument(other.toUri()))
+                val dependencies = compilation.captureSnapshotSource(other.toUri()).dependencies
+                val indexer = assertNotNull(dependencies.semanticIndexer)
+                val previous = assertNotNull(indexer.currentReferencePublication(other.toUri()))
+                assertSame(supplied, previous.document)
+                assertFalse(previous.diskConfirmed)
+                assertTrue(assertNotNull(previous.producer).complete)
+                assertEquals(Phases.CANONICALIZATION, previous.phase)
+                compilation.refreshClosedReferences(other, ParseMode.WORKSPACE)
+                val qualified = compilation.referenceReadiness(origin).query { facts ->
+                    assertEquals(ParseMode.WORKSPACE, facts.modeFor(other.toUri()))
+                    facts.index.getDocumentSnapshot(other.toUri())?.document
+                }
+                assertSame(supplied, assertIs<SnapshotQuery.Answer<*>>(qualified).value)
+
+                val service = GroovyTextDocumentService(
+                    scope,
+                    compilation,
+                    GroovyTextDocumentServiceOptions(documentProvider = documents),
+                )
+                val item = service.prepareCallHierarchy(
+                    CallHierarchyPrepareParams(
+                        TextDocumentIdentifier(origin.toString()),
+                        Position(0, source.indexOf("target")),
+                    ),
+                ).get(10, TimeUnit.SECONDS).single()
+                val incoming = service.callHierarchyIncomingCalls(CallHierarchyIncomingCallsParams(item))
+                    .get(10, TimeUnit.SECONDS).single()
+                assertEquals(other.toUri().toString(), incoming.from.uri)
+                assertEquals("caller", incoming.from.name)
+                val start = otherSource.indexOf("target")
+                val range = Range(Position(0, start), Position(0, start + "target".length))
+                assertEquals(listOf(range), incoming.fromRanges)
             } finally {
+                scope.cancel()
                 compilation.shutdown()
             }
         }
