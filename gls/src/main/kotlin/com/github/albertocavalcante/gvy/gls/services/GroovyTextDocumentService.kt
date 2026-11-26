@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
@@ -140,8 +141,7 @@ class GroovyTextDocumentService(
     options: GroovyTextDocumentServiceOptions = GroovyTextDocumentServiceOptions(),
 ) : TextDocumentService {
 
-    @Volatile
-    private var serverConfiguration: ServerConfiguration = options.serverConfiguration
+    private val serverConfiguration = SharedValue(options.serverConfiguration)
 
     init {
         compilationService.updateServerConfiguration(options.serverConfiguration)
@@ -155,22 +155,17 @@ class GroovyTextDocumentService(
     private val codeNarcRulesetResolverFactory = options.codeNarcRulesetResolverFactory
 
     /** The resolver behind the current CodeNarc provider, so [reloadCodeNarcRulesets] can clear its caches. */
-    @Volatile
-    private var codeNarcRulesetResolver: HierarchicalRulesetResolver? = null
+    private val codeNarcRulesetResolver = SharedValue<HierarchicalRulesetResolver?>(null)
 
-    @Volatile
-    private var definitionLinkSupport: Boolean = options.definitionLinkSupport
+    private val definitionLinkSupport = SharedValue(options.definitionLinkSupport)
 
     // Read once from the client's initialize capabilities; see updateLabelDetailsSupport.
-    @Volatile
-    private var labelDetailsSupport: Boolean = false
+    private val labelDetailsSupport = SharedValue(false)
 
-    @Volatile
-    private var snippetSupport: Boolean = false
+    private val snippetSupport = SharedValue(false)
 
     // LSP: a client that does not say it renders `DocumentSymbol` trees gets flat `SymbolInformation`.
-    @Volatile
-    private var hierarchicalDocumentSymbolSupport: Boolean = false
+    private val hierarchicalDocumentSymbolSupport = SharedValue(false)
 
     private val logger = KotlinLogging.logger {}
 
@@ -178,15 +173,14 @@ class GroovyTextDocumentService(
     private val renameDiskText = WorkspaceTextCache()
     internal val renameWalks = WorkspaceWalkCache()
 
-    @Volatile
-    private var workspaceFolders: List<Path> = emptyList()
+    private val workspaceFolders = SharedValue<List<Path>>(emptyList())
 
     /**
      * Folders the client opened. The server does not declare workspace-folder change support, so these are fixed
      * at initialize; rename checks every one of them for other uses of a symbol, not just the first.
      */
     fun updateWorkspaceFolders(folders: List<Path>) {
-        workspaceFolders = folders
+        workspaceFolders.set(folders)
         renameWalks.invalidate()
     }
 
@@ -195,27 +189,27 @@ class GroovyTextDocumentService(
 
     /** Whether the client renders `CompletionItem.labelDetails` (LSP 3.17), from its initialize capabilities. */
     fun updateLabelDetailsSupport(supported: Boolean) {
-        labelDetailsSupport = supported
+        labelDetailsSupport.set(supported)
     }
 
     /** Whether the client renders nested `DocumentSymbol`s, from its initialize capabilities. */
     fun updateHierarchicalDocumentSymbolSupport(supported: Boolean) {
-        hierarchicalDocumentSymbolSupport = supported
+        hierarchicalDocumentSymbolSupport.set(supported)
     }
 
     fun updateSnippetSupport(supported: Boolean) {
-        snippetSupport = supported
+        snippetSupport.set(supported)
     }
 
     fun updateDefinitionLinkSupport(supported: Boolean) {
-        definitionLinkSupport = supported
+        definitionLinkSupport.set(supported)
         logger.info { "Definition link support set to $supported" }
     }
 
     // Initialization and configuration changes share this monitor so a newly initialized
     // orchestrator cannot retain a configuration superseded while it was being constructed.
     private val diagnosticsOrchestratorDelegate = lazy(this) {
-        val configuration = serverConfiguration
+        val configuration = serverConfiguration.value
         DiagnosticsOrchestrator(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
@@ -230,7 +224,7 @@ class GroovyTextDocumentService(
 
     @Synchronized
     fun updateConfiguration(configuration: ServerConfiguration) {
-        serverConfiguration = configuration
+        serverConfiguration.set(configuration)
         compilationService.updateServerConfiguration(configuration)
         if (diagnosticsOrchestratorDelegate.isInitialized()) {
             diagnosticsOrchestrator.updateConfiguration(configuration, createDiagnosticsService(configuration))
@@ -252,7 +246,7 @@ class GroovyTextDocumentService(
                 workspaceContext,
                 // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
                 rulesetResolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
-                    .also { codeNarcRulesetResolver = it },
+                    .also { codeNarcRulesetResolver.set(it) },
             )
             val codeNarcAdapter = DiagnosticProviderAdapter(
                 delegate = codeNarcProvider,
@@ -347,7 +341,7 @@ class GroovyTextDocumentService(
             compilationService = compilationService,
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
-            definitionLinkSupport = { definitionLinkSupport },
+            definitionLinkSupport = { definitionLinkSupport.value },
             clientTelemetry = { event -> client()?.telemetryEvent(event) },
         )
     }
@@ -477,7 +471,7 @@ class GroovyTextDocumentService(
      */
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
         // One immutable configuration applies throughout this request.
-        val configuration = serverConfiguration
+        val configuration = serverConfiguration.value
         val diagnosticsService = createDiagnosticsService(configuration)
         val result = compilationService.compile(uri, content)
         val parserEnabled = configuration.diagnosticConfig.isProviderEnabled(
@@ -515,7 +509,7 @@ class GroovyTextDocumentService(
             )
 
             logger.debug { "Returning ${completions.size} completions" }
-            Either.forLeft(completions.forClient(labelDetailsSupport, snippetSupport))
+            Either.forLeft(completions.forClient(labelDetailsSupport.value, snippetSupport.value))
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
@@ -603,7 +597,7 @@ class GroovyTextDocumentService(
             val source = compilationService.captureSnapshotSource(uri)
             Triple(uriText, source, documentProvider.getSnapshot(uri))
         }
-        val hierarchical = hierarchicalDocumentSymbolSupport
+        val hierarchical = hierarchicalDocumentSymbolSupport.value
         return coroutineScope.future {
             val (uriText, source, original) = request.getOrThrow()
             val uri = source.uri
@@ -651,7 +645,7 @@ class GroovyTextDocumentService(
             compilationService,
             documentProvider,
             renameDiskText,
-            extraRoots = { workspaceFolders },
+            extraRoots = { workspaceFolders.value },
             walks = renameWalks,
         )
             .providePrepareRename(params.textDocument.uri, params.position)
@@ -670,7 +664,7 @@ class GroovyTextDocumentService(
                 compilationService,
                 documentProvider,
                 renameDiskText,
-                extraRoots = { workspaceFolders },
+                extraRoots = { workspaceFolders.value },
                 walks = renameWalks,
             )
             renameProvider.provideRename(
@@ -856,7 +850,7 @@ class GroovyTextDocumentService(
     fun reloadCodeNarcRulesets() {
         logger.info { "CodeNarc ruleset reload requested" }
         // Clears the cached project detection and default rulesets; workspace ruleset files are read per analysis.
-        codeNarcRulesetResolver?.reloadRulesets()
+        codeNarcRulesetResolver.value?.reloadRulesets()
         diagnosticsOrchestrator.invalidateWorkspaceConfiguration()
     }
 

@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.documentation
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -80,30 +81,30 @@ class DocumentationProvider(private val documentProvider: DocumentProvider) {
 
     companion object {
         // Shared instance for use across the application
-        @Volatile
-        private var instance: DocumentationProvider? = null
+        private val instance = SharedValue<DocumentationProvider?>(null)
 
         /**
          * Get or create a shared DocumentationProvider instance.
          * This ensures cache invalidation works across all hover requests.
          */
-        fun getInstance(documentProvider: DocumentProvider): DocumentationProvider = instance ?: synchronized(this) {
-            instance ?: DocumentationProvider(documentProvider).also { instance = it }
-        }
+        fun getInstance(documentProvider: DocumentProvider): DocumentationProvider =
+            instance.value ?: synchronized(this) {
+                instance.value ?: DocumentationProvider(documentProvider).also { instance.set(it) }
+            }
 
         /**
          * Clear cache for a document across the shared instance.
          * Call this when a document changes.
          */
         fun invalidateDocument(documentUri: URI) {
-            instance?.clearCache(documentUri)
+            instance.value?.clearCache(documentUri)
         }
 
         /**
          * Reset the singleton instance. Useful for testing.
          */
         fun reset() {
-            instance = null
+            instance.set(null)
         }
     }
 }

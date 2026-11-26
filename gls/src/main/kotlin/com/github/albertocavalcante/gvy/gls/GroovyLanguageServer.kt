@@ -9,6 +9,8 @@ import com.github.albertocavalcante.gvy.build.bsp.BspBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
@@ -125,10 +127,11 @@ class GroovyLanguageServer(
         Thread({ handleParentExit() }, "gls-parent-exit").apply { isDaemon = true }.start()
     }
 
+    private val shutdown = OnceFlag()
+
     /** True once the client has requested `shutdown` (or the parent died and we shut down). */
-    @Volatile
-    internal var shutdownRequested = false
-        private set
+    internal val shutdownRequested: Boolean
+        get() = shutdown.isSet
 
     private fun handleParentExit() {
         // shutdown() is idempotent, so a prior client-requested shutdown is not repeated.
@@ -236,8 +239,7 @@ class GroovyLanguageServer(
     )
 
     // State
-    @Volatile
-    private var implementationRequestsReady = false
+    private val implementationRequestsReady = SharedValue(false)
     private var savedInitParams: InitializeParams? = null
     private var clientCapabilities: ClientCapabilities? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
@@ -282,7 +284,7 @@ class GroovyLanguageServer(
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
-        implementationRequestsReady = false
+        implementationRequestsReady.set(false)
         logger.info { "Initializing Groovy Language Server..." }
         logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
@@ -314,7 +316,7 @@ class GroovyLanguageServer(
 
         initializeResult.capabilities.experimental = mapOf("groovyDocumentAnalysis" to true)
 
-        implementationRequestsReady = true
+        implementationRequestsReady.set(true)
         logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
@@ -367,7 +369,7 @@ class GroovyLanguageServer(
      * its future cannot cancel the run or disturb another caller (including the parent watchdog).
      */
     override fun shutdown(): CompletableFuture<Any?> {
-        shutdownRequested = true
+        shutdown.trySet() // One-way; shutdown() is idempotent.
         return shutdownRun.copy()
     }
 
@@ -467,7 +469,7 @@ class GroovyLanguageServer(
 
     private fun customRequestLifecycleError(): ResponseError? = when {
         shutdownRequested -> ResponseError(ResponseErrorCode.InvalidRequest, "Server is shutting down", null)
-        !implementationRequestsReady ->
+        !implementationRequestsReady.value ->
             ResponseError(ResponseErrorCode.ServerNotInitialized, "Server is not initialized", null)
         else -> null
     }
