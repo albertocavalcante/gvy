@@ -48,6 +48,9 @@ internal class PendingDelivery(private val uri: URI) {
     private var enrollmentClosed = false
     private var undelivered: Closeable? = null
 
+    val enrolledWaiters: Int
+        @Synchronized get() = waiters
+
     /** Called under the registry's URI lock; only increments the reservation count. */
     @Synchronized
     fun enroll() {
@@ -217,7 +220,8 @@ internal class SnapshotAcquirer(
     suspend fun acquire(uri: URI, phase: Int, mode: ParseMode?): SnapshotAcquisition =
         whileCallerActive { acquireCurrent(capture(uri), phase, mode) }
 
-    fun capture(uri: URI): SnapshotSource = SnapshotSource(dependencies, uri)
+    fun capture(uri: URI, ticket: ArtifactOwnership.Ticket = cache.ownership.begin(uri)): SnapshotSource =
+        SnapshotSource(dependencies, uri, ticket)
 
     /** Retry only an unchanged open source after a real worker replacement, using a wholly fresh producer. */
     fun captureWorkerReplacement(original: SnapshotSource): SnapshotSource? {
@@ -242,10 +246,7 @@ internal class SnapshotAcquirer(
         if (!source.isCurrent()) return SnapshotAcquisition.Stale
         val content = try {
             source.buffer?.snapshot?.content ?: UriPathConverter.toPath(source.uri)?.let { path ->
-                withContext(dependencies.ioDispatcher) {
-                    val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
-                    if (attributes.isRegularFile) Files.readString(path) else null
-                }
+                withContext(dependencies.ioDispatcher) { readRegularSnapshotSource(path) }
             }
         } catch (_: NoSuchFileException) {
             null
@@ -350,4 +351,9 @@ internal class SnapshotAcquirer(
 
     private fun failure(capture: CapturedCompilation, error: Exception): SnapshotAcquisition =
         if (capture.isCurrent()) SnapshotAcquisition.Failure(error) else SnapshotAcquisition.Stale
+}
+
+internal fun readRegularSnapshotSource(path: Path): String? {
+    val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+    return if (attributes.isRegularFile) Files.readString(path) else null
 }

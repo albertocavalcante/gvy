@@ -42,7 +42,9 @@ class PackagedEditorInventoryTest {
             val origin = workspace.resolve("Implementation.groovy")
             val first = prepare(session, origin)
             val failure = assertFailsWith<ExecutionException> {
-                session.server.textDocumentService.callHierarchyIncomingCalls(CallHierarchyIncomingCallsParams(first)).await()
+                session.server.textDocumentService.callHierarchyIncomingCalls(
+                    CallHierarchyIncomingCallsParams(first),
+                ).await()
             }
             val response = assertIs<ResponseErrorException>(failure.cause).responseError
             assertEquals(ResponseErrorCode.RequestFailed.value, response.code)
@@ -113,11 +115,17 @@ class PackagedEditorInventoryTest {
         }
     }
 
-    private fun openGroovyFixtures(session: LanguageServerSession, workspace: Path): List<Path> =
-        listOf("Implementation", "CodeNarcRanges", "SemanticTokens", "FoldingRanges", "SelectionRanges",
-            "ScriptClassLiterals", "ImportedAliases").map { name ->
-            workspace.resolve("$name.groovy").also { openAnalyzed(session, it, "groovy") }
-        }
+    private fun openGroovyFixtures(session: LanguageServerSession, workspace: Path): List<Path> = listOf(
+        "Implementation",
+        "CodeNarcRanges",
+        "SemanticTokens",
+        "FoldingRanges",
+        "SelectionRanges",
+        "ScriptClassLiterals",
+        "ImportedAliases",
+    ).map { name ->
+        workspace.resolve("$name.groovy").also { openAnalyzed(session, it, "groovy") }
+    }
 
     private fun openAnalyzed(session: LanguageServerSession, path: Path, language: String) {
         val uri = path.toUri().toString()

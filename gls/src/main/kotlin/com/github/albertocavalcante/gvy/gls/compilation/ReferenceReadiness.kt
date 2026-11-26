@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -46,21 +47,26 @@ internal class ReferenceReadiness(
                     compilation.ensureCompiled(uri, buffer)
                 }
             }
-            for (path in source.workspace.sources) {
-                ensureActive()
-                if (!inputsCurrent()) return@withTimeoutOrNull
-                val uri = path.toUri()
-                if (uri in source.documents || uri in hidden) continue
-                val publication = currentPublication(uri) ?: continue
-                val producer = publication.producer ?: continue
-                val mode = producer.mode ?: continue
-                if (publication.diskConfirmed &&
-                    !producer.ownsWindow(source.workspace, source.ticket, source.inventory.identity)
-                ) {
-                    compilation.refreshClosedReferences(path, mode)
-                }
-            }
+            refreshClosedSources(compilation)
         }
+    }
+
+    private suspend fun refreshClosedSources(compilation: GroovyCompilationService) {
+        for (path in source.workspace.sources) {
+            currentCoroutineContext().ensureActive()
+            if (!inputsCurrent()) return
+            val mode = retiredDiskMode(path.toUri())
+            if (mode != null) compilation.refreshClosedReferences(path, mode)
+        }
+    }
+
+    private fun retiredDiskMode(uri: URI): ParseMode? {
+        if (uri in source.documents || uri in hidden) return null
+        val publication = currentPublication(uri) ?: return null
+        return publication.producer?.takeIf { producer ->
+            publication.diskConfirmed &&
+                !producer.ownsWindow(source.workspace, source.ticket, source.inventory.identity)
+        }?.mode
     }
 
     suspend fun <T> query(compute: suspend (QualifiedReferences) -> T): SnapshotQuery<T> {

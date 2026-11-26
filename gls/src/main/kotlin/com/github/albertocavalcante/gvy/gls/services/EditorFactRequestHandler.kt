@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
+import com.github.albertocavalcante.gvy.gls.compilation.queryCurrentSnapshot
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighlightProvider
 import com.google.gson.JsonPrimitive
@@ -84,8 +85,14 @@ internal class EditorFactRequestHandler(
         }
         return coroutineScope.future {
             val (captured, readiness) = request.getOrThrow()
-            if (!readiness.inputsCurrent()) throw contentModified()
-            incomingCalls(captured.source.uri, captured.position, captured.identity, readiness)
+            val uri = captured.source.uri
+            val result = queryCurrentSnapshot(captured.source::isCurrent) {
+                incomingCalls(uri, captured.position, captured.identity, readiness)
+            }
+            when (result) {
+                is SnapshotQuery.Answer -> result.value
+                else -> throw queryError(uri, result)
+            }
         }
     }
 

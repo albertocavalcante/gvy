@@ -248,7 +248,26 @@ class GroovyCompilationService internal constructor(
         referenceReadiness(orchestrator.snapshots.referenceSource(uri))
 
     internal suspend fun refreshClosedReferences(path: Path, mode: ParseMode) {
-        orchestrator.compileFromDisk(path, path.toUri(), mode)
+        val uri = path.toUri()
+        // Enroll the semantic write before resolving the disk source. A close, reopen or watcher may retire it.
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
+        publication.use {
+            val source = orchestrator.snapshots.capture(uri, ticket)
+            if (source.buffer != null) return
+            val acquired = orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, mode)
+            if (acquired is SnapshotAcquisition.Failure) throw acquired.cause
+            if (acquired !is SnapshotAcquisition.Ready) return
+            acquired.query { snapshot ->
+                val parsed = snapshot.parseResult
+                semanticIndexer.publish(
+                    publication,
+                    snapshot.sourceText,
+                    checkNotNull(parsed.ast),
+                    parsed.outcome.achievedPhase,
+                    SemanticPublicationSource(fromBuffer = false, producer = checkNotNull(snapshot.referenceProducer)),
+                )
+            }
+        }
     }
 
     internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(
