@@ -70,6 +70,7 @@ class HeldReferenceCoverageTest {
         private val targetText = "class Target { def work() {} }"
         private val callerText = "class Caller { def run(Target x) { x.work() } }"
         private val healthyRequests = ConcurrentHashMap<URI, ParseRequest>()
+
         @Volatile private var recover: URI? = null
         private val documents = DocumentProvider().apply {
             put(target, targetText)

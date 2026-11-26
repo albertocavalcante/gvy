@@ -64,41 +64,40 @@ class DiskReferenceCoverageTest {
         }
 
     @Test
-    fun `only a current disk refresh can restore retired coverage`(@TempDir root: Path): Unit =
-        runBlocking {
-            val origin = root.resolve("Origin.groovy").toUri()
-            val other = root.resolve("Other.groovy")
-            val diskSource = "class Other {}"
-            Files.writeString(other, diskSource)
-            val source = "class Origin {}"
-            val documents = DocumentProvider().apply { put(origin, source) }
-            val compilation = GroovyCompilationService(documentProvider = documents)
-            try {
-                compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
-                compilation.compile(origin, source)
-                val workspace = compilation.getWorkspaceCompiler()
-                workspace.compileWorkspace()
-                suspend fun query(): SnapshotQuery<Set<URI>> {
-                    val readiness = compilation.referenceReadiness(origin)
-                    readiness.prepareOpenSources(compilation)
-                    return readiness.query { it.index.visibleDocuments }
-                }
-                assertIs<SnapshotQuery.Answer<*>>(query())
-
-                val uri = other.toUri()
-                val oldRead = assertNotNull(compilation.onClosedSourceChanged(uri, keepIfUnchanged = false))
-                compilation.onClosedSourceChanged(uri, keepIfUnchanged = false)
-                assertNull(workspace.confirmDiskSource(oldRead, diskSource))
-                assertIs<SnapshotQuery.Failure>(query())
-
-                compilation.refreshSemanticFromDisk(listOf(uri))
-                assertIs<SnapshotQuery.Answer<*>>(query())
-                Files.delete(other)
-                assertIs<SnapshotQuery.Failure>(query())
-            } finally {
-                compilation.shutdown()
+    fun `only a current disk refresh can restore retired coverage`(@TempDir root: Path): Unit = runBlocking {
+        val origin = root.resolve("Origin.groovy").toUri()
+        val other = root.resolve("Other.groovy")
+        val diskSource = "class Other {}"
+        Files.writeString(other, diskSource)
+        val source = "class Origin {}"
+        val documents = DocumentProvider().apply { put(origin, source) }
+        val compilation = GroovyCompilationService(documentProvider = documents)
+        try {
+            compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
+            compilation.compile(origin, source)
+            val workspace = compilation.getWorkspaceCompiler()
+            workspace.compileWorkspace()
+            suspend fun query(): SnapshotQuery<Set<URI>> {
+                val readiness = compilation.referenceReadiness(origin)
+                readiness.prepareOpenSources(compilation)
+                return readiness.query { it.index.visibleDocuments }
             }
+            assertIs<SnapshotQuery.Answer<*>>(query())
+
+            val uri = other.toUri()
+            val oldRead = assertNotNull(compilation.onClosedSourceChanged(uri, keepIfUnchanged = false))
+            compilation.onClosedSourceChanged(uri, keepIfUnchanged = false)
+            assertNull(workspace.confirmDiskSource(oldRead, diskSource))
+            assertIs<SnapshotQuery.Failure>(query())
+
+            compilation.refreshSemanticFromDisk(listOf(uri))
+            assertIs<SnapshotQuery.Answer<*>>(query())
+            Files.delete(other)
+            assertIs<SnapshotQuery.Failure>(query())
+        } finally {
+            compilation.shutdown()
         }
+    }
 
     @Test
     fun `coverage reads only the unconfirmed closed origin body`(@TempDir root: Path): Unit = runBlocking {

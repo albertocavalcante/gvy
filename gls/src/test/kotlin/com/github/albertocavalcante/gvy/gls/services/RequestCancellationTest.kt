@@ -71,7 +71,8 @@ class RequestCancellationTest {
             documentProvider = documents,
             workerSessionDecorator = {
                 object : WorkerSession {
-                    override fun parse(request: ParseRequest): ParseResult = throw CancellationException("compile cancelled")
+                    override fun parse(request: ParseRequest): ParseResult =
+                        throw CancellationException("compile cancelled")
                 }
             },
         )

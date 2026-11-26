@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Text and the client's version captured from the same buffer state. Null means unversioned input. */
 data class DocumentSnapshot(val content: String, val version: DocumentVersion?) {
     internal val sourceIdentity: String = UUID.randomUUID().toString()
+
     /** SHA-256 of [content], computed once per buffer state (readiness checks run on every navigation). */
     internal val contentHash: String by lazy { contentHash(content) }
 }

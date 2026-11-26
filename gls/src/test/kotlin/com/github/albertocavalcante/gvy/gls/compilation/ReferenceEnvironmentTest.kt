@@ -32,8 +32,7 @@ class ReferenceEnvironmentTest {
     @Test
     fun `retained index provenance has no strong reference to the worker`() {
         val worker = object : WorkerSession {
-            override fun parse(request: ParseRequest): Nothing =
-                error("No parse expected")
+            override fun parse(request: ParseRequest): Nothing = error("No parse expected")
         }
         val producer = ReferenceProducer(emptyList(), worker)
         val directlyOwnedWorker = producer.javaClass.declaredFields.any { field ->

@@ -8,7 +8,6 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.types.Position as AstPosition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
@@ -33,8 +32,8 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
@@ -42,18 +41,19 @@ import org.junit.jupiter.api.parallel.Isolated
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.slf4j.LoggerFactory
-import java.net.URI
 import java.io.IOException
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import com.github.albertocavalcante.groovyparser.ast.types.Position as AstPosition
 
 @Isolated("Temporarily enables debug logging for the text document service")
 class EditorFactJourneyTest {
@@ -68,7 +68,8 @@ class EditorFactJourneyTest {
         Fixture("def target = 1\n").use { fixture ->
             fixture.workerFailure = IOException("controlled parse failure")
             val params = DocumentHighlightParams(TextDocumentIdentifier(fixture.uri.toString()), Position(0, 4))
-            val error = assertThrows<ExecutionException> { fixture.service.documentHighlight(params).get(10, TimeUnit.SECONDS) }
+            val error =
+                assertThrows<ExecutionException> { fixture.service.documentHighlight(params).get(10, TimeUnit.SECONDS) }
             assertEquals("controlled parse failure", assertIs<IOException>(error.cause).message)
         }
     }
@@ -178,8 +179,12 @@ class EditorFactJourneyTest {
             }
             fixture.documents.update(fixture.uri, "def hacker() {}\ndef caller() { hacker() }\n", DocumentVersion.of(8))
             val stale = when (direction) {
-                Direction.INCOMING -> fixture.service.callHierarchyIncomingCalls(CallHierarchyIncomingCallsParams(echoed))
-                Direction.OUTGOING -> fixture.service.callHierarchyOutgoingCalls(CallHierarchyOutgoingCallsParams(echoed))
+                Direction.INCOMING -> fixture.service.callHierarchyIncomingCalls(
+                    CallHierarchyIncomingCallsParams(echoed),
+                )
+                Direction.OUTGOING -> fixture.service.callHierarchyOutgoingCalls(
+                    CallHierarchyOutgoingCallsParams(echoed),
+                )
             }
             assertError(stale, ResponseErrorCode.ContentModified)
         }
@@ -193,8 +198,12 @@ class EditorFactJourneyTest {
                 val item = fixture.prepare(Position(0, 5))
                 item.data = invalid
                 val result = when (direction) {
-                    Direction.INCOMING -> fixture.service.callHierarchyIncomingCalls(CallHierarchyIncomingCallsParams(item))
-                    Direction.OUTGOING -> fixture.service.callHierarchyOutgoingCalls(CallHierarchyOutgoingCallsParams(item))
+                    Direction.INCOMING -> fixture.service.callHierarchyIncomingCalls(
+                        CallHierarchyIncomingCallsParams(item),
+                    )
+                    Direction.OUTGOING -> fixture.service.callHierarchyOutgoingCalls(
+                        CallHierarchyOutgoingCallsParams(item),
+                    )
                 }
                 assertError(result, ResponseErrorCode.RequestFailed)
             }
@@ -203,7 +212,10 @@ class EditorFactJourneyTest {
 
     @ParameterizedTest
     @EnumSource(Direction::class)
-    fun `closed item rejects changed disk text even before watcher notification`(direction: Direction, @TempDir dir: Path) {
+    fun `closed item rejects changed disk text even before watcher notification`(
+        direction: Direction,
+        @TempDir dir: Path,
+    ) {
         val file = dir.resolve("Closed.groovy")
         val original = "def target() {}\ndef caller() { target() }\n"
         Files.writeString(file, original)
@@ -314,8 +326,11 @@ class EditorFactJourneyTest {
         open: Boolean = true,
     ) : AutoCloseable {
         val documents = DocumentProvider().apply { if (open) put(uri, source, DocumentVersion.of(7)) }
+
         @Volatile var modelAction: (URI) -> Unit = {}
+
         @Volatile var hiddenNodeUri: URI? = null
+
         @Volatile var workerFailure: IOException? = null
         private val compilation = GroovyCompilationService(
             documentProvider = documents,
@@ -325,18 +340,25 @@ class EditorFactJourneyTest {
                         workerFailure?.let { throw it }
                         val parsed = delegate.parse(request)
                         val model = parsed.astModel
-                        return parsed.copy(astModel = object : GroovyAstModel by model {
-                            override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
-                                modelAction(uri)
-                                return if (uri == hiddenNodeUri) null else model.getNodeAt(uri, position)
-                            }
-                        })
+                        return parsed.copy(
+                            astModel = object : GroovyAstModel by model {
+                                override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
+                                    modelAction(uri)
+                                    return if (uri == hiddenNodeUri) null else model.getNodeAt(uri, position)
+                                }
+                            },
+                        )
                     }
                 }
             },
         )
         private val scope = CoroutineScope(dispatcher + SupervisorJob())
-        val service = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = documents))
+        val service =
+            GroovyTextDocumentService(
+                scope,
+                compilation,
+                GroovyTextDocumentServiceOptions(documentProvider = documents),
+            )
 
         init {
             if (open) compilation.onDocumentOpened(uri)

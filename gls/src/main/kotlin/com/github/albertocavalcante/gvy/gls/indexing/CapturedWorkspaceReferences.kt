@@ -19,8 +19,7 @@ internal class CapturedWorkspaceReferences(
 ) {
     val visibleDocuments: Set<URI> get() = snapshot.documents.keys - hidden
 
-    fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? =
-        if (uri in hidden) null else snapshot.documents[uri]
+    fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? = if (uri in hidden) null else snapshot.documents[uri]
 
     fun findSymbol(symbolId: String): SymbolInfo? =
         snapshot.findDefinitions(symbolId).firstOrNull { it.first !in hidden }?.second
