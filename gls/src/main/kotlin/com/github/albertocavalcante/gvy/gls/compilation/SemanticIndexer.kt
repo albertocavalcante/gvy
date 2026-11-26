@@ -203,27 +203,28 @@ class SemanticIndexer internal constructor(
             val keep = existing?.keepsCoverageOver(candidate) { producer, document ->
                 currentProducer(uri, content, producer) && index.getDocument(uri) === document
             } == true
-            if (keep) {
-                if (entries[uri]?.entry === existing) return
-            } else if (storeIfUnchanged(publication, existing, candidate, built, content)) {
-                return
+            val document = if (keep) null else built
+            val decided = decideIfUnchanged(publication, existing, candidate) { current ->
+                if (!keep) {
+                    current.entry = store(uri, document, content)?.let { candidate.copy(stored = WeakReference(it)) }
+                }
             }
+            if (decided) return
         } while (true)
     }
 
-    /** Retry against a competing postimage. Reuse the already built document across attempts. */
-    private fun storeIfUnchanged(
+    /** Keeping a stronger document and installing a new one both settle this ticket against the exact entry. */
+    private fun decideIfUnchanged(
         publication: Publication,
         existing: Entry?,
         candidate: Entry,
-        built: Built?,
-        content: String,
+        update: (State) -> Unit,
     ): Boolean = swap.read {
         var unchanged = true
-        entries.computeIfPresent(publication.uri) { uri, state ->
+        entries.computeIfPresent(publication.uri) { _, state ->
             unchanged = state.entry === existing
             if (unchanged && replaces(state, publication, candidate)) {
-                state.entry = store(uri, built, content)?.let { candidate.copy(stored = WeakReference(it)) }
+                update(state)
                 state.highestTicket = maxOf(state.highestTicket, publication.ticket)
             }
             state

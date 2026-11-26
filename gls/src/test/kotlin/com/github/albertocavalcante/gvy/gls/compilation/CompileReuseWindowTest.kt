@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
@@ -75,14 +76,7 @@ class CompileReuseWindowTest {
         try {
             compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
             compilation.compile(uri, text)
-            val original = assertNotNull(compilation.getParseResult(uri))
-            assertTrue(original.isSuccessful)
-            assertFalse(original.outcome.isDegraded)
-            assertEquals(Phases.CANONICALIZATION, original.outcome.achievedPhase)
-            assertEquals(1, requests.size)
-            assertEquals(ParseMode.WORKSPACE, requests.single().parseMode)
-            assertEquals(before, requests.single().openSources[support])
-            assertTrue(supportPath in requests.single().workspaceSources)
+            val original = assertOriginalParse(compilation, uri, requests, supportPath, before)
             val inventory = documents.captureDocuments()
 
             armed = true
@@ -106,5 +100,23 @@ class CompileReuseWindowTest {
         } finally {
             compilation.shutdown()
         }
+    }
+
+    private fun assertOriginalParse(
+        compilation: GroovyCompilationService,
+        uri: URI,
+        requests: List<ParseRequest>,
+        supportPath: Path,
+        content: String,
+    ): ParseResult {
+        val original = assertNotNull(compilation.getParseResult(uri))
+        assertTrue(original.isSuccessful)
+        assertFalse(original.outcome.isDegraded)
+        assertEquals(Phases.CANONICALIZATION, original.outcome.achievedPhase)
+        assertEquals(1, requests.size)
+        assertEquals(ParseMode.WORKSPACE, requests.single().parseMode)
+        assertEquals(content, requests.single().openSources[supportPath.toUri()])
+        assertTrue(supportPath in requests.single().workspaceSources)
+        return original
     }
 }
