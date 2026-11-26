@@ -15,12 +15,11 @@ class CodeNarcRequestInputs {
 
     fun provider(context: WorkspaceContext, resolver: HierarchicalRulesetResolver): CodeNarcDiagnosticProvider {
         val observed = object : DetailedRulesetResolver by resolver {
-            override fun resolveDetailed(context: WorkspaceContext, file: URI?): RulesetResolution =
-                observe {
-                    val hashes = mutableMapOf<Path, String>()
-                    val effective = resolver.resolveDetailed(context, file) { path, hash -> hashes[path] = hash }
-                    effective to hashes
-                }.first
+            override fun resolveDetailed(context: WorkspaceContext, file: URI?): RulesetResolution = observe {
+                val hashes = mutableMapOf<Path, String>()
+                val effective = resolver.resolveDetailed(context, file) { path, hash -> hashes[path] = hash }
+                effective to hashes
+            }.first
         }
         val analyzer = DefaultCodeAnalyzer().apply {
             readProperties = { file ->

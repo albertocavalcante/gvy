@@ -108,44 +108,49 @@ class CliDiagnoseDeliveryTest {
     @Test
     fun `ordinary LRU eviction leaves the held CLI import diagnostic available`(@TempDir root: Path) {
         runBlocking {
-        val uri = Files.writeString(root.resolve("Checked.groovy"), SOURCE).toUri()
-        val neighbor = Files.writeString(root.resolve("Neighbor.groovy"), "class Neighbor {}").toUri()
-        val compilation = GroovyCompilationService(compilationCacheMaxEntries = 1)
-        val owner = SupervisorJob()
-        val selected = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        val disabled = object : Set<String> by DISABLED {
-            override fun contains(element: String): Boolean {
-                if (element == "unused-imports") {
-                    selected.countDown()
-                    check(release.await(30, TimeUnit.SECONDS)) { "registered provider selection was never released" }
+            val uri = Files.writeString(root.resolve("Checked.groovy"), SOURCE).toUri()
+            val neighbor = Files.writeString(root.resolve("Neighbor.groovy"), "class Neighbor {}").toUri()
+            val compilation = GroovyCompilationService(compilationCacheMaxEntries = 1)
+            val owner = SupervisorJob()
+            val selected = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val disabled = object : Set<String> by DISABLED {
+                override fun contains(element: String): Boolean {
+                    if (element == "unused-imports") {
+                        selected.countDown()
+                        check(release.await(30, TimeUnit.SECONDS)) {
+                            "registered provider selection was never released"
+                        }
+                    }
+                    return element in DISABLED
                 }
-                return element in DISABLED
             }
-        }
-        val scope = CoroutineScope(owner + Dispatchers.Default)
-        val config = ServerConfiguration(diagnosticConfig = DiagnosticConfig(disabledProviders = disabled))
-        val options = GroovyTextDocumentServiceOptions(serverConfiguration = config)
-        val endpoint = GroovyTextDocumentService(scope, compilation, options)
-        try {
-            val pending = scope.async { endpoint.diagnose(uri, SOURCE) }
+            val scope = CoroutineScope(owner + Dispatchers.Default)
+            val config = ServerConfiguration(diagnosticConfig = DiagnosticConfig(disabledProviders = disabled))
+            val options = GroovyTextDocumentServiceOptions(serverConfiguration = config)
+            val endpoint = GroovyTextDocumentService(scope, compilation, options)
             try {
-                assertTrue(
-                    selected.await(30, TimeUnit.SECONDS),
-                    "request did not select the registered unused-import provider",
-                )
-                assertTrue(compilation.compile(neighbor, "class Neighbor {}").isSuccess)
-                assertNotNull(compilation.getCompiledSnapshot(neighbor))
-                assertNull(compilation.getCompiledSnapshot(uri), "target must be unavailable through the legacy cache")
+                val pending = scope.async { endpoint.diagnose(uri, SOURCE) }
+                try {
+                    assertTrue(
+                        selected.await(30, TimeUnit.SECONDS),
+                        "request did not select the registered unused-import provider",
+                    )
+                    assertTrue(compilation.compile(neighbor, "class Neighbor {}").isSuccess)
+                    assertNotNull(compilation.getCompiledSnapshot(neighbor))
+                    assertNull(
+                        compilation.getCompiledSnapshot(uri),
+                        "target must be unavailable through the legacy cache",
+                    )
+                } finally {
+                    release.countDown()
+                }
+                assertExactUnusedImport(pending.await().single())
             } finally {
                 release.countDown()
+                owner.cancelAndJoin()
+                compilation.shutdown()
             }
-            assertExactUnusedImport(pending.await().single())
-        } finally {
-            release.countDown()
-            owner.cancelAndJoin()
-            compilation.shutdown()
-        }
         }
     }
 
