@@ -109,7 +109,7 @@ class PackagedEditorInventoryTest {
             Files.writeString(path, text)
             val language = if (index == 5) "groovy" else "jenkinsfile"
             openAnalyzed(session, path, language)
-            // The integration suite removes each temp file after closing its tab. Its text model is still open.
+            // Model the original reproducer: the file is deleted while its editor text model remains open.
             Files.delete(path)
             path
         }

@@ -31,17 +31,18 @@ internal class ReferenceSources(
             epoch == ticket.epoch &&
             retirement == ticket.lastRetirement
 
-    fun matches(other: ReferenceSources?): Boolean {
+    fun sameSelection(other: ReferenceSources?): Boolean {
         val workspace = model.get() ?: return false
         return other != null &&
             workspace === other.model.get() &&
             buffers === other.buffers &&
             epoch == other.epoch &&
             retirement == other.retirement &&
-            mode == other.mode &&
-            projection?.sameAs(other.projection) == true &&
-            located == other.located
+            projection?.sameAs(other.projection) == true
     }
+
+    fun matches(other: ReferenceSources?): Boolean =
+        other != null && mode == other.mode && sameSelection(other) && located == other.located
 
     fun isCurrent(source: SnapshotSource, uri: URI, selected: List<Path>): Boolean {
         if (!ownsWindow(source.workspace, source.ticket, source.inventory.identity) ||
@@ -87,6 +88,10 @@ internal class ReferenceProducer(
 
     fun matches(other: ReferenceProducer?): Boolean =
         sameEnvironment(other) && sources != null && sources.matches(other?.sources)
+
+    /** Compare the original worker, window and selected files. Each policy's lookup answers remain its own. */
+    fun sharesInputsAcrossModes(other: ReferenceProducer?): Boolean =
+        other != null && mode != other.mode && sameEnvironment(other) && sources?.sameSelection(other.sources) == true
 
     fun isCurrent(
         source: SnapshotSource,

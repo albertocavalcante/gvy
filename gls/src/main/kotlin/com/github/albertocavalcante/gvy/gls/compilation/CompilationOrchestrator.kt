@@ -189,7 +189,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                 it.matches(context.classpath, workerSessionManager.current()) &&
                     it.isCurrent(source, uri, content, ::referenceSources)
             }
-            if (cached != null && compatible != false) {
+            if (cached != null && compatible != false && source.isCurrent()) {
                 val cachedResult = cached.parseResult
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)

@@ -5,27 +5,34 @@ package com.github.albertocavalcante.gvy.gls.providers.callhierarchy
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.groovyparser.ast.hasCyclicSuperClassChain
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
+import com.github.albertocavalcante.gvy.gls.providers.hover.HoverMethodSelection
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import kotlinx.coroutines.flow.toList
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.transform.stc.StaticTypesMarker
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -38,6 +45,7 @@ import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.lang.reflect.Modifier
 import java.net.URI
 
 class CallHierarchyProvider(private val compilationService: GroovyCompilationService) {
@@ -61,53 +69,28 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     private fun prepareCallHierarchy(uri: URI, position: Position, source: CallSource): List<CallHierarchyItem> {
         val node = source.index.codePointPosition(position)?.toGroovyPosition()
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
-        val definition = resolveDefinitionWithFallback(node, source.visitor, source.symbolTable)
+        val definition = resolveDeclaration(node, source.visitor, source.symbolTable)
 
         val declaration = source.localDeclaration(definition, uri) ?: return emptyList()
         return listOfNotNull(createCallHierarchyItem(declaration, uri, source.index))
     }
 
-    private fun resolveDefinitionWithFallback(
-        node: ASTNode,
-        astModel: GroovyAstModel,
-        symbolTable: SymbolTable,
-    ): ASTNode {
-        // Resolve definitions
-        // If it's a call, we want the definition. If it's a def, we want itself.
-        val resolved = node.resolveToDefinition(astModel, symbolTable, strict = false) ?: node
-        // HEURISTIC: Fallback for script method calls.
-        // In top-level scripts, method calls often appear as VariableExpression (dynamic) or ConstantExpression
-        // (the method name leaf) when the parser can't fully resolve the implicit 'this' or script context.
-        // The core resolveToDefinition might fail to link these to the script's MethodNode.
-        // TODO(#564): Improve parser to resolve strict methods better.
-        //   See: https://github.com/albertocavalcante/gvy/issues/564
-        return if (resolved !== node) {
-            resolved
+    private fun resolveDeclaration(node: ASTNode, astModel: GroovyAstModel, symbolTable: SymbolTable): ASTNode {
+        val parent = astModel.getParent(node)
+        val call = when {
+            node is MethodCallExpression -> node
+            parent is MethodCallExpression && isMethodToken(parent, node) -> parent
+            else -> null
+        }
+        return if (call != null) {
+            methodTarget(call, astModel) ?: node
         } else {
-            extractEnclosingMethodCall(node, astModel)
-                ?.takeIf { it.isImplicitThis }
-                ?.let { findScriptMethodFallback(it, astModel) } ?: node
+            node.resolveToDefinition(astModel, symbolTable, strict = false) ?: node
         }
     }
 
-    private fun extractEnclosingMethodCall(node: ASTNode, astModel: GroovyAstModel): MethodCallExpression? {
-        if (node is MethodCallExpression) {
-            return node
-        }
-        if (node is ConstantExpression || node is VariableExpression) {
-            return astModel.getParent(node) as? MethodCallExpression
-        }
-        return null
-    }
-
-    private fun findScriptMethodFallback(call: MethodCallExpression, astModel: GroovyAstModel): MethodNode? {
-        val methodName = call.methodAsString ?: return null
-        return astModel.getAllNodes()
-            .asSequence()
-            .filterIsInstance<MethodNode>()
-            .filter { it.name == methodName && it.declaringClass?.isScript == true }
-            .singleOrNull()
-    }
+    private fun methodTarget(call: MethodCallExpression, model: GroovyAstModel): MethodNode? =
+        directMethodTarget(call) ?: selectCallMethod(call, model, getEnclosingMethodOrClass(call, model))
 
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> =
         failingAsInternalError("finding incoming calls") { collectIncomingCalls(params) }
@@ -125,7 +108,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             .toList()
         val originSource = CallSource(origin)
         val selected = originSource.nodeAt(uri, position)?.let {
-            val definition = resolveDefinitionWithFallback(it, originSource.visitor, originSource.symbolTable)
+            val definition = resolveDeclaration(it, originSource.visitor, originSource.symbolTable)
             originSource.localDeclaration(definition, uri)
         } ?: IncomingCallTarget.unavailable()
         val target = IncomingCallTarget(uri, selected, references.visibleDocuments)
@@ -249,7 +232,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
 
         // Resolve to definition (should be MethodNode or ClassNode)
-        val definition = node.resolveToDefinition(source.visitor, source.symbolTable, strict = false) ?: node
+        val definition = resolveDeclaration(node, source.visitor, source.symbolTable)
         val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
         if (definition is MethodNode) {
             val callVisitor = CallVisitor(source, uri, callsMap)
@@ -258,14 +241,18 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return callsMap.values.toList()
     }
 
-    private class CallVisitor(
+    private inner class CallVisitor(
         private val source: CallSource,
         private val uri: URI,
         private val callsMap: MutableMap<String, CallHierarchyOutgoingCall>,
     ) : CodeVisitorSupport() {
 
         private fun addCall(call: Expression) {
-            val resolved = call.resolveToDefinition(source.visitor, source.symbolTable, strict = false)
+            val resolved = if (call is MethodCallExpression) {
+                methodTarget(call, source.visitor)
+            } else {
+                call.resolveToDefinition(source.visitor, source.symbolTable, strict = false)
+            }
             val range = call.toLspRange()?.let(source.index::utf16Range)
             if (resolved != null && range != null) {
                 val callee = source.localDeclaration(resolved, uri)
@@ -343,4 +330,57 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             return item
         }
     }
+}
+
+internal fun directMethodTarget(call: MethodCallExpression): MethodNode? =
+    call.methodTarget ?: call.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET)
+
+private fun receiverClass(call: MethodCallExpression, lexicalOwner: ClassNode?): ClassNode? {
+    val receiver = call.objectExpression
+    return when {
+        call.isImplicitThis -> lexicalOwner
+        receiver is VariableExpression && receiver.isThisExpression -> lexicalOwner
+        receiver is VariableExpression && receiver.isSuperExpression -> lexicalOwner?.superClass
+        receiver is VariableExpression -> receiver.accessedVariable?.type?.takeUnless {
+            ClassHelper.isDynamicTyped(it) || it == ClassHelper.OBJECT_TYPE
+        }
+        receiver is ClassExpression -> receiver.type
+        receiver is ConstantExpression -> receiver.type.takeIf { receiver.value != null }
+        receiver is ConstructorCallExpression -> receiver.type.takeUnless { receiver.isUsingAnonymousInnerClass }
+        else -> null
+    }?.redirect()
+}
+
+/** Keep the original declaration selected by Groovy, including when it omits default arguments. */
+internal fun selectCallMethod(call: MethodCallExpression, model: GroovyAstModel, enclosing: ASTNode?): MethodNode? {
+    val ancestors = generateSequence<ASTNode>(call, model::getParent).takeWhile { it !== enclosing }
+    val delegated = call.isImplicitThis && ancestors.any { it is ClosureExpression }
+    val lexicalOwner = when (enclosing) {
+        is MethodNode -> enclosing.declaringClass
+        is ClassNode -> enclosing
+        // The top-level statement block can be tracked directly under the module.
+        else -> model.getAllClassNodes().singleOrNull { it.isScript }
+    }
+    val receiver = receiverClass(call, lexicalOwner)
+    return if (delegated || call.isSpreadSafe || receiver == null) {
+        null
+    } else {
+        selectReceiverMethod(call, receiver)
+    }
+}
+
+private fun selectReceiverMethod(call: MethodCallExpression, receiver: ClassNode): MethodNode? {
+    val name = call.methodAsString ?: return null
+    val arguments = (call.arguments as? TupleExpression)?.expressions ?: return null
+    val candidates = if (receiver.hasCyclicSuperClassChain()) emptyList() else receiver.getMethods(name)
+    val methods = candidates.filter { call.objectExpression !is ClassExpression || it.isStatic }
+    // Groovy dispatches on runtime types. A variable declared as a base type can select a narrower overload.
+    val unknownOverload = methods.size > 1 && arguments.any { !hasExactArgumentType(it) }
+    return if (unknownOverload) null else HoverMethodSelection.select(receiver, methods, arguments).singleOrNull()
+}
+
+private fun hasExactArgumentType(argument: Expression): Boolean = when (argument) {
+    is ConstantExpression -> argument.value != null
+    is ConstructorCallExpression -> !argument.isUsingAnonymousInnerClass
+    else -> ClassHelper.isPrimitiveType(argument.type) || Modifier.isFinal(argument.type.modifiers)
 }

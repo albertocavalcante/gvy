@@ -124,7 +124,7 @@ class GroovyCompilationService internal constructor(
     // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb, shadows::shadowed)
-    private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen)
+    private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen, currentProducer = ::isCurrentProducer)
     private val semanticSnapshotGuard = SemanticSnapshotGuard { workspaceSymbolIndex.implementationSnapshot }
 
     // Shared dependency graph for bounded workspace selection (Issue #743)
@@ -430,6 +430,11 @@ class GroovyCompilationService internal constructor(
             parsed.outcome.achievedPhase,
             SemanticPublicationSource(fromBuffer, checkNotNull(snapshot.referenceProducer)),
         )
+    }
+
+    private fun isCurrentProducer(uri: URI, content: String, producer: ReferenceProducer): Boolean {
+        val source = captureSnapshotSource(uri)
+        return producer.isCurrent(source, uri, content, orchestrator::referenceSources) && source.isCurrent()
     }
 
     internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(
