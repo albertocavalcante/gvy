@@ -51,7 +51,7 @@ internal class RenameSourceSnapshots(private val source: RenameDocumentSource, v
     }
 
     fun validatePublications() {
-        if (!publications.all { it() }) changed(request.source.uri)
+        if (!request.authority.current() || !publications.all { it() }) changed(request.source.uri)
     }
 
     suspend fun validate() {

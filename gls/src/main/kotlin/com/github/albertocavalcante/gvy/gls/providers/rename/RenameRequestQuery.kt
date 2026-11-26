@@ -34,6 +34,7 @@ internal data class RenameRequest(
     val readiness: ReferenceReadiness,
     val references: CapturedWorkspaceReferences,
     val context: DocumentCompileContext?,
+    val authority: RenamePhysicalAuthority,
 )
 
 /** Owns the source and compiler that supply one eager rename answer, including any inputs to a refusal. */
@@ -48,11 +49,13 @@ internal class RenameRequestQuery(
     fun capture(uri: String, position: Position): RenameRequest {
         val source = compilationService.captureSnapshotSource(URI.create(uri))
         val readiness = compilationService.referenceReadiness(source)
+        val folders = extraRoots().toList()
+        val authority = RenamePhysicalAuthority((listOfNotNull(source.workspace.root) + folders).distinct(), source.uri)
         return RenameRequest(
             source,
             Position(position.line, position.character),
             documents?.captureDocuments(),
-            extraRoots().toList(),
+            folders,
             caches.walks.invalidations,
             readiness,
             readiness.captureMembersView(),
@@ -60,6 +63,7 @@ internal class RenameRequestQuery(
                 compilationService.workspaceManager.compileContextFor(source.uri, it.snapshot.content, source.workspace)
                     .captureClasspath()
             },
+            authority,
         )
     }
 
@@ -68,7 +72,7 @@ internal class RenameRequestQuery(
         val sameContext = source.buffer?.let {
             compilationService.workspaceManager.compileContextFor(source.uri, it.snapshot.content, source.workspace)
         } == request.context
-        return sameContext &&
+        return request.authority.current() && sameContext &&
             documents?.captureDocuments()?.identity === request.buffers?.identity &&
             extraRoots() == request.extraFolders &&
             source.workerCurrent() &&

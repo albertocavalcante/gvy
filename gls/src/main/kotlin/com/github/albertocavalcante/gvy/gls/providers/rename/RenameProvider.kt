@@ -382,15 +382,12 @@ class RenameProvider private constructor(
      */
     @Suppress("TooGenericExceptionCaught")
     private fun isInWorkspace(uriString: String, sources: RenameSourceSnapshots): Boolean {
-        val roots = sources.roots
         return try {
             val uri = URI.create(uriString)
-            if (roots.isEmpty()) {
-                uri == sources.request.source.uri || sources.request.buffers?.documents?.containsKey(uri) == true
-            } else {
-                val path = Paths.get(uri)
-                roots.any { path.startsWith(it) }
-            }
+            sources.request.authority.contains(
+                uri,
+                uri == sources.request.source.uri || sources.request.buffers?.documents?.containsKey(uri) == true,
+            )
         } catch (e: Exception) {
             logger.warn(e) { "Could not parse URI: $uriString" }
             false
@@ -453,6 +450,11 @@ class RenameProvider private constructor(
         // If renaming a top-level class, add file rename operation
         if (definition is ClassNode && isTopLevelClass(definition, definitionLocation)) {
             val fileRename = createFileRenameOperation(definitionLocation.uri, newName)
+            if (fileRename != null &&
+                !sources.request.authority.contains(URI.create(fileRename.newUri), sources.roots.isEmpty())
+            ) {
+                sources.changed(URI.create(definitionLocation.uri))
+            }
             if (fileRename != null) {
                 documentChanges.add(Either.forRight(fileRename))
             }
