@@ -75,7 +75,8 @@ internal class DefaultBuildFileWatcher(
         /** The watch loop, set once it is launched; null until then. */
         val job = SharedValue<Job?>(null)
 
-        val isActive: Boolean
+        /** Whether the watch loop is running; distinct from [scope], which outlives a finished loop until close. */
+        val isLoopActive: Boolean
             get() = job.value?.isActive == true
 
         override fun close() {
@@ -100,7 +101,7 @@ internal class DefaultBuildFileWatcher(
 
     @Synchronized
     override fun startWatching(projectDir: Path) {
-        if (session.value?.isActive == true) {
+        if (session.value?.isLoopActive == true) {
             logger.debug { "$logLabel build file watcher already active for project" }
             return
         }
@@ -315,7 +316,7 @@ internal class DefaultBuildFileWatcher(
         }
     }
 
-    override fun isWatching(): Boolean = session.value?.isActive == true
+    override fun isWatching(): Boolean = session.value?.isLoopActive == true
 
     @Synchronized
     override fun onFileChanged(path: Path) {

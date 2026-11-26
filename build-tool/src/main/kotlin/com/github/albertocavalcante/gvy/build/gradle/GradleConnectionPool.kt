@@ -49,7 +49,10 @@ object GradleConnectionPool : LeasingConnectionFactory {
 
     private var sweeper: ScheduledExecutorService? = null
 
-    /** Set by [shutdown]; a pool that is shut down keeps no connections and runs no sweeper. */
+    /**
+     * Set by [shutdown]; a pool that is shut down keeps no connections and runs no sweeper. Not a one-way flag:
+     * [reopenForTesting] clears it.
+     */
     private val closed = SharedValue(false)
 
     /** Applies [newSettings]; only the connection idle timeout is used here, and it applies from the next sweep. */
