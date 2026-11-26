@@ -89,7 +89,7 @@ class TestFrameworkRegistry {
     /**
      * Returns all registered detectors.
      */
-    fun getDetectors(): List<TestFrameworkDetector> = detectors.toList()
+    fun getDetectors(): List<TestFrameworkDetector> = ArrayList(detectors)
 
     /**
      * Returns the detector for a specific framework, if registered.

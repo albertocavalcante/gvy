@@ -4,8 +4,11 @@
 package com.github.albertocavalcante.gvy.gls.providers.folding
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.control.Phases
@@ -21,30 +24,36 @@ internal class FoldingRangeRequestHandler(
     private val compilation: GroovyCompilationService,
     private val documents: DocumentProvider,
 ) {
-    suspend fun provide(params: FoldingRangeRequestParams): List<FoldingRange> {
-        val context = currentCoroutineContext()
-        context.ensureActive()
+    internal data class Request(val uri: URI, val source: SnapshotSource, val original: DocumentSnapshot?)
+
+    fun capture(params: FoldingRangeRequestParams): Request {
         val text = params.textDocument?.uri ?: fail(ResponseErrorCode.InvalidParams, "Missing folding document")
         val uri = try {
             URI.create(text)
         } catch (_: IllegalArgumentException) {
             fail(ResponseErrorCode.InvalidParams, "Invalid folding document URI")
         }
-        val original = documents.getSnapshot(uri) ?: return emptyList()
-        val cached = compilation.getCompiledSnapshot(uri)?.takeIf { it.sourceText == original.content }
-        requireCurrent(uri, original)
-        val parsed = cached?.parseResult ?: compilation.compileTransient(uri, original.content, Phases.CONVERSION)
-        context.ensureActive()
-        requireCurrent(uri, original)
-        val result = buildFoldingRanges(uri, original.content, parsed.astModel) { context.ensureActive() }
-        context.ensureActive()
-        requireCurrent(uri, original)
-        return result
+        val source = compilation.captureSnapshotSource(uri)
+        return Request(uri, source, documents.getSnapshot(uri))
     }
 
-    private fun requireCurrent(uri: URI, original: DocumentSnapshot) {
-        if (documents.getSnapshot(uri) != original) {
+    suspend fun provide(request: Request): List<FoldingRange> {
+        val context = currentCoroutineContext()
+        context.ensureActive()
+        val (uri, source, original) = request
+        if (documents !== compilation.documents || !source.isCurrent() || source.buffer?.snapshot !== original) {
             fail(ResponseErrorCode.ContentModified, "Document changed during folding")
+        }
+        if (original == null) return emptyList()
+        return when (
+            val result = compilation.queryCapturedSnapshot(source, Phases.CONVERSION, ParseMode.WORKSPACE) {
+                buildFoldingRanges(uri, it.sourceText, it.parseResult.astModel) { context.ensureActive() }
+            }
+        ) {
+            is SnapshotQuery.Answer -> result.value
+            SnapshotQuery.Missing -> emptyList()
+            SnapshotQuery.Stale -> fail(ResponseErrorCode.ContentModified, "Document changed during folding")
+            is SnapshotQuery.Failure -> throw result.cause
         }
     }
 

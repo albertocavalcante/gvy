@@ -901,9 +901,24 @@ computation; current partial syntax, missing source, stale work and expected com
 Compatible waiters share work without one cancelled caller cancelling the producer. Rejected traversal streams and
 exclusively owned unpublished native loaders are closed.
 
-This foundation does not publish legacy semantic indexes or migrate handlers. Handler-specific engine, metadata and
-index inputs still need qualification, and M2.1–M2.4 remain open. Filesystem freshness depends on observed retirements;
-checking regular-file attributes before reading does not make the subsequent open atomic with external replacements.
+Folding and selection ranges use the owned query at CONVERSION/WORKSPACE. Code lenses and document symbols use
+CANONICALIZATION with WORKSPACE for captured open buffers and MINIMAL for closed files, avoiding an incidental
+workspace-wide parse for a cold local fact. File URI schemes are case-insensitive. Each captures the request's source
+authority and retirement fence before scheduling, then constructs its answer eagerly from that same source and parse.
+Range requests retain their open-only behavior and copy mutable parameters at entry. Code-lens discovery uses one
+captured ordered detector list for every class and verifies its detector identities before returning. The server
+supplies the same document provider to the compiler and endpoints; an inconsistent source authority is rejected before
+parsing. The focused local-handler suite passed on the Air after fail-first controls covered cache retirement,
+computation-time retirement, equal-text reopening, cancellation, registry changes and queued request-entry changes.
+Code-lens and document-symbol parameter failures complete their futures exceptionally, and these routes reject
+separately configured document authorities before parsing. For the startup worker-selection case, document symbols may
+retry one stale acquisition against a fresh producer only when the worker changed and the captured open documents and
+workspace still match; a stale answer during construction is never retried. Focused tests also cover worker replacement
+with concurrent cache clearing. This evidence applies to the tested routes, not all semantic entry points.
+
+Owned acquisition does not publish legacy semantic indexes. Other handler-specific engine, metadata and index inputs
+still need qualification, and M2.1–M2.4 remain open. Filesystem freshness depends on observed retirements; checking
+regular-file attributes before reading does not make the subsequent open atomic with external replacements.
 
 **Fail-first test and gate:** delayed A cannot publish as B after target/config/companion changes without a text edit;
 close/reopen and phase upgrade cannot reuse the wrong result. One real query consumes the captured request throughout;

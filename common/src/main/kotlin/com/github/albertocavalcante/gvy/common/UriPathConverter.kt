@@ -59,5 +59,5 @@ object UriPathConverter {
      * @param uri The URI to check
      * @return true if the URI scheme is "file", false otherwise
      */
-    fun isFileUri(uri: URI): Boolean = uri.scheme == "file"
+    fun isFileUri(uri: URI): Boolean = uri.scheme.equals("file", ignoreCase = true)
 }

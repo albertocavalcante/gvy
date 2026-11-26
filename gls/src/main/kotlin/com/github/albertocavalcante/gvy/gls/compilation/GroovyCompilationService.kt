@@ -71,6 +71,7 @@ class GroovyCompilationService internal constructor(
 
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
+    internal val documents: DocumentProvider = documentProvider ?: DocumentProvider()
 
     @Volatile
     var serverConfiguration: ServerConfiguration =
@@ -88,13 +89,13 @@ class GroovyCompilationService internal constructor(
     )
 
     // Specialized services
-    private val isOpen: (URI) -> Boolean = { uri -> documentProvider?.get(uri) != null }
+    private val isOpen: (URI) -> Boolean = { uri -> documents.get(uri) != null }
 
     // One publication fence for every artifact derived from a file (#1184)
     private val ownership = ArtifactOwnership()
 
     // Listed copies a buffer open under another spelling stands for (#1446): kept out of compiles and queries.
-    private val shadows = ListedShadows(documentProvider, workspaceManager)
+    private val shadows = ListedShadows(documents, workspaceManager)
     private val cacheService =
         CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen, ownership = ownership)
     val workspaceManager = workspaceManager
@@ -136,7 +137,7 @@ class GroovyCompilationService internal constructor(
         parentClassLoader,
         workspaceManager,
         LanguageEngineManagerOptions(
-            documentProvider = documentProvider,
+            documentProvider = documents,
             sourceNavigator = sourceNavigator,
             engineConfig = engineConfig,
         ),
@@ -154,7 +155,7 @@ class GroovyCompilationService internal constructor(
             errorHandler = errorHandler,
             semanticIndexer = semanticIndexer,
             dependencyGraph = dependencyGraph,
-            documentProvider = documentProvider,
+            documentProvider = documents,
             shadowed = shadows::shadowed,
         ),
     )
@@ -189,6 +190,41 @@ class GroovyCompilationService internal constructor(
         SnapshotAcquisition.Missing -> SnapshotQuery.Missing
         SnapshotAcquisition.Stale -> SnapshotQuery.Stale
         is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
+    }
+
+    /** Capture the request's ownership fence and source identity before dispatching its coroutine. */
+    internal fun captureSnapshotSource(uri: URI): SnapshotSource = orchestrator.snapshots.capture(uri)
+
+    internal suspend fun <T> queryCapturedSnapshot(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode,
+        query: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> = when (val acquisition = orchestrator.snapshots.acquireSource(source, phase, mode)) {
+        is SnapshotAcquisition.Available -> acquisition.query(query)
+        SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+        SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+        is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
+    }
+
+    /** Preserve startup symbol requests when worker selection retires acquisition, never the query itself. */
+    internal suspend fun <T> querySymbolsWithWorkerRetry(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode,
+        query: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> {
+        var acquisition = orchestrator.snapshots.acquireSource(source, phase, mode)
+        if (acquisition is SnapshotAcquisition.Stale) {
+            val fresh = orchestrator.snapshots.captureWorkerReplacement(source)
+            if (fresh != null) acquisition = orchestrator.snapshots.acquireSource(fresh, phase, mode)
+        }
+        return when (acquisition) {
+            is SnapshotAcquisition.Available -> acquisition.query(query)
+            SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+            SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+            is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
+        }
     }
 
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)

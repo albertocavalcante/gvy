@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.Diagnost
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin.JenkinsPipelineStageRule
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
@@ -153,6 +154,7 @@ class DiagnosticModeContextTest {
 
     private fun compilation(configuration: () -> ServerConfiguration): GroovyCompilationService =
         mockk<GroovyCompilationService>().also {
+            every { it.documents } returns DocumentProvider()
             every { it.serverConfiguration } answers { configuration() }
             every { it.workspaceManager } returns mockk {
                 every { getJenkinsCapabilities() } returns null

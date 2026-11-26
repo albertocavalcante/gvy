@@ -4,16 +4,16 @@
 package com.github.albertocavalcante.gvy.gls.providers.folding
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
-import io.mockk.coEvery
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +21,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.FoldingRange
 import org.eclipse.lsp4j.FoldingRangeKind
 import org.eclipse.lsp4j.FoldingRangeRequestParams
@@ -37,15 +36,38 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FoldingRangeCompletenessTest {
     private val uri = URI.create("file:///FoldingComplete.groovy")
     private val documents = DocumentProvider()
-    private val actual = GroovyCompilationService()
-    private val compilation = spyk(actual)
+    private var afterParse: () -> Unit = {}
+    private var beforeParse: () -> Unit = {}
+    private var onClasses: () -> Unit = {}
+    private var modelOverride: GroovyAstModel? = null
+    private val actual = GroovyCompilationService(
+        documentProvider = documents,
+        workerSessionDecorator = { delegate ->
+            object : WorkerSession {
+                override fun parse(request: ParseRequest): ParseResult {
+                    beforeParse()
+                    val parsed = delegate.parse(request)
+                    afterParse()
+                    val model = modelOverride ?: parsed.astModel
+                    return parsed.copy(
+                        astModel = object : GroovyAstModel by model {
+                            override fun getAllClassNodes(): List<ClassNode> {
+                                onClasses()
+                                return model.getAllClassNodes()
+                            }
+                        },
+                    )
+                }
+            }
+        },
+    )
+    private val compilation = actual
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(
         scope,
@@ -57,7 +79,7 @@ class FoldingRangeCompletenessTest {
     @AfterEach
     fun close() {
         scope.cancel()
-        actual.clearCaches()
+        actual.shutdown()
     }
 
     @Test
@@ -102,8 +124,6 @@ class FoldingRangeCompletenessTest {
     fun `foreign AST classes never contribute folds for the requested URI`(): Unit = runBlocking {
         val source = "\n\n\n\n\n"
         documents.put(uri, source, DocumentVersion.of(1))
-        actual.compile(uri, source)
-        val cached = assertNotNull(compilation.getCompiledSnapshot(uri))
         val foreign = ClassNode("Foreign", 0, ClassHelper.OBJECT_TYPE).apply {
             lineNumber = 1
             columnNumber = 1
@@ -114,11 +134,7 @@ class FoldingRangeCompletenessTest {
         every { model.getAllClassNodes() } returns listOf(foreign)
         every { model.getNodes(uri) } returns listOf(foreign)
         every { model.getUri(foreign) } returns URI.create("file:///Other.groovy")
-        every { compilation.getAstModel(uri) } returns model
-        every { compilation.getCompiledSnapshot(uri) } returns CompiledDocumentSnapshot(
-            source,
-            cached.parseResult.copy(astModel = model),
-        )
+        modelOverride = model
         assertTrue(request().isEmpty())
     }
 
@@ -131,11 +147,7 @@ class FoldingRangeCompletenessTest {
     @Test
     fun `a document version change during transient parsing rejects without publishing`(): Unit = runBlocking {
         documents.put(uri, classSource, DocumentVersion.of(1))
-        val parsed = actual.compileTransient(uri, classSource, Phases.CONVERSION)
-        coEvery { compilation.compileTransient(uri, classSource, any()) } coAnswers {
-            documents.put(uri, classSource, DocumentVersion.of(2))
-            parsed
-        }
+        afterParse = { documents.put(uri, classSource, DocumentVersion.of(2)) }
         val error = assertThrows<ExecutionException> { request() }
         assertEquals(
             ResponseErrorCode.ContentModified.value,
@@ -145,14 +157,9 @@ class FoldingRangeCompletenessTest {
     }
 
     @Test
-    fun `a change after matching-cache acquisition rejects before using its AST`(): Unit = runBlocking {
+    fun `a document change during folding traversal rejects the answer`(): Unit = runBlocking {
         documents.put(uri, classSource, DocumentVersion.of(1))
-        actual.compile(uri, classSource)
-        val cached = assertNotNull(compilation.getCompiledSnapshot(uri))
-        every { compilation.getCompiledSnapshot(uri) } answers {
-            documents.put(uri, classSource, DocumentVersion.of(2))
-            cached
-        }
+        onClasses = { documents.put(uri, classSource, DocumentVersion.of(2)) }
         val error = assertThrows<ExecutionException> { request() }
         assertEquals(
             ResponseErrorCode.ContentModified.value,
@@ -163,7 +170,7 @@ class FoldingRangeCompletenessTest {
     @Test
     fun `transient cancellation propagates to the folding future`() {
         documents.put(uri, classSource, DocumentVersion.of(1))
-        coEvery { compilation.compileTransient(uri, classSource, any()) } throws CancellationException("cancelled")
+        beforeParse = { throw CancellationException("cancelled") }
         assertThrows<CancellationException> { request() }
     }
 
