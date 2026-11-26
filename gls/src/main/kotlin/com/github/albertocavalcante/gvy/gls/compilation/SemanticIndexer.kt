@@ -46,8 +46,8 @@ internal data class SemanticPublicationSource(val fromBuffer: Boolean = true, va
  *
  * Each file keeps the content hash and the compile phase its document was built at, so:
  * - a document built from different content replaces the stored one (stale is worse than degraded);
- * - for the same content, only a document from a later phase replaces it: a degraded parse never
- *   displaces a resolved one, and which of two compiles of the same text lands first does not matter;
+ * - for the same content, a later phase takes precedence; a degraded parse never
+ *   displaces a resolved one at the same phase, and complete coverage upgrades a degraded same-phase entry;
  * - for the same content and phase, a document begun after [retireAllPublications] replaces one stored
  *   before it: the inputs besides the text (the source list, the classpath) changed, so the kept document
  *   may resolve names the newer one resolves differently;
@@ -72,6 +72,12 @@ class SemanticIndexer(
         // The graph owns this document. Keep its identity without retaining a displaced graph.
         val stored: WeakReference<SemanticDocument>? = null,
     ) {
+        fun improves(existing: Entry): Boolean {
+            if (phase != existing.phase) return phase > existing.phase
+            if (generation != existing.generation) return generation > existing.generation
+            return producer?.complete == true && existing.producer?.complete != true
+        }
+
         fun matchesDisk(hash: String, activeGeneration: AnalysisGeneration, current: (ReferenceProducer) -> Boolean) =
             generation == activeGeneration && contentHash == hash && producer?.let(current) != false
     }
@@ -198,8 +204,7 @@ class SemanticIndexer(
         ) {
             return publication.ticket > state.highestTicket
         }
-        return candidate.phase > existing.phase ||
-            (candidate.phase == existing.phase && candidate.generation > existing.generation)
+        return candidate.improves(existing)
     }
 
     /**

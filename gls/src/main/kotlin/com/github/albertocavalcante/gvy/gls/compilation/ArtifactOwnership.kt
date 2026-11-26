@@ -40,8 +40,7 @@ internal class BufferOrder(val incarnation: Any, val version: DocumentVersion, v
  */
 class ArtifactOwnership {
     /** One file's generation. Referenced strongly only by its tickets, so it lives exactly as long as they do. */
-    internal class FileState {
-        val identity: String = UUID.randomUUID().toString()
+    internal class FileState(val ownerIdentity: UUID) {
         var stamp = 0L
     }
 
@@ -58,13 +57,15 @@ class ArtifactOwnership {
         internal val lastRetirement: Long,
         internal val order: BufferOrder? = null,
     ) {
-        internal val sourceIdentity: String get() = "${state.identity}:$stamp:$epoch:$lastRetirement"
+        // A closed navigation item can outlive all tickets for its URI and the weak file state.
+        internal val sourceIdentity: String get() = "${state.ownerIdentity}:$epoch:$lastRetirement:$uri"
 
         /** Query captures may share only when both observed the same file and workspace input retirements. */
         internal fun sharesInputs(other: Ticket): Boolean = state === other.state && stamp == other.stamp &&
             epoch == other.epoch && lastRetirement == other.lastRetirement
     }
 
+    private val identity = UUID.randomUUID()
     private val monitor = Any()
     private var epoch = OwnershipEpoch.INITIAL
     private var lastStamp = 0L
@@ -184,7 +185,8 @@ class ArtifactOwnership {
 
     private fun ticketFor(uri: URI, order: BufferOrder? = null): Ticket {
         expungeLocked()
-        val state = liveStateLocked(uri) ?: FileState().also { states[uri] = StateReference(uri, it, collected) }
+        val state =
+            liveStateLocked(uri) ?: FileState(identity).also { states[uri] = StateReference(uri, it, collected) }
         return Ticket(uri, epoch, state, state.stamp, lastStamp, order)
     }
 

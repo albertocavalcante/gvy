@@ -139,9 +139,11 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             val callerUri = URI.create(location.uri)
             val (source, sites) = sources.getValue(callerUri)
             val site = source.nodeAt(callerUri, location.range.start) ?: IncomingCallTarget.unavailable()
+            if (target.isNonCallTypeUse(site, source.visitor)) continue
             val enclosing = getEnclosingMethodOrClass(site, source.visitor) ?: IncomingCallTarget.unavailable()
             target.requireBinding(site, enclosing, source.visitor, sites)
-            val fromItem = createCallHierarchyItem(enclosing, callerUri, source.index) ?: IncomingCallTarget.unavailable()
+            val fromItem =
+                createCallHierarchyItem(enclosing, callerUri, source.index) ?: IncomingCallTarget.unavailable()
             val key = "${fromItem.uri}:${fromItem.range.start.line}:${fromItem.range.start.character}"
             val existing = calls[key]
             if (existing != null) {

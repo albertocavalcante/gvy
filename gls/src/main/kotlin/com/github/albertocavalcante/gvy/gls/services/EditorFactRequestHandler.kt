@@ -208,7 +208,11 @@ internal class EditorFactRequestHandler(
             val (source, position, identity) = request.getOrThrow()
             val uri = source.uri
             when (
-                val result = compilationService.queryCapturedSnapshot(source, Phases.CANONICALIZATION, null) { snapshot ->
+                val result = compilationService.queryCapturedSnapshot(
+                    source,
+                    Phases.CANONICALIZATION,
+                    null,
+                ) { snapshot ->
                     requirePreparedIdentity(identity, snapshot.sourceIdentity)
                     callHierarchyProvider.outgoingCalls(uri, position, snapshot).onEach { call ->
                         call.to.data = checkNotNull(snapshot.sourceIdentity)

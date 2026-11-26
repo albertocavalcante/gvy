@@ -66,7 +66,10 @@ class CallHierarchyQueuedFollowupTest {
             documents.update(companion, "class ChangedCompanion {}\n", DocumentVersion.of(2))
             release.countDown()
             val error = assertThrows<ExecutionException> { answer.get(10, TimeUnit.SECONDS) }
-            assertEquals(ResponseErrorCode.ContentModified.value, (error.cause as ResponseErrorException).responseError.code)
+            assertEquals(
+                ResponseErrorCode.ContentModified.value,
+                (error.cause as ResponseErrorException).responseError.code,
+            )
         } finally {
             release.countDown()
             queued.cancel()

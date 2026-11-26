@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -27,11 +28,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
 
 /** An encoded method ID can denote both a source declaration and its namesake in a binary. */
-internal class IncomingCallTarget(
-    private val uri: URI,
-    private val declaration: ASTNode,
-    visibleDocuments: Set<URI>,
-) {
+internal class IncomingCallTarget(private val uri: URI, private val declaration: ASTNode, visibleDocuments: Set<URI>) {
     // Groovy names an in-memory companion by its URI path. Distinct URIs can collapse to that same name.
     private val sourceName = uri.path ?: uri.toString()
     private val uniqueInputName = visibleDocuments.none { it != uri && (it.path ?: it.toString()) == sourceName }
@@ -51,17 +48,20 @@ internal class IncomingCallTarget(
             .map { Position(it.range.startLine, it.range.startColumn) }.toSet()
     }.orEmpty()
 
-    fun requireBinding(site: ASTNode, enclosing: ASTNode, model: GroovyAstModel, sites: Set<Position>) {
-        val parent = model.getParent(site)
-        val call = when {
-            site is MethodCallExpression -> site
-            site is StaticMethodCallExpression -> site
-            site is ConstructorCallExpression -> site
-            parent is MethodCallExpression && parent.isMethodToken(site) -> parent
-            parent is ConstructorCallExpression && parent.type === site -> parent
-            else -> null
+    /** The class reference scan includes class literals and imported type names alongside constructors. */
+    fun isNonCallTypeUse(site: ASTNode, model: GroovyAstModel): Boolean {
+        if (declaration !is ClassNode) return false
+        return when (site) {
+            is ClassExpression -> true
+            is ClassNode -> model.getParent(site) is ImportNode
+            // Inside annotated imports only the tracked imported type itself is a proven non-call.
+            is ImportNode -> site.annotations.isEmpty()
+            else -> false
         }
-        val matches = when (call) {
+    }
+
+    fun requireBinding(site: ASTNode, enclosing: ASTNode, model: GroovyAstModel, sites: Set<Position>) {
+        val matches = when (val call = callAt(site, model)) {
             is MethodCallExpression -> matchesMethod(call, enclosing, model, sites)
             is StaticMethodCallExpression ->
                 matchesDeclaration(call.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET))
@@ -71,10 +71,24 @@ internal class IncomingCallTarget(
         if (!matches) unavailable()
     }
 
+    private fun callAt(site: ASTNode, model: GroovyAstModel): ASTNode? {
+        val parent = model.getParent(site)
+        return when {
+            site is MethodCallExpression -> site
+            site is StaticMethodCallExpression -> site
+            site is ConstructorCallExpression -> site
+            parent is MethodCallExpression && parent.isMethodToken(site) -> parent
+            parent is ConstructorCallExpression && parent.type === site -> parent
+            else -> null
+        }
+    }
+
     /** Native position lookup can choose the implicit receiver placed at the very same token as the name. */
     private fun MethodCallExpression.isMethodToken(site: ASTNode): Boolean = method === site ||
-        (isImplicitThis && objectExpression === site &&
-            site.lineNumber == method.lineNumber && site.columnNumber == method.columnNumber)
+        (
+            isImplicitThis && objectExpression === site &&
+                site.lineNumber == method.lineNumber && site.columnNumber == method.columnNumber
+            )
 
     private fun matchesMethod(
         call: MethodCallExpression,
@@ -84,9 +98,8 @@ internal class IncomingCallTarget(
     ): Boolean {
         val direct = call.methodTarget ?: call.getNodeMetaData<MethodNode>(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET)
         if (direct != null) return matchesDeclaration(direct)
-        val receiverType = receiverClass(call, enclosing) ?: return false
-        if (!matchesOwner(receiverType)) return false
-        val method = receiverType.getDeclaredMethods(call.methodAsString).singleOrNull() ?: return false
+        val method = receiverClass(call, enclosing)?.takeIf(::matchesOwner)
+            ?.getDeclaredMethods(call.methodAsString)?.singleOrNull() ?: return false
         val token = call.method
         val indexed = Position(token.lineNumber - 1, token.columnNumber - 1) in sites
         return if (indexed) {
@@ -119,16 +132,20 @@ internal class IncomingCallTarget(
     ): Boolean {
         val script = method.declaringClass
         val lexicalOwner = (enclosing as? MethodNode)?.declaringClass
-        if (!call.isImplicitThis || !script.isScript || lexicalOwner !== script) return false
+        val implicitScriptCall = call.isImplicitThis && script.isScript && lexicalOwner === script
         // Prove the exact source MethodNode in this same parse, with no competing overload (including inherited).
-        if (method !== declaration || model.getUri(method) != uri) return false
+        if (!implicitScriptCall || method !== declaration || model.getUri(method) != uri) return false
         val arguments = (call.arguments as? TupleExpression)?.expressions ?: return false
         val exactArity = arguments.size == method.parameters.size && arguments.none { it is SpreadExpression }
         return exactArity && script.getMethods(method.name).singleOrNull() === method &&
             outsideDelegatingClosure(call, enclosing, model)
     }
 
-    private fun outsideDelegatingClosure(call: MethodCallExpression, enclosing: ASTNode, model: GroovyAstModel): Boolean {
+    private fun outsideDelegatingClosure(
+        call: MethodCallExpression,
+        enclosing: ASTNode,
+        model: GroovyAstModel,
+    ): Boolean {
         var node: ASTNode? = call
         while (node != null && node !== enclosing && node !is ClosureExpression) {
             node = model.getParent(node)
