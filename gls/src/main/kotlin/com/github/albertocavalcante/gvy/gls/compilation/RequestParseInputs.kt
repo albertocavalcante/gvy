@@ -94,7 +94,8 @@ internal class RequestParseInputs(parsed: ParseResult) {
         val excludedDisk = excluded.filterNot(open::contains).mapTo(mutableSetOf(), ::excludedPath)
         val physicalSearch = classpath?.sourceRoots?.isNotEmpty() == true || classpath?.classpath?.isNotEmpty() == true
         val history = retry
-        if ((excludedDisk.isNotEmpty() || (recovered && physicalSearch)) && history?.hasDiscarded != true) {
+        val requiresHistory = excludedDisk.isNotEmpty() || (recovered && physicalSearch)
+        if (requiresHistory && history?.hasDiscarded != true) {
             unavailable("Earlier compiler inputs could not be verified")
         }
         if (history == null) return true

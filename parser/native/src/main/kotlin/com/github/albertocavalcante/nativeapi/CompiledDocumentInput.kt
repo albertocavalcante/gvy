@@ -108,27 +108,23 @@ class CompiledDocumentInput private constructor(
                 ?.takeIf { it.reader === reader }
         }
 
-        internal fun capture(
-            factory: ParserPluginFactory,
-            attempt: AttemptInputs,
-        ): ParserPluginFactory = object : ParserPluginFactory() {
-            override fun createParserPlugin(): ParserPlugin {
-                val parser = factory.createParserPlugin()
-                // This parser consumes the decoded reader in buildAST; another plugin may parse in parseCST.
-                return if (parser is Antlr4ParserPlugin) {
-                    CapturingParser(parser, attempt)
-                } else {
-                    attempt.record(null)
-                    parser
+        internal fun capture(factory: ParserPluginFactory, attempt: AttemptInputs): ParserPluginFactory =
+            object : ParserPluginFactory() {
+                override fun createParserPlugin(): ParserPlugin {
+                    val parser = factory.createParserPlugin()
+                    // This parser consumes the decoded reader in buildAST; another plugin may parse in parseCST.
+                    return if (parser is Antlr4ParserPlugin) {
+                        CapturingParser(parser, attempt)
+                    } else {
+                        attempt.record(null)
+                        parser
+                    }
                 }
             }
-        }
     }
 
-    private class CapturingParser(
-        private val parser: ParserPlugin,
-        private val attempt: AttemptInputs,
-    ) : ParserPlugin by parser {
+    private class CapturingParser(private val parser: ParserPlugin, private val attempt: AttemptInputs) :
+        ParserPlugin by parser {
         override fun buildAST(unit: SourceUnit, loader: ClassLoader, cst: Reduction?): ModuleNode {
             val original = unit.source
             val uri = unit.inputDocumentUri()

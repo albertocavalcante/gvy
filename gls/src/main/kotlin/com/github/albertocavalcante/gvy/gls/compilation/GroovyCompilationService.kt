@@ -232,13 +232,12 @@ class GroovyCompilationService internal constructor(
         mode: ParseMode = ParseMode.WORKSPACE,
         inspectCompilerInputs: Boolean = false,
         query: suspend (CompiledDocumentSnapshot) -> T,
-    ): SnapshotQuery<T> =
-        orchestrator.snapshots.queryDerived(
-            source,
-            content,
-            DerivedParseOptions(phase, mode, inspectCompilerInputs),
-            query,
-        )
+    ): SnapshotQuery<T> = orchestrator.snapshots.queryDerived(
+        source,
+        content,
+        DerivedParseOptions(phase, mode, inspectCompilerInputs),
+        query,
+    )
 
     internal suspend fun <T> queryDiagnosticSnapshot(
         source: SnapshotSource,

@@ -26,14 +26,7 @@ class NativeRetryInputs internal constructor(
         if (!complete) return NativeSourceMembership.Status.UNAVAILABLE
         val outstanding = excludedDisk.toMutableSet()
         for (attempt in discarded) {
-            for (read in attempt.reads) {
-                checkCancelled()
-                if (read == null) return NativeSourceMembership.Status.UNAVAILABLE
-                if (!read.matches(editorText(read.uri), checkCancelled)) return NativeSourceMembership.Status.CHANGED
-                outstanding.remove(Path.of(read.uri).toAbsolutePath().normalize())
-            }
-            val membership = attempt.membership ?: return NativeSourceMembership.Status.UNAVAILABLE
-            val status = membership.check(checkCancelled)
+            val status = attempt.checkInputs(outstanding, editorText, checkCancelled)
             if (status != NativeSourceMembership.Status.CURRENT) return status
         }
         return if (outstanding.isEmpty()) {
@@ -41,6 +34,20 @@ class NativeRetryInputs internal constructor(
         } else {
             NativeSourceMembership.Status.UNAVAILABLE
         }
+    }
+
+    private fun Attempt.checkInputs(
+        outstanding: MutableSet<Path>,
+        editorText: (URI) -> String?,
+        checkCancelled: () -> Unit,
+    ): NativeSourceMembership.Status {
+        for (read in reads) {
+            checkCancelled()
+            if (read == null) return NativeSourceMembership.Status.UNAVAILABLE
+            if (!read.matches(editorText(read.uri), checkCancelled)) return NativeSourceMembership.Status.CHANGED
+            outstanding.remove(Path.of(read.uri).toAbsolutePath().normalize())
+        }
+        return membership?.check(checkCancelled) ?: NativeSourceMembership.Status.UNAVAILABLE
     }
 
     companion object {

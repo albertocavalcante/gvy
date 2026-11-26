@@ -105,9 +105,12 @@ class DiscardedParseInputsTest {
                     val error = assertFailsWith<ResponseErrorException> { service.diagnose(uri, source) }
                     assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
                 } else {
-                    assertTrue(service.diagnose(uri, source).any {
-                        it.severity == DiagnosticSeverity.Error && it.message.contains("unable to resolve class LateType")
-                    })
+                    assertTrue(
+                        service.diagnose(uri, source).any {
+                            it.severity == DiagnosticSeverity.Error &&
+                                it.message.contains("unable to resolve class LateType")
+                        },
+                    )
                 }
                 assertTrue(reached.get())
             } finally {
@@ -119,8 +122,15 @@ class DiscardedParseInputsTest {
     fun `a primary syntax error remains available without a complete module`(): Unit = runBlocking {
         val compiler = compiler(DocumentProvider()) { _, result -> assertTrue(!result.isSuccessful) }
         try {
-            val diagnostics = endpoint(this, compiler).diagnose(root.resolve("Uses.groovy").toUri(), "class Uses { void m( }")
-            assertTrue(diagnostics.any { it.severity == DiagnosticSeverity.Error && it.code?.left != "compilation-error" })
+            val diagnostics = endpoint(
+                this,
+                compiler,
+            ).diagnose(root.resolve("Uses.groovy").toUri(), "class Uses { void m( }")
+            assertTrue(
+                diagnostics.any {
+                    it.severity == DiagnosticSeverity.Error && it.code?.left != "compilation-error"
+                },
+            )
         } finally {
             compiler.shutdown()
         }
@@ -129,7 +139,8 @@ class DiscardedParseInputsTest {
     private fun compiler(documents: DocumentProvider, after: (ParseRequest, ParseResult) -> Unit) =
         GroovyCompilationService(documentProvider = documents, workerSessionDecorator = { delegate ->
             object : WorkerSession {
-                override fun parse(request: ParseRequest): ParseResult = delegate.parse(request).also { after(request, it) }
+                override fun parse(request: ParseRequest): ParseResult =
+                    delegate.parse(request).also { after(request, it) }
             }
         }).apply { updateWorkspaceModel(root, emptyList(), listOf(root)) }
 
@@ -137,7 +148,11 @@ class DiscardedParseInputsTest {
         val configuration = ServerConfiguration(
             diagnosticConfig = DiagnosticConfig(disabledProviders = setOf("codenarc", "custom-rules")),
         )
-        return GroovyTextDocumentService(scope, compiler, GroovyTextDocumentServiceOptions(serverConfiguration = configuration))
+        return GroovyTextDocumentService(
+            scope,
+            compiler,
+            GroovyTextDocumentServiceOptions(serverConfiguration = configuration),
+        )
     }
 
     private companion object {

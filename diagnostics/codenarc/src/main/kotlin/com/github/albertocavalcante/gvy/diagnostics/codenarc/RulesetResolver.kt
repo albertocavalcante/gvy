@@ -421,19 +421,6 @@ class HierarchicalRulesetResolver(
         }
     }
 
-    /**
-     * [file]'s path segments under [root], or null outside it. Real paths on both sides, so a symlinked root
-     * (`/Volumes/T9/...` reached through another path) still matches; the plain paths when a file is unsaved.
-     */
-    private fun relativeToRoot(root: Path, file: URI): List<String>? {
-        val path = runCatching { Paths.get(file) }.getOrNull() ?: return null
-        fun Path.canonical(): Path = runCatching { toRealPath() }.getOrElse { toAbsolutePath().normalize() }
-        val canonicalRoot = root.canonical()
-        val canonicalFile = path.parent?.canonical()?.resolve(path.fileName) ?: path.canonical()
-        if (!canonicalFile.startsWith(canonicalRoot)) return null
-        return canonicalRoot.relativize(canonicalFile).map { it.toString() }
-    }
-
     private fun loadDefault(projectType: ProjectType): ResolvedRuleset {
         // Try custom DSL rulesets first
         val customResourcePath = when (projectType) {
@@ -534,3 +521,16 @@ private val SOURCE_LANGUAGES = listOf("groovy", "java", "kotlin")
  */
 private fun isSourceSet(dir: Path): Boolean =
     dir.fileName.toString() in BUILD_SOURCE_SETS || SOURCE_LANGUAGES.any { Files.isDirectory(dir.resolve(it)) }
+
+/**
+ * [file]'s path segments under [root], or null outside it. Real paths on both sides, so a symlinked root
+ * (`/Volumes/T9/...` reached through another path) still matches; the plain paths when a file is unsaved.
+ */
+private fun relativeToRoot(root: Path, file: URI): List<String>? {
+    val path = runCatching { Paths.get(file) }.getOrNull() ?: return null
+    fun Path.canonical(): Path = runCatching { toRealPath() }.getOrElse { toAbsolutePath().normalize() }
+    val canonicalRoot = root.canonical()
+    val canonicalFile = path.parent?.canonical()?.resolve(path.fileName) ?: path.canonical()
+    if (!canonicalFile.startsWith(canonicalRoot)) return null
+    return canonicalRoot.relativize(canonicalFile).map { it.toString() }
+}

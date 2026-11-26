@@ -130,21 +130,19 @@ internal class RenameRequestQuery(
         source: SnapshotSource,
         supplied: DocumentSnapshot?,
         compute: suspend (CompiledDocumentSnapshot) -> T,
-    ): SnapshotQuery<T> {
-        return if (source.buffer == null && supplied != null) {
-            compilationService.queryDerivedSnapshot(
-                source,
-                supplied.content,
-                mode = ParseMode.WORKSPACE,
-                query = compute,
-            )
-        } else {
-            when (val acquired = compilationService.acquireEditorSnapshot(source)) {
-                is SnapshotAcquisition.Available -> acquired.query(compute)
-                SnapshotAcquisition.Missing -> SnapshotQuery.Missing
-                SnapshotAcquisition.Stale -> SnapshotQuery.Stale
-                is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
-            }
+    ): SnapshotQuery<T> = if (source.buffer == null && supplied != null) {
+        compilationService.queryDerivedSnapshot(
+            source,
+            supplied.content,
+            mode = ParseMode.WORKSPACE,
+            query = compute,
+        )
+    } else {
+        when (val acquired = compilationService.acquireEditorSnapshot(source)) {
+            is SnapshotAcquisition.Available -> acquired.query(compute)
+            SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+            SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+            is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
         }
     }
 
