@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gradle.tooling.GradleConnectionException
 import org.gradle.tooling.GradleConnector
@@ -30,8 +31,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
 
     private data class ConnectionKey(val projectDir: Path, val gradleUserHomeDir: Path?)
 
-    @Volatile
-    private var settings = GradleDaemonSettings()
+    private val settings = SharedValue(GradleDaemonSettings())
 
     // Thread-safe cache of project directories (and optional user home) to their connections
     private val connections = IdleReleasingCache<ConnectionKey, ProjectConnection>(
@@ -44,18 +44,17 @@ object GradleConnectionPool : LeasingConnectionFactory {
         },
         close = ::closeQuietly,
         clockNanos = System::nanoTime,
-        idleTimeout = { settings.connectionIdleTimeout },
+        idleTimeout = { settings.value.connectionIdleTimeout },
     )
 
     private var sweeper: ScheduledExecutorService? = null
 
     /** Set by [shutdown]; a pool that is shut down keeps no connections and runs no sweeper. */
-    @Volatile
-    private var closed = false
+    private val closed = SharedValue(false)
 
     /** Applies [newSettings]; only the connection idle timeout is used here, and it applies from the next sweep. */
     fun configure(newSettings: GradleDaemonSettings) {
-        settings = newSettings
+        settings.set(newSettings)
         logger.info { "Gradle daemon settings: $newSettings" }
     }
 
@@ -71,7 +70,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
      * @return A connected ProjectConnection
      */
     override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
-        check(!closed) { "Gradle connection pool is shut down" }
+        check(!closed.value) { "Gradle connection pool is shut down" }
         ensureSweeper()
         return connections.get(keyOf(projectDir, gradleUserHomeDir))
     }
@@ -81,7 +80,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
      * the lease wraps a private connection that is closed with the lease, and the sweeper is not restarted.
      */
     override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease {
-        if (closed) {
+        if (closed.value) {
             val key = keyOf(projectDir, gradleUserHomeDir)
             val connection = createConnection(key.projectDir, key.gradleUserHomeDir)
             return ConnectionLease(connection) { closeQuietly(key, connection) }
@@ -98,7 +97,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
 
     @Synchronized
     private fun ensureSweeper() {
-        if (sweeper != null || closed) return
+        if (sweeper != null || closed.value) return
         sweeper = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "gradle-connection-idle-sweep").apply { isDaemon = true }
         }.also { executor ->
@@ -152,7 +151,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
     fun shutdown() {
         logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
-        closed = true
+        closed.set(true)
         stopSweeper()
         connections.clear()
         logger.info { "Gradle connection pool shutdown complete" }
@@ -160,7 +159,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
 
     /** Test hook: makes a pool that was shut down usable again. */
     internal fun reopenForTesting() {
-        closed = false
+        closed.set(false)
     }
 
     /**

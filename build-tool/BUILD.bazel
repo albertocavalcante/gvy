@@ -9,6 +9,7 @@ kt_library(
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
+        "//common/concurrent",
         "@maven//:ch_epfl_scala_bsp4j",
         "@maven//:com_google_code_gson_gson",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
@@ -59,6 +60,7 @@ kt_test(
     ]) + ["//tools/test-logging:logback_test_config"],
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
+        "//common/concurrent",
         "@maven//:ch_epfl_scala_bsp4j",
         "@maven//:ch_qos_logback_logback_classic",
         "@maven//:ch_qos_logback_logback_core",
