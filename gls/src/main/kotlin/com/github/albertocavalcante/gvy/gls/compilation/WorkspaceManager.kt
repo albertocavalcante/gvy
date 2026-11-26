@@ -71,8 +71,8 @@ class WorkspaceManager internal constructor(
     private val updateLock = Any()
 
     // Project strategy registry for project-type-specific functionality
+    // Read directly: a private property named strategyRegistry would clash with getStrategyRegistry() on the JVM.
     private val currentRegistry = SharedValue<ProjectStrategyRegistry?>(null)
-    private val strategyRegistry: ProjectStrategyRegistry? get() = currentRegistry.value
 
     /** The current workspace configuration: one consistent snapshot of root, classpath, roots and sources. */
     fun current(): WorkspaceModel = model.get()
@@ -89,7 +89,7 @@ class WorkspaceManager internal constructor(
     /**
      * Gets the project strategy registry.
      */
-    fun getStrategyRegistry(): ProjectStrategyRegistry? = strategyRegistry
+    fun getStrategyRegistry(): ProjectStrategyRegistry? = currentRegistry.value
 
     /**
      * Gets Jenkins capabilities from the strategy registry.
@@ -97,7 +97,7 @@ class WorkspaceManager internal constructor(
      *
      * @return JenkinsCapabilities if a Jenkins strategy is active, null otherwise
      */
-    fun getJenkinsCapabilities(): JenkinsCapabilities? = strategyRegistry?.findCapability<JenkinsCapabilities>()
+    fun getJenkinsCapabilities(): JenkinsCapabilities? = currentRegistry.value?.findCapability<JenkinsCapabilities>()
 
     fun initializeWorkspace(workspaceRoot: Path) {
         logger.info { "Initializing workspace (non-blocking): $workspaceRoot" }
@@ -650,7 +650,7 @@ class WorkspaceManager internal constructor(
         }
 
         // Add source roots from active strategies
-        strategyRegistry?.activeStrategies?.forEach { strategy ->
+        currentRegistry.value?.activeStrategies?.forEach { strategy ->
             strategy.getSourceRoots().forEach { sourceRoot ->
                 if (Files.exists(sourceRoot) && Files.isDirectory(sourceRoot)) {
                     sourceRoots.add(sourceRoot)
@@ -771,7 +771,7 @@ class WorkspaceManager internal constructor(
         compileContextFor(uri, content, workspace).classpath
 
     private fun overridingStrategy(uri: URI): ProjectStrategy? =
-        strategyRegistry?.activeStrategies?.firstOrNull { it.overridesClasspath(uri) }
+        currentRegistry.value?.activeStrategies?.firstOrNull { it.overridesClasspath(uri) }
 
     private fun documentPath(uri: URI): Path? =
         if (uri.scheme == "file") runCatching { Path.of(uri) }.getOrNull() else null
