@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Compani
 import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
+import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -72,31 +73,8 @@ class GroovyGdkProvider(
             // The first parameter is the "self" type (the type being extended)
             val selfType = method.parameterTypes[0].name // Full qualified name
 
-            // Parameters excluding the first one (self)
-            val parameterTypes = method.parameterTypes.drop(1).map { it.simpleName }
-
-            // Try to get real parameter names from source resolver first
-            val parameterNames = groovySourceResolver?.getParameterNames(
-                clazz.simpleName,
-                method.name,
-                parameterTypes,
-            ) ?: method.parameters.drop(1).map { it.name } // Fallback to reflection
-
-            val methodInfo = GdkExtensionMethod(
-                name = method.name,
-                returnType = method.returnType.simpleName,
-                parameterTypes = parameterTypes,
-                parameterNames = parameterNames,
-                originClass = clazz.simpleName,
-                doc = "Groovy GDK method from ${clazz.simpleName}",
-                displayParameterTypes = method.displayParameterTypes().drop(1),
-            )
-
-            cache.compute(selfType) { _, list ->
-                val newList = list?.toMutableList() ?: mutableListOf()
-                newList.add(QualifiedGdkMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName }))
-                newList
-            }
+            val qualified = method.qualifiedGdk(clazz, groovySourceResolver)
+            cache.compute(selfType) { _, list -> list.orEmpty() + qualified }
 
             // Also index by simple name for looser matching if needed, or interfaces
             // e.g. List -> Collection -> Iterable
@@ -169,26 +147,6 @@ class GroovyGdkProvider(
         }
     }
 
-    /** Every superclass and every interface reachable through any chain (`ArrayList` -> `Collection` -> `Iterable`). */
-    private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequence {
-        val seen = mutableSetOf<Class<*>>()
-        val pending = ArrayDeque<Class<*>>()
-        pending.addLast(clazz)
-        while (pending.isNotEmpty()) {
-            val current = pending.removeFirst()
-            for (parent in current.interfaces) {
-                if (seen.add(parent)) {
-                    yield(parent)
-                    pending.addLast(parent)
-                }
-            }
-            current.superclass?.let { superClass ->
-                if (seen.add(superClass)) yield(superClass)
-                pending.addLast(superClass)
-            }
-        }
-    }
-
     private fun appendFallbackMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
         when (className) {
             in FALLBACK_LIST_TYPES -> {
@@ -213,6 +171,61 @@ class GroovyGdkProvider(
 
         private val FALLBACK_LIST_TYPES = setOf("java.util.ArrayList", "java.util.LinkedList")
     }
+}
+
+/** Every superclass and every interface reachable through any chain (`ArrayList` -> `Collection` -> `Iterable`). */
+private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequence {
+    val seen = mutableSetOf<Class<*>>()
+    val pending = ArrayDeque<Class<*>>()
+    pending.addLast(clazz)
+    while (pending.isNotEmpty()) {
+        val current = pending.removeFirst()
+        for (parent in current.interfaces) {
+            if (seen.add(parent)) {
+                yield(parent)
+                pending.addLast(parent)
+            }
+        }
+        current.superclass?.let { superClass ->
+            if (seen.add(superClass)) yield(superClass)
+            pending.addLast(superClass)
+        }
+    }
+}
+
+
+/** Resolve extension metadata from the held parser loader, without consulting the service's live GDK index. */
+internal fun heldGdkMethods(
+    reflection: ClasspathReflection,
+    receiverName: String,
+    name: String,
+): List<QualifiedGdkMethod> {
+    val receiver = reflection.loadClass(receiverName) ?: return emptyList()
+    val methods = GDK_CLASSES.asSequence().mapNotNull(reflection::loadClass).flatMap { owner ->
+        owner.methods.asSequence().filter { method ->
+            method.name == name && Modifier.isPublic(method.modifiers) && Modifier.isStatic(method.modifiers) &&
+                method.parameterCount > 0 && method.parameterTypes.first().isAssignableFrom(receiver)
+        }.map { method -> method.parameterTypes.first() to method.qualifiedGdk(owner, null) }
+    }.groupBy({ it.first }, { it.second })
+    val receivers = sequenceOf(receiver) + collectHierarchyTypes(receiver) + sequenceOf(Any::class.java)
+    return receivers.flatMap { methods[it].orEmpty() }
+        .distinctBy { it.display.name to it.qualifiedParameters }
+        .toList()
+}
+
+private fun Method.qualifiedGdk(owner: Class<*>, sources: GroovySourceResolver?): QualifiedGdkMethod {
+    val arguments = parameterTypes.drop(1)
+    val types = arguments.map { it.simpleName }
+    val display = GdkExtensionMethod(
+        name = name,
+        returnType = returnType.simpleName,
+        parameterTypes = types,
+        parameterNames = sources?.getParameterNames(owner.simpleName, name, types) ?: parameters.drop(1).map { it.name },
+        originClass = owner.simpleName,
+        doc = "Groovy GDK method from ${owner.simpleName}",
+        displayParameterTypes = displayParameterTypes().drop(1),
+    )
+    return QualifiedGdkMethod(display, arguments.map { it.typeName })
 }
 
 /** A GDK method with simple-name display types and its qualified erased parameter identity. */

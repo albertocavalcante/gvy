@@ -27,21 +27,28 @@ data class ReflectedField(
 class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader) : ClasspathReflection {
     private val logger = KotlinLogging.logger {}
 
+    private fun <T> readMetadata(action: (ClassLoader) -> T): T {
+        val loader = classLoaderProvider()
+        return if (loader is BytecodeOnlyClassLoader) loader.read { action(loader) } else action(loader)
+    }
+
     override fun getMethods(className: String): List<ReflectedMethod> = runCatching {
-        val clazz = classLoaderProvider().loadClass(className)
-        clazz.methods.map { method ->
-            ReflectedMethod(
-                name = method.name,
-                returnType = method.returnType.simpleName,
-                parameters = method.parameterTypes.map { it.simpleName },
-                parameterNames = method.parameters.map { it.name },
-                isStatic = Modifier.isStatic(method.modifiers),
-                isPublic = Modifier.isPublic(method.modifiers),
-                doc = "JDK/Classpath method from ${clazz.simpleName}",
-                declaringClass = method.declaringClass.name,
-                displayParameters = method.displayParameterTypes(),
-                qualifiedParameters = method.parameterTypes.map { it.typeName },
-            )
+        readMetadata { loader ->
+            val clazz = loader.loadClass(className)
+            clazz.methods.map { method ->
+                ReflectedMethod(
+                    name = method.name,
+                    returnType = method.returnType.simpleName,
+                    parameters = method.parameterTypes.map { it.simpleName },
+                    parameterNames = method.parameters.map { it.name },
+                    isStatic = Modifier.isStatic(method.modifiers),
+                    isPublic = Modifier.isPublic(method.modifiers),
+                    doc = "JDK/Classpath method from ${clazz.simpleName}",
+                    declaringClass = method.declaringClass.name,
+                    displayParameters = method.displayParameterTypes(),
+                    qualifiedParameters = method.parameterTypes.map { it.typeName },
+                )
+            }
         }
     }.getOrElse { throwable ->
         when (throwable) {
@@ -65,16 +72,18 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
     }
 
     override fun getFields(className: String): List<ReflectedField> = runCatching {
-        val clazz = classLoaderProvider().loadClass(className)
-        clazz.fields.map { field ->
-            ReflectedField(
-                name = field.name,
-                type = field.type.simpleName,
-                isStatic = Modifier.isStatic(field.modifiers),
-                isPublic = Modifier.isPublic(field.modifiers),
-                isFinal = Modifier.isFinal(field.modifiers),
-                declaringClass = field.declaringClass.name,
-            )
+        readMetadata { loader ->
+            val clazz = loader.loadClass(className)
+            clazz.fields.map { field ->
+                ReflectedField(
+                    name = field.name,
+                    type = field.type.simpleName,
+                    isStatic = Modifier.isStatic(field.modifiers),
+                    isPublic = Modifier.isPublic(field.modifiers),
+                    isFinal = Modifier.isFinal(field.modifiers),
+                    declaringClass = field.declaringClass.name,
+                )
+            }
         }
     }.getOrElse { throwable ->
         when (throwable) {

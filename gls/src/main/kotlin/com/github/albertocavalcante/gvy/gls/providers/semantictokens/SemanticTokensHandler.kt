@@ -4,11 +4,16 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
+import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQueryFacts
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.UnusedImportDetector
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
-import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
-import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.control.Phases
@@ -17,44 +22,76 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
-import java.util.concurrent.CancellationException
 
 /** Acquires one captured source/parse pair before generating Groovy and Jenkins tokens. */
 class SemanticTokensHandler(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
 ) {
-    private val logger = KotlinLogging.logger {}
+    internal data class Request(val source: SnapshotSource, val jenkins: JenkinsQuerySnapshot)
 
-    suspend fun getSemanticTokens(uri: URI): SemanticTokens {
-        val context = currentCoroutineContext()
-        context.ensureActive()
-        val original = documentProvider.getSnapshot(uri) ?: return SemanticTokens(emptyList())
-        val result = try {
-            val cached = compilationService.getCompiledSnapshot(uri)?.takeIf { it.sourceText == original.content }
-            requireCurrent(uri, original)
-            val parsed = cached?.parseResult
-                ?: compilationService.compileTransient(uri, original.content, Phases.CANONICALIZATION)
-            context.ensureActive()
-            requireCurrent(uri, original)
-            generate(uri, original.content, parsed) { context.ensureActive() }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: ResponseErrorException) {
-            throw error
-        } catch (@Suppress("TooGenericExceptionCaught") error: Exception) {
-            logger.error(error) { "Failed to generate semantic tokens for $uri" }
-            SemanticTokens(emptyList())
+    internal fun capture(uri: URI): Request {
+        val source = compilationService.captureSnapshotSource(uri)
+        if (documentProvider !== compilationService.documents ||
+            source.buffer?.snapshot !== documentProvider.getSnapshot(uri)
+        ) {
+            throw contentModified()
         }
-        context.ensureActive()
-        requireCurrent(uri, original)
-        return result
+        return Request(source, JenkinsQuerySnapshot.capture(compilationService, uri))
     }
 
-    private fun generate(uri: URI, source: String, parsed: ParseResult, checkCancelled: () -> Unit): SemanticTokens {
-        val jenkins = compilationService.workspaceManager.getJenkinsCapabilities()
-        val isJenkinsFile = jenkins?.isJenkinsFile(uri) ?: false
-        val varsNames = jenkins?.getGlobalVariables()?.map { it.name }?.toSet().orEmpty()
+    suspend fun getSemanticTokens(uri: URI): SemanticTokens = getSemanticTokens(capture(uri))
+
+    internal suspend fun getSemanticTokens(request: Request): SemanticTokens =
+        failingAsInternalError("generating semantic tokens") {
+            val uri = request.source.uri
+            val context = currentCoroutineContext()
+            context.ensureActive()
+            if (request.source.buffer == null) {
+                val current = deliveryInputsCurrent({
+                    request.source.isCurrent() && request.jenkins.authoritiesCurrent()
+                }, request.jenkins::isCurrent)
+                if (!current) throw contentModified()
+                return@failingAsInternalError SemanticTokens(emptyList())
+            }
+            val jenkins = request.jenkins
+            if (!jenkins.isCurrent()) throw contentModified()
+            val outcome = compilationService.queryCapturedSnapshot(
+                request.source,
+                Phases.CANONICALIZATION,
+                ParseMode.WORKSPACE,
+            ) { held ->
+                val facts = jenkins.materialize()
+                context.ensureActive()
+                val result = generate(uri, held.sourceText, held.parseResult, facts) { context.ensureActive() }
+                result to facts
+            }
+            val facts = if (outcome is SnapshotQuery.Answer) outcome.value.second else null
+            val current = deliveryInputsCurrent({
+                request.source.isCurrent() && (facts?.publicationsCurrent?.invoke() ?: jenkins.authoritiesCurrent())
+            }) {
+                facts?.isCurrent() ?: jenkins.isCurrent()
+            }
+            if (!current) throw contentModified()
+            when (outcome) {
+                is SnapshotQuery.Answer -> outcome.value.first
+                SnapshotQuery.Missing -> SemanticTokens(emptyList())
+                SnapshotQuery.Stale -> throw contentModified()
+                is SnapshotQuery.Failure -> throw outcome.cause
+            }
+        }
+
+    private fun contentModified() = ResponseErrorException(
+        ResponseError(ResponseErrorCode.ContentModified, "Document changed during semantic tokens", null),
+    )
+
+    private fun generate(
+        uri: URI,
+        source: String,
+        parsed: ParseResult,
+        jenkins: JenkinsQueryFacts,
+        checkCancelled: () -> Unit,
+    ): SemanticTokens {
         val module = parsed.ast
         val unused = module?.let { UnusedImportDetector.detectUnusedImports(it).toSet() }.orEmpty()
         checkCancelled()
@@ -62,8 +99,8 @@ class SemanticTokensHandler(
         val groovyTokens = GroovySemanticTokenProvider.tokensForSnapshot(input, checkCancelled)
         val jenkinsTokens = JenkinsSemanticTokenProvider.tokensForSnapshot(
             input,
-            isJenkinsFile,
-            varsNames,
+            jenkins.isJenkinsFile,
+            jenkins.variables,
             checkCancelled,
         )
         val allTokens = SemanticTokensEncoder.combine(groovyTokens, jenkinsTokens).sortedWith(
@@ -72,13 +109,5 @@ class SemanticTokensHandler(
         )
         checkCancelled()
         return SemanticTokens(SemanticTokensEncoder.encode(allTokens))
-    }
-
-    private fun requireCurrent(uri: URI, original: DocumentSnapshot) {
-        if (documentProvider.getSnapshot(uri) != original) {
-            throw ResponseErrorException(
-                ResponseError(ResponseErrorCode.ContentModified, "Document changed during semantic tokens", null),
-            )
-        }
     }
 }

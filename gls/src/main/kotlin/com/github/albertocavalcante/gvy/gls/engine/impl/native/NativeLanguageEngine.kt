@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.engine.impl.native
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.adapters.NativeParserAdapter
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit
@@ -21,6 +22,7 @@ import com.github.albertocavalcante.gvy.gls.engine.features.UnifiedDocumentSymbo
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.features.NativeCompletionService
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.features.NativeDefinitionService
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.features.NativeHoverProvider
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
@@ -60,19 +62,21 @@ class NativeLanguageEngine(
     }
 
     /** Uses the held compiled facts only for a request that explicitly acquired a hover snapshot. */
-    internal fun createHoverSession(parseResult: ParseResult, uri: String, content: String): LanguageSession {
-        val session = createSession(parseResult, uri, content)
+    internal fun createHoverSession(
+        held: CompiledDocumentSnapshot,
+        uri: URI,
+        jenkins: JenkinsQuerySnapshot,
+    ): LanguageSession {
+        val session = createSession(held.parseResult, uri.toString(), held.sourceText)
         return object : LanguageSession {
-            override val result: ParseResultMetadata = session.result
-            override val features: FeatureSet by lazy {
-                object : FeatureSet by session.features {
-                    override val hoverProvider: HoverProvider = NativeHoverProvider(
-                        parseResult,
-                        compilationService,
-                        documentProvider,
-                        sourceNavigator,
-                    ).forSource(content)
-                }
+            override val result = session.result
+            override val features = object : FeatureSet {
+                override val hoverProvider = NativeHoverProvider(
+                    held.parseResult, compilationService, documentProvider, sourceNavigator,
+                ).forSnapshot(held, uri, jenkins)
+                override val documentSymbolProvider get() = session.features.documentSymbolProvider
+                override val definitionProvider get() = session.features.definitionProvider
+                override val completionProvider get() = session.features.completionProvider
             }
         }
     }

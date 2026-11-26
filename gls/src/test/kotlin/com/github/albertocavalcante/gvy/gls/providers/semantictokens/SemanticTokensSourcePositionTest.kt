@@ -24,8 +24,8 @@ import kotlin.test.assertTrue
 
 class SemanticTokensSourcePositionTest {
     private val uri = URI.create("file:///SemanticPositions.groovy")
-    private val compilation = GroovyCompilationService()
     private val documents = DocumentProvider()
+    private val compilation = GroovyCompilationService(documentProvider = documents)
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(
         scope,

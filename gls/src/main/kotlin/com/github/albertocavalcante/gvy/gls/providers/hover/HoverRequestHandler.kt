@@ -3,81 +3,110 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
-import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
-import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
+import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
+import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider as EngineHoverProvider
+import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
-import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
 
-/** Acquires current source before querying an engine and rejects results for changed buffers. */
+/** An eager result with only the checks for inputs consulted by this invocation. */
+internal class HeldHover(
+    val value: Hover,
+    val publicationsCurrent: () -> Boolean = { true },
+    val qualify: suspend () -> Boolean = { true },
+)
+
+internal interface HeldHoverProvider : EngineHoverProvider {
+    suspend fun prepareHover(params: HoverParams): HeldHover
+
+    override suspend fun getHover(params: HoverParams): Hover {
+        val held = prepareHover(params)
+        if (!deliveryInputsCurrent(held.publicationsCurrent, held.qualify)) {
+            throw hoverChanged(URI.create(params.textDocument.uri))
+        }
+        return held.value
+    }
+}
+
+private fun hoverChanged(uri: URI) = ResponseErrorException(
+    ResponseError(ResponseErrorCode.ContentModified, "Document changed during hover: $uri", null),
+)
+
 internal class HoverRequestHandler(
     private val compilation: GroovyCompilationService,
     private val documents: DocumentProvider,
 ) {
-    suspend fun getHover(params: HoverParams): Hover {
-        currentCoroutineContext().ensureActive()
-        val uri = URI.create(params.textDocument.uri)
-        val input = documents.getSnapshot(uri)
-        val compiled = acquireSnapshot(uri, input) ?: return emptyHover()
-        if (input != null && compiled.sourceText != input.content) throw contentModified(uri)
+    internal data class Request(
+        val source: SnapshotSource,
+        val params: HoverParams,
+        val engine: LanguageEngine,
+        val jenkins: JenkinsQuerySnapshot,
+    )
 
-        val session = compilation.getHoverSession(uri, compiled)
-        val result = session.features.hoverProvider.getHover(params)
-        currentCoroutineContext().ensureActive()
-        requireUnchanged(uri, input)
-        return result
+    fun capture(params: HoverParams): Request {
+        val uri = URI.create(params.textDocument.uri)
+        val source = compilation.captureSnapshotSource(uri)
+        if (documents !== compilation.documents || source.buffer?.snapshot !== documents.getSnapshot(uri)) {
+            throw hoverChanged(uri)
+        }
+        val copied = HoverParams(
+            TextDocumentIdentifier(uri.toString()),
+            Position(params.position.line, params.position.character),
+        )
+        return Request(source, copied, compilation.captureHoverEngine(), JenkinsQuerySnapshot.capture(compilation, uri))
     }
 
-    private suspend fun acquireSnapshot(uri: URI, input: DocumentSnapshot?): CompiledDocumentSnapshot? {
-        val acquired = compilation.ensureCompiled(uri)
-        currentCoroutineContext().ensureActive()
-        requireUnchanged(uri, input)
-        if (hasNoCurrentAst(uri, input, acquired)) return null
+    suspend fun getHover(params: HoverParams): Hover = getHover(capture(params))
 
-        return compilation.getCompiledSnapshot(uri) ?: input?.let { snapshot ->
-            // Startup retires compiles more than once (worker selection, then the workspace model), so a cache
-            // entry written now can be gone again before it is read (#2457). Hover keeps the parse it compiled
-            // for the captured buffer instead of rereading the cache; text without an AST still answers nothing.
-            // The ticket is taken before the compile reads its model and worker: a change to either retires it,
-            // and a parse of retired inputs is ContentModified rather than an answer from the old classpath.
-            val ownership = compilation.compilationCacheService.ownership
-            val ticket = ownership.begin(uri)
-            val parsed = failingAsInternalError("compiling $uri for hover") {
-                compilation.compileTransient(uri, snapshot.content)
+    suspend fun getHover(request: Request): Hover = failingAsInternalError("computing hover") {
+        val uri = request.source.uri
+        val acquired = compilation.acquireHoverSnapshot(request.source) {
+            request.jenkins.isCurrent() && compilation.isHoverEngineCurrent(request.engine)
+        }
+        val outcome = acquired.query { held ->
+            if (!compilation.isHoverEngineCurrent(request.engine) || !request.jenkins.isCurrent()) {
+                throw hoverChanged(uri)
             }
-            currentCoroutineContext().ensureActive()
-            requireUnchanged(uri, input)
-            if (!ownership.isCurrent(ticket)) throw contentModified(uri)
-            parsed.takeIf { it.ast != null }?.let { CompiledDocumentSnapshot(snapshot.content, it) }
+            val session = compilation.getHoverSession(uri, held, request.engine, request.jenkins)
+            val provider = session.features.hoverProvider
+            if (provider is HeldHoverProvider) {
+                provider.prepareHover(request.params)
+            } else {
+                HeldHover(provider.getHover(request.params))
+            }
+        }
+        // Source qualification in query() can call project strategies. Check the actual feature inputs afterwards.
+        val answer = if (outcome is SnapshotQuery.Answer) outcome.value else null
+        val current = deliveryInputsCurrent({
+            request.jenkins.authoritiesCurrent() &&
+                acquired.source.isCurrent() &&
+                compilation.isHoverEngineCurrent(request.engine) &&
+                (answer == null || answer.publicationsCurrent())
+        }) {
+            request.jenkins.isCurrent() && (answer == null || answer.qualify())
+        }
+        if (!current) throw hoverChanged(uri)
+        when (outcome) {
+            is SnapshotQuery.Answer -> outcome.value.value
+            SnapshotQuery.Missing -> emptyHover()
+            SnapshotQuery.Stale -> throw hoverChanged(uri)
+            is SnapshotQuery.Failure -> throw outcome.cause
         }
     }
-
-    private fun hasNoCurrentAst(uri: URI, input: DocumentSnapshot?, result: CompilationResult?): Boolean {
-        if (result == null || !result.parseCompleted || result.ast != null) return false
-        if (input != null && result.sourceText != input.content) throw contentModified(uri)
-        // A completed parse can leave the last successful AST cached. It cannot describe this incomplete text.
-        return true
-    }
-
-    private fun requireUnchanged(uri: URI, input: DocumentSnapshot?) {
-        // A reopened buffer can have equal text and version but belongs to a different lifecycle.
-        if (documents.getSnapshot(uri) !== input) throw contentModified(uri)
-    }
-
-    private fun contentModified(uri: URI) = ResponseErrorException(
-        ResponseError(ResponseErrorCode.ContentModified, "Document changed during hover: $uri", null),
-    )
 
     private fun emptyHover() = Hover(MarkupContent(MarkupKind.MARKDOWN, ""))
 }

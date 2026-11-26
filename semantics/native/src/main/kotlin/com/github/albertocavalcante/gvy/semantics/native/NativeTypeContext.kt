@@ -18,6 +18,13 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.expr.CastExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 
 /**
@@ -36,13 +43,36 @@ import org.codehaus.groovy.ast.expr.VariableExpression
  * @property isStaticCompilation Whether static compilation is enabled
  * @property workspaceMemberLookup Optional workspace-wide member lookup for cross-file resolution
  */
-class NativeTypeContext(
+class NativeTypeContext private constructor(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry,
     private val scope: NativeScope,
-    override val isStaticCompilation: Boolean = false,
-    private val workspaceMemberLookup: MemberLookup? = null,
+    override val isStaticCompilation: Boolean,
+    private val workspaceMemberLookup: MemberLookup?,
+    private val rootContext: NativeTypeContext?,
 ) : TypeContext {
+    constructor(
+        typeSolver: TypeSolver,
+        calculatorRegistry: TypeCalculatorRegistry,
+        scope: NativeScope,
+        isStaticCompilation: Boolean = false,
+        workspaceMemberLookup: MemberLookup? = null,
+    ) : this(typeSolver, calculatorRegistry, scope, isStaticCompilation, workspaceMemberLookup, null)
+
+    // Each nested expression chooses its own receiver. In particular, arguments cannot inherit the
+    // outer call's binding, and calculating an argument cannot replace the binding for the outer call.
+    private fun contextFor(node: Any): NativeTypeContext {
+        val root = rootContext ?: this
+        val lookup = root.workspaceMemberLookup as? ReceiverBoundMemberLookup ?: return root
+        val receiver = when (node) {
+            is MethodCallExpression -> node.objectExpression
+            is PropertyExpression -> node.objectExpression
+            else -> return root
+        }
+        val bound = lookup.forReceiver(receiver.declaredReceiver()?.redirect())
+        return NativeTypeContext(typeSolver, calculatorRegistry, scope, isStaticCompilation, bound, root)
+    }
+
 
     override fun resolveType(fqn: String): SemanticType = runCatching {
         val ref = typeSolver.tryToSolveType(fqn)
@@ -55,7 +85,7 @@ class NativeTypeContext(
         SemanticType.Unknown("Error resolving $fqn: ${e.message}")
     }
 
-    override fun calculateType(node: Any): SemanticType = calculatorRegistry.calculate(node, this)
+    override fun calculateType(node: Any): SemanticType = calculatorRegistry.calculate(node, contextFor(node))
 
     override fun lookupSymbol(name: String): SemanticType? = scope.lookupVariable(name)
 
@@ -222,7 +252,7 @@ class NativeTypeContext(
         TypeInferenceError.TypeNotResolved(fqn, "Error resolving: ${e.message}").left()
     }
 
-    override fun calculateTypeResult(node: Any): TypeResult = calculatorRegistry.calculateResult(node, this)
+    override fun calculateTypeResult(node: Any): TypeResult = calculatorRegistry.calculateResult(node, contextFor(node))
 
     override fun lookupSymbolResult(name: String): TypeResult = scope.lookupVariable(name)?.right()
         ?: TypeInferenceError.SymbolNotFound(name).left()
@@ -278,4 +308,25 @@ class NativeTypeContext(
          */
         fun fromClassNode(classNode: ClassNode): SemanticType = classNode.toSemanticType()
     }
+}
+
+/** Optional native adapter for consumers requiring a compiler-selected declaration for foreign members. */
+interface ReceiverBoundMemberLookup : MemberLookup {
+    fun forReceiver(declaration: ClassNode?): MemberLookup?
+}
+
+private fun Expression.declaredReceiver(): ClassNode? = when (this) {
+    is VariableExpression -> when (val binding = accessedVariable) {
+        is Parameter -> binding.type
+        is FieldNode -> binding.type
+        // getType follows accessedVariable recursively. Never follow a cycle or infer a source by name.
+        is VariableExpression -> if (binding.accessedVariable === binding || binding.accessedVariable == null) {
+            binding.type
+        } else {
+            null
+        }
+        else -> null
+    }
+    is ConstructorCallExpression, is CastExpression, is ClassExpression -> type
+    else -> null
 }

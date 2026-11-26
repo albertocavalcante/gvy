@@ -69,6 +69,10 @@ class LanguageEngineManager(
         HoverEngineObservation(engineConfig.type.id, state, actual)
     }
 
+    internal fun isActiveHoverEngine(engine: LanguageEngine): Boolean = synchronized(activeEngineLock) {
+        activeEngineInstance === engine
+    }
+
     fun updateEngineConfiguration(newConfig: EngineConfiguration) {
         synchronized(activeEngineLock) {
             if (engineConfig != newConfig) {

@@ -9,6 +9,8 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
+import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
@@ -196,6 +198,9 @@ class GroovyCompilationService internal constructor(
     /** Capture the request's ownership fence and source identity before dispatching its coroutine. */
     internal fun captureSnapshotSource(uri: URI): SnapshotSource = orchestrator.snapshots.capture(uri)
 
+    internal suspend fun acquireHoverSnapshot(source: SnapshotSource, requestCurrent: () -> Boolean): SourceAcquisition =
+        orchestrator.snapshots.acquireHover(source, Phases.CANONICALIZATION, requestCurrent)
+
     internal suspend fun <T> queryCapturedSnapshot(
         source: SnapshotSource,
         phase: Int,
@@ -277,11 +282,22 @@ class GroovyCompilationService internal constructor(
         return engineManager.activeEngine.createSession(uri, content)
     }
 
+    internal fun captureHoverEngine() = engineManager.activeEngine
+
+    internal fun isHoverEngineCurrent(engine: LanguageEngine) = engineManager.isActiveHoverEngine(engine)
+
     /** Retains a request's source and native parse together, independently of later cache changes. */
-    internal fun getHoverSession(uri: URI, snapshot: CompiledDocumentSnapshot): LanguageSession {
-        val engine = engineManager.activeEngine
+    internal fun getHoverSession(uri: URI, snapshot: CompiledDocumentSnapshot): LanguageSession =
+        getHoverSession(uri, snapshot, engineManager.activeEngine, JenkinsQuerySnapshot.capture(this, uri))
+
+    internal fun getHoverSession(
+        uri: URI,
+        snapshot: CompiledDocumentSnapshot,
+        engine: LanguageEngine,
+        jenkins: JenkinsQuerySnapshot,
+    ): LanguageSession {
         return if (engine is NativeLanguageEngine) {
-            engine.createHoverSession(snapshot.parseResult, uri.toString(), snapshot.sourceText)
+            engine.createHoverSession(snapshot, uri, jenkins)
         } else {
             engine.createSession(uri, snapshot.sourceText)
         }

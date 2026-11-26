@@ -67,9 +67,12 @@ class WorkspaceSymbolIndex(
     internal fun captureReferences(hidden: Set<URI> = referenceShadows()): CapturedWorkspaceReferences {
         val snapshot = semanticDb.snapshotReferences()
         val excluded = hidden.toSet()
-        return CapturedWorkspaceReferences(snapshot, excluded) {
-            shadowed() == excluded && semanticDb.isCurrentReferenceSnapshot(snapshot)
-        }
+        return CapturedWorkspaceReferences(
+            snapshot,
+            excluded,
+            isDatabaseCurrent = { semanticDb.isCurrentReferenceSnapshot(snapshot) },
+            shadowsCurrent = { shadowed() == excluded },
+        )
     }
 
     /** The definition of [symbolId] in a document not [shadowed]: the database's first one when none is. */
@@ -378,7 +381,7 @@ private class FrozenWorkspaceMemberLookup(
         .map { it.toMemberInfo() }
 }
 
-private fun SymbolInfo.toMemberInfo() = MemberInfo(
+internal fun SymbolInfo.toMemberInfo() = MemberInfo(
     name = name,
     kind = kind,
     type = type,

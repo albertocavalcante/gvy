@@ -15,8 +15,11 @@ import java.net.URI
 internal class CapturedWorkspaceReferences(
     private val snapshot: ReferenceIndexSnapshot,
     private val hidden: Set<URI>,
-    val isCurrent: () -> Boolean,
+    val isDatabaseCurrent: () -> Boolean,
+    private val shadowsCurrent: () -> Boolean,
 ) {
+    val isCurrent: () -> Boolean = { shadowsCurrent() && isDatabaseCurrent() }
+
     val visibleDocuments: Set<URI> get() = snapshot.documents.keys - hidden
 
     fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? = if (uri in hidden) null else snapshot.documents[uri]
@@ -25,7 +28,9 @@ internal class CapturedWorkspaceReferences(
         snapshot.findDefinitions(symbolId).firstOrNull { it.first !in hidden }?.second
 
     /** Occurrences carry the symbol ID alone. Two visible files declaring it cannot be distinguished. */
-    fun findUniqueSymbol(symbolId: String): SymbolInfo? {
+    fun findUniqueSymbol(symbolId: String): SymbolInfo? = uniqueDefinition(symbolId)?.second
+
+    fun uniqueDefinition(symbolId: String): Pair<URI, SymbolInfo>? {
         val definitions = snapshot.findDefinitions(symbolId)
         val first = definitions.firstOrNull { it.first !in hidden } ?: return null
         if (definitions.any { (uri, _) -> uri != first.first && uri !in hidden }) {
@@ -33,7 +38,7 @@ internal class CapturedWorkspaceReferences(
                 ResponseError(ResponseErrorCode.RequestFailed, "Multiple visible definitions for $symbolId", null),
             )
         }
-        return first.second
+        return first
     }
 
     fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> =

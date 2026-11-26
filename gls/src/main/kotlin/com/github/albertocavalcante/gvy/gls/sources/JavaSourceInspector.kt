@@ -120,6 +120,19 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         }
     }
 
+    /** Reads just the declared source entry of an already selected source artifact. */
+    internal fun documentationFromArchive(archive: Path, className: String): Documentation? {
+        val entryName = className.substringBefore('$').replace('.', '/') + ".java"
+        return java.util.zip.ZipFile(archive.toFile()).use { zip ->
+            val entry = zip.getEntry(entryName) ?: return null
+            if (entry.size > MAX_PARSE_BYTES) return null
+            val bytes = zip.getInputStream(entry).use { it.readNBytes(MAX_PARSE_BYTES + 1) }
+            if (bytes.size > MAX_PARSE_BYTES) return null
+            val text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+            inspectClassFromContent(text, className, entryName)?.documentation
+        }
+    }
+
     /**
      * Inspect Java source content directly (useful for testing).
      */

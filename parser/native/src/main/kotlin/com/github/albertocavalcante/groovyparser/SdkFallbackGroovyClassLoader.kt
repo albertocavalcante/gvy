@@ -3,14 +3,18 @@
 
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.nativeapi.NativeBinaryReadScope
 import com.github.albertocavalcante.nativeapi.NativeCompilerSdkIdentity
 import groovy.lang.GroovyClassLoader
+import groovy.lang.GroovyResourceLoader
 import java.net.URL
 import java.util.Collections
 import java.util.Enumeration
 
 /** Project bytecode and source lookup completes before a narrowly enumerated process SDK fallback is considered. */
 internal open class SdkFallbackGroovyClassLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
+    val binaryReads = NativeBinaryReadScope()
+    private val noSource = GroovyResourceLoader { null }
     private var fallback: RuntimeGroovySdk? = null
     val compilerSdk: NativeCompilerSdkIdentity? get() = fallback?.identity
 
@@ -27,10 +31,14 @@ internal open class SdkFallbackGroovyClassLoader(parent: ClassLoader) : GroovyCl
         preferClassOverScript: Boolean,
         resolve: Boolean,
     ): Class<*> = try {
-        super.loadClass(name, lookupScriptFiles, preferClassOverScript, resolve)
+        super.loadClass(name, lookupScriptFiles && !binaryReads.active, preferClassOverScript, resolve)
     } catch (missing: ClassNotFoundException) {
         fallback?.load(name) ?: throw missing
     }
+
+    // The compiler's ClassNodeResolver asks the resource loader directly, outside loadClass.
+    override fun getResourceLoader(): GroovyResourceLoader =
+        if (binaryReads.active) noSource else super.getResourceLoader()
 
     override fun getResource(name: String): URL? {
         if (name == AST_TRANSFORMATION_SERVICE_FILE) return null

@@ -486,8 +486,20 @@ class JenkinsContext private constructor(
     fun getAllMetadata(classpath: List<Path>?): MergedJenkinsMetadata =
         viewOf(classpath?.let { scans.get().byClasspath[it] })
 
-    private fun viewOf(scan: ScanSnapshot?): MergedJenkinsMetadata {
+    internal fun captureMetadata(key: List<Path>?): JenkinsMetadataView {
+        val scan = key?.let { scans.get().byClasspath[it] }
         val gdsl = gdslSnapshot
+        return JenkinsMetadataView(viewOf(scan, gdsl)) {
+            gdsl === gdslSnapshot && scan === key?.let { scans.get().byClasspath[it] }
+        }
+    }
+
+    internal fun gdslCurrent(): () -> Boolean {
+        val original = gdslSnapshot
+        return { gdslSnapshot === original }
+    }
+
+    private fun viewOf(scan: ScanSnapshot?, gdsl: GdslSnapshot? = gdslSnapshot): MergedJenkinsMetadata {
         val memo = if (scan != null) scan.view else unscannedView
         memo?.takeIf { it.gdsl === gdsl }?.let { return it.metadata }
 

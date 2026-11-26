@@ -40,28 +40,26 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
     // Supports annotations (@NonCPS), modifiers (public, static), but not comments
     private val defCallPattern = Regex("""^\s*(?!//|/\*|#)(?:@?\w+\s+)*def\s+call\s*\(""")
 
-    fun getGlobalVariables(): List<GlobalVariable> {
-        val varsDir = workspaceRoot.resolve("vars")
-        if (!Files.exists(varsDir) || !Files.isDirectory(varsDir)) {
-            return emptyList()
-        }
+    fun getVariableNames(): Set<String> = readVars { it.nameWithoutExtension }.toSet()
 
-        return Either.catch {
-            Files.list(varsDir).use { stream ->
-                stream.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".groovy") }
-                    .map { path ->
-                        val name = path.nameWithoutExtension
-                        val documentation = readDocumentation(varsDir, name)
-                        val callLineNumber = findCallMethodLine(path)
-                        GlobalVariable(name, path, documentation, callLineNumber)
-                    }
-                    .toList()
-            }
-        }.map { variables ->
-            variables.sortedWith(compareBy({ it.name.lowercase() }, { it.name }))
-        }.getOrElse { error ->
-            logger.error(error) { "Failed to scan vars directory" }
-            emptyList()
+    fun getGlobalVariables(): List<GlobalVariable> = Either.catch {
+        readVars { path ->
+            val name = path.nameWithoutExtension
+            val documentation = readDocumentation(path.parent, name)
+            GlobalVariable(name, path, documentation, findCallMethodLine(path))
+        }.sortedWith(compareBy({ it.name.lowercase() }, { it.name }))
+    }.getOrElse { error ->
+        logger.error(error) { "Failed to scan vars directory" }
+        emptyList()
+    }
+
+    private fun <T> readVars(project: (Path) -> T): List<T> {
+        val varsDir = workspaceRoot.resolve("vars")
+        if (!Files.isDirectory(varsDir)) return emptyList()
+        return Files.list(varsDir).use { stream ->
+            stream.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".groovy") }
+                .map { project(it) }
+                .toList()
         }
     }
 
@@ -87,7 +85,7 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
      */
     private fun readDocumentation(varsDir: Path, varName: String): String {
         val txtFile = varsDir.resolve("$varName.txt")
-        if (!Files.exists(txtFile)) {
+        if (!Files.isRegularFile(txtFile)) {
             return ""
         }
 

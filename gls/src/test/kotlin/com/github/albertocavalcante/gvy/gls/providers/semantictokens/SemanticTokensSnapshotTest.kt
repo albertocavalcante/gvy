@@ -8,9 +8,9 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.gvy.source.DocumentVersion
-import io.mockk.coEvery
-import io.mockk.every
-import io.mockk.spyk
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +28,8 @@ import java.net.URI
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -39,8 +41,20 @@ class SemanticTokensSnapshotTest {
     private val foreign = URI.create("file:///ForeignTokens.groovy")
     private val source = "class Fresh {}\n"
     private val documents = DocumentProvider()
-    private val actual = GroovyCompilationService()
-    private val compilation = spyk(actual)
+    private val afterParse = AtomicReference<() -> Unit>({})
+    private val parseCount = AtomicInteger()
+    private val actual = GroovyCompilationService(
+        documentProvider = documents,
+        workerSessionDecorator = { delegate ->
+            object : WorkerSession {
+                override fun parse(request: ParseRequest): ParseResult {
+                    parseCount.incrementAndGet()
+                    return delegate.parse(request).also { afterParse.get().invoke() }
+                }
+            }
+        },
+    )
+    private val compilation = actual
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(
         scope,
@@ -80,29 +94,23 @@ class SemanticTokensSnapshotTest {
     @Test
     fun `cancellation is not converted into an empty token success`() {
         documents.put(uri, source, DocumentVersion.of(1))
-        coEvery { compilation.ensureCompiled(uri) } throws CancellationException("cancelled")
-        coEvery { compilation.compileTransient(uri, source, any()) } throws CancellationException("cancelled")
+        afterParse.set { throw CancellationException("cancelled") }
         assertThrows<CancellationException> { request() }
+        assertEquals(1, parseCount.get())
     }
 
     @Test
     fun `a version change during AST acquisition rejects the response`(): Unit = runBlocking {
         documents.put(uri, source, DocumentVersion.of(1))
         actual.compile(uri, source)
-        val cached = assertNotNull(compilation.getCompiledSnapshot(uri))
-        every { compilation.getAstModel(uri) } answers {
-            documents.put(uri, source, DocumentVersion.of(2))
-            cached.parseResult.astModel
-        }
-        every { compilation.getCompiledSnapshot(uri) } answers {
-            documents.put(uri, source, DocumentVersion.of(2))
-            cached
-        }
+        val previousParses = parseCount.get()
+        afterParse.set { documents.put(uri, source, DocumentVersion.of(2)) }
         val error = assertThrows<ExecutionException> { request() }
         assertEquals(
             ResponseErrorCode.ContentModified.value,
             assertIs<ResponseErrorException>(error.cause).responseError.code,
         )
+        assertEquals(previousParses + 1, parseCount.get(), "the real worker must execute the edit callback")
     }
 
     @Test

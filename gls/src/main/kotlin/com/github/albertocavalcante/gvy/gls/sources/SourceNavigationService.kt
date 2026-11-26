@@ -8,6 +8,8 @@ import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,7 +33,7 @@ class SourceNavigationService(
     private val sourceExtractor: SourceJarExtractor = SourceJarExtractor(),
     private val jdkSourceResolver: JdkSourceResolver = JdkSourceResolver(),
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
-) : SourceNavigator {
+) : SourceNavigator, BinaryDocumentationSource {
 
     private companion object {
         private const val MIN_MAVEN_COORDINATE_PARTS = 3
@@ -232,6 +234,25 @@ class SourceNavigationService(
 
         logger.debug { "No source JAR found for: $binaryJarPath" }
         return null
+    }
+
+    /** A held class identifies its binary artifact even when another artifact defines the same name. */
+    override suspend fun documentationFor(type: Class<*>): Documentation? = withContext(Dispatchers.IO) {
+        val module = type.module
+        if (module.isNamed && module.layer === ModuleLayer.boot()) {
+            val resource = type.getResource("/" + type.name.replace('.', '/') + ".class")
+            if (resource?.protocol == "jrt") {
+                val location = jdkSourceResolver.resolveJdkSource(resource.toURI(), type.name)
+                return@withContext (location as? SourceNavigator.SourceResult.SourceLocation)?.documentation
+            }
+        }
+        val location = type.protectionDomain?.codeSource?.location ?: return@withContext null
+        if (location.protocol != "file") return@withContext null
+        val binary = Path.of(location.toURI())
+        if (!Files.isRegularFile(binary)) return@withContext null
+        // This held class supplies its actual archive, but no verified Maven coordinates or download context.
+        val source = findAdjacentSourceJar(binary)?.takeIf { Files.isRegularFile(it) } ?: return@withContext null
+        javaSourceInspector.documentationFromArchive(source, type.name)
     }
 
     private fun inspectClassDefinition(sourcePath: Path, className: String): JavaSourceInspector.InspectionResult? =

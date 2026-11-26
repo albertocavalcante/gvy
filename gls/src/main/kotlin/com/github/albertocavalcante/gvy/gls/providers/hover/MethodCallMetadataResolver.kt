@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.GdkExtensionMethod
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
+import com.github.albertocavalcante.gvy.gls.services.QualifiedGdkMethod
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -28,11 +29,23 @@ import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 
 /** Resolves proven method targets; ambiguous or dynamic calls keep their honest call summary. */
-class MethodCallMetadataResolver(
-    private val classpathService: ClasspathService,
-    private val gdkProvider: GroovyGdkProvider,
+class MethodCallMetadataResolver internal constructor(
+    private val methods: (String) -> List<ReflectedMethod>,
+    private val loadClass: (String) -> Class<*>?,
+    private val extensions: (ClassNode, String) -> List<QualifiedGdkMethod>,
     private val semanticResolver: SemanticTypeResolver,
 ) {
+    constructor(
+        classpathService: ClasspathService,
+        gdkProvider: GroovyGdkProvider,
+        semanticResolver: SemanticTypeResolver,
+    ) : this(
+        classpathService::getMethods,
+        classpathService::loadClass,
+        { receiver, name -> gdkProvider.getQualifiedMethodsForType(receiver.name).filter { it.display.name == name } },
+        semanticResolver,
+    )
+
     private val logger = LoggerFactory.getLogger(MethodCallMetadataResolver::class.java)
 
     data class MethodMetadata(
@@ -81,7 +94,7 @@ class MethodCallMetadataResolver(
         arguments: List<Expression>,
         name: String,
     ): MethodMetadata? {
-        val reflected = classpathService.getMethods(receiver.name).filter {
+        val reflected = methods(receiver.name).filter {
             it.name == name && it.isPublic && (call.objectExpression !is ClassExpression || it.isStatic)
         }
         // Groovy's owner distance is zero for equal receiver/owner names. Inherited owners need their
@@ -104,7 +117,7 @@ class MethodCallMetadataResolver(
     }
 
     private fun resolveExtension(receiver: ClassNode, arguments: List<Expression>, name: String): MethodMetadata? {
-        val extensions = gdkProvider.getQualifiedMethodsForType(receiver.name).filter { it.display.name == name }
+        val extensions = extensions(receiver.redirect(), name)
         val extensionNodes = extensions.map {
             methodNode(it.display.name, it.qualifiedParameters, receiver, Modifier.PUBLIC) ?: return null
         }
@@ -166,7 +179,7 @@ class MethodCallMetadataResolver(
             type
         } else {
             // Retain a distinct reference per erased snapshot while borrowing complete class/interface metadata.
-            classpathService.loadClass(type.name)?.let { ClassHelper.make(it).plainNodeReference }
+            loadClass(type.name)?.let { ClassHelper.make(it).plainNodeReference }
         }
 
     private fun GdkExtensionMethod.toMethodMetadata(): MethodMetadata = MethodMetadata(

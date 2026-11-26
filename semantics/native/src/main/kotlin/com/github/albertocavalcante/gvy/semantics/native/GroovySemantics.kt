@@ -108,7 +108,7 @@ class GroovySemantics(
                 if (!expression.isMultipleAssignmentDeclaration) {
                     scope.defineDeclaration(
                         expression.variableExpression,
-                        calculatorRegistry.calculate(expression, context),
+                        context.calculateType(expression),
                     )
                 }
                 super.visitDeclarationExpression(expression)
@@ -140,7 +140,7 @@ class GroovySemantics(
         currentModule.set(module)
         try {
             val context = acquireContext(module)
-            return calculatorRegistry.calculate(node, context)
+            return context.calculateType(node)
         } finally {
             currentModule.remove()
         }
@@ -160,7 +160,7 @@ class GroovySemantics(
             val module = synchronized(contextCache) { contextCache.keys.firstOrNull() }
                 ?: return SemanticType.Unknown("Node not in injected module")
             val context = acquireContext(module)
-            return calculatorRegistry.calculate(node, context)
+            return context.calculateType(node)
         } finally {
             currentModule.remove()
         }
@@ -191,7 +191,7 @@ class GroovySemantics(
             val context = contextCache[module]?.get()
                 ?: return TypeInferenceError.InternalError("Module not in context cache").left()
 
-            return calculatorRegistry.calculateResult(node, context)
+            return context.calculateTypeResult(node)
         } finally {
             currentModule.remove()
         }
@@ -204,7 +204,7 @@ class GroovySemantics(
         currentModule.set(module)
         try {
             val context = acquireContext(module)
-            return calculatorRegistry.calculateResult(node, context)
+            return context.calculateTypeResult(node)
         } finally {
             currentModule.remove()
         }

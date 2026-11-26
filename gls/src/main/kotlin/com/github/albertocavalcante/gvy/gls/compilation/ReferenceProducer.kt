@@ -74,7 +74,9 @@ internal class ReferenceProducer(
     fun ownsWindow(workspace: WorkspaceModel, ticket: ArtifactOwnership.Ticket, inventory: Any): Boolean =
         sources?.ownsWindow(workspace, ticket, inventory) == true
 
-    fun matches(paths: List<Path>, worker: WorkerSession): Boolean = worker === session.get() && paths == classpath
+    fun hasClasspath(paths: List<Path>): Boolean = paths == classpath
+
+    fun matches(paths: List<Path>, worker: WorkerSession): Boolean = worker === session.get() && hasClasspath(paths)
 
     fun sameEnvironment(other: ReferenceProducer?): Boolean {
         val worker = other?.session?.get() ?: return false
