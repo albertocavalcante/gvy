@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Keeps the VolatileProperty excludes a ratchet that only shrinks (#2474). The rule must stay active, and each exclude
-// must name one module's src tree whose linted sources still apply @Volatile outside comments and strings. Linted
+// Keeps the excludes of gvy's migration rules a ratchet that only shrinks (#2474). Each rule must stay active, and each
+// migration exclude must name one module's src tree whose linted sources still hold what the rule reports, outside
+// comments and strings: @Volatile for VolatileProperty, java.util.concurrent.atomic in main code for JdkAtomics. Linted
 // sources are the kotlin and java folders of src/main and src/test, what the lint task's detekt run reads by default.
 // A pull request that migrates a module therefore has to drop its line, and a line for an unlinted path such as
-// tests/e2e (#2480) or for a clean module cannot be added.
+// tests/e2e (#2480) or for a clean module cannot be added. JdkAtomics also has fixed permanent excludes.
 
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -15,18 +16,24 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const lintedRoots = ['src/main/kotlin', 'src/main/java', 'src/test/kotlin', 'src/test/java'];
+const lintedMainRoots = ['src/main/kotlin', 'src/main/java'];
+// Tests, the facade and modules published on their own keep the JDK atomics for good (see tools/lint/detekt.yml).
+const jdkAtomicsPermanent = new Set([
+  '**/src/test/**', '**/src/jvmTest/**', '**/src/commonTest/**', '**/src/jmh/**',
+  '**/common/concurrent/src/**', '**/bsp/bsp-core/src/**', '**/bsp/maven-bsp/src/**', '**/parser/core/src/**',
+]);
 const kotlinVolatile = new Set(['kotlin.jvm.Volatile', 'kotlin.concurrent.Volatile']);
 const literalOrComment =
   /^(?:\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|"""[\s\S]*?(?:"""|$)|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?)/;
 
 /**
- * The `gvy > VolatileProperty` block as `{ active, excludes }`, or null when it is missing. Any line in the block
- * other than `active: true|false`, `excludes:`, a comment or a single-quoted list entry is an error, so a change of
- * YAML style cannot silently empty the list.
+ * The `gvy > <rule>` block as `{ active, excludes }`, or null when it is missing. Any line in the block other than
+ * `active: true|false`, `excludes:`, a comment or a single-quoted list entry is an error, so a change of YAML style
+ * cannot silently empty the list.
  */
-function volatilePropertyConfig(config) {
+function gvyRuleConfig(config, rule) {
   const lines = config.replaceAll('\r\n', '\n').split('\n');
-  const start = lines.indexOf('  VolatileProperty:');
+  const start = lines.indexOf(`  ${rule}:`);
   if (start < 0) return null;
   if (lines.slice(0, start).reverse().find(line => /^\S/.test(line)) !== 'gvy:') return null;
   let active;
@@ -39,7 +46,7 @@ function volatilePropertyConfig(config) {
     const entry = line.match(/^ {4}- '([^']+)'$/);
     if (setting) active = setting[1] === 'true';
     else if (entry) excludes.push(entry[1]);
-    else if (line !== '    excludes:') throw new Error(`Unexpected VolatileProperty configuration line: ${line}`);
+    else if (line !== '    excludes:') throw new Error(`Unexpected ${rule} configuration line: ${line}`);
   }
   return { active, excludes };
 }
@@ -73,6 +80,11 @@ function appliesVolatile(source) {
   return [...code.matchAll(/@(?:\w+:)?\[?\s*([\w.]+)/g)].some(([, name]) => names.has(name));
 }
 
+/** Whether [source] uses the java.util.concurrent.atomic package (an import or a qualified name), outside literals. */
+function usesJdkAtomics(source) {
+  return /\bjava\.util\.concurrent\.atomic\b/.test(codeOnly(source));
+}
+
 function kotlinFiles(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -98,10 +110,10 @@ test('the configuration reader takes only the gvy VolatileProperty block and rej
     "    - '**/not-an-exclude/src/**'",
   ].join('\n');
   const expected = { active: true, excludes: ['**/first/src/**', '**/second/module/src/**'] };
-  assert.deepEqual(volatilePropertyConfig(config), expected);
-  assert.deepEqual(volatilePropertyConfig(config.replaceAll('\n', '\r\n')), expected);
-  assert.equal(volatilePropertyConfig('style:\n  VolatileProperty:\n    active: true\n'), null);
-  assert.equal(volatilePropertyConfig('gvy:\n  RegexInFunctionBody:\n    active: true\n'), null);
+  assert.deepEqual(gvyRuleConfig(config, 'VolatileProperty'), expected);
+  assert.deepEqual(gvyRuleConfig(config.replaceAll('\n', '\r\n'), 'VolatileProperty'), expected);
+  assert.equal(gvyRuleConfig('style:\n  VolatileProperty:\n    active: true\n', 'VolatileProperty'), null);
+  assert.equal(gvyRuleConfig('gvy:\n  RegexInFunctionBody:\n    active: true\n', 'VolatileProperty'), null);
   const otherStyles = [
     '    - "**/fmt/src/**"',
     "    - '**/fmt/src/**' # note",
@@ -111,7 +123,7 @@ test('the configuration reader takes only the gvy VolatileProperty block and rej
   ];
   for (const line of otherStyles) {
     const block = `gvy:\n  VolatileProperty:\n    active: true\n${line}\n`;
-    assert.throws(() => volatilePropertyConfig(block), /Unexpected/, line);
+    assert.throws(() => gvyRuleConfig(block, 'VolatileProperty'), /Unexpected/, line);
   }
 });
 
@@ -130,7 +142,7 @@ test('only an applied annotation counts, not comments, strings or another namesa
 });
 
 test('VolatileProperty is active and each exclude names a module whose linted sources still apply @Volatile', () => {
-  const config = volatilePropertyConfig(readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8'));
+  const config = gvyRuleConfig(readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8'), 'VolatileProperty');
   assert.ok(config, 'tools/lint/detekt.yml must configure gvy > VolatileProperty');
   assert.equal(config.active, true, 'VolatileProperty must stay active');
   for (const exclude of config.excludes) {
@@ -140,5 +152,33 @@ test('VolatileProperty is active and each exclude names a module whose linted so
       .flatMap(linted => kotlinFiles(join(root, module, linted)))
       .filter(file => appliesVolatile(readFileSync(file, 'utf8')));
     assert.ok(sites.length > 0, `${module} applies no @Volatile in its linted sources: remove its exclude (#2474)`);
+  }
+});
+
+test('a JDK atomics use counts only in code, as a package name and not a longer one', () => {
+  assert.equal(usesJdkAtomics('import java.util.concurrent.atomic.AtomicLong'), true);
+  assert.equal(usesJdkAtomics('import java.util.concurrent.atomic.*'), true);
+  assert.equal(usesJdkAtomics('val counter = java.util.concurrent.atomic.AtomicLong()'), true);
+  assert.equal(usesJdkAtomics('// java.util.concurrent.atomic.AtomicLong'), false);
+  assert.equal(usesJdkAtomics('val text = "java.util.concurrent.atomic"'), false);
+  assert.equal(usesJdkAtomics('import java.util.concurrent.atomicity.Unrelated'), false);
+  assert.equal(usesJdkAtomics('import java.util.concurrent.ConcurrentHashMap'), false);
+});
+
+test('JdkAtomics is active and each migration exclude names a module whose main code uses the JDK atomics', () => {
+  const config = gvyRuleConfig(readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8'), 'JdkAtomics');
+  assert.ok(config, 'tools/lint/detekt.yml must configure gvy > JdkAtomics');
+  assert.equal(config.active, true, 'JdkAtomics must stay active');
+  for (const permanent of jdkAtomicsPermanent) {
+    const module = permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
+    if (module) assert.ok(existsSync(join(root, module, 'src')), `${permanent} names no module`);
+  }
+  for (const exclude of config.excludes.filter(entry => !jdkAtomicsPermanent.has(entry))) {
+    const module = exclude.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
+    assert.ok(module, `${exclude} must be a permanent exclude or have the form '**/<module>/src/**'`);
+    const sites = lintedMainRoots
+      .flatMap(linted => kotlinFiles(join(root, module, linted)))
+      .filter(file => usesJdkAtomics(readFileSync(file, 'utf8')));
+    assert.ok(sites.length > 0, `${module} no longer uses the JDK atomics in main code: remove its exclude`);
   }
 });

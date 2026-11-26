@@ -114,14 +114,17 @@ State that several threads read and write needs a primitive that says what it is
 | A count: calls, attempts, tickets                                             | `Counter`                                                |
 | A value computed once, on first use                                           | `lazy`                                                   |
 | Several fields that change together                                           | One immutable value in a `SharedValue`, or one lock      |
+| State that one thread owns: a counter local to one call                       | A plain `var`                                            |
 
 - Do not add `@Volatile` fields. They make single reads and writes visible, but not `x++`, check-then-act or a read of
   two related fields. detekt's `VolatileProperty` rule reports them (#2474).
 - Use `kotlin.concurrent.atomics` only inside `:common:concurrent`; detekt's `ForbiddenImport` enforces this. The API is
-  experimental, and confining it keeps an upstream change to one module. Prefer the gvy types over
-  `java.util.concurrent.atomic` in new code too.
-- Modules published on their own, without other gvy modules (`bsp/bsp-core`, `bsp/maven-bsp`), use
-  `java.util.concurrent.atomic` instead, so their published dependencies do not include an unpublished module.
+  experimental, and confining it keeps an upstream change to one module. Use the gvy types rather than
+  `java.util.concurrent.atomic` too; detekt's `JdkAtomics` rule reports it outside tests and the modules still listed in
+  its excludes.
+- Modules published as their own artifacts (`bsp/bsp-core`, `bsp/maven-bsp`, `parser/core`) use
+  `java.util.concurrent.atomic` instead, so their published dependencies do not gain the unpublished
+  `:common:concurrent`.
 - `SharedValue.update` can run its transform more than once under contention, so the transform must not have side
   effects. Reading `value` and then calling `set` can lose a concurrent change.
 - Coroutine code can instead confine state to one coroutine or guard it with a `Mutex`; see Kotlin's

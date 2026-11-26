@@ -66,6 +66,7 @@ class RegexInFunctionBodyTest {
     fun `provider registers every rule under the gvy id`() {
         val ruleSet = GvyRuleSetProvider().instance(Config.empty)
         assertThat(ruleSet.id).isEqualTo("gvy")
-        assertThat(ruleSet.rules.map { it.ruleId }).containsExactly("RegexInFunctionBody", "VolatileProperty")
+        val ruleIds = ruleSet.rules.map { it.ruleId }
+        assertThat(ruleIds).containsExactly("RegexInFunctionBody", "VolatileProperty", "JdkAtomics")
     }
 }

@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import java.util.concurrent.atomic.AtomicBoolean // FLAG
+import java.util.concurrent.atomic.AtomicReference as Ref // FLAG
+import java.util.concurrent.atomic.* // FLAG
+
+class Qualified {
+    val counter = java.util.concurrent.atomic.AtomicLong() // FLAG
+    val holder: java.util.concurrent.atomic.AtomicInteger? = null // FLAG
+    fun next(): Long = java.util.concurrent.atomic.AtomicLong(1).incrementAndGet() // FLAG
+}
+
+fun typed(flags: List<java.util.concurrent.atomic.AtomicBoolean>) = flags.size // FLAG
+
+typealias Flag = java.util.concurrent.atomic.AtomicBoolean // FLAG
+
+class Extended : java.util.concurrent.atomic.AtomicLong() // FLAG
+
+class Forms {
+    val type = java.util.concurrent.atomic.AtomicLong::class // FLAG
+    val increment = java.util.concurrent.atomic.AtomicLong::incrementAndGet // FLAG
+    val updater = java.util.concurrent.atomic.AtomicIntegerFieldUpdater.newUpdater(Forms::class.java, "n") // FLAG
+    fun check(value: Any) = value is java.util.concurrent.atomic.AtomicLong // FLAG
+    fun cast(value: Any) = value as java.util.concurrent.atomic.AtomicLong // FLAG
+    val none = emptyList<java.util.concurrent.atomic.AtomicLong>() // FLAG
+    val text = "${java.util.concurrent.atomic.AtomicLong()}" // FLAG
+}
+
+class Spellings {
+    val escaped = java.util.concurrent.`atomic`.AtomicLong() // FLAG
+    val commented = java.util.concurrent./* between */atomic.AtomicLong() // FLAG
+    val escapedType: java.util.concurrent.`atomic`.AtomicLong? = null // FLAG
+}

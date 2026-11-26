@@ -18,6 +18,6 @@ class GvyRuleSetProvider : RuleSetProvider {
 
     override fun instance(config: Config): RuleSet = RuleSet(
         ruleSetId,
-        listOf(RegexInFunctionBody(config), VolatileProperty(config)),
+        listOf(RegexInFunctionBody(config), VolatileProperty(config), JdkAtomics(config)),
     )
 }

@@ -100,9 +100,46 @@ The rule cannot resolve names, so it errs in these documented ways:
 ### Coverage
 
 The rule guards every module the lint task reads: the migration in #2474 removed the last `excludes` line, and no
-baseline entry exists. `tools/ci/detekt-volatile-excludes.test.mjs` keeps it so: the rule must stay active, and any
+baseline entry exists. `tools/ci/detekt-ratchet-excludes.test.mjs` keeps it so: the rule must stay active, and any
 future `excludes` line must name a module whose `src/main/kotlin` or `src/test/kotlin` (or their `java` folders) still
 applies `@Volatile` outside comments and strings, so a clean or unlinted module can never be excluded.
+
+## `JdkAtomics`
+
+Shared state goes through gvy's own types in `:common:concurrent` (`OnceFlag`, `SharedValue`, `Counter`), which keep the
+JVM's atomics in one module (see [Shared mutable state](../../docs/kotlin-style.md#shared-mutable-state)). The rule
+reports every import of `java.util.concurrent.atomic` and every qualified use of a type in it, such as
+`java.util.concurrent.atomic.AtomicLong()`. Mentions in comments and strings, and a longer package such as
+`java.util.concurrent.atomicity`, are not uses.
+
+| The JDK type was used as                                        | Use                                                                           |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `AtomicBoolean` claimed with `compareAndSet(false, true)`       | `OnceFlag.trySet()`                                                           |
+| `AtomicBoolean` set and cleared                                 | `SharedValue<Boolean>`                                                        |
+| `AtomicReference`                                               | `SharedValue<T>`: `exchange` for `getAndSet`, `update {}` for a derived value |
+| `AtomicReference.compareAndSet(null, value)` (first value wins) | `update { it ?: value }`                                                      |
+| `AtomicInteger`, `AtomicLong` counters                          | `Counter` (convert with `toInt()` where an `Int` is needed)                   |
+| Any of these, used by one thread only                           | A plain `var`; an atomic there claims the state is shared                     |
+
+Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
+their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. The other excludes
+are modules still to migrate (#2474); `tools/ci/detekt-ratchet-excludes.test.mjs` fails on one whose main code no longer
+uses the package.
+
+`Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
+previous value (`increment() - 1`), or a counter that starts one lower.
+
+A field updater that needs the JDK type is the accepted reason for `@Suppress("JdkAtomics")`, with a comment. Write the
+qualified name at the suppressed declaration: an imported name is reported at its import, which only a file-wide
+`@file:Suppress` can silence.
+
+### Known limits
+
+The rule reads syntax only, so it does not see:
+
+1. A JDK atomic behind a type alias declared where the rule does not look (tests, excluded or unlinted code), or a type
+   inferred from another API (`val counter = api.counter()`).
+2. Java sources, and Kotlin outside the source roots the lint task reads (#2480).
 
 ## Running the tests
 
@@ -110,9 +147,9 @@ applies `@Volatile` outside comments and strings, so a clean or unlinted module 
 ./gradlew :tools:detekt-rules:test
 ```
 
-Each rule has fixtures in `src/test/resources/<rule-name>/` (`regex-in-function-body/`, `volatile-property/`). Each
-`// FLAG` line in `violations.kt.fixture` must be reported and `compliant.kt.fixture` must stay silent; add a case to
-the fixture before changing the rule.
+Each rule has fixtures in `src/test/resources/<rule-name>/` (`regex-in-function-body/`, `volatile-property/`,
+`jdk-atomics/`). Each `// FLAG` line in `violations.kt.fixture` must be reported and `compliant.kt.fixture` must stay
+silent; add a case to the fixture before changing the rule.
 
 ## No Bazel target
 
