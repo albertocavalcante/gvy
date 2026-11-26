@@ -6,6 +6,7 @@
 package com.github.albertocavalcante.gvy.jenkins
 
 import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
@@ -46,7 +47,7 @@ class JenkinsWorkspaceManager internal constructor(
     private val libraryCache = ConcurrentHashMap<URI, CacheEntry>()
 
     /** A file's scan key and the request that recorded it; an older request never overwrites a newer one. */
-    private class TrackedClasspath(val request: Long, val scanKey: List<Path>)
+    private class TrackedClasspath(val request: Long, val scanKey: List<Path>, val entries: List<Path>)
 
     /** Hands out classpath request numbers, in the order compiles ask for a classpath. */
     private val classpathRequests = AtomicLong()
@@ -122,7 +123,8 @@ class JenkinsWorkspaceManager internal constructor(
         synchronized(classpathByUri) {
             val recorded = classpathByUri[uri]
             if (recorded == null || recorded.request < request) {
-                classpathByUri[uri] = TrackedClasspath(request, scoped.scanKey)
+                val actual = if (scoped.entries == scoped.scanKey) scoped.scanKey else scoped.entries.toList()
+                classpathByUri[uri] = TrackedClasspath(request, scoped.scanKey, actual)
             }
         }
         val classpath = scoped.entries
@@ -184,11 +186,26 @@ class JenkinsWorkspaceManager internal constructor(
      */
     fun getGlobalVariables(): List<GlobalVariable> = varsProvider.getGlobalVariables()
 
+    /** Semantic tokens consume the names alone; avoid reading every vars body and documentation file. */
+    fun getGlobalVariableNames(): Set<String> = varsProvider.getVariableNames()
+
     /**
      * Metadata for the Jenkinsfile [uri]: bundled and GDSL metadata plus the library steps scanned from the
      * classpath it was last compiled with, never another file's (#1242). Before its first compile (or after
      * its classpath was evicted) it has no scanned steps.
      */
+    fun captureGdsl(): () -> Boolean = jenkinsContext.gdslCurrent()
+
+    /** Capture the scan and GDSL actually selected for this file. A later equal selection remains usable. */
+    fun captureMetadata(uri: URI): JenkinsFileMetadata {
+        val original = synchronized(classpathByUri) { classpathByUri[uri] }
+        val view = jenkinsContext.captureMetadata(original?.scanKey)
+        return JenkinsFileMetadata(view.metadata, original?.entries) {
+            val current = synchronized(classpathByUri) { classpathByUri[uri] }
+            original?.scanKey == current?.scanKey && original?.entries == current?.entries && view.isCurrent()
+        }
+    }
+
     fun getAllMetadata(uri: URI) =
         jenkinsContext.getAllMetadata(synchronized(classpathByUri) { classpathByUri[uri]?.scanKey })
 
@@ -199,3 +216,11 @@ class JenkinsWorkspaceManager internal constructor(
         const val LOAD_FACTOR = 0.75f
     }
 }
+
+internal class JenkinsMetadataView(val metadata: MergedJenkinsMetadata, val isCurrent: () -> Boolean)
+
+class JenkinsFileMetadata internal constructor(
+    val metadata: MergedJenkinsMetadata,
+    val classpath: List<Path>?,
+    val isCurrent: () -> Boolean,
+)

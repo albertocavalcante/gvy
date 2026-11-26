@@ -52,7 +52,8 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
     @Suppress("MagicNumber") // Priority constant for strategy ordering
     override val priority: Int = 100
 
-    private var workspaceManager: JenkinsWorkspaceManager? = null
+    @Volatile private var workspaceManager: JenkinsWorkspaceManager? = null
+    internal val queryManager: JenkinsWorkspaceManager? get() = workspaceManager
     private var pluginManager: JenkinsPluginManager? = null
     private var initJob: Job? = null
 

@@ -38,12 +38,10 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
 
     private val logger = KotlinLogging.logger {}
 
-    // Factories return an independent mutable parser for each call.
-    private fun newParser(): JavaParser = parserFactory()
-
     private fun parseContent(content: String, checkCancelled: () -> Unit) =
         CancellableSourceReader(StringReader(content), checkCancelled).use { reader ->
-            val parsed = newParser().parse(ParseStart.COMPILATION_UNIT, Providers.provider(reader))
+            // Each parse owns its mutable JavaParser.
+            val parsed = parserFactory().parse(ParseStart.COMPILATION_UNIT, Providers.provider(reader))
             reader.cancellation?.let { throw it }
             parsed
         }
@@ -117,6 +115,19 @@ class JavaSourceInspector internal constructor(private val parserFactory: () -> 
         } catch (e: Exception) {
             logger.warn(e) { "Failed to inspect method in Java source: $sourcePath" }
             null
+        }
+    }
+
+    /** Reads just the declared source entry of an already selected source artifact. */
+    internal fun documentationFromArchive(archive: Path, className: String): Documentation? {
+        val entryName = className.substringBefore('$').replace('.', '/') + ".java"
+        return java.util.zip.ZipFile(archive.toFile()).use { zip ->
+            val entry = zip.getEntry(entryName)
+            if (entry == null || entry.size > MAX_PARSE_BYTES) return null
+            val bytes = zip.getInputStream(entry).use { it.readNBytes(MAX_PARSE_BYTES + 1) }
+            if (bytes.size > MAX_PARSE_BYTES) return null
+            val text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+            inspectClassFromContent(text, className, entryName)?.documentation
         }
     }
 

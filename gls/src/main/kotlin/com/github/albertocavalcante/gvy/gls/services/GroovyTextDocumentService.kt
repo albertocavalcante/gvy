@@ -523,8 +523,9 @@ class GroovyTextDocumentService(
         HoverRequestHandler(compilationService, documentProvider)
     }
 
-    override fun hover(params: HoverParams): CompletableFuture<Hover> = coroutineScope.future {
-        hoverRequestHandler.getHover(params)
+    override fun hover(params: HoverParams): CompletableFuture<Hover> {
+        val request = runCatching { hoverRequestHandler.capture(params) }
+        return coroutineScope.future { hoverRequestHandler.getHover(request.getOrThrow()) }
     }
 
     override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
@@ -788,12 +789,10 @@ class GroovyTextDocumentService(
         inlayHintsProvider.provideInlayHints(params)
     }
 
-    override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
-        coroutineScope.future {
-            logger.debug { "Semantic tokens requested for ${params.textDocument.uri}" }
-            val uri = URI.create(params.textDocument.uri)
-            semanticTokensHandler.getSemanticTokens(uri)
-        }
+    override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> {
+        val request = runCatching { semanticTokensHandler.capture(URI.create(params.textDocument.uri)) }
+        return coroutineScope.future { semanticTokensHandler.getSemanticTokens(request.getOrThrow()) }
+    }
 
     /**
      * Wait for any ongoing diagnostics job for the given URI to complete.

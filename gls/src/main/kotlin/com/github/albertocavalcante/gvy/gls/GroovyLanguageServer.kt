@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.build.bsp.BspBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
@@ -98,14 +99,37 @@ private const val PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS = 20L
 private const val MAX_PENDING_ANALYSIS_SESSIONS = 1024
 private const val MAX_ANALYSIS_SESSION_LENGTH = 128
 
-class GroovyLanguageServer(
-    private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val processLiveness: ProcessLiveness = SystemProcessLiveness,
-    private val exitProcess: (Int) -> Unit = { kotlin.system.exitProcess(it) },
-    private val shutdownExecutor: Executor = ForkJoinPool.commonPool(),
+class GroovyLanguageServer private constructor(
+    private val parentClassLoader: ClassLoader,
+    private val dispatcher: CoroutineDispatcher,
+    private val processLiveness: ProcessLiveness,
+    private val exitProcess: (Int) -> Unit,
+    private val shutdownExecutor: Executor,
+    workerSessionDecorator: (WorkerSession) ->
+        WorkerSession,
 ) : LanguageServer,
     LanguageClientAware {
+
+    constructor(
+        parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
+        processLiveness: ProcessLiveness = SystemProcessLiveness,
+        exitProcess: (Int) -> Unit = { kotlin.system.exitProcess(it) },
+        shutdownExecutor: Executor = ForkJoinPool.commonPool(),
+    ) : this(parentClassLoader, dispatcher, processLiveness, exitProcess, shutdownExecutor, { it })
+
+    constructor() : this(
+        ClassLoader.getPlatformClassLoader(), Dispatchers.Default, SystemProcessLiveness,
+        { kotlin.system.exitProcess(it) }, ForkJoinPool.commonPool(), { it },
+    )
+
+    internal constructor(
+        workerSessionDecorator: (WorkerSession) ->
+            WorkerSession,
+    ) : this(
+        ClassLoader.getPlatformClassLoader(), Dispatchers.Default, SystemProcessLiveness,
+        { kotlin.system.exitProcess(it) }, ForkJoinPool.commonPool(), workerSessionDecorator,
+    )
 
     private val logger = KotlinLogging.logger {}
 
@@ -143,10 +167,11 @@ class GroovyLanguageServer(
     private val documentProvider = DocumentProvider()
     private val sourceNavigator = SourceNavigationService()
 
-    private val compilationService = GroovyCompilationService(
+    internal val compilationService = GroovyCompilationService(
         parentClassLoader = parentClassLoader,
         documentProvider = documentProvider,
         sourceNavigator = sourceNavigator,
+        workerSessionDecorator = workerSessionDecorator,
     )
 
     private val documentAnalysisSessions = java.util.concurrent.ConcurrentHashMap<URI, String>()

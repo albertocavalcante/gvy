@@ -34,8 +34,8 @@ class SemanticTokensHandlerTest {
     @BeforeEach
     fun setup() = runBlocking {
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        compilationService = GroovyCompilationService()
         documentProvider = DocumentProvider()
+        compilationService = GroovyCompilationService(documentProvider = documentProvider)
 
         tempWorkspace = Files.createTempDirectory("semantic-tokens-handler-test")
         compilationService.workspaceManager.initializeWorkspace(tempWorkspace)

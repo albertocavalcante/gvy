@@ -108,6 +108,14 @@ internal class SnapshotSource(
     private fun sameSource(other: SnapshotSource): Boolean = workspace === other.workspace &&
         buffer?.incarnation === other.buffer?.incarnation && inventory.identity === other.inventory.identity
 
+    /** A single workspace cache retirement, with the same open inputs and no intervening file retirement. */
+    fun followsCacheClear(original: SnapshotSource): Boolean {
+        val prior = original.buffer ?: return false
+        return buffer?.snapshot === prior.snapshot && sameSource(original) &&
+            ticket.epoch > original.ticket.epoch && ticket.epoch == original.ticket.epoch.next() &&
+            ticket.lastRetirement == original.ticket.lastRetirement
+    }
+
     fun matches(other: SnapshotSource): Boolean = ticket.sharesInputs(other.ticket) && sameSource(other)
 
     fun canRetryWith(other: SnapshotSource): Boolean = buffer != null && worker !== other.worker &&
@@ -127,7 +135,7 @@ internal class SnapshotSource(
  */
 internal class CapturedCompilation(
     private val selectSources: (URI, WorkspaceModel) -> List<Path>,
-    private val source: SnapshotSource,
+    val source: SnapshotSource,
     val content: String,
     val phase: Int,
     val mode: ParseMode,
@@ -183,10 +191,13 @@ internal class CapturedCompilation(
         context == requester.document &&
         isCurrent()
 
+    /** The effective compiler inputs, including the classpath selected by a strategy for this exact content. */
+    fun sameCompilerInputs(other: CapturedCompilation): Boolean = phase == other.phase && mode == other.mode &&
+        content == other.content && context == other.context && session === other.session && sources == other.sources
+
     /** Reuse the original producer, including the retirement stamp and resolver answers it actually observed. */
-    fun canShare(producer: CapturedCompilation): Boolean = phase == producer.phase && mode == producer.mode &&
-        content == producer.content && source.matches(producer.source) && context == producer.context &&
-        session === producer.session && sources == producer.sources && producer.isCurrent()
+    fun canShare(producer: CapturedCompilation): Boolean =
+        source.matches(producer.source) && sameCompilerInputs(producer) && producer.isCurrent()
 
     suspend fun parse(): ParseResult {
         val job = currentCoroutineContext()
@@ -205,6 +216,16 @@ internal class CapturedCompilation(
             workspaceClassLocator = if (mode == ParseMode.MINIMAL) ::locate else null,
         )
         return session.parse(request)
+    }
+}
+
+/** Source whose ownership guard applies after acquisition, including a successful startup retry. */
+internal class SourceAcquisition(val source: SnapshotSource, private val outcome: SnapshotAcquisition) {
+    suspend fun <T> query(compute: suspend (CompiledDocumentSnapshot) -> T): SnapshotQuery<T> = when (outcome) {
+        is SnapshotAcquisition.Available -> outcome.query(compute)
+        SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+        SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+        is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(outcome.cause)
     }
 }
 
@@ -228,6 +249,45 @@ internal class SnapshotAcquirer(
         val fresh = capture(original.uri)
         return fresh.takeIf(original::canRetryWith)
     }
+
+    /**
+     * Hover may replace one retired open-buffer producer before querying it. MINIMAL parses can consume
+     * locator answers while running, so closed files use their original acquisition without a retry.
+     */
+    suspend fun acquireHover(original: SnapshotSource, phase: Int, requestCurrent: () -> Boolean): SourceAcquisition {
+        if (original.buffer == null) {
+            return SourceAcquisition(original, acquireSource(original, phase, ParseMode.MINIMAL))
+        }
+        val caller = currentCoroutineContext()
+        caller.ensureActive()
+        dependencies.waiterScope.coroutineContext.ensureActive()
+        if (!caller.inputsCurrent(original::isCurrent)) return SourceAcquisition(original, SnapshotAcquisition.Stale)
+
+        val first = resolve(openCompilation(original, phase))
+        val replacement = first.retiredProducer?.let { producer ->
+            val fresh = capture(original.uri)
+            if (fresh.followsCacheClear(original) && caller.inputsCurrent(requestCurrent)) {
+                openCompilation(fresh, phase).takeIf(producer::sameCompilerInputs)
+            } else {
+                null
+            }
+        }
+        return if (replacement != null) {
+            dependencies.waiterScope.coroutineContext.ensureActive()
+            // The original worker may still be unwinding. No result from it is delivered under the fresh ticket.
+            SourceAcquisition(replacement.source, resolve(replacement).outcome)
+        } else {
+            SourceAcquisition(original, first.outcome)
+        }
+    }
+
+    private fun openCompilation(source: SnapshotSource, phase: Int) = CapturedCompilation(
+        selectSources,
+        source,
+        checkNotNull(source.buffer).snapshot.content,
+        phase,
+        ParseMode.WORKSPACE,
+    )
 
     suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition =
         whileCallerActive { acquireCurrent(source, phase, mode) }
@@ -257,37 +317,43 @@ internal class SnapshotAcquirer(
             source.unlessRetired(SnapshotAcquisition.Missing)
         } else {
             val selectedMode = mode ?: if (source.buffer != null) ParseMode.WORKSPACE else ParseMode.MINIMAL
-            resolve(CapturedCompilation(selectSources, source, content, phase, selectedMode))
+            resolve(CapturedCompilation(selectSources, source, content, phase, selectedMode)).outcome
         }
     }
 
-    private suspend fun resolve(capture: CapturedCompilation): SnapshotAcquisition {
+    /** Only a producer actually chosen after the initial freshness check can witness a startup retry. */
+    private class Resolution(val outcome: SnapshotAcquisition, selected: CapturedCompilation? = null) {
+        val retiredProducer = selected.takeIf { outcome === SnapshotAcquisition.Stale }
+    }
+
+    private suspend fun resolve(capture: CapturedCompilation): Resolution {
         currentCoroutineContext().ensureActive()
-        if (!capture.isCurrent()) return checked(SnapshotAcquisition.Stale)
+        if (!capture.isCurrent()) return Resolution(checked(SnapshotAcquisition.Stale))
         val previous = cache.getOwned(capture.uri)
         if (previous != null && capture.canShare(previous.capture)) {
             val outcome = previous.outcome()
-            return checked(if (capture.isCurrent()) outcome else SnapshotAcquisition.Stale)
+            val answer = checked(if (capture.isCurrent()) outcome else SnapshotAcquisition.Stale)
+            return Resolution(answer, previous.capture)
         }
         val pending = cache.snapshotJobs.register(capture.uri, capture, capture.ticket, capture::canShare) {
             dependencies.waiterScope.async(dependencies.ioDispatcher, start = CoroutineStart.LAZY) {
                 compile(capture, previous)
             }
         }
-        var answer: SnapshotAcquisition? = null
+        var answer: Resolution? = null
         try {
             answer = awaitCurrent(capture, pending)
             return answer
         } finally {
             // After this final checked handoff the caller may use the parser, even if it is cancelled later.
-            pending.identity.delivery.leave(answer is SnapshotAcquisition.Available)
+            pending.identity.delivery.leave(answer?.outcome is SnapshotAcquisition.Available)
         }
     }
 
     private suspend fun awaitCurrent(
         capture: CapturedCompilation,
         pending: PendingWork<CapturedCompilation, SnapshotAcquisition>,
-    ): SnapshotAcquisition {
+    ): Resolution {
         // Registration may have raced the global map swap after the producer took its input ticket.
         if (!pending.identity.ticketsCurrent()) pending.retire()
         pending.deferred.start()
@@ -302,7 +368,8 @@ internal class SnapshotAcquirer(
         }
         currentCoroutineContext().ensureActive()
         val current = capture.isCurrent() && pending.identity.isCurrent()
-        return checked(if (current && outcome != null) outcome else SnapshotAcquisition.Stale)
+        val answer = checked(if (current && outcome != null) outcome else SnapshotAcquisition.Stale)
+        return Resolution(answer, pending.identity.takeUnless { outcome is SnapshotAcquisition.Failure })
     }
 
     /** Strategy and source freshness lookups can run caller code or block before an answer is delivered. */

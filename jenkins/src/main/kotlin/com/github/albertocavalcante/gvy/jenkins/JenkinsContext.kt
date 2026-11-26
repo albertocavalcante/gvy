@@ -173,7 +173,7 @@ class JenkinsContext private constructor(
                 stubSets(stubsDir).evict(live + setOfNotNull(published?.fileName?.toString()))
             },
         )
-        classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs, pluginStubs)
+        classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, pluginStubs)
 
         return ScopedClasspath(classpath, scanKey)
     }
@@ -210,12 +210,6 @@ class JenkinsContext private constructor(
     /** The plugin stub sets under a workspace stubs directory (#1367). */
     private val stubSets: (Path) -> JenkinsStubSets = { stubsDir ->
         JenkinsStubSets(stubsDir.resolve(STUB_SETS_DIR), stubHooks.generator, stubHooks.clock, stubHooks.fileOps)
-    }
-
-    private fun shouldGenerateStubs(classpath: List<Path>): Boolean {
-        // Heuristic: If we don't have workflow-cps jar, we definitely need stubs for CpsScript
-        val hasWorkflowCps = classpath.any { it.fileName.toString().contains("workflow-cps") }
-        return !hasWorkflowCps
     }
 
     /**
@@ -335,21 +329,6 @@ class JenkinsContext private constructor(
         }
 
         return null
-    }
-
-    /**
-     * Compares version strings with semantic versioning awareness.
-     */
-    private fun compareVersions(v1: String, v2: String): Int {
-        val parts1 = v1.split("[.-]".toRegex())
-        val parts2 = v2.split("[.-]".toRegex())
-
-        for (i in 0 until maxOf(parts1.size, parts2.size)) {
-            val p1 = parts1.getOrNull(i)?.toIntOrNull() ?: 0
-            val p2 = parts2.getOrNull(i)?.toIntOrNull() ?: 0
-            if (p1 != p2) return p1.compareTo(p2)
-        }
-        return 0
     }
 
     /**
@@ -486,8 +465,20 @@ class JenkinsContext private constructor(
     fun getAllMetadata(classpath: List<Path>?): MergedJenkinsMetadata =
         viewOf(classpath?.let { scans.get().byClasspath[it] })
 
-    private fun viewOf(scan: ScanSnapshot?): MergedJenkinsMetadata {
+    internal fun captureMetadata(key: List<Path>?): JenkinsMetadataView {
+        val scan = key?.let { scans.get().byClasspath[it] }
         val gdsl = gdslSnapshot
+        return JenkinsMetadataView(viewOf(scan, gdsl)) {
+            gdsl === gdslSnapshot && scan === key?.let { scans.get().byClasspath[it] }
+        }
+    }
+
+    internal fun gdslCurrent(): () -> Boolean {
+        val original = gdslSnapshot
+        return { gdslSnapshot === original }
+    }
+
+    private fun viewOf(scan: ScanSnapshot?, gdsl: GdslSnapshot? = gdslSnapshot): MergedJenkinsMetadata {
         val memo = if (scan != null) scan.view else unscannedView
         memo?.takeIf { it.gdsl === gdsl }?.let { return it.metadata }
 
@@ -593,6 +584,21 @@ class JenkinsContext private constructor(
     }
 }
 
+/**
+ * Compares version strings with semantic versioning awareness.
+ */
+private fun compareVersions(v1: String, v2: String): Int {
+    val parts1 = v1.split("[.-]".toRegex())
+    val parts2 = v2.split("[.-]".toRegex())
+
+    for (i in 0 until maxOf(parts1.size, parts2.size)) {
+        val p1 = parts1.getOrNull(i)?.toIntOrNull() ?: 0
+        val p2 = parts2.getOrNull(i)?.toIntOrNull() ?: 0
+        if (p1 != p2) return p1.compareTo(p2)
+    }
+    return 0
+}
+
 private fun MutableList<Path>.addProjectDependencies(logger: KLogger, projectDependencies: List<Path>) {
     if (projectDependencies.isEmpty()) return
 
@@ -672,13 +678,13 @@ private fun MutableList<Path>.tryGenerateStubs(
     logger: KLogger,
     stubGenerator: JenkinsStubGenerator,
     stubsDirectory: () -> Path,
-    shouldGenerateStubs: (List<Path>) -> Boolean,
     pluginStubs: PluginStubs,
 ) {
     tryGenerateLibraryAnnotationStub(logger, stubGenerator, stubsDirectory)
 
     runCatching {
-        if (!shouldGenerateStubs(this)) return@runCatching
+        // Without a workflow-cps JAR, Jenkins needs stubs for CpsScript.
+        if (any { it.fileName.toString().contains("workflow-cps") }) return@runCatching
         val stubsDir = stubsDirectory()
         logger.info { "Publishing Jenkins plugin stubs under $stubsDir" }
         val published = pluginStubs.publish(stubsDir)?.also(::add)

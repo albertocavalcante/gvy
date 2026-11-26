@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import com.github.albertocavalcante.nativeapi.ExcludedSource
 import com.github.albertocavalcante.nativeapi.Fallback
 import com.github.albertocavalcante.nativeapi.NativeClasspathInputs
@@ -34,7 +35,6 @@ import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
-import org.codehaus.groovy.control.io.StringReaderSource
 import org.codehaus.groovy.control.messages.ExceptionMessage
 import org.codehaus.groovy.control.messages.LocatedMessage
 import org.codehaus.groovy.control.messages.Message
@@ -503,7 +503,7 @@ class GroovyParserFacade internal constructor(
         // Use 4-arg constructor with separate transform loader for proper classloader isolation.
         // transformLoader is a singleton (see companion object) to prevent resource leaks.
         val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
-        val source = StringReaderSource(request.content, config)
+        val source = DocumentReaderSource(request.uri, request.content, config)
         val sourceUnit = SourceUnit(
             request.sourceUnitName,
             source,
@@ -766,7 +766,7 @@ class GroovyParserFacade internal constructor(
                 compilationUnit.addSource(
                     SourceUnit(
                         name,
-                        StringReaderSource(text, config),
+                        DocumentReaderSource(uri, text, config),
                         config,
                         classLoader,
                         compilationUnit.errorCollector,
@@ -906,6 +906,23 @@ private fun fileKey(uri: URI): Any = if (uri.scheme.equals("file", ignoreCase = 
 private fun sourceIdentity(path: Path): Path =
     runCatching { path.toRealPath() }.getOrElse { path.toAbsolutePath().normalize() }
 
+/** Metadata reads can decompile available bytecode, but a miss cannot poison the normal source-resolution cache. */
+internal open class NativeClassNodeResolver : ClassNodeResolver() {
+    final override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? {
+        val loader = compilationUnit.classLoader as? SdkFallbackGroovyClassLoader
+        if (loader?.binaryReads?.active != true) return resolveDuringCompile(name, compilationUnit)
+        val cached = getFromClassCache(name)
+        return when {
+            cached === NO_CLASS -> null
+            cached != null -> LookupResult(null, cached)
+            else -> super.findClassNode(name, compilationUnit)
+        }
+    }
+
+    protected open fun resolveDuringCompile(name: String, unit: CompilationUnit): LookupResult? =
+        super.resolveName(name, unit)
+}
+
 /**
  * Groovy's class lookup, then the workspace class index (#1425): a name Groovy cannot find on the classpath or as
  * a file named after it is looked up by the exact fully qualified name of its top-level class (the part before
@@ -923,14 +940,14 @@ internal class LocatingClassNodeResolver(
     private val locator: (String) -> List<Path>,
     excludedSources: Set<Path>,
     private val buffers: Map<Path, Pair<URI, String>>,
-) : ClassNodeResolver() {
+) : NativeClassNodeResolver() {
     private val excluded = excludedSources.mapTo(HashSet(), ::sourceIdentity)
     private val added = LinkedHashSet<Path>()
     private val addedIdentities = HashSet<Path>()
     private val unlocated = LinkedHashSet<String>()
 
-    override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? =
-        super.resolveName(name, compilationUnit) ?: located(name, compilationUnit)
+    override fun resolveDuringCompile(name: String, unit: CompilationUnit): LookupResult? =
+        super.resolveDuringCompile(name, unit) ?: located(name, unit)
 
     private fun located(name: String, unit: CompilationUnit): LookupResult? {
         val topLevel = name.substringBefore('$')
@@ -955,7 +972,7 @@ internal class LocatingClassNodeResolver(
             unit.addSource(
                 SourceUnit(
                     uri.path ?: uri.toString(),
-                    StringReaderSource(text, config),
+                    DocumentReaderSource(uri, text, config),
                     config,
                     unit.classLoader,
                     unit.errorCollector,
@@ -971,7 +988,11 @@ internal class LocatingClassNodeResolver(
 
         /** Installs the lookup on [unit] when [request] carries a class locator. */
         fun install(unit: CompilationUnit, request: ParseRequest, locatorBuffers: Map<URI, String>) {
-            val locator = request.workspaceClassLocator ?: return
+            val locator = request.workspaceClassLocator
+            if (locator == null) {
+                unit.classNodeResolver = NativeClassNodeResolver()
+                return
+            }
             val buffers = (locatorBuffers + request.openSources).entries.mapNotNull { (uri, text) ->
                 runCatching { sourceIdentity(Path.of(uri)) to (uri to text) }.getOrNull()
             }.toMap()

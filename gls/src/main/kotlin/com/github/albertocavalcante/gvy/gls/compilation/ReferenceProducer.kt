@@ -78,7 +78,9 @@ internal class ReferenceProducer(
     fun <T> withCompilerInputs(action: (WorkerSession, List<Path>) -> T): T? =
         session.get()?.let { worker -> action(worker, classpath) }
 
-    fun matches(paths: List<Path>, worker: WorkerSession): Boolean = worker === session.get() && paths == classpath
+    fun hasClasspath(paths: List<Path>): Boolean = paths == classpath
+
+    fun matches(paths: List<Path>, worker: WorkerSession): Boolean = worker === session.get() && hasClasspath(paths)
 
     fun sameEnvironment(other: ReferenceProducer?): Boolean {
         val worker = other?.session?.get() ?: return false

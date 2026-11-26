@@ -97,6 +97,12 @@ internal suspend fun <T> queryCurrentSnapshot(
     return SnapshotQuery.Answer(result.getOrThrow(), partial)
 }
 
+/** Recheck cheap publication identities and cancellation even when a consulted input's validation throws. */
+internal suspend fun deliveryInputsCurrent(identitiesCurrent: () -> Boolean, qualify: suspend () -> Boolean): Boolean {
+    val outcome = queryCurrentSnapshot(identitiesCurrent, compute = qualify)
+    return outcome is SnapshotQuery.Answer && outcome.value
+}
+
 private const val LAZY_QUERY_RESULT = "Consume traversal results inside the snapshot query"
 
 /** Reject standard lazy carriers before returning them, even if the query was cancelled during computation. */

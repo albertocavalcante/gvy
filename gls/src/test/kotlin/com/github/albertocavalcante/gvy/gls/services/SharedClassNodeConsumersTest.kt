@@ -31,8 +31,8 @@ class SharedClassNodeConsumersTest {
     private val stamping = URI.create("file:///Stamp.groovy")
     private val script = URI.create("file:///Victim.groovy")
     private val scriptText = "println 1\nprintln 2\nprintln 3\n        timeout(time: 1)\n"
-    private val compilation = GroovyCompilationService()
     private val documents = DocumentProvider()
+    private val compilation = GroovyCompilationService(documentProvider = documents)
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(
         scope,

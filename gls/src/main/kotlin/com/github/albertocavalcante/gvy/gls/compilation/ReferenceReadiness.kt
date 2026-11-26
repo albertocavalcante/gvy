@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
 import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -93,6 +94,26 @@ internal class ReferenceReadiness(
                 ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, unavailable, null)),
             )
         }
+    }
+
+    fun captureMembersView(): CapturedWorkspaceReferences = index.captureReferences(hidden)
+
+    fun qualifyMember(
+        uri: URI,
+        indexed: SemanticDocumentSnapshot,
+        origin: CompiledDocumentSnapshot,
+    ): (() -> Boolean)? {
+        val published = currentPublication(uri) ?: return null
+        val content = indexed.sourceText ?: return null
+        val producer = published.producer ?: return null
+        if (!published.covers(indexed.document) ||
+            !producer.sameEnvironment(origin.referenceProducer) ||
+            !matchesSource(uri, content, published)
+        ) {
+            return null
+        }
+        val current = { producer.isCurrent(source, uri, content, selectSources) && source.isCurrent() }
+        return current.takeIf { it() }
     }
 
     private suspend fun firstUnavailable(
