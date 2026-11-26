@@ -100,9 +100,8 @@ The rule cannot resolve names, so it errs in these documented ways:
 ### Coverage
 
 The rule guards every module the lint task reads: the migration in #2474 removed the last `excludes` line, and no
-baseline entry exists. `tools/ci/detekt-ratchet-excludes.test.mjs` keeps it so: the rule must stay active, and any
-future `excludes` line must name a module whose `src/main/kotlin` or `src/test/kotlin` (or their `java` folders) still
-applies `@Volatile` outside comments and strings, so a clean or unlinted module can never be excluded.
+baseline entry exists. `tools/ci/detekt-gvy-excludes.test.mjs` keeps it so: the rule must stay active and exclude
+nothing. A sanctioned `@Volatile` is suppressed at its site, with a reason.
 
 ## `JdkAtomics`
 
@@ -123,8 +122,7 @@ reports every import of `java.util.concurrent.atomic` and every qualified use of
 
 Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
 their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. No other module is
-excluded (#2474), and `tools/ci/detekt-ratchet-excludes.test.mjs` rejects an exclude for a module whose main code does
-not use the package.
+excluded (#2474), and `tools/ci/detekt-gvy-excludes.test.mjs` rejects any other exclude.
 
 `Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
 previous value (`increment() - 1`), or a counter that starts one lower.
