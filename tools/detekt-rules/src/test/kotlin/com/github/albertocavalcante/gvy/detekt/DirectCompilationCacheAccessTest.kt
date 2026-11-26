@@ -16,13 +16,14 @@ class DirectCompilationCacheAccessTest {
     fun `reports direct safe aliased imported and callable access`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.example
-            import com.github.albertocavalcante.gvy.gls.compilation.getCompiledSnapshot as snapshot
-            fun test(compilationService: Any, uri: Any) {
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+            import com.github.albertocavalcante.gvy.gls.converters.compiledTextOf as sourceText
+            fun GroovyCompilationService.test(compilationService: GroovyCompilationService, uri: URI) {
                 compilationService.getCompiledSnapshot(uri)
                 compilationService?.getAst(uri)
                 val alias = compilationService
                 alias.getTokenIndex(uri)
-                snapshot(uri)
+                sourceText(target, uri, content)
                 val getter = compilationService::getParseResult
                 compilationService.compiledTextOf(uri, uri, "")
                 provider.provideHover(uri, position)
@@ -36,6 +37,8 @@ class DirectCompilationCacheAccessTest {
     fun `unrelated getters and code outside gls do not match`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.example
+            import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
+            import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
             fun test(context: RuleContext, diagnosticsService: DiagnosticsService) {
                 context.getAst()
                 diagnosticsService.getDiagnostics(uri, content)
@@ -54,7 +57,8 @@ class DirectCompilationCacheAccessTest {
         assertThat((rule as DirectCompilationCacheAccess).active).isTrue()
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
-            fun handler(compilationService: Any) {
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+            fun handler(compilationService: GroovyCompilationService) {
                 compilationService.getCompiledSnapshot(uri)
                 compilationService.compile(uri, text)
             }
@@ -83,11 +87,12 @@ class DirectCompilationCacheAccessTest {
     fun `exact compiler forwarder exception rejects mutations`(@TempDir directory: Path) {
         val source = """
             package com.github.albertocavalcante.gvy.gls.compilation
+            import java.net.URI
             class GroovyCompilationService {
                 fun getAst(uri: URI) = parseAccessor.getAst(uri)
             }
         """.trimIndent()
-        val file = directory.resolve("GroovyCompilationService.kt")
+        val file = compilerFixture(directory)
         fun findings(code: String): Int {
             Files.writeString(file, code)
             return DirectCompilationCacheAccess().lint(file).size
@@ -101,8 +106,9 @@ class DirectCompilationCacheAccessTest {
             "= parseAccessor.getAst(uri)",
             "{ parseAccessor.getAst(uri); return parseAccessor.getAst(uri) }",
         )
-        assertThat(findings(duplicate)).isEqualTo(1)
-        val movedFile = directory.resolve("Other.kt")
+        assertThat(findings(duplicate)).isEqualTo(2)
+        assertThat(findings(source.replace("java.net.URI", "other.URI"))).isEqualTo(1)
+        val movedFile = file.resolveSibling("Other.kt")
         Files.writeString(movedFile, source)
         assertThat(DirectCompilationCacheAccess().lint(movedFile)).hasSize(1)
     }
@@ -111,6 +117,7 @@ class DirectCompilationCacheAccessTest {
     fun `renamed typed receiver and shadowing never grant unrelated exemptions`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.example
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
             fun request(wire: GroovyCompilationService, uri: URI) {
                 val alias = wire
                 alias.compile(uri, text)
@@ -119,8 +126,13 @@ class DirectCompilationCacheAccessTest {
             fun unrelated(context: RuleContext) = context.getAst()
             fun shadow(context: GroovyCompilationService) = context.getAst(uri)
         """.trimIndent()
-        // Ambiguous same-name declarations are conservatively reported, even in the unrelated function.
+        // An unimported RuleContext in this package cannot justify an exception for getAst.
         assertThat(DirectCompilationCacheAccess().lint(source)).hasSize(4)
+    }
+
+    private fun compilerFixture(root: Path, path: String = COMPILER_FILE): Path {
+        Files.writeString(root.resolve("settings.gradle.kts"), "")
+        return root.resolve(path).also { Files.createDirectories(it.parent) }
     }
 
     private fun assertMarked(source: String) {
@@ -136,6 +148,7 @@ class DirectCompilationCacheAccessTest {
     fun `unrelated import alias cannot rename compiler member selectors or references`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
             import kotlin.collections.first as getCompiledSnapshot
             fun handler(compilationService: GroovyCompilationService, uri: URI) {
                 compilationService.getCompiledSnapshot(uri) // FLAG
@@ -150,6 +163,7 @@ class DirectCompilationCacheAccessTest {
     fun `real converter import alias remains guarded`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
             import com.github.albertocavalcante.gvy.gls.converters.compiledTextOf as sourceText
             fun handler(
                 compilationService: GroovyCompilationService, target: String, currentUri: URI, current: String,
@@ -181,6 +195,7 @@ class DirectCompilationCacheAccessTest {
     fun `unrelated parameter cannot exempt an inherited compiler receiver`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
             fun diagnostic(context: RuleContext) = context.getAst()
             class Handler : Parent() {
                 fun handle(uri: URI) = context.getAst(uri) // FLAG
@@ -193,6 +208,7 @@ class DirectCompilationCacheAccessTest {
     fun `compiler extension receiver acquisitions are guarded`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
             suspend fun GroovyCompilationService.handler(uri: URI, text: String) {
                 compile(uri, text) // FLAG
                 this.compile(uri, text) // FLAG
@@ -205,10 +221,13 @@ class DirectCompilationCacheAccessTest {
     fun `additional real cache read APIs are guarded`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
             suspend fun handler(compilationService: GroovyCompilationService, uri: URI, fingerprint: String) {
                 compilationService.getCompiledContent(uri) // FLAG
                 compilationService.getValidParseResult(uri) // FLAG
                 compilationService.compilationCacheService.getCachedWithContent(uri, fingerprint) // FLAG
+                compilationService.compileAsync(scope, uri, text) // FLAG
+                compilationService.compileTransient(uri, text)
             }
         """.trimIndent()
         assertMarked(source)
@@ -218,11 +237,15 @@ class DirectCompilationCacheAccessTest {
     fun `real unrelated callable references and nullable getter do not report`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
             import java.util.regex.Pattern
             fun inspect(context: RuleContext, nullable: RuleContext?, diagnostics: DiagnosticsService) {
                 val readAst = context::getAst
                 val readDiagnostics = diagnostics::getDiagnostics
                 val regex = Pattern::compile
+                val other = unrelated::compile
+                val compilation = Pattern.compile("a")
+                compilation.compile(text)
                 nullable?.getAst()
             }
         """.trimIndent()
@@ -233,6 +256,8 @@ class DirectCompilationCacheAccessTest {
     fun `destructured compiler receiver is not exempted by a different function`() {
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
+            import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+            import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
             fun diagnostic(context: RuleContext) = context.getAst()
             fun handler(wire: GroovyCompilationService, uri: URI) {
                 val (context) = listOf(wire)
@@ -244,12 +269,12 @@ class DirectCompilationCacheAccessTest {
 
     @Test
     fun `same basename in another source path cannot reuse a compiler exception`(@TempDir directory: Path) {
-        val file = directory.resolve("other/GroovyCompilationService.kt")
-        Files.createDirectories(file.parent)
+        val file = compilerFixture(directory, "other/$COMPILER_FILE")
         Files.writeString(
             file,
             """
                 package com.github.albertocavalcante.gvy.gls.compilation
+                import java.net.URI
                 class GroovyCompilationService {
                     fun getAst(uri: URI) = parseAccessor.getAst(uri)
                 }
@@ -260,11 +285,12 @@ class DirectCompilationCacheAccessTest {
 
     @Test
     fun `nested same-named class cannot reuse a compiler exception`(@TempDir directory: Path) {
-        val file = directory.resolve("GroovyCompilationService.kt")
+        val file = compilerFixture(directory)
         Files.writeString(
             file,
             """
                 package com.github.albertocavalcante.gvy.gls.compilation
+                import java.net.URI
                 class Other {
                     class GroovyCompilationService {
                         fun getAst(uri: URI) = parseAccessor.getAst(uri)
@@ -277,11 +303,12 @@ class DirectCompilationCacheAccessTest {
 
     @Test
     fun `member extension cannot reuse a compiler exception`(@TempDir directory: Path) {
-        val file = directory.resolve("GroovyCompilationService.kt")
+        val file = compilerFixture(directory)
         Files.writeString(
             file,
             """
                 package com.github.albertocavalcante.gvy.gls.compilation
+                import java.net.URI
                 class GroovyCompilationService {
                     fun Other.getAst(uri: URI) = parseAccessor.getAst(uri)
                 }
@@ -322,11 +349,16 @@ class DirectCompilationCacheAccessTest {
         assertThat(CACHE_ACCESS_EXCEPTIONS.map { it.key }.distinct()).hasSize(6)
         assertThat(CACHE_ACCESS_EXCEPTIONS).allSatisfy {
             assertThat(it.count).isEqualTo(1)
-            assertThat(it.key.file).isEqualTo("GroovyCompilationService.kt")
+            assertThat(it.key.file).isEqualTo(COMPILER_FILE)
             assertThat(it.key.parameterTypes).containsExactly("URI")
             assertThat(it.rationale).isNotBlank()
             assertThat(it.owner).isNotBlank()
             assertThat(it.removalGate).isNotBlank()
         }
+    }
+
+    private companion object {
+        const val COMPILER_FILE =
+            "gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/compilation/GroovyCompilationService.kt"
     }
 }
