@@ -114,6 +114,7 @@ State that several threads read and write needs a primitive that says what it is
 | A count: calls, attempts, tickets                                             | `Counter`                                                |
 | A value computed once, on first use                                           | `lazy`                                                   |
 | Several fields that change together                                           | One immutable value in a `SharedValue`, or one lock      |
+| State that one thread owns: a counter local to one call                       | A plain `var`                                            |
 
 - Do not add `@Volatile` fields. They make single reads and writes visible, but not `x++`, check-then-act or a read of
   two related fields. detekt's `VolatileProperty` rule reports them (#2474).

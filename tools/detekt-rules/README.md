@@ -119,6 +119,7 @@ reports every import of `java.util.concurrent.atomic` and every qualified use of
 | `AtomicReference`                                               | `SharedValue<T>`: `exchange` for `getAndSet`, `update {}` for a derived value |
 | `AtomicReference.compareAndSet(null, value)` (first value wins) | `update { it ?: value }`                                                      |
 | `AtomicInteger`, `AtomicLong` counters                          | `Counter` (convert with `toInt()` where an `Int` is needed)                   |
+| Any of these, used by one thread only                           | A plain `var`; an atomic there claims the state is shared                     |
 
 Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
 their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. The other excludes
