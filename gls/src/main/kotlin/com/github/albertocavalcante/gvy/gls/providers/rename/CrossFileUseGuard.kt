@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import kotlinx.coroutines.Dispatchers
@@ -74,8 +75,7 @@ internal class CrossFileUseGuard(
     /** Known sources keyed for one workspace root; the source list is replaced, never mutated, on refresh. */
     private class KeyedSources(val list: List<Path>, val rootKeys: List<Path>, val byKey: Map<Path, Path>)
 
-    @Volatile
-    private var keyedSources: KeyedSources? = null
+    private val keyedSources = SharedValue<KeyedSources?>(null)
 
     /** Reads files on the IO dispatcher and checks for cancellation between files. */
     suspend fun usesOutside(documentUri: URI, definition: ASTNode, name: String): CrossFileUses {
@@ -130,10 +130,10 @@ internal class CrossFileUseGuard(
     /** Resolves the known sources' keys once per source list (they cost a filesystem call each). */
     private fun sourcesKeyed(keys: FileKeys): Map<Path, Path> {
         val list = layout.sources()
-        keyedSources?.takeIf { it.list === list && it.rootKeys == keys.rootKeys }?.let { return it.byKey }
+        keyedSources.value?.takeIf { it.list === list && it.rootKeys == keys.rootKeys }?.let { return it.byKey }
         val byKey = LinkedHashMap<Path, Path>()
         list.forEach { byKey.putIfAbsent(keys.of(it), it) }
-        keyedSources = KeyedSources(list, keys.rootKeys, byKey)
+        keyedSources.set(KeyedSources(list, keys.rootKeys, byKey))
         return byKey
     }
 

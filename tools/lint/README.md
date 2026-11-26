@@ -31,6 +31,5 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
   reported. Modules that are not hoisted yet are listed under the rule's `excludes` in `detekt.yml`; remove a module's
   line in the pull request that hoists it. Do not add detekt baseline entries for this rule (#2420).
 - `VolatileProperty`: reports `@Volatile` annotations, including `@field:Volatile`, qualified names and import aliases.
-  Use `OnceFlag`, `SharedValue` or `Counter` from `:common:concurrent`, `lazy`, or a lock instead. Modules that still
-  have `@Volatile` fields are listed under the rule's `excludes`; remove a module's line in the pull request that
-  migrates it. Do not add detekt baseline entries for this rule (#2474).
+  Use `OnceFlag`, `SharedValue` or `Counter` from `:common:concurrent`, `lazy`, or a lock instead. It guards every
+  linted module; there are no excludes, and none or a baseline entry may be added (#2474).

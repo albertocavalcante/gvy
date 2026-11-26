@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.build.maven.MavenFailureAnalyzer
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -73,19 +74,15 @@ class DependencyManager(
     private val sourceDirs = AtomicReference<List<Path>>(emptyList())
     private var generation = AnalysisGeneration.INITIAL
 
-    @Volatile
-    private var currentAttempt: Attempt? = null
+    private val currentAttempt = SharedValue<Attempt?>(null)
     private var resolutionJob: Job? = null
     private var buildFileWatcher: BuildToolFileWatcher? = null
 
-    @Volatile
-    private var watcherToken: Any? = null
+    private val watcherToken = SharedValue<Any?>(null)
 
-    @Volatile
-    private var currentWorkspaceRoot: Path? = null
+    private val currentWorkspaceRoot = SharedValue<Path?>(null)
 
-    @Volatile
-    private var currentBuildToolName: String? = null
+    private val currentBuildToolName = SharedValue<String?>(null)
 
     /**
      * Starts a new attempt after failure, or for a changed workspace.
@@ -130,10 +127,10 @@ class DependencyManager(
     }
 
     private fun prepareStart(request: Request?, enableFileWatching: Boolean, expectedWatcher: Any?): StartDecision {
-        val expected = currentAttempt
+        val expected = currentAttempt.value
         val activeRequest = when {
             expectedWatcher == null -> requireNotNull(request)
-            watcherToken !== expectedWatcher -> null
+            watcherToken.value !== expectedWatcher -> null
             else -> expected?.request
         } ?: return StartDecision.Stop
         val possibleDuplicate = expectedWatcher == null &&
@@ -142,8 +139,8 @@ class DependencyManager(
             !expected.cancellation.isCancelled
         if (possibleDuplicate) {
             val duplicate = synchronized(lock) {
-                currentAttempt === expected &&
-                    currentWorkspaceRoot == activeRequest.workspaceRoot &&
+                currentAttempt.value === expected &&
+                    currentWorkspaceRoot.value == activeRequest.workspaceRoot &&
                     state.get() in setOf(State.IN_PROGRESS, State.COMPLETED) &&
                     !expected.cancellation.isCancelled
             }
@@ -160,23 +157,23 @@ class DependencyManager(
         enableFileWatching: Boolean,
         expectedWatcher: Any?,
     ): StartDecision = synchronized(lock) {
-        if (currentAttempt !== expected) return@synchronized StartDecision.Retry
-        if (expectedWatcher != null && watcherToken !== expectedWatcher) return@synchronized StartDecision.Stop
+        if (currentAttempt.value !== expected) return@synchronized StartDecision.Retry
+        if (expectedWatcher != null && watcherToken.value !== expectedWatcher) return@synchronized StartDecision.Stop
         // Bumped before any mutation: next() throws on overflow, which must not leave the attempt half-installed.
         generation = generation.next()
         // Invalidate the old watcher before publishing the new attempt, so a stale event cannot pair
         // its token with an attempt from another workspace.
-        val watcher = if (currentWorkspaceRoot != request.workspaceRoot) detachWatcher() else null
-        if (currentWorkspaceRoot != request.workspaceRoot) {
+        val watcher = if (currentWorkspaceRoot.value != request.workspaceRoot) detachWatcher() else null
+        if (currentWorkspaceRoot.value != request.workspaceRoot) {
             dependencies.set(emptyList())
             sourceDirs.set(emptyList())
-            currentBuildToolName = null
+            currentBuildToolName.set(null)
         }
         val previousJob = resolutionJob
-        currentWorkspaceRoot = request.workspaceRoot
+        currentWorkspaceRoot.set(request.workspaceRoot)
         state.set(State.IN_PROGRESS)
         val attempt = Attempt(generation, request, enableFileWatching)
-        currentAttempt = attempt
+        currentAttempt.set(attempt)
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { resolve(attempt) }
         resolutionJob = job
         StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher))
@@ -192,7 +189,7 @@ class DependencyManager(
         }
         effects.job.invokeOnCompletion {
             synchronized(lock) {
-                if (currentAttempt === effects.attempt) {
+                if (currentAttempt.value === effects.attempt) {
                     if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                     if (resolutionJob === effects.job) resolutionJob = null
                 }
@@ -212,7 +209,7 @@ class DependencyManager(
             checkCurrent(attempt)
             tool = buildToolManager.detectBuildTool(request.workspaceRoot)
             checkCurrent(attempt)
-            notifyCurrent(attempt) { currentBuildToolName = tool?.name }
+            notifyCurrent(attempt) { currentBuildToolName.set(tool?.name) }
             // Install before resolving: an initially broken build must still be able to recover on an edit.
             if (tool != null && attempt.enableFileWatching) startWatching(attempt, tool)
             notifyCurrent(attempt) {
@@ -302,7 +299,7 @@ class DependencyManager(
                     false
                 } else {
                     buildFileWatcher = watcher
-                    watcherToken = token
+                    watcherToken.set(token)
                     true
                 }
             }
@@ -311,7 +308,7 @@ class DependencyManager(
                 return
             }
             watcher.startWatching(attempt.request.workspaceRoot)
-            if (synchronized(lock) { watcherToken !== token }) watcher.stopWatching()
+            if (synchronized(lock) { watcherToken.value !== token }) watcher.stopWatching()
         } catch (e: CancellationException) {
             discardWatcher(token, watcher)
             throw e
@@ -323,7 +320,7 @@ class DependencyManager(
     }
 
     private fun discardWatcher(token: Any, watcher: BuildToolFileWatcher?) {
-        synchronized(lock) { if (watcherToken === token) detachWatcher() }
+        synchronized(lock) { if (watcherToken.value === token) detachWatcher() }
         watcher?.stopWatching()
     }
 
@@ -351,7 +348,7 @@ class DependencyManager(
 
     /** Called under the state lock; the returned watcher is stopped after releasing it. */
     private fun detachWatcher(): BuildToolFileWatcher? {
-        watcherToken = null
+        watcherToken.set(null)
         return buildFileWatcher.also { buildFileWatcher = null }
     }
 
@@ -364,8 +361,8 @@ class DependencyManager(
     }
     fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
     fun getState(): State = state.get()
-    fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot
-    fun getCurrentBuildToolName(): String? = currentBuildToolName
+    fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot.value
+    fun getCurrentBuildToolName(): String? = currentBuildToolName.value
     fun isDependenciesReady(): Boolean = state.get() == State.COMPLETED
 
     fun cancel() = stop(reset = false)
@@ -375,10 +372,10 @@ class DependencyManager(
     private fun stop(reset: Boolean) {
         check(!Thread.holdsLock(lock)) { "Lifecycle calls cannot run from a dependency callback" }
         while (true) {
-            val expected = currentAttempt
+            val expected = currentAttempt.value
             expected?.cancellation?.cancel()
             val effects = synchronized(lock) {
-                if (currentAttempt !== expected) return@synchronized null
+                if (currentAttempt.value !== expected) return@synchronized null
                 generation = generation.next()
                 val oldJob = resolutionJob
                 resolutionJob = null
@@ -388,9 +385,9 @@ class DependencyManager(
                     dependencies.set(emptyList())
                     sourceDirs.set(emptyList())
                     state.set(State.NOT_STARTED)
-                    currentWorkspaceRoot = null
-                    currentBuildToolName = null
-                    currentAttempt = null
+                    currentWorkspaceRoot.set(null)
+                    currentBuildToolName.set(null)
+                    currentAttempt.set(null)
                 }
                 oldJob to watcher
             } ?: continue
@@ -401,7 +398,7 @@ class DependencyManager(
     }
 
     fun getStatusSummary(): String =
-        "DependencyManager[state=${state.get()}, tool=${currentBuildToolName ?: "none"}, " +
+        "DependencyManager[state=${state.get()}, tool=${currentBuildToolName.value ?: "none"}, " +
             "dependencies=${dependencies.get().size}, sources=${sourceDirs.get().size}, " +
-            "workspace=${currentWorkspaceRoot?.fileName ?: "none"}]"
+            "workspace=${currentWorkspaceRoot.value?.fileName ?: "none"}]"
 }

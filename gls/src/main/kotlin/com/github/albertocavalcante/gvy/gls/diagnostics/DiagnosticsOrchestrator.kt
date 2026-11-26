@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.diagnostics
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.toSourceModelDiagnostic
@@ -90,20 +91,19 @@ class DiagnosticsOrchestrator(
     private val analysisPublisher =
         DocumentAnalysisPublisher(documentProvider, publicationLock, client, documentAnalysisSupported)
 
-    @Volatile
-    private var runtime = Runtime(serverConfiguration, diagnosticsService)
+    private val runtime = SharedValue(Runtime(serverConfiguration, diagnosticsService))
 
     /** Replace provider configuration and cancel work computed under the previous settings. */
     fun updateConfiguration(configuration: ServerConfiguration, service: DiagnosticsService) {
         val recipient = client()
         val (retiredJobs, retiredRuns) = documentProvider.withLifecycleLock {
             synchronized(publicationLock) {
-                runtime = Runtime(configuration, service, runtime.generation.next())
+                runtime.update { previous -> Runtime(configuration, service, previous.generation.next()) }
                 clearConfigurationNotices(
                     recipient,
                     null,
                     documentProvider,
-                    runtime.configuration.maxNumberOfProblems,
+                    runtime.value.configuration.maxNumberOfProblems,
                     configurationPublication,
                 )
                 (diagnosticJobs.values.toList() to runs.values.toList()).also { runs.clear() }
@@ -139,7 +139,7 @@ class DiagnosticsOrchestrator(
     fun trigger(uri: URI, content: String, debounce: Boolean = false) {
         val buffer = documentProvider.getBuffer(uri) ?: return
         val captured = buffer.snapshot.takeIf { it.content == content } ?: return
-        val run = Run(uri, captured, runtime, runIds.incrementAndGet(), buffer.incarnation.analysisSessionId)
+        val run = Run(uri, captured, runtime.value, runIds.incrementAndGet(), buffer.incarnation.analysisSessionId)
         // Register before starting; a fast completion must not leave a completed job in the active map.
         val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
             val currentJob = coroutineContext.job
@@ -168,7 +168,7 @@ class DiagnosticsOrchestrator(
         var registered = false
         documentProvider.withCurrentSnapshot(uri, captured) {
             synchronized(publicationLock) {
-                if (runtime === run.settings) {
+                if (runtime.value === run.settings) {
                     previousJob = diagnosticJobs.put(uri, job)
                     previousRun = runs.put(uri, run)
                     registered = true
@@ -229,7 +229,12 @@ class DiagnosticsOrchestrator(
             DocumentAnalysisContext(run.uri, run.snapshot, run.id, run.sessionId),
             result,
             allDiagnostics,
-        ) { runtime === run.settings && runs[run.uri] === run && owner.isActive && diagnosticJobs[run.uri] === owner }
+        ) {
+            runtime.value === run.settings &&
+                runs[run.uri] === run &&
+                owner.isActive &&
+                diagnosticJobs[run.uri] === owner
+        }
         run.result.complete(
             DiagnosticsRunResult(
                 run.uri.toString(),
@@ -251,7 +256,7 @@ class DiagnosticsOrchestrator(
         var current = false
         documentProvider.withCurrentSnapshot(run.uri, run.snapshot) {
             synchronized(publicationLock) {
-                current = runtime === run.settings && runs[run.uri] === run &&
+                current = runtime.value === run.settings && runs[run.uri] === run &&
                     (owner == null || owner.isActive && diagnosticJobs[run.uri] === owner)
             }
         }
@@ -292,7 +297,7 @@ class DiagnosticsOrchestrator(
             // An external owner can cancel its Deferred without cancelling this diagnostics job.
             // Own cancellation must propagate, and obsolete work must never be restarted.
             scope.ensureActive()
-            if (documentProvider.getSnapshot(uri) !== captured || runtime !== settings ||
+            if (documentProvider.getSnapshot(uri) !== captured || runtime.value !== settings ||
                 diagnosticJobs[uri] !== owner
             ) {
                 throw cancelled
@@ -342,7 +347,7 @@ class DiagnosticsOrchestrator(
                         recipient,
                         uri,
                         null,
-                        runtime.configuration.maxNumberOfProblems,
+                        runtime.value.configuration.maxNumberOfProblems,
                         configurationPublication,
                     )
                     affected.filter { it != uri }.forEach {
@@ -350,7 +355,7 @@ class DiagnosticsOrchestrator(
                             recipient,
                             it,
                             documentProvider.getSnapshot(it)?.version,
-                            runtime.configuration.maxNumberOfProblems,
+                            runtime.value.configuration.maxNumberOfProblems,
                             configurationPublication,
                         )
                     }
@@ -404,7 +409,7 @@ class DiagnosticsOrchestrator(
         var published = false
         documentProvider.withCurrentSnapshot(uri, captured) {
             synchronized(publicationLock) {
-                if (runtime !== settings || !owner.isActive || diagnosticJobs[uri] !== owner) return@synchronized
+                if (runtime.value !== settings || !owner.isActive || diagnosticJobs[uri] !== owner) return@synchronized
                 ownDiagnostics[uri] = diagnostics
                 publishCombined(
                     recipient,
@@ -437,7 +442,7 @@ class DiagnosticsOrchestrator(
             val presented = consolidateProviderFailures(filtered, failures)
             val all = parserDiagnostics + presented
             synchronized(publicationLock) {
-                if (runtime !== run.settings || runs[run.uri] !== run) return@synchronized
+                if (runtime.value !== run.settings || runs[run.uri] !== run) return@synchronized
                 if (!owner.isActive || diagnosticJobs[run.uri] !== owner) return@synchronized
                 ownDiagnostics[run.uri] = all
                 if (presented.isNotEmpty()) {
@@ -475,7 +480,7 @@ class DiagnosticsOrchestrator(
                     recipient,
                     uri,
                     documentProvider,
-                    runtime.configuration.maxNumberOfProblems,
+                    runtime.value.configuration.maxNumberOfProblems,
                     configurationPublication,
                 )
             }
@@ -487,12 +492,12 @@ class DiagnosticsOrchestrator(
         val recipient = client()
         val (jobs, retiredRuns) = documentProvider.withLifecycleLock {
             synchronized(publicationLock) {
-                runtime = runtime.copy(generation = runtime.generation.next())
+                runtime.update { previous -> previous.copy(generation = previous.generation.next()) }
                 clearConfigurationNotices(
                     recipient,
                     null,
                     documentProvider,
-                    runtime.configuration.maxNumberOfProblems,
+                    runtime.value.configuration.maxNumberOfProblems,
                     configurationPublication,
                 )
                 (diagnosticJobs.values.toList() to runs.values.toList()).also { runs.clear() }

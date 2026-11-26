@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceScanner
 import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
 import java.io.IOException
@@ -223,8 +224,7 @@ internal class WorkspaceWalkCache(
 ) {
     private class Entry(val key: Any, val at: Long, val generation: Int, val walked: Walked)
 
-    @Volatile
-    private var entry: Entry? = null
+    private val entry = SharedValue<Entry?>(null)
     private val generation = AtomicInteger()
     private val walkCounter = AtomicInteger()
 
@@ -235,19 +235,19 @@ internal class WorkspaceWalkCache(
     val invalidations: Int get() = generation.get()
 
     fun get(key: Any, walk: () -> Walked): Walked {
-        entry?.takeIf { isFresh(it, key) }?.let { return it.walked }
+        entry.value?.takeIf { isFresh(it, key) }?.let { return it.walked }
         // The generation is read before the walk and stored with it: an invalidation that lands at any later point,
         // even between the walk and the store, makes this entry stale on its first read.
         val before = generation.get()
         val walked = walk()
         walkCounter.incrementAndGet()
-        entry = Entry(key, clock(), before, walked)
+        entry.set(Entry(key, clock(), before, walked))
         return walked
     }
 
     fun invalidate() {
         generation.incrementAndGet()
-        entry = null
+        entry.set(null)
     }
 
     private fun isFresh(entry: Entry, key: Any): Boolean = entry.key == key &&

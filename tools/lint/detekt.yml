@@ -122,12 +122,8 @@ gvy:
     - '**/semantics/core/src/**'
   VolatileProperty:
     active: true
-    excludes:
-    # Modules that still have @Volatile fields, tests included. Remove a line in the same pull request that migrates
-    # that module; the rule then guards it. Never add a line here (or a baseline entry) for a clean module (#2474);
-    # tools/ci/detekt-volatile-excludes.test.mjs fails on a line whose module has no @Volatile left. Kotlin outside
-    # src/main and src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
-    - '**/gls/src/**'
+    # Every linted module is guarded; no module is excluded (#2474). Kotlin outside src/main and src/test, such as
+    # tests/e2e, is not linted unless its module sets detekt.source (#2480).
 naming:
   active: true
   ClassNaming:

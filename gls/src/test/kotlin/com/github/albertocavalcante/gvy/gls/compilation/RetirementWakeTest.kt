@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
@@ -51,7 +52,7 @@ class RetirementWakeTest {
     private val uri = URI.create("file:///Held.groovy")
 
     /** Parses of [uri] beyond the first [heldParses] are not held. Held parses wait for [release]. */
-    @Volatile private var heldParses = Int.MAX_VALUE
+    private val heldParses = SharedValue(Int.MAX_VALUE)
     private val parses = AtomicInteger()
     private val parseStarted = Semaphore(0)
     private val release = CountDownLatch(1)
@@ -64,7 +65,7 @@ class RetirementWakeTest {
                     if (request.uri == uri) {
                         val n = parses.incrementAndGet()
                         parseStarted.release()
-                        if (n <= heldParses) release.await(HOLD_SECONDS, TimeUnit.SECONDS)
+                        if (n <= heldParses.value) release.await(HOLD_SECONDS, TimeUnit.SECONDS)
                     }
                     return delegate.parse(request)
                 }
@@ -93,7 +94,7 @@ class RetirementWakeTest {
     @Test
     fun `a global clear wakes a waiter before the retired compile finishes`(): Unit = runBlocking {
         open("class Held {}")
-        heldParses = 1 // only the owner's parse is held; the waiter's fresh compile runs
+        heldParses.set(1) // only the owner's parse is held; the waiter's fresh compile runs
         val owner = service.compileAsync(scope, uri, "class Held {}")
         awaitParse()
         val waiter = waiter()
@@ -175,7 +176,7 @@ class RetirementWakeTest {
      */
     private fun assertWakeKeepsFacts(dispatcher: CoroutineDispatcher): Unit = runBlocking {
         open("class Held {}")
-        heldParses = 1 // only the owner's parse is held; the waiter's fresh compile runs
+        heldParses.set(1) // only the owner's parse is held; the waiter's fresh compile runs
         val owner = service.compileAsync(scope, uri, "class Held {}")
         awaitParse()
         val waiter = async(SupervisorJob() + dispatcher, start = CoroutineStart.UNDISPATCHED) {
