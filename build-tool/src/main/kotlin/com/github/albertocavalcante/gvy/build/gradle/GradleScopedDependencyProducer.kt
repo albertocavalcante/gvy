@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.build.gradle
 import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.build.DependencyProvenance
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -18,7 +19,6 @@ import org.gradle.tooling.ResultHandler
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -183,13 +183,13 @@ class GradleScopedDependencyProducer(
                 return@suspendCancellableCoroutine
             }
             // Once launch begins, only its callback (or synchronous launch failure) acknowledges completion.
-            val completed = AtomicBoolean(false)
+            val completed = OnceFlag()
             var launched = false
             try {
                 builder.get(
                     object : ResultHandler<T> {
                         override fun onComplete(result: T?) {
-                            if (completed.compareAndSet(false, true)) {
+                            if (completed.trySet()) {
                                 try {
                                     lease.close()
                                 } finally {
@@ -199,7 +199,7 @@ class GradleScopedDependencyProducer(
                         }
 
                         override fun onFailure(failure: GradleConnectionException) {
-                            if (completed.compareAndSet(false, true)) {
+                            if (completed.trySet()) {
                                 try {
                                     lease.close()
                                 } finally {
@@ -211,7 +211,7 @@ class GradleScopedDependencyProducer(
                 )
                 launched = true
             } finally {
-                if (!launched && completed.compareAndSet(false, true)) lease.close()
+                if (!launched && completed.trySet()) lease.close()
             }
         }
     }

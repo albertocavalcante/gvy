@@ -8,6 +8,7 @@ package com.github.albertocavalcante.gvy.viz.desktop.state
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import kotlinx.coroutines.CancellationException
@@ -26,7 +27,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.prefs.Preferences
 
 /**
@@ -65,7 +65,7 @@ internal class FileEnvironment(
 class AstViewModel internal constructor(
     uiDispatcher: CoroutineDispatcher,
     private val backgroundDispatcher: CoroutineDispatcher,
-    private val parseEngine: suspend (ParseSnapshot, AtomicBoolean) -> ParseOutput,
+    private val parseEngine: suspend (ParseSnapshot, OnceFlag) -> ParseOutput,
     debounceMillis: Long,
     private val files: FileEnvironment,
     private val encode: suspend (ExportSnapshot) -> String = ::encodeExport,

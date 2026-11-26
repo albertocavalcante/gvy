@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build.maven
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.repository.RemoteRepository
@@ -10,7 +11,6 @@ import org.eclipse.aether.spi.connector.transport.Transporter
 import org.eclipse.aether.spi.connector.transport.TransporterFactory
 import java.io.IOException
 import java.io.UncheckedIOException
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** Owns only one verified lookup's HTTP transports; closing them aborts active socket reads and cleanup drains. */
 internal class SourceTransferCancellation {
@@ -50,10 +50,10 @@ internal class SourceTransferCancellation {
     }
 
     private inner class Registration(private val delegate: Transporter) : Transporter by delegate {
-        private val closed = AtomicBoolean()
+        private val closed = OnceFlag()
 
         override fun close() {
-            if (closed.compareAndSet(false, true)) {
+            if (closed.trySet()) {
                 synchronized(this@SourceTransferCancellation) { active.remove(this) }
                 delegate.close()
             }

@@ -9,6 +9,7 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "//common",
+        "//common/concurrent",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",

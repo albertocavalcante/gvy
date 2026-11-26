@@ -21,6 +21,7 @@ dependencies {
     // TokenStreamGuard uses the Groovy compiler's own lexer as ground truth.
     implementation(libs.groovy.core)
     implementation(project(":common"))
+    implementation(project(":common:concurrent"))
     implementation(libs.slf4j.api)
 
     detektPlugins(libs.detekt.formatting)

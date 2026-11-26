@@ -9,7 +9,6 @@ import com.github.albertocavalcante.groovyparser.provider.RewriteParserProvider
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import com.github.albertocavalcante.gvy.viz.model.RewriteAstNodeDto
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Converts OpenRewrite's parsed output to platform-agnostic DTOs.
@@ -29,17 +28,17 @@ class RewriteAstConverter(private val parser: RewriteParserProvider) {
         val parseUnit = parser.parse(source, null)
         if (!parseUnit.isSuccessful) return null
 
-        val idGenerator = AtomicInteger(0)
+        val idGenerator = NodeIds()
         return buildTree(source, parseUnit, idGenerator)
     }
 
     /**
      * Build the AST tree from the parse unit's symbols.
      */
-    private fun buildTree(source: String, parseUnit: ParseUnit, idGenerator: AtomicInteger): AstNodeDto {
+    private fun buildTree(source: String, parseUnit: ParseUnit, idGenerator: NodeIds): AstNodeDto {
         val children = parseUnit.symbols().map { symbol ->
             RewriteAstNodeDto(
-                id = "node-${idGenerator.incrementAndGet()}",
+                id = idGenerator.next(),
                 type = symbol.kind.name,
                 range = symbol.range.toDtoRange(),
                 children = emptyList(),

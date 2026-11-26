@@ -10,6 +10,8 @@ dependencies {
     implementation(project(":parser:native"))
     // Spock-specific detection and extraction
     implementation(project(":ext:spock"))
+    // Shared state through gvy's own primitives (#2474)
+    implementation(project(":common:concurrent"))
 
     // Logging
     // kotlin-logging provides the API; SLF4J implementation needed at runtime.

@@ -21,7 +21,6 @@ import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.GroovyRangeGuard
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Converts Core parser AST (JavaParser-like) to platform-agnostic DTOs.
@@ -41,10 +40,10 @@ class CoreAstConverter {
 
     /** Converts using the exact parsed source; a null source makes all ranges unavailable. */
     fun convert(compilationUnit: CompilationUnit, source: String?): AstNodeDto =
-        convertNode(compilationUnit, AtomicInteger(0), source?.let(::GroovyRangeGuard))
+        convertNode(compilationUnit, NodeIds(), source?.let(::GroovyRangeGuard))
 
-    private fun convertNode(node: Node, ids: AtomicInteger, guard: GroovyRangeGuard?): CoreAstNodeDto {
-        val id = "node-${ids.incrementAndGet()}"
+    private fun convertNode(node: Node, ids: NodeIds, guard: GroovyRangeGuard?): CoreAstNodeDto {
+        val id = ids.next()
         val type = node.javaClass.simpleName
         val range = node.range?.let { guard?.validRange(convertRange(it)) }
         val children = node.getChildNodes().map { convertNode(it, ids, guard) }

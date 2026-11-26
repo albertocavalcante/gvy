@@ -5,12 +5,12 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Manages Jenkins workspace context separately from regular Groovy sources.
@@ -49,7 +49,7 @@ class JenkinsWorkspaceManager internal constructor(
     private class TrackedClasspath(val request: Long, val scanKey: List<Path>)
 
     /** Hands out classpath request numbers, in the order compiles ask for a classpath. */
-    private val classpathRequests = AtomicLong()
+    private val classpathRequests = Counter()
 
     /** The scan key of the classpath each Jenkinsfile was last compiled with, for [getAllMetadata]; LRU-bounded. */
     private val classpathByUri =
@@ -117,7 +117,7 @@ class JenkinsWorkspaceManager internal constructor(
         // Build classpath from references AND project dependencies
         // Taken before building: when two compiles of this file overlap, the later request's classpath is kept
         // even if the earlier (slower) one finishes last.
-        val request = classpathRequests.incrementAndGet()
+        val request = classpathRequests.increment()
         val scoped = jenkinsContext.buildScopedClasspath(libraries, projectDependencies)
         synchronized(classpathByUri) {
             val recorded = classpathByUri[uri]

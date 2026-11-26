@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.testing.spock
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.spock.SpecificationEvidence
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockClassContext
@@ -19,7 +20,6 @@ import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import java.lang.ref.WeakReference
-import java.util.concurrent.atomic.AtomicReference
 
 private const val LOG_CLASS_NAME_LIMIT = 120
 
@@ -53,7 +53,7 @@ class SpockTestDetector internal constructor(private val classify: (ModuleNode) 
             module.get() === candidate && verdicts.size == candidate.classes.size
     }
 
-    private val lastModule = AtomicReference<ModuleVerdicts?>(null)
+    private val lastModule = SharedValue<ModuleVerdicts?>(null)
 
     private val logger = KotlinLogging.logger {}
 
@@ -84,7 +84,7 @@ class SpockTestDetector internal constructor(private val classify: (ModuleNode) 
     private fun contextFor(classNode: ClassNode, module: ModuleNode): SpockClassContext? {
         val index = module.classes.indexOfFirst { it === classNode }
         if (index < 0) return null
-        val cached = lastModule.get()?.takeIf { it.isFor(module) }
+        val cached = lastModule.value?.takeIf { it.isFor(module) }
             ?: ModuleVerdicts(module, classify(module).map { it.status to it.evidence }).also(lastModule::set)
         val (status, evidence) = cached.verdicts.getOrNull(index) ?: return null
         return SpockClassContext(classNode, status, evidence)

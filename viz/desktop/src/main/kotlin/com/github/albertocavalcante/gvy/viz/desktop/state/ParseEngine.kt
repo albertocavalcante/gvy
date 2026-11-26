@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
 import com.github.albertocavalcante.groovyparser.provider.RewriteParserProvider
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.RewriteAstConverter
@@ -17,7 +18,6 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import java.io.File
 import java.net.URI
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class ParseSnapshot(val source: String, val parser: ParserType, val path: String?)
 internal data class ParseOutput(val tree: AstNodeDto?, val errors: List<CodeError>)
@@ -25,7 +25,7 @@ internal data class ParseOutput(val tree: AstNodeDto?, val errors: List<CodeErro
 internal fun nativeUri(path: String?): URI = path?.let { File(it).toURI() } ?: URI("file:///temp.groovy")
 
 /** Each invocation owns its parser, converter and mutable parser objects. */
-internal fun parseSnapshot(snapshot: ParseSnapshot, cancelled: AtomicBoolean): ParseOutput = when (snapshot.parser) {
+internal fun parseSnapshot(snapshot: ParseSnapshot, cancelled: OnceFlag): ParseOutput = when (snapshot.parser) {
     ParserType.CORE -> parseCore(snapshot)
     ParserType.NATIVE -> parseNative(snapshot, cancelled)
     ParserType.REWRITE -> parseRewrite(snapshot)
@@ -48,10 +48,10 @@ private fun parseCore(snapshot: ParseSnapshot): ParseOutput {
     return ParseOutput(tree, errors)
 }
 
-private fun parseNative(snapshot: ParseSnapshot, cancelled: AtomicBoolean): ParseOutput {
+private fun parseNative(snapshot: ParseSnapshot, cancelled: OnceFlag): ParseOutput {
     val result = GroovyParserFacade().parse(
         ParseRequest(uri = nativeUri(snapshot.path), content = snapshot.source, checkCancelled = {
-            if (cancelled.get()) throw CancellationException("Parse superseded")
+            if (cancelled.isSet) throw CancellationException("Parse superseded")
         }),
     )
     val guard = GroovyRangeGuard(snapshot.source)

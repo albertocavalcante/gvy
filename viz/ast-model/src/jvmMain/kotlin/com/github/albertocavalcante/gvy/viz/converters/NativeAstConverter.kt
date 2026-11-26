@@ -20,7 +20,6 @@ import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.Expression
 import java.lang.reflect.Modifier
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Converts Native Groovy AST (org.codehaus.groovy.ast.*) to platform-agnostic DTOs.
@@ -40,10 +39,10 @@ class NativeAstConverter {
 
     /** Converts using the exact parsed source; a null source makes all ranges unavailable. */
     fun convert(moduleNode: ModuleNode, source: String?): AstNodeDto =
-        convertNode(moduleNode, AtomicInteger(0), source?.let(::GroovyRangeGuard))
+        convertNode(moduleNode, NodeIds(), source?.let(::GroovyRangeGuard))
 
-    private fun convertNode(node: ASTNode, ids: AtomicInteger, guard: GroovyRangeGuard?): NativeAstNodeDto {
-        val id = "node-${ids.incrementAndGet()}"
+    private fun convertNode(node: ASTNode, ids: NodeIds, guard: GroovyRangeGuard?): NativeAstNodeDto {
+        val id = ids.next()
         val type = node.javaClass.simpleName
         val range = extractRange(node)?.let { guard?.validRange(it) }
         val children = extractChildren(node, ids, guard)
@@ -81,43 +80,42 @@ class NativeAstConverter {
         )
     }
 
-    private fun extractChildren(node: ASTNode, ids: AtomicInteger, guard: GroovyRangeGuard?): List<AstNodeDto> =
-        buildList {
-            when (node) {
-                is ModuleNode -> {
-                    // Add imports
-                    node.imports?.forEach { add(convertNode(it, ids, guard)) }
-                    node.starImports?.forEach { add(convertNode(it, ids, guard)) }
-                    node.staticImports?.values?.forEach { add(convertNode(it, ids, guard)) }
-                    node.staticStarImports?.values?.forEach { add(convertNode(it, ids, guard)) }
+    private fun extractChildren(node: ASTNode, ids: NodeIds, guard: GroovyRangeGuard?): List<AstNodeDto> = buildList {
+        when (node) {
+            is ModuleNode -> {
+                // Add imports
+                node.imports?.forEach { add(convertNode(it, ids, guard)) }
+                node.starImports?.forEach { add(convertNode(it, ids, guard)) }
+                node.staticImports?.values?.forEach { add(convertNode(it, ids, guard)) }
+                node.staticStarImports?.values?.forEach { add(convertNode(it, ids, guard)) }
 
-                    // Add classes
-                    node.classes?.forEach { add(convertNode(it, ids, guard)) }
-                }
-                is ClassNode -> {
-                    // Add fields
-                    node.fields?.forEach { add(convertNode(it, ids, guard)) }
-
-                    // Add properties
-                    node.properties?.forEach { add(convertNode(it, ids, guard)) }
-
-                    // Add methods
-                    node.methods?.forEach { add(convertNode(it, ids, guard)) }
-
-                    // Add constructors
-                    node.declaredConstructors?.forEach { add(convertNode(it, ids, guard)) }
-                }
-                is MethodNode -> {
-                    // Add parameters
-                    node.parameters?.forEach { add(convertNode(it, ids, guard)) }
-
-                    // Note: We skip method code/body to keep DTO simple
-                    // Can be added later if needed
-                }
-                // For other node types, we use reflection as fallback
-                // or simply don't extract children
+                // Add classes
+                node.classes?.forEach { add(convertNode(it, ids, guard)) }
             }
+            is ClassNode -> {
+                // Add fields
+                node.fields?.forEach { add(convertNode(it, ids, guard)) }
+
+                // Add properties
+                node.properties?.forEach { add(convertNode(it, ids, guard)) }
+
+                // Add methods
+                node.methods?.forEach { add(convertNode(it, ids, guard)) }
+
+                // Add constructors
+                node.declaredConstructors?.forEach { add(convertNode(it, ids, guard)) }
+            }
+            is MethodNode -> {
+                // Add parameters
+                node.parameters?.forEach { add(convertNode(it, ids, guard)) }
+
+                // Note: We skip method code/body to keep DTO simple
+                // Can be added later if needed
+            }
+            // For other node types, we use reflection as fallback
+            // or simply don't extract children
         }
+    }
 
     private fun extractProperties(node: ASTNode): Map<String, String> = buildMap {
         when (node) {
