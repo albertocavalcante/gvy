@@ -8,6 +8,7 @@ import org.junit.jupiter.api.assertThrows
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -46,11 +47,15 @@ class ReferenceIndexSnapshotTest {
     @Test
     fun `replacing removing and clearing retire even identical or empty views`() {
         val db = GroovySemanticDB()
-        db.updateDocument(uri, document(1), "text")
+        val input = document(1)
+        val stored = db.storeDocument(uri, input, "text", ImplementationFacts.empty)
         val first = db.snapshotReferences()
-        db.updateDocument(uri, document(1), "text")
+        assertNotSame(input, stored)
+        assertSame(stored, first.documents.getValue(uri).document)
+        db.updateDocument(uri, input, "text")
         assertFalse(db.isCurrentReferenceSnapshot(first))
         val replaced = db.snapshotReferences()
+        assertNotSame(stored, replaced.documents.getValue(uri).document)
         db.removeDocument(uri)
         assertFalse(db.isCurrentReferenceSnapshot(replaced))
         val removed = db.snapshotReferences()

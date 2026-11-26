@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
+import java.lang.ref.WeakReference
 import java.net.URI
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -25,7 +26,12 @@ internal fun contentHash(content: String): String =
     HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray()))
 
 /** Reference completeness needs a resolved phase and evidence of which source the publication followed. */
-internal data class ReferencePublication(val phase: Int, val diskConfirmed: Boolean, val producer: ReferenceProducer?)
+internal data class ReferencePublication(
+    val document: SemanticDocument,
+    val phase: Int,
+    val diskConfirmed: Boolean,
+    val producer: ReferenceProducer?,
+)
 
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
@@ -56,6 +62,8 @@ class SemanticIndexer(
         val generation: AnalysisGeneration,
         val diskConfirmed: Boolean,
         val producer: ReferenceProducer?,
+        // The graph owns this document. Keep its identity without retaining a displaced graph.
+        val stored: WeakReference<SemanticDocument>? = null,
     )
 
     private class State {
@@ -160,7 +168,7 @@ class SemanticIndexer(
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
                 if (replaces(state, publication, candidate)) {
-                    state.entry = candidate.takeIf { store(uri, built, content) }
+                    state.entry = store(uri, built, content)?.let { candidate.copy(stored = WeakReference(it)) }
                     state.highestTicket = maxOf(state.highestTicket, publication.ticket)
                 }
                 state
@@ -191,16 +199,16 @@ class SemanticIndexer(
 
     /**
      * Puts [built] in the index, or, when building failed, removes the stale document (no document beats
-     * one that describes other content). Returns whether a document is now stored.
+     * one that describes other content). Returns the immutable document installed by this invocation.
      */
     @Suppress("TooGenericExceptionCaught") // an index failure must not fail the compile that produced the AST
-    private fun store(uri: URI, built: Built?, content: String): Boolean = try {
+    private fun store(uri: URI, built: Built?, content: String): SemanticDocument? = try {
         if (built != null) {
-            index.updateDocument(uri, built.document, sourceText = content, implementations = built.implementations)
+            index.storeDocument(uri, built.document, content, built.implementations)
         } else {
             index.removeDocument(uri)
+            null
         }
-        built != null
     } catch (e: Exception) {
         logger.warn(e) { "Failed to store the semantic document for $uri" }
         // Best effort: an index left holding the previous document would disagree with the empty entry.
@@ -209,7 +217,7 @@ class SemanticIndexer(
         } catch (removal: Exception) {
             logger.warn(removal) { "Failed to remove the semantic document for $uri" }
         }
-        false
+        null
     }
 
     @Suppress("TooGenericExceptionCaught") // a failing builder must not fail the compile that produced the AST
@@ -237,7 +245,9 @@ class SemanticIndexer(
         entries.computeIfPresent(uri) { _, state ->
             val entry = state.entry
             if (entry != null && entry.generation == generation) {
-                result = ReferencePublication(entry.phase, entry.diskConfirmed, entry.producer)
+                result = entry.stored?.get()?.let { document ->
+                    ReferencePublication(document, entry.phase, entry.diskConfirmed, entry.producer)
+                }
             }
             state
         }

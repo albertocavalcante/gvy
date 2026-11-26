@@ -95,6 +95,16 @@ class GroovySemanticDB {
         sourceText: String?,
         implementations: ImplementationFacts.Snapshot,
     ) {
+        storeDocument(uri, doc, sourceText, implementations)
+    }
+
+    /** Returns the detached document installed by this write, even if a later write replaces it. */
+    fun storeDocument(
+        uri: URI,
+        doc: SemanticDocument,
+        sourceText: String?,
+        implementations: ImplementationFacts.Snapshot,
+    ): SemanticDocument {
         val freezer = TypeFreezer()
         val snapshot = doc.copy(
             symbols = Collections.unmodifiableList(doc.symbols.map { it.copy(type = it.type?.let(freezer::freeze)) }),
@@ -114,6 +124,7 @@ class GroovySemanticDB {
                 versionCounter.incrementAndGet()
             }
         }
+        return snapshot
     }
 
     /**

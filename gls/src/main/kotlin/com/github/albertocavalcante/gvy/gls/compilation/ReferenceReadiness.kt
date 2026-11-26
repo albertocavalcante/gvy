@@ -86,13 +86,15 @@ internal class ReferenceReadiness(
         var environment: ReferenceProducer? = null
         for (uri in required) {
             ensureActive()
-            val indexed = references.getDocumentSnapshot(uri)?.sourceText ?: return@withContext unavailable(uri)
+            val indexed = references.getDocumentSnapshot(uri) ?: return@withContext unavailable(uri)
+            val content = indexed.sourceText ?: return@withContext unavailable(uri)
             val publication = currentPublication(uri) ?: return@withContext unavailable(uri)
             val producer = publication.producer ?: return@withContext unavailable(uri)
-            if (!producer.complete ||
+            if (publication.document !== indexed.document ||
+                !producer.complete ||
                 publication.phase < Phases.SEMANTIC_ANALYSIS ||
-                !matchesSource(uri, indexed, publication) ||
-                !producer.isCurrent(source, uri, indexed, selectSources)
+                !matchesSource(uri, content, publication) ||
+                !producer.isCurrent(source, uri, content, selectSources)
             ) {
                 return@withContext unavailable(uri)
             }

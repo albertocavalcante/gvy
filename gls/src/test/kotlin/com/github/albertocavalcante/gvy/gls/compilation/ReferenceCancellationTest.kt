@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import io.mockk.every
 import io.mockk.mockk
@@ -46,7 +47,8 @@ class ReferenceCancellationTest {
                     if (checks == stage) caller.cancel()
                     if (checks == stage && !stillCurrent) setOf(origin) else emptySet()
                 }
-                index.updateDocument(origin, SemanticDocument(origin, emptyList(), emptyList()), source)
+                val doc = SemanticDocument(origin, emptyList(), emptyList())
+                val stored = index.storeDocument(origin, doc, source, ImplementationFacts.empty)
                 val producer = mockk<ReferenceProducer> {
                     every { complete } returns true
                     every { isCurrent(capture, any(), any(), any()) } returns true
@@ -55,7 +57,7 @@ class ReferenceCancellationTest {
                     capture,
                     index,
                     currentPublication = {
-                        ReferencePublication(Phases.SEMANTIC_ANALYSIS, diskConfirmed = false, producer = producer)
+                        ReferencePublication(stored, Phases.SEMANTIC_ANALYSIS, false, producer)
                     },
                     selectSources = { _, model -> model.sources },
                 )
