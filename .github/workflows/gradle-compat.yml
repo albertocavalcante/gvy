@@ -1,142 +1,93 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-# Verifies the scoped-dependency init script's internal project-lock API (ProjectState.applyToMutableState)
-# on the oldest Gradle the server's JDK runs, the last 8.x, and the latest release (#1376). Not a required
-# check: a services.gradle.org outage must never block merges.
-name: Gradle Compatibility
+# Temporary qualification branch only. Never merge this replacement.
+name: G6 actual compiler input baselines
 
 on:
-  schedule:
-    - cron: "17 4 * * 1" # Weekly, Mondays 04:17 UTC
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'build-tool/src/main/resources/gvy/gradle/scoped-dependencies.init.gradle'
-      - 'build-tool/src/main/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleScoped*.kt'
-      - 'build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleScopedDependencyProducerIntegrationTest.kt'
-      - '.github/workflows/gradle-compat.yml'
 
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: g6-handler-input-baselines-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  scoped-lock-api:
-    name: Scoped init script on older and latest Gradle
+  baseline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      GRADLE_OPTS: -Xmx512m
     steps:
-      - name: Checkout
+      - name: Checkout frozen baseline and tests
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-
       - name: Set up JDK 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
-          java-version: 17
-
-      - name: Setup licensing tools
+          java-version: '17'
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+      - name: Set up licensing tools
         uses: ./.github/actions/setup-licensing
-
-      - name: Setup Gradle
+      - name: Set up read-only Gradle cache
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
-          # Never cache Gradle artifact transforms: the entry is ~4.5 GB, restored by every job and
-          # rewritten on main; it rebuilds from the dependency cache. See #2166.
+          cache-read-only: true
           gradle-home-cache-excludes: |
             caches/transforms-*
             caches/*/transforms
-          cache-read-only: true
-
-      - name: Resolve Gradle versions
-        id: versions
+      - name: Record source identity
         shell: bash
         run: |
-          # The minimum is the oldest Gradle that runs on JDK 17; 8.14.x and the latest final release are looked up,
-          # so a newer Gradle that changes the internal API is caught. Retried with backoff, then fails loudly.
           set -euo pipefail
-          for attempt in 1 2 3; do
-            if curl -fsS --max-time 30 https://services.gradle.org/versions/all -o versions.json; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "::error::services.gradle.org unreachable after 3 attempts"
-              exit 1
-            fi
-            sleep $((attempt * 15))
-          done
-          list=$(python3 - <<'PY'
-          import json
-          import re
-          releases = [
-              v for v in json.load(open("versions.json"))
-              if not (v["snapshot"] or v["nightly"] or v["releaseNightly"] or v["broken"])
-              and not v["rcFor"] and not v["milestoneFor"]
-              and re.fullmatch(r"\d+(\.\d+)*", v["version"])
-          ]
-          def key(version):
-              return tuple(int(part) for part in version.split("."))
-          latest = max((v["version"] for v in releases), key=key)
-          eight = max((v["version"] for v in releases if v["version"].startswith("8.14.")), key=key)
-          print(",".join(["7.3.3", eight, latest]))
-          PY
-          )
-          echo "list=$list" >> "$GITHUB_OUTPUT"
-          # Cache keys may not contain commas
-          echo "key=${list//,/_}" >> "$GITHUB_OUTPUT"
-          echo "Gradle versions under test: \`$list\`" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Cache Gradle distributions
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: build-tool/build/scoped-gradle-test-home/wrapper/dists
-          key: gradle-compat-dists-${{ steps.versions.outputs.key }}
-
-      - name: Run the scoped observation on each version
-        env:
-          GVY_SCOPED_TEST_GRADLE_VERSIONS: ${{ steps.versions.outputs.list }}
+          git rev-parse HEAD
+          git status --porcelain
+          git cat-file -p HEAD
+          java -version
+      - name: Format the exact candidate modules
+        id: format
+        shell: bash
         run: >-
-          ./gradlew :build-tool:test
-          --tests '*GradleScopedDependencyProducerIntegrationTest.a project dependency resolves on the requested older Gradle versions'
-          --stacktrace
-
-  report:
-    name: Report scheduled result
-    needs: scoped-lock-api
-    if: always() && github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      issues: write
-    steps:
-      - name: Open, update or close the tracking issue
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
+          :gls:spotlessApply :parser:native:spotlessApply :ext:spock:spotlessApply :diagnostics:codenarc:spotlessApply --continue
+          --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+      - name: Run frozen actual input controls
+        if: ${{ !cancelled() && steps.format.outcome == 'success' }}
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RESULT: ${{ needs.scoped-lock-api.result }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit
+          :gls:test --tests '*CodeActionBinaryInputsWireTest' --tests '*CodeActionPackageInputsWireTest' --tests '*InvocationReceiptWireTest' --tests '*ModuleFreeInputWireTest'
+          --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+      - name: Preserve exact formatter delta and resulting file hashes
+        if: always()
+        shell: bash
         run: |
           set -euo pipefail
-          title="Scheduled Gradle compatibility check is failing"
-          existing=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" \
-            --json number,title --jq "map(select(.title == \"$title\")) | .[0].number // empty")
-          if [ "$RESULT" = "failure" ]; then
-            if [ -n "$existing" ]; then
-              gh issue comment "$existing" --repo "$REPO" --body "Still failing: $RUN_URL"
-            else
-              gh issue create --repo "$REPO" --title "$title" --body "$(printf '%s\n\n%s\n' \
-                "The weekly scoped init script check (#1376) failed: $RUN_URL" \
-                "A subproject target was not COMPLETE on one of the tested Gradle versions, or the run broke.")"
-            fi
-          elif [ "$RESULT" = "success" ] && [ -n "$existing" ]; then
-            gh issue close "$existing" --repo "$REPO" --comment "Passing again: $RUN_URL"
-          fi
+          mkdir -p "$RUNNER_TEMP/g6-source"
+          git diff --binary -- gls parser/native ext/spock diagnostics/codenarc > "$RUNNER_TEMP/g6-source/format.patch"
+          git diff --name-only -- gls parser/native ext/spock diagnostics/codenarc > "$RUNNER_TEMP/g6-source/changed-paths.txt"
+          git ls-files -z gls parser/native ext/spock diagnostics/codenarc | xargs -0 sha256sum > "$RUNNER_TEMP/g6-source/postimages.sha256"
+          git status --porcelain > "$RUNNER_TEMP/g6-source/worktree-status.txt"
+      - name: Preserve raw invocation and JUnit evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: g6-handler-input-baselines-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/g6-evidence/**
+            ${{ runner.temp }}/g6-source/**
+            gls/build/test-results/test/*.xml
+            parser/native/build/test-results/test/*.xml
+            ext/spock/build/test-results/test/*.xml
+            diagnostics/codenarc/build/test-results/test/*.xml
+            gls/build/reports/tests/test/**
