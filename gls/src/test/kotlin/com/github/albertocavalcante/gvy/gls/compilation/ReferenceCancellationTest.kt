@@ -43,7 +43,10 @@ class ReferenceCancellationTest {
             val caller = currentCoroutineContext()
             val index = WorkspaceSymbolIndex(GroovySemanticDB())
             val stored = index.storeDocument(
-                origin, SemanticDocument(origin, emptyList(), emptyList()), text, ImplementationFacts.empty,
+                origin,
+                SemanticDocument(origin, emptyList(), emptyList()),
+                text,
+                ImplementationFacts.empty,
             )
             val producer = mockk<ReferenceProducer> {
                 every { complete } returns true
@@ -54,7 +57,8 @@ class ReferenceCancellationTest {
                 }
             }
             val readiness = ReferenceReadiness(
-                source, index,
+                source,
+                index,
                 currentPublication = { ReferencePublication(stored, Phases.SEMANTIC_ANALYSIS, false, producer) },
                 selectSources = { _, model -> model.sources },
             )

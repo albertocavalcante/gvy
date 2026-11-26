@@ -39,7 +39,10 @@ internal class ReferenceReadiness(
                 ensureActive()
                 if (!inputsCurrent()) return@withTimeoutOrNull
                 val producer = currentPublication(uri)?.producer ?: continue
-                if (!currentCoroutineContext().inputsCurrent { producer.isCurrent(source, uri, buffer.content, selectSources) }) {
+                if (!currentCoroutineContext().inputsCurrent {
+                        producer.isCurrent(source, uri, buffer.content, selectSources)
+                    }
+                ) {
                     compilation.ensureCompiled(uri, buffer)
                 }
             }

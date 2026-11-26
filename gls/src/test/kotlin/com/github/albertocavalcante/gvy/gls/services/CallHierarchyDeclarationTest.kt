@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
 import org.eclipse.lsp4j.Position
@@ -20,6 +21,32 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 
 class CallHierarchyDeclarationTest {
+    @Test
+    fun `typed parameter is not a call to its constructor`() {
+        val caller = "class Caller { def make(Local unused) { new Local() } }"
+        val source = "class Local {}\n$caller\n"
+        val uri = URI.create("file:///Local.groovy")
+        val documents = DocumentProvider().apply { put(uri, source) }
+        val compilation = GroovyCompilationService(documentProvider = documents)
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        try {
+            val service = GroovyTextDocumentService(scope, compilation)
+            val target = service.prepareCallHierarchy(
+                CallHierarchyPrepareParams(TextDocumentIdentifier(uri.toString()), Position(0, 7)),
+            ).get(10, TimeUnit.SECONDS).single()
+            assertEquals("Local", target.name)
+            val incoming = service.callHierarchyIncomingCalls(CallHierarchyIncomingCallsParams(target))
+                .get(10, TimeUnit.SECONDS)
+            assertEquals(listOf("make"), incoming.map { it.from.name })
+            assertEquals(uri.toString(), incoming.single().from.uri)
+            val name = caller.lastIndexOf("Local")
+            assertEquals(listOf(Range(Position(1, name), Position(1, name + 5))), incoming.single().fromRanges)
+        } finally {
+            scope.cancel()
+            compilation.shutdown()
+        }
+    }
+
     @Test
     fun `constructor uses share the positioned local declaration`() {
         val source = "class Local {}\nclass Caller { def run() { new Local(); new Local() } }\n"

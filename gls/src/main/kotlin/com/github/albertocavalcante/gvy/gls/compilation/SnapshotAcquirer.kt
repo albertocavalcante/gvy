@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.OpenDocuments
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -213,12 +214,8 @@ internal class SnapshotAcquirer(
     /** Fence all source inputs before preparing the workspace reference index. */
     fun referenceSource(uri: URI): SnapshotSource = SnapshotSource(dependencies, uri)
 
-    suspend fun acquire(uri: URI, phase: Int, mode: ParseMode?): SnapshotAcquisition {
-        currentCoroutineContext().ensureActive()
-        dependencies.waiterScope.coroutineContext.ensureActive()
-        val source = SnapshotSource(dependencies, uri)
-        return acquireSource(source, phase, mode)
-    }
+    suspend fun acquire(uri: URI, phase: Int, mode: ParseMode?): SnapshotAcquisition =
+        whileCallerActive { acquireCurrent(capture(uri), phase, mode) }
 
     fun capture(uri: URI): SnapshotSource = SnapshotSource(dependencies, uri)
 
@@ -228,9 +225,19 @@ internal class SnapshotAcquirer(
         return fresh.takeIf(original::canRetryWith)
     }
 
-    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition {
-        currentCoroutineContext().ensureActive()
+    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition =
+        whileCallerActive { acquireCurrent(source, phase, mode) }
+
+    private suspend inline fun whileCallerActive(acquire: () -> SnapshotAcquisition): SnapshotAcquisition {
+        val caller = currentCoroutineContext()
+        caller.ensureActive()
         dependencies.waiterScope.coroutineContext.ensureActive()
+        val result = runSuspendCatching(acquire)
+        caller.ensureActive()
+        return result.getOrThrow()
+    }
+
+    private suspend fun acquireCurrent(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition {
         if (!source.isCurrent()) return SnapshotAcquisition.Stale
         val content = try {
             source.buffer?.snapshot?.content ?: UriPathConverter.toPath(source.uri)?.let { path ->
