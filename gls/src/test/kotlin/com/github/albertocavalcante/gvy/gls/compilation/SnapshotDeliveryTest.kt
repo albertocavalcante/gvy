@@ -7,11 +7,14 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import groovy.lang.GroovyClassLoader
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
@@ -42,7 +45,7 @@ class SnapshotDeliveryTest {
     @TempDir
     lateinit var tempDir: Path
 
-    enum class Receiver { CANCELLED, SURVIVES, CANCEL_DURING_FINAL_CHECK }
+    enum class Receiver { CANCELLED, SURVIVES, CANCEL_DURING_FINAL_CHECK, CANCEL_AT_HANDOFF }
 
     @ParameterizedTest
     @EnumSource(Receiver::class)
@@ -69,6 +72,7 @@ class SnapshotDeliveryTest {
                     service.acquireSnapshot(uri, Phases.CONVERSION).also(returned::set)
                 }
                 assertTrue(held.entered.await(5, TimeUnit.SECONDS))
+                val delivery = assertNotNull(service.compilationCacheService.snapshotJobs[uri]).identity.delivery
                 val survivor = if (receiver == Receiver.SURVIVES) {
                     async(start = CoroutineStart.UNDISPATCHED) { service.acquireSnapshot(uri, Phases.CONVERSION) }
                 } else {
@@ -77,7 +81,7 @@ class SnapshotDeliveryTest {
                 val winner = assertIs<SnapshotAcquisition.Ready>(
                     withTimeout(5_000) { service.acquireSnapshot(uri, Phases.CANONICALIZATION) },
                 )
-                if (receiver != Receiver.CANCEL_DURING_FINAL_CHECK) first.cancelAndJoin()
+                if (receiver == Receiver.CANCELLED || receiver == Receiver.SURVIVES) first.cancelAndJoin()
                 held.release.countDown()
                 assertTrue(held.finished.await(5, TimeUnit.SECONDS))
                 val loader = held.parsed.get().compilationUnit.classLoader
@@ -90,19 +94,58 @@ class SnapshotDeliveryTest {
                     assertTrue(first.isCancelled)
                     assertNull(returned.get(), "A cancelled acquisition must not deliver its parser")
                 }
-                if (survivor == null) {
-                    assertNull(loader.findResource(marker))
+                val delivered = if (receiver == Receiver.CANCEL_AT_HANDOFF) {
+                    cancelAtHandoff(first, delivery)
+                    returned.get()
                 } else {
-                    val received = assertIs<SnapshotAcquisition.Ready>(withTimeout(5_000) { survivor.await() })
-                    assertSame(held.parsed.get(), received.snapshot.parseResult)
-                    assertNotNull(received.snapshot.parseResult.compilationUnit.classLoader.findResource(marker))
+                    survivor?.let { withTimeout(5_000) { it.await() } }
                 }
+                assertDelivery(delivered, held.parsed.get(), loader, marker)
             } finally {
                 held.release.countDown()
                 service.shutdown()
                 held.parsed.get()?.compilationUnit?.classLoader?.close()
             }
         }
+
+    private fun assertDelivery(
+        delivered: SnapshotAcquisition?,
+        expected: ParseResult,
+        loader: GroovyClassLoader,
+        marker: String,
+    ) {
+        if (delivered == null) {
+            assertNull(loader.findResource(marker), "An uncached loader with no recipient must be closed")
+        } else {
+            val received = assertIs<SnapshotAcquisition.Ready>(delivered)
+            assertSame(expected, received.snapshot.parseResult)
+            assertNotNull(received.snapshot.parseResult.compilationUnit.classLoader.findResource(marker))
+        }
+    }
+
+    private suspend fun cancelAtHandoff(first: Job, delivery: PendingDelivery) = coroutineScope {
+        // The worker has finished. Its first waiter resumes on this event loop only after we yield at join().
+        val waiter = Thread.currentThread()
+        val locked = CountDownLatch(1)
+        val canceller = async(Dispatchers.IO) {
+            synchronized(delivery) {
+                locked.countDown()
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (!waiter.isBlockedInDelivery()) {
+                    check(System.nanoTime() < deadline) { "Waiter did not reach the delivery handoff" }
+                    Thread.onSpinWait()
+                }
+                first.cancel()
+            }
+        }
+        assertTrue(locked.await(5, TimeUnit.SECONDS))
+        first.join()
+        canceller.await()
+        assertTrue(first.isCancelled)
+    }
+
+    private fun Thread.isBlockedInDelivery(): Boolean = state == Thread.State.BLOCKED &&
+        stackTrace.any { it.className == PendingDelivery::class.java.name && it.methodName == "update" }
 
     private fun markerJar(marker: String): Path {
         val jar = tempDir.resolve("delivery.jar")

@@ -233,7 +233,8 @@ internal class SnapshotAcquirer(
         caller.ensureActive()
         dependencies.waiterScope.coroutineContext.ensureActive()
         val result = runSuspendCatching(acquire)
-        caller.ensureActive()
+        // An Available has passed checked() and may already own an uncached loader transferred by leave().
+        if (result.getOrNull() !is SnapshotAcquisition.Available) caller.ensureActive()
         return result.getOrThrow()
     }
 
