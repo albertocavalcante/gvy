@@ -86,12 +86,13 @@ function deprecationOrigin(message, origin) {
   // Historical traces and their source/job hashes are in fixtures/gradle-native-*;
   // the artifact-set, map and bean-property readers appear once a project with
   // both JVM tests and Native targets is in the task graph (#2474).
-  if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.') &&
-      origin.startsWith('org.gradle.')) {
+  if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.')) {
     if (nativeBundleWrapperFrame.test(origin)) return undefined;
-    // Decide at the first caller below the wrappers: a deeper recognised reader must not stand in for an unknown one.
+    // Decide at the first frame below the wrappers, whatever its package: a deeper recognised reader must not
+    // stand in for an unknown caller. An unknown caller, like the plugin's own initializer, keeps the last header
+    // and names its frame, so it stays unexpected and identifiable.
     if (nativeBundleCodecCaller.test(origin)) return { origin, context: 'emitter gradle configuration-cache' };
-    return { unattributed: true };
+    return { origin };
   }
   if (/^(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.)/.test(origin)) return undefined;
   if (message.startsWith('Declaring dependencies using multi-string notation has been deprecated.') &&
@@ -142,10 +143,6 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     const origin = line.match(/^at ([^ ]+\([^()]+\))$/);
     if (pending && /deprecated/.test(pending.message) && origin) {
       const attribution = deprecationOrigin(pending.message, origin[1]);
-      if (attribution?.unattributed) {
-        flush();
-        continue;
-      }
       if (attribution) {
         pending.context = attribution.context ?? pending.context;
         pending.attribution = ` [origin ${attribution.origin}]`;

@@ -558,9 +558,11 @@ test('changed Native codec consumer frames and call sites remain unexpected', ()
     assert.equal(result.ok, false, before);
     assert.equal(result.unexpected.length, 1, before);
   }
-  // Another reader in the same package is not a recognised consumer: it falls back to the last header.
+  // Another reader in the same package is not a recognised caller: it keeps the last header and names its frame.
   const renamed = collectDiagnostics(codecConsumerLog.replace('CombinatorsKt.readMapEntriesInto(', 'CombinatorsKt.readOtherEntries('));
-  assert.ok(renamed.includes(`[project :viz:desktop] ${nativeBundleMessage}`));
+  assert.ok(renamed.includes(
+    `[project :viz:desktop] ${nativeBundleMessage} [origin org.gradle.internal.serialize.graph.CombinatorsKt.readOtherEntries(Combinators.kt:235)]`,
+  ));
   assert.equal(evaluate(renamed, exceptions, now).unexpected.length, 1);
 });
 
@@ -571,9 +573,33 @@ test('an unknown first Native codec caller is not attributed to a deeper recogni
   assert.ok(codecConsumerLog.includes(before));
   const unknown = collectDiagnostics(codecConsumerLog.replace(before, 'transform.OtherTransformCodec.decode(OtherTransformCodec.kt:66)'));
   assert.equal(unknown.length, 4);
-  assert.ok(unknown.includes(`[project :viz:desktop] ${nativeBundleMessage}`));
+  assert.ok(unknown.includes(
+    `[project :viz:desktop] ${nativeBundleMessage} [origin org.gradle.internal.serialize.codecs.dm.transform.OtherTransformCodec.decode(OtherTransformCodec.kt:66)]`,
+  ));
   assert.equal(unknown.filter(line => line.endsWith('BeanPropertyExtensions.kt:61)]')).length, 1);
   assert.equal(evaluate(unknown, gradleExceptions(), now).unexpected.length, 1);
+});
+
+test('any frame between the Native bundle wrappers and a recognised reader decides the attribution', () => {
+  // The generic rule skips java/kotlin frames for other warnings; for this one they are a different caller.
+  const caller = '\tat org.gradle.internal.serialize.codecs.dm.LocalFileDependencyBackedArtifactSetCodec.decode(';
+  assert.ok(codecConsumerLog.includes(caller));
+  const interposed = collectDiagnostics(codecConsumerLog.replace(caller, `\tat kotlin.collections.CollectionsKt.forEach(Collections.kt:10)\n${caller}`));
+  assert.ok(interposed.includes(
+    `[project :viz:desktop] ${nativeBundleMessage} [origin kotlin.collections.CollectionsKt.forEach(Collections.kt:10)]`,
+  ));
+  assert.equal(evaluate(interposed, gradleExceptions(), now).unexpected.length, 1);
+});
+
+test('the general configuration-cache readers identify the caller, not the bean or map being decoded', () => {
+  // readPropertyValue and readMapEntriesInto decode any bean field or map, and the logged stack never names which.
+  // Another decode of this same enum through them therefore shares their identity: the same plugin defect (#1603).
+  const lines = codecConsumerLog.split('\n');
+  const start = lines.findIndex(line => line.includes('BeanPropertyExtensionsKt.readPropertyValue(BeanPropertyExtensions.kt:61)'));
+  const end = lines.findIndex((line, index) => index > start && !line.startsWith('\tat '));
+  assert.ok(start > 0 && end > start);
+  const deeper = [...lines.slice(0, start + 1), '\tat org.gradle.internal.serialize.graph.codecs.OtherBeanCodec.decode(OtherBeanCodec.kt:7)', ...lines.slice(end)];
+  assert.deepEqual(collectDiagnostics(deeper.join('\n')), collectDiagnostics(codecConsumerLog));
 });
 
 test('Native attribution cannot accept unrelated Gradle deprecations or bypass missing and expired policy', () => {
