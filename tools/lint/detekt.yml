@@ -142,7 +142,6 @@ gvy:
     # Modules still to migrate (#2474). Remove a line in the pull request that migrates that module; the guard test
     # fails on a line whose module no longer uses java.util.concurrent.atomic in its main sources.
     - '**/gls/src/**'
-    - '**/indexer/lsif/src/**'
 naming:
   active: true
   ClassNaming:

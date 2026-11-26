@@ -12,14 +12,14 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.io.OutputStream
 import java.io.OutputStreamWriter
-import java.util.concurrent.atomic.AtomicInteger
 
 class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : IndexWriter {
     private val writer = OutputStreamWriter(outputStream)
     private val json = Json { encodeDefaults = true }
-    private val idCounter = AtomicInteger(1)
+    // An export drives its writers from one thread, in document order.
+    private var idCounter = 1
 
-    private fun nextId(): Int = idCounter.getAndIncrement()
+    private fun nextId(): Int = idCounter++
 
     private fun emit(element: kotlinx.serialization.json.JsonObject) {
         writer.write(element.toString())
