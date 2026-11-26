@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.detekt
 
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtCatchClause
@@ -31,7 +32,8 @@ import org.jetbrains.kotlin.psi.KtWhenExpression
 import org.jetbrains.kotlin.psi.psiUtil.parents
 
 internal const val GLS_PACKAGE = "com.github.albertocavalcante.gvy.gls"
-private const val COMPILER_TYPE = "$GLS_PACKAGE.compilation.GroovyCompilationService"
+internal const val COMPILER_TYPE = "$GLS_PACKAGE.compilation.GroovyCompilationService"
+internal const val CACHE_SERVICE_TYPE = "$GLS_PACKAGE.compilation.CompilationCacheService"
 private val COMPILER_NAMES = setOf("compilationService", "compilation")
 
 /** Looks outward from the use. A nearer untyped binding stops lookup just as a typed binding does. */
@@ -40,8 +42,6 @@ internal class CacheReceiverLookup(private val file: KtFile) {
         val target = directive.importedFqName ?: return@mapNotNull null
         (directive.aliasName ?: target.shortName().asString()) to target.asString()
     }.toMap()
-
-    fun isCompiler(receiver: KtExpression?, use: PsiElement): Boolean = typeOf(receiver, use) == COMPILER_TYPE
 
     fun typeOf(receiver: KtExpression?, use: PsiElement): String? = when (receiver) {
         null -> implicitReceiver(use)
@@ -55,22 +55,43 @@ internal class CacheReceiverLookup(private val file: KtFile) {
     }
 
     private fun qualify(name: String, use: PsiElement): String? {
-        if ('.' in name) return name
-        // A type parameter, nested class or local type alias may shadow even an explicit import.
-        if (use.parents.any { it.shadowsType(name) }) return null
-        return imports[name] ?: "${file.packageFqName.asString()}.$name"
+        var spelling = name
+        var location = use
+        val visited = mutableSetOf<KtTypeAlias>()
+        while (true) {
+            val declaration = visibleType(spelling, location)
+            if (declaration !is KtTypeAlias) {
+                return when {
+                    declaration is KtClassOrObject -> declaration.fqName?.asString()
+                    declaration != null -> null // A type parameter can shadow an import.
+                    '.' in spelling -> spelling
+                    else -> imports[spelling] ?: "${file.packageFqName.asString()}.$spelling"
+                }
+            }
+            if (declaration.typeParameters.isNotEmpty() || !visited.add(declaration)) return null
+            val target = declaration.getTypeReference() ?: return null
+            spelling = target.text.removeSuffix("?")
+            location = target
+        }
     }
 
-    private fun PsiElement.shadowsType(name: String): Boolean {
-        if (this is KtTypeParameterListOwner && typeParameters.any { it.name == name }) return true
+    private fun visibleType(name: String, use: PsiElement): KtNamedDeclaration? {
+        if ('.' in name) {
+            val shortName = name.substringAfterLast('.')
+            return if (name == "${file.packageFqName.asString()}.$shortName") file.typeDeclaration(shortName) else null
+        }
+        return use.parents.firstNotNullOfOrNull { it.typeDeclaration(name) }
+    }
+
+    private fun PsiElement.typeDeclaration(name: String): KtNamedDeclaration? {
+        if (this is KtTypeParameterListOwner) typeParameters.firstOrNull { it.name == name }?.let { return it }
         val declarations = when (this) {
             is KtBlockExpression -> statements.filterIsInstance<KtDeclaration>()
             is KtDeclarationContainer -> this.declarations
             else -> emptyList()
         }
-        return declarations.any {
-            (it is KtClassOrObject || it is KtTypeAlias) && (it as KtNamedDeclaration).name == name &&
-                (it.parent !is KtFile || it is KtTypeAlias || name in imports)
+        return declarations.filterIsInstance<KtNamedDeclaration>().firstOrNull {
+            (it is KtClassOrObject || it is KtTypeAlias) && it.name == name
         }
     }
 
@@ -111,10 +132,14 @@ internal class CacheReceiverLookup(private val file: KtFile) {
             val binding = scope.binding(name, use)
             if (binding != null) return bindingType(binding, seen)
             if (scope is KtFunctionLiteral && name == "it" && scope.valueParameterList == null) return null
-            // An inherited property can hide an outer or file-scope property of the same name.
-            if (scope is KtClassOrObject) break
+            // A plain top-level class still sees file properties. Inherited or enclosing members may shadow them.
+            if (scope is KtClassOrObject && (scope.superTypeListEntries.isNotEmpty() || scope.parent !is KtFile)) break
         }
-        return if (name in COMPILER_NAMES) COMPILER_TYPE else qualify(name, use)
+        return when {
+            name in COMPILER_NAMES -> COMPILER_TYPE
+            name == "compilationCacheService" && implicitReceiver(use) == COMPILER_TYPE -> CACHE_SERVICE_TYPE
+            else -> qualify(name, use)
+        }
     }
 
     private fun qualifiedType(expression: KtQualifiedExpression, seen: MutableSet<KtProperty>): String? {
@@ -127,7 +152,11 @@ internal class CacheReceiverLookup(private val file: KtFile) {
                 owner.binding(name, expression)?.let { return bindingType(it, seen) }
             }
         }
-        return if (name in COMPILER_NAMES) COMPILER_TYPE else expression.text
+        return when {
+            name == "compilationCacheService" && expressionType(receiver, seen) == COMPILER_TYPE -> CACHE_SERVICE_TYPE
+            name in COMPILER_NAMES -> COMPILER_TYPE
+            else -> expression.text
+        }
     }
 
     private fun bindingType(binding: KtNamedDeclaration, seen: MutableSet<KtProperty>): String? = when (binding) {
@@ -147,7 +176,11 @@ internal class CacheReceiverLookup(private val file: KtFile) {
             is KtFile -> declarations
             is KtFunction -> valueParameters
             is KtPropertyAccessor -> listOfNotNull(parameter)
-            is KtForExpression -> listOfNotNull(destructuringDeclaration, loopParameter)
+            is KtForExpression -> if (body?.let { PsiTreeUtil.isAncestor(it, use, false) } == true) {
+                listOfNotNull(destructuringDeclaration, loopParameter)
+            } else {
+                emptyList()
+            }
             is KtCatchClause -> listOfNotNull(catchParameter)
             is KtWhenExpression -> listOfNotNull(subjectVariable)
             else -> emptyList()

@@ -75,18 +75,31 @@ target would need the detekt API artifacts pinned in `maven_install.json` for no
 
 ## `DirectCompilationCacheAccess` (integration in progress)
 
-This PSI-only change detector reports direct compilation cache reads, known compiler acquisition calls and named legacy
-entry calls in GLS packages. The ordinary `lint` task loads the rule without type resolution (#2409). The exception
-ledger in `CacheAccessExceptions.kt` identifies the exact package, file, containing class and function parameter types,
-call text and allowed count, with a rationale, owner and removal gate. Adding or changing an exception requires review;
-never use a file-wide exemption. The six initial compiler compatibility forwarders are not permission to add wire uses.
+The ordinary pull-request lint task runs this PSI rule on GLS production packages without type resolution. It reports
+cache reads such as `getCompiledSnapshot`, `getCompiledContent`, `getValidParseResult` and `getCachedWithContent`, the
+source converter `compiledTextOf`, and direct uses of the named legacy provider entry points. On a
+`CompilationCacheService`, `getCached(uri, content, fingerprint)` returns the matching cached parse. On a
+`GroovyCompilationService`, `getSession(uri)` reads cached source to construct a language session. Both calls and their
+callable references require review.
 
-The rule recognizes typed compiler receivers, simple property aliases of known receiver names, imported call aliases,
-safe calls and callable references. It ignores `getAst` on a uniquely declared `RuleContext` receiver and
-`getDiagnostics` on a uniquely declared `DiagnosticsService` receiver; ambiguous duplicate names are reported. It is not
-a call graph or type resolver: unrelated same-named calls can be reported, and shadowing, unknown receiver names,
-aliases through arbitrary expressions, extensions, wrappers, reflection and function values can escape detection. Legacy
-calls with ambiguous overloads are reported for explicit narrow review, not type-guessed. The final composed GLS source
-must be inventoried and legitimate compatibility calls classified in the ledger before this rule can pass ordinary lint;
-no baseline or suppression is authorized for remaining wire paths. Hosted rule tests, ordinary lint and real
-direct-getter and legacy-acquisition mutation checks remain required before this guard is ready.
+The rule recognizes `compile`, `compileAsync` and `ensureCompiled` on a compiler receiver. It follows explicit types,
+import aliases, simple same-file type aliases and immutable property initializers, including safe calls, parenthesized
+receivers and callable references. A compiler member or extension can use an implicit receiver. The conventional
+receiver names `compilationService` and `compilation` also count where a declaration is unavailable. `compileAsync`
+starts a shared compilation. `compileTransient` parses request-local input and falls outside this acquisition check.
+
+For unrelated APIs, the rule recognizes the zero-argument `RuleContext.getAst()` and two-argument
+`DiagnosticsService.getDiagnostics(uri, content)` and their callable references when the receiver type is identifiable.
+It uses the nearest visible declaration, explicit imports and the file's package. A loop variable is visible in its
+body. Its range still resolves references against the outer scope. An unresolved destructured or shadowing name cannot
+grant an exception. An import alias never replaces a written guarded selector.
+
+The six compiler compatibility forwarders in `CacheAccessExceptions.kt` have individual entries. Each requires the
+production file path relative to the Gradle settings root, its package, a direct ordinary member of the top-level
+compiler class, the `java.net.URI` parameter and the entire expression body. Removing a forwarder requires reconciling
+its ledger entry; an occurrence ceiling alone cannot detect an unused permission.
+
+PSI cannot resolve arbitrary expression results, implicit lambda receivers, inherited declarations, reflection,
+wrappers, external type aliases or indirect function values. Same-named accessors and overloaded legacy calls can
+require review. The final composed GLS inventory must account for each legitimate use. Ordinary root lint and separate
+direct-getter and legacy-acquisition mutation runs on that tree remain integration gates.

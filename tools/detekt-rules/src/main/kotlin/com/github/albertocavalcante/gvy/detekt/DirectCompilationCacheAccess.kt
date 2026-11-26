@@ -58,7 +58,8 @@ internal class DirectCompilationCacheAccess(config: Config = Config.empty) : Rul
             receivers.imports[writtenName] == "$GLS_PACKAGE.converters.compiledTextOf" -> "compiledTextOf"
             else -> return
         }
-        if (name in ACQUISITIONS && !receivers.isCompiler(receiver, element)) return
+        val requiredType = REQUIRED_RECEIVERS[name]
+        if (requiredType != null && receivers.typeOf(receiver, element) != requiredType) return
         val unrelated = UNRELATED_GETTERS[name]
         if (unrelated != null && (argumentCount == null || argumentCount == unrelated.second)) {
             if (receivers.typeOf(receiver, element) == unrelated.first) return
@@ -74,12 +75,18 @@ internal class DirectCompilationCacheAccess(config: Config = Config.empty) : Rul
     }
 
     private companion object {
-        val ACQUISITIONS = setOf("compile", "compileAsync", "ensureCompiled")
+        val REQUIRED_RECEIVERS = mapOf(
+            "compile" to COMPILER_TYPE,
+            "compileAsync" to COMPILER_TYPE,
+            "ensureCompiled" to COMPILER_TYPE,
+            "getSession" to COMPILER_TYPE,
+            "getCached" to CACHE_SERVICE_TYPE,
+        )
         val UNRELATED_GETTERS = mapOf(
             "getAst" to ("$GLS_PACKAGE.providers.diagnostics.rules.RuleContext" to 0),
             "getDiagnostics" to ("$GLS_PACKAGE.services.DiagnosticsService" to 2),
         )
-        val GUARDED_NAMES = ACQUISITIONS + setOf(
+        val GUARDED_NAMES = REQUIRED_RECEIVERS.keys + setOf(
             "getCompiledSnapshot", "getCompiledContent", "getValidParseResult", "getCachedWithContent",
             "compiledTextOf", "createContextWithSource", "getAst", "getParseResult", "getAstModel",
             "getSymbolTable", "getDiagnostics", "getTokenIndex", "createContext",
