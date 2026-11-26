@@ -6,7 +6,9 @@ package com.github.albertocavalcante.gvy.gls.providers.callhierarchy
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
@@ -30,7 +32,12 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
 import org.eclipse.lsp4j.Location
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.SymbolKind
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import kotlinx.coroutines.flow.toList
 import java.net.URI
 
 class CallHierarchyProvider(private val compilationService: GroovyCompilationService) {
@@ -38,7 +45,21 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     fun prepareCallHierarchy(params: CallHierarchyPrepareParams): List<CallHierarchyItem> {
         val uri = URI.create(params.textDocument.uri)
         val source = captureSource(uri) ?: return emptyList()
-        val node = source.index.codePointPosition(params.position)?.toGroovyPosition()
+        return prepareCallHierarchy(uri, params.position, source)
+    }
+
+    internal fun prepareCallHierarchy(
+        uri: URI,
+        position: Position,
+        snapshot: CompiledDocumentSnapshot,
+    ): List<CallHierarchyItem> = prepareCallHierarchy(
+        uri,
+        position,
+        CallSource(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, TextIndex(snapshot.sourceText)),
+    )
+
+    private fun prepareCallHierarchy(uri: URI, position: Position, source: CallSource): List<CallHierarchyItem> {
+        val node = source.index.codePointPosition(position)?.toGroovyPosition()
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
         val definition = resolveDefinitionWithFallback(node, source.visitor, source.symbolTable)
 
@@ -91,6 +112,43 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
 
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> =
         failingAsInternalError("finding incoming calls") { collectIncomingCalls(params) }
+
+    internal suspend fun incomingCalls(
+        uri: URI,
+        position: Position,
+        origin: CompiledDocumentSnapshot,
+        references: CapturedWorkspaceReferences,
+        callerSnapshot: suspend (URI) -> CompiledDocumentSnapshot,
+    ): List<CallHierarchyIncomingCall> {
+        val locations = ReferenceProvider(compilationService).provideCapturedReferences(uri, position, origin, references)
+            .toList()
+        val sources = mutableMapOf<URI, CallSource?>()
+        for (location in locations) {
+            val callerUri = URI.create(location.uri)
+            if (callerUri !in sources) {
+                val snapshot = callerSnapshot(callerUri)
+                sources[callerUri] = CallSource(
+                    snapshot.parseResult.astModel,
+                    snapshot.parseResult.symbolTable,
+                    TextIndex(snapshot.sourceText),
+                )
+            }
+        }
+        val calls = mutableMapOf<String, CallHierarchyIncomingCall>()
+        for (location in locations) {
+            val fromItem = caller(location, sources) ?: throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.RequestFailed, "Cannot resolve an incoming caller", null),
+            )
+            val key = "${fromItem.uri}:${fromItem.range.start.line}:${fromItem.range.start.character}"
+            val existing = calls[key]
+            if (existing != null) {
+                existing.fromRanges.add(location.range)
+            } else {
+                calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
+            }
+        }
+        return calls.values.toList()
+    }
 
     private suspend fun collectIncomingCalls(
         params: CallHierarchyIncomingCallsParams,
@@ -152,7 +210,21 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     fun outgoingCalls(params: CallHierarchyOutgoingCallsParams): List<CallHierarchyOutgoingCall> {
         val uri = URI.create(params.item.uri)
         val source = captureSource(uri) ?: return emptyList()
-        val node = source.index.codePointPosition(params.item.selectionRange.start)?.toGroovyPosition()
+        return outgoingCalls(uri, params.item.selectionRange.start, source)
+    }
+
+    internal fun outgoingCalls(
+        uri: URI,
+        position: Position,
+        snapshot: CompiledDocumentSnapshot,
+    ): List<CallHierarchyOutgoingCall> = outgoingCalls(
+        uri,
+        position,
+        CallSource(snapshot.parseResult.astModel, snapshot.parseResult.symbolTable, TextIndex(snapshot.sourceText)),
+    )
+
+    private fun outgoingCalls(uri: URI, position: Position, source: CallSource): List<CallHierarchyOutgoingCall> {
+        val node = source.index.codePointPosition(position)?.toGroovyPosition()
             ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
 
         // Resolve to definition (should be MethodNode or ClassNode)

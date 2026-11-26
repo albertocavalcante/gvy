@@ -14,6 +14,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.errors.ReferenceScanFailedException
 import com.github.albertocavalcante.gvy.gls.errors.ReferenceScanPhase
+import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.utils.ParameterOrigins
 import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
@@ -21,6 +22,7 @@ import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
@@ -81,6 +83,27 @@ class ReferenceProvider(
      * [ReferenceScanFailedException] when a scan phase fails, never completing with a partial list.
      */
     fun provideReferences(uri: String, position: Position, includeDeclaration: Boolean): Flow<Location> = channelFlow {
+        collectReferences(uri, position, includeDeclaration, { createReferenceContext(uri, position) },
+            workspaceSymbolIndex?.let(::LiveReferences))
+    }
+
+    internal fun provideCapturedReferences(
+        uri: URI,
+        position: Position,
+        compiled: CompiledDocumentSnapshot,
+        references: CapturedWorkspaceReferences,
+    ): Flow<Location> = channelFlow {
+        collectReferences(uri.toString(), position, false, { createReferenceContext(uri, position, compiled) },
+            FrozenReferences(references))
+    }
+
+    private suspend fun ProducerScope<Location>.collectReferences(
+        uri: String,
+        position: Position,
+        includeDeclaration: Boolean,
+        contextProvider: () -> ReferenceContext?,
+        references: ReferenceLookup?,
+    ) {
         logger.debug { "Finding references for $uri at ${position.line}:${position.character}" }
 
         val emittedLocations = mutableSetOf<String>()
@@ -90,7 +113,7 @@ class ReferenceProvider(
 
         // First, try same-file AST-based reference finding
         scanning(logger, ReferenceScanPhase.DOCUMENT) {
-            val context = createReferenceContext(uri, position)
+            val context = contextProvider()
             if (context != null) {
                 val definition = resolveTargetDefinition(context)
                 val target = context.targetNode
@@ -129,7 +152,7 @@ class ReferenceProvider(
         }
 
         // Second, search workspace-wide using SemanticDB
-        workspaceSymbolIndex?.takeUnless { isLocal || isTypeParameterTarget }?.let { index ->
+        references?.takeUnless { isLocal || isTypeParameterTarget }?.let { index ->
             scanning(logger, ReferenceScanPhase.WORKSPACE) {
                 findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
             }
@@ -177,7 +200,7 @@ class ReferenceProvider(
         uri: String,
         position: Position,
         includeDeclaration: Boolean,
-        index: WorkspaceSymbolIndex,
+        index: ReferenceLookup,
         emittedLocations: MutableSet<String>,
         symbolName: String?,
     ) {
@@ -234,6 +257,24 @@ class ReferenceProvider(
         }
     }
 
+    private interface ReferenceLookup {
+        fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot?
+        fun findSymbol(symbolId: String): SymbolInfo?
+        fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot>
+    }
+
+    private class LiveReferences(private val index: WorkspaceSymbolIndex) : ReferenceLookup {
+        override fun getDocumentSnapshot(uri: URI) = index.getDocumentSnapshot(uri)
+        override fun findSymbol(symbolId: String) = index.findSymbol(symbolId)
+        override fun findReferenceDocuments(symbolId: String) = index.findReferenceDocuments(symbolId)
+    }
+
+    private class FrozenReferences(private val index: CapturedWorkspaceReferences) : ReferenceLookup {
+        override fun getDocumentSnapshot(uri: URI) = index.getDocumentSnapshot(uri)
+        override fun findSymbol(symbolId: String) = index.findSymbol(symbolId)
+        override fun findReferenceDocuments(symbolId: String) = index.findReferenceDocuments(symbolId)
+    }
+
     /**
      * Context for reference resolution.
      */
@@ -284,6 +325,14 @@ class ReferenceProvider(
     private fun createReferenceContext(uri: String, position: Position): ReferenceContext? {
         val documentUri = URI.create(uri)
         val compiled = compilationService.getCompiledSnapshot(documentUri) ?: return null
+        return createReferenceContext(documentUri, position, compiled)
+    }
+
+    private fun createReferenceContext(
+        documentUri: URI,
+        position: Position,
+        compiled: CompiledDocumentSnapshot,
+    ): ReferenceContext? {
         val source = TextIndex(compiled.sourceText)
         val groovyPosition = source.codePointPosition(position)?.toGroovyPosition() ?: return null
         return compiled.parseResult.astModel.getNodeAt(documentUri, groovyPosition)

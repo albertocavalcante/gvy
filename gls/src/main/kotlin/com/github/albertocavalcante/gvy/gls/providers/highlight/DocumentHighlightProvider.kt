@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.highlight
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
@@ -57,6 +58,14 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         val documentUri = URI.create(uri)
         // One snapshot supplies text, AST and symbols, so a concurrent recompile cannot mix generations.
         val snapshot = compilationService.getCompiledSnapshot(documentUri) ?: return emptyList()
+        return provideHighlights(documentUri, position, snapshot)
+    }
+
+    internal fun provideHighlights(
+        documentUri: URI,
+        position: Position,
+        snapshot: CompiledDocumentSnapshot,
+    ): List<DocumentHighlight> {
         val index = TextIndex(snapshot.sourceText)
         val groovyPosition = index.codePointPosition(position)?.toGroovyPosition()
 

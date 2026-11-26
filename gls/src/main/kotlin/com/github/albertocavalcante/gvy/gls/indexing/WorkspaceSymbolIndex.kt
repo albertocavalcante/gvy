@@ -61,6 +61,17 @@ class WorkspaceSymbolIndex(
         return CapturedWorkspaceMembers(lookup) { database.get()?.isCurrentDeclarationSnapshot(snapshot) == true }
     }
 
+    internal fun referenceShadows(): Set<URI> = shadowed().toSet()
+
+    /** The caller may capture [hidden] before preparing the index and validate both inputs after its query. */
+    internal fun captureReferences(hidden: Set<URI> = referenceShadows()): CapturedWorkspaceReferences {
+        val snapshot = semanticDb.snapshotReferences()
+        val excluded = hidden.toSet()
+        return CapturedWorkspaceReferences(snapshot, excluded) {
+            shadowed() == excluded && semanticDb.isCurrentReferenceSnapshot(snapshot)
+        }
+    }
+
     /** The definition of [symbolId] in a document not [shadowed]: the database's first one when none is. */
     private fun definition(symbolId: String): Pair<URI, SymbolInfo>? {
         val hidden = shadowed()

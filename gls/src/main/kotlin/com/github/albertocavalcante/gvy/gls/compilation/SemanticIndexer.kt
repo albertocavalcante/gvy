@@ -24,6 +24,9 @@ import kotlin.concurrent.write
 internal fun contentHash(content: String): String =
     HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.toByteArray()))
 
+/** Reference completeness needs a resolved phase and evidence of which source the publication followed. */
+internal data class ReferencePublication(val phase: Int, val diskConfirmed: Boolean, val producer: ReferenceProducer?)
+
 /**
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
  * reports it here, and cache invalidation and deletes remove entries here.
@@ -47,7 +50,13 @@ class SemanticIndexer(
     },
 ) {
     /** [generation]: the [retireAllPublications] generation of the publication that stored it. */
-    private class Entry(val contentHash: String, val phase: Int, val generation: AnalysisGeneration)
+    private data class Entry(
+        val contentHash: String,
+        val phase: Int,
+        val generation: AnalysisGeneration,
+        val diskConfirmed: Boolean,
+        val producer: ReferenceProducer?,
+    )
 
     private class State {
         @Volatile var entry: Entry? = null
@@ -135,16 +144,23 @@ class SemanticIndexer(
         ast: ModuleNode,
         phase: Int,
         fromBuffer: Boolean = true,
+        producer: ReferenceProducer? = null,
     ) {
         val uri = publication.uri
-        val hash = contentHash(content)
-        if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
+        val candidate = Entry(
+            contentHash(content),
+            phase,
+            publication.generation,
+            diskConfirmed = !fromBuffer,
+            producer = producer,
+        )
+        if (!replaces(entries[uri], publication, candidate)) return
         val built = buildOrNull(ast, uri)
         // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
-                if (replaces(state, publication, hash, phase, fromBuffer)) {
-                    state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
+                if (replaces(state, publication, candidate)) {
+                    state.entry = candidate.takeIf { store(uri, built, content) }
                     state.highestTicket = maxOf(state.highestTicket, publication.ticket)
                 }
                 state
@@ -152,22 +168,25 @@ class SemanticIndexer(
         }
     }
 
-    /** Whether a document for [hash] at [phase] replaces what [state] holds (see the class rules). */
-    private fun replaces(
-        state: State?,
-        publication: Publication,
-        hash: String,
-        phase: Int,
-        fromBuffer: Boolean,
-    ): Boolean {
-        val existing = state?.entry
-        val supersedes = if (existing != null && existing.contentHash == hash) {
-            phase > existing.phase || (phase == existing.phase && publication.generation > existing.generation)
-        } else {
-            publication.ticket > (state?.highestTicket ?: 0L)
+    /** Different bindings, like different source, replace only in publication order. */
+    private fun replaces(state: State?, publication: Publication, candidate: Entry): Boolean {
+        if (state == null ||
+            state !== publication.identity ||
+            publication.generation != generation ||
+            publication.isClosed
+        ) {
+            return false
         }
-        return state === publication.identity && publication.generation == generation && !publication.isClosed &&
-            (fromBuffer || !isOpen(publication.uri)) && supersedes
+        if (candidate.diskConfirmed && isOpen(publication.uri)) return false
+        val existing = state.entry
+        if (existing == null ||
+            existing.contentHash != candidate.contentHash ||
+            candidate.producer?.matches(existing.producer) == false
+        ) {
+            return publication.ticket > state.highestTicket
+        }
+        return candidate.phase > existing.phase ||
+            (candidate.phase == existing.phase && candidate.generation > existing.generation)
     }
 
     /**
@@ -210,6 +229,39 @@ class SemanticIndexer(
     /** The compile phase of the document stored for [uri], or null when there is none. */
     fun phaseOf(uri: URI): Int? = entries[uri]?.entry?.phase
 
+    /** Kept entries from before a workspace retirement still serve legacy readers, but cannot qualify references. */
+    internal fun currentReferencePublication(uri: URI): ReferencePublication? = swap.read {
+        var result: ReferencePublication? = null
+        // A publisher stores into the semantic DB before installing its entry. Serialize this metadata read
+        // with that file's publication so a newly captured document cannot borrow the previous entry's proof.
+        entries.computeIfPresent(uri) { _, state ->
+            val entry = state.entry
+            if (entry != null && entry.generation == generation) {
+                result = ReferencePublication(entry.phase, entry.diskConfirmed, entry.producer)
+            }
+            state
+        }
+        result
+    }
+
+    /** Called under the ownership ticket taken before reading disk. Never confirms a kept, retired generation. */
+    internal fun confirmDiskHash(uri: URI, hash: String, current: (ReferenceProducer) -> Boolean): Boolean = swap.read {
+        var confirmed = false
+        entries.computeIfPresent(uri) { _, state ->
+            val entry = state.entry
+            if (entry != null &&
+                entry.generation == generation &&
+                entry.contentHash == hash &&
+                entry.producer?.let(current) != false
+            ) {
+                if (!entry.diskConfirmed) state.entry = entry.copy(diskConfirmed = true)
+                confirmed = true
+            }
+            state
+        }
+        confirmed
+    }
+
     /** Whether the stored document was built from exactly [content]. */
     fun isCurrent(uri: URI, content: String): Boolean = entries[uri]?.entry?.contentHash == contentHash(content)
 
@@ -223,7 +275,7 @@ class SemanticIndexer(
             entries.computeIfPresent(uri) { _, state ->
                 state.entry?.let { kept ->
                     State().also {
-                        it.entry = kept
+                        it.entry = kept.copy(diskConfirmed = false)
                         it.highestTicket = state.highestTicket
                     }
                 }

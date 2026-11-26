@@ -9,8 +9,10 @@ import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticP
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationEnsurer
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
@@ -49,6 +51,7 @@ import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseMode
+import com.google.gson.JsonPrimitive
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -352,28 +355,137 @@ class GroovyTextDocumentService(
         )
     }
 
-    override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
-        coroutineScope.future {
-            logger.debug { "Prepare call hierarchy requested for ${params.textDocument.uri}" }
-            val uri = URI.create(params.textDocument.uri)
-
-            compilationService.ensureCompiled(uri)
-
-            callHierarchyProvider.prepareCallHierarchy(params)
+    override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> {
+        val document = params.textDocument.uri
+        val position = Position(params.position.line, params.position.character)
+        return coroutineScope.future {
+            val uri = URI.create(document)
+            queryEditorFact(uri) { snapshot ->
+                callHierarchyProvider.prepareCallHierarchy(uri, position, snapshot).onEach { item ->
+                    item.data = checkNotNull(snapshot.sourceIdentity)
+                }
+            }
         }
+    }
+
+    private suspend fun <T> queryEditorFact(
+        uri: URI,
+        compute: (CompiledDocumentSnapshot) -> List<T>,
+    ): List<T> = when (val result = compilationService.queryEditorSnapshot(uri) { compute(it) }) {
+        is SnapshotQuery.Answer -> result.value
+        SnapshotQuery.Missing -> emptyList()
+        SnapshotQuery.Stale -> throw ResponseErrorException(
+            ResponseError(ResponseErrorCode.ContentModified, "Document changed during request", null),
+        )
+        is SnapshotQuery.Failure -> throw result.cause
+    }
 
     override fun callHierarchyIncomingCalls(
         params: CallHierarchyIncomingCallsParams,
-    ): CompletableFuture<List<CallHierarchyIncomingCall>> = coroutineScope.future {
-        logger.debug { "Incoming calls requested for ${params.item.name}" }
-        callHierarchyProvider.incomingCalls(params)
+    ): CompletableFuture<List<CallHierarchyIncomingCall>> {
+        val document = params.item.uri
+        val start = params.item.selectionRange.start
+        val position = Position(start.line, start.character)
+        val identity = preparedIdentity(params.item.data)
+        return coroutineScope.future {
+            val uri = URI.create(document)
+            val readiness = compilationService.referenceReadiness(uri)
+            requirePreparedFence(identity, readiness.sourceIdentity)
+            val initialOrigin = when (val acquisition = compilationService.acquireEditorSnapshot(uri)) {
+                is SnapshotAcquisition.Available -> acquisition
+                SnapshotAcquisition.Stale, SnapshotAcquisition.Missing -> throw contentModified()
+                is SnapshotAcquisition.Failure -> throw acquisition.cause
+            }
+            if (!initialOrigin.isCurrent()) throw contentModified()
+            requirePreparedIdentity(identity, initialOrigin.snapshot.sourceIdentity)
+            CompilationEnsurer(documentProvider, compilationService).ensureAllCompiled()
+            readiness.prepareOpenSources(compilationService)
+            compilationService.ensureCompiled(uri)
+            when (val result = readiness.query { references ->
+                val held = mutableMapOf<URI, SnapshotAcquisition.Ready>()
+                suspend fun capture(sourceUri: URI): CompiledDocumentSnapshot {
+                    val existing = held[sourceUri]
+                    if (existing != null) return existing.snapshot
+                    val acquisition = compilationService.acquireSnapshot(
+                        sourceUri,
+                        mode = references.modeFor(sourceUri),
+                    )
+                    val ready = when (acquisition) {
+                        is SnapshotAcquisition.Ready -> acquisition
+                        SnapshotAcquisition.Stale -> throw contentModified()
+                        SnapshotAcquisition.Missing, is SnapshotAcquisition.Partial ->
+                            throw referenceUnavailable(sourceUri)
+                        is SnapshotAcquisition.Failure -> throw acquisition.cause
+                    }
+                    if (!references.matches(sourceUri, ready.snapshot)) throw contentModified()
+                    held[sourceUri] = ready
+                    return ready.snapshot
+                }
+                val origin = capture(uri)
+                requirePreparedIdentity(identity, origin.sourceIdentity)
+                val answer = callHierarchyProvider.incomingCalls(uri, position, origin, references.index, ::capture)
+                if (!initialOrigin.isCurrent() || held.values.any { !it.isCurrent() }) throw contentModified()
+                answer.forEach { call ->
+                    call.from.data = checkNotNull(held.getValue(URI.create(call.from.uri)).snapshot.sourceIdentity)
+                }
+                answer
+            }) {
+                is SnapshotQuery.Answer -> result.value
+                SnapshotQuery.Missing -> throw referenceUnavailable(uri)
+                SnapshotQuery.Stale -> throw contentModified()
+                is SnapshotQuery.Failure -> throw result.cause
+            }
+        }
     }
+
+    private fun contentModified() = ResponseErrorException(
+        ResponseError(ResponseErrorCode.ContentModified, "Inputs changed during call hierarchy", null),
+    )
+
+    private fun referenceUnavailable(uri: URI) = ResponseErrorException(
+        ResponseError(ResponseErrorCode.RequestFailed, "Reference source unavailable for $uri", null),
+    )
 
     override fun callHierarchyOutgoingCalls(
         params: CallHierarchyOutgoingCallsParams,
-    ): CompletableFuture<List<CallHierarchyOutgoingCall>> = coroutineScope.future {
-        logger.debug { "Outgoing calls requested for ${params.item.name}" }
-        callHierarchyProvider.outgoingCalls(params)
+    ): CompletableFuture<List<CallHierarchyOutgoingCall>> {
+        val document = params.item.uri
+        val start = params.item.selectionRange.start
+        val position = Position(start.line, start.character)
+        val identity = preparedIdentity(params.item.data)
+        return coroutineScope.future {
+            val uri = URI.create(document)
+            when (val result = compilationService.queryEditorSnapshot(uri) { snapshot ->
+                requirePreparedIdentity(identity, snapshot.sourceIdentity)
+                callHierarchyProvider.outgoingCalls(uri, position, snapshot).onEach { call ->
+                    call.to.data = checkNotNull(snapshot.sourceIdentity)
+                }
+            }) {
+                is SnapshotQuery.Answer -> result.value
+                SnapshotQuery.Missing, SnapshotQuery.Stale -> throw contentModified()
+                is SnapshotQuery.Failure -> throw result.cause
+            }
+        }
+    }
+
+    private fun requirePreparedIdentity(identity: String?, sourceIdentity: String?) {
+        if (identity == null) {
+            throw ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, "Missing call hierarchy identity", null))
+        }
+        if (identity != sourceIdentity) throw contentModified()
+    }
+
+    private fun requirePreparedFence(identity: String?, fence: String) {
+        if (identity == null || '/' !in identity) {
+            throw ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, "Missing call hierarchy identity", null))
+        }
+        if (identity.substringBeforeLast('/') != fence) throw contentModified()
+    }
+
+    private fun preparedIdentity(data: Any?): String? = when (data) {
+        is String -> data
+        is JsonPrimitive -> if (data.isString) data.asString else null
+        else -> null
     }
 
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {
@@ -561,38 +673,20 @@ class GroovyTextDocumentService(
         crossFileOperationsHandler.getImplementations(params.textDocument.uri, params.position)
     }
 
-    override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> =
-        coroutineScope.future {
+    override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> {
+        val document = params.textDocument.uri
+        val position = Position(params.position.line, params.position.character)
+        return coroutineScope.future {
             logger.debug {
-                "Document highlight requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}"
+                "Document highlight requested for $document at ${position.line}:${position.character}"
             }
 
-            try {
-                val uri = URI.create(params.textDocument.uri)
-                val compilationResult = ensureCompiledOrCompileNow(uri)
-                if (compilationResult == null) {
-                    logger.warn { "Document $uri not compiled, cannot provide highlights" }
-                    return@future emptyList()
-                }
-
-                val highlights = documentHighlightProvider.provideHighlights(
-                    params.textDocument.uri,
-                    params.position,
-                )
-
-                logger.debug { "Found ${highlights.size} highlights" }
-                highlights
-            } catch (e: Exception) {
-                rethrowIfCancellationOrError(e) // a cancelled request ends cancelled, not with no highlights
-                when (e) {
-                    is IllegalArgumentException -> logger.error(e) { "Invalid arguments finding highlights" }
-                    is IllegalStateException -> logger.error(e) { "Invalid state finding highlights" }
-                    else -> logger.error(e) { "Unexpected error finding highlights" }
-                }
-                emptyList()
-            }
+            val uri = URI.create(document)
+            val highlights = queryEditorFact(uri) { documentHighlightProvider.provideHighlights(uri, position, it) }
+            logger.debug { "Found ${highlights.size} highlights" }
+            highlights
         }
+    }
 
     override fun documentSymbol(
         params: DocumentSymbolParams,

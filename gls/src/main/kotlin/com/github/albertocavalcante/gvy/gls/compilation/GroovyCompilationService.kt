@@ -128,6 +128,8 @@ class GroovyCompilationService internal constructor(
         semanticIndexer,
         dependencyGraph = dependencyGraph,
         ownership = ownership,
+        documentProvider = documents,
+        shadowed = shadows::shadowed,
     )
 
     // Managers that handle complex lifecycle and orchestration
@@ -226,6 +228,30 @@ class GroovyCompilationService internal constructor(
             is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
         }
     }
+
+    /** Choose the editor or cold disk policy from the same captured source as the parse. */
+    internal suspend fun <T> queryEditorSnapshot(
+        uri: URI,
+        query: suspend (CompiledDocumentSnapshot) -> T,
+    ): SnapshotQuery<T> = when (val acquisition = orchestrator.snapshots.acquire(uri, Phases.CANONICALIZATION, null)) {
+        is SnapshotAcquisition.Available -> acquisition.query(query)
+        SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+        SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+        is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
+    }
+
+    /** Retain a caller parse and its freshness check while a multi-source query runs. */
+    internal suspend fun acquireEditorSnapshot(uri: URI): SnapshotAcquisition =
+        orchestrator.snapshots.acquire(uri, Phases.CANONICALIZATION, null)
+
+    /** Capture source ownership before any reference-index readiness work. */
+    internal fun referenceReadiness(uri: URI): ReferenceReadiness =
+        ReferenceReadiness(
+            orchestrator.snapshots.referenceSource(uri),
+            workspaceSymbolIndex,
+            semanticIndexer::currentReferencePublication,
+            orchestrator::referenceSources,
+        )
 
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)
 

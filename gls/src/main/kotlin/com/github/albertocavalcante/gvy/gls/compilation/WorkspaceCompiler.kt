@@ -4,8 +4,11 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.OpenDocuments
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -61,6 +64,8 @@ class WorkspaceCompiler(
     private val semanticIndexer: SemanticIndexer,
     val dependencyGraph: DependencyGraph = DependencyGraph(),
     private val ownership: ArtifactOwnership = ArtifactOwnership(),
+    private val documentProvider: DocumentProvider? = null,
+    private val shadowed: () -> Set<URI> = { emptySet() },
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -130,9 +135,7 @@ class WorkspaceCompiler(
                 stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
                     compileFileWithWorkspaceContext(
                         checkNotNull(UriPathConverter.toPath(uri)),
-                        workspace.sources,
-                        workspace.classpath,
-                        workspace.sourceRoots,
+                        workspace,
                     )
                 }
             }
@@ -150,7 +153,23 @@ class WorkspaceCompiler(
         if (content == null) {
             ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
         }
-        return content != null && !semanticIndexer.isCurrent(uri, content)
+        return content != null && confirmDiskSource(ticket, content) == false
+    }
+
+    /** True if the verified file matches the index, false if it needs compiling, null if the disk read retired. */
+    internal fun confirmDiskSource(ticket: ArtifactOwnership.Ticket, content: String): Boolean? {
+        val hash = contentHash(content)
+        val model = workspaceManager.current()
+        val inventory = documentProvider?.captureDocuments() ?: OpenDocuments.absent
+        var matches: Boolean? = null
+        ownership.commit(ticket) {
+            if (!semanticIndexer.followsBuffer(ticket.uri)) {
+                matches = semanticIndexer.confirmDiskHash(ticket.uri, hash) { producer ->
+                    producer.ownsWindow(model, ticket, inventory.identity)
+                }
+            }
+        }
+        return matches
     }
 
     /**
@@ -163,10 +182,6 @@ class WorkspaceCompiler(
         val modules = mutableMapOf<URI, ModuleNode>()
         val errors = mutableListOf<CompilationError>()
 
-        // Get workspace configuration
-        val classpath = workspace.classpath
-        val sourceRoots = workspace.sourceRoots
-
         // We need to compile each file separately but with all workspace sources available
         // to the compilation unit. This allows the compiler to resolve cross-file references.
         // We do this in parallel for better performance.
@@ -174,7 +189,7 @@ class WorkspaceCompiler(
         val results = coroutineScope {
             val compilationJobs = sources.map { sourcePath ->
                 async(Dispatchers.Default) {
-                    compileFileWithWorkspaceContext(sourcePath, sources, classpath, sourceRoots)
+                    compileFileWithWorkspaceContext(sourcePath, workspace)
                 }
             }
 
@@ -207,12 +222,10 @@ class WorkspaceCompiler(
      */
     private suspend fun compileFileWithWorkspaceContext(
         sourcePath: Path,
-        allSources: List<Path>,
-        classpath: List<Path>,
-        sourceRoots: List<Path>,
+        workspace: WorkspaceModel,
     ): FileCompilationResult {
         val uri = sourcePath.toUri()
-        val publication = semanticIndexer.begin(uri)
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
 
         return try {
             // Read file content
@@ -222,18 +235,27 @@ class WorkspaceCompiler(
             val locatorCandidates = buildLocatorCandidates(uri, sourcePath)
 
             // Create parse request with SEMANTIC_ANALYSIS phase for full type resolution
+            val inventory = documentProvider?.captureDocuments() ?: OpenDocuments.absent
+            val hidden = shadowed()
+            val sources = if (hidden.isEmpty()) {
+                workspace.sources
+            } else {
+                workspace.sources.filterNot { it.toUri() in hidden }
+            }
             val parseRequest = ParseRequest(
                 uri = uri,
                 content = content,
-                classpath = classpath,
-                sourceRoots = sourceRoots,
-                workspaceSources = allSources,
+                classpath = workspace.classpath,
+                sourceRoots = workspace.sourceRoots,
+                workspaceSources = sources,
+                openSources = inventory.documents.filterKeys { it != uri }.mapValues { it.value.content },
                 locatorCandidates = locatorCandidates,
                 compilePhase = Phases.SEMANTIC_ANALYSIS,
             )
 
             // Parse using worker session
-            val parseResult = workerSessionManager.parse(parseRequest)
+            val worker = workerSessionManager.current()
+            val parseResult = worker.parse(parseRequest)
 
             // Extract module
             val module = parseResult.ast
@@ -245,6 +267,19 @@ class WorkspaceCompiler(
                     module,
                     parseResult.outcome.achievedPhase,
                     fromBuffer = false,
+                    producer = ReferenceProducer(
+                        workspace.classpath,
+                        worker,
+                        ReferenceSources(
+                            workspace,
+                            ticket,
+                            inventory.identity,
+                            ParseMode.WORKSPACE,
+                            sources,
+                            emptyMap(),
+                        ),
+                        parseResult.isSuccessful && !parseResult.outcome.isDegraded,
+                    ),
                 )
                 val errors = parseResult.diagnostics.filter { it.severity == ParserSeverity.ERROR }.map {
                     CompilationError(uri, it.message, "SEMANTIC_ANALYSIS")
