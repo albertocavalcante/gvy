@@ -20,7 +20,7 @@ const lintedMainRoots = ['src/main/kotlin', 'src/main/java'];
 // Tests, the facade and modules published on their own keep the JDK atomics for good (see tools/lint/detekt.yml).
 const jdkAtomicsPermanent = new Set([
   '**/src/test/**', '**/src/jvmTest/**', '**/src/commonTest/**', '**/src/jmh/**',
-  '**/common/concurrent/**', '**/bsp/**', '**/parser/core/**',
+  '**/common/concurrent/src/**', '**/bsp/bsp-core/src/**', '**/bsp/maven-bsp/src/**', '**/parser/core/src/**',
 ]);
 const kotlinVolatile = new Set(['kotlin.jvm.Volatile', 'kotlin.concurrent.Volatile']);
 const literalOrComment =
@@ -169,6 +169,10 @@ test('JdkAtomics is active and each migration exclude names a module whose main 
   const config = gvyRuleConfig(readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8'), 'JdkAtomics');
   assert.ok(config, 'tools/lint/detekt.yml must configure gvy > JdkAtomics');
   assert.equal(config.active, true, 'JdkAtomics must stay active');
+  for (const permanent of jdkAtomicsPermanent) {
+    const module = permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
+    if (module) assert.ok(existsSync(join(root, module, 'src')), `${permanent} names no module`);
+  }
   for (const exclude of config.excludes.filter(entry => !jdkAtomicsPermanent.has(entry))) {
     const module = exclude.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
     assert.ok(module, `${exclude} must be a permanent exclude or have the form '**/<module>/src/**'`);

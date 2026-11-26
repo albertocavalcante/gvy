@@ -128,14 +128,16 @@ gvy:
     active: true
     excludes:
     # Permanent: tests, the facade itself, and modules published on their own, which must not depend on the unpublished
-    # :common:concurrent. tools/ci/detekt-ratchet-excludes.test.mjs knows these patterns.
+    # :common:concurrent. tools/ci/detekt-ratchet-excludes.test.mjs knows these patterns. detekt matches them against
+    # absolute paths, so a module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp package.
     - '**/src/test/**'
     - '**/src/jvmTest/**'
     - '**/src/commonTest/**'
     - '**/src/jmh/**'
-    - '**/common/concurrent/**'
-    - '**/bsp/**'
-    - '**/parser/core/**'
+    - '**/common/concurrent/src/**'
+    - '**/bsp/bsp-core/src/**'
+    - '**/bsp/maven-bsp/src/**'
+    - '**/parser/core/src/**'
     # Modules still to migrate (#2474). Remove a line in the pull request that migrates that module; the guard test
     # fails on a line whose module no longer uses java.util.concurrent.atomic in its main sources.
     - '**/build-tool/src/**'
@@ -212,7 +214,7 @@ style:
     # OnceFlag, SharedValue and Counter; elsewhere, use those types (#2474). Syntax-only, so the PR lint gate runs it.
     forbiddenPatterns: 'kotlin\.concurrent\.atomics\..*'
     excludes:
-    - '**/common/concurrent/**'
+    - '**/common/concurrent/src/**'
   LoopWithTooManyJumpStatements:
     active: true
   MaxLineLength:
