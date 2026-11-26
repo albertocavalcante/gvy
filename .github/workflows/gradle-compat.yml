@@ -20,7 +20,6 @@ jobs:
     permissions:
       contents: read
     env:
-      JAVA_TOOL_OPTIONS: -Xmx2g
       GRADLE_OPTS: -Xmx512m
     steps:
       - name: Checkout frozen baseline and tests
@@ -58,7 +57,7 @@ jobs:
         shell: bash
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
-          :gls:spotlessApply :parser:native:spotlessApply :ext:spock:spotlessApply :diagnostics:codenarc:spotlessApply
+          :gls:spotlessApply :parser:native:spotlessApply :ext:spock:spotlessApply :diagnostics:codenarc:spotlessApply --continue
           --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Run complete GLS, native parser, Spock and CodeNarc suites
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}

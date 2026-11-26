@@ -106,9 +106,8 @@ class CliDiagnoseDeliveryTest {
     }
 
     @Test
-    fun `ordinary LRU eviction leaves the held CLI import diagnostic available`(
-        @TempDir root: Path,
-    ): Unit = runBlocking {
+    fun `ordinary LRU eviction leaves the held CLI import diagnostic available`(@TempDir root: Path) {
+        runBlocking {
         val uri = Files.writeString(root.resolve("Checked.groovy"), SOURCE).toUri()
         val neighbor = Files.writeString(root.resolve("Neighbor.groovy"), "class Neighbor {}").toUri()
         val compilation = GroovyCompilationService(compilationCacheMaxEntries = 1)
@@ -146,6 +145,7 @@ class CliDiagnoseDeliveryTest {
             release.countDown()
             owner.cancelAndJoin()
             compilation.shutdown()
+        }
         }
     }
 
