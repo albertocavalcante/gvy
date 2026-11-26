@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           git rev-parse HEAD
           git status --porcelain
-          git diff 5c9c1e9e1d60d6c06fdfa2ee2e8f049058974e4b --stat
+          git cat-file -p HEAD
           java -version
       - name: Run all 23 frozen baseline cases
         shell: bash
