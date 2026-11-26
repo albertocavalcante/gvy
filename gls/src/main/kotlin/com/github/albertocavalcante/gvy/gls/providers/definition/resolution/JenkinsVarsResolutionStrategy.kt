@@ -100,7 +100,17 @@ class JenkinsVarsResolutionStrategy(
 
         // Create a synthetic ClassNode to represent the definition location.
         // Uses the callLineNumber parsed from the vars file to navigate directly to `def call(...)`.
-        val callLine = matchingVar.callLineNumber
+        val uri = matchingVar.path.toUri()
+        val inputs = context.inputs
+        val callLine = if (inputs == null) matchingVar.callLineNumber else {
+            // The Jenkins inventory is read from disk. An open vars file may have moved its call declaration.
+            val module = inputs.target(uri).parseResult.ast
+                ?: throw com.github.albertocavalcante.gvy.gls.providers.crossfile.navigationUnavailable(
+                    "Missing Jenkins global source at $uri",
+                )
+            module.classes.filter { it.isScript }.flatMap { it.getDeclaredMethods("call") }
+                .map { it.lineNumber }.filter { it > 0 }.minOrNull() ?: 1
+        }
         val syntheticNode = ClassNode(matchingVar.name, 0, null).apply {
             lineNumber = callLine
             columnNumber = 1
@@ -109,7 +119,7 @@ class JenkinsVarsResolutionStrategy(
         }
 
         return SymbolResolutionStrategy.found(
-            DefinitionResolver.DefinitionResult.Source(syntheticNode, matchingVar.path.toUri()),
+            DefinitionResolver.DefinitionResult.Source(syntheticNode, uri),
         )
     }
 

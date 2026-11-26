@@ -53,15 +53,24 @@ class DefinitionProvider(
      * the cursor, no definition with a position, a file that is not compiled); a lookup that broke is
      * [Result.failure] with its cause, never an empty list. Cancellation is rethrown.
      */
-    internal suspend fun lookupDefinitions(uri: String, position: Position): Result<List<Location>> =
-        lookup(uri, position, spockTarget = { it }, render = {
+    internal suspend fun lookupDefinitions(
+        uri: String,
+        position: Position,
+        inputs: DefinitionInputs? = null,
+    ): Result<List<Location>> =
+        lookup(uri, position, inputs, spockTarget = { it }, render = {
             locationOf(it.result, it.context, it.documentUri)
         })
 
     /** Like [lookupDefinitions], as [LocationLink]s, resolving the position once. */
-    internal suspend fun lookupDefinitionLinks(uri: String, position: Position): Result<List<LocationLink>> = lookup(
+    internal suspend fun lookupDefinitionLinks(
+        uri: String,
+        position: Position,
+        inputs: DefinitionInputs? = null,
+    ): Result<List<LocationLink>> = lookup(
         uri,
         position,
+        inputs,
         spockTarget = { LocationLink(it.uri, it.range, it.range) },
         render = {
             val originNode = it.context.visitor.getNodeAt(it.documentUri, it.position)
@@ -88,12 +97,13 @@ class DefinitionProvider(
     private suspend fun <T> lookup(
         uri: String,
         position: Position,
+        inputs: DefinitionInputs?,
         spockTarget: (Location) -> T,
-        render: (Resolved) -> T,
+        render: suspend (Resolved) -> T,
     ): Result<List<T>> {
         val documentUri = parseUriOrReport(uri) ?: return Result.success(emptyList())
         val attempt = try {
-            runSuspendCatching { attemptLookup(uri, documentUri, position, spockTarget, render) }
+            runSuspendCatching { attemptLookup(uri, documentUri, position, inputs, spockTarget, render) }
         } catch (e: CancellationException) {
             logger.debug { "Definition resolution cancelled by client for: $uri" }
             telemetrySink.report(
@@ -113,11 +123,12 @@ class DefinitionProvider(
         uri: String,
         documentUri: URI,
         position: Position,
+        inputs: DefinitionInputs?,
         spockTarget: (Location) -> T,
-        render: (Resolved) -> T,
+        render: suspend (Resolved) -> T,
     ): Verdict<T> {
         // One snapshot supplies text, AST and symbols, so a concurrent recompile cannot mix generations.
-        val snapshot = compilationService.getCompiledSnapshot(documentUri)
+        val snapshot = inputs?.origin ?: compilationService.getCompiledSnapshot(documentUri)
         spockDefinition(documentUri, position, snapshot)?.let {
             return Verdict(
                 DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS),
@@ -132,6 +143,7 @@ class DefinitionProvider(
             snapshot.parseResult.astModel,
             snapshot.parseResult.symbolTable,
             snapshot.sourceText,
+            inputs,
         )
         val groovyPosition = position.toGroovyPosition(context.sourceText)
         val resolver = resolverFor(context)
@@ -167,9 +179,10 @@ class DefinitionProvider(
         compilationService,
         sourceNavigator,
         compilationService.getWorkspaceSymbolIndex(),
+        context.inputs,
     )
 
-    private fun createLocationLink(
+    private suspend fun createLocationLink(
         result: DefinitionResolver.DefinitionResult,
         originNode: ASTNode?,
         context: DefinitionContext,
@@ -181,9 +194,11 @@ class DefinitionProvider(
 
         return when (result) {
             is DefinitionResolver.DefinitionResult.Source -> {
-                val targetUri = result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
+                val targetUri = context.inputs?.targetUri(result)?.toString()
+                    ?: result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
                 val targetRange = result.node.toProtocolRange(
-                    compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
+                    context.inputs?.textOf(URI.create(targetUri))
+                        ?: compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
                 ) ?: EMPTY_RANGE
                 LocationLink().apply {
                     this.targetUri = targetUri
@@ -393,9 +408,10 @@ class DefinitionProvider(
         val visitor: GroovyAstModel,
         val symbolTable: SymbolTable,
         val sourceText: String,
+        val inputs: DefinitionInputs? = null,
     )
 
-    private fun locationOf(
+    private suspend fun locationOf(
         result: DefinitionResolver.DefinitionResult,
         context: DefinitionContext,
         documentUri: URI,
@@ -403,9 +419,11 @@ class DefinitionProvider(
         is DefinitionResolver.DefinitionResult.Source -> {
             // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
             // (e.g., Jenkins vars) that aren't in the visitor's AST.
-            val targetUri = result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
+            val targetUri = context.inputs?.targetUri(result)?.toString()
+                    ?: result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
             val range = result.node.toProtocolRange(
-                compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
+                context.inputs?.textOf(URI.create(targetUri))
+                        ?: compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
             ) ?: EMPTY_RANGE
             Location(targetUri, range)
         }

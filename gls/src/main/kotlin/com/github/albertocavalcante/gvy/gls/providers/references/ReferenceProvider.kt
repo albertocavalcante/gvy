@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.QualifiedReferences
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
@@ -17,6 +18,7 @@ import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.utils.ParameterOrigins
 import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
@@ -84,7 +86,7 @@ class ReferenceProvider(
         collectReferences(
             ReferenceRequest(uri, position, includeDeclaration),
             { createReferenceContext(uri, position) },
-            workspaceSymbolIndex?.let(::LiveReferences),
+            { scan -> workspaceSymbolIndex?.let { scan(LiveReferences(it)) } },
         )
     }
 
@@ -97,8 +99,28 @@ class ReferenceProvider(
         collectReferences(
             ReferenceRequest(uri.toString(), position, includeDeclaration = false),
             { referenceCursor(uri, position, compiled) },
-            FrozenReferences(references),
+            { scan -> scan(FrozenReferences(references)) },
         )
+    }
+
+    internal fun navigationReferences(
+        uri: URI,
+        position: Position,
+        held: CompiledDocumentSnapshot,
+        includeDeclaration: Boolean,
+        withGraph: suspend (suspend (QualifiedReferences) -> Unit) -> Unit,
+    ): Flow<Location> = channelFlow {
+        collectReferences(
+            ReferenceRequest(uri.toString(), position, includeDeclaration),
+            { referenceCursor(uri, position, held) },
+        ) { scan ->
+            withGraph { graph ->
+                val bindings = ReferenceBindings(compilationService, graph, uri, held)
+                val result = runSuspendCatching { scan(FrozenReferences(graph.index, bindings)) }
+                bindings.validate()
+                result.getOrThrow()
+            }
+        }
     }
 
     private data class ReferenceRequest(val uri: String, val position: Position, val includeDeclaration: Boolean)
@@ -106,7 +128,7 @@ class ReferenceProvider(
     private suspend fun ProducerScope<Location>.collectReferences(
         request: ReferenceRequest,
         contextProvider: () -> ReferenceCursor?,
-        references: ReferenceLookup?,
+        withIndex: suspend (suspend (ReferenceLookup) -> Unit) -> Unit,
     ) {
         val (uri, position, includeDeclaration) = request
         logger.debug { "Finding references for $uri at ${position.line}:${position.character}" }
@@ -157,9 +179,11 @@ class ReferenceProvider(
         }
 
         // Second, search workspace-wide using SemanticDB
-        references?.takeUnless { isLocal || isTypeParameterTarget }?.let { index ->
-            scanning(logger, ReferenceScanPhase.WORKSPACE) {
-                findWorkspaceReferences(request, index, emittedLocations, symbolName)
+        if (!isLocal && !isTypeParameterTarget) {
+            withIndex { index ->
+                scanning(logger, ReferenceScanPhase.WORKSPACE) {
+                    findWorkspaceReferences(request, index, emittedLocations, symbolName)
+                }
             }
         }
     }
@@ -239,6 +263,7 @@ class ReferenceProvider(
             return
         }
         val (target, name) = indexed
+        if (occurrence.role == OccurrenceRole.CALL) index.requireSelection(target, name, position)
         index.findReferenceDocuments(target).forEach { (referenceUri, snapshot) ->
             snapshot.referenceLocations(
                 referenceUri,
@@ -247,12 +272,17 @@ class ReferenceProvider(
                 includeDeclaration,
             ).forEach { named ->
                 val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
-                if (emittedLocations.add(key)) send(named)
+                if (key !in emittedLocations && index.accepts(target, name, named)) {
+                    emittedLocations.add(key)
+                    send(named)
+                }
             }
         }
     }
 
     private interface ReferenceLookup {
+        suspend fun accepts(symbol: String, name: String, location: Location): Boolean = true
+        suspend fun requireSelection(symbol: String, name: String, position: Position) = Unit
         fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot?
         fun findSymbol(symbolId: String): SymbolInfo?
         fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot>
@@ -264,7 +294,17 @@ class ReferenceProvider(
         override fun findReferenceDocuments(symbolId: String) = index.findReferenceDocuments(symbolId)
     }
 
-    private class FrozenReferences(private val index: CapturedWorkspaceReferences) : ReferenceLookup {
+    private class FrozenReferences(
+        private val index: CapturedWorkspaceReferences,
+        private val bindings: ReferenceBindings? = null,
+    ) : ReferenceLookup {
+        override suspend fun requireSelection(symbol: String, name: String, position: Position) {
+            bindings?.requireSelection(symbol, name, position)
+        }
+
+        override suspend fun accepts(symbol: String, name: String, location: Location): Boolean =
+            bindings?.accepts(symbol, name, location) ?: true
+
         override fun getDocumentSnapshot(uri: URI) = index.getDocumentSnapshot(uri)
         override fun findSymbol(symbolId: String) = index.findUniqueSymbol(symbolId)
         override fun findReferenceDocuments(symbolId: String) = index.findUnambiguousReferenceDocuments(symbolId)

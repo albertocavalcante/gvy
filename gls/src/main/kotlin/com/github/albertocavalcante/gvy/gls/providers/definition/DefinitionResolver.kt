@@ -42,13 +42,22 @@ import org.codehaus.groovy.ast.stmt.Statement
 import org.eclipse.lsp4j.Range
 import java.net.URI
 
-class DefinitionResolver(
+class DefinitionResolver internal constructor(
     private val astVisitor: GroovyAstModel,
     private val symbolTable: SymbolTable,
     private val compilationService: GroovyCompilationService? = null,
     private val sourceNavigator: SourceNavigator? = null,
-    private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
+    private val workspaceSymbolIndex: WorkspaceSymbolIndex?,
+    private val inputs: DefinitionInputs?,
 ) {
+    constructor(
+        astVisitor: GroovyAstModel,
+        symbolTable: SymbolTable,
+        compilationService: GroovyCompilationService? = null,
+        sourceNavigator: SourceNavigator? = null,
+        workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
+    ) : this(astVisitor, symbolTable, compilationService, sourceNavigator, workspaceSymbolIndex, null)
+
 
     private val logger = KotlinLogging.logger {}
 
@@ -69,19 +78,22 @@ class DefinitionResolver(
         run {
             val strategies = buildList {
                 compilationService?.let { service ->
-                    service.workspaceManager.getJenkinsCapabilities()?.let { capabilities ->
+                    val capabilities = if (inputs != null) inputs.jenkins.capability else {
+                        service.workspaceManager.getJenkinsCapabilities()
+                    }
+                    capabilities?.let {
                         add(
                             JenkinsVarsResolutionStrategy(
                                 jenkinsCapabilities = capabilities,
                                 // Same mode decision as Jenkins hover/completion; read the configuration per
                                 // request so a groovy.mode change applies without rebuilding the resolver.
                                 isJenkinsModeEnabled = { uri ->
-                                    ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                    (inputs?.jenkins?.mode ?: ModeResolver.fromConfig(service.serverConfiguration, capabilities))
                                         .isJenkinsModeEnabled(uri)
                                 },
                                 astModel = astVisitor,
                                 isGroovyOnlyMode = {
-                                    ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                    (inputs?.jenkins?.mode ?: ModeResolver.fromConfig(service.serverConfiguration, capabilities))
                                         .isGroovyOnlyMode()
                                 },
                             ),
@@ -183,8 +195,8 @@ class DefinitionResolver(
      * Prefers more specific nodes over broad containers (ClassNode, BlockStatement, etc.)
      */
     private fun selectBestNode(uri: URI, position: Position, trackedNode: ASTNode?): ASTNode {
-        val fallbackNode = (compilationService?.getAst(uri) as? ModuleNode)
-            ?.findNodeAt(position.line, position.character)
+        val module = if (inputs != null) inputs.origin.parseResult.ast else compilationService?.getAst(uri) as? ModuleNode
+        val fallbackNode = module?.findNodeAt(position.line, position.character)
 
         return when {
             trackedNode == null && fallbackNode != null -> fallbackNode
@@ -285,6 +297,7 @@ class DefinitionResolver(
             targetNode = targetNode,
             documentUri = uri,
             position = position,
+            inputs = inputs,
         )
 
         return resolutionPipeline.resolve(context).fold(

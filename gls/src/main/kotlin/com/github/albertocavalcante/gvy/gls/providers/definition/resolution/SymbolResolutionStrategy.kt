@@ -8,6 +8,7 @@ import arrow.core.left
 import arrow.core.right
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.common.functional.DomainError
+import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionInputs
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -45,7 +46,15 @@ data class ResolutionContext(
     val documentUri: URI,
     /** Cursor position within the document */
     val position: Position,
-)
+) {
+    internal var inputs: DefinitionInputs? = null
+        private set
+
+    internal constructor(targetNode: ASTNode, documentUri: URI, position: Position, inputs: DefinitionInputs?) :
+        this(targetNode, documentUri, position) {
+        this.inputs = inputs
+    }
+}
 
 /**
  * Functional interface for symbol resolution strategies.
@@ -120,6 +129,7 @@ fun interface SymbolResolutionStrategy {
                     } catch (e: Error) {
                         throw e
                     } catch (e: Exception) {
+                        if (context.inputs != null && e is org.eclipse.lsp4j.jsonrpc.ResponseErrorException) throw e
                         // Broad on purpose: any strategy bug is reported as a typed failure carrying the throwable,
                         // never as "not found" and never swallowed.
                         val name = strategy::class.simpleName ?: "unknown"

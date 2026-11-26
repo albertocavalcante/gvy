@@ -18,7 +18,7 @@ import java.util.zip.ZipFile
  * enabling go-to-definition to navigate to source code rather than
  * just showing "binary definition".
  */
-class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionDir()) {
+class SourceJarExtractor(internal val extractionDir: Path = getDefaultExtractionDir()) {
 
     private val logger = KotlinLogging.logger {}
 

@@ -38,6 +38,22 @@ internal fun getClassName(targetNode: ASTNode): String? = when (targetNode) {
     else -> null
 }
 
+/** The compiler's receiver or type declaration, before any workspace name matching. */
+internal fun boundType(node: ASTNode): ClassNode? = when (node) {
+    is ImportNode -> node.type
+    is ClassNode -> node
+    is ConstructorCallExpression -> node.type
+    is ClassExpression -> node.type
+    is StaticMethodCallExpression -> node.ownerType
+    is MethodCallExpression -> boundReceiver(node.objectExpression)
+    is PropertyExpression -> boundReceiver(node.objectExpression)
+    is VariableExpression -> node.accessedVariable?.type
+    else -> null
+}?.redirect()
+
+private fun boundReceiver(receiver: org.codehaus.groovy.ast.expr.Expression): ClassNode? =
+    if (receiver is VariableExpression) receiver.accessedVariable?.type else receiver.type
+
 /**
  * Extract class name from an expression that may represent a class receiver.
  *

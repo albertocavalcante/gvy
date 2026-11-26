@@ -10,6 +10,9 @@ package com.github.albertocavalcante.gvy.gls.providers.crossfile
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationEnsurer
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
+import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionInputs
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.gvy.gls.providers.implementation.ImplementationProvider
@@ -79,6 +82,58 @@ class CrossFileOperationsHandler(
     private val implementationProvider by lazy {
         ImplementationProvider(compilationService)
     }
+
+    internal fun capture(uri: String, position: Position, definition: Boolean = false): NavigationRequest {
+        val document = URI.create(uri)
+        if (documentProvider !== compilationService.documents) throw navigationChanged("Different document authority")
+        val source = compilationService.captureSnapshotSource(document)
+        val jenkins = if (definition) JenkinsQuerySnapshot.capture(compilationService, document) else null
+        return NavigationRequest(
+            source,
+            Position(position.line, position.character),
+            compilationService.referenceReadiness(source),
+            jenkins,
+            definition && definitionLinkSupport(),
+        )
+    }
+
+    internal suspend fun definitions(request: NavigationRequest): Either<List<Location>, List<LocationLink>> =
+        failingAsInternalError("finding definitions") {
+            request.query(compilationService, Either.forLeft<List<Location>, List<LocationLink>>(emptyList())) { held ->
+                val inputs = DefinitionInputs(compilationService, documentProvider, request, held)
+                inputs.query {
+                    val uri = request.uri.toString()
+                    if (request.links) {
+                        val links = definitionProvider.lookupDefinitionLinks(uri, request.position, inputs).getOrThrow()
+                        if (links.isEmpty()) Either.forLeft(emptyList()) else Either.forRight(links)
+                    } else {
+                        Either.forLeft(definitionProvider.lookupDefinitions(uri, request.position, inputs).getOrThrow())
+                    }
+                }
+            }
+        }
+
+    internal suspend fun references(request: NavigationRequest, includeDeclaration: Boolean): List<Location> =
+        failingAsInternalError("finding references") {
+            request.query(compilationService, emptyList()) { held ->
+                referenceProvider.navigationReferences(request.uri, request.position, held, includeDeclaration) { scan ->
+                    ensureAllOpenDocumentsCompiled()
+                    request.readiness.prepareOpenSources(compilationService)
+                    if (request.source.buffer == null) compilationService.ensureCompiled(request.uri)
+                    when (val graph = request.readiness.query { qualified ->
+                        if (!qualified.matches(request.uri, held)) {
+                            throw navigationUnavailable("Reference origin and index have different producers")
+                        }
+                        scan(qualified)
+                    }) {
+                        is SnapshotQuery.Answer -> graph.value
+                        SnapshotQuery.Stale -> throw navigationChanged("Reference inputs changed")
+                        SnapshotQuery.Missing -> throw navigationUnavailable("Reference index is missing")
+                        is SnapshotQuery.Failure -> throw graph.cause
+                    }
+                }.toList()
+            }
+        }
 
     /**
      * Get definitions for the symbol at the given position.

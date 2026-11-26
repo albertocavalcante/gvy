@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.sources.definitionFor
+import com.github.albertocavalcante.gvy.gls.sources.binaryResourceUri
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ImportNode
 import org.eclipse.lsp4j.Position
@@ -42,6 +44,23 @@ class ClasspathResolutionStrategy(
                 }
                 return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
             }
+
+        context.inputs?.let { inputs ->
+            val selected = inputs.binaryType(boundType(context.targetNode))
+                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            if (selected.name != className) return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            val resource = selected.binaryResourceUri() ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            val member = importNode?.takeIf { it.isStatic }?.fieldName
+            val result = sourceNavigator?.definitionFor(selected, member, inputs::observeAttachment)
+            if (result is SourceNavigator.SourceResult.SourceLocation) {
+                return SymbolResolutionStrategy.found(
+                    DefinitionResolver.DefinitionResult.Binary(
+                        result.uri, selected.name, result.lineNumber?.let(::toZeroBasedLineRange),
+                    ),
+                )
+            }
+            return resolveBinaryFallback(resource, selected.name)
+        }
 
         val classpathUri = compilationService.findClasspathClass(className)
             ?: run {

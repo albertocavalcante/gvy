@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
+import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -128,6 +129,26 @@ internal class ReferenceReadiness(
             producers[uri] = producer
         }
         null
+    }
+
+    /** A closed document may have been indexed by a workspace parse. This selects its mode only. */
+    fun closedMode(uri: URI): ParseMode? = if (uri in source.documents) null else currentPublication(uri)?.producer?.mode
+
+    /** Qualify a consumed index record against the actual held parse of that same document. */
+    fun qualifyDocument(uri: URI, indexed: SemanticDocumentSnapshot, held: CompiledDocumentSnapshot): (() -> Boolean)? {
+        val expected = held.referenceProducer ?: return null
+        if (!expected.complete || indexed.sourceText != held.sourceText) return null
+        val publication = currentPublication(uri) ?: return null
+        val producer = publication.producer ?: return null
+        if (!publication.covers(indexed.document) || !producer.matches(expected) ||
+            !matchesSource(uri, held.sourceText, publication)
+        ) return null
+        val current = {
+            producer.isCurrent(source, uri, held.sourceText, selectSources) &&
+                currentPublication(uri)?.let { it.covers(indexed.document) && it.producer === producer } == true &&
+                source.isCurrent()
+        }
+        return current.takeIf { it() }
     }
 
     private fun unavailable(uri: URI) = "Reference index unavailable for $uri"

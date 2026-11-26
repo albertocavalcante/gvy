@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.sources.definitionFor
+import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
@@ -33,10 +35,12 @@ class MethodResolutionStrategy(
 ) : SymbolResolutionStrategy {
 
     private val logger = LoggerFactory.getLogger(MethodResolutionStrategy::class.java)
-    private val semanticResolver = com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver(
-        compilationService.classpathService.getTypeSolver(),
-        compilationService.getWorkspaceSymbolIndex(),
-    )
+    private val semanticResolver by lazy {
+        com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver(
+            compilationService.classpathService.getTypeSolver(),
+            compilationService.getWorkspaceSymbolIndex(),
+        )
+    }
 
     @Suppress("TooGenericExceptionCaught", "ReturnCount")
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
@@ -46,6 +50,27 @@ class MethodResolutionStrategy(
 
         val methodName = methodCall.methodAsString
             ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+
+        context.inputs?.let { inputs ->
+            if (methodCall.isImplicitThis || sourceNavigator == null) {
+                return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            }
+            val owner = inputs.binaryType(boundType(methodCall))
+                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            val arity = (methodCall.arguments as? TupleExpression)?.expressions?.size
+            val declaration = withContext(inputs.binaryContext) {
+                owner.methods.filter { it.name == methodName && (arity == null || it.parameterCount == arity) }
+                    .map { it.declaringClass }.distinct().singleOrNull()
+            } ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            val location = sourceNavigator.definitionFor(declaration, methodName, inputs::observeAttachment)
+                as? SourceNavigator.SourceResult.SourceLocation
+                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            return SymbolResolutionStrategy.found(
+                DefinitionResolver.DefinitionResult.Binary(
+                    location.uri, methodName, location.lineNumber?.let(::toZeroBasedLineRange),
+                ),
+            )
+        }
 
         // Resolve the receiver type
         val receiverType = resolveReceiverType(methodCall, context)

@@ -31,6 +31,18 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
 
         logger.debug { "Attempting global lookup for class: $className" }
 
+        context.inputs?.let { inputs ->
+            val declaration = boundType(context.targetNode)
+            val uri = declaration?.let(inputs::declarationUri)
+            if (declaration == null || uri == null || declaration.name != className) {
+                return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            }
+            // The native origin already retains the declaration it compiled alongside this use.
+            // Never resolve its spelling a second time in an independent class index.
+            inputs.textOf(uri)
+            return SymbolResolutionStrategy.found(DefinitionResolver.DefinitionResult.Source(declaration, uri))
+        }
+
         // Extract simple name from potentially fully-qualified name for matching
         val simpleClassName = className.substringAfterLast('.')
 

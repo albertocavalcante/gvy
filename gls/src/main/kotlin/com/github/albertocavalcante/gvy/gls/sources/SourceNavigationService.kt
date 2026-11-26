@@ -49,6 +49,38 @@ class SourceNavigationService(
 
     private val logger = KotlinLogging.logger {}
 
+    private val bundled = BundledSourceCatalog()
+
+    internal suspend fun selectedDefinition(
+        type: Class<*>,
+        resource: URI,
+        method: String?,
+        observe: (suspend () -> Boolean) -> Unit,
+    ): SourceNavigator.SourceResult = withContext(Dispatchers.IO) {
+        val absent = SourceNavigator.SourceResult.BinaryOnly(resource, type.name, "No matching source declaration")
+        val selection = selectedSourceArchive(type, resource, bundled, ::findAdjacentSourceJar)
+            ?: return@withContext absent
+        observe { withContext(Dispatchers.IO) { selection.current() } }
+        val input = selection.input ?: return@withContext absent
+        val limits = SourceStoreLimits()
+        SourceContentStore(sourceExtractor.extractionDir.resolve("selected"), limits).use { store ->
+            val archive = store.importArchive(input)
+            if (input is SourceArchiveInput.Local) {
+                observe { withContext(Dispatchers.IO) { fileDigest(input.path, limits.maxArchiveBytes) == archive.sha256 } }
+            }
+            val source = store.sourceFor(archive, type.name, selection.prefix) ?: return@withContext absent
+            observe {
+                withContext(Dispatchers.IO) { fileDigest(source.contentPath, limits.maxEntryBytes) == source.contentDigest }
+            }
+            val declaration = if (method == null) {
+                inspectClassDefinition(source.contentPath, type.name)
+            } else {
+                inspectMethodDefinition(source.contentPath, type.name, method)
+            } ?: return@withContext absent
+            SourceNavigator.SourceResult.SourceLocation(source.contentPath.toUri(), type.name, declaration.lineNumber)
+        }
+    }
+
     /**
      * Navigate to source code for a class found in the classpath.
      *

@@ -21,7 +21,7 @@ internal suspend fun SourceNavigator.documentationForSelectedBinary(type: Class<
     return (source as? SourceNavigator.SourceResult.SourceLocation)?.documentation
 }
 
-private fun Class<*>.binaryResourceUri(): URI? {
+internal fun Class<*>.binaryResourceUri(): URI? {
     val entry = name.replace('.', '/') + ".class"
     val resource = getResource("/$entry") ?: return null
     return if (resource.protocol == "jrt") {

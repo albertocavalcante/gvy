@@ -484,17 +484,22 @@ class GroovyTextDocumentService(
         return coroutineScope.future { hoverRequestHandler.getHover(request.getOrThrow()) }
     }
 
-    override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
-        coroutineScope.future {
-            crossFileOperationsHandler.getDefinitions(params.textDocument.uri, params.position)
+    override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+        val request = runCatching {
+            crossFileOperationsHandler.capture(params.textDocument.uri, params.position, definition = true)
         }
+        return coroutineScope.future { crossFileOperationsHandler.definitions(request.getOrThrow()) }
+    }
 
-    override fun references(params: ReferenceParams): CompletableFuture<List<Location>> = coroutineScope.future {
-        crossFileOperationsHandler.getReferences(
-            params.textDocument.uri,
-            params.position,
-            params.context.isIncludeDeclaration,
-        )
+    override fun references(params: ReferenceParams): CompletableFuture<List<Location>> {
+        val request = runCatching {
+            crossFileOperationsHandler.capture(params.textDocument.uri, params.position) to
+                params.context.isIncludeDeclaration
+        }
+        return coroutineScope.future {
+            val (captured, includeDeclaration) = request.getOrThrow()
+            crossFileOperationsHandler.references(captured, includeDeclaration)
+        }
     }
 
     override fun typeDefinition(

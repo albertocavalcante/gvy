@@ -3,7 +3,10 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
+import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.semantics.db.Symbol
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -40,7 +43,20 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
         }
 
         // 1. Get SemanticDocument for current file
-        val document = workspaceSymbolIndex.getDocument(context.documentUri)
+        val inputs = context.inputs
+        val selected = boundType(context.targetNode)
+        if (inputs != null && selected?.isResolved == true && !selected.isPrimaryClassNode) {
+            return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        }
+        val graph = inputs?.index()
+        val document = if (graph != null && inputs != null) {
+            graph.getDocumentSnapshot(context.documentUri)?.let { indexed ->
+                inputs.qualify(context.documentUri, indexed)
+                indexed.document
+            }
+        } else {
+            workspaceSymbolIndex.getDocument(context.documentUri)
+        }
         if (document == null) {
             logger.debug { "No SemanticDocument found for ${context.documentUri}" }
             return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
@@ -71,6 +87,21 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
         }
 
         logger.debug { "Found occurrence for symbol: ${occurrence.symbol} at cursor position" }
+
+        if (graph != null && inputs != null) {
+            val (uri, info) = graph.uniqueDefinition(occurrence.symbol)
+                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            val indexed = checkNotNull(graph.getDocumentSnapshot(uri))
+            inputs.qualify(uri, indexed)
+            if (uri != context.documentUri && selected?.let(inputs::declarationUri) != uri) {
+                return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            }
+            val raw = info.range
+            val range = Range(Position(raw.startLine, raw.startColumn), Position(raw.endLine, raw.endColumn))
+            return SymbolResolutionStrategy.found(
+                DefinitionResolver.DefinitionResult.Binary(uri, info.name, range.toProtocolRange(indexed.sourceText)),
+            )
+        }
 
         // 3. Use WorkspaceSymbolIndex to find definition
         val location = workspaceSymbolIndex.findDefinition(occurrence.symbol)
