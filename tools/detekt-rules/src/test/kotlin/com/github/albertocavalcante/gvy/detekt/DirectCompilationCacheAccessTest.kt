@@ -51,7 +51,7 @@ class DirectCompilationCacheAccessTest {
     fun `registered default rule catches wire mutations`() {
         val config = yamlConfig("config/config.yml").subConfig("gvy")
         val rule = GvyRuleSetProvider().instance(config).rules.single { it.ruleId == "DirectCompilationCacheAccess" }
-        assertThat(rule.active).isTrue()
+        assertThat((rule as DirectCompilationCacheAccess).active).isTrue()
         val source = """
             package com.github.albertocavalcante.gvy.gls.services
             fun handler(compilationService: Any) {
