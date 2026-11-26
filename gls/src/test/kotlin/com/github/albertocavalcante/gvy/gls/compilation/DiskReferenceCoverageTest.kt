@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import io.mockk.every
 import io.mockk.mockk
@@ -104,11 +105,12 @@ class DiskReferenceCoverageTest {
         val paths = List(16) { root.resolve("Source$it.groovy") }
         val origin = paths.first().toUri()
         val index = WorkspaceSymbolIndex(GroovySemanticDB())
-        for (path in paths) {
+        val stored = paths.associate { path ->
             val content = "// ${path.fileName}"
             Files.writeString(path, content)
             val uri = path.toUri()
-            index.updateDocument(uri, SemanticDocument(uri, emptyList(), emptyList()), content)
+            val document = SemanticDocument(uri, emptyList(), emptyList())
+            uri to index.storeDocument(uri, document, content, ImplementationFacts.empty)
         }
         val capture = mockk<SnapshotSource> {
             every { uri } returns origin
@@ -125,7 +127,7 @@ class DiskReferenceCoverageTest {
             capture,
             index,
             currentPublication = { uri ->
-                ReferencePublication(Phases.SEMANTIC_ANALYSIS, diskConfirmed = uri != origin, producer = producer)
+                ReferencePublication(stored.getValue(uri), Phases.SEMANTIC_ANALYSIS, uri != origin, producer)
             },
             selectSources = { _, model -> model.sources },
             readOrigin = { uri ->

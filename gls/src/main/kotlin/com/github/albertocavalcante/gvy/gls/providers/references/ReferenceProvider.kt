@@ -271,8 +271,8 @@ class ReferenceProvider(
 
     private class FrozenReferences(private val index: CapturedWorkspaceReferences) : ReferenceLookup {
         override fun getDocumentSnapshot(uri: URI) = index.getDocumentSnapshot(uri)
-        override fun findSymbol(symbolId: String) = index.findSymbol(symbolId)
-        override fun findReferenceDocuments(symbolId: String) = index.findReferenceDocuments(symbolId)
+        override fun findSymbol(symbolId: String) = index.findUniqueSymbol(symbolId)
+        override fun findReferenceDocuments(symbolId: String) = index.findUnambiguousReferenceDocuments(symbolId)
     }
 
     /**

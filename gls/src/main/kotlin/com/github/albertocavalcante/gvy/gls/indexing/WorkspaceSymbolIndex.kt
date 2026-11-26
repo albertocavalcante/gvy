@@ -305,6 +305,13 @@ class WorkspaceSymbolIndex(
         semanticDb.updateDocument(uri, doc, sourceText, implementations)
     }
 
+    internal fun storeDocument(
+        uri: URI,
+        doc: SemanticDocument,
+        sourceText: String,
+        implementations: ImplementationFacts.Snapshot,
+    ): SemanticDocument = semanticDb.storeDocument(uri, doc, sourceText, implementations)
+
     /** Drops every document in O(1): the database swaps in an empty graph under its write lock (#1342). */
     fun clear() {
         semanticDb.clear()
