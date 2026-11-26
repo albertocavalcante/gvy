@@ -266,7 +266,7 @@ class GroovyCompilationService internal constructor(
         }
     }
 
-    /** Discover from the exact open buffer or disk read whose original compiler also supplies the index. */
+    /** Compute suites against the current source. Only compiler and index work is shared across requests. */
     internal suspend fun <T> queryUncachedTestDiscovery(uri: URI, extract: (ParseResult) -> T): T? {
         val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
         return publication.use {
@@ -293,6 +293,11 @@ class GroovyCompilationService internal constructor(
         snapshot: CompiledDocumentSnapshot,
         extract: (ParseResult) -> T,
     ): T? {
+        val indexed = snapshot.indexedDiscovery
+        if (indexed != null && indexed.symbols === symbolIndexer.getSymbolIndex(source.uri)) {
+            publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
+            return extract(indexed.parsed)
+        }
         val parsed = snapshot.parseResult
         val recovered = if (parseAccessor.isSuspiciousScript(source.uri, parsed)) {
             checkNotNull(snapshot.referenceProducer).withCompilerInputs { worker, classpath ->
@@ -302,25 +307,26 @@ class GroovyCompilationService internal constructor(
             null
         }
         var retainedRecovery = false
-        try {
+        // A published model owns its loader. On rejection, use preserves any primary failure during close.
+        val unpublished = AutoCloseable { if (!retainedRecovery) recovered?.compilationUnit?.classLoader?.close() }
+        return unpublished.use {
+            val selected = recovered ?: parsed
             if (parsed.ast != null) {
-                val forSymbols = recovered?.takeIf { it.ast != null } ?: parsed
-                if (!installDiscoverySymbols(source, snapshot, forSymbols)) return null
-                retainedRecovery = forSymbols === recovered
+                if (!installDiscoverySymbols(source, snapshot, selected)) return null
+                retainedRecovery = recovered?.ast != null
                 publishSnapshot(publication, snapshot, fromBuffer = source.buffer != null)
             }
-            return extract(recovered ?: parsed)
-        } finally {
-            if (!retainedRecovery) recovered?.compilationUnit?.classLoader?.close()
+            extract(selected)
         }
     }
 
     private suspend fun installDiscoverySymbols(
         source: SnapshotSource,
         snapshot: CompiledDocumentSnapshot,
-        parsed: ParseResult,
+        selected: ParseResult,
     ): Boolean {
-        val prepared = symbolIndexer.prepare(snapshot.sourceText, parsed.astModel)
+        val forSymbols = if (selected.ast != null) selected else snapshot.parseResult
+        val prepared = symbolIndexer.prepare(snapshot.sourceText, forSymbols.astModel)
         val caller = currentCoroutineContext()
         val producer = checkNotNull(snapshot.referenceProducer)
         val current = caller.inputsCurrent {
@@ -344,6 +350,7 @@ class GroovyCompilationService internal constructor(
                 caller.ensureActive()
                 if (ownership.inputsCurrent(ticket)) {
                     symbolIndexer.install(source.uri, prepared)
+                    if (selected === forSymbols) snapshot.indexedDiscovery = IndexedDiscovery(prepared.index, selected)
                     installed = true
                 }
             }

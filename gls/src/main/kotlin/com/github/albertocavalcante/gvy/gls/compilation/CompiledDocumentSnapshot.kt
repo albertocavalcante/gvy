@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.currentCoroutineContext
@@ -18,7 +19,13 @@ internal data class CompiledDocumentSnapshot(
     val parseResult: ParseResult,
     val referenceProducer: ReferenceProducer? = null,
     val sourceIdentity: String? = null,
-)
+) {
+    /** Structural parse for discovery, reusable only while its exact symbol index is still installed. */
+    @Volatile
+    var indexedDiscovery: IndexedDiscovery? = null
+}
+
+internal class IndexedDiscovery(val symbols: SymbolIndex, val parsed: ParseResult)
 
 /** Result of acquiring source and parser facts under one ownership fence. */
 internal sealed interface SnapshotAcquisition {

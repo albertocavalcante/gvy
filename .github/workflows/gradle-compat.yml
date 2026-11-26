@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary qualification branch only. Never merge this replacement.
-name: G6 discovery reuse regression baseline
+name: G6 discovery sharing regression baseline
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: g6-editor-discovery-r10-red-${{ github.ref }}
+  group: g6-editor-discovery-r11-red-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -53,19 +53,19 @@ jobs:
           git status --porcelain
           git cat-file -p HEAD
           java -version
-      - name: Run the six frozen reuse and close regressions
+      - name: Run the two frozen sharing and cancellation regressions
         shell: bash
         run: |
           set -euo pipefail
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer discovery-r10-baseline \
-            :gls:test --tests '*DiscoveryReuseTest' \
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer discovery-r11-baseline \
+            :gls:test --tests '*DiscoverySharingTest' \
             --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace \
             '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Preserve raw invocation and JUnit evidence even on failure
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: g6-editor-discovery-r10-red-${{ github.run_id }}-${{ github.run_attempt }}
+          name: g6-editor-discovery-r11-red-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
           path: |

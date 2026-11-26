@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.gvy.testing.spock.SpockTestDetector
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -116,14 +117,7 @@ class TestDiscoveryProviderTest {
         realService.compile(uri, content, compilePhase = Phases.CONVERSION)
         val parseResult = realService.getParseResult(uri)!!
 
-        val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<WorkspaceManager>()
-
-        every { mockService.workspaceManager } returns mockWorkspaceManager
-        every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
-        coEvery { mockService.getValidParseResult(uri) } returns parseResult
-
-        val testProvider = TestDiscoveryProvider(mockService, registry)
+        val testProvider = providerFor(uri, parseResult)
         val suites = testProvider.discoverTests("file:///")
 
         assertEquals(1, suites.size)
@@ -158,14 +152,7 @@ class TestDiscoveryProviderTest {
         realService.compile(uri, content, compilePhase = Phases.CONVERSION)
         val parseResult = realService.getParseResult(uri)!!
 
-        val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<WorkspaceManager>()
-
-        every { mockService.workspaceManager } returns mockWorkspaceManager
-        every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
-        coEvery { mockService.getValidParseResult(uri) } returns parseResult
-
-        val testProvider = TestDiscoveryProvider(mockService, registry)
+        val testProvider = providerFor(uri, parseResult)
         val suites = testProvider.discoverTests("file:///")
 
         assertEquals(1, suites.size)
@@ -188,14 +175,7 @@ class TestDiscoveryProviderTest {
         realService.compile(uri, content)
         val parseResult = realService.getParseResult(uri)!!
 
-        val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<WorkspaceManager>()
-
-        every { mockService.workspaceManager } returns mockWorkspaceManager
-        every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
-        coEvery { mockService.getValidParseResult(uri) } returns parseResult
-
-        val testProvider = TestDiscoveryProvider(mockService, registry)
+        val testProvider = providerFor(uri, parseResult)
         val suites = testProvider.discoverTests("file:///")
 
         assertTrue(suites.isEmpty())
@@ -279,11 +259,17 @@ class TestDiscoveryProviderTest {
         val realService = GroovyCompilationService(TestDiscoveryProviderTest::class.java.classLoader)
         realService.compile(uri, content, compilePhase = phase)
         val parseResult = realService.getParseResult(uri)!!
-        val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<WorkspaceManager>()
-        every { mockService.workspaceManager } returns mockWorkspaceManager
-        every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
-        coEvery { mockService.getValidParseResult(uri) } returns parseResult
-        TestDiscoveryProvider(mockService, registry).discoverTests("file:///")
+        providerFor(uri, parseResult).discoverTests("file:///")
+    }
+
+    private fun providerFor(uri: URI, parsed: ParseResult): TestDiscoveryProvider {
+        val service = mockk<GroovyCompilationService>()
+        val workspace = mockk<WorkspaceManager>()
+        every { service.workspaceManager } returns workspace
+        every { workspace.getWorkspaceSourceUris() } returns listOf(uri)
+        coEvery { service.queryUncachedTestDiscovery(uri, any<(ParseResult) -> List<TestSuite>>()) } answers {
+            secondArg<(ParseResult) -> List<TestSuite>>().invoke(parsed)
+        }
+        return TestDiscoveryProvider(service, registry)
     }
 }

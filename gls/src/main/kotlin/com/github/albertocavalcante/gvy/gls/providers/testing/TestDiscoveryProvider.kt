@@ -58,11 +58,8 @@ class TestDiscoveryProvider(
         return testSuites
     }
 
-    private suspend fun discoverTestsForFile(uri: URI): List<TestSuite> {
-        val cached = compilationService.getValidParseResult(uri)
-        if (cached != null) return extractSuites(uri, cached)
-        return compilationService.queryUncachedTestDiscovery(uri) { parsed -> extractSuites(uri, parsed) }.orEmpty()
-    }
+    private suspend fun discoverTestsForFile(uri: URI): List<TestSuite> =
+        compilationService.queryUncachedTestDiscovery(uri) { parsed -> extractSuites(uri, parsed) }.orEmpty()
 
     private fun extractSuites(uri: URI, parseResult: ParseResult): List<TestSuite> {
         val ast = parseResult.ast
