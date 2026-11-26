@@ -15,6 +15,18 @@ concurrency:
 
 jobs:
   baseline:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: invocation
+            selectors: --tests '*InvocationReceiptWireTest'
+          - group: module-free
+            selectors: --tests '*ModuleFreeInputWireTest'
+          - group: code-actions
+            selectors: --tests '*CodeActionBinaryInputsWireTest' --tests '*CodeActionPackageInputsWireTest'
+          - group: index-bounds
+            selectors: --tests '*IndexedCandidateDeliveryTest' --tests '*IndexedSymbolSelectionTest'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -59,13 +71,37 @@ jobs:
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
           :gls:spotlessApply :parser:native:spotlessApply :ext:spock:spotlessApply :diagnostics:codenarc:spotlessApply --continue
           --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
-      - name: Run frozen actual input controls
+      - name: Run frozen actual input controls with bounded diagnostic sampling
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
         shell: bash
-        run: >-
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit
-          :gls:test --tests '*CodeActionBinaryInputsWireTest' --tests '*CodeActionPackageInputsWireTest' --tests '*InvocationReceiptWireTest' --tests '*ModuleFreeInputWireTest'
-          --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/g6-source"
+          node --input-type=module <<'NODE' &
+          import {execFileSync} from 'node:child_process';
+          import {writeFileSync} from 'node:fs';
+          let sample = 0;
+          setInterval(() => {
+            sample++;
+            const root = process.env.RUNNER_TEMP + '/g6-source/';
+            try {
+              const list = execFileSync('jcmd', ['-J-Xmx128m', '-l'], {encoding:'utf8', timeout:15000});
+              writeFileSync(root + 'jcmd-' + sample + '.txt', list);
+              for (const line of list.split('\n').filter(line => line.includes('GradleWorkerMain'))) {
+                const pid = line.split(' ')[0];
+                const trace = execFileSync('jcmd', ['-J-Xmx128m', pid, 'Thread.print'], {timeout:15000});
+                writeFileSync(root + 'threads-' + sample + '-' + pid + '.txt', trace);
+              }
+            } catch (error) { writeFileSync(root + 'sampling-' + sample + '.txt', String(error)); }
+            if (sample >= 4) process.exit(0);
+          }, 240000);
+          NODE
+          watcher=$!
+          trap 'kill "$watcher" 2>/dev/null || true' EXIT
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit \
+            :gls:test ${{ matrix.selectors }} \
+            --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace \
+            '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Preserve exact formatter delta and resulting file hashes
         if: always()
         shell: bash
@@ -80,7 +116,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: g6-handler-input-baselines-${{ github.run_id }}-${{ github.run_attempt }}
+          name: g6-handler-input-baselines-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
           path: |
