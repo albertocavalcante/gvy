@@ -19,12 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: invocation
-            selectors: --tests '*InvocationReceiptWireTest'
-          - group: module-free
-            selectors: --tests '*ModuleFreeInputWireTest'
-          - group: index-bounds
-            selectors: --tests '*IndexedCandidateDeliveryTest' --tests '*IndexedSymbolSelectionTest'
+          - group: physical-members
+            selectors: --tests '*PhysicalMemberSourceDeliveryTest'
+          - group: binary-members
+            selectors: --tests '*SignatureCompletionBinaryInputsTest'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
