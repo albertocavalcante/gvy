@@ -66,8 +66,8 @@ internal class JdkAtomics(config: Config = Config.empty) : Rule(config) {
             CodeSmell(
                 issue,
                 Entity.from(element),
-                "`$name` is a JDK atomic. Use OnceFlag, SharedValue or Counter from :common:concurrent, or a plain " +
-                    "field for state one thread owns (#2474).",
+                "`$name`: use OnceFlag, SharedValue or Counter from :common:concurrent instead of the JDK atomics, " +
+                    "or a plain field for state one thread owns (#2474).",
             ),
         )
     }

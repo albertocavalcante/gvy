@@ -129,7 +129,8 @@ gvy:
     excludes:
     # Permanent: tests, the facade itself, and modules published on their own, which must not depend on the unpublished
     # :common:concurrent. tools/ci/detekt-ratchet-excludes.test.mjs knows these patterns. detekt matches them against
-    # absolute paths, so a module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp package.
+    # absolute paths, so a module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp
+    # package.
     - '**/src/test/**'
     - '**/src/jvmTest/**'
     - '**/src/commonTest/**'

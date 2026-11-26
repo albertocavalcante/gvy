@@ -137,8 +137,8 @@ qualified name at the suppressed declaration: an imported name is reported at it
 
 The rule reads syntax only, so it does not see:
 
-1. A JDK atomic behind a type alias declared in another file, or a type inferred from another API
-   (`val counter = api.counter()`).
+1. A JDK atomic behind a type alias declared where the rule does not look (tests, excluded or unlinted code), or a type
+   inferred from another API (`val counter = api.counter()`).
 2. A qualified name with a comment or backticks inside it (``java.util.concurrent.`atomic`.AtomicLong()``).
 3. Java sources, and Kotlin outside the source roots the lint task reads (#2480).
 
