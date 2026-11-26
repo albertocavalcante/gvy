@@ -76,7 +76,8 @@ with the type that says what it is for (see [Shared mutable state](../../docs/ko
 
 The rule recognises `@Volatile`, `@field:Volatile`, `@[Volatile]`, `@kotlin.jvm.Volatile`, `@kotlin.concurrent.Volatile`
 and import aliases of the last two. Mentions in comments, KDoc and strings are not annotations. When a file imports a
-different symbol named `Volatile`, the unqualified name refers to that one and is not reported.
+different annotation named `Volatile`, the unqualified name refers to that one and is not reported (see limit 2 for
+other imports of that name).
 
 A field that an `AtomicIntegerFieldUpdater`, `AtomicLongFieldUpdater` or `AtomicReferenceFieldUpdater` updates must be
 declared volatile: the updater rejects any other field. That, or a hot path where a measured benchmark shows the extra
@@ -92,15 +93,17 @@ The rule cannot resolve names, so it errs in these documented ways:
 2. An import of any other symbol named `Volatile`, even a function, makes the unqualified name count as that symbol, so
    a Kotlin `@Volatile` in that file is missed. Qualified uses are still reported.
 3. A typealias of the annotation (`typealias V = kotlin.jvm.Volatile`, then `@V`) is missed. gvy has none.
-4. Kotlin outside `src/main` and `src/test`, such as `tests/e2e` and the Kotlin Multiplatform sources of
-   `viz/ast-model`, is not read by the lint task, so no detekt rule sees it yet (#2480).
+4. The lint task reads only `src/main` and `src/test` unless a module sets `detekt.source` (as `launcher` and
+   `common/concurrent` do). Other Kotlin, such as `tests/e2e` and the Kotlin Multiplatform sources of `viz/ast-model`,
+   is not seen by any detekt rule yet (#2480).
 
 ### Enabling a module
 
 The modules listed under `gvy > VolatileProperty > excludes` in `tools/lint/detekt.yml` still have `@Volatile` fields,
 in main or test code. In the pull request that migrates a module, remove its line so the rule guards it. Never add an
 `excludes` line or a detekt baseline entry for a clean module (#2474). `tools/ci/detekt-volatile-excludes.test.mjs`
-enforces this: every line must name a module's `src` tree that still holds a `@Volatile` annotation.
+enforces this: the rule must stay active, and every line must name a module whose `src/main/kotlin` or `src/test/kotlin`
+still applies `@Volatile` outside comments and strings.
 
 ## Running the tests
 
