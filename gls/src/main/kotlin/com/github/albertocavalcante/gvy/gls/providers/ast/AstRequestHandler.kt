@@ -5,8 +5,9 @@ package com.github.albertocavalcante.gvy.gls.providers.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
-import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
@@ -42,7 +43,14 @@ class AstRequestHandler(
     private val documents: DocumentProvider,
     private val coroutineScope: CoroutineScope,
 ) {
-    fun getAst(request: AstParams?): CompletableFuture<AstResult> = coroutineScope.future {
+    private class Inspection(val source: SnapshotSource, val parser: String)
+
+    fun getAst(request: AstParams?): CompletableFuture<AstResult> {
+        val inspection = runCatching { capture(request) }
+        return coroutineScope.future { inspect(inspection.getOrThrow()) }
+    }
+
+    private fun capture(request: AstParams?): Inspection {
         val params = request ?: fail(ResponseErrorCode.InvalidParams, "Missing AST request parameters")
         val uri = parseUri(params.uri)
         val requestedParser = params.parser ?: fail(ResponseErrorCode.InvalidParams, "Missing AST parser")
@@ -50,32 +58,44 @@ class AstRequestHandler(
         if (parser != "core" && parser != "native") {
             fail(ResponseErrorCode.InvalidParams, "Unsupported AST parser: $requestedParser")
         }
+        val source = compilationService.captureSnapshotSource(uri)
         val snapshot = documents.getSnapshot(uri)
             ?: fail(ResponseErrorCode.RequestFailed, "Document is not open: ${params.uri}")
         if (params.expectedSourceHash != null && params.expectedSourceHash != snapshot.contentHash) {
             fail(ResponseErrorCode.ContentModified, "Document source hash does not match")
         }
-        currentCoroutineContext().ensureActive()
-        val parsed = compilationService.compileTransient(uri, snapshot.content, Phases.CANONICALIZATION)
-        parsed.compilationUnit.classLoader.use {
-            currentCoroutineContext().ensureActive()
-            requireCurrent(uri, snapshot)
-            val nativeAst = requireCanonicalAst(parsed, uri)
-            val astDto: AstNodeDto = when (parser) {
+        if (documents !== compilationService.documents || source.buffer?.snapshot !== snapshot) {
+            fail(ResponseErrorCode.ContentModified, "Document changed during AST inspection")
+        }
+        return Inspection(source, requestedParser)
+    }
+
+    private suspend fun inspect(inspection: Inspection): AstResult {
+        val source = inspection.source
+        val snapshot = checkNotNull(source.buffer).snapshot
+        val answer = compilationService.queryDerivedSnapshot(
+            source,
+            snapshot.content,
+            inspectCompilerInputs = true,
+        ) { held ->
+            val nativeAst = requireCanonicalAst(held.parseResult, source.uri)
+            val astDto: AstNodeDto = when (inspection.parser.lowercase()) {
                 "core" -> coreConverter.convert(GroovyParser.convertFromNative(nativeAst), snapshot.content)
                 else -> nativeConverter.convert(nativeAst, snapshot.content)
             }
-            val result = AstResult(
+            AstResult(
                 ast = Json.encodeToString<AstNodeDto>(astDto),
-                parser = requestedParser,
+                parser = inspection.parser,
                 documentVersion = snapshot.version?.value,
                 sourceHash = snapshot.contentHash,
             )
-            currentCoroutineContext().ensureActive()
-            // This is the request's linearization point. Later edits must be rejected by the client using the
-            // returned identity; completing a future under the document lock could run arbitrary callbacks there.
-            requireCurrent(uri, snapshot)
-            result
+        }
+        currentCoroutineContext().ensureActive()
+        return when (answer) {
+            is SnapshotQuery.Answer -> answer.value
+            SnapshotQuery.Stale -> fail(ResponseErrorCode.ContentModified, "Inputs changed during AST inspection")
+            SnapshotQuery.Missing -> fail(ResponseErrorCode.RequestFailed, "AST is unavailable: ${source.uri}")
+            is SnapshotQuery.Failure -> throw answer.cause
         }
     }
 
@@ -106,12 +126,6 @@ class AstRequestHandler(
             fail(ResponseErrorCode.InvalidParams, "Invalid AST document URI")
         } catch (_: java.nio.file.FileSystemNotFoundException) {
             fail(ResponseErrorCode.InvalidParams, "Invalid AST document URI")
-        }
-    }
-
-    private fun requireCurrent(uri: URI, snapshot: DocumentSnapshot) {
-        if (documents.getSnapshot(uri) !== snapshot) {
-            fail(ResponseErrorCode.ContentModified, "Document changed during AST inspection")
         }
     }
 

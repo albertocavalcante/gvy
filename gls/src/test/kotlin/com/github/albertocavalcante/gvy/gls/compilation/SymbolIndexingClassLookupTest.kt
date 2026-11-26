@@ -33,7 +33,7 @@ class SymbolIndexingClassLookupTest {
 
     @BeforeTest
     fun setUp() {
-        val workers = mockk<WorkerSessionManager>()
+        val workers = mockk<WorkerSessionManager>().apply { delegateCapturedSessionToParseStub() }
         coEvery { workers.parse(any<ParseRequest>()) } answers { parser.parse(firstArg()) }
         val workspace = mockk<WorkspaceManager>(relaxed = true)
         // Disk indexing reads one workspace model (#1278)

@@ -4,22 +4,22 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
-import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.MethodSignatureKey
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
-import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionInputs
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionInputs
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
 import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
-import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.services.ReflectedField
+import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.services.heldGdkMethods
 import com.github.albertocavalcante.gvy.gls.services.reflectSafely
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
@@ -108,15 +108,8 @@ internal class MemberAccessCompletionStrategy(
     ) {
         val qualifierName = completionContext.qualifierName
         val module = ctx.baseContext.moduleNode
-        val staticType = staticClasspathReceiver(ctx) { name ->
-            if (inputs == null) compilationService.classpathService.loadClass(name) != null else inputs.native.reflection.loadClass(name) != null
-        }
-        if (staticType != null) {
-            val methods = inputs?.native?.reflection?.getMethods(staticType) ?: compilationService.classpathService.getMethods(staticType)
-            val fields = inputs?.native?.reflection?.getFields(staticType) ?: compilationService.classpathService.getFields(staticType)
-            addStaticClasspathMembers(methods, fields)
-            return
-        }
+        if (addStaticReceiverMembers(ctx, compilationService, inputs)) return
+
         val receiverType = module?.let { explicitReceiverType(qualifierName, it, ctx.baseContext) }
             ?: completionContext.qualifierType
         val rawType = receiverType.substringBefore('<')
@@ -137,13 +130,16 @@ internal class MemberAccessCompletionStrategy(
             return
         }
 
-        if (inputs != null) {
+        if (inputs == null) {
+            addLegacyReceiverMembers(rawType, ctx)
+        } else {
             addHeldMembers(ctx, inputs)
-            return
         }
+    }
 
+    private fun CompletionsBuilder.addLegacyReceiverMembers(rawType: String, ctx: CompletionStrategyContext) {
         // Held declarations are authoritative for this buffer, including unsaved changes.
-        val held = LocalCompletionMembers(module)
+        val held = LocalCompletionMembers(ctx.baseContext.moduleNode)
         val local = held.lookup(rawType)
         if (local == null) {
             addSharedMembers(rawType, ctx)
@@ -164,16 +160,8 @@ internal class MemberAccessCompletionStrategy(
     }
 
     private fun CompletionsBuilder.addHeldMembers(ctx: CompletionStrategyContext, inputs: CompletionInputs) {
-        val anchor = ctx.nodeAtCursor ?: return
         val types = HeldReceiverTypes(inputs.native)
-        val expression = receiverExpression(ctx)
-        val receiver = when {
-            expression is VariableExpression && expression.isThisExpression -> types.lexicalOwner(anchor)
-            expression is VariableExpression && expression.isSuperExpression -> types.lexicalOwner(anchor)?.superClass
-            expression is VariableExpression -> types.bindingType(expression)
-            expression is MethodCallExpression -> expression.methodTarget?.returnType
-            else -> expression?.type
-        }?.redirect() ?: return
+        val receiver = heldCompletionReceiver(ctx, types) ?: return
         val local = if (types.isSource(receiver)) {
             LocalCompletionMembers(receiver.module, types).lookup(receiver)
         } else {
@@ -186,8 +174,14 @@ internal class MemberAccessCompletionStrategy(
             .distinctBy { it.display.name to it.qualifiedParameters }
         extensions.forEach { gdk ->
             val method = gdk.display
-            addCandidate(MethodCandidate(method.name, method.returnType,
-                gdk.qualifiedParameters.zip(method.parameterTypes, ::CandidateParameter), method.doc))
+            addCandidate(
+                MethodCandidate(
+                    method.name,
+                    method.returnType,
+                    gdk.qualifiedParameters.zip(method.parameterTypes, ::CandidateParameter),
+                    method.doc,
+                ),
+            )
         }
         binaries.forEach { name ->
             addQualifiedClasspathMethods(name) { local?.genericOverrides?.value.orEmpty() }
@@ -265,9 +259,25 @@ internal class MemberAccessCompletionStrategy(
         className: String,
         genericOverrides: () -> Set<Pair<String, List<String>>>,
     ) {
-        val types = if (inputs == null) resolveDataTypes(className, compilationService).ifEmpty { listOf(className) } else listOf(className)
+        val types = if (inputs ==
+            null
+        ) {
+            resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
+        } else {
+            listOf(className)
+        }
         types.forEach { type ->
-            val reflected = (if (inputs == null) compilationService.classpathService.loadClass(type) else inputs.native.reflection.loadClass(type)) ?: return@forEach
+            val reflected =
+                (
+                    if (inputs ==
+                        null
+                    ) {
+                        compilationService.classpathService.loadClass(type)
+                    } else {
+                        inputs.native.reflection.loadClass(type)
+                    }
+                    )
+                    ?: return@forEach
             // Generic signatures may need types the (possibly closed) loader never loaded: keep what was added.
             reflectSafely({ "completion methods of $type" }, Unit) {
                 reflectedInstanceMethods(reflected).filterNot {
@@ -319,19 +329,10 @@ internal class MemberAccessCompletionStrategy(
             .forEach { candidates.add(it) }
         importInfo.starImports.forEach { candidates.add("$it.$simpleName") }
 
-        findWorkspaceClassFqnsBySimpleName(simpleName, compilationService)
-            .forEach { candidates.add(it) }
-
+        compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+            .mapTo(candidates) { it.fullyQualifiedName }
         return candidates.toList()
     }
-
-    /** Workspace classes with this simple name, from the indexed name lookup rather than a full scan (#861). */
-    private fun findWorkspaceClassFqnsBySimpleName(
-        simpleName: String,
-        compilationService: GroovyCompilationService,
-    ): List<String> = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
-        .mapTo(linkedSetOf()) { it.fullyQualifiedName }
-        .toList()
 
     /**
      * Finds the enclosing block for the cursor position.
@@ -441,31 +442,16 @@ internal class MemberAccessCompletionStrategy(
      * Add GDK (Groovy Development Kit) method completions for a given type.
      */
     private fun CompletionsBuilder.addGdkMethods(className: String, compilationService: GroovyCompilationService) {
-        val resolvedTypes = resolveDataTypes(className, compilationService)
-        if (resolvedTypes.isEmpty()) {
-            // Try original name as fallback
-            addGdkMethodsForSingleType(className, compilationService, this)
-        } else {
-            resolvedTypes.forEach { type ->
-                addGdkMethodsForSingleType(type, compilationService, this)
+        val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
+        types.forEach { type ->
+            compilationService.gdkProvider.getMethodsForType(type).forEach { gdkMethod ->
+                method(
+                    name = gdkMethod.name,
+                    returnType = gdkMethod.returnType,
+                    parameters = gdkMethod.parameterTypes,
+                    doc = gdkMethod.doc,
+                )
             }
-        }
-    }
-
-    private fun addGdkMethodsForSingleType(
-        className: String,
-        compilationService: GroovyCompilationService,
-        builder: CompletionsBuilder,
-    ) {
-        val gdkMethods = compilationService.gdkProvider.getMethodsForType(className)
-
-        gdkMethods.forEach { gdkMethod ->
-            builder.method(
-                name = gdkMethod.name,
-                returnType = gdkMethod.returnType,
-                parameters = gdkMethod.parameterTypes,
-                doc = gdkMethod.doc,
-            )
         }
     }
 
@@ -527,6 +513,37 @@ internal class MemberAccessCompletionStrategy(
         }
         return emptyList()
     }
+}
+
+private fun heldCompletionReceiver(ctx: CompletionStrategyContext, types: HeldReceiverTypes): ClassNode? {
+    val anchor = ctx.nodeAtCursor ?: return null
+    val expression = receiverExpression(ctx)
+    return when {
+        expression is VariableExpression && expression.isThisExpression -> types.lexicalOwner(anchor)
+        expression is VariableExpression && expression.isSuperExpression -> types.lexicalOwner(anchor)?.superClass
+        expression is VariableExpression -> types.bindingType(expression)
+        expression is MethodCallExpression -> expression.methodTarget?.returnType
+        else -> expression?.type
+    }?.redirect()
+}
+
+private fun CompletionsBuilder.addStaticReceiverMembers(
+    ctx: CompletionStrategyContext,
+    compilationService: GroovyCompilationService,
+    inputs: CompletionInputs?,
+): Boolean {
+    val reflection = inputs?.native?.reflection
+    val type = staticClasspathReceiver(ctx) { name ->
+        if (reflection == null) {
+            compilationService.classpathService.loadClass(name) != null
+        } else {
+            reflection.loadClass(name) != null
+        }
+    } ?: return false
+    val methods = reflection?.getMethods(type) ?: compilationService.classpathService.getMethods(type)
+    val fields = reflection?.getFields(type) ?: compilationService.classpathService.getFields(type)
+    addStaticClasspathMembers(methods, fields)
+    return true
 }
 
 private fun CompletionsBuilder.addStaticClasspathMembers(

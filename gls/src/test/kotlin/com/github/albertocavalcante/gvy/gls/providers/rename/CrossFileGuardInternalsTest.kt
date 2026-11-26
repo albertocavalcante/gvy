@@ -50,7 +50,7 @@ class CrossFileGuardInternalsTest {
                 },
                 roots = { listOf(tempDir) },
             ),
-            diskText = cache,
+            caches = RenameCaches(diskText = cache),
         )
         job = launch { outcome = guard.usesOutside(tempDir.resolve("A.groovy").toUri(), target(), "A") }
         job.join()
@@ -108,6 +108,7 @@ class CrossFileGuardInternalsTest {
         Files.writeString(file, "class G0 {}")
         Files.setLastModifiedTime(file, stamp)
         assertEquals("class F0 {}", assertIs<DiskText.Text>(cache.read(file, 1_000)).text)
+        assertEquals("class G0 {}", assertIs<DiskText.Text>(cache.readCurrent(file, 1_000)).text)
     }
 
     @Test

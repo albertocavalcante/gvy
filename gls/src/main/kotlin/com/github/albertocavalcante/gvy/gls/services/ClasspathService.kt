@@ -34,6 +34,7 @@ class ClasspathService(
     }
 
     private val generations = ClasspathGenerations()
+
     @Volatile private var namePublication = Any()
 
     /** A request-entry retirement fence; no loader is borrowed until a consumer actually needs one. */
@@ -43,15 +44,25 @@ class ClasspathService(
     }
 
     /** Read a detached result and its publication under the same lock as the lazy index build and replacement. */
-    internal fun captureClassNames(prefix: String, limit: Int, qualified: Boolean): ClassNameAnswer = synchronized(this) {
-        val candidates = if (qualified) findClassesByQualifiedPrefix(prefix, limit) else findClassesByPrefix(prefix, limit)
-        val publication = namePublication
-        val generation = generations.current()
-        ClassNameAnswer(candidates, generation.paths) { namePublication === publication && generations.current() === generation }
-    }
+    internal fun captureClassNames(prefix: String, limit: Int, qualified: Boolean): ClassNameAnswer =
+        synchronized(this) {
+            val candidates = if (qualified) {
+                findClassesByQualifiedPrefix(
+                    prefix,
+                    limit,
+                )
+            } else {
+                findClassesByPrefix(prefix, limit)
+            }
+            val publication = namePublication
+            val generation = generations.current()
+            ClassNameAnswer(candidates, generation.paths) {
+                namePublication === publication &&
+                    generations.current() === generation
+            }
+        }
 
     internal class ClassNameAnswer(val classes: List<ClassInfo>, val paths: List<Path>, val current: () -> Boolean)
-
 
     /** What long-lived legacy resolvers hold: each lookup uses the current generation. */
     private val typeSolverFacade = object : TypeSolver {

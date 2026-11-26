@@ -80,7 +80,10 @@ class SignatureCompletionSnapshotTest {
 
     private fun assertModified(answer: CompletableFuture<*>) {
         val error = assertThrows<ExecutionException> { answer.get(10, TimeUnit.SECONDS) }
-        assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(error.cause).responseError.code)
+        assertEquals(
+            ResponseErrorCode.ContentModified.value,
+            assertIs<ResponseErrorException>(error.cause).responseError.code,
+        )
     }
 
     private enum class Route { SIGNATURE, COMPLETION }

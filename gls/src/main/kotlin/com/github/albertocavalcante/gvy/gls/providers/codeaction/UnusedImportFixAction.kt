@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.providers.imports.TextReplacement
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImport
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImportFacts
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImportRemoval
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.Diagnostic
@@ -21,19 +22,19 @@ import org.eclipse.lsp4j.Diagnostic
 internal class UnusedImportFixAction(private val compilationService: GroovyCompilationService) {
 
     fun createActions(request: ImportActionRequest): List<CodeAction> {
+        val snapshot = compilationService.getCompiledSnapshot(request.uri)
+            ?.takeIf { it.sourceText == request.content } ?: return emptyList()
+        return createActions(request, snapshot.parseResult)
+    }
+
+    internal fun createActions(request: ImportActionRequest, parseResult: ParseResult): List<CodeAction> {
         val reported = request.diagnostics.filter { it.source == GVY_SOURCE && it.code?.left == UNUSED_IMPORT_CODE }
         if (reported.isEmpty()) return emptyList()
-        val unused = unusedImports(request) ?: return emptyList()
+        val unused = UnusedImportFacts.from(parseResult)
 
         val single = reported.mapNotNull { diagnostic -> removeOne(request, unused, diagnostic) }
         val all = removeAll(request, unused, reported)
         return single + listOfNotNull(all)
-    }
-
-    private fun unusedImports(request: ImportActionRequest): List<UnusedImport>? {
-        val snapshot = compilationService.getCompiledSnapshot(request.uri)
-            ?.takeIf { it.sourceText == request.content }
-        return snapshot?.let { UnusedImportFacts.from(it.parseResult) }
     }
 
     private fun removeOne(

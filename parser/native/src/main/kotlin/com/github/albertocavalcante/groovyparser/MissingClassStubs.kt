@@ -5,6 +5,7 @@ package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.gvy.common.ast.stubSourceName
+import com.github.albertocavalcante.nativeapi.GeneratedStubReaderSource
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
@@ -12,7 +13,6 @@ import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
-import org.codehaus.groovy.control.io.StringReaderSource
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import org.codehaus.groovy.syntax.SyntaxException
 
@@ -68,7 +68,7 @@ internal class MissingClassStubs {
         stubs.values.forEach { stub ->
             val source = SourceUnit(
                 stubSourceName(stub.fqn),
-                StringReaderSource(stub.source(), config),
+                GeneratedStubReaderSource(stub.source(), config),
                 config,
                 loader,
                 unit.errorCollector,

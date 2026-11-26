@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.imports.ImportOrganizer
 import com.github.albertocavalcante.gvy.gls.providers.imports.UnusedImportFacts
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 
@@ -22,7 +23,11 @@ internal class OrganizeImportsAction(private val compilationService: GroovyCompi
     fun createAction(request: ImportActionRequest): CodeAction? {
         val snapshot = compilationService.getCompiledSnapshot(request.uri)
             ?.takeIf { it.sourceText == request.content } ?: return null
-        val edits = ImportOrganizer.organize(request.content, UnusedImportFacts.from(snapshot.parseResult))
+        return createAction(request, snapshot.parseResult)
+    }
+
+    internal fun createAction(request: ImportActionRequest, parseResult: ParseResult): CodeAction? {
+        val edits = ImportOrganizer.organize(request.content, UnusedImportFacts.from(parseResult))
         if (edits.isEmpty()) return null
         return CodeAction("Organize imports").apply {
             kind = CodeActionKind.SourceOrganizeImports

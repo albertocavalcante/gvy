@@ -26,7 +26,15 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
      * Creates import actions for missing symbols identified in diagnostics.
      * Only returns actions for unambiguous single matches.
      */
-    fun createImportActions(uriString: String, diagnostics: List<Diagnostic>, content: String): List<CodeAction> {
+    fun createImportActions(uriString: String, diagnostics: List<Diagnostic>, content: String): List<CodeAction> =
+        createImportActions(uriString, diagnostics, content, ::findImportCandidates)
+
+    internal fun createImportActions(
+        uriString: String,
+        diagnostics: List<Diagnostic>,
+        content: String,
+        findCandidates: (String) -> List<String>,
+    ): List<CodeAction> {
         val actions = mutableListOf<CodeAction>()
 
         // Find diagnostics that indicate missing symbols
@@ -37,7 +45,7 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
             logger.debug { "Looking for import candidates for symbol: $symbolName" }
 
             // Find all possible imports for this symbol
-            val candidates = findImportCandidates(symbolName)
+            val candidates = findCandidates(symbolName)
 
             // Only offer action if exactly one candidate exists (unambiguous)
             if (candidates.size == 1) {

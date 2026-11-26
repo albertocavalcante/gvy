@@ -5,6 +5,8 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
@@ -37,6 +39,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -63,8 +66,8 @@ class RenameSnapshotTest {
     fun `public rename rejects a buffer newer than the compiled ranges`(): Unit = runBlocking {
         supervisorScope {
             fixture().use { fixture ->
-                val stale = assertNotNull(fixture.compilation.ensureCompiled(fixture.uri))
-                coEvery { fixture.compilation.ensureCompiled(fixture.uri) } returns stale
+                val stale = fixture.acquireCompilation(fixture.compilation.captureSnapshotSource(fixture.uri))
+                coEvery { fixture.compilation.acquireEditorSnapshot(any<SnapshotSource>()) } returns stale
                 fixture.documents.put(
                     fixture.uri,
                     "def total = 1\n// total must stay\nprintln total\n",
@@ -104,8 +107,8 @@ class RenameSnapshotTest {
     fun `public rename rejects a version change during acquisition`(): Unit = runBlocking {
         supervisorScope {
             fixture().use { fixture ->
-                coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                    fixture.acquireCompilation().also {
+                coEvery { fixture.compilation.acquireEditorSnapshot(any<SnapshotSource>()) } coAnswers {
+                    fixture.acquireCompilation(firstArg()).also {
                         fixture.documents.put(fixture.uri, fixture.source, DocumentVersion.of(42))
                     }
                 }
@@ -147,7 +150,8 @@ class RenameSnapshotTest {
     fun `public rename propagates compilation cancellation`(): Unit = runBlocking {
         supervisorScope {
             fixture().use { fixture ->
-                coEvery { fixture.compilation.ensureCompiled(fixture.uri) } throws CancellationException("cancelled")
+                coEvery { fixture.compilation.acquireEditorSnapshot(any<SnapshotSource>()) } throws
+                    CancellationException("cancelled")
 
                 assertFailsWith<CancellationException> {
                     fixture.endpoint(this).rename(fixture.params()).await()
@@ -191,9 +195,9 @@ class RenameSnapshotTest {
             var failedLookups = 0
             var scanning = false
             try {
-                coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                    fixture.acquireCompilation().also {
-                        val visitor = assertNotNull(fixture.compilation.getAstModel(fixture.uri))
+                coEvery { fixture.compilation.acquireEditorSnapshot(any<SnapshotSource>()) } coAnswers {
+                    fixture.acquireCompilation(firstArg()).also {
+                        val visitor = it.snapshot.parseResult.astModel
                         val nodes = visitor.getAllNodes()
                         val variables = nodes.filterIsInstance<VariableExpression>()
                             .filter { variable -> variable.name == "total" }
@@ -259,9 +263,7 @@ class RenameSnapshotTest {
         supervisorScope {
             fixture().use { fixture ->
                 val endpoint = fixture.endpoint(this)
-                fixture.compilation.ensureCompiled(fixture.uri)
-                val captured = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
-                every { fixture.compilation.getCompiledSnapshot(fixture.uri) } returns captured
+                fixture.acquireCompilation(fixture.compilation.captureSnapshotSource(fixture.uri))
                 val params = fixture.params().apply {
                     textDocument.uri = fixture.uri.toString().replace("file:///", "file:/")
                 }
@@ -282,15 +284,15 @@ class RenameSnapshotTest {
                 var instrumented: GroovyAstModel? = null
                 var evicted = false
                 try {
-                    coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                        fixture.acquireCompilation().also {
-                            val visitor = assertNotNull(fixture.compilation.getAstModel(fixture.uri))
+                    coEvery { fixture.compilation.acquireEditorSnapshot(any<SnapshotSource>()) } coAnswers {
+                        fixture.acquireCompilation(firstArg()).also {
+                            val visitor = it.snapshot.parseResult.astModel
                             instrumented = visitor
                             mockkObject(visitor)
                             every { visitor.getAllNodes() } answers {
                                 if (!evicted) {
                                     evicted = true
-                                    fixture.compilation.clearCaches()
+                                    fixture.compilation.compilationCacheService.invalidate(fixture.uri)
                                 }
                                 callOriginal()
                             }
@@ -382,7 +384,8 @@ class RenameSnapshotTest {
         }
 
         // Delegate normally so the post-acquisition mutation runs after an actual suspension.
-        suspend fun acquireCompilation() = actual.ensureCompiled(uri)
+        suspend fun acquireCompilation(source: SnapshotSource): SnapshotAcquisition.Available =
+            assertIs<SnapshotAcquisition.Available>(actual.acquireEditorSnapshot(source))
 
         fun params() = RenameParams(TextDocumentIdentifier(uri.toString()), Position(0, 6), "sum")
 
