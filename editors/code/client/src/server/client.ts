@@ -28,6 +28,7 @@ import { setClient, getStatusBarManager } from "../ui/statusBar";
 import { getConfiguration } from "../configuration/settings";
 import { buildJavaArgs, envJavaOptions } from "./launchArgs";
 import { toProtocolUri } from "./uri";
+import { onGroovyStatus, SymbolStartup } from "./serverStatus";
 import { ServerResolver } from "../services/ServerResolver";
 import { pipeServerStderr, pipeServerStdout } from "./stderrRouter";
 
@@ -54,6 +55,7 @@ const GROOVY_FILE_EVENTS_GLOB =
   "{**/*.{groovy,gvy,gy,gsh,gradle,Jenkinsfile},**/Jenkinsfile}";
 
 let client: LanguageClient | undefined;
+let symbolStartup: SymbolStartup | undefined;
 let context: ExtensionContext | undefined;
 /** Server log channel, remembered so restarts keep writing to the same one. */
 let serverOutputChannel: vscode.LogOutputChannel | undefined;
@@ -440,6 +442,7 @@ function getTraceOutputChannel(): vscode.LogOutputChannel {
 function createClientOptions(
   fileWatcher: vscode.FileSystemWatcher,
   isCurrentClient: () => boolean,
+  startup: SymbolStartup,
   outputChannel?: vscode.LogOutputChannel,
 ): LanguageClientOptions {
   const pendingSessions = new Map<string, string[]>();
@@ -463,7 +466,9 @@ function createClientOptions(
     middleware: {
       provideDocumentSymbols: async (document, token, next) => {
         const version = document.version;
+        const sameConnection = startup.captureConnection();
         const isCurrent = () =>
+          sameConnection() &&
           isCurrentClient() &&
           !token.isCancellationRequested &&
           !document.isClosed &&
@@ -511,7 +516,13 @@ function createClientOptions(
           ) {
             throw error;
           }
-          const result = await next(type, params, request.token);
+          const result = await startup.retry(
+            workspace,
+            request.token,
+            request.isCurrent,
+            error,
+            () => next(type, params, request.token),
+          );
           if (!request.isCurrent()) throw error;
           return result;
         }
@@ -635,9 +646,12 @@ async function doStart(): Promise<void> {
 
   try {
     const { serverOptions, launch } = await createServerOptions();
+    const startup = new SymbolStartup();
+    symbolStartup = startup;
     const clientOptions = createClientOptions(
       fileWatcher,
       () => client === created && created.isRunning(),
+      startup,
       serverOutputChannel,
     );
     let abandoned = false;
@@ -657,6 +671,14 @@ async function doStart(): Promise<void> {
       clientOptions,
     );
     client = created;
+    clientResources.push(
+      onGroovyStatus(created, (status) => startup.observe(status)),
+    );
+    clientResources.push(
+      created.onDidChangeState(({ newState }) => {
+        if (newState !== State.Running) startup.retireConnection();
+      }),
+    );
     created.registerFeature({
       fillClientCapabilities: (capabilities) => {
         capabilities.experimental = {
@@ -716,6 +738,8 @@ async function doStop(): Promise<void> {
   analysisUi?.setClient(undefined);
   const current = client;
   client = undefined;
+  symbolStartup?.retireConnection();
+  symbolStartup = undefined;
   setClient(undefined);
   const resources = clientResources;
   clientResources = [];

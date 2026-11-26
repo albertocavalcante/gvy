@@ -4,6 +4,8 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import { PassThrough } from "stream";
+import * as path from "path";
+import { createRequire } from "module";
 import proxyquire from "proxyquire";
 import {
   DocumentSymbolRequest,
@@ -34,7 +36,21 @@ interface FakeErrorHandler {
 }
 
 type TestDocument = { uri: string; version: number; isClosed: boolean };
-type TestToken = { isCancellationRequested: boolean };
+type TestToken = {
+  isCancellationRequested: boolean;
+  onCancellationRequested?: (listener: () => void) => { dispose(): void };
+};
+
+class TestEvent<T> {
+  readonly listeners = new Set<(value: T) => void>();
+  readonly subscribe = (listener: (value: T) => void) => {
+    this.listeners.add(listener);
+    return { dispose: () => this.listeners.delete(listener) };
+  };
+  fire(value: T) {
+    for (const listener of this.listeners) listener(value);
+  }
+}
 
 interface FakeClientOptions {
   middleware?: {
@@ -77,7 +93,19 @@ class FakeClient {
   static instances: FakeClient[] = [];
   registerFeature = sinon.stub();
   sendNotification = sinon.stub().resolves();
-  onNotification = sinon.stub().returns({ dispose: () => {} });
+  readonly stateEvent = new TestEvent<{ oldState: number; newState: number }>();
+  readonly onDidChangeState = this.stateEvent.subscribe;
+  // The pinned SDK keeps a single handler per wire method.
+  readonly notifications = new Map<string, (params: unknown) => void>();
+  readonly onNotification = sinon
+    .stub()
+    .callsFake((method: string, handler: (params: unknown) => void) => {
+      this.notifications.set(method, handler);
+      return { dispose: () => this.notifications.delete(method) };
+    });
+  status(quiescent: boolean) {
+    this.notifications.get("groovy/status")?.({ health: "ok", quiescent });
+  }
   static nextStart: (() => Promise<void>) | undefined;
   state = State.Stopped;
   initializeResult: unknown = { serverInfo: { name: "gls", version: "9.9.9" } };
@@ -142,8 +170,14 @@ describe("server/client lifecycle", () => {
   let serverVmArgs: unknown;
   const symbolUri = "untitled:Untitled-1";
   let openDocuments: TestDocument[];
+  let edits: TestEvent<{ document: TestDocument }>;
+  let closes: TestEvent<TestDocument>;
+  let opens: TestEvent<TestDocument>;
 
   beforeEach(() => {
+    edits = new TestEvent();
+    closes = new TestEvent();
+    opens = new TestEvent();
     FakeClient.instances = [];
     FakeClient.nextStart = undefined;
     FakeClient.spawnLate = false;
@@ -167,6 +201,9 @@ describe("server/client lifecycle", () => {
         get textDocuments() {
           return openDocuments;
         },
+        onDidChangeTextDocument: edits.subscribe,
+        onDidCloseTextDocument: closes.subscribe,
+        onDidOpenTextDocument: opens.subscribe,
         workspaceFolders: [{ uri: { fsPath: "/w" } }],
         getConfiguration: () => ({ get: (_k: string, d?: unknown) => d }),
         createFileSystemWatcher: () => {
@@ -387,6 +424,222 @@ describe("server/client lifecycle", () => {
       assert.strictEqual(await pending, null);
       assert.strictEqual(next.callCount, 2);
     });
+
+    function sdkSymbolProvider(
+      client: FakeClient,
+      next: SendRequest,
+      drain: () => Promise<void>,
+    ) {
+      // Use the SDK's document-symbol provider and BaseLanguageClient.sendRequest. Control the
+      // open-notification drain and the wire, the same two asynchronous handoffs as the editor.
+      const sdk = path.resolve(
+        path.dirname(require.resolve("vscode-languageclient/node")),
+        "../common",
+      );
+      // Scope the host API stubs to this SDK load, preserving the protocol error identity in other fixtures.
+      const loadSdk = (
+        createRequire(__filename)("proxyquire") as typeof proxyquire
+      ).noCallThru();
+      const feature = loadSdk(path.join(sdk, "documentSymbol.js"), {
+        vscode: {
+          languages: {
+            registerDocumentSymbolProvider: () => ({ dispose() {} }),
+          },
+        },
+        "./features": { TextDocumentLanguageFeature: class {} },
+      }).DocumentSymbolFeature;
+      const hostTypes = [
+        "CallHierarchyItem",
+        "CodeLens",
+        "CompletionItem",
+        "DocumentLink",
+        "InlayHint",
+        "SymbolInformation",
+        "TypeHierarchyItem",
+        "CodeAction",
+        "Diagnostic",
+        "CancellationError",
+      ];
+      const sdkClientClass = loadSdk(path.join(sdk, "client.js"), {
+        vscode: {
+          ...Object.fromEntries(hostTypes.map((name) => [name, class {}])),
+          "@global": true,
+        },
+      }).BaseLanguageClient;
+      const sdkClient = {
+        middleware: client.clientOptions.middleware,
+        _clientOptions: client.clientOptions,
+        $start: async () => ({ sendRequest: next }),
+        _didOpenTextDocumentFeature: {
+          sendPendingOpenNotifications: drain,
+        },
+        _didChangeTextDocumentFeature: { syncKind: 0 },
+        sendRequest: sdkClientClass.prototype.sendRequest,
+        code2ProtocolConverter: { asDocumentSymbolParams: () => request },
+        protocol2CodeConverter: {
+          asDocumentSelector: () => [],
+          asSymbolInformations: (result: unknown) => result,
+        },
+        handleFailedRequest: () => null,
+      };
+      const [, provider] = feature.prototype.registerLanguageProvider.call(
+        { _client: sdkClient },
+        {},
+      );
+      return provider as {
+        provideDocumentSymbols(
+          document: TestDocument,
+          token: TestToken,
+        ): Promise<unknown>;
+      };
+    }
+
+    it("waits for server Ready before retrying a busy document symbol provider", async () => {
+      await mod.startClient();
+      const client = FakeClient.instances[0];
+      const sync = deferred();
+      const enteredSync = deferred();
+      const firstRpc = deferred();
+      const next = sinon.stub();
+      next.onFirstCall().callsFake(async () => {
+        firstRpc.resolve();
+        throw stale;
+      });
+      next.onSecondCall().resolves(symbols);
+
+      const provider = sdkSymbolProvider(client, next, async () => {
+        enteredSync.resolve();
+        await sync.promise;
+      });
+      const pending = provider.provideDocumentSymbols(openDocuments[0], {
+        isCancellationRequested: false,
+        onCancellationRequested: new TestEvent<void>().subscribe,
+      });
+      await enteredSync.promise;
+      client.status(false);
+      sync.resolve();
+      await firstRpc.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.strictEqual(
+        next.callCount,
+        1,
+        "a second RPC spent while startup is still busy cannot recover the outline",
+      );
+      client.status(false);
+      client.status(true);
+      assert.deepStrictEqual(await pending, symbols);
+      assert.strictEqual(next.callCount, 2);
+      assert.strictEqual(
+        edits.listeners.size + closes.listeners.size + opens.listeners.size,
+        0,
+      );
+    });
+
+    it("delivers a successful first response while busy without waiting for Ready", async () => {
+      await mod.startClient();
+      FakeClient.instances[0].status(false);
+      const next = sinon.stub().resolves(symbols);
+      assert.strictEqual(await send(next), symbols);
+      assert.strictEqual(next.callCount, 1);
+    });
+
+    it("forgets the previous busy period when the SDK starts another connection", async () => {
+      await mod.startClient();
+      const client = FakeClient.instances[0];
+      client.status(false);
+      client.stateEvent.fire({
+        oldState: State.Running,
+        newState: State.Starting,
+      });
+      client.stateEvent.fire({
+        oldState: State.Starting,
+        newState: State.Running,
+      });
+      const next = sinon.stub();
+      next.onFirstCall().rejects(stale);
+      next.onSecondCall().resolves(symbols);
+      assert.strictEqual(await send(next), symbols);
+      assert.strictEqual(next.callCount, 2);
+    });
+
+    for (const change of [
+      "edit",
+      "close",
+      "reopen",
+      "cancel",
+      "stop",
+      "restart",
+      "connection restart",
+    ]) {
+      it(`releases a busy symbol waiter after ${change} without Ready`, async () => {
+        await mod.startClient();
+        const client = FakeClient.instances[0];
+        client.status(false);
+        const cancel = new TestEvent<void>();
+        const token = {
+          isCancellationRequested: false,
+          onCancellationRequested: cancel.subscribe,
+        };
+        const next = sinon.stub();
+        next.onFirstCall().rejects(stale);
+        next.onSecondCall().resolves(symbols);
+        const pending = send(next, token);
+        const result = pending.then(
+          (value) => value,
+          (error: unknown) => error,
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.strictEqual(next.callCount, 1);
+        const document = openDocuments[0];
+        switch (change) {
+          case "edit":
+            document.version++;
+            edits.fire({ document });
+            break;
+          case "close":
+            document.isClosed = true;
+            closes.fire(document);
+            break;
+          case "reopen":
+            openDocuments = [{ ...document }];
+            closes.fire(document);
+            opens.fire(openDocuments[0]);
+            break;
+          case "cancel":
+            token.isCancellationRequested = true;
+            cancel.fire();
+            break;
+          case "stop":
+            await mod.stopClient();
+            break;
+          case "restart":
+            await mod.restartClient();
+            break;
+          case "connection restart":
+            client.state = State.Stopped;
+            client.stateEvent.fire({
+              oldState: State.Running,
+              newState: State.Stopped,
+            });
+            client.state = State.Running;
+            client.stateEvent.fire({
+              oldState: State.Stopped,
+              newState: State.Running,
+            });
+            break;
+        }
+        assert.strictEqual(await result, stale);
+        client.status(true);
+        assert.strictEqual(next.callCount, 1);
+        assert.strictEqual(
+          edits.listeners.size +
+            closes.listeners.size +
+            opens.listeners.size +
+            cancel.listeners.size,
+          0,
+        );
+      });
+    }
 
     it("sends one fresh RPC after ContentModified for an unchanged open document", async () => {
       const next = sinon.stub();

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { onGroovyStatus } from "../server/serverStatus";
 import {
   State,
   LanguageClient,
@@ -231,12 +232,7 @@ export class StatusBarManager implements vscode.Disposable {
    * This is the primary status source (replaces inference from progress messages).
    */
   private setupGroovyStatusHandling(client: LanguageClient): vscode.Disposable {
-    return client.onNotification(
-      "groovy/status",
-      (params: GroovyStatusParams) => {
-        this.handleGroovyStatus(params);
-      },
-    );
+    return onGroovyStatus(client, (params) => this.handleGroovyStatus(params));
   }
 
   /**
