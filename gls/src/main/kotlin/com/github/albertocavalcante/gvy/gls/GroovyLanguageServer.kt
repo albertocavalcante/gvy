@@ -9,7 +9,6 @@ import com.github.albertocavalcante.gvy.build.bsp.BspBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
-import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
@@ -51,6 +50,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.verification.observeRuntime
 import com.github.albertocavalcante.gvy.gls.verification.runtimeFacts
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
 import com.github.albertocavalcante.gvy.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
@@ -106,7 +106,7 @@ class GroovyLanguageServer private constructor(
     private val exitProcess: (Int) -> Unit,
     private val shutdownExecutor: Executor,
     workerSessionDecorator: (WorkerSession) ->
-        WorkerSession,
+    WorkerSession,
 ) : LanguageServer,
     LanguageClientAware {
 
@@ -119,16 +119,24 @@ class GroovyLanguageServer private constructor(
     ) : this(parentClassLoader, dispatcher, processLiveness, exitProcess, shutdownExecutor, { it })
 
     constructor() : this(
-        ClassLoader.getPlatformClassLoader(), Dispatchers.Default, SystemProcessLiveness,
-        { kotlin.system.exitProcess(it) }, ForkJoinPool.commonPool(), { it },
+        ClassLoader.getPlatformClassLoader(),
+        Dispatchers.Default,
+        SystemProcessLiveness,
+        { kotlin.system.exitProcess(it) },
+        ForkJoinPool.commonPool(),
+        { it },
     )
 
     internal constructor(
         workerSessionDecorator: (WorkerSession) ->
-            WorkerSession,
+        WorkerSession,
     ) : this(
-        ClassLoader.getPlatformClassLoader(), Dispatchers.Default, SystemProcessLiveness,
-        { kotlin.system.exitProcess(it) }, ForkJoinPool.commonPool(), workerSessionDecorator,
+        ClassLoader.getPlatformClassLoader(),
+        Dispatchers.Default,
+        SystemProcessLiveness,
+        { kotlin.system.exitProcess(it) },
+        ForkJoinPool.commonPool(),
+        workerSessionDecorator,
     )
 
     private val logger = KotlinLogging.logger {}

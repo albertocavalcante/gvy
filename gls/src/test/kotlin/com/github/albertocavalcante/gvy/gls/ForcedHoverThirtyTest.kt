@@ -32,11 +32,11 @@ import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
@@ -58,17 +58,28 @@ class ForcedHoverThirtyTest {
         assertEquals("typed-hover", control)
     }
 
-    private fun trial(number: Int): String {
-        val dir = Files.createDirectories(workspace.resolve("trial-$number"))
+    private class BarrierState(number: Int) {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val exited = CountDownLatch(1)
         val first = AtomicBoolean(true)
         val barrierFailure = AtomicReference<String?>(null)
         val events = mutableMapOf<String, Any>(
-            "kind" to "trial", "number" to number, "mode" to "forced-api-direct-document",
+            "kind" to "trial",
+            "number" to number,
+            "mode" to "forced-api-direct-document",
         )
-        val server = serverWithBarrier(first, entered, release, exited, barrierFailure, events)
+    }
+
+    private fun trial(number: Int): String {
+        val dir = Files.createDirectories(workspace.resolve("trial-$number"))
+        val state = BarrierState(number)
+        val entered = state.entered
+        val release = state.release
+        val exited = state.exited
+        val barrierFailure = state.barrierFailure
+        val events = state.events
+        val server = serverWithBarrier(state)
         var category = "other-error"
         try {
             val uri = dir.resolve("Inference.groovy").toUri().toString()
@@ -82,11 +93,12 @@ class ForcedHoverThirtyTest {
             val answer = server.textDocumentService.hover(HoverParams(TextDocumentIdentifier(uri), Position(0, 5)))
             check(entered.await(30, TimeUnit.SECONDS)) { "actual parse barrier missed" }
             check(barrierFailure.get() == null) { "native parse or barrier failed: ${barrierFailure.get()}" }
-            check(events["parseUri"] == uri && events["parseInput"] == SOURCE &&
-                events["parsePhase"] == Phases.CANONICALIZATION && events["parseMode"] == "WORKSPACE" &&
-                events["requestedPhase"] == Phases.CANONICALIZATION &&
-                events["achievedPhase"] == Phases.CANONICALIZATION &&
-                events["parseResult"] == "successful-undegraded-ast"
+            check(
+                events["parseUri"] == uri && events["parseInput"] == SOURCE &&
+                    events["parsePhase"] == Phases.CANONICALIZATION && events["parseMode"] == "WORKSPACE" &&
+                    events["requestedPhase"] == Phases.CANONICALIZATION &&
+                    events["achievedPhase"] == Phases.CANONICALIZATION &&
+                    events["parseResult"] == "successful-undegraded-ast",
             ) { "wrong parse entered barrier" }
             retire(server, dir, events)
             check(exited.count == 1L && release.count == 1L && barrierFailure.get() == null) {
@@ -98,75 +110,60 @@ class ForcedHoverThirtyTest {
         } catch (failure: Throwable) {
             events["failure"] = "${failure.javaClass.name}: ${failure.message}"
         } finally {
-            category = finishTrial(server, first, release, exited, barrierFailure, events, category)
+            category = finishTrial(server, state, category)
             events["category"] = category
             emit(events)
         }
         return category
     }
 
-    private fun finishTrial(
-        server: GroovyLanguageServer,
-        first: AtomicBoolean,
-        release: CountDownLatch,
-        exited: CountDownLatch,
-        barrierFailure: AtomicReference<String?>,
-        events: MutableMap<String, Any>,
-        initialCategory: String,
-    ): String {
+    private fun finishTrial(server: GroovyLanguageServer, state: BarrierState, initialCategory: String): String {
         var category = initialCategory
-        release.countDown()
+        state.release.countDown()
         try {
-            if (!first.get()) {
-                check(exited.await(30, TimeUnit.SECONDS)) { "held parse did not exit" }
-                events["parseExited"] = true
-                check(barrierFailure.get() == null) { "barrier failed: ${barrierFailure.get()}" }
+            if (!state.first.get()) {
+                check(state.exited.await(30, TimeUnit.SECONDS)) { "held parse did not exit" }
+                state.events["parseExited"] = true
+                check(state.barrierFailure.get() == null) { "barrier failed: ${state.barrierFailure.get()}" }
             }
         } catch (failure: Throwable) {
-            events["barrierFailure"] = "${failure.javaClass.name}: ${failure.message}"
+            state.events["barrierFailure"] = "${failure.javaClass.name}: ${failure.message}"
             category = "other-error"
         }
         try {
             server.shutdown().get(30, TimeUnit.SECONDS)
         } catch (failure: Throwable) {
-            events["shutdownFailure"] = "${failure.javaClass.name}: ${failure.message}"
+            state.events["shutdownFailure"] = "${failure.javaClass.name}: ${failure.message}"
             category = "other-error"
         }
         return category
     }
 
-    private fun serverWithBarrier(
-        first: AtomicBoolean,
-        entered: CountDownLatch,
-        release: CountDownLatch,
-        exited: CountDownLatch,
-        barrierFailure: AtomicReference<String?>,
-        events: MutableMap<String, Any>,
-    ): GroovyLanguageServer = GroovyLanguageServer { delegate ->
+    private fun serverWithBarrier(state: BarrierState): GroovyLanguageServer = GroovyLanguageServer { delegate ->
         object : WorkerSession {
             override fun parse(request: ParseRequest): ParseResult {
-                if (!first.compareAndSet(true, false)) return delegate.parse(request)
+                if (!state.first.compareAndSet(true, false)) return delegate.parse(request)
                 try {
                     val result = delegate.parse(request)
                     check(result.ast != null && result.isSuccessful && !result.outcome.isDegraded) {
                         "native parse did not produce a successful undegraded AST"
                     }
-                    events["parseUri"] = request.uri.toString()
-                    events["parsePhase"] = request.compilePhase
-                    events["parseMode"] = request.parseMode.toString()
-                    events["parseInput"] = request.content
-                    events["parseResult"] = "successful-undegraded-ast"
-                    events["requestedPhase"] = result.outcome.requestedPhase
-                    events["achievedPhase"] = result.outcome.achievedPhase
-                    entered.countDown()
-                    check(release.await(30, TimeUnit.SECONDS)) { "parse release timed out" }
+                    state.events["parseUri"] = request.uri.toString()
+                    state.events["parsePhase"] = request.compilePhase
+                    state.events["parseMode"] = request.parseMode.toString()
+                    state.events["parseInput"] = request.content
+                    state.events["parseResult"] = "successful-undegraded-ast"
+                    state.events["requestedPhase"] = result.outcome.requestedPhase
+                    state.events["achievedPhase"] = result.outcome.achievedPhase
+                    state.entered.countDown()
+                    check(state.release.await(30, TimeUnit.SECONDS)) { "parse release timed out" }
                     return result
                 } catch (failure: Throwable) {
-                    barrierFailure.compareAndSet(null, "${failure.javaClass.name}: ${failure.message}")
-                    entered.countDown()
+                    state.barrierFailure.compareAndSet(null, "${failure.javaClass.name}: ${failure.message}")
+                    state.entered.countDown()
                     throw failure
                 } finally {
-                    exited.countDown()
+                    state.exited.countDown()
                 }
             }
         }
@@ -178,7 +175,8 @@ class ForcedHoverThirtyTest {
         val worker = WorkerDescriptor(
             id = "replacement",
             supportedRange = GroovyVersionRange(parseGroovyVersion("1.0.0"), parseGroovyVersion("5.0.0")),
-            capabilities = WorkerCapabilities(), connector = WorkerConnector.InProcess,
+            capabilities = WorkerCapabilities(),
+            connector = WorkerConnector.InProcess,
         )
         check(service.updateSelectedWorker(worker)) { "worker did not change" }
         events["workerBefore"] = oldWorker
@@ -209,7 +207,9 @@ class ForcedHoverThirtyTest {
             open(server, uri)
             client.awaitSuccessfulCompilation(uri)
             val controlEvents = mutableMapOf<String, Any>(
-                "kind" to "control-response", "uri" to uri, "producer" to "successful-diagnostics-after-ready",
+                "kind" to "control-response",
+                "uri" to uri,
+                "producer" to "successful-diagnostics-after-ready",
             )
             val category = classify(controlEvents) {
                 server.textDocumentService.hover(HoverParams(TextDocumentIdentifier(uri), Position(0, 5)))
@@ -232,7 +232,11 @@ class ForcedHoverThirtyTest {
         events["response"] = contents.toString()
         if (contents.isRight && contents.right.kind == MarkupKind.MARKDOWN &&
             contents.right.value.contains("int count")
-        ) "typed-hover" else "wrong-or-empty-hover"
+        ) {
+            "typed-hover"
+        } else {
+            "wrong-or-empty-hover"
+        }
     } catch (failure: ExecutionException) {
         val cause = failure.cause as? ResponseErrorException
         events["responseError"] = "${failure.cause?.javaClass?.name}: ${failure.cause?.message}"
@@ -246,10 +250,12 @@ class ForcedHoverThirtyTest {
     }
 
     private fun initialize(server: GroovyLanguageServer, dir: Path) {
-        server.initialize(InitializeParams().apply {
-            workspaceFolders = listOf(WorkspaceFolder(dir.toUri().toString(), "hover"))
-            capabilities = ClientCapabilities()
-        }).get(30, TimeUnit.SECONDS)
+        server.initialize(
+            InitializeParams().apply {
+                workspaceFolders = listOf(WorkspaceFolder(dir.toUri().toString(), "hover"))
+                capabilities = ClientCapabilities()
+            },
+        ).get(30, TimeUnit.SECONDS)
     }
 
     private fun open(server: GroovyLanguageServer, uri: String) {
@@ -258,5 +264,7 @@ class ForcedHoverThirtyTest {
 
     private fun emit(record: Map<String, Any>) = println("HOVER_THIRTY_JSON ${json.toJson(record)}")
 
-    private companion object { const val SOURCE = "def count = 42" }
+    private companion object {
+        const val SOURCE = "def count = 42"
+    }
 }

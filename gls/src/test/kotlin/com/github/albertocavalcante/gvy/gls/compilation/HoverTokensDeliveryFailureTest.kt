@@ -8,9 +8,9 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
-import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
@@ -145,12 +145,7 @@ class HoverTokensDeliveryFailureTest {
             documentProvider = docs,
             workspaceManager = manager,
             workerSessionDecorator = { delegate ->
-                object : WorkerSession {
-                    override fun parse(request: ParseRequest): ParseResult {
-                        requests.add(request.classpath.toList())
-                        return delegate.parse(request)
-                    }
-                }
+                recordingWorker(delegate, requests)
             },
         )
         val model = manager.current()
@@ -177,6 +172,14 @@ class HoverTokensDeliveryFailureTest {
             service.shutdown()
         }
     }
+
+    private fun recordingWorker(delegate: WorkerSession, requests: MutableList<List<Path>>): WorkerSession =
+        object : WorkerSession {
+            override fun parse(request: ParseRequest): ParseResult {
+                requests.add(request.classpath.toList())
+                return delegate.parse(request)
+            }
+        }
 
     private fun assertDeliveryFailure(action: String, escaped: Throwable?, fatal: AssertionError, io: IOException) {
         when (action) {

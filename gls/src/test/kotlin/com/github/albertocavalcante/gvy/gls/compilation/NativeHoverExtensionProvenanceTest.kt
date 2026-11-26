@@ -38,7 +38,8 @@ class NativeHoverExtensionProvenanceTest {
             assertEquals(Any::class.java, selected.superClass.redirect().typeClass)
             val answer = HoverRequestHandler(service, documents).getHover(
                 HoverParams(
-                    TextDocumentIdentifier(caller.toString()), Position(1, source.lines()[1].indexOf("dump") + 1),
+                    TextDocumentIdentifier(caller.toString()),
+                    Position(1, source.lines()[1].indexOf("dump") + 1),
                 ),
             ).contents.right.value
             assertContains(answer, "DefaultGroovyMethods")

@@ -403,8 +403,14 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @CsvSource(
-        "hover,stable", "tokens,stable", "hover,stale", "tokens,stale",
-        "hover,cancel", "tokens,cancel", "hover,fatal", "tokens,fatal",
+        "hover,stable",
+        "tokens,stable",
+        "hover,stale",
+        "tokens,stale",
+        "hover,cancel",
+        "tokens,cancel",
+        "hover,fatal",
+        "tokens,fatal",
     )
     fun `traversal failure respects changed request authority`(endpoint: String, mode: String): Unit = runBlocking {
         var isJenkins = false
