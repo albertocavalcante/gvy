@@ -7,3 +7,5 @@ gvy:
   active: true
   RegexInFunctionBody:
     active: true
+  DirectCompilationCacheAccess:
+    active: true

@@ -45,7 +45,7 @@ class RegexInFunctionBodyTest {
 
     private fun ruleFrom(resource: String): RegexInFunctionBody {
         val ruleSetConfig = yamlConfig(resource).subConfig("gvy")
-        val rule = GvyRuleSetProvider().instance(ruleSetConfig).rules.single()
+        val rule = GvyRuleSetProvider().instance(ruleSetConfig).rules.single { it.ruleId == "RegexInFunctionBody" }
         return rule as RegexInFunctionBody
     }
 
@@ -67,6 +67,7 @@ class RegexInFunctionBodyTest {
     fun `provider registers the rule under the gvy id`() {
         val ruleSet = GvyRuleSetProvider().instance(Config.empty)
         assertThat(ruleSet.id).isEqualTo("gvy")
-        assertThat(ruleSet.rules.map { it.ruleId }).containsExactly("RegexInFunctionBody")
+        assertThat(ruleSet.rules.map { it.ruleId })
+            .containsExactly("RegexInFunctionBody", "DirectCompilationCacheAccess")
     }
 }

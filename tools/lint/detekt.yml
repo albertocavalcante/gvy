@@ -108,6 +108,11 @@ formatting:
     autoCorrect: true
 gvy:
   active: true
+  DirectCompilationCacheAccess:
+    active: true
+    excludes:
+    - '**/src/test/**'
+    - '**/src/jmh/**'
   RegexInFunctionBody:
     active: true
     excludes:

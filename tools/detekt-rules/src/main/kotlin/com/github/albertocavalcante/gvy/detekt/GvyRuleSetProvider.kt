@@ -16,5 +16,8 @@ import io.gitlab.arturbosch.detekt.api.RuleSetProvider
 class GvyRuleSetProvider : RuleSetProvider {
     override val ruleSetId: String = "gvy"
 
-    override fun instance(config: Config): RuleSet = RuleSet(ruleSetId, listOf(RegexInFunctionBody(config)))
+    override fun instance(config: Config): RuleSet = RuleSet(
+        ruleSetId,
+        listOf(RegexInFunctionBody(config), DirectCompilationCacheAccess(config)),
+    )
 }
