@@ -98,7 +98,7 @@ class DiagnosticsOrchestrator(
         val recipient = client()
         val (retiredJobs, retiredRuns) = documentProvider.withLifecycleLock {
             synchronized(publicationLock) {
-                runtime.set(Runtime(configuration, service, runtime.value.generation.next()))
+                runtime.update { previous -> Runtime(configuration, service, previous.generation.next()) }
                 clearConfigurationNotices(
                     recipient,
                     null,
@@ -492,7 +492,7 @@ class DiagnosticsOrchestrator(
         val recipient = client()
         val (jobs, retiredRuns) = documentProvider.withLifecycleLock {
             synchronized(publicationLock) {
-                runtime.set(runtime.value.copy(generation = runtime.value.generation.next()))
+                runtime.update { previous -> previous.copy(generation = previous.generation.next()) }
                 clearConfigurationNotices(
                     recipient,
                     null,

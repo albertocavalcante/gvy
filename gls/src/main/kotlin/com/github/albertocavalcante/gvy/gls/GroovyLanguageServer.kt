@@ -127,11 +127,11 @@ class GroovyLanguageServer(
         Thread({ handleParentExit() }, "gls-parent-exit").apply { isDaemon = true }.start()
     }
 
-    private val shutdown = OnceFlag()
+    private val shutdownStarted = OnceFlag()
 
     /** True once the client has requested `shutdown` (or the parent died and we shut down). */
     internal val shutdownRequested: Boolean
-        get() = shutdown.isSet
+        get() = shutdownStarted.isSet
 
     private fun handleParentExit() {
         // shutdown() is idempotent, so a prior client-requested shutdown is not repeated.
@@ -369,7 +369,7 @@ class GroovyLanguageServer(
      * its future cannot cancel the run or disturb another caller (including the parent watchdog).
      */
     override fun shutdown(): CompletableFuture<Any?> {
-        shutdown.trySet() // One-way; shutdown() is idempotent.
+        shutdownStarted.trySet() // One-way; shutdownRun below already does the work only once.
         return shutdownRun.copy()
     }
 
