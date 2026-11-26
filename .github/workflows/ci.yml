@@ -476,7 +476,8 @@ jobs:
           gradle-home-cache-excludes: |
             caches/transforms-*
             caches/*/transforms
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          # Hosted macOS toolchain homes can change between jobs; keep their configuration cache within the job.
+          cache-encryption-key: ${{ runner.os != 'macOS' && secrets.GRADLE_ENCRYPTION_KEY || '' }}
           # Allow writing to cache for main OR PRs from the same repository
           # Read-only for forks to prevent cache poisoning
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
