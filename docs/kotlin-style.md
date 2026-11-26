@@ -120,7 +120,8 @@ State that several threads read and write needs a primitive that says what it is
   two related fields. detekt's `VolatileProperty` rule reports them (#2474).
 - Use `kotlin.concurrent.atomics` only inside `:common:concurrent`; detekt's `ForbiddenImport` enforces this. The API is
   experimental, and confining it keeps an upstream change to one module. Use the gvy types rather than
-  `java.util.concurrent.atomic` too; detekt's `JdkAtomics` rule reports it outside tests.
+  `java.util.concurrent.atomic` too; detekt's `JdkAtomics` rule reports it outside tests and the modules still listed in
+  its excludes.
 - Modules published as their own artifacts (`bsp/bsp-core`, `bsp/maven-bsp`, `parser/core`) use
   `java.util.concurrent.atomic` instead, so their published dependencies do not gain the unpublished
   `:common:concurrent`.

@@ -124,8 +124,23 @@ reports every import of `java.util.concurrent.atomic` and every qualified use of
 Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
 their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. The other excludes
 are modules still to migrate (#2474); `tools/ci/detekt-ratchet-excludes.test.mjs` fails on one whose main code no longer
-uses the package. A field updater or `VarHandle` that needs the JDK type is the accepted reason for
-`@Suppress("JdkAtomics")`, with a comment.
+uses the package.
+
+`Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
+previous value (`increment() - 1`), or a counter that starts one lower.
+
+A field updater that needs the JDK type is the accepted reason for `@Suppress("JdkAtomics")`, with a comment. Write the
+qualified name at the suppressed declaration: an imported name is reported at its import, which only a file-wide
+`@file:Suppress` can silence.
+
+### Known limits
+
+The rule reads syntax only, so it does not see:
+
+1. A JDK atomic behind a type alias declared in another file, or a type inferred from another API
+   (`val counter = api.counter()`).
+2. A qualified name with a comment or backticks inside it (``java.util.concurrent.`atomic`.AtomicLong()``).
+3. Java sources, and Kotlin outside the source roots the lint task reads (#2480).
 
 ## Running the tests
 
