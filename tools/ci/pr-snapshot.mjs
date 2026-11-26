@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 const HELP = 'Usage: node tools/ci/pr-snapshot.mjs --repo owner/name PR [--json]';
 const MAX_PAGES = 100;
@@ -50,10 +51,11 @@ export async function ghRequest(request, run = runGh) {
 function required(condition, message) { if (!condition) throw new Error(message); }
 function metadata(pr, number) {
   required(pr && pr.number === number && typeof pr.title === 'string' && typeof pr.draft === 'boolean' &&
+    ['open', 'closed'].includes(pr.state) && typeof pr.merged === 'boolean' && !(pr.state === 'open' && pr.merged) &&
     typeof pr.created_at === 'string' && ['additions', 'deletions', 'changed_files'].every(k => Number.isSafeInteger(pr[k]) && pr[k] >= 0) &&
     /^[a-f0-9]{40}$/i.test(pr.head?.sha ?? '') && typeof pr.head?.ref === 'string' &&
     /^[a-f0-9]{40}$/i.test(pr.base?.sha ?? '') && typeof pr.base?.ref === 'string', 'Missing PR metadata');
-  return { number, title: pr.title, draft: pr.draft, openedAt: pr.created_at, head: { ref: pr.head.ref, sha: pr.head.sha }, base: { ref: pr.base.ref, sha: pr.base.sha }, additions: pr.additions, deletions: pr.deletions, fileCount: pr.changed_files };
+  return { number, title: pr.title, state: pr.merged ? 'merged' : pr.state, draft: pr.draft, openedAt: pr.created_at, head: { ref: pr.head.ref, sha: pr.head.sha }, base: { ref: pr.base.ref, sha: pr.base.sha }, additions: pr.additions, deletions: pr.deletions, fileCount: pr.changed_files };
 }
 
 async function collect(kind, repo, number, sha, read) {
@@ -72,7 +74,9 @@ async function collect(kind, repo, number, sha, read) {
     required(connection && Array.isArray(connection.nodes) && typeof connection.pageInfo?.hasNextPage === 'boolean', 'Missing connection or page info');
     for (const node of connection.nodes) {
       required(node && typeof node.id === 'string' && node.id.length > 0, 'Missing node ID');
-      if (!nodes.has(node.id)) nodes.set(node.id, node);
+      if (nodes.has(node.id)) {
+        required(isDeepStrictEqual(nodes.get(node.id), node), 'Conflicting duplicate node');
+      } else nodes.set(node.id, node);
     }
     if (!connection.pageInfo.hasNextPage) return [...nodes.values()];
     const next = connection.pageInfo.endCursor;
@@ -113,6 +117,7 @@ export async function snapshot(repo, number, read = ghRequest) {
   if (checks) for (const check of checks) counts[classifyCheck(check)]++;
   const last = metadata(await read({ kind: 'rest', repo, number }), number);
   required(last.head.sha === sha, 'PR head changed before output');
+  required(last.state === first.state, 'PR state changed before output');
   const contexts = checks?.map(check => check.__typename === 'CheckRun'
     ? { type: check.__typename, id: check.id, name: check.name, status: check.status, conclusion: check.conclusion, url: check.detailsUrl }
     : { type: check.__typename, id: check.id, context: check.context, state: check.state, url: check.targetUrl }) ?? null;
@@ -121,7 +126,7 @@ export async function snapshot(repo, number, read = ghRequest) {
 
 export function formatSnapshot(value) {
   const ci = value.ci.available ? Object.entries(value.ci.counts).map(([k, v]) => `${k}=${v}`).join(' ') : 'unavailable';
-  return [`${value.repo} #${value.number}: ${escapeControls(value.title)}`, `Head: ${escapeControls(value.head.ref)} ${value.head.sha}`, `Base: ${escapeControls(value.base.ref)} ${value.base.sha}`, `Draft: ${value.draft}; opened: ${escapeControls(value.openedAt)}`, `Changes: +${value.additions} -${value.deletions}, ${value.fileCount} files`, `CI observed: ${ci}`, `Unresolved threads: ${value.unresolvedThreads.length}`, `Thread metadata (first 3; use --json for all): ${JSON.stringify(value.unresolvedThreads.slice(0, 3))}`].join('\n');
+  return [`${value.repo} #${value.number}: ${escapeControls(value.title)}`, `Head: ${escapeControls(value.head.ref)} ${value.head.sha}`, `Base: ${escapeControls(value.base.ref)} ${value.base.sha}`, `State: ${value.state}; draft: ${value.draft}; opened: ${escapeControls(value.openedAt)}`, `Changes: +${value.additions} -${value.deletions}, ${value.fileCount} files`, `CI observed: ${ci}`, `Unresolved threads: ${value.unresolvedThreads.length}`, `Thread metadata (first 3; use --json for all): ${JSON.stringify(value.unresolvedThreads.slice(0, 3))}`].join('\n');
 }
 
 async function main() {

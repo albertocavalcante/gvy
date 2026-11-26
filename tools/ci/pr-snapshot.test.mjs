@@ -5,7 +5,7 @@ import test from 'node:test';
 import { parseArgs, snapshot, formatSnapshot, ghRequest } from './pr-snapshot.mjs';
 
 const sha = 'a'.repeat(40);
-const pr = { number: 42, title: 'Title', draft: false, created_at: '2026-01-01T00:00:00Z', additions: 3, deletions: 2, changed_files: 1, head: { sha, ref: 'feature' }, base: { ref: 'main', sha: 'b'.repeat(40) } };
+const pr = { number: 42, title: 'Title', state: 'open', merged: false, draft: false, created_at: '2026-01-01T00:00:00Z', additions: 3, deletions: 2, changed_files: 1, head: { sha, ref: 'feature' }, base: { ref: 'main', sha: 'b'.repeat(40) } };
 const page = (nodes = [], next = null) => ({ nodes, pageInfo: { hasNextPage: next !== null, endCursor: next } });
 const thread = id => ({ id, path: 'a', line: null, url: 'https://example.test/t', isOutdated: true, isResolved: false, body: 'SECRET' });
 const check = id => ({ __typename: 'CheckRun', id, name: id, status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: null });
@@ -99,4 +99,37 @@ test('rejects malformed GraphQL errors and escapes untrusted display text', asyn
   assert.equal(formatted.split('\n').length, 8);
   assert.ok(formatted.includes('title\\nforged line'));
   assert.ok(formatted.includes('a\\nforged path'));
+});
+
+
+test('rejects conflicting duplicate check conclusions and thread resolution', async () => {
+  await assert.rejects(snapshot('owner/repo', 42, reader({ checks: [page([check('x')], 'next'), page([{ ...check('x'), conclusion: 'FAILURE' }])] })), /conflicting duplicate/i);
+  await assert.rejects(snapshot('owner/repo', 42, reader({ threads: [page([{ ...thread('x'), isResolved: true }], 'next'), page([thread('x')])] })), /conflicting duplicate/i);
+});
+
+test('reports open, closed and merged states in JSON and compact output', async () => {
+  for (const [state, merged, expected] of [['open', false, 'open'], ['closed', false, 'closed'], ['closed', true, 'merged']]) {
+    const base = reader();
+    const result = await snapshot('owner/repo', 42, async request => {
+      const value = await base(request);
+      return request.kind === 'rest' ? { ...value, state, merged } : value;
+    });
+    assert.equal(result.state, expected);
+    assert.match(formatSnapshot(result), new RegExp(`State: ${expected}`));
+    assert.equal(formatSnapshot(result).split('\n').length, 8);
+  }
+});
+
+test('accepts identical duplicate fields in a different order and rejects a changing state', async () => {
+  const original = check('x');
+  const reordered = Object.fromEntries(Object.entries(original).reverse());
+  const result = await snapshot('owner/repo', 42, reader({ checks: [page([original], 'next'), page([reordered])] }));
+  assert.equal(result.ci.counts.passed, 1);
+  const base = reader();
+  let reads = 0;
+  await assert.rejects(snapshot('owner/repo', 42, async request => {
+    const value = await base(request);
+    if (request.kind === 'rest' && reads++) return { ...value, state: 'closed' };
+    return value;
+  }), /state changed/i);
 });
