@@ -49,6 +49,20 @@ class VolatilePropertyTest {
     }
 
     @Test
+    fun `a suppression silences only the field it annotates`() {
+        val source = """
+            class A {
+                @Suppress("VolatileProperty") // Updated through an AtomicIntegerFieldUpdater.
+                @Volatile var updated = 0
+
+                @Volatile var other = 0
+            }
+        """.trimIndent()
+
+        assertThat(flaggedLines(source)).containsExactly(5)
+    }
+
+    @Test
     fun `message names the replacements`() {
         val findings = rule.lint("class A { @Volatile var flag = false }")
         assertThat(findings).hasSize(1)

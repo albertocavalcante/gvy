@@ -24,7 +24,8 @@ class ImportedNamesake {
 }
 
 class Suppressed {
+    // Qualified, so only the suppression keeps it silent in a file that imports another Volatile.
     @Suppress("VolatileProperty") // A documented exception: a field updater needs a real volatile field.
-    @Volatile
+    @kotlin.jvm.Volatile
     var updatedThroughFieldUpdater = 0
 }
