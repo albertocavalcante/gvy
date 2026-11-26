@@ -8,7 +8,10 @@ import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
+import com.github.albertocavalcante.nativeapi.NativeBinaryInputs
+import com.github.albertocavalcante.nativeapi.nativeBinaryInputs
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
@@ -32,7 +35,10 @@ internal class SignatureCompletionRequest(
     private val classpathCurrent = compilation.classpathService.captureGeneration()
     private val jenkins = if (completion) JenkinsQuerySnapshot.capture(compilation, uri) else null
     private var jenkinsFacts: JenkinsQueryFacts? = null
+    private lateinit var checkCancelled: () -> Unit
     private val inputs = mutableListOf<() -> Boolean>()
+    private val parseInputs = mutableListOf<RequestParseInputs>()
+    private val binaryInputs = mutableListOf<NativeBinaryInputs?>()
     private val publications = mutableListOf<() -> Boolean>()
     private val consultedMembers = mutableListOf<HoverMemberLookup>()
 
@@ -55,9 +61,9 @@ internal class SignatureCompletionRequest(
         if (!current()) throw changed()
     }
 
-    fun observeInputs(current: () -> Boolean) {
-        inputs.add(current)
-        if (!current()) throw changed()
+    fun observeInputs(current: (() -> Unit) -> Boolean) {
+        inputs.add { current(checkCancelled) }
+        if (!current(checkCancelled)) throw changed()
     }
 
     suspend fun completionJenkins(): JenkinsQueryFacts =
@@ -65,10 +71,14 @@ internal class SignatureCompletionRequest(
             .also { jenkinsFacts = it }
 
     suspend fun <T> deliver(compute: suspend () -> T): T {
-        if (!currentCoroutineContext().inputsCurrent(::current)) throw changed()
+        val caller = currentCoroutineContext()
+        checkCancelled = caller::ensureActive
+        if (!caller.inputsCurrent(::current)) throw changed()
         val result = runSuspendCatching { compute() }
         val qualified = deliveryInputsCurrent(::current) {
-            inputs.all { it() } && consultedMembers.all { it.isCurrent() } && jenkinsFacts?.isCurrent() != false
+            parseInputs.all { it.isCurrent(source, caller::ensureActive) } &&
+                binaryInputsCurrent(caller::ensureActive) &&
+                inputs.all { it() } && consultedMembers.all { it.isCurrent() } && jenkinsFacts?.isCurrent() != false
         }
         if (!qualified) throw changed()
         return result.getOrThrow()
@@ -87,10 +97,24 @@ internal class SignatureCompletionRequest(
     }
 
     private suspend fun <T> materialize(held: CompiledDocumentSnapshot, compute: suspend (NativeQueryContext) -> T): T {
-        val members = HoverMemberLookup.forRequest(held) { compilation.referenceReadiness(source) }
-        consultedMembers.add(members)
-        val context = NativeQueryContext(held, members)
-        return withContext(context.binaryScope) { compute(context) }
+        val caller = currentCoroutineContext()
+        val physical = held.requireParseInputs()
+        parseInputs.add(physical)
+        if (!physical.isCurrent(source, caller::ensureActive)) throw changed()
+        return try {
+            val members = HoverMemberLookup.forRequest(held) { compilation.referenceReadiness(source) }
+            consultedMembers.add(members)
+            val context = NativeQueryContext(held, members)
+            withContext(context.binaryScope) { compute(context) }
+        } finally {
+            val binary = held.parseResult.compilationUnit.classLoader.nativeBinaryInputs()
+            if (binary != null || !physical.isolatedLegacy) binaryInputs.add(binary)
+        }
+    }
+
+    private fun binaryInputsCurrent(checkCancelled: () -> Unit): Boolean = binaryInputs.all { binary ->
+        val observed = binary ?: unavailableParseInputs("The compiler did not identify its binary inputs")
+        requireObservable(observed.check(checkCancelled), "Compiler binary inputs could not be verified")
     }
 
     private fun <T> unwrap(result: SnapshotQuery<T>, missing: () -> T): T = when (result) {

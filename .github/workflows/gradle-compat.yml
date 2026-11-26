@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary qualification branch only. Never merge this replacement.
-name: G6 code action held-producer fixture baseline
+name: G6 physical input composition qualification
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: g6-code-action-fixture-baseline-${{ github.ref }}
+  group: g6-physical-input-qualification-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +20,6 @@ jobs:
     permissions:
       contents: read
     env:
-      JAVA_TOOL_OPTIONS: -Xmx2g
       GRADLE_OPTS: -Xmx512m
     steps:
       - name: Checkout frozen baseline and tests
@@ -58,31 +57,36 @@ jobs:
         shell: bash
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
-          :gls:spotlessApply :parser:native:spotlessApply :ext:spock:spotlessApply
+          :gls:spotlessApply :parser:native:spotlessApply :ext:spock:spotlessApply :diagnostics:codenarc:spotlessApply :semantics-native:spotlessApply :jenkins:spotlessApply --continue
           --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
-      - name: Run frozen native and actual-held-producer baseline controls
+      - name: Run complete GLS, native parser, Spock and CodeNarc suites
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
         shell: bash
         run: >-
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-fixture-baseline
-          :parser:native:test --tests '*CompiledDocumentInputTest' --tests '*NativeSourceMembershipTest'
-          :gls:test --tests '*CodeActionCompilerInputWireTest' --tests '*CodeActionCompilerShadowWireTest'
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit
+          :parser:native:test :ext:spock:test :diagnostics:codenarc:test :gls:test
           --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+      - name: Run normal repository lint
+        if: ${{ !cancelled() && steps.format.outcome == 'success' }}
+        shell: bash
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-lint
+          lint --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Preserve exact formatter delta and resulting file hashes
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/g6-source"
-          git diff --binary -- gls parser/native ext/spock > "$RUNNER_TEMP/g6-source/format.patch"
-          git diff --name-only -- gls parser/native ext/spock > "$RUNNER_TEMP/g6-source/changed-paths.txt"
-          git ls-files -z gls parser/native ext/spock | xargs -0 sha256sum > "$RUNNER_TEMP/g6-source/postimages.sha256"
+          git diff --binary -- gls parser/native ext/spock diagnostics/codenarc > "$RUNNER_TEMP/g6-source/format.patch"
+          git diff --name-only -- gls parser/native ext/spock diagnostics/codenarc > "$RUNNER_TEMP/g6-source/changed-paths.txt"
+          git ls-files -z gls parser/native ext/spock diagnostics/codenarc | xargs -0 sha256sum > "$RUNNER_TEMP/g6-source/postimages.sha256"
           git status --porcelain > "$RUNNER_TEMP/g6-source/worktree-status.txt"
       - name: Preserve raw invocation and JUnit evidence even on failure
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: g6-code-action-fixture-baseline-${{ github.run_id }}-${{ github.run_attempt }}
+          name: g6-physical-input-qualification-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
           path: |
@@ -91,4 +95,7 @@ jobs:
             gls/build/test-results/test/*.xml
             parser/native/build/test-results/test/*.xml
             ext/spock/build/test-results/test/*.xml
+            diagnostics/codenarc/build/test-results/test/*.xml
+            semantics/native/build/test-results/test/*.xml
+            jenkins/build/test-results/test/*.xml
             gls/build/reports/tests/test/**

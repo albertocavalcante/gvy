@@ -3,12 +3,10 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
-import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
-import com.github.albertocavalcante.gvy.gls.compilation.contentHash
 import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -16,7 +14,9 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
+import com.github.albertocavalcante.nativeapi.NativeBinaryInputs
 import com.github.albertocavalcante.nativeapi.NativeSourceMembership
+import com.github.albertocavalcante.nativeapi.nativeBinaryInputs
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.ast.ModuleNode
@@ -26,9 +26,6 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
-import java.nio.file.Files
-import java.nio.file.NoSuchFileException
-import java.nio.file.attribute.BasicFileAttributes
 import java.util.IdentityHashMap
 
 /** Inputs captured at dispatch, plus the publications and source facts actually consulted by the providers. */
@@ -62,24 +59,13 @@ internal class CodeActionRequest(
         publications += current
         val index = compilation.getWorkspaceSymbolIndex()
         val shadows = index?.referenceShadows().orEmpty()
-        val visible = selected.sourceHashes.filterKeys { it !in shadows }
+        val visible = selected.sources.filterKeys { it !in shadows }
         checks += {
             index === compilation.getWorkspaceSymbolIndex() && shadows == index?.referenceShadows().orEmpty() &&
-                visible.all { (uri, hash) -> hasIndexedText(uri, hash) }
+                visible.all { (uri, text) -> text.matches(uri, source.documents[uri]?.content, checkCancelled) }
         }
         return selected.classes.filter { it.uri !in shadows }.map { it.fullyQualifiedName }
             .filter { it.contains('.') }.distinct()
-    }
-
-    private fun hasIndexedText(uri: URI, hash: String): Boolean {
-        source.documents[uri]?.let { return it.contentHash == hash }
-        val path = UriPathConverter.toPath(uri) ?: return false
-        return try {
-            Files.readAttributes(path, BasicFileAttributes::class.java).isRegularFile &&
-                contentHash(Files.readString(path)) == hash
-        } catch (_: NoSuchFileException) {
-            false
-        }
     }
 
     fun compilerInput(module: ModuleNode): CompiledDocumentInput = compilerSources.getOrPut(module) {
@@ -93,15 +79,19 @@ internal class CodeActionRequest(
         ResponseError(ResponseErrorCode.RequestFailed, "Compiler source inputs could not be qualified", null),
     )
 
-    private fun membershipCurrent(membership: NativeSourceMembership, checkCancelled: () -> Unit): Boolean =
-        when (membership.check(checkCancelled)) {
+    private fun inputCurrent(status: NativeSourceMembership.Status): Boolean =
+        when (status) {
             NativeSourceMembership.Status.CURRENT -> true
             NativeSourceMembership.Status.CHANGED -> false
             NativeSourceMembership.Status.UNAVAILABLE -> throw unavailable()
         }
 
     fun canRecall(membership: NativeSourceMembership): Boolean = observe {
-        membershipCurrent(membership, checkCancelled)
+        inputCurrent(membership.check(checkCancelled))
+    }
+
+    fun canRecall(binary: NativeBinaryInputs): Boolean = observe {
+        inputCurrent(binary.check(checkCancelled))
     }
 
     fun <T> observe(read: () -> T): T = read().also { value -> checks += { read() == value } }
@@ -109,43 +99,49 @@ internal class CodeActionRequest(
     suspend fun deliver(compute: (DocumentSnapshot, CompiledDocumentSnapshot) -> List<CodeAction>): List<CodeAction> {
         val caller = currentCoroutineContext()
         checkCancelled = caller::ensureActive
-        if (!caller.inputsCurrent(::identitiesCurrent)) throw changed()
+        requireCurrent(caller.inputsCurrent(::identitiesCurrent))
         val document = original ?: return emptyList()
-        val held = when (val acquisition = compilation.acquireEditorSnapshot(source)) {
-            is SnapshotAcquisition.Available -> acquisition
-            SnapshotAcquisition.Stale -> throw changed()
-            SnapshotAcquisition.Missing -> throw changed()
-            is SnapshotAcquisition.Failure -> throw acquisition.cause
-        }
-        if (!caller.inputsCurrent(held.isCurrent)) throw changed()
+        val held = acquire()
+        requireCurrent(caller.inputsCurrent(held.isCurrent))
+        val loader = held.snapshot.parseResult.compilationUnit.classLoader
         val result = runSuspendCatching {
-            bytecodeOnlyClassLoader(held.snapshot.parseResult.compilationUnit.classLoader).read {
+            bytecodeOnlyClassLoader(loader).read {
                 compute(document, held.snapshot)
             }
         }
+        val binary = loader.nativeBinaryInputs() ?: throw unavailable()
         val qualified = deliveryInputsCurrent(::identitiesCurrent) {
-            val consumed = runSuspendCatching { consumedInputsCurrent() }
+            val consumed = runSuspendCatching { consumedInputsCurrent() && inputCurrent(binary.check(checkCancelled)) }
             caller.inputsCurrent(held.isCurrent) && consumed.getOrThrow()
         }
-        if (!qualified) throw changed()
+        requireCurrent(qualified)
         val actions = result.getOrThrow()
         // IO and strategy callbacks have finished. Order the short write against document and ticket retirement.
         val ownership = source.dependencies.cacheService.ownership
         documents.withLifecycleLock {
-            if (!ownership.commit(source.ticket) {
-                    caller.ensureActive()
-                    if (!identitiesCurrent() || verdicts?.commit() == false) throw changed()
-                }
-            ) {
-                throw changed()
+            val committed = ownership.commit(source.ticket) {
+                caller.ensureActive()
+                requireCurrent(identitiesCurrent() && verdicts?.commit() != false)
             }
+            requireCurrent(committed)
         }
         return actions
     }
 
+    private suspend fun acquire(): SnapshotAcquisition.Available =
+        when (val acquisition = compilation.acquireEditorSnapshot(source)) {
+            is SnapshotAcquisition.Available -> acquisition
+            is SnapshotAcquisition.Failure -> throw acquisition.cause
+            SnapshotAcquisition.Missing, SnapshotAcquisition.Stale -> throw changed()
+        }
+
+    private fun requireCurrent(current: Boolean) {
+        if (!current) throw changed()
+    }
+
     private fun consumedInputsCurrent(): Boolean {
         val membership = consultedMembership
-        if (membership != null && !membershipCurrent(membership, checkCancelled)) return false
+        if (membership != null && !inputCurrent(membership.check(checkCancelled))) return false
         val sameSources = compilerSources.values.all { input ->
             input.matchesCurrentText(source.documents[input.uri]?.content, checkCancelled)
         }

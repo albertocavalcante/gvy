@@ -53,13 +53,10 @@ internal class SpockTableWireProject(private val workspace: Path, superclass: St
         GroovyTextDocumentServiceOptions(documentProvider = documents, formatter = formatter),
     )
 
-    fun open(compilation: GroovyCompilationService) {
+    fun open(compilation: GroovyCompilationService, extraClasspath: List<Path> = emptyList()) {
         fun jar(type: Class<*>) = Path.of(type.protectionDomain.codeSource.location.toURI())
-        compilation.updateWorkspaceModel(
-            workspace,
-            listOf(jar(spock.lang.Specification::class.java), jar(groovy.lang.GroovyObject::class.java)),
-            listOf(src),
-        )
+        val runtime = listOf(jar(spock.lang.Specification::class.java), jar(groovy.lang.GroovyObject::class.java))
+        compilation.updateWorkspaceModel(workspace, runtime + extraClasspath, listOf(src))
         compilation.onDocumentOpened(uri)
         documents.put(uri, source, DocumentVersion.of(7))
         runBlocking { compilation.compile(uri, source) }

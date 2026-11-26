@@ -10,13 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
-import org.eclipse.lsp4j.CodeActionContext
-import org.eclipse.lsp4j.CodeActionKind
-import org.eclipse.lsp4j.CodeActionParams
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
-import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
@@ -40,69 +35,39 @@ class CodeActionSpockInputsWireTest {
 
     @Test
     fun `changed base after verdict consumption rejects table action`() {
-        val src = Files.createDirectories(workspace.resolve("src"))
-        val base = src.resolve("BaseSpec.groovy")
-        Files.writeString(base, "import spock.lang.*\nabstract class BaseSpec extends Specification {}\n")
-        val file = src.resolve("TableSpec.groovy")
-        val source = """
-            class TableSpec extends BaseSpec {
-                def "feature"() {
-                    expect:
-                    true
-                    where:
-                    a | b
-                    100|2
-                }
-            }
-        """.trimIndent()
-        Files.writeString(file, source)
-        val uri = file.toUri()
-        val documents = DocumentProvider()
+        val project = SpockTableWireProject(workspace)
+        val base = project.base
+        val before = "import spock.lang.*\nabstract class BaseSpec extends Specification {}\n"
+        Files.writeString(base, before)
+        val documents = project.documents
+        val uri = project.uri
         val compilation = GroovyCompilationService(documentProvider = documents)
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val pause = AtomicBoolean(false)
-        val service = GroovyTextDocumentService(
+        val service = project.service(
             scope,
             compilation,
-            GroovyTextDocumentServiceOptions(
-                documentProvider = documents,
-                formatter = Formatter { text ->
-                    if (pause.get()) {
-                        entered.countDown()
-                        check(release.await(10, TimeUnit.SECONDS))
-                    }
-                    text
-                },
-            ),
+            Formatter { text ->
+                if (pause.get()) {
+                    entered.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                }
+                text
+            },
         )
         try {
-            fun jar(type: Class<*>) = Path.of(type.protectionDomain.codeSource.location.toURI())
-            compilation.updateWorkspaceModel(
-                workspace,
-                listOf(jar(spock.lang.Specification::class.java), jar(groovy.lang.GroovyObject::class.java)),
-                listOf(src),
-            )
-            compilation.onDocumentOpened(uri)
-            documents.put(uri, source, DocumentVersion.of(7))
-            runBlocking { compilation.compile(uri, source) }
+            project.open(compilation)
             val compiled = assertNotNull(compilation.getCompiledSnapshot(uri))
-            assertEquals(source, compiled.sourceText)
+            assertEquals(project.source, compiled.sourceText)
             assertTrue(compiled.parseResult.outcome.achievedPhase >= Phases.CANONICALIZATION)
             val module = assertNotNull(compiled.parseResult.ast)
-            val baseNode = assertNotNull(module.classes.firstOrNull { it.name == "TableSpec" }?.superClass?.redirect())
-            assertEquals("BaseSpec", baseNode.name)
-            assertFalse(baseNode.isResolved, "a resolved JVM base does not read the source witness")
-            assertNotNull(baseNode.module?.context?.name, "the source base must have a locator")
-            val params = CodeActionParams(
-                TextDocumentIdentifier(uri.toString()),
-                Range(Position(5, 0), Position(6, 10)),
-                CodeActionContext(emptyList()).apply { only = listOf(CodeActionKind.RefactorRewrite) },
-            )
+            assertSourceBase(module)
+            val params = project.params
             val control = service.codeAction(params).get(10, TimeUnit.SECONDS)
             assertTrue(control.any { it.right.title == "Align Spock data table" }, "table action precondition")
-            val nextSource = "$source\n// next version"
+            val nextSource = project.next
             assertNotNull(documents.update(uri, nextSource, DocumentVersion.of(8)))
             runBlocking { compilation.compile(uri, nextSource) }
             val next = assertNotNull(compilation.getCompiledSnapshot(uri))
@@ -125,5 +90,12 @@ class CodeActionSpockInputsWireTest {
             scope.cancel()
             compilation.shutdown()
         }
+    }
+
+    private fun assertSourceBase(module: ModuleNode) {
+        val baseNode = assertNotNull(module.classes.firstOrNull { it.name == "TableSpec" }?.superClass?.redirect())
+        assertEquals("BaseSpec", baseNode.name)
+        assertFalse(baseNode.isResolved, "a resolved JVM base does not read the source witness")
+        assertNotNull(baseNode.module?.context?.name, "the source base must have a locator")
     }
 }

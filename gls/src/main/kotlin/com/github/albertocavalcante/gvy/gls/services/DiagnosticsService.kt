@@ -64,14 +64,28 @@ class DiagnosticsService(
     suspend fun collectDiagnostics(uri: URI, content: String): DiagnosticsCollectionResult =
         collectDiagnostics(uri, content, compilation = null)
 
-    @OptIn(FlowPreview::class)
     internal suspend fun collectDiagnostics(
+        uri: URI,
+        content: String,
+        compilation: CompilationResult?,
+    ): DiagnosticsCollectionResult {
+        check(compilation?.parseCompleted != false) {
+            "Incomplete compilation cannot establish diagnostic context for $uri"
+        }
+        return collectFromInputs(uri, content, compilation)
+    }
+
+    /** CLI checks retain source-only providers and the worker error diagnostic when parsing failed. */
+    internal suspend fun collectCliDiagnostics(uri: URI, content: String, compilation: CompilationResult) =
+        collectFromInputs(uri, content, compilation)
+
+    @OptIn(FlowPreview::class)
+    private suspend fun collectFromInputs(
         uri: URI,
         content: String,
         compilation: CompilationResult?,
     ): DiagnosticsCollectionResult = withContext(Dispatchers.IO) {
         compilation?.let {
-            check(it.parseCompleted) { "Incomplete compilation cannot establish diagnostic context for $uri" }
             require(it.sourceText == content) {
                 "Compilation source does not match the diagnostic snapshot for $uri"
             }

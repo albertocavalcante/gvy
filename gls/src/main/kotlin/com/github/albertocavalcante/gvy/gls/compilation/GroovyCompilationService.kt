@@ -87,6 +87,7 @@ class GroovyCompilationService internal constructor(
     private val parser = GroovyParserFacade(parentClassLoader)
     private val workerSessionManager = WorkerSessionManager(
         defaultSession = workerSessionDecorator(InProcessWorkerSession(parser)),
+        platformParent = parentClassLoader === ClassLoader.getPlatformClassLoader(),
         sessionFactory = { workerSessionDecorator(InProcessWorkerSession(parser)) },
     )
 
@@ -110,7 +111,8 @@ class GroovyCompilationService internal constructor(
             shadowed = shadows::shadowed,
             isOpen = isOpen,
         )
-    private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
+    private val parseAccessor =
+        ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer, documents)
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)
@@ -229,8 +231,24 @@ class GroovyCompilationService internal constructor(
         content: String,
         phase: Int = Phases.CANONICALIZATION,
         mode: ParseMode = ParseMode.WORKSPACE,
+        inspectCompilerInputs: Boolean = false,
         query: suspend (CompiledDocumentSnapshot) -> T,
-    ): SnapshotQuery<T> = orchestrator.snapshots.queryDerived(source, content, phase, mode, query)
+    ): SnapshotQuery<T> = orchestrator.snapshots.queryDerived(
+        source,
+        content,
+        DerivedParseOptions(phase, mode, inspectCompilerInputs),
+        query,
+    )
+
+    internal suspend fun <T> queryDiagnosticSnapshot(
+        source: SnapshotSource,
+        content: String,
+        query: suspend (CompilationResult) -> T,
+    ): SnapshotQuery<T> = orchestrator.snapshots.queryDiagnostics(source, content, query)
+
+    /** A retained symbol row can outlive a physical companion edit without any LSP notification. */
+    internal suspend fun acquireSymbolRow(source: SnapshotSource, text: IndexedSourceText): SnapshotAcquisition =
+        orchestrator.snapshots.acquireSource(source, Phases.CANONICALIZATION, mode = null, indexedText = text)
 
     /** Preserve startup symbol requests when worker selection retires acquisition, never the query itself. */
     internal suspend fun <T> querySymbolsWithWorkerRetry(
@@ -269,7 +287,7 @@ class GroovyCompilationService internal constructor(
 
     /** Capture source ownership before any reference-index readiness work. */
     internal fun referenceReadiness(uri: URI): ReferenceReadiness =
-        referenceReadiness(orchestrator.snapshots.referenceSource(uri))
+        referenceReadiness(captureSnapshotSource(uri))
 
     internal fun referenceReadiness(source: SnapshotSource): ReferenceReadiness = ReferenceReadiness(
         source,
@@ -594,8 +612,7 @@ class GroovyCompilationService internal constructor(
 
     /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
-        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
-            ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+        cacheService.getSnapshot(uri, workspaceManager.fingerprintFor(uri))
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)

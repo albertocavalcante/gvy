@@ -19,6 +19,8 @@ class NativeSourceMembership internal constructor(
     private val files: Map<Path, FileState>?,
     private val retiredDuringLookup: Boolean,
 ) {
+    internal val isolated: Boolean get() = files?.isEmpty() == true && !retiredDuringLookup
+
     enum class Status { CURRENT, CHANGED, UNAVAILABLE }
 
     fun check(checkCancelled: () -> Unit): Status {
@@ -43,28 +45,26 @@ internal sealed interface FileState {
     data class Present(val canonical: Path) : FileState
 
     companion object {
-        fun observe(path: Path): FileState? {
-            val attributes = try {
-                Files.readAttributes(path, BasicFileAttributes::class.java)
-            } catch (_: NoSuchFileException) {
-                return Absent
-            } catch (_: NotDirectoryException) {
-                return Absent
-            } catch (_: IOException) {
-                return null
-            } catch (_: SecurityException) {
-                return null
-            }
-            if (!attributes.isRegularFile) return null
-            // Groovy checks the canonical filename for case-sensitive matches. Opening the file distinguishes
-            // a readable candidate from one whose metadata is visible while its contents are inaccessible.
-            return try {
-                Files.newByteChannel(path).use { Present(path.toFile().canonicalFile.toPath()) }
-            } catch (_: IOException) {
-                null
-            } catch (_: SecurityException) {
-                null
-            }
+        fun observe(path: Path): FileState? = try {
+            val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+            if (attributes.isRegularFile) readableFile(path) else null
+        } catch (_: NoSuchFileException) {
+            Absent
+        } catch (_: NotDirectoryException) {
+            Absent
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
+
+        // A file that disappeared or became unreadable after stat cannot certify a stable absence.
+        private fun readableFile(path: Path): FileState? = try {
+            Files.newByteChannel(path).use { Present(path.toFile().canonicalFile.toPath()) }
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
         }
     }
 }
@@ -95,7 +95,7 @@ internal class SourceMembershipRecorder(
         } finally {
             try {
                 if (!returned) unavailable()
-                observe(consulted)
+                consulted.forEach(::observe)
             } finally {
                 searchPaths.remove()
             }
@@ -105,9 +105,8 @@ internal class SourceMembershipRecorder(
     /** Capture the physical candidates before the real lookup. scriptSearch checks again after Groovy selects. */
     fun resource(name: String, lookup: () -> URL?): URL? {
         val consulted = searchPaths.get() ?: return lookup()
-        val paths = candidates(name)
+        val paths = observeSearchPrefix(candidates(name))
         consulted.addAll(paths)
-        observe(paths)
         var returned = false
         return try {
             lookup().also { answer ->
@@ -158,36 +157,44 @@ internal class SourceMembershipRecorder(
         } catch (_: InvalidPathException) {
             null
         }
-        if (name.length > MAX_RESOURCE_NAME || relative == null || relative.isAbsolute ||
-            relative.normalize() != relative || relative.startsWith("..") || directories.size > limit
-        ) {
+        val withinLimits = name.length <= MAX_RESOURCE_NAME && directories.size <= limit
+        val safeRelative = relative?.takeUnless { it.isAbsolute || it.normalize() != it || it.startsWith("..") }
+        if (!withinLimits || safeRelative == null) {
             complete = false
             return emptyList()
         }
-        return directories.map { it.resolve(relative) }
+        return directories.map { it.resolve(safeRelative) }
+    }
+
+    /** A selected directory resource hides later entries. An opaque or inconsistent selection is unavailable. */
+    @Synchronized
+    private fun observeSearchPrefix(candidates: List<Path>): List<Path> {
+        val consulted = mutableListOf<Path>()
+        for (path in candidates) {
+            consulted.add(path)
+            observe(path)
+            if (!complete || files[path] is FileState.Present) break
+        }
+        return consulted
     }
 
     @Synchronized
-    private fun observe(paths: Collection<Path>) {
-        for (path in paths) {
-            val before = files[path]
-            if (!complete && before == null) continue
-            if (before == null) pathCharacters += path.toString().length
-            if ((before == null && files.size >= limit) || pathCharacters > MAX_PATH_CHARACTERS) {
-                complete = false
-                return
-            }
-            val seen = state(path)
-            if (before != null && seen != null && before != seen) {
+    private fun observe(path: Path) {
+        val before = files[path]
+        if (!complete && before == null) return
+        if (before == null) pathCharacters += path.toString().length
+        if ((before == null && files.size >= limit) || pathCharacters > MAX_PATH_CHARACTERS) {
+            complete = false
+            return
+        }
+        val seen = state(path)
+        when {
+            seen == null -> complete = false
+            before != null && before != seen -> {
                 retired = true
                 complete = false
-                return
             }
-            if (seen == null) {
-                complete = false
-                return
-            }
-            if (complete) files[path] = seen
+            complete -> files[path] = seen
         }
     }
 

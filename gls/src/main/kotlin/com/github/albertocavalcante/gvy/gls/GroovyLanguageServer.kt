@@ -143,7 +143,7 @@ class GroovyLanguageServer(
     private val documentProvider = DocumentProvider()
     private val sourceNavigator = SourceNavigationService()
 
-    private val compilationService = GroovyCompilationService(
+    internal val compilationService = GroovyCompilationService(
         parentClassLoader = parentClassLoader,
         documentProvider = documentProvider,
         sourceNavigator = sourceNavigator,

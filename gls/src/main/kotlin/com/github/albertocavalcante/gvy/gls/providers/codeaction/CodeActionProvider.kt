@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.nativeapi.nativeBinaryInputs
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
@@ -48,11 +49,11 @@ class CodeActionProvider(
 
     /**
      * The Groovy and Java files of [packageName] across every workspace source root the compile uses, plus the
-     * source's own directory (its file need not sit where its `package` says), on disk or open, as one sorted
-     * string; null when a directory cannot be listed. The package comes from the AST, not the directory, so
+     * source's own directory (its file need not sit where its `package` says), on disk or open, as sorted
+     * paths; null when the source directory cannot be identified. The package comes from the AST, not the directory, so
      * nested source roots cannot misplace it.
      */
-    private fun packageFileSet(path: String, packageName: String): String? {
+    private fun packageFileSet(path: String, packageName: String): List<String>? {
         val directory = try {
             Path.of(path).parent?.let(::real)
         } catch (_: IllegalArgumentException) {
@@ -76,21 +77,29 @@ class CodeActionProvider(
                 }
             }
             .filter { it.parent in directories && isSourceFile(it) }
-        return (onDisk + open).map(Path::toString).toSortedSet().joinToString(",")
+        return (onDisk + open).map(Path::toString).toSortedSet().toList()
     }
 
     /** A missing package directory is empty; unexpected filesystem errors reach the query boundary. */
-    private fun listSources(directory: Path): List<Path> = try {
-        Files.list(directory).use { entries ->
-            entries.filter {
-                isSourceFile(it) && Files.readAttributes(it, BasicFileAttributes::class.java).isRegularFile
-            }
-                .map(::real).toList()
+    private fun listSources(directory: Path): List<Path> {
+        val entries = try {
+            Files.list(directory)
+        } catch (_: NoSuchFileException) {
+            return emptyList()
+        } catch (_: NotDirectoryException) {
+            return emptyList()
         }
-    } catch (_: NoSuchFileException) {
-        emptyList()
-    } catch (_: NotDirectoryException) {
-        emptyList()
+        return entries.use { paths -> paths.filter(::regularSource).map(::real).toList() }
+    }
+
+    private fun regularSource(path: Path): Boolean {
+        if (!isSourceFile(path)) return false
+        return try {
+            Files.readAttributes(path, BasicFileAttributes::class.java).isRegularFile
+        } catch (_: NoSuchFileException) {
+            // A dangling link or concurrently removed child contributes no source to this package.
+            false
+        }
     }
 
     private fun real(path: Path): Path = try {
@@ -109,14 +118,15 @@ class CodeActionProvider(
         } catch (_: IllegalArgumentException) {
             return null
         }
-        documentProvider.getSnapshot(file.toUri())?.let { return it.content }
+        return documentProvider.getSnapshot(file.toUri())?.content ?: readSourceFile(file)
+    }
+
+    private fun readSourceFile(file: Path): String? {
         return try {
             val attributes = Files.readAttributes(file, BasicFileAttributes::class.java)
             if (!attributes.isRegularFile || attributes.size() > MAX_SOURCE_BYTES) return null
             val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_SOURCE_BYTES + 1) }
-            if (bytes.size >
-                MAX_SOURCE_BYTES
-            ) {
+            if (bytes.size > MAX_SOURCE_BYTES) {
                 null
             } else {
                 Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
@@ -229,13 +239,17 @@ class CodeActionProvider(
             uri,
             request?.fingerprint ?: compilationService.workspaceManager.fingerprintFor(URI.create(uri)),
             compiled.parseResult.outcome,
-            readSource = { path ->
-                if (request == null) currentSourceText(path) else request.observe { currentSourceText(path) }
+            sources = SpockVerdictMemory.Sources(
+                read = { path ->
+                    if (request == null) currentSourceText(path) else request.observe { currentSourceText(path) }
+                },
+                listPackage = { path, name ->
+                    if (request == null) packageFileSet(path, name) else request.observe { packageFileSet(path, name) }
+                },
+            ),
+            compiler = SpockVerdictMemory.Compiler(compiled.referenceProducer, request) {
+                compiled.parseResult.compilationUnit.classLoader.nativeBinaryInputs()
             },
-            listPackage = { path, name ->
-                if (request == null) packageFileSet(path, name) else request.observe { packageFileSet(path, name) }
-            },
-            compiler = SpockVerdictMemory.Compiler(compiled.referenceProducer, request),
         )
         request?.verdicts = verdicts
         return SpockTableAction.createActions(

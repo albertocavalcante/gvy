@@ -5,6 +5,8 @@ package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.WorkspaceFileReaderSource
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.io.FileReaderSource
 import org.codehaus.groovy.control.io.URLReaderSource
@@ -43,6 +45,15 @@ class CompiledDocumentInputTest {
             Files.writeString(file, "\uFEFF" + text.replace("😀", "🙃"))
             assertFalse(selected.matchesCurrentText(null) {})
         }
+    }
+
+    @Test
+    fun `workspace file readers respect the configured non UTF-8 decoder`() {
+        val text = "// déjà vu\r\nclass Base {}\r\n"
+        val file = Files.writeString(root.resolve("Base.groovy"), text, Charsets.ISO_8859_1)
+        val config = CompilerConfiguration().apply { sourceEncoding = Charsets.ISO_8859_1.name() }
+        val selected = WorkspaceFileReaderSource(file.toFile(), config)
+        assertEquals(text, selected.reader.use { it.readText() })
     }
 
     @Test

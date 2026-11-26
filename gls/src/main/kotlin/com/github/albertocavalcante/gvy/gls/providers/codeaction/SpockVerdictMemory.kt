@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.ReferenceProducer
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
+import com.github.albertocavalcante.nativeapi.NativeBinaryInputs
 import com.github.albertocavalcante.nativeapi.NativeSourceMembership
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import groovyjarjarantlr4.v4.runtime.CharStreams
@@ -50,9 +51,8 @@ import java.util.IdentityHashMap
  * AST changes, and dropped when the document closes; a write from a request that started before the close
  * is discarded. Only strings and hashes are kept, never AST nodes beyond a weak reference to the last module.
  *
- * Known limits: the recalled verdict assumes the broken base still extends what its prelude says, so an edit
- * that changes spec identity outside the prelude, for example through a base's own base in a jar, is not
- * seen until the base compiles again. A remote prelude is recorded only when its text matches the physical
+ * The wire request revalidates the clean compiler's binary inputs before recalling its verdict.
+ * A remote prelude is recorded only when its text matches the physical
  * source read by the compiler. When a base's file stops lexing after the base's header,
  * only the class names before that point are known: a class added after the lex error, say one shadowing
  * `Specification`, cannot deny reuse until the file lexes again, so the recall may disagree with what the
@@ -70,7 +70,7 @@ internal class SpockVerdictMemory {
         val source: String?,
         val name: String,
         val prelude: String?,
-        val packageFiles: String?,
+        val packageFiles: List<String>?,
         val localDeclaration: String?,
         /** The base's package from the clean compile's AST; the broken base has no AST at recall. */
         val packageName: String = "",
@@ -82,6 +82,7 @@ internal class SpockVerdictMemory {
         val fingerprint: String,
         val environment: ReferenceProducer?,
         val membership: NativeSourceMembership?,
+        val binary: NativeBinaryInputs?,
         val wireQualified: Boolean,
         val module: WeakReference<ModuleNode>,
         val classes: Map<String, Remembered>,
@@ -92,23 +93,27 @@ internal class SpockVerdictMemory {
     private val records = HashMap<String, Record>()
     private val epochs = HashMap<String, Long>()
 
-    class Compiler(val producer: ReferenceProducer?, val wire: CodeActionRequest?)
+    class Compiler(
+        val producer: ReferenceProducer?,
+        val wire: CodeActionRequest?,
+        val binary: () -> NativeBinaryInputs? = { null },
+    )
 
-    /**
-     * Starts one request for [uri]. By a source's normalized path, [readSource] reads its current text and
-     * [listPackage] the current file set of its package (named as in the clean compile's AST); null from either
-     * denies reuse.
-     */
+    /** Missing source text or package listing denies historical verdict reuse. */
+    class Sources(val read: (String) -> String?, val listPackage: (source: String, packageName: String) -> List<String>?)
+
     fun access(
         uri: String,
         fingerprint: String,
         outcome: ParseOutcome,
         readSource: (String) -> String?,
-        listPackage: (source: String, packageName: String) -> String?,
-        compiler: Compiler = Compiler(null, null),
-    ): Access = synchronized(lock) {
-        Access(uri, fingerprint, outcome, readSource, listPackage, epochs[uri] ?: 0L, compiler)
-    }
+        listPackage: (source: String, packageName: String) -> List<String>?,
+    ): Access = access(uri, fingerprint, outcome, Sources(readSource, listPackage), Compiler(null, null))
+
+    fun access(uri: String, fingerprint: String, outcome: ParseOutcome, sources: Sources, compiler: Compiler): Access =
+        synchronized(lock) {
+            Access(uri, fingerprint, outcome, sources, epochs[uri] ?: 0L, compiler)
+        }
 
     fun forget(uri: String) {
         synchronized(lock) {
@@ -122,8 +127,7 @@ internal class SpockVerdictMemory {
         private val uri: String,
         private val fingerprint: String,
         private val outcome: ParseOutcome,
-        private val readSource: (String) -> String?,
-        private val listPackage: (source: String, packageName: String) -> String?,
+        private val sources: Sources,
         private val epoch: Long,
         private val compiler: Compiler,
     ) {
@@ -212,6 +216,7 @@ internal class SpockVerdictMemory {
                 fingerprint,
                 compiler.producer?.environment(),
                 compiler.wire?.consultedMembership,
+                compiler.binary(),
                 compiler.wire != null,
                 WeakReference(module),
                 classes,
@@ -227,7 +232,8 @@ internal class SpockVerdictMemory {
 
         private fun matchesMembership(record: Record): Boolean {
             val wire = compiler.wire ?: return true
-            return record.membership?.let(wire::canRecall) ?: true
+            val binary = record.binary ?: return false
+            return wire.canRecall(binary) && record.membership?.let(wire::canRecall) != false
         }
 
         private fun sameBaseDegraded(remembered: Remembered): Boolean {
@@ -255,11 +261,11 @@ internal class SpockVerdictMemory {
         }
 
         private fun remoteDifference(base: Base, source: String): (() -> String)? {
-            val prelude = readSource(source)?.let { preludeOf(it, base.name)?.hash }
+            val prelude = sources.read(source)?.let { preludeOf(it, base.name)?.hash }
             if (base.prelude == null || base.prelude != prelude) {
                 return { "prelude of ${base.name}: recorded=${base.prelude} current=$prelude" }
             }
-            val files = listPackage(source, base.packageName)
+            val files = sources.listPackage(source, base.packageName)
             val unchanged = base.packageFiles != null && base.packageFiles == files
             val describe = { "package files of ${base.name}: recorded=${base.packageFiles} current=$files" }
             return describe.takeUnless { unchanged }
@@ -286,11 +292,11 @@ internal class SpockVerdictMemory {
                             ?: owner?.context?.name?.let(::sourceKey)
                         val name = link.name
                         val written = link.getUnresolvedSuperClass(false)?.unresolvedName
-                        val text = sourceKey?.let(readSource)
+                        val text = sourceKey?.let(sources.read)
                         val prelude = text?.takeIf { input?.matchesText(it) == true }
                             ?.let { preludeOf(it, name) }?.takeIf { it.extendsMatches(written) }?.hash
                         val packageName = link.packageName.orEmpty()
-                        val files = sourceKey?.let { listPackage(it, packageName) }
+                        val files = sourceKey?.let { sources.listPackage(it, packageName) }
                         bases += Base(sourceKey, link.name, prelude, files, null, packageName)
                         link = link.superClass?.redirect()
                     }

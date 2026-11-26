@@ -17,10 +17,14 @@ class InProcessWorkerSession(private val parser: GroovyParserFacade) : WorkerSes
     override fun parse(request: ParseRequest): ParseResult = parser.parse(request)
 }
 
-class WorkerSessionManager(
+class WorkerSessionManager internal constructor(
     private val defaultSession: WorkerSession,
+    private val platformParent: Boolean,
     private val sessionFactory: (WorkerDescriptor) -> WorkerSession,
 ) {
+    constructor(defaultSession: WorkerSession, sessionFactory: (WorkerDescriptor) -> WorkerSession) :
+        this(defaultSession, true, sessionFactory)
+
     private val sessions = ConcurrentHashMap<String, WorkerSession>()
     private val activeSession = AtomicReference(defaultSession)
 
@@ -32,6 +36,8 @@ class WorkerSessionManager(
         val session = sessions.getOrPut(worker.id) { sessionFactory(worker) }
         activeSession.set(session)
     }
+
+    internal fun allowsIsolatedInputs(session: WorkerSession): Boolean = platformParent && session === defaultSession
 
     internal fun current(): WorkerSession = activeSession.get()
 

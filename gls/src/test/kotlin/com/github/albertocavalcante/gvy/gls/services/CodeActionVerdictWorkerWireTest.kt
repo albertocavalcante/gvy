@@ -20,12 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import org.eclipse.lsp4j.CodeActionContext
-import org.eclipse.lsp4j.CodeActionKind
-import org.eclipse.lsp4j.CodeActionParams
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
-import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -41,26 +35,12 @@ class CodeActionVerdictWorkerWireTest {
 
     @Test
     fun `a degraded parse cannot recall a verdict learned by another worker`() {
-        val src = Files.createDirectories(workspace.resolve("src"))
-        val base = src.resolve("BaseSpec.groovy")
+        val project = SpockTableWireProject(workspace)
+        val base = project.base
         val before = "import spock.lang.*\nabstract class BaseSpec extends Specification {}\n"
         Files.writeString(base, before)
-        val file = src.resolve("TableSpec.groovy")
-        val source = """
-            class TableSpec extends BaseSpec {
-                def "feature"() {
-                    expect:
-                    true
-                    where:
-                    a | b
-                    100|2
-                }
-            }
-        """.trimIndent()
-        Files.writeString(file, source)
-        val next = "$source\n// next version"
-        val uri = file.toUri()
-        val documents = DocumentProvider()
+        val documents = project.documents
+        val uri = project.uri
         val sessions = mutableListOf<WorkerSession>()
         val compilation = GroovyCompilationService(
             documentProvider = documents,
@@ -74,37 +54,16 @@ class CodeActionVerdictWorkerWireTest {
             },
         )
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val service = GroovyTextDocumentService(
-            scope,
-            compilation,
-            GroovyTextDocumentServiceOptions(
-                documentProvider = documents,
-                formatter = Formatter {
-                    it
-                },
-            ),
-        )
+        val service = project.service(scope, compilation)
         try {
-            fun jar(type: Class<*>) = Path.of(type.protectionDomain.codeSource.location.toURI())
-            compilation.updateWorkspaceModel(
-                workspace,
-                listOf(jar(spock.lang.Specification::class.java), jar(groovy.lang.GroovyObject::class.java)),
-                listOf(src),
-            )
-            compilation.onDocumentOpened(uri)
-            documents.put(uri, source, DocumentVersion.of(7))
-            runBlocking { compilation.compile(uri, source) }
-            val params = CodeActionParams(
-                TextDocumentIdentifier(uri.toString()),
-                Range(Position(5, 0), Position(6, 10)),
-                CodeActionContext(emptyList()).apply { only = listOf(CodeActionKind.RefactorRewrite) },
-            )
+            project.open(compilation)
+            val params = project.params
             val control = service.codeAction(params).get(10, TimeUnit.SECONDS)
             assertTrue(control.any { it.right.title == "Align Spock data table" })
             val learned = synchronized(sessions) { sessions.last() }
             Files.writeString(base, before.replace("{}", "{ void m( }"))
-            assertNotNull(documents.update(uri, next, DocumentVersion.of(8)))
-            runBlocking { compilation.compile(uri, next) }
+            assertNotNull(documents.update(uri, project.next, DocumentVersion.of(8)))
+            runBlocking { compilation.compile(uri, project.next) }
             fun assertDegraded() {
                 val compiled = assertNotNull(compilation.getCompiledSnapshot(uri))
                 assertTrue(compiled.parseResult.outcome.isDegraded)
@@ -126,7 +85,7 @@ class CodeActionVerdictWorkerWireTest {
                 connector = WorkerConnector.InProcess,
             )
             assertTrue(compilation.updateSelectedWorker(worker))
-            runBlocking { compilation.compile(uri, next) }
+            runBlocking { compilation.compile(uri, project.next) }
             assertTrue(synchronized(sessions) { sessions.last() !== learned }, "a different worker must parse")
             assertDegraded()
             assertEquals(false, hasTable(), "a different worker never established the clean verdict")

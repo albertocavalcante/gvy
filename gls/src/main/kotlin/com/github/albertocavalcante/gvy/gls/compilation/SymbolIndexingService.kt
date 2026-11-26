@@ -9,10 +9,11 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -26,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Service for indexing Groovy source files to extract symbols for resolution.
  *
- * Holds one [SymbolIndex] per file, stamped with a hash of the content it was built from. A caller that
+ * Holds one [SymbolIndex] per file, paired with the exact content it was built from. A caller that
  * has the current content ([ensureIndexed], [indexFile]) therefore never gets an index of older content,
  * and every compile - including a compile cache hit - can restore an index that is missing.
  *
@@ -62,10 +63,9 @@ class SymbolIndexingService(
         private const val INDEXING_BATCH_SIZE = 10
     }
 
-    /** An index together with the hash of the content it was built from, built before it is committed. */
-    internal class Prepared(val contentHash: String, val index: SymbolIndex) {
-        constructor(contentHash: String, astModel: GroovyAstModel) :
-            this(contentHash, SymbolIndex().buildFromVisitor(astModel))
+    /** An index together with the exact content it was built from, built before it is committed. */
+    internal class Prepared(content: String, val index: SymbolIndex, val inputs: RequestParseInputs? = null) {
+        val sourceText = IndexedSourceText(content)
 
         /** Classes this file declares; feeds the class-name lookup (#861). */
         val classes: List<Symbol.Class> by lazy {
@@ -87,7 +87,10 @@ class SymbolIndexingService(
     fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
 
     /** Builds the index of [astModel], compiled from [content], without storing it: see [install]. */
-    internal fun prepare(content: String, astModel: GroovyAstModel): Prepared = Prepared(contentHash(content), astModel)
+    internal fun prepare(content: String, astModel: GroovyAstModel, inputs: RequestParseInputs? = null): Prepared {
+        val index = if (inputs?.ownsSymbolAst == false) SymbolIndex() else SymbolIndex().buildFromVisitor(astModel)
+        return Prepared(content, index, inputs)
+    }
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
@@ -96,7 +99,7 @@ class SymbolIndexingService(
     }
 
     /** Whether the stored index of [uri] was built from exactly [snapshot]'s text; older text is not current. */
-    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.contentHash == snapshot.contentHash
+    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.sourceText?.content == snapshot.content
 
     /** Text known not to parse, so readiness checks skip it (#1344); removed with this file's index. */
     internal val unparseable = UnparseableTexts(ownership)
@@ -109,16 +112,16 @@ class SymbolIndexingService(
     internal fun ensureIndexed(
         ticket: ArtifactOwnership.Ticket,
         content: String,
+        inputs: RequestParseInputs? = null,
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
-        val hash = contentHash(content)
-        entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { stored ->
+        entries[ticket.uri]?.takeIf { it.sourceText.content == content }?.let { stored ->
             // A matching index answers only a current ticket, so a non-null result always means "committed or
             // already current for this ticket" (#1399)
             return stored.index.takeIf { ownership.isCurrent(ticket) }
         }
         val astModel = astModelProvider() ?: return null
-        val prepared = Prepared(hash, astModel)
+        val prepared = prepare(content, astModel, inputs)
         return prepared.index.takeIf { ownership.commit(ticket) { install(ticket.uri, prepared) } }
     }
 
@@ -141,21 +144,21 @@ class SymbolIndexingService(
     fun findClasses(query: ClassNameQuery): List<Symbol.Class> =
         classNames.files(query).sorted().flatMap { entries[it]?.classes.orEmpty() }.filter(query::matches)
 
-    internal class ClassNameSelection(val classes: List<Symbol.Class>, val sourceHashes: Map<URI, String>)
+    internal class ClassNameSelection(val classes: List<Symbol.Class>, val sources: Map<URI, IndexedSourceText>)
 
     internal fun captureClasses(query: ClassNameQuery): Pair<ClassNameSelection, () -> Boolean> = classNames.read {
-        val hashes = mutableMapOf<URI, String>()
+        val sources = mutableMapOf<URI, IndexedSourceText>()
         val matches = buildList {
             for (owner in classNames.files(query).sorted()) {
                 val entry = entries[owner] ?: continue
                 val declarations = entry.classes.filter { it.uri == owner && query.matches(it) }
                 if (declarations.isNotEmpty()) {
                     addAll(declarations)
-                    hashes[owner] = entry.contentHash
+                    sources[owner] = entry.sourceText
                 }
             }
         }
-        ClassNameSelection(matches, hashes)
+        ClassNameSelection(matches, sources)
     }
 
     /**
@@ -175,13 +178,46 @@ class SymbolIndexingService(
         if (isOpen(uri)) return entries[uri]?.index
         val path = UriPathConverter.toPath(uri) ?: return null
 
-        if (!Files.isRegularFile(path)) {
+        return if (!Files.isRegularFile(path)) {
             logger.debug { "File does not exist or is not a regular file: $uri" }
-            commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
-            return null
-        }
+            ownership.commitFromDisk(ticket, isOpen) {
+                classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes }
+            }
+            null
+        } else {
+            indexFileFromDisk(uri, path, logger, cached = { content ->
+                entries[uri]?.takeIf { it.sourceText.content == content }?.index
+            }) { content ->
+                // Parse the source code for indexing
+                // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
+                // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
+                val workspace = workspaceManager.current()
+                val worker = workerSessionManager.current()
+                val request = ParseRequest(
+                    uri = uri,
+                    content = content,
+                    classpath = workspace.classpath,
+                    sourceRoots = workspace.sourceRoots,
+                    workspaceSources = emptyList(), // Don't recurse during indexing
+                    locatorCandidates = buildLocatorCandidates(uri, path),
+                )
+                val parseResult = worker.parse(request)
 
-        return performIndexing(uri, path, ticket)
+                // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
+                val isolated = parseResult.classpathInputs == null && workerSessionManager.allowsIsolatedInputs(worker)
+                val inputs = RequestParseInputs(request, parseResult, isolated) { source ->
+                    source.workspace === workspace && workerSessionManager.current() === worker &&
+                        ownership.isCurrent(ticket) && source.buffer == null
+                }
+                val prepared = prepare(content, parseResult.astModel, inputs)
+                if (ownership.commitFromDisk(ticket, isOpen) { install(uri, prepared) }) {
+                    logger.debug { "Indexed workspace file: $uri" }
+                    prepared.index
+                } else {
+                    entries[uri]?.index
+                }
+            }
+        }
     }
 
     /**
@@ -199,7 +235,7 @@ class SymbolIndexingService(
 
         logger.info { "Starting workspace indexing: ${uris.size} files" }
         val total = uris.size
-        val indexed = AtomicInteger(0)
+        val progress = IndexingProgress(total, onProgress)
 
         // Index files in parallel batches
         // NOTE: Batch size balances parallelism with resource usage
@@ -209,13 +245,13 @@ class SymbolIndexingService(
                 batch.forEach { uri ->
                     @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
                     launch(ioDispatcher) {
-                        indexFileWithProgress(uri, indexed, total, onProgress)
+                        progress.track(uri) { indexFile(uri) }
                     }
                 }
             }
         }
 
-        logger.info { "Workspace indexing complete: ${indexed.get()}/$total files indexed" }
+        logger.info { "Workspace indexing complete: ${progress.completed}/$total files indexed" }
     }
 
     /**
@@ -238,7 +274,9 @@ class SymbolIndexingService(
     suspend fun refreshAfterClose(uri: URI, ticket: ArtifactOwnership.Ticket = ownership.begin(uri)) {
         unparseable.remove(uri) // the closed buffer's text is gone; a reopen starts over
         if (UriPathConverter.toPath(uri) == null) {
-            commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
+            ownership.commitFromDisk(ticket, isOpen) {
+                classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes }
+            }
         } else {
             indexFile(uri, ticket)
         }
@@ -255,86 +293,70 @@ class SymbolIndexingService(
 
     // Private helper methods
 
-    /**
-     * Applies a disk-derived [write] while [ticket] is current and no buffer is open, checked under the same
-     * fence that a reopen advances through: it never replaces or removes an open buffer's facts.
-     */
-    private fun commitFromDisk(ticket: ArtifactOwnership.Ticket, write: () -> Unit): Boolean {
-        var applied = false
-        ownership.commit(ticket) {
-            if (!isOpen(ticket.uri)) {
-                write()
-                applied = true
-            }
-        }
-        return applied
-    }
+    /** Snapshot the ordered rows and publication under the writer lock. Shadow resolution runs outside it. */
+    internal fun captureRows() = classNames.read { entries.toMap() }
 
-    /**
-     * Performs the actual indexing of a file.
-     * Catches all exceptions to prevent individual file failures from stopping batch indexing.
-     */
-    @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
-    private suspend fun performIndexing(uri: URI, path: Path, ticket: ArtifactOwnership.Ticket): SymbolIndex? = try {
-        val content = Files.readString(path)
-        val hash = contentHash(content)
-        entries[uri]?.takeIf { it.contentHash == hash }?.let {
-            logger.debug { "File already indexed: $uri" }
-            return it.index
-        }
+    internal fun hiddenRows() = shadowed()
 
-        // Parse the source code for indexing
-        // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
-        // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
+    internal fun captureEnvironment(): () -> Boolean {
         val workspace = workspaceManager.current()
-        val parseResult = workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = workspace.classpath,
-                sourceRoots = workspace.sourceRoots,
-                workspaceSources = emptyList(), // Don't recurse during indexing
-                locatorCandidates = buildLocatorCandidates(uri, path),
-            ),
-        )
-
-        // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
-        val prepared = Prepared(hash, parseResult.astModel)
-        if (commitFromDisk(ticket) { install(uri, prepared) }) {
-            logger.debug { "Indexed workspace file: $uri" }
-            prepared.index
-        } else {
-            entries[uri]?.index
+        val worker = workerSessionManager.current()
+        val inputsCurrent = ownership.captureInputGeneration()
+        return {
+            workspaceManager.current() === workspace && workerSessionManager.current() === worker && inputsCurrent()
         }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        logger.warn(e) { "Failed to index workspace file: $uri" }
-        null
     }
+}
 
-    /**
-     * Indexes a single file and reports progress atomically.
-     */
-    @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
-    private suspend fun indexFileWithProgress(
-        uri: URI,
-        indexed: AtomicInteger,
-        total: Int,
-        onProgress: (Int, Int) -> Unit,
-    ) {
+/** Read and index one regular file. Open-buffer checks and missing-file invalidation run outside this boundary. */
+private inline fun indexFileFromDisk(
+    uri: URI,
+    path: Path,
+    logger: KLogger,
+    cached: (String) -> SymbolIndex?,
+    index: (String) -> SymbolIndex?,
+): SymbolIndex? = runSuspendCatching {
+    val content = Files.readString(path)
+    cached(content)?.also { logger.debug { "File already indexed: $uri" } } ?: index(content)
+}.getOrElse { error ->
+    if (error !is Exception) throw error
+    logger.warn(error) { "Failed to index workspace file: $uri" }
+    null
+}
+
+/** Keep per-file progress and failure isolation local to this batch. */
+private class IndexingProgress(private val total: Int, private val onProgress: (Int, Int) -> Unit) {
+    private val indexed = AtomicInteger()
+    val completed: Int get() = indexed.get()
+
+    suspend fun track(uri: URI, index: suspend () -> Unit) {
         try {
-            indexFile(uri)
-        } catch (e: CancellationException) {
-            throw e // Re-throw cancellation
-        } catch (e: Exception) {
-            // Catch all to prevent batch failure from stopping entire indexing
-            logger.warn(e) { "Failed to index file: $uri" }
+            runSuspendCatching { index() }.onFailure { error ->
+                if (error !is Exception) throw error
+                indexingLogger.warn(error) { "Failed to index file: $uri" }
+            }
         } finally {
-            val currentCount = indexed.incrementAndGet()
-            onProgress(currentCount, total)
+            onProgress(indexed.incrementAndGet(), total)
         }
     }
+}
+
+private val indexingLogger = KotlinLogging.logger {}
+
+/** Commit a disk read inside the ticket fence, provided a buffer has not reopened the file. */
+private fun ArtifactOwnership.commitFromDisk(
+    ticket: ArtifactOwnership.Ticket,
+    isOpen: (URI) -> Boolean,
+    write: () -> Unit,
+): Boolean {
+    var applied = false
+    commit(ticket) {
+        if (!isOpen(ticket.uri)) {
+            write()
+            applied = true
+        }
+    }
+    return applied
 }
 
 /** Every spelling under which the parser may locate [uri]'s source. Pure; needs no service state. */

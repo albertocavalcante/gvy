@@ -40,7 +40,8 @@ class ParseResultAccessorTest {
     @BeforeTest
     fun setup() {
         cacheService = mockk(relaxed = true)
-        workerSessionManager = mockk(relaxed = true)
+        workerSessionManager =
+            mockk<WorkerSessionManager>(relaxed = true).apply { delegateCapturedSessionToParseStub() }
         workspaceManager = mockk(relaxed = true)
         symbolIndexer = mockk(relaxed = true)
 
@@ -322,8 +323,8 @@ class ParseResultAccessorTest {
 
         accessor.getValidParseResult(uri)
 
-        verify { cacheService.publish(any(), "cached source", freshResult, "fp-1", any()) }
-        verify { symbolIndexer.prepare("cached source", freshResult.astModel) }
+        verify { cacheService.publish(any(), "cached source", freshResult, "fp-1", any<RequestParseInputs>(), any()) }
+        verify { symbolIndexer.prepare("cached source", freshResult.astModel, any()) }
     }
 
     @Test

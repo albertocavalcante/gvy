@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.nativeapi.AttemptInputs
 import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import com.github.albertocavalcante.nativeapi.ExcludedSource
@@ -27,6 +28,8 @@ import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
+import com.github.albertocavalcante.nativeapi.WorkspaceFileReaderSource
+import com.github.albertocavalcante.nativeapi.nativeBinaryInputs
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
@@ -125,6 +128,25 @@ private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequ
 } finally {
     // The unit is cached with the result; don't keep the caller's job alive through it.
     compilationUnit.progressCallback = null
+}
+
+private fun compileWithSourceMembership(
+    classLoader: SdkFallbackGroovyClassLoader,
+    compilationUnit: CompilationUnit,
+    request: ParseRequest,
+    attempt: AttemptInputs,
+): CompileFailure? {
+    classLoader.beginSourceSearch()
+    return try {
+        compileCatching(compilationUnit, request)
+    } finally {
+        classLoader.finishSourceSearch()?.let { membership ->
+            attempt.membership = membership
+            compilationUnit.ast.modules.forEach { module ->
+                module.putNodeMetaData(NativeSourceMembership::class.java, membership)
+            }
+        }
+    }
 }
 
 /**
@@ -555,7 +577,8 @@ class GroovyParserFacade internal constructor(
     ): ParseResult {
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
-        val config = createCompilerConfiguration(allClasspath, annotationCapture)
+        val attempt = AttemptInputs()
+        val config = createCompilerConfiguration(allClasspath, annotationCapture, attempt)
 
         val classLoader = createClassLoader(request, lookup.filter, lookup.buffers)
 
@@ -568,16 +591,7 @@ class GroovyParserFacade internal constructor(
                 lookup.buffers,
             )
 
-            classLoader.beginSourceSearch(request.sourceRoots)
-            val failure = try {
-                compileCatching(compilationUnit, request)
-            } finally {
-                classLoader.finishSourceSearch()?.let { membership ->
-                    compilationUnit.ast.modules.forEach { module ->
-                        module.putNodeMetaData(NativeSourceMembership::class.java, membership)
-                    }
-                }
-            }
+            val failure = compileWithSourceMembership(classLoader, compilationUnit, request, attempt)
             observeCompilation?.invoke(compilationUnit)
             lookup.onCompileFailure(failure)
             val compilationFailed = failure != null
@@ -622,7 +636,10 @@ class GroovyParserFacade internal constructor(
                 outcome = ParseOutcome(requestedPhase = request.compilePhase),
                 sourceAnnotations = annotationCapture.finish(ast, compilationFailed),
                 classpathInputs = inputs.withCompilerSdk(classLoader.compilerSdk),
-            )
+            ).also {
+                val documentReader = sourceUnit.source as? DocumentReaderSource
+                documentReader?.attempts = attempt.finish(classLoader.nativeBinaryInputs())
+            }
         }
     }
 
@@ -677,6 +694,7 @@ class GroovyParserFacade internal constructor(
     private fun createCompilerConfiguration(
         classpath: List<Path>,
         annotationCapture: SourceAnnotationCapture,
+        attempt: AttemptInputs,
     ): CompilerConfiguration = CompilerConfiguration().apply {
         targetDirectory = null
         debug = true
@@ -684,7 +702,7 @@ class GroovyParserFacade internal constructor(
             CompilerConfiguration.GROOVYDOC to true,
         )
         sourceEncoding = "UTF-8"
-        pluginFactory = CompiledDocumentInput.capture(pluginFactory)
+        pluginFactory = CompiledDocumentInput.capture(pluginFactory, attempt)
 
         // Scan and disable external AST transformations to prevent classloader conflicts
         val externalTransforms = scanForAstTransformations(classpath)
@@ -799,7 +817,10 @@ class GroovyParserFacade internal constructor(
             .forEach { path ->
                 runCatching {
                     logger.trace { "Adding workspace source: $path" }
-                    compilationUnit.addSource(path.toFile())
+                    val source = WorkspaceFileReaderSource(path.toFile(), config)
+                    compilationUnit.addSource(
+                        SourceUnit(path.toString(), source, config, classLoader, compilationUnit.errorCollector),
+                    )
                 }.onFailure { throwable ->
                     logger.trace { "Failed adding workspace source $path: ${throwable.message}" }
                 }
@@ -920,6 +941,12 @@ private fun sourceIdentity(path: Path): Path =
 
 /** Metadata reads can decompile available bytecode, but a miss cannot poison the normal source-resolution cache. */
 internal open class NativeClassNodeResolver : ClassNodeResolver() {
+    final override fun findClassNode(name: String, compilationUnit: CompilationUnit): LookupResult? {
+        val loader = compilationUnit.classLoader as? SdkFallbackGroovyClassLoader
+            ?: return super.findClassNode(name, compilationUnit)
+        return loader.decompile(name) { super.findClassNode(name, compilationUnit) }
+    }
+
     final override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? {
         val loader = compilationUnit.classLoader as? SdkFallbackGroovyClassLoader
         if (loader?.binaryReads?.active != true) return resolveDuringCompile(name, compilationUnit)
@@ -927,7 +954,7 @@ internal open class NativeClassNodeResolver : ClassNodeResolver() {
         return when {
             cached === NO_CLASS -> null
             cached != null -> LookupResult(null, cached)
-            else -> super.findClassNode(name, compilationUnit)
+            else -> findClassNode(name, compilationUnit)
         }
     }
 

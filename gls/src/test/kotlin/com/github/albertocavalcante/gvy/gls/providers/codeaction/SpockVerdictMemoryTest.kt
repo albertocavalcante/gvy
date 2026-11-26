@@ -23,8 +23,8 @@ class SpockVerdictMemoryTest {
     private val baseKey = Path.of("/src/BaseSpec.groovy").toAbsolutePath().normalize().toString()
     private val spec = "class TableSpec extends BaseSpec {}\n"
     private val read: (String) -> String? = { key -> baseText.takeIf { key == baseKey } }
-    private val packageFiles: (String, String) -> String? = { key, _ ->
-        "BaseSpec.groovy,TableSpec.groovy".takeIf { key == baseKey }
+    private val packageFiles: (String, String) -> List<String>? = { key, _ ->
+        listOf("BaseSpec.groovy", "TableSpec.groovy").takeIf { key == baseKey }
     }
 
     private fun parse(withBase: Boolean): ParseResult = GroovyParserFacade(javaClass.classLoader).parse(
