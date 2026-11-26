@@ -129,6 +129,7 @@ class CompiledDocumentInput private constructor(
             val original = unit.source
             val uri = unit.inputDocumentUri()
             if (original is DocumentReaderSource) {
+                attempt.record(original)
                 return parser.buildAST(unit, loader, cst).also { module ->
                     val witness =
                         CompiledDocumentInput(original.documentUri, original, original.text.length.toLong(), null)

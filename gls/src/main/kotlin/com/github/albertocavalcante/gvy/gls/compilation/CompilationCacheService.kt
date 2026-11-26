@@ -61,6 +61,9 @@ class CompilationCacheService(
     fun getCachedWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? =
         cache.getWithContent(uri, configFingerprint)
 
+    internal fun getSnapshot(uri: URI, fingerprint: String): CompiledDocumentSnapshot? =
+        cache.getSnapshot(uri, fingerprint)
+
     /**
      * Stores a ParseResult (and [alongside], the other artifacts of the same compile) only while [ticket] is
      * current, atomically with respect to invalidation. Returns whether it was stored.
@@ -77,8 +80,14 @@ class CompilationCacheService(
         content: String,
         parseResult: ParseResult,
         configFingerprint: String,
+        inputs: RequestParseInputs? = null,
         alongside: () -> Unit = {},
-    ): Boolean = publishCompile(ticket, CachedParse(content, parseResult, configFingerprint, null), { true }, alongside)
+    ): Boolean = publishCompile(
+        ticket,
+        CachedParse(content, parseResult, configFingerprint, null, symbolInputs = inputs),
+        { true },
+        alongside,
+    )
 
     internal fun publishCompile(
         ticket: ArtifactOwnership.Ticket,

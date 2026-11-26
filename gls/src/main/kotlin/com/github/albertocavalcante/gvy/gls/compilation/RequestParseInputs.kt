@@ -8,7 +8,9 @@ import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.NativeArtifactStamp
 import com.github.albertocavalcante.nativeapi.NativeRetryInputs
 import com.github.albertocavalcante.nativeapi.NativeSourceMembership
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import com.github.albertocavalcante.nativeapi.matchesPrimaryInput
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
@@ -16,107 +18,108 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
-/** Receipts produced by this parser invocation, kept independently of its cache entry. */
-internal class RequestParseInputs(parsed: ParseResult) {
+/** Binds the selected worker's result to its own primary text, native inputs and producer freshness. */
+internal class RequestParseInputs(
+    request: ParseRequest,
+    parsed: ParseResult,
+    isolatedWorker: Boolean,
+    locatedDisk: Boolean = false,
+    private val producerCurrent: (SnapshotSource) -> Boolean,
+) {
+    private val uri = request.uri
+    private val content = request.content
     private val classpath = parsed.classpathInputs
-    private val main: CompiledDocumentInput?
-    private val companions: List<CompiledDocumentInput?>
-    private val memberships: List<NativeSourceMembership?>
-    private val mainModulePresent: Boolean
+    private val retry = NativeRetryInputs.of(parsed)
+    private val resolvedTypes = request.compilePhase >= Phases.SEMANTIC_ANALYSIS
     private val excluded = parsed.outcome.excludedSources.map { it.source }
     private val recovered = parsed.outcome.fallback != null || parsed.outcome.stubbedClasses.isNotEmpty()
-    private val retry = if (classpath == null) null else NativeRetryInputs.of(parsed)
-    private val resolvedTypes = parsed.outcome.requestedPhase >= Phases.SEMANTIC_ANALYSIS
+    private val isolated = isolatedWorker && !locatedDisk && request.classpath.isEmpty() &&
+        request.sourceRoots.isEmpty() && request.workspaceSources.isEmpty() && request.openSources.isEmpty()
+    private val matchingClasspath = classpath == null ||
+        (classpath.classpath == request.classpath && classpath.sourceRoots == request.sourceRoots)
+    private val primaryMatches = parsed.sourceUnit.matchesPrimaryInput(uri, content) &&
+        parsed.compilationUnit.iterator().asSequence().any { it === parsed.sourceUnit }
+    private val identifiedModules: Boolean
+    val ownsSymbolAst: Boolean
 
     init {
-        // Older/synthetic workers without native receipts can describe an isolated in-memory parse.
-        // They cannot establish physical source or dependency inputs for a workspace parse.
-        val modules = if (classpath == null) emptyList() else parsed.compilationUnit.ast.modules
+        val modules = parsed.compilationUnit.ast.modules
         val primary = modules.firstOrNull { it.context === parsed.sourceUnit }
-        mainModulePresent = primary != null
-        main = primary?.let(CompiledDocumentInput::of)
+        ownsSymbolAst = primaryMatches && primary != null && parsed.ast === primary && primary === parsed.sourceUnit.ast
         val synthetic = parsed.outcome.stubbedClasses.mapTo(mutableSetOf(), ::stubSourceName)
-        companions = modules.filterNot { it.context === parsed.sourceUnit || it.context?.name in synthetic }
-            .map(CompiledDocumentInput::of)
-        memberships = modules.map(NativeSourceMembership::of).distinct()
+        identifiedModules = if (retry == null && classpath == null) {
+            modules.all { it === primary }
+        } else {
+            modules.all { module ->
+                val identified = module.context?.name in synthetic || CompiledDocumentInput.of(module) != null
+                identified && retry?.owns(module) == true
+            }
+        }
     }
 
-    fun isCurrent(source: SnapshotSource, content: String, checkCancelled: () -> Unit): Boolean {
-        requireIdentifiedWorkspace(source)
+    fun isCurrent(source: SnapshotSource, checkCancelled: () -> Unit): Boolean {
         checkCancelled()
-        if (!discardedInputsCurrent(source, checkCancelled)) return false
-        requirePrimarySource(source, content)
-        return lookupsCurrent(checkCancelled) && companionsCurrent(source, checkCancelled) &&
-            classpathCurrent(checkCancelled)
-    }
-
-    private fun requireIdentifiedWorkspace(source: SnapshotSource) {
-        if (classpath != null) return
-        val workspace = source.workspace
-        val noPhysicalInputs = workspace.classpath.isEmpty() && workspace.sourceRoots.isEmpty() &&
-            workspace.sources.isEmpty()
-        if (!noPhysicalInputs || source.documents.keys.any { it != source.uri }) {
-            unavailable("Compiler did not identify its physical inputs")
+        if (source.uri != uri || !producerCurrent(source)) return false
+        if (classpath == null && (!isolated || retry?.isolated(uri) == false)) {
+            unavailableParseInputs("Compiler did not identify its physical inputs")
         }
-    }
-
-    private fun requirePrimarySource(source: SnapshotSource, content: String) {
-        if (mainModulePresent && main == null) unavailable("Compiler did not identify its primary source")
-        if (main != null && (main.uri != source.uri || !main.matchesText(content))) {
-            unavailable("Requested source does not belong to this parse")
+        if (!matchingClasspath || !primaryMatches || !identifiedModules) {
+            unavailableParseInputs("Compiler sources or classpath do not belong to this invocation")
         }
-    }
-
-    private fun lookupsCurrent(checkCancelled: () -> Unit): Boolean = memberships.all { membership ->
-        val observed = membership ?: unavailable("Compiler did not identify its source lookups")
-        requireObservable(observed.check(checkCancelled), "Source lookup could not be verified")
-    }
-
-    private fun companionsCurrent(source: SnapshotSource, checkCancelled: () -> Unit): Boolean = companions.all {
-        val input = it ?: unavailable("Compiler did not identify a companion source")
-        input.matchesCurrentText(source.documents[input.uri]?.content, checkCancelled)
+        return attemptsCurrent(source, checkCancelled) && classpathCurrent(checkCancelled)
     }
 
     private fun classpathCurrent(checkCancelled: () -> Unit): Boolean {
         if (classpath == null || !resolvedTypes) return true
         return classpath.classpath.withIndex().all { (index, path) ->
             checkCancelled()
-            val expected = classpath.classpathStamps[index] ?: unavailable("Unobserved classpath entry: $path")
+            val expected = classpath.classpathStamps[index]
+                ?: unavailableParseInputs("Unobserved classpath entry: $path")
             val actual = NativeArtifactStamp.observe(path, checkCancelled = checkCancelled)
-                ?: unavailable("Classpath entry could not be verified: $path")
+                ?: unavailableParseInputs("Classpath entry could not be verified: $path")
             actual == expected
         }
     }
 
-    private fun discardedInputsCurrent(source: SnapshotSource, checkCancelled: () -> Unit): Boolean {
-        if (excluded.isEmpty() && !recovered && retry?.hasDiscarded != true) return true
-        val open = source.documents.keys.mapTo(mutableSetOf()) { it.toString() }
-        val excludedDisk = excluded.filterNot(open::contains).mapTo(mutableSetOf(), ::excludedPath)
+    private fun attemptsCurrent(source: SnapshotSource, checkCancelled: () -> Unit): Boolean {
+        val excludedDisk = if (excluded.isEmpty()) {
+            emptySet()
+        } else {
+            val open = source.documents.keys.mapTo(mutableSetOf()) { it.toString() }
+            excluded.filterNot(open::contains).mapTo(mutableSetOf(), ::excludedPath)
+        }
         val physicalSearch = classpath?.sourceRoots?.isNotEmpty() == true || classpath?.classpath?.isNotEmpty() == true
         val history = retry
         val requiresHistory = excludedDisk.isNotEmpty() || (recovered && physicalSearch)
         if (requiresHistory && history?.hasDiscarded != true) {
-            unavailable("Earlier compiler inputs could not be verified")
+            unavailableParseInputs("Earlier compiler inputs could not be verified")
         }
-        if (history == null) return true
-        val status = history.check(excludedDisk, { source.documents[it]?.content }, checkCancelled)
-        return requireObservable(status, "Earlier compiler inputs could not be verified")
+        if (history == null) {
+            if (classpath != null) unavailableParseInputs("Compiler did not identify its source reads")
+            return true
+        }
+        val status = history.check(
+            excludedDisk,
+            { if (it == uri) content else source.documents[it]?.content },
+            checkCancelled,
+        )
+        return requireObservable(status, "Compiler source reads could not be verified")
     }
 
     private fun excludedPath(name: String): Path = try {
         val path = Path.of(name)
-        if (!path.isAbsolute) unavailable("Compiler did not identify an excluded disk source")
+        if (!path.isAbsolute) unavailableParseInputs("Compiler did not identify an excluded disk source")
         path.normalize()
     } catch (_: InvalidPathException) {
-        unavailable("Compiler did not identify an excluded disk source")
+        unavailableParseInputs("Compiler did not identify an excluded disk source")
     }
 
     private fun requireObservable(status: NativeSourceMembership.Status, message: String): Boolean = when (status) {
         NativeSourceMembership.Status.CURRENT -> true
         NativeSourceMembership.Status.CHANGED -> false
-        NativeSourceMembership.Status.UNAVAILABLE -> unavailable(message)
+        NativeSourceMembership.Status.UNAVAILABLE -> unavailableParseInputs(message)
     }
-
-    private fun unavailable(message: String): Nothing =
-        throw ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, message, null))
 }
+
+internal fun unavailableParseInputs(message: String): Nothing =
+    throw ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, message, null))

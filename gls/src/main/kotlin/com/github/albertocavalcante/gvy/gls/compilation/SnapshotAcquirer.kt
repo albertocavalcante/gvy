@@ -27,12 +27,13 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 /** The exact parse and the producer whose inputs must still be current to answer a query from it. */
 internal class OwnedSnapshot(val capture: CapturedCompilation, val snapshot: CompiledDocumentSnapshot) {
     fun inputsCurrent(request: CapturedCompilation, checkCancelled: () -> Unit): Boolean =
-        RequestParseInputs(snapshot.parseResult).isCurrent(request.source, request.content, checkCancelled)
+        snapshot.requireParseInputs().isCurrent(request.source, checkCancelled)
 
     fun outcome(): SnapshotAcquisition {
         if (!capture.isCurrent()) return SnapshotAcquisition.Stale
@@ -155,7 +156,7 @@ internal class CapturedCompilation(
     private val workspaceManager = dependencies.workspaceManager
     private val session = dependencies.workerSessionManager.current()
     val context = resolvedContext ?: workspaceManager.compileContextFor(uri, content, workspace).captureClasspath()
-    private val sources = selectSources(uri, workspace)
+    private val sources = Collections.unmodifiableList(selectSources(uri, workspace))
     private val locator = dependencies.symbolIndexer.classLocator(sourcePath)
     private val lookups = ConcurrentHashMap<String, List<Path>>()
 
@@ -175,7 +176,9 @@ internal class CapturedCompilation(
     )
 
     /** Repeated lookups see their first answer, including a miss. Only names this worker asks for are retained. */
-    private fun locate(name: String): List<Path> = lookups.computeIfAbsent(name, locator)
+    private fun locate(name: String): List<Path> = lookups.computeIfAbsent(name) {
+        Collections.unmodifiableList(locator(it).toList())
+    }
 
     /** Constant-time check under the ownership fence, including watched source changes outside the selected list. */
     fun ticketsCurrent(): Boolean = ownership.inputsCurrent(ticket)
@@ -202,7 +205,7 @@ internal class CapturedCompilation(
     fun canShare(producer: CapturedCompilation): Boolean =
         source.matches(producer.source) && sameCompilerInputs(producer) && producer.isCurrent()
 
-    suspend fun parse(): ParseResult {
+    suspend fun parse(): CompiledDocumentSnapshot {
         val job = currentCoroutineContext()
         job.ensureActive()
         val request = ParseRequest(
@@ -211,14 +214,37 @@ internal class CapturedCompilation(
             classpath = context.classpath,
             sourceRoots = workspace.sourceRoots,
             workspaceSources = sources,
-            openSources = source.documents.filterKeys { it != uri }.mapValues { it.value.content },
+            openSources = Collections.unmodifiableMap(
+                source.documents.filterKeys { it != uri }.mapValues { it.value.content },
+            ),
             locatorCandidates = compilationLocatorCandidates(uri, sourcePath),
             compilePhase = phase,
             parseMode = mode,
             checkCancelled = { job.ensureActive() },
             workspaceClassLocator = if (mode == ParseMode.MINIMAL) ::locate else null,
         )
-        return session.parse(request)
+        val parsed = session.parse(request)
+        var transferred = false
+        try {
+            val producer = referenceProducer(parsed)
+            val contextAtCall = context
+            val select = selectSources
+            val target = request.uri
+            val text = request.content
+            val inputs = RequestParseInputs(
+                request,
+                parsed,
+                parsed.classpathInputs == null && dependencies.workerSessionManager.allowsIsolatedInputs(session),
+                locatedDisk = lookups.values.any { it.isNotEmpty() },
+            ) { current ->
+                producer.isCurrent(current, target, text, select, contextAtCall)
+            }
+            val held = CompiledDocumentSnapshot(content, parsed, producer, sourceIdentity, inputs)
+            transferred = true
+            return held
+        } finally {
+            if (!transferred) parsed.compilationUnit.classLoader.close()
+        }
     }
 }
 
@@ -269,16 +295,10 @@ internal class SnapshotAcquirer(
             val producer = CapturedCompilation(selectSources, source, content, options.phase, options.mode)
             captured = producer
             if (!caller.inputsCurrent { producer.isCurrent() && sourceCurrent() }) return SnapshotQuery.Stale
-            val parsed = producer.parse()
-            parsed.compilationUnit.classLoader.use {
-                if (options.inspectCompilerInputs) physical = RequestParseInputs(parsed)
-                val held = CompiledDocumentSnapshot(
-                    content,
-                    parsed,
-                    referenceProducer = producer.referenceProducer(parsed),
-                    sourceIdentity = producer.sourceIdentity,
-                )
-                val partial = parsed.isPartialAt(options.phase)
+            val held = producer.parse()
+            held.parseResult.compilationUnit.classLoader.use {
+                if (options.inspectCompilerInputs) physical = held.requireParseInputs()
+                val partial = held.parseResult.isPartialAt(options.phase)
                 queryCurrentSnapshot({ producer.isCurrent() && sourceCurrent() }, partial) { query(held) }
             }
         }
@@ -286,7 +306,7 @@ internal class SnapshotAcquirer(
         // after any effectful producer checks, including when the worker or the consumer failed.
         return runSuspendCatching {
             val qualified = deliveryInputsCurrent(::sourceCurrent) {
-                physical?.isCurrent(source, content, caller::ensureActive) != false && captured?.isCurrent() != false
+                physical?.isCurrent(source, caller::ensureActive) != false && captured?.isCurrent() != false
             }
             if (qualified) {
                 answer.getOrThrow()
@@ -313,8 +333,8 @@ internal class SnapshotAcquirer(
         return when (acquisition) {
             is SnapshotAcquisition.Available -> {
                 val held = acquisition.snapshot
-                val physical = RequestParseInputs(held.parseResult)
-                fun qualified() = physical.isCurrent(source, content, caller::ensureActive) &&
+                val physical = held.requireParseInputs()
+                fun qualified() = physical.isCurrent(source, caller::ensureActive) &&
                     acquisition.isCurrent() && current()
                 queryCurrentSnapshot(::qualified, partial = acquisition is SnapshotAcquisition.Partial) {
                     query(dependencies.resultMapper.map(held.parseResult, content))
@@ -490,7 +510,7 @@ internal class SnapshotAcquirer(
 
     private suspend fun compile(capture: CapturedCompilation, previous: OwnedSnapshot?): SnapshotAcquisition {
         if (!capture.isCurrent()) return SnapshotAcquisition.Stale
-        val result = runSuspendCatching { capture.parse() }.getOrElse { error ->
+        val snapshot = runSuspendCatching { capture.parse() }.getOrElse { error ->
             when (error) {
                 is IOException -> return failure(capture, error)
                 is CompilationFailedException -> return failure(capture, error)
@@ -499,12 +519,6 @@ internal class SnapshotAcquirer(
                 else -> throw error
             }
         }
-        val snapshot = CompiledDocumentSnapshot(
-            capture.content,
-            result,
-            referenceProducer = capture.referenceProducer(result),
-            sourceIdentity = capture.sourceIdentity,
-        )
         return publish(OwnedSnapshot(capture, snapshot), previous)
     }
 

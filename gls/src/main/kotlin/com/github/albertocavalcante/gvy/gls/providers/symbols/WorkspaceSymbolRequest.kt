@@ -85,7 +85,7 @@ internal class WorkspaceSymbolRequest(
         val inputs = row.inputs
         if (inputs != null) {
             val current = {
-                rowCurrent(source, row.content, inputs.physical, checkCancelled) { inputs.producerCurrent(source) }
+                rowCurrent(source, row.content, inputs, checkCancelled)
             }
             if (current()) {
                 checks.add(current)
@@ -97,13 +97,17 @@ internal class WorkspaceSymbolRequest(
         return when (val acquisition = compilation.acquireSymbolRow(source)) {
             is SnapshotAcquisition.Available -> {
                 val held = acquisition.snapshot
-                val physical = RequestParseInputs(held.parseResult)
+                val physical = held.requireParseInputs()
                 val current = {
-                    rowCurrent(source, held.sourceText, physical, checkCancelled, acquisition.isCurrent)
+                    rowCurrent(source, held.sourceText, physical, checkCancelled) && acquisition.isCurrent()
                 }
                 if (!current()) changed()
                 checks.add(current)
-                Row(held.sourceText, SymbolIndex().buildFromVisitor(held.parseResult.astModel))
+                if (physical.ownsSymbolAst) {
+                    Row(held.sourceText, SymbolIndex().buildFromVisitor(held.parseResult.astModel))
+                } else {
+                    null
+                }
             }
             SnapshotAcquisition.Missing -> {
                 checks.add { currentText(source) == null && source.isCurrent() }
@@ -119,11 +123,10 @@ internal class WorkspaceSymbolRequest(
         text: String,
         inputs: RequestParseInputs,
         checkCancelled: () -> Unit,
-        producerCurrent: () -> Boolean,
     ): Boolean {
-        val contentCurrent = currentText(source) == text && inputs.isCurrent(source, text, checkCancelled)
+        val contentCurrent = currentText(source) == text && inputs.isCurrent(source, checkCancelled)
         if (!contentCurrent) return false
-        return producerCurrent() && source.workerCurrent() && source.isCurrent()
+        return source.workerCurrent() && source.isCurrent()
     }
 
     private fun currentText(source: SnapshotSource): String? {

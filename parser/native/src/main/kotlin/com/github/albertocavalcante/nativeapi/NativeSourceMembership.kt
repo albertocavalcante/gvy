@@ -19,6 +19,8 @@ class NativeSourceMembership internal constructor(
     private val files: Map<Path, FileState>?,
     private val retiredDuringLookup: Boolean,
 ) {
+    internal val isolated: Boolean get() = files?.isEmpty() == true && !retiredDuringLookup
+
     enum class Status { CURRENT, CHANGED, UNAVAILABLE }
 
     fun check(checkCancelled: () -> Unit): Status {

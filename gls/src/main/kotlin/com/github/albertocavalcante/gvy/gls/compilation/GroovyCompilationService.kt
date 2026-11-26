@@ -87,6 +87,7 @@ class GroovyCompilationService internal constructor(
     private val parser = GroovyParserFacade(parentClassLoader)
     private val workerSessionManager = WorkerSessionManager(
         defaultSession = workerSessionDecorator(InProcessWorkerSession(parser)),
+        platformParent = parentClassLoader === ClassLoader.getPlatformClassLoader(),
         sessionFactory = { workerSessionDecorator(InProcessWorkerSession(parser)) },
     )
 
@@ -611,8 +612,7 @@ class GroovyCompilationService internal constructor(
 
     /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
-        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
-            ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+        cacheService.getSnapshot(uri, workspaceManager.fingerprintFor(uri))
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)

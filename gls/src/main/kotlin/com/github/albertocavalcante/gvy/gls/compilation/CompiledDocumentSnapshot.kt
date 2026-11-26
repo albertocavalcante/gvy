@@ -18,7 +18,10 @@ internal data class CompiledDocumentSnapshot(
     val parseResult: ParseResult,
     val referenceProducer: ReferenceProducer? = null,
     val sourceIdentity: String? = null,
-)
+    private val parseInputs: RequestParseInputs? = null,
+) {
+    fun requireParseInputs(): RequestParseInputs = parseInputs ?: unavailableParseInputs("Missing worker invocation")
+}
 
 /** Result of acquiring source and parser facts under one ownership fence. */
 internal sealed interface SnapshotAcquisition {

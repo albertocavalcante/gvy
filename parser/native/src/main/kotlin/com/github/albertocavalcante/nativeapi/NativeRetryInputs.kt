@@ -3,16 +3,29 @@
 
 package com.github.albertocavalcante.nativeapi
 
+import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
 import java.nio.file.Path
 
-/** The physical reads and lookups made before recovery replaced a compiler unit and closed its loader. */
+/** Detached reads and lookups of the returned compiler unit and every unit replaced during recovery. */
 class NativeRetryInputs internal constructor(
     private val discarded: List<Attempt>,
     private val latest: Attempt,
     private val complete: Boolean,
 ) {
-    internal class Attempt(val reads: List<CompiledDocumentInput.DiskRead?>, val membership: NativeSourceMembership?)
+    internal class Attempt(
+        val reads: List<CompiledDocumentInput.DiskRead?>,
+        val documents: List<Pair<URI, String>>,
+        val membership: NativeSourceMembership?,
+    ) {
+        fun isolated(uri: URI): Boolean =
+            reads.isEmpty() && documents.all { it.first == uri } && membership?.isolated == true
+    }
+
+    fun isolated(uri: URI): Boolean = complete && latest.isolated(uri) && discarded.all { it.isolated(uri) }
+
+    fun owns(module: ModuleNode): Boolean =
+        latest.membership != null && NativeSourceMembership.of(module) === latest.membership
 
     val hasDiscarded: Boolean get() = discarded.isNotEmpty()
 
@@ -30,7 +43,7 @@ class NativeRetryInputs internal constructor(
             if (status != NativeSourceMembership.Status.CURRENT) return status
         }
         return if (outstanding.isEmpty()) {
-            NativeSourceMembership.Status.CURRENT
+            latest.checkInputs(outstanding, editorText, checkCancelled)
         } else {
             NativeSourceMembership.Status.UNAVAILABLE
         }
@@ -41,6 +54,10 @@ class NativeRetryInputs internal constructor(
         editorText: (URI) -> String?,
         checkCancelled: () -> Unit,
     ): NativeSourceMembership.Status {
+        for ((uri, text) in documents) {
+            checkCancelled()
+            if (editorText(uri) != text) return NativeSourceMembership.Status.CHANGED
+        }
         for (read in reads) {
             checkCancelled()
             if (read == null) return NativeSourceMembership.Status.UNAVAILABLE
@@ -68,6 +85,7 @@ class NativeRetryInputs internal constructor(
 /** Per compiler unit, detached before publication. Compiler callbacks cannot append to a finished receipt. */
 internal class AttemptInputs {
     private val reads = mutableListOf<CompiledDocumentInput.DiskRead?>()
+    private val documents = mutableListOf<Pair<URI, String>>()
     private var complete = true
     var membership: NativeSourceMembership? = null
 
@@ -77,10 +95,16 @@ internal class AttemptInputs {
     }
 
     @Synchronized
+    fun record(document: DocumentReaderSource) {
+        if (complete) documents.add(document.documentUri to document.text)
+    }
+
+    @Synchronized
     fun finish(): NativeRetryInputs {
         complete = false
-        val attempt = NativeRetryInputs.Attempt(reads.toList(), membership)
+        val attempt = NativeRetryInputs.Attempt(reads.toList(), documents.toList(), membership)
         reads.clear()
+        documents.clear()
         membership = null
         return NativeRetryInputs(emptyList(), attempt, true)
     }

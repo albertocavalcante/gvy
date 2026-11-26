@@ -94,11 +94,13 @@ internal class ReferenceProducer(
         uri: URI,
         content: String,
         selectSources: (URI, WorkspaceModel) -> List<Path>,
+        expectedContext: DocumentCompileContext? = null,
     ): Boolean {
         if (sources?.isCurrent(source, uri, selectSources(uri, source.workspace)) != true) return false
         val dependencies = source.dependencies
         val context = dependencies.workspaceManager.compileContextFor(uri, content, source.workspace)
-        return matches(context.classpath, dependencies.workerSessionManager.current())
+        return (expectedContext == null || context == expectedContext) &&
+            matches(context.classpath, dependencies.workerSessionManager.current())
     }
 }
 

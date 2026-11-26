@@ -209,7 +209,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                     val inputs = cached.symbolInputs
                     val indexed =
                         symbolIndexer.ensureIndexed(claim.ticket, content, inputs) { cachedResult.astModel } != null
-                    cachedResult.ast?.takeIf { indexed }?.let {
+                    cachedResult.ast?.takeIf { indexed && inputs?.ownsSymbolAst != false }?.let {
                         publication?.let { token ->
                             semanticIndexer?.publish(
                                 token,
@@ -253,7 +253,8 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
             parseMode,
             context,
         )
-        val parseResult = capture.parse()
+        val held = capture.parse()
+        val parseResult = held.parseResult
 
         logIfDegraded(uri, parseResult)
 
@@ -264,12 +265,8 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
             // index, as one commit that a retired compile cannot make (#1184)
             val outcome = parseResult.outcome
             val fallback = capture.takeIf { outcome.typesUnresolved && outcome.fallback != null }
-            val producer = capture.referenceProducer(parseResult)
-            val contextForSymbols = capture.context
-            val inputs = SymbolIndexingService.Inputs(parseResult) { request ->
-                producer.isCurrent(request, uri, content, ::referenceSources) &&
-                    workspaceManager.compileContextFor(uri, content, request.workspace) == contextForSymbols
-            }
+            val producer = checkNotNull(held.referenceProducer)
+            val inputs = held.requireParseInputs()
             val symbols = symbolIndexer.prepare(content, parseResult.astModel, inputs)
             val entry = CachedParse(
                 content,
@@ -284,7 +281,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                 symbolIndexer.install(uri, symbols)
             }
 
-            if (published) {
+            if (published && inputs.ownsSymbolAst) {
                 // Semantic document for cross-file resolution
                 claim.publication?.let {
                     semanticIndexer?.publish(

@@ -20,7 +20,7 @@ internal data class CachedParse(
     val fallback: CapturedCompilation? = null,
     val referenceProducer: ReferenceProducer? = null,
     /** A restored symbol index must retain the original parse window, including its selected target. */
-    val symbolInputs: SymbolIndexingService.Inputs? = null,
+    val symbolInputs: RequestParseInputs? = null,
 )
 
 /** Context-owned and legacy parses share a single LRU budget, but only legacy publication writes global indexes. */
@@ -101,6 +101,16 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         val parsed = value.snapshot.parseResult
         store(key, CachedParse(capture.content, parsed, capture.context.fingerprint, capture.mode, value))
         true
+    }
+
+    internal fun getSnapshot(uri: URI, fingerprint: String): CompiledDocumentSnapshot? = synchronized(lock) {
+        val entry = entries[CacheKey(uri)]?.takeIf { it.configFingerprint == fingerprint } ?: return@synchronized null
+        CompiledDocumentSnapshot(
+            entry.content,
+            entry.parseResult,
+            entry.referenceProducer,
+            parseInputs = entry.symbolInputs,
+        )
     }
 
     /**

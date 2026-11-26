@@ -162,30 +162,32 @@ class ParseResultAccessor @JvmOverloads constructor(
             }
             val worker = workerSessionManager.current()
             val context = workspaceManager.compileContextFor(uri, content, workspace).captureClasspath()
-            val parseResult = worker.parse(
-                ParseRequest(
-                    uri = uri,
-                    content = content,
-                    classpath = context.classpath,
-                    // Don't add source roots - prevents classloader from finding .groovy file
-                    sourceRoots = emptyList(),
-                    // Don't add other sources - causes Script fallback
-                    workspaceSources = emptyList(),
-                    locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                    compilePhase = Phases.CONVERSION,
-                ),
+            val request = ParseRequest(
+                uri = uri,
+                content = content,
+                classpath = context.classpath,
+                // Don't add source roots - prevents classloader from finding .groovy file
+                sourceRoots = emptyList(),
+                // Don't add other sources - causes Script fallback
+                workspaceSources = emptyList(),
+                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                compilePhase = Phases.CONVERSION,
             )
+            val parseResult = worker.parse(request)
 
             // Replace the cached result and its symbol index together, unless they were retired meanwhile
             if (parseResult.ast != null) {
-                val inputs = SymbolIndexingService.Inputs(parseResult) { source ->
+                val isolated = parseResult.classpathInputs == null && workerSessionManager.allowsIsolatedInputs(worker)
+                val inputs = RequestParseInputs(request, parseResult, isolated) { source ->
                     source.workspace === workspace && cacheService.ownership.isCurrent(ticket) &&
                         workerSessionManager.current() === worker &&
                         source.buffer?.snapshot?.sourceIdentity == original &&
                         workspaceManager.compileContextFor(uri, content, workspace) == context
                 }
                 val symbols = symbolIndexer.prepare(content, parseResult.astModel, inputs)
-                cacheService.publish(ticket, content, parseResult, fingerprint) { symbolIndexer.install(uri, symbols) }
+                cacheService.publish(ticket, content, parseResult, fingerprint, inputs) {
+                    symbolIndexer.install(uri, symbols)
+                }
             }
             logger.info {
                 "Re-parsed $uri at CONVERSION: classes=${

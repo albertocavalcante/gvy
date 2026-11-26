@@ -52,3 +52,25 @@ fun SourceUnit.inputDocumentUri(): URI? = when (val reader = source) {
     is URLReaderSource -> reader.getURI()?.takeIf { it.scheme.equals("file", ignoreCase = true) }
     else -> null
 }
+
+/** The primary reader is available even when syntax errors prevented creation of its module. */
+fun SourceUnit.matchesPrimaryInput(uri: URI, content: String): Boolean {
+    val input = source
+    if (input is DocumentReaderSource) return input.documentUri == uri && input.text == content
+    // Older in-memory workers use Groovy's unmodified string reader and name the unit from the request.
+    if (input?.javaClass != StringReaderSource::class.java || name != (uri.path ?: uri.toString())) return false
+    return input.reader.use { reader ->
+        val buffer = CharArray(DEFAULT_BUFFER_SIZE)
+        var offset = 0
+        var count = reader.read(buffer)
+        while (count >= 0) {
+            if (count > content.length - offset) return false
+            for (index in 0 until count) {
+                if (buffer[index] != content[offset + index]) return false
+            }
+            offset += count
+            count = reader.read(buffer)
+        }
+        offset == content.length
+    }
+}

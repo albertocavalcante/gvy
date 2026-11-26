@@ -5,7 +5,6 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.compilation.RequestParseInputs
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
@@ -148,10 +147,10 @@ internal class RenameScanWitness(
         sources.observePublication { acquired.isCurrent() && source.workerCurrent() && source.isCurrent() }
         val answer = acquired.query { held ->
             if (held.sourceText != text) sources.changed(source.uri)
-            val physical = RequestParseInputs(held.parseResult)
+            val physical = held.requireParseInputs()
             sources.observe {
                 val caller = currentCoroutineContext()
-                physical.isCurrent(source, text, caller::ensureActive)
+                physical.isCurrent(source, caller::ensureActive)
             }
             val module = checkNotNull(held.parseResult.ast)
             compiled.referenceProducer?.sameEnvironment(held.referenceProducer) == true &&

@@ -12,7 +12,6 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
-import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
@@ -65,17 +64,13 @@ class SymbolIndexingService(
     }
 
     /** An index together with the hash of the content it was built from, built before it is committed. */
-    internal class Prepared(val content: String, val index: SymbolIndex, val inputs: Inputs? = null) {
+    internal class Prepared(val content: String, val index: SymbolIndex, val inputs: RequestParseInputs? = null) {
         val contentHash: String = contentHash(content)
 
         /** Classes this file declares; feeds the class-name lookup (#861). */
         val classes: List<Symbol.Class> by lazy {
             index.getUris().flatMap(index::getSymbols).filterIsInstance<Symbol.Class>()
         }
-    }
-
-    internal class Inputs(parsed: ParseResult, val producerCurrent: (SnapshotSource) -> Boolean) {
-        val physical = RequestParseInputs(parsed)
     }
 
     private val logger = KotlinLogging.logger {}
@@ -92,8 +87,10 @@ class SymbolIndexingService(
     fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
 
     /** Builds the index of [astModel], compiled from [content], without storing it: see [install]. */
-    internal fun prepare(content: String, astModel: GroovyAstModel, inputs: Inputs? = null): Prepared =
-        Prepared(content, SymbolIndex().buildFromVisitor(astModel), inputs)
+    internal fun prepare(content: String, astModel: GroovyAstModel, inputs: RequestParseInputs? = null): Prepared {
+        val index = if (inputs?.ownsSymbolAst == false) SymbolIndex() else SymbolIndex().buildFromVisitor(astModel)
+        return Prepared(content, index, inputs)
+    }
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
@@ -115,7 +112,7 @@ class SymbolIndexingService(
     internal fun ensureIndexed(
         ticket: ArtifactOwnership.Ticket,
         content: String,
-        inputs: Inputs? = null,
+        inputs: RequestParseInputs? = null,
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
         val hash = contentHash(content)
@@ -197,19 +194,19 @@ class SymbolIndexingService(
                 // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
                 val workspace = workspaceManager.current()
                 val worker = workerSessionManager.current()
-                val parseResult = worker.parse(
-                    ParseRequest(
-                        uri = uri,
-                        content = content,
-                        classpath = workspace.classpath,
-                        sourceRoots = workspace.sourceRoots,
-                        workspaceSources = emptyList(), // Don't recurse during indexing
-                        locatorCandidates = buildLocatorCandidates(uri, path),
-                    ),
+                val request = ParseRequest(
+                    uri = uri,
+                    content = content,
+                    classpath = workspace.classpath,
+                    sourceRoots = workspace.sourceRoots,
+                    workspaceSources = emptyList(), // Don't recurse during indexing
+                    locatorCandidates = buildLocatorCandidates(uri, path),
                 )
+                val parseResult = worker.parse(request)
 
                 // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
-                val inputs = Inputs(parseResult) { source ->
+                val isolated = parseResult.classpathInputs == null && workerSessionManager.allowsIsolatedInputs(worker)
+                val inputs = RequestParseInputs(request, parseResult, isolated) { source ->
                     source.workspace === workspace && workerSessionManager.current() === worker &&
                         ownership.isCurrent(ticket) && source.buffer == null
                 }
