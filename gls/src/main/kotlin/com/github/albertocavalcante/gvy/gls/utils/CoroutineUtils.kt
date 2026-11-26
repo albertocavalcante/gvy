@@ -4,6 +4,8 @@
 package com.github.albertocavalcante.gvy.gls.utils
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Rethrows the throwable if it's a [CancellationException] or [Error].
@@ -55,4 +57,17 @@ internal inline fun <T> runSuspendCatching(block: () -> T): Result<T> = try {
     throw e // StackOverflowError, OutOfMemoryError: never an ordinary failed result
 } catch (e: Throwable) {
     Result.failure(e)
+}
+
+/** A fatal provider error keeps its identity and takes precedence over cancellation on the dispatcher return. */
+internal suspend fun <T> withContextPreservingFatal(context: CoroutineContext, block: suspend () -> T): T {
+    var result: Result<T>? = null
+    try {
+        withContext(context) { result = runCatching { block() } }
+    } catch (cancelled: CancellationException) {
+        val failure = result?.exceptionOrNull()
+        if (failure is Error) throw failure
+        throw cancelled
+    }
+    return checkNotNull(result).getOrThrow()
 }

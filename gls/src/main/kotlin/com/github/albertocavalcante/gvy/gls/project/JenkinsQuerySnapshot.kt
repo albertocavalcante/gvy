@@ -5,9 +5,9 @@ package com.github.albertocavalcante.gvy.gls.project
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
+import com.github.albertocavalcante.gvy.gls.utils.withContextPreservingFatal
 import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
@@ -104,19 +104,7 @@ internal class JenkinsQueryFacts(
     val classpath: List<Path>? get() = checks.classpath
     val publicationsCurrent: () -> Boolean = checks::publicationsCurrent
 
-    suspend fun isCurrent(): Boolean {
-        // Carry the synchronous outcome across the dispatcher hop. Coroutine stack recovery can copy a thrown Error,
-        // and prompt cancellation on return from IO must not hide a fatal error the callback already raised.
-        var checked: Result<Boolean>? = null
-        try {
-            withContext(Dispatchers.IO) { checked = runCatching(checks::inputsCurrent) }
-        } catch (cancelled: CancellationException) {
-            val failure = checked?.exceptionOrNull()
-            if (failure is Error) throw failure
-            throw cancelled
-        }
-        return checkNotNull(checked).getOrThrow()
-    }
+    suspend fun isCurrent(): Boolean = withContextPreservingFatal(Dispatchers.IO) { checks.inputsCurrent() }
 }
 
 private fun staleJenkins() = ResponseErrorException(

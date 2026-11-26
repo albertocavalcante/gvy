@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.PreparedFeature
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
@@ -11,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
@@ -23,22 +25,16 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider as EngineHoverProvider
 
-/** An eager result with only the checks for inputs consulted by this invocation. */
-internal class HeldHover(
-    val value: Hover,
-    val publicationsCurrent: () -> Boolean = { true },
-    val qualify: suspend () -> Boolean = { true },
-)
-
 internal interface HeldHoverProvider : EngineHoverProvider {
-    suspend fun prepareHover(params: HoverParams): HeldHover
+    suspend fun prepareHover(params: HoverParams): PreparedFeature<Hover>
 
     override suspend fun getHover(params: HoverParams): Hover {
-        val held = prepareHover(params)
-        if (!deliveryInputsCurrent(held.publicationsCurrent, held.qualify)) {
+        val feature = prepareHover(params)
+        val result = runSuspendCatching { feature.compute() }
+        if (!deliveryInputsCurrent(feature.publicationsCurrent, feature.qualify)) {
             throw hoverChanged(URI.create(params.textDocument.uri))
         }
-        return held.value
+        return result.getOrThrow()
     }
 }
 
@@ -77,7 +73,12 @@ internal class HoverRequestHandler(
         val acquired = compilation.acquireHoverSnapshot(request.source) {
             request.jenkins.isCurrent() && compilation.isHoverEngineCurrent(request.engine)
         }
-        val outcome = acquired.query { held ->
+        val outcome = acquired.queryFeature(
+            publicationsCurrent = {
+                request.jenkins.authoritiesCurrent() && compilation.isHoverEngineCurrent(request.engine)
+            },
+            requestCurrent = request.jenkins::isCurrent,
+        ) { held ->
             if (!compilation.isHoverEngineCurrent(request.engine) || !request.jenkins.isCurrent()) {
                 throw hoverChanged(uri)
             }
@@ -86,29 +87,16 @@ internal class HoverRequestHandler(
             if (provider is HeldHoverProvider) {
                 provider.prepareHover(request.params)
             } else {
-                HeldHover(provider.getHover(request.params))
+                PreparedFeature(qualify = request.jenkins::isCurrent) { provider.getHover(request.params) }
             }
         }
-        // Source qualification in query() can call project strategies. Check the actual feature inputs afterwards.
-        val answer = if (outcome is SnapshotQuery.Answer) outcome.value else null
-        if (!inputsCurrentAtDelivery(request, acquired.source, answer)) throw hoverChanged(uri)
         when (outcome) {
-            is SnapshotQuery.Answer -> outcome.value.value
+            is SnapshotQuery.Answer -> outcome.value
             SnapshotQuery.Missing -> emptyHover()
             SnapshotQuery.Stale -> throw hoverChanged(uri)
             is SnapshotQuery.Failure -> throw outcome.cause
         }
     }
-
-    private suspend fun inputsCurrentAtDelivery(request: Request, source: SnapshotSource, answer: HeldHover?): Boolean =
-        deliveryInputsCurrent({
-            request.jenkins.authoritiesCurrent() &&
-                source.isCurrent() &&
-                compilation.isHoverEngineCurrent(request.engine) &&
-                (answer == null || answer.publicationsCurrent())
-        }) {
-            request.jenkins.isCurrent() && (answer == null || answer.qualify())
-        }
 
     private fun emptyHover() = Hover(MarkupContent(MarkupKind.MARKDOWN, ""))
 }

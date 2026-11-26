@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.PreparedFeature
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
@@ -56,25 +57,20 @@ class SemanticTokensHandler(
             }
             val jenkins = request.jenkins
             if (!jenkins.isCurrent()) throw contentModified()
-            val outcome = compilationService.queryCapturedSnapshot(
+            val acquired = compilationService.acquireCapturedSnapshot(
                 request.source,
                 Phases.CANONICALIZATION,
                 ParseMode.WORKSPACE,
-            ) { held ->
+            )
+            val outcome = acquired.queryFeature(jenkins::authoritiesCurrent, jenkins::isCurrent) { held ->
                 val facts = jenkins.materialize()
-                context.ensureActive()
-                val result = generate(uri, held.sourceText, held.parseResult, facts) { context.ensureActive() }
-                result to facts
+                PreparedFeature(facts.publicationsCurrent, facts::isCurrent) {
+                    context.ensureActive()
+                    generate(uri, held.sourceText, held.parseResult, facts) { context.ensureActive() }
+                }
             }
-            val facts = if (outcome is SnapshotQuery.Answer) outcome.value.second else null
-            val current = deliveryInputsCurrent({
-                request.source.isCurrent() && (facts?.publicationsCurrent?.invoke() ?: jenkins.authoritiesCurrent())
-            }) {
-                facts?.isCurrent() ?: jenkins.isCurrent()
-            }
-            if (!current) throw contentModified()
             when (outcome) {
-                is SnapshotQuery.Answer -> outcome.value.first
+                is SnapshotQuery.Answer -> outcome.value
                 SnapshotQuery.Missing -> SemanticTokens(emptyList())
                 SnapshotQuery.Stale -> throw contentModified()
                 is SnapshotQuery.Failure -> throw outcome.cause

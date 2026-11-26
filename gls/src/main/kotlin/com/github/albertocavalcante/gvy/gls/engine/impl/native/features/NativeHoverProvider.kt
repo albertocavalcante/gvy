@@ -7,11 +7,11 @@ import com.github.albertocavalcante.groovyparser.resolution.typesolvers.Reflecti
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.HoverMemberLookup
+import com.github.albertocavalcante.gvy.gls.compilation.PreparedFeature
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
-import com.github.albertocavalcante.gvy.gls.providers.hover.HeldHover
 import com.github.albertocavalcante.gvy.gls.providers.hover.HeldHoverProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
 import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallMetadataResolver
@@ -26,7 +26,6 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
@@ -72,7 +71,7 @@ class NativeHoverProvider(
         source: SnapshotSource,
         jenkins: JenkinsQuerySnapshot,
     ): HoverProvider = object : HeldHoverProvider {
-        override suspend fun prepareHover(params: HoverParams): HeldHover {
+        override suspend fun prepareHover(params: HoverParams): PreparedFeature<Hover> {
             val facts = jenkins.materialize(forHover = true)
             require(held.parseResult === parseResult)
             val loader = bytecodeOnlyClassLoader(parseResult.compilationUnit.classLoader)
@@ -82,13 +81,7 @@ class NativeHoverProvider(
             val methods = MethodCallMetadataResolver(
                 reflection::getMethods,
                 reflection::loadClass,
-                { receiver, name ->
-                    if (receiver.isPrimaryClassNode || !receiver.isResolved) {
-                        emptyList()
-                    } else {
-                        heldGdkMethods(reflection, receiver.name, name)
-                    }
-                },
+                { receiver, name -> heldGdkMethods(reflection, receiver, name) },
                 types,
             )
             val provider = DelegateHoverProvider(
@@ -103,19 +96,16 @@ class NativeHoverProvider(
                     }
                 }
             }
-            val answer = withContext(loader.context) {
-                provider.provideHover(source.uri.toString(), params.position, held)
-            }
-            return HeldHover(
-                answer ?: Hover(MarkupContent(MarkupKind.MARKDOWN, "")),
+            return PreparedFeature(
                 publicationsCurrent = {
                     val classpath = facts.classpath
                     (classpath == null || held.referenceProducer?.hasClasspath(classpath) == true) &&
                         facts.publicationsCurrent() &&
                         members.isDatabaseCurrent()
                 },
+                qualify = { currentCoroutineContext().inputsCurrent(members::isCurrent) && facts.isCurrent() },
             ) {
-                currentCoroutineContext().inputsCurrent(members::isCurrent) && facts.isCurrent()
+                provider.provideHover(source.uri.toString(), params.position, held, loader.context) ?: emptyHover()
             }
         }
     }

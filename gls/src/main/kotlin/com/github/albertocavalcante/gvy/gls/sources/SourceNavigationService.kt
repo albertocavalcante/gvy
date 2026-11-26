@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -253,7 +254,12 @@ class SourceNavigationService(
         if (!Files.isRegularFile(binary)) return@withContext null
         // This held class supplies its actual archive, but no verified Maven coordinates or download context.
         val source = findAdjacentSourceJar(binary)?.takeIf { Files.isRegularFile(it) } ?: return@withContext null
-        javaSourceInspector.documentationFromArchive(source, type.name)
+        try {
+            javaSourceInspector.documentationFromArchive(source, type.name)
+        } catch (failure: IOException) {
+            logger.debug(failure) { "Cannot read optional source archive $source" }
+            null
+        }
     }
 
     private fun inspectClassDefinition(sourcePath: Path, className: String): JavaSourceInspector.InspectionResult? =

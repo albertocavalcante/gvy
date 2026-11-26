@@ -39,6 +39,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.gls.utils.withContextPreservingFatal
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,7 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import java.io.IOException
 import java.net.URI
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Kotlin-idiomatic hover provider for Groovy symbols.
@@ -150,11 +152,16 @@ class HoverProvider private constructor(
      */
     suspend fun provideHover(uri: String, position: Position): Hover? = provideHoverInternal(uri, position, null)
 
-    internal suspend fun provideHover(uri: String, position: Position, snapshot: CompiledDocumentSnapshot): Hover? =
+    internal suspend fun provideHover(
+        uri: String,
+        position: Position,
+        snapshot: CompiledDocumentSnapshot,
+        binaryContext: CoroutineContext,
+    ): Hover? {
         // Native Jenkins strategies consult workspace variables and metadata only if they handle the selected node.
-        withContext(if (heldInputs?.jenkins?.capability != null) Dispatchers.IO else Dispatchers.Default) {
-            hoverForSource(uri, position, snapshot)
-        }
+        val dispatcher = if (heldInputs?.jenkins?.capability != null) Dispatchers.IO else Dispatchers.Default
+        return withContextPreservingFatal(dispatcher + binaryContext) { hoverForSource(uri, position, snapshot) }
+    }
 
     private suspend fun provideHoverInternal(
         uri: String,

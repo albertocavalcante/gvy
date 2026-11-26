@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary qualification branch only. Never merge this replacement.
-name: G6 hover review baseline
+name: G6 hover review candidate
 
 on:
   workflow_dispatch:
@@ -59,13 +59,28 @@ jobs:
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-format
           :gls:spotlessApply :parser:native:spotlessApply :jenkins:spotlessApply :semantics-native:spotlessApply --continue
           --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
-      - name: Run frozen hover review controls
+      - name: Run complete hover candidate modules
         if: ${{ !cancelled() && steps.format.outcome == 'success' }}
         shell: bash
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit
-          :gls:test --tests '*NativeHoverProvenanceTest' --tests '*NativeHoverExtensionProvenanceTest' --tests '*HoverTokensDeliveryFailureTest' --tests '*HoverTokensOwnershipTest' --tests '*HoverRetrySharingTest'
+          :gls:test :parser:native:test :semantics-native:test :jenkins:test
           --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+      - name: Run normal repository lint
+        if: ${{ !cancelled() && steps.format.outcome == 'success' }}
+        shell: bash
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer candidate-lint
+          lint --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+      - name: Verify public server constructor descriptors
+        if: ${{ !cancelled() && steps.format.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/g6-source"
+          javap -J-Xmx128m -s -classpath gls/build/classes/kotlin/main com.github.albertocavalcante.gvy.gls.GroovyLanguageServer > "$RUNNER_TEMP/g6-source/server-javap.txt"
+          grep -F 'public com.github.albertocavalcante.gvy.gls.GroovyLanguageServer();' "$RUNNER_TEMP/g6-source/server-javap.txt"
+          grep -F 'descriptor: (Ljava/lang/ClassLoader;Lkotlinx/coroutines/CoroutineDispatcher;Lcom/github/albertocavalcante/gvy/gls/ProcessLiveness;Lkotlin/jvm/functions/Function1;Ljava/util/concurrent/Executor;)V' "$RUNNER_TEMP/g6-source/server-javap.txt"
       - name: Preserve exact formatter delta and resulting file hashes
         if: always()
         shell: bash
@@ -88,6 +103,6 @@ jobs:
             ${{ runner.temp }}/g6-source/**
             gls/build/test-results/test/*.xml
             parser/native/build/test-results/test/*.xml
-            ext/spock/build/test-results/test/*.xml
-            diagnostics/codenarc/build/test-results/test/*.xml
+            jenkins/build/test-results/test/*.xml
+            semantics/native/build/test-results/test/*.xml
             gls/build/reports/tests/test/**

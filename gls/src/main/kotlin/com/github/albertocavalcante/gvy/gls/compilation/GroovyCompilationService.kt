@@ -210,17 +210,18 @@ class GroovyCompilationService internal constructor(
         requestCurrent: () -> Boolean,
     ): SourceAcquisition = orchestrator.snapshots.acquireHover(source, Phases.CANONICALIZATION, requestCurrent)
 
+    internal suspend fun acquireCapturedSnapshot(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode?,
+    ): SourceAcquisition = SourceAcquisition(source, orchestrator.snapshots.acquireSource(source, phase, mode))
+
     internal suspend fun <T> queryCapturedSnapshot(
         source: SnapshotSource,
         phase: Int,
         mode: ParseMode?,
         query: suspend (CompiledDocumentSnapshot) -> T,
-    ): SnapshotQuery<T> = when (val acquisition = orchestrator.snapshots.acquireSource(source, phase, mode)) {
-        is SnapshotAcquisition.Available -> acquisition.query(query)
-        SnapshotAcquisition.Missing -> SnapshotQuery.Missing
-        SnapshotAcquisition.Stale -> SnapshotQuery.Stale
-        is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquisition.cause)
-    }
+    ): SnapshotQuery<T> = acquireCapturedSnapshot(source, phase, mode).query(query)
 
     /** Preserve startup symbol requests when worker selection retires acquisition, never the query itself. */
     internal suspend fun <T> querySymbolsWithWorkerRetry(

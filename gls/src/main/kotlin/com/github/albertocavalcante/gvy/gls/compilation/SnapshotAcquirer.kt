@@ -221,6 +221,36 @@ internal class CapturedCompilation(
 
 /** Source whose ownership guard applies after acquisition, including a successful startup retry. */
 internal class SourceAcquisition(val source: SnapshotSource, private val outcome: SnapshotAcquisition) {
+    /** Qualify ordinary failures and answers against the same producer and the inputs this feature consulted. */
+    suspend fun <T> queryFeature(
+        publicationsCurrent: () -> Boolean,
+        requestCurrent: suspend () -> Boolean,
+        prepare: suspend (CompiledDocumentSnapshot) -> PreparedFeature<T>,
+    ): SnapshotQuery<T> {
+        var feature: PreparedFeature<T>? = null
+        val result = runSuspendCatching {
+            query { snapshot ->
+                val prepared = prepare(snapshot)
+                feature = prepared
+                prepared.compute()
+            }
+        }
+        if (result.getOrNull() === SnapshotQuery.Stale) return SnapshotQuery.Stale
+        val prepared = feature
+        val current = deliveryInputsCurrent({
+            (prepared == null || prepared.publicationsCurrent()) && publicationsCurrent() && source.isCurrent()
+        }) {
+            // The compiler's first check in query() can change feature inputs. Feature callbacks in turn can
+            // change a strategy's classpath without publishing a new workspace. Reuse the actual worker's guard.
+            val featureCurrent = runSuspendCatching { prepared?.qualify?.invoke() ?: requestCurrent() }
+            if (featureCurrent.getOrNull() == false) return@deliveryInputsCurrent false
+            val producer = outcome as? SnapshotAcquisition.Available
+            (producer == null || currentCoroutineContext().inputsCurrent(producer.isCurrent)) &&
+                featureCurrent.getOrThrow()
+        }
+        return if (current) result.getOrThrow() else SnapshotQuery.Stale
+    }
+
     suspend fun <T> query(compute: suspend (CompiledDocumentSnapshot) -> T): SnapshotQuery<T> = when (outcome) {
         is SnapshotAcquisition.Available -> outcome.query(compute)
         SnapshotAcquisition.Missing -> SnapshotQuery.Missing
@@ -228,6 +258,13 @@ internal class SourceAcquisition(val source: SnapshotSource, private val outcome
         is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(outcome.cause)
     }
 }
+
+/** Installed before traversal, so even a failed computation retains the inputs it already consumed. */
+internal class PreparedFeature<T>(
+    val publicationsCurrent: () -> Boolean = { true },
+    val qualify: suspend () -> Boolean,
+    val compute: suspend () -> T,
+)
 
 internal class SnapshotAcquirer(
     private val dependencies: CompilationOrchestratorDependencies,

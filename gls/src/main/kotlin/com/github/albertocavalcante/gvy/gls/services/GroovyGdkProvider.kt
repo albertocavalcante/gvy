@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Compani
 import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ClassNode
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
@@ -193,6 +194,30 @@ private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequenc
     }
 }
 
+/** Follow source declarations to their actual resolved binary parents inside the held native read scope. */
+internal fun heldGdkMethods(
+    reflection: ClasspathReflection,
+    receiver: ClassNode,
+    name: String,
+): List<QualifiedGdkMethod> {
+    val methods = mutableSetOf<QualifiedGdkMethod>()
+    val visited = mutableSetOf<ClassNode>()
+    val pending = ArrayDeque<ClassNode>()
+    pending.add(receiver)
+    while (pending.isNotEmpty()) {
+        val current = pending.removeFirst().redirect()
+        if (!visited.add(current)) continue
+        if (current.isPrimaryClassNode) {
+            current.superClass?.let(pending::addLast)
+            current.interfaces.forEach(pending::addLast)
+        } else if (current.isResolved) {
+            val binary = reflection.loadClass(current.name)
+            if (binary != null && binary === current.typeClass) methods += heldGdkMethods(reflection, binary, name)
+        }
+    }
+    return methods.toList()
+}
+
 /** Resolve extension metadata from the held parser loader, without consulting the service's live GDK index. */
 internal fun heldGdkMethods(
     reflection: ClasspathReflection,
@@ -200,6 +225,14 @@ internal fun heldGdkMethods(
     name: String? = null,
 ): List<QualifiedGdkMethod> {
     val receiver = reflection.loadClass(receiverName) ?: return emptyList()
+    return heldGdkMethods(reflection, receiver, name)
+}
+
+private fun heldGdkMethods(
+    reflection: ClasspathReflection,
+    receiver: Class<*>,
+    name: String?,
+): List<QualifiedGdkMethod> {
     val methods = GDK_CLASSES.asSequence().mapNotNull(reflection::loadClass).flatMap { owner ->
         owner.methods.asSequence().filter { method ->
             (name == null || method.name == name) && Modifier.isPublic(method.modifiers) &&
