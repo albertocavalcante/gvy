@@ -78,6 +78,14 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
     `dependencyResolutionManagement`, which uses `FAIL_ON_PROJECT_REPOS`); never in a `build.gradle(.kts)` or convention
     plugin. Exceptions are tracked in #2276.
 
+## Tooling language choice
+
+Prefer Python for new standalone automation, agent helpers and repository tooling, with meaningful type annotations and
+the project's pinned formatting, type checks and tests. When a JavaScript/TypeScript runtime or library integration
+justifies Node, use TypeScript with strict type checking. Avoid new untyped `.js`/`.mjs` tooling; neighboring JavaScript
+scripts alone do not justify that choice. Maintain existing scripts within scope rather than starting unrelated language
+migrations.
+
 ## Recovery and mixed-version architecture requirements
 
 Before changing parsing, completion/hover/tokens, analysis sessions, target/import selection, caches/indexes, semantic
