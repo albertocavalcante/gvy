@@ -16,7 +16,7 @@ import java.io.OutputStreamWriter
 class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : IndexWriter {
     private val writer = OutputStreamWriter(outputStream)
     private val json = Json { encodeDefaults = true }
-    // An export drives its writers from one thread, in document order.
+    // Not thread-safe, like the rest of this writer: one export drives it from one thread.
     private var idCounter = 1
 
     private fun nextId(): Int = idCounter++

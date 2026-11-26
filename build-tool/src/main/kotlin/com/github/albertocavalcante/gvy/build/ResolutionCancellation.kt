@@ -91,6 +91,7 @@ class ResolutionCancellation {
         }
 
         fun close() {
+            // Claims the registration, so a later fire() does nothing.
             done.trySet()
         }
     }
