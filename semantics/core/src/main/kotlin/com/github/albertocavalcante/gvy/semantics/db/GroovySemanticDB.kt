@@ -3,11 +3,11 @@
 
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import java.net.URI
 import java.util.Collections
 import java.util.IdentityHashMap
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -42,7 +42,7 @@ class GroovySemanticDB {
     // owner symbolId -> the symbols it owns (its members), grouped by file
     private var ownerIndex = SymbolIndex<SymbolInfo>()
 
-    private val versionCounter = AtomicLong()
+    private val versionCounter = Counter()
 
     // Guarded by lock; invalidated by every successful document graph mutation.
     private var cachedDeclarations: DeclarationIndexSnapshot? = null
@@ -52,7 +52,7 @@ class GroovySemanticDB {
      * removed, renamed or retyped), or the database is cleared, so a derived value can tell it was computed earlier.
      * Edits inside bodies, moved ranges and an identical recompile leave it unchanged.
      */
-    val version: Long get() = versionCounter.get()
+    val version: Long get() = versionCounter.value
 
     /**
      * Get semantic document for a URI
@@ -107,7 +107,7 @@ class GroovySemanticDB {
             addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex, ownerIndex)
             cachedDeclarations = null
             if (declarationsChanged) {
-                versionCounter.incrementAndGet()
+                versionCounter.increment()
             }
         }
     }
@@ -120,7 +120,7 @@ class GroovySemanticDB {
             documents.remove(uri)?.let {
                 removeFromIndexes(uri, it.document)
                 cachedDeclarations = null
-                if (declarations(it.document).isNotEmpty()) versionCounter.incrementAndGet()
+                if (declarations(it.document).isNotEmpty()) versionCounter.increment()
             }
         }
     }
@@ -134,7 +134,7 @@ class GroovySemanticDB {
         lock.read { cachedDeclarations?.let { return it } }
         return lock.write {
             cachedDeclarations ?: DeclarationIndexSnapshot(
-                versionCounter.get(),
+                versionCounter.value,
                 symbolIndex.snapshot(),
                 ownerIndex.snapshot(),
             ).also { cachedDeclarations = it }
@@ -239,7 +239,7 @@ class GroovySemanticDB {
             occurrenceIndex = SymbolIndex()
             ownerIndex = SymbolIndex()
             cachedDeclarations = null
-            versionCounter.incrementAndGet()
+            versionCounter.increment()
         }
     }
 

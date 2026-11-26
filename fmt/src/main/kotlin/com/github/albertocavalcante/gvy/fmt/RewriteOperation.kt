@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.fmt
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import groovyjarjarantlr4.v4.runtime.RecognitionException
 import org.apache.groovy.parser.antlr4.GroovySyntaxError
 import org.codehaus.groovy.control.CompilationFailedException
@@ -13,14 +14,13 @@ import org.slf4j.LoggerFactory
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicReference
 
 /** Error callbacks belong to one formatting operation, including callbacks from engine worker threads. */
 internal class RewriteOperation {
     // Retain bounded evidence rather than every reported failure and stack trace.
-    private val firstFailure = AtomicReference<Throwable?>()
-    private val firstEngineFailure = AtomicReference<Throwable?>()
-    private val criticalFailure = AtomicReference<Throwable?>()
+    private val firstFailure = SharedValue<Throwable?>(null)
+    private val firstEngineFailure = SharedValue<Throwable?>(null)
+    private val criticalFailure = SharedValue<Throwable?>(null)
 
     val context: ExecutionContext = InMemoryExecutionContext(::inspectFailureEvidence)
 
@@ -50,22 +50,25 @@ internal class RewriteOperation {
         }
         if (truncated) {
             // Do not retain the oversized graph as a cause: logging it would defeat the evidence bound.
-            firstEngineFailure.compareAndSet(null, IllegalStateException("OpenRewrite failure evidence limit exceeded"))
+            firstEngineFailure.keepFirst(IllegalStateException("OpenRewrite failure evidence limit exceeded"))
         }
     }
 
     private fun observe(failure: Throwable) {
-        firstFailure.compareAndSet(null, failure)
+        firstFailure.keepFirst(failure)
         if (failure.isCritical()) {
-            criticalFailure.compareAndSet(null, failure)
-            throw checkNotNull(criticalFailure.get())
+            throw criticalFailure.keepFirst(failure)
         }
-        if (!failure.isExpectedSourceError()) firstEngineFailure.compareAndSet(null, failure)
+        if (!failure.isExpectedSourceError()) firstEngineFailure.keepFirst(failure)
     }
 
+    /** Records [failure] unless an earlier one was recorded, and returns the one kept. */
+    private fun SharedValue<Throwable?>.keepFirst(failure: Throwable): Throwable =
+        checkNotNull(update { it ?: failure })
+
     fun throwIfFailed(allowSourceErrors: Boolean = false) {
-        val failure = criticalFailure.get() ?: firstEngineFailure.get()
-            ?: firstFailure.get().takeUnless { allowSourceErrors }
+        val failure = criticalFailure.value ?: firstEngineFailure.value
+            ?: firstFailure.value.takeUnless { allowSourceErrors }
         if (failure != null) {
             if (!failure.isCritical()) logger.error("OpenRewrite formatting recipe failed", failure)
             throw failure

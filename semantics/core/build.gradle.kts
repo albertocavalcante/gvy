@@ -16,6 +16,9 @@ dependencies {
     // Common functional utilities (DomainError, etc.)
     implementation(project(":common"))
 
+    // Shared state through gvy's own primitives (#2474)
+    implementation(project(":common:concurrent"))
+
     // Cycle-safe class hierarchy walks (internal package, shared by every module that walks user-written hierarchies)
     implementation(project(":parser:api"))
 
