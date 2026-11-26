@@ -72,7 +72,10 @@ class NativeLanguageEngine(
             override val result = session.result
             override val features = object : FeatureSet {
                 override val hoverProvider = NativeHoverProvider(
-                    held.parseResult, compilationService, documentProvider, sourceNavigator,
+                    held.parseResult,
+                    compilationService,
+                    documentProvider,
+                    sourceNavigator,
                 ).forSnapshot(held, uri, jenkins)
                 override val documentSymbolProvider get() = session.features.documentSymbolProvider
                 override val definitionProvider get() = session.features.definitionProvider

@@ -52,7 +52,11 @@ class NativeHoverProvenanceTest {
             put(peer, "package p; class Api {}")
         }
         val manager = WorkspaceManager().apply { setTestClasspath(root) { listOf(binary) } }
-        val service = GroovyCompilationService(documentProvider = documents, workspaceManager = manager, sourceNavigator = navigator)
+        val service = GroovyCompilationService(
+            documentProvider = documents,
+            workspaceManager = manager,
+            sourceNavigator = navigator
+        )
         try {
             val parsed = assertIs<SnapshotAcquisition.Ready>(service.acquireEditorSnapshot(caller)).snapshot.parseResult
             val imported = parsed.ast!!.imports.single().type.redirect()
@@ -76,7 +80,9 @@ class NativeHoverProvenanceTest {
         val type = java.util.ArrayList::class.java
         val origin = assertNotNull(type.getResource("/java/util/ArrayList.class")).toURI()
         coEvery { navigator.navigateToSource(origin, type.name) } returns SourceNavigator.SourceResult.SourceLocation(
-            root.resolve("ArrayList.java").toUri(), type.name, documentation = Documentation(summary = "Custom JDK prose"),
+            root.resolve("ArrayList.java").toUri(),
+            type.name,
+            documentation = Documentation(summary = "Custom JDK prose"),
         )
         val service = GroovyCompilationService(documentProvider = documents, sourceNavigator = navigator)
         try {
@@ -99,7 +105,10 @@ class NativeHoverProvenanceTest {
             val probes = mutableListOf<String>()
             val previous = loader.resourceLoader
             try {
-                loader.resourceLoader = groovy.lang.GroovyResourceLoader { name -> probes.add(name); null }
+                loader.resourceLoader = groovy.lang.GroovyResourceLoader { name ->
+                    probes.add(name)
+                    null
+                }
                 val answer = HoverRequestHandler(service, documents)
                     .getHover(params(caller, source.lines()[1].indexOf("missingMember") + 1, 1)).contents.right.value
                 assertContains(answer, "missingMember")
@@ -120,7 +129,8 @@ class NativeHoverProvenanceTest {
             val peerText = "package java.util.concurrent; class Semaphore { String drainPermits() { 'wrong' } }"
             val peer = Files.writeString(src.resolve("Semaphore.groovy"), peerText).toUri()
             val type = Semaphore::class.java
-            val source = "class Client { def use(java.util.concurrent.Semaphore permits) { def result = permits.drainPermits(); result } }"
+            val source = "class Client { def use(java.util.concurrent.Semaphore permits) { " +
+                "def result = permits.drainPermits(); result } }"
             val caller = Files.writeString(root.resolve("Client.groovy"), source).toUri()
             val documents = DocumentProvider()
             val service = GroovyCompilationService(documentProvider = documents)
@@ -129,9 +139,14 @@ class NativeHoverProvenanceTest {
                 assertEquals(listOf(Path.of(peer)), service.workspaceManager.getWorkspaceSources())
                 service.getWorkspaceCompiler().compileWorkspace()
                 val stored = assertNotNull(service.getWorkspaceSymbolIndex()?.getDocument(peer))
-                assertEquals(SemanticType.Known("java.lang.String"), stored.symbols.single { it.name == "drainPermits" }.type)
+                assertEquals(
+                    SemanticType.Known("java.lang.String"),
+                    stored.symbols.single { it.name == "drainPermits" }.type
+                )
                 val held = assertIs<SnapshotAcquisition.Ready>(service.acquireEditorSnapshot(caller)).snapshot
-                val receiver = held.parseResult.ast!!.classes.single().getMethods("use").single().parameters.single().type.redirect()
+                val receiver = held.parseResult.ast!!.classes.single().getMethods(
+                    "use"
+                ).single().parameters.single().type.redirect()
                 assertFalse(receiver.isPrimaryClassNode)
                 assertTrue(receiver.isResolved)
                 assertEquals(type.name, receiver.name)

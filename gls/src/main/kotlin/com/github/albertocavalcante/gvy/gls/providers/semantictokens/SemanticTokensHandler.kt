@@ -9,9 +9,9 @@ import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQueryFacts
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
-import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.UnusedImportDetector
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.currentCoroutineContext

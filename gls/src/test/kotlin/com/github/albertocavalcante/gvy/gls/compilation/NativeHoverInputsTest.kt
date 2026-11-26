@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
 import com.github.albertocavalcante.gvy.gls.project.JenkinsProjectStrategy
@@ -25,8 +24,8 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +53,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 class NativeHoverInputsTest {
     @Test
@@ -99,12 +99,13 @@ class NativeHoverInputsTest {
             object : WorkerSession {
                 override fun parse(request: ParseRequest): ParseResult {
                     val parsed = native.parse(request)
-                    return parsed.copy(astModel = object : GroovyAstModel by parsed.astModel {
+                    val failingModel = object : GroovyAstModel by parsed.astModel {
                         override fun getNodeAt(uri: URI, position: GroovyPosition): ASTNode? {
                             traversed = true
                             error("failed inside native hover traversal")
                         }
-                    })
+                    }
+                    return parsed.copy(astModel = failingModel)
                 }
             }
         })
@@ -119,7 +120,9 @@ class NativeHoverInputsTest {
     }
 
     @Test
-    fun `replacing the manager inside the same Jenkins capability retires the captured facts`(@TempDir root: Path): Unit =
+    fun `replacing the manager inside the same Jenkins capability retires the captured facts`(
+        @TempDir root: Path,
+    ): Unit =
         runBlocking {
             val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
             val strategy = JenkinsProjectStrategy(scope)
@@ -177,8 +180,12 @@ class NativeHoverInputsTest {
 
                     val resource = assertNotNull(loader.getResource("p/Api.class")).toURI()
                     val attachment = Documentation(summary = "$side custom documentation")
-                    coEvery { custom.navigateToSource(resource, type.name) } returns
-                        SourceNavigator.SourceResult.SourceLocation(binary.toUri(), type.name, documentation = attachment)
+                    val location = SourceNavigator.SourceResult.SourceLocation(
+                        binary.toUri(),
+                        type.name,
+                        documentation = attachment,
+                    )
+                    coEvery { custom.navigateToSource(resource, type.name) } returns location
                     assertEquals(attachment, custom.documentationForSelectedBinary(type))
                 }
             }
@@ -219,13 +226,13 @@ class NativeHoverInputsTest {
         val lookup = HoverMemberLookup.forRequest(service, URI.create("file:///Local.groovy"), mockk())
         assertEquals(0L, lookup.version)
         assertTrue(lookup.isCurrent())
-        verify(exactly = 0) { service.referenceReadiness(any()) }
+        verify(exactly = 0) { service.referenceReadiness(any<URI>()) }
     }
 
     @Test
     fun `a held local member miss never borrows a global index publication`() {
         val service = mockk<GroovyCompilationService>()
-        every { service.referenceReadiness(any()) } throws AssertionError("local miss consulted global index")
+        every { service.referenceReadiness(any<URI>()) } throws AssertionError("local miss consulted global index")
         val local = org.codehaus.groovy.ast.ClassNode("Local", 0, org.codehaus.groovy.ast.ClassHelper.OBJECT_TYPE)
         val module = mockk<org.codehaus.groovy.ast.ModuleNode> { every { classes } returns listOf(local) }
         val parsed = mockk<ParseResult> { every { ast } returns module }
@@ -234,9 +241,9 @@ class NativeHoverInputsTest {
         assertEquals(null, lookup.findField("Local", "missing"))
         assertEquals(emptyList(), lookup.findMethods("Local", "missing"))
         assertTrue(lookup.isCurrent())
-        verify(exactly = 0) { service.referenceReadiness(any()) }
+        verify(exactly = 0) { service.referenceReadiness(any<URI>()) }
         assertFailsWith<AssertionError> { lookup.findField("Foreign", "missing") }
-        verify(exactly = 1) { service.referenceReadiness(any()) }
+        verify(exactly = 1) { service.referenceReadiness(any<URI>()) }
     }
 
     @Test

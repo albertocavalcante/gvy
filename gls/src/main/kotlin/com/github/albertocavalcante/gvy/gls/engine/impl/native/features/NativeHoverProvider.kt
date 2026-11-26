@@ -10,22 +10,22 @@ import com.github.albertocavalcante.gvy.gls.compilation.HoverMemberLookup
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
-import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
-import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallMetadataResolver
 import com.github.albertocavalcante.gvy.gls.providers.hover.HeldHover
 import com.github.albertocavalcante.gvy.gls.providers.hover.HeldHoverProvider
+import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
+import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallMetadataResolver
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.JvmClasspathReflection
 import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
 import com.github.albertocavalcante.gvy.gls.services.heldGdkMethods
-import com.github.albertocavalcante.gvy.gls.sources.documentationForSelectedBinary
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.sources.documentationForSelectedBinary
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
@@ -60,7 +60,10 @@ class NativeHoverProvider(
             resolver,
         )
         DelegateHoverProvider(
-            compilationService, documentProvider, HoverContentGenerator(resolver, methods), sourceNavigator,
+            compilationService,
+            documentProvider,
+            HoverContentGenerator(resolver, methods),
+            sourceNavigator,
         )
     }
 
@@ -92,7 +95,9 @@ class NativeHoverProvider(
                     facts,
                 ) { type ->
                     sourceNavigator?.let { navigator ->
-                        reflection.loadClass(type.name)?.let { binary -> navigator.documentationForSelectedBinary(binary) }
+                        reflection.loadClass(type.name)?.let { binary ->
+                            navigator.documentationForSelectedBinary(binary)
+                        }
                     }
                 }
                 val answer = withContext(loader.context) {

@@ -250,11 +250,7 @@ internal class SnapshotAcquirer(
      * Hover may replace one retired open-buffer producer before querying it. MINIMAL parses can consume
      * locator answers while running, so closed files use their original acquisition without a retry.
      */
-    suspend fun acquireHover(
-        original: SnapshotSource,
-        phase: Int,
-        requestCurrent: () -> Boolean,
-    ): SourceAcquisition {
+    suspend fun acquireHover(original: SnapshotSource, phase: Int, requestCurrent: () -> Boolean): SourceAcquisition {
         if (original.buffer == null) {
             return SourceAcquisition(original, acquireSource(original, phase, ParseMode.MINIMAL))
         }
@@ -281,14 +277,13 @@ internal class SnapshotAcquirer(
         }
     }
 
-    private fun openCompilation(source: SnapshotSource, phase: Int) =
-        CapturedCompilation(
-            selectSources,
-            source,
-            checkNotNull(source.buffer).snapshot.content,
-            phase,
-            ParseMode.WORKSPACE,
-        )
+    private fun openCompilation(source: SnapshotSource, phase: Int) = CapturedCompilation(
+        selectSources,
+        source,
+        checkNotNull(source.buffer).snapshot.content,
+        phase,
+        ParseMode.WORKSPACE,
+    )
 
     suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition =
         whileCallerActive { acquireCurrent(source, phase, mode) }

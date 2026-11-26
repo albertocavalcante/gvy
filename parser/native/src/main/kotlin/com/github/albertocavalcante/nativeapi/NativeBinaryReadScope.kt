@@ -24,4 +24,5 @@ class NativeBinaryReadScope internal constructor() {
 }
 
 /** Only the native parser's loader supports scoped suppression of implicit Groovy source resolution. */
-fun GroovyClassLoader.nativeBinaryReadScope(): NativeBinaryReadScope? = (this as? SdkFallbackGroovyClassLoader)?.binaryReads
+fun GroovyClassLoader.nativeBinaryReadScope(): NativeBinaryReadScope? =
+    (this as? SdkFallbackGroovyClassLoader)?.binaryReads

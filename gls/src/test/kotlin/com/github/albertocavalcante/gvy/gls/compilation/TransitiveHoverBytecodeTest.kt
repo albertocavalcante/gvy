@@ -3,9 +3,9 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
-import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.JvmClasspathReflection
+import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
 import groovy.lang.GroovyResourceLoader
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
@@ -26,7 +26,10 @@ class TransitiveHoverBytecodeTest {
         @TempDir root: Path,
     ): Unit = runBlocking {
         val compiled = Files.createDirectory(root.resolve("classes"))
-        val api = Files.writeString(root.resolve("Api.java"), "package p; public class Api { public Probe use(){return null;} }")
+        val api = Files.writeString(
+            root.resolve("Api.java"),
+            "package p; public class Api { public Probe use(){return null;} }",
+        )
         val probe = Files.writeString(root.resolve("Probe.java"), "package p; public class Probe {}")
         val compiler = checkNotNull(ToolProvider.getSystemJavaCompiler())
         assertEquals(0, compiler.run(null, null, null, "-d", compiled.toString(), api.toString(), probe.toString()))

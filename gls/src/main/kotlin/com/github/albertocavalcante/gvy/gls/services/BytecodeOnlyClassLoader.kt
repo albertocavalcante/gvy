@@ -15,16 +15,18 @@ import kotlin.coroutines.CoroutineContext
 
 internal fun bytecodeOnlyClassLoader(held: GroovyClassLoader): BytecodeOnlyClassLoader {
     val scope = held.nativeBinaryReadScope() ?: throw ResponseErrorException(
-        ResponseError(ResponseErrorCode.RequestFailed, "Held compiler loader cannot isolate binary metadata reads", null),
+        ResponseError(
+            ResponseErrorCode.RequestFailed,
+            "Held compiler loader cannot isolate binary metadata reads",
+            null,
+        ),
     )
     return BytecodeOnlyClassLoader(held, scope)
 }
 
 /** The declaring class keeps its real loader. Signature resolution must therefore use the same scoped policy. */
-internal class BytecodeOnlyClassLoader(
-    private val held: GroovyClassLoader,
-    private val scope: NativeBinaryReadScope,
-) : ClassLoader(null) {
+internal class BytecodeOnlyClassLoader(private val held: GroovyClassLoader, private val scope: NativeBinaryReadScope) :
+    ClassLoader(null) {
     val context: CoroutineContext = BinaryReadContext(scope)
 
     fun <T> read(action: () -> T): T = scope.enter().use { action() }
@@ -35,7 +37,8 @@ internal class BytecodeOnlyClassLoader(
 }
 
 private class BinaryReadContext(private val scope: NativeBinaryReadScope) :
-    AbstractCoroutineContextElement(Key), ThreadContextElement<AutoCloseable> {
+    AbstractCoroutineContextElement(Key),
+    ThreadContextElement<AutoCloseable> {
     private companion object Key : CoroutineContext.Key<BinaryReadContext>
 
     override fun updateThreadContext(context: CoroutineContext): AutoCloseable = scope.enter()

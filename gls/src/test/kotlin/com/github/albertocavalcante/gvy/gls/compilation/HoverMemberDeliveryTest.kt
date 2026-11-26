@@ -57,7 +57,8 @@ class HoverMemberDeliveryTest {
                     }
                     context
                 }
-                val params = HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, text.indexOf("result") + 1))
+                val params =
+                    HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, text.indexOf("result") + 1))
                 val handler = HoverRequestHandler(service, docs)
                 assertContains(handler.getHover(params).contents.right.value, "String")
                 assertTrue(qualified.get(), "The real native provider must qualify the foreign member producer")
@@ -65,7 +66,10 @@ class HoverMemberDeliveryTest {
                 race.set(true)
                 val error = runCatching { handler.getHover(params) }.exceptionOrNull()
                 assertTrue(replaced.get(), "Caller qualification must run after the peer lookup")
-                assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(error).responseError.code)
+                assertEquals(
+                    ResponseErrorCode.ContentModified.value,
+                    assertIs<ResponseErrorException>(error).responseError.code,
+                )
             } finally {
                 service.shutdown()
             }

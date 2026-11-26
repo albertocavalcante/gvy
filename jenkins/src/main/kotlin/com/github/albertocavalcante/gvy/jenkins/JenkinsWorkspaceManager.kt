@@ -6,8 +6,8 @@
 package com.github.albertocavalcante.gvy.jenkins
 
 import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
-import io.github.oshai.kotlinlogging.KotlinLogging
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -217,10 +217,7 @@ class JenkinsWorkspaceManager internal constructor(
     }
 }
 
-internal class JenkinsMetadataView(
-    val metadata: MergedJenkinsMetadata,
-    val isCurrent: () -> Boolean,
-)
+internal class JenkinsMetadataView(val metadata: MergedJenkinsMetadata, val isCurrent: () -> Boolean)
 
 class JenkinsFileMetadata internal constructor(
     val metadata: MergedJenkinsMetadata,

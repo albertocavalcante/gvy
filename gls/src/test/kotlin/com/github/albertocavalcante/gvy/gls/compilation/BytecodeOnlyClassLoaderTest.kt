@@ -3,14 +3,14 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
-import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
-import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
-import com.github.albertocavalcante.gvy.gls.services.JvmClasspathReflection
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import com.github.albertocavalcante.gvy.gls.services.JvmClasspathReflection
+import com.github.albertocavalcante.gvy.gls.services.bytecodeOnlyClassLoader
 import com.github.albertocavalcante.nativeapi.ParseRequest
-import java.net.URI
 import groovy.lang.GroovyResourceLoader
 import org.junit.jupiter.api.Test
+import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse

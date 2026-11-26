@@ -4,18 +4,17 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
-import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
+import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
-import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.every
 import io.mockk.spyk
 import io.mockk.verify
@@ -56,6 +55,7 @@ import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HoverSnapshotTest {
@@ -598,7 +598,9 @@ class HoverSnapshotTest {
                         onParsed.get().invoke(parsed)
                         val model = object : GroovyAstModel by parsed.astModel {
                             override fun getNodeAt(uri: URI, position: GroovyPosition): ASTNode? =
-                                parsed.astModel.getNodeAt(uri, position).also { onTraversal.get().invoke(request, parsed) }
+                                parsed.astModel.getNodeAt(uri, position).also {
+                                    onTraversal.get().invoke(request, parsed)
+                                }
                         }
                         return parsed.copy(astModel = model)
                     }

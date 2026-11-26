@@ -7,12 +7,12 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
-import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
-import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
@@ -198,8 +198,10 @@ class GroovyCompilationService internal constructor(
     /** Capture the request's ownership fence and source identity before dispatching its coroutine. */
     internal fun captureSnapshotSource(uri: URI): SnapshotSource = orchestrator.snapshots.capture(uri)
 
-    internal suspend fun acquireHoverSnapshot(source: SnapshotSource, requestCurrent: () -> Boolean): SourceAcquisition =
-        orchestrator.snapshots.acquireHover(source, Phases.CANONICALIZATION, requestCurrent)
+    internal suspend fun acquireHoverSnapshot(
+        source: SnapshotSource,
+        requestCurrent: () -> Boolean,
+    ): SourceAcquisition = orchestrator.snapshots.acquireHover(source, Phases.CANONICALIZATION, requestCurrent)
 
     internal suspend fun <T> queryCapturedSnapshot(
         source: SnapshotSource,
@@ -295,12 +297,10 @@ class GroovyCompilationService internal constructor(
         snapshot: CompiledDocumentSnapshot,
         engine: LanguageEngine,
         jenkins: JenkinsQuerySnapshot,
-    ): LanguageSession {
-        return if (engine is NativeLanguageEngine) {
-            engine.createHoverSession(snapshot, uri, jenkins)
-        } else {
-            engine.createSession(uri, snapshot.sourceText)
-        }
+    ): LanguageSession = if (engine is NativeLanguageEngine) {
+        engine.createHoverSession(snapshot, uri, jenkins)
+    } else {
+        engine.createSession(uri, snapshot.sourceText)
     }
 
     fun updateGroovyVersion(info: GroovyVersionInfo) = engineManager.updateGroovyVersion(info)

@@ -25,7 +25,8 @@ internal class HoverMemberLookup(
     capture: () -> CapturedWorkspaceReferences,
     private val qualify: (URI, SemanticDocumentSnapshot) -> (() -> Boolean)?,
     localTypes: () -> Set<String> = { emptySet() },
-) : HoverMemberQueries(), ReceiverBoundMemberLookup {
+) : HoverMemberQueries(),
+    ReceiverBoundMemberLookup {
     companion object {
         fun forRequest(
             compilation: GroovyCompilationService,
@@ -73,7 +74,11 @@ internal class HoverMemberLookup(
             val stored = checkNotNull(references.getDocumentSnapshot(uri))
             checks.getOrPut(uri) {
                 qualify(uri, stored) ?: throw ResponseErrorException(
-                    ResponseError(ResponseErrorCode.RequestFailed, "Cannot qualify workspace members of $classFqn", null),
+                    ResponseError(
+                        ResponseErrorCode.RequestFailed,
+                        "Cannot qualify workspace members of $classFqn",
+                        null,
+                    ),
                 )
             }
             return stored.document.symbols.filter { it.owner == id }
@@ -90,7 +95,6 @@ internal class HoverMemberLookup(
         unavailable?.let { throw it }
         return !view.isInitialized() || (checks.values.all { it() } && view.value.isCurrent())
     }
-
 }
 
 internal abstract class HoverMemberQueries : MemberLookup {

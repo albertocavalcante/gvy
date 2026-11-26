@@ -42,7 +42,9 @@ class HoverRetrySharingTest {
             object : WorkerSession {
                 override fun parse(request: ParseRequest): ParseResult {
                     val first = calls.incrementAndGet() == 1
-                    val parsed = delegate.parse(if (first) request.copy(content = source.replace("String", "Object")) else request)
+                    val parsed = delegate.parse(
+                        if (first) request.copy(content = source.replace("String", "Object")) else request,
+                    )
                     if (first) oldEntered.countDown()
                     check((if (first) releaseOld else releaseFresh).await(10, TimeUnit.SECONDS))
                     return parsed

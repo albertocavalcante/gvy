@@ -70,7 +70,9 @@ class HoverTokensDeliveryFailureTest {
             if (qualified.get()) {
                 failures.incrementAndGet()
                 when (action) {
-                    "cancel", "cancelFatal" -> caller.cancel(CancellationException("cancelled during Jenkins validation"))
+                    "cancel", "cancelFatal" -> caller.cancel(
+                        CancellationException("cancelled during Jenkins validation"),
+                    )
                     "retire", "fatal" -> docs.put(uri, "$source // edited")
                 }
                 if (action == "fatal" || action == "cancelFatal") throw fatal
@@ -95,26 +97,30 @@ class HoverTokensDeliveryFailureTest {
             }.join()
             assertTrue(read.get() && qualified.get(), "The compiler must requalify after actual vars consumption")
             assertEquals(1, failures.get())
-            when (action) {
-                "cancel" -> assertIs<CancellationException>(escaped)
-                "fatal", "cancelFatal" -> assertSame(
-                    fatal,
-                    escaped,
-                    "Recovered wrapper points to original: ${escaped?.cause === fatal}",
-                )
-                "retire" -> {
-                    val error = assertIs<ResponseErrorException>(escaped)
-                    assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
-                }
-                "current" -> {
-                    val error = assertIs<ResponseErrorException>(escaped)
-                    assertEquals(ResponseErrorCode.InternalError.value, error.responseError.code)
-                    assertContains(error.responseError.message, requireNotNull(io.message))
-                }
-                else -> error("Unknown test action $action")
-            }
+            assertDeliveryFailure(action, escaped, fatal, io)
         } finally {
             service.shutdown()
+        }
+    }
+
+    private fun assertDeliveryFailure(action: String, escaped: Throwable?, fatal: AssertionError, io: IOException) {
+        when (action) {
+            "cancel" -> assertIs<CancellationException>(escaped)
+            "fatal", "cancelFatal" -> assertSame(
+                fatal,
+                escaped,
+                "Recovered wrapper points to original: ${escaped?.cause === fatal}",
+            )
+            "retire" -> {
+                val error = assertIs<ResponseErrorException>(escaped)
+                assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            }
+            "current" -> {
+                val error = assertIs<ResponseErrorException>(escaped)
+                assertEquals(ResponseErrorCode.InternalError.value, error.responseError.code)
+                assertContains(error.responseError.message, requireNotNull(io.message))
+            }
+            else -> error("Unknown test action $action")
         }
     }
 }

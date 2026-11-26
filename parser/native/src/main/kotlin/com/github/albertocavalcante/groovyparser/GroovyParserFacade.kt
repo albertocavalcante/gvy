@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import com.github.albertocavalcante.nativeapi.ExcludedSource
 import com.github.albertocavalcante.nativeapi.Fallback
 import com.github.albertocavalcante.nativeapi.NativeClasspathInputs
@@ -34,7 +35,6 @@ import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
-import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import org.codehaus.groovy.control.messages.ExceptionMessage
 import org.codehaus.groovy.control.messages.LocatedMessage
 import org.codehaus.groovy.control.messages.Message

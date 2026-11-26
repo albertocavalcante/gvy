@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.sources
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
 import java.net.JarURLConnection
 import java.net.URI
+import java.net.URL
 import java.nio.file.Path
 
 /** Source attachments paired with the selected class even when another artifact defines the same name. */
@@ -23,11 +24,16 @@ internal suspend fun SourceNavigator.documentationForSelectedBinary(type: Class<
 private fun Class<*>.binaryResourceUri(): URI? {
     val entry = name.replace('.', '/') + ".class"
     val resource = getResource("/$entry") ?: return null
-    if (resource.protocol == "jrt") {
-        return resource.toURI().takeIf {
+    return if (resource.protocol == "jrt") {
+        resource.toURI().takeIf {
             module.layer === ModuleLayer.boot() && it.path == "/${module.name}/$entry"
         }
+    } else {
+        artifactResourceUri(resource, entry)
     }
+}
+
+private fun Class<*>.artifactResourceUri(resource: URL, entry: String): URI? {
     // Class.getResource delegates to its loader; a parent can supply another artifact's same-named entry.
     val location = protectionDomain?.codeSource?.location?.takeIf { it.protocol == "file" } ?: return null
     val artifact = Path.of(location.toURI())

@@ -193,7 +193,6 @@ private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequenc
     }
 }
 
-
 /** Resolve extension metadata from the held parser loader, without consulting the service's live GDK index. */
 internal fun heldGdkMethods(
     reflection: ClasspathReflection,
@@ -220,7 +219,9 @@ private fun Method.qualifiedGdk(owner: Class<*>, sources: GroovySourceResolver?)
         name = name,
         returnType = returnType.simpleName,
         parameterTypes = types,
-        parameterNames = sources?.getParameterNames(owner.simpleName, name, types) ?: parameters.drop(1).map { it.name },
+        parameterNames = sources?.getParameterNames(owner.simpleName, name, types) ?: parameters.drop(1).map {
+            it.name
+        },
         originClass = owner.simpleName,
         doc = "Groovy GDK method from ${owner.simpleName}",
         displayParameterTypes = displayParameterTypes().drop(1),

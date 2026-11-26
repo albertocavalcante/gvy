@@ -37,7 +37,13 @@ class NativeHoverExtensionProvenanceTest {
             val documents = DocumentProvider().apply { put(caller, source) }
             val manager = WorkspaceManager().apply { setTestClasspath(root) { listOf(classes) } }
             val service = GroovyCompilationService(documentProvider = documents, workspaceManager = manager)
-            val params = HoverParams(TextDocumentIdentifier(caller.toString()), Position(0, source.indexOf("reverse") + 1))
+            val params = HoverParams(
+                TextDocumentIdentifier(caller.toString()),
+                Position(
+                    0,
+                    source.indexOf("reverse") + 1,
+                ),
+            )
             try {
                 val handler = HoverRequestHandler(service, documents)
                 val binary = handler.getHover(params).contents.right.value
@@ -45,8 +51,12 @@ class NativeHoverExtensionProvenanceTest {
                 assertContains(binary, "reverse()")
 
                 documents.put(peer, "package p; class Api {}")
-                val parsed = assertIs<SnapshotAcquisition.Ready>(service.acquireEditorSnapshot(caller)).snapshot.parseResult
-                val selected = parsed.ast!!.classes.single().getMethods("use").single().parameters.single().type.redirect()
+                val parsed = assertIs<SnapshotAcquisition.Ready>(
+                    service.acquireEditorSnapshot(caller),
+                ).snapshot.parseResult
+                val selected = parsed.ast!!.classes.single().getMethods(
+                    "use",
+                ).single().parameters.single().type.redirect()
                 assertTrue(selected.isPrimaryClassNode)
                 assertEquals(Path.of(peer).toString(), selected.module.context.name)
                 assertEquals("java.lang.Object", selected.superClass.name)

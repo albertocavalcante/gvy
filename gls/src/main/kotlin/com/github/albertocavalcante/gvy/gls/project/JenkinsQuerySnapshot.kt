@@ -39,42 +39,47 @@ internal class JenkinsQuerySnapshot private constructor(
 
     suspend fun materialize(forHover: Boolean = false): JenkinsQueryFacts = withContext(Dispatchers.IO) {
         if (!isCurrent()) throw staleJenkins()
-        val globals = lazy { capability?.getGlobalVariables().orEmpty().toList() }
-        val native = lazy { manager?.captureMetadata(uri) }
-        val metadata = lazy { native.value?.metadata ?: capability?.getAllMetadata(uri) }
+        val reads = ConsultedInputs(forHover)
+        val frozen = reads.frozenCapability()
+        JenkinsQueryFacts(isFile, reads.names, frozen, ModeResolver(mode, frozen), reads)
+    }
+
+    private inner class ConsultedInputs(private val forHover: Boolean) : JenkinsInputChecks {
+        private val globals = lazy { capability?.getGlobalVariables().orEmpty().toList() }
+        private val native = lazy { manager?.captureMetadata(uri) }
+        private val metadata = lazy { native.value?.metadata ?: capability?.getAllMetadata(uri) }
         val names = if (!forHover && isFile) variableNames() else emptySet()
-        val frozen = capability?.let { original ->
+
+        private val consultedMetadata get() = if (native.isInitialized()) native.value else null
+        override val classpath: List<Path>? get() = consultedMetadata?.classpath
+
+        fun frozenCapability(): JenkinsCapabilities? = capability?.let { original ->
             object : JenkinsCapabilities by original {
                 override fun isJenkinsFile(uri: URI) = isFile
                 override fun getGlobalVariables(): List<GlobalVariable> = globals.value
                 override fun getAllMetadata(uri: URI): MergedJenkinsMetadata? = metadata.value
             }
         }
-        fun publicationsCurrent(): Boolean {
-            val selection = if (native.isInitialized()) native.value else null
+
+        override fun publicationsCurrent(): Boolean {
+            val selection = consultedMetadata
             return authoritiesCurrent() &&
                 (selection == null || (selection.isCurrent() && gdslCurrent?.invoke() == true))
         }
-        fun inputsCurrent(): Boolean {
-            if (!isCurrent()) return false
-            val original = if (native.isInitialized()) native.value else null
-            if (metadata.isInitialized() && original == null && capability?.getAllMetadata(uri) != metadata.value) {
-                return false
-            }
-            if (globals.isInitialized() && capability?.getGlobalVariables().orEmpty() != globals.value) return false
-            if (!forHover && isFile && variableNames() != names) return false
-            // The native publication checks are identity reads. Run them after custom capability callbacks and IO.
-            return publicationsCurrent()
-        }
-        JenkinsQueryFacts(
-            isFile,
-            names,
-            frozen,
-            ModeResolver(mode, frozen),
-            consultedClasspath = { if (native.isInitialized()) native.value?.classpath else null },
-            publicationsCurrent = ::publicationsCurrent,
-            current = ::inputsCurrent,
-        )
+
+        private fun metadataCurrent(): Boolean = !metadata.isInitialized() ||
+            consultedMetadata != null ||
+            capability?.getAllMetadata(uri) == metadata.value
+
+        private fun globalsCurrent(): Boolean = !globals.isInitialized() ||
+            capability?.getGlobalVariables().orEmpty() == globals.value
+
+        // Run the native publication checks after custom capability callbacks and IO.
+        override fun inputsCurrent(): Boolean = isCurrent() &&
+            metadataCurrent() &&
+            globalsCurrent() &&
+            (forHover || !isFile || variableNames() == names) &&
+            publicationsCurrent()
     }
 
     companion object {
@@ -82,23 +87,29 @@ internal class JenkinsQuerySnapshot private constructor(
     }
 }
 
+/** Qualification for the values a single query actually read. */
+internal interface JenkinsInputChecks {
+    val classpath: List<Path>?
+    fun publicationsCurrent(): Boolean
+    fun inputsCurrent(): Boolean
+}
+
 internal class JenkinsQueryFacts(
     val isJenkinsFile: Boolean,
     val variables: Set<String>,
     val capability: JenkinsCapabilities?,
     val mode: ModeResolver,
-    private val consultedClasspath: () -> List<Path>?,
-    val publicationsCurrent: () -> Boolean,
-    private val current: () -> Boolean,
+    private val checks: JenkinsInputChecks,
 ) {
-    val classpath: List<Path>? get() = consultedClasspath()
+    val classpath: List<Path>? get() = checks.classpath
+    val publicationsCurrent: () -> Boolean = checks::publicationsCurrent
 
     suspend fun isCurrent(): Boolean {
         // Carry the synchronous outcome across the dispatcher hop. Coroutine stack recovery can copy a thrown Error,
         // and prompt cancellation on return from IO must not hide a fatal error the callback already raised.
         var checked: Result<Boolean>? = null
         try {
-            withContext(Dispatchers.IO) { checked = runCatching(current) }
+            withContext(Dispatchers.IO) { checked = runCatching(checks::inputsCurrent) }
         } catch (cancelled: CancellationException) {
             val failure = checked?.exceptionOrNull()
             if (failure is Error) throw failure

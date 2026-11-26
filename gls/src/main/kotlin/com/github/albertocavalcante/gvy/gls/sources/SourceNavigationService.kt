@@ -33,7 +33,8 @@ class SourceNavigationService(
     private val sourceExtractor: SourceJarExtractor = SourceJarExtractor(),
     private val jdkSourceResolver: JdkSourceResolver = JdkSourceResolver(),
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
-) : SourceNavigator, BinaryDocumentationSource {
+) : SourceNavigator,
+    BinaryDocumentationSource {
 
     private companion object {
         private const val MIN_MAVEN_COORDINATE_PARTS = 3
@@ -401,26 +402,6 @@ class SourceNavigationService(
     }
 
     /**
-     * Look for a -sources.jar next to a binary JAR file.
-     *
-     * For example: libs/testlib.jar -> libs/testlib-sources.jar
-     */
-    private fun findAdjacentSourceJar(binaryJarPath: Path): Path? {
-        val fileName = binaryJarPath.fileName.toString()
-        if (!fileName.endsWith(".jar")) return null
-
-        val baseName = fileName.removeSuffix(".jar")
-        val sourceJarName = "$baseName-sources.jar"
-        val sourceJarPath = binaryJarPath.parent?.resolve(sourceJarName)
-
-        return if (sourceJarPath != null && Files.exists(sourceJarPath)) {
-            sourceJarPath
-        } else {
-            null
-        }
-    }
-
-    /**
      * Derive Maven coordinates from a JAR file path.
      *
      * Uses common Maven repository layout patterns:
@@ -511,4 +492,24 @@ class SourceNavigationService(
     fun getStatistics(): Map<String, Any> = mapOf(
         "extractorStats" to sourceExtractor.getStatistics(),
     )
+}
+
+/**
+ * Look for a -sources.jar next to a binary JAR file.
+ *
+ * For example: libs/testlib.jar -> libs/testlib-sources.jar
+ */
+private fun findAdjacentSourceJar(binaryJarPath: Path): Path? {
+    val fileName = binaryJarPath.fileName.toString()
+    if (!fileName.endsWith(".jar")) return null
+
+    val baseName = fileName.removeSuffix(".jar")
+    val sourceJarName = "$baseName-sources.jar"
+    val sourceJarPath = binaryJarPath.parent?.resolve(sourceJarName)
+
+    return if (sourceJarPath != null && Files.exists(sourceJarPath)) {
+        sourceJarPath
+    } else {
+        null
+    }
 }

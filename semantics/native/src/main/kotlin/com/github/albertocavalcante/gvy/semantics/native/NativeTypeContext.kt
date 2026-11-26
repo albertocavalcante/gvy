@@ -73,7 +73,6 @@ class NativeTypeContext private constructor(
         return NativeTypeContext(typeSolver, calculatorRegistry, scope, isStaticCompilation, bound, root)
     }
 
-
     override fun resolveType(fqn: String): SemanticType = runCatching {
         val ref = typeSolver.tryToSolveType(fqn)
         if (ref.isSolved) {
@@ -292,16 +291,6 @@ class NativeTypeContext private constructor(
         )
     }
 
-    /**
-     * The return type of [methodName] on [classFqn] when it is certain: every overload of that arity must declare
-     * the same known type. Overloads that disagree (or lack a type) give null, so the call stays Unknown instead
-     * of taking the first overload's type.
-     */
-    private fun MemberLookup.agreedMethodType(classFqn: String, methodName: String, arity: Int): SemanticType? {
-        val types = findMethods(classFqn, methodName, arity).map { it.type }
-        return if (types.isNotEmpty() && types.none { it == null }) types.distinct().singleOrNull() else null
-    }
-
     companion object {
         /**
          * Convert a Groovy ClassNode to SemanticType.
@@ -313,6 +302,16 @@ class NativeTypeContext private constructor(
 /** Optional native adapter for consumers requiring a compiler-selected declaration for foreign members. */
 interface ReceiverBoundMemberLookup : MemberLookup {
     fun forReceiver(declaration: ClassNode?): MemberLookup?
+}
+
+/**
+ * The return type of [methodName] on [classFqn] when it is certain: every overload of that arity must declare
+ * the same known type. Overloads that disagree (or lack a type) give null, so the call stays Unknown instead
+ * of taking the first overload's type.
+ */
+private fun MemberLookup.agreedMethodType(classFqn: String, methodName: String, arity: Int): SemanticType? {
+    val types = findMethods(classFqn, methodName, arity).map { it.type }
+    return if (types.isNotEmpty() && types.none { it == null }) types.distinct().singleOrNull() else null
 }
 
 private fun Expression.declaredReceiver(): ClassNode? = when (this) {

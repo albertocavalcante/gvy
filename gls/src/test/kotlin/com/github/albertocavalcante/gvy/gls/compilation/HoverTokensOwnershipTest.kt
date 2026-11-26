@@ -4,11 +4,10 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
-import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineFeatures
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
+import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
@@ -19,8 +18,8 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -52,6 +51,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 class HoverTokensOwnershipTest {
     @TempDir
@@ -184,7 +184,9 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["hover", "tokens"])
-    fun `equal text and version reopened during actual parse cannot return old facts`(endpoint: String): Unit = runBlocking {
+    fun `equal text and version reopened during actual parse cannot return old facts`(
+        endpoint: String
+    ): Unit = runBlocking {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val fixture = Fixture(afterParse = {
@@ -359,7 +361,9 @@ class HoverTokensOwnershipTest {
                 val available = assertIs<SnapshotAcquisition.Available>(fixture.service.acquireSnapshot(fixture.uri))
                 val parsed = available.snapshot.parseResult
                 val classes = parsed.astModel.getAllClassNodes().map { it.nameWithoutPackage }.sorted()
-                val methods = parsed.astModel.getNodes(fixture.uri).filterIsInstance<MethodNode>().map { it.name }.sorted()
+                val methods = parsed.astModel.getNodes(
+                    fixture.uri
+                ).filterIsInstance<MethodNode>().map { it.name }.sorted()
                 val evidence = "case=$label ast=${parsed.ast != null} " +
                     "requested=${parsed.outcome.requestedPhase} achieved=${parsed.outcome.achievedPhase} " +
                     "degraded=${parsed.outcome.isDegraded} classes=$classes methods=$methods " +
@@ -401,7 +405,9 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["engine", "source"])
-    fun `hover rejects authority changed by a freshness callback after AST traversal`(authority: String): Unit = runBlocking {
+    fun `hover rejects authority changed by a freshness callback after AST traversal`(
+        authority: String
+    ): Unit = runBlocking {
         val manager = spyk(WorkspaceManager())
         val armed = AtomicBoolean(false)
         val changed = AtomicBoolean(false)
@@ -453,7 +459,9 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["hover", "tokens"])
-    fun `final compiler qualification cannot replace consulted Jenkins variables`(endpoint: String): Unit = runBlocking {
+    fun `final compiler qualification cannot replace consulted Jenkins variables`(
+        endpoint: String
+    ): Unit = runBlocking {
         val capability = mockk<JenkinsCapabilities>()
         val manager = spyk(WorkspaceManager())
         val step = "sharedStep"
@@ -474,7 +482,8 @@ class HoverTokensOwnershipTest {
         try {
             val stable = fixture.request(endpoint, 1)
             if (endpoint == "hover") {
-                assertContains(assertIs<org.eclipse.lsp4j.Hover>(stable).contents.right.value, previous.documentation)
+                val hover = assertIs<org.eclipse.lsp4j.Hover>(stable)
+                assertContains(hover.contents.right.value, previous.documentation)
             } else {
                 val tokens = assertIs<SemanticTokens>(stable).data.chunked(5)
                 assertTrue(tokens.any { it[2] == step.length && it[3] == 12 }, "Expected the vars function token")

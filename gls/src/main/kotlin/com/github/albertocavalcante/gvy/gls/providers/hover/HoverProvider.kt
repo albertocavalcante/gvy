@@ -71,19 +71,18 @@ import java.net.URI
  * This provider uses a strategy pattern to handle different AST node types.
  * Strategies are evaluated in order, and the first one that can handle the node is used.
  */
-class HoverProvider internal constructor(
+class HoverProvider private constructor(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     private val contentGenerator: HoverContentGenerator,
-    private val sourceNavigator: SourceNavigator? = null,
+    private val sourceNavigator: SourceNavigator?,
     /**
      * The workspace-independent strategies, evaluated in order after any Jenkins ones; the first that handles a
      * node and returns a hover wins. Built once and shared by every request, so they must hold no per-request
      * state. The last one should be a fallback.
      */
     baseStrategies: List<HoverStrategy>,
-    private val frozenJenkins: JenkinsQueryFacts?,
-    private val binaryDocumentation: (suspend (ClassNode) -> Documentation?)?,
+    private val heldInputs: HeldHoverInputs?,
 ) {
     constructor(
         compilationService: GroovyCompilationService,
@@ -91,7 +90,7 @@ class HoverProvider internal constructor(
         contentGenerator: HoverContentGenerator,
         sourceNavigator: SourceNavigator? = null,
         baseStrategies: List<HoverStrategy> = DEFAULT_STRATEGIES,
-    ) : this(compilationService, documentProvider, contentGenerator, sourceNavigator, baseStrategies, null, null)
+    ) : this(compilationService, documentProvider, contentGenerator, sourceNavigator, baseStrategies, null)
 
     internal constructor(
         compilationService: GroovyCompilationService,
@@ -99,7 +98,14 @@ class HoverProvider internal constructor(
         contentGenerator: HoverContentGenerator,
         jenkins: JenkinsQueryFacts,
         documentation: suspend (ClassNode) -> Documentation?,
-    ) : this(compilationService, documentProvider, contentGenerator, null, DEFAULT_STRATEGIES, jenkins, documentation)
+    ) : this(
+        compilationService,
+        documentProvider,
+        contentGenerator,
+        null,
+        DEFAULT_STRATEGIES,
+        HeldHoverInputs(jenkins, documentation),
+    )
 
     // The shared default is already immutable and is used as is; an injected list is copied defensively.
     private val baseStrategies: List<HoverStrategy> =
@@ -122,6 +128,7 @@ class HoverProvider internal constructor(
      */
     internal val strategies: List<HoverStrategy>
         get() {
+            val frozenJenkins = heldInputs?.jenkins
             val jenkinsCapabilities = if (frozenJenkins == null) {
                 compilationService.workspaceManager.getJenkinsCapabilities()
             } else {
@@ -145,7 +152,7 @@ class HoverProvider internal constructor(
 
     internal suspend fun provideHover(uri: String, position: Position, snapshot: CompiledDocumentSnapshot): Hover? =
         // Native Jenkins strategies consult workspace variables and metadata only if they handle the selected node.
-        withContext(if (frozenJenkins?.capability != null) Dispatchers.IO else Dispatchers.Default) {
+        withContext(if (heldInputs?.jenkins?.capability != null) Dispatchers.IO else Dispatchers.Default) {
             hoverForSource(uri, position, snapshot)
         }
 
@@ -419,20 +426,21 @@ class HoverProvider internal constructor(
 
     private suspend fun sourceDocumentation(node: ASTNode): Documentation? {
         val declaration = classDeclaration(node)
-        binaryDocumentation?.let { documentation ->
+        if (heldInputs != null) {
             // A source companion can share a binary name with an artifact in the same held loader.
-            return declaration?.takeIf { !it.isPrimaryClassNode && it.isResolved }?.let { documentation(it) }
+            return declaration?.takeIf { !it.isPrimaryClassNode && it.isResolved }?.let { heldInputs.documentation(it) }
         }
-        val className = declaration?.name ?: (node as? ImportNode)?.className ?: return null
-        val navigator = sourceNavigator ?: return null
-        val classpathUri = compilationService.findClasspathClass(className) ?: return null
-        return try {
-            (navigator.navigateToSource(classpathUri, className) as? SourceNavigator.SourceResult.SourceLocation)
-                ?.documentation
-        } catch (e: Exception) {
-            rethrowIfCancellationOrError(e)
-            logger.debug(e) { "Failed to get source documentation for $className" }
-            null
+        val className = declaration?.name ?: (node as? ImportNode)?.className
+        if (className == null || sourceNavigator == null) return null
+        return compilationService.findClasspathClass(className)?.let { classpathUri ->
+            try {
+                val source = sourceNavigator.navigateToSource(classpathUri, className)
+                (source as? SourceNavigator.SourceResult.SourceLocation)?.documentation
+            } catch (e: Exception) {
+                rethrowIfCancellationOrError(e)
+                logger.debug(e) { "Failed to get source documentation for $className" }
+                null
+            }
         }
     }
 
@@ -486,6 +494,8 @@ class HoverProvider internal constructor(
         )
     }
 }
+
+private class HeldHoverInputs(val jenkins: JenkinsQueryFacts, val documentation: suspend (ClassNode) -> Documentation?)
 
 /** Whether this class or member is declared in a module other than [current]. */
 private fun ASTNode.isDeclaredInAnotherModule(current: ModuleNode?): Boolean {
