@@ -85,8 +85,8 @@ private class ActiveJobs<I, T : Any>(val members: List<PendingWork<I, T>>, val s
 }
 
 internal class PendingRegistry<I, T : Any>(private val deliveryFor: ((I) -> PendingDelivery)? = null) {
-    private val current = SharedValue(ConcurrentHashMap<URI, ActiveJobs<I, T>>())
-    private val jobs: ConcurrentHashMap<URI, ActiveJobs<I, T>> get() = current.value
+    private val publishedJobs = SharedValue(ConcurrentHashMap<URI, ActiveJobs<I, T>>())
+    private val jobs: ConcurrentHashMap<URI, ActiveJobs<I, T>> get() = publishedJobs.value
 
     operator fun get(uri: URI): PendingWork<I, T>? = jobs[uri]?.selected
 
@@ -139,8 +139,8 @@ internal class PendingRegistry<I, T : Any>(private val deliveryFor: ((I) -> Pend
     fun detach(uri: URI): RetiredCompilations? = jobs.remove(uri)
 
     fun detach(): RetiredCompilations {
-        // One atomic swap, so two detaches cannot both retire the same map and lose the other's.
-        val retired = current.exchange(ConcurrentHashMap())
+        // Callers hold ArtifactOwnership's monitor; one atomic swap keeps this correct without it as well.
+        val retired = publishedJobs.exchange(ConcurrentHashMap())
         return RetiredCompilations { retired.values.forEach { it.retire() } }
     }
 }

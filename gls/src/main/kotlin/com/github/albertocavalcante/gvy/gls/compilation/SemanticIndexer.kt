@@ -50,7 +50,11 @@ class SemanticIndexer(
     /** [generation]: the [retireAllPublications] generation of the publication that stored it. */
     private class Entry(val contentHash: String, val phase: Int, val generation: AnalysisGeneration)
 
-    /** Written only inside [entries]' compute for its key; [entry] and [highestTicket] are also read lock-free. */
+    /**
+     * Written only inside [entries]' compute for its key. [entry] and [highestTicket] change together but are also
+     * read lock-free by [publish]'s pre-check, which can see a mismatched pair; [publish] decides again under the
+     * lock, so that is harmless.
+     */
     private class State(initialEntry: Entry? = null, initialHighestTicket: Long = 0L) {
         val entry = SharedValue(initialEntry)
 
@@ -84,12 +88,13 @@ class SemanticIndexer(
      * finishes on the old map and old graph first, and a later one sees only the new pair. Reads stay lock-free;
      * they see the old or the new map, and a pre-clear publication can never match an entry of the new one.
      */
-    private val current = SharedValue(ConcurrentHashMap<URI, State>())
-    private val entries: ConcurrentHashMap<URI, State> get() = current.value
+    private val publishedEntries = SharedValue(ConcurrentHashMap<URI, State>())
+    private val entries: ConcurrentHashMap<URI, State> get() = publishedEntries.value
     private val swap = ReentrantReadWriteLock()
     private val tickets = AtomicLong()
 
-    // Read under [swap]'s read lock, bumped under its write lock: see [retireAllPublications]
+    // Read under [swap]'s read lock and by [publish]'s lock-free pre-check, bumped under its write lock: see
+    // [retireAllPublications]
     private val generation = SharedValue(AnalysisGeneration.INITIAL)
 
     /** Acquire before reading/enqueueing source. Removal invalidates every outstanding publication. */
@@ -258,7 +263,7 @@ class SemanticIndexer(
      */
     fun clear() {
         swap.write {
-            current.set(ConcurrentHashMap())
+            publishedEntries.set(ConcurrentHashMap())
             index.clear()
         }
     }

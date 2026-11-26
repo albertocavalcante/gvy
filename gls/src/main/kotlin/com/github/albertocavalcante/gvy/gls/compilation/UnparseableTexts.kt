@@ -18,8 +18,8 @@ internal class UnparseableTexts(private val ownership: ArtifactOwnership) {
 
     // Swapped by [clear] (#1342). A [mark] racing it may land in either map; an entry carries its ticket, which a
     // global clear retires, so [isKnown] ignores it whichever map it is in.
-    private val current = SharedValue(ConcurrentHashMap<URI, Entry>())
-    private val entries: ConcurrentHashMap<URI, Entry> get() = current.value
+    private val publishedEntries = SharedValue(ConcurrentHashMap<URI, Entry>())
+    private val entries: ConcurrentHashMap<URI, Entry> get() = publishedEntries.value
 
     /** A ticket to take before compiling [uri], so a retirement during that compile voids [mark]. */
     fun begin(uri: URI): ArtifactOwnership.Ticket = ownership.begin(uri)
@@ -38,7 +38,7 @@ internal class UnparseableTexts(private val ownership: ArtifactOwnership) {
     }
 
     fun clear() {
-        current.set(ConcurrentHashMap())
+        publishedEntries.set(ConcurrentHashMap())
     }
 
     /** Entries held, for tests that prove removals leave nothing behind. */

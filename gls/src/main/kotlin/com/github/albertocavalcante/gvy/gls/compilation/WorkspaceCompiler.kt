@@ -99,7 +99,7 @@ class WorkspaceCompiler(
 
         // Compile all files together
         val result = compileFiles(workspaceSources, workspace)
-        workspaceCompiled.trySet()
+        workspaceCompiled.trySet() // A one-way mark: a later compile finds it set.
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
