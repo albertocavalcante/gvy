@@ -1,0 +1,40 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import kotlin.concurrent.Volatile as CommonVolatile
+import kotlin.jvm.Volatile as JvmVolatile
+
+class Fields {
+    @Volatile var plain = false // FLAG
+
+    @Volatile // FLAG
+    private var onItsOwnLine: String? = null
+
+    @Volatile private var withModifier = 0L // FLAG
+    @Volatile() var withParentheses = false // FLAG
+    @field:Volatile var withUseSiteTarget = false // FLAG
+    @[Volatile] var inAnnotationList = false // FLAG
+    @kotlin.jvm.Volatile var qualifiedJvm = false // FLAG
+    @kotlin.concurrent.Volatile var qualifiedCommon = false // FLAG
+    @JvmVolatile var aliasedJvm = false // FLAG
+    @CommonVolatile var aliasedCommon = false // FLAG
+    @Transient @Volatile var afterAnotherAnnotation = false // FLAG
+}
+
+class Holder(@Volatile var constructorProperty: Int) // FLAG
+
+object Singleton {
+    @Volatile private var instance: Any? = null // FLAG
+}
+
+class WithCompanion {
+    companion object {
+        @Volatile var shared = 0 // FLAG
+    }
+}
+
+fun anonymousObject(): Any = object {
+    @Volatile var inside = 0 // FLAG
+}
