@@ -65,9 +65,7 @@ class SymbolIndexingService(
     /** An index together with the hash of the content it was built from, built before it is committed. */
     internal class Prepared(val contentHash: String, val index: SymbolIndex) {
         /** Classes this file declares; feeds the class-name lookup (#861). */
-        val classes: List<Symbol.Class> by lazy {
-            index.getUris().flatMap(index::getSymbols).filterIsInstance<Symbol.Class>()
-        }
+        val classes: List<Symbol.Class> = index.getUris().flatMap(index::getSymbols).filterIsInstance<Symbol.Class>()
     }
 
     private val logger = KotlinLogging.logger {}
