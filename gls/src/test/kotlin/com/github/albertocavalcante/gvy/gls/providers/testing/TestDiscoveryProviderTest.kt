@@ -268,8 +268,9 @@ class TestDiscoveryProviderTest {
         val workspace = mockk<WorkspaceManager>()
         every { service.workspaceManager } returns workspace
         every { workspace.getWorkspaceSourceUris() } returns listOf(uri)
-        coEvery { service.queryUncachedTestDiscovery(uri, any<(ParseResult) -> List<TestSuite>>()) } answers {
-            val suites = secondArg<(ParseResult) -> List<TestSuite>>().invoke(parsed)
+        every { service.captureSnapshotSource(any()) } returns mockk { every { isCurrent() } returns true }
+        coEvery { service.queryUncachedTestDiscovery(uri, any(), any<(ParseResult) -> List<TestSuite>>()) } answers {
+            val suites = thirdArg<(ParseResult) -> List<TestSuite>>().invoke(parsed)
             SnapshotQuery.Answer(suites, partial = false)
         }
         return TestDiscoveryProvider(service, registry)

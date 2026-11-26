@@ -65,7 +65,10 @@ class DiscoveryPublicationTest {
             try {
                 compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
                 compilation.onDocumentOpened(uri)
-                val discovery = async(Dispatchers.Default) { compilation.queryUncachedTestDiscovery(uri) { "old" } }
+                val window = DiscoveryWindow(compilation.captureSnapshotSource(root.toUri()))
+                val discovery = async(Dispatchers.Default) {
+                    compilation.queryUncachedTestDiscovery(uri, window) { "old" }
+                }
                 assertTrue(entered.await(10, TimeUnit.SECONDS), "Older symbol construction must reach the barrier")
                 val options = GroovyTextDocumentServiceOptions(documentProvider = documents)
                 GroovyTextDocumentService(scope, compilation, options).didChange(

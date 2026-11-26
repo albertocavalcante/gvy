@@ -31,15 +31,19 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import java.net.URI
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class DiscoveryInventoryTest {
@@ -103,6 +107,91 @@ class DiscoveryInventoryTest {
             previous.forEach(registry::register)
         }
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["current-io", "stale-io", "stale-cancel", "stale-fatal"])
+    fun `peer failure is delivered under the original inventory window`(scenario: String, @TempDir root: Path) {
+        val original = "class Alpha { @org.junit.jupiter.api.Test void original() {} }"
+        val updated = original.replace("original", "updated")
+        val first = Files.writeString(root.resolve("Alpha.groovy"), original).toUri()
+        val second = Files.writeString(root.resolve("Beta.groovy"), "class Beta {}").toUri()
+        val peer = FailingPeer(first, second, scenario)
+        val documents = spyk(DocumentProvider()).apply { put(first, original, DocumentVersion.of(1)) }
+        val manager = spyk(WorkspaceManager())
+        every { manager.getWorkspaceSourceUris() } returns listOf(first, second)
+        val compilation = GroovyCompilationService(
+            DiscoveryInventoryTest::class.java.classLoader,
+            documentProvider = documents,
+            workspaceManager = manager,
+            workerSessionDecorator = peer::decorate,
+        )
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val diagnostics = CoroutineScope(StandardTestDispatcher() + SupervisorJob())
+        val registry = TestFrameworkRegistry.default
+        val previous = registry.getDetectors()
+        try {
+            val extracted = observeFirstSuite(registry)
+            compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
+            compilation.onDocumentOpened(first)
+            val options = GroovyTextDocumentServiceOptions(documentProvider = documents)
+            val service = GroovyTextDocumentService(diagnostics, compilation, options)
+            val pendingEdit = AtomicBoolean(scenario != "current-io")
+            every { documents.getBuffer(second) } answers {
+                if (pendingEdit.compareAndSet(true, false)) {
+                    check(extracted.count == 0L)
+                    service.didChange(
+                        DidChangeTextDocumentParams(
+                            VersionedTextDocumentIdentifier(first.toString(), 2),
+                            listOf(TextDocumentContentChangeEvent(updated)),
+                        ),
+                    )
+                }
+                callOriginal()
+            }
+            val delegate = TestRequestDelegate(scope, compilation, buildToolManagerProvider = { null })
+            val request = delegate.discoverTests(DiscoverTestsParams(root.toUri().toString()))
+            val failed = assertFails { request.get(10, TimeUnit.SECONDS) }
+            val cause = (failed as? ExecutionException)?.cause ?: failed
+            assertEquals(0L, extracted.count)
+            assertEquals(if (scenario == "current-io") original else updated, peer.overlay)
+            if (scenario == "stale-io") {
+                val response = assertIs<ResponseErrorException>(cause).responseError
+                assertEquals(ResponseErrorCode.ContentModified.value, response.code)
+            } else {
+                assertSame(peer.failure, cause)
+            }
+        } finally {
+            diagnostics.cancel()
+            scope.cancel()
+            compilation.shutdown()
+            registry.clear()
+            previous.forEach(registry::register)
+        }
+    }
+
+    private class FailingPeer(private val first: URI, private val second: URI, scenario: String) {
+        val failure = when (scenario) {
+            "stale-cancel" -> CancelledParse(second)
+            "stale-fatal" -> FatalParse(second)
+            else -> FileSystemException("beta-compiler.jar", null, "Beta compiler input unavailable")
+        }
+
+        @Volatile
+        var overlay: String? = null
+
+        fun decorate(worker: WorkerSession) = object : WorkerSession {
+            override fun parse(request: ParseRequest): ParseResult {
+                if (request.uri == second) {
+                    overlay = request.openSources[first]
+                    throw failure
+                }
+                return worker.parse(request)
+            }
+        }
+    }
+
+    private class CancelledParse(val input: URI) : CancellationException("Cancelled parse of $input")
+    private class FatalParse(val input: URI) : AssertionError("Fatal parse of $input")
 
     private fun assertCurrentInventory(request: CompletableFuture<List<TestSuite>>) {
         try {

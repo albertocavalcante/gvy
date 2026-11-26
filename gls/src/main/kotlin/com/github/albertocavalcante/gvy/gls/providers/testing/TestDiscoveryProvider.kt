@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.testing
 
+import com.github.albertocavalcante.gvy.gls.compilation.DiscoveryWindow
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.testing.api.TestItemKind
@@ -40,39 +41,42 @@ class TestDiscoveryProvider(
 
         val testSuites = mutableListOf<TestSuite>()
 
-        // Validate workspace URI for potential future filtering
-        if (parseWorkspaceUri(workspaceUri) == null) {
+        val root = parseWorkspaceUri(workspaceUri)
+        if (root == null) {
             logger.warn { "Invalid workspace URI: $workspaceUri" }
             return emptyList()
         }
 
-        // Get all workspace source URIs
+        val window = DiscoveryWindow(compilationService.captureSnapshotSource(root))
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         val groovyFiles = sourceUris.filter { it.path.endsWith(".groovy", ignoreCase = true) }
         logger.info { "Found ${sourceUris.size} source URIs, ${groovyFiles.size} are Groovy files" }
 
         for (uri in groovyFiles) {
-            testSuites.addAll(discoverTestsForFile(uri))
+            testSuites.addAll(discoverTestsForFile(uri, window))
         }
         logger.info {
             "Test discovery complete: found ${testSuites.size} test suites with ${testSuites.sumOf {
                 it.tests.size
             }} total tests"
         }
+        if (!window.isCurrent()) throw contentModified(root)
         return testSuites
     }
 
-    private suspend fun discoverTestsForFile(uri: URI): List<TestSuite> {
-        val result = compilationService.queryUncachedTestDiscovery(uri) { parsed -> extractSuites(uri, parsed) }
+    private suspend fun discoverTestsForFile(uri: URI, window: DiscoveryWindow): List<TestSuite> {
+        val result = compilationService.queryUncachedTestDiscovery(uri, window) { parsed -> extractSuites(uri, parsed) }
         return when (result) {
             is SnapshotQuery.Answer -> result.value.orEmpty()
             SnapshotQuery.Missing -> emptyList()
-            SnapshotQuery.Stale -> throw ResponseErrorException(
-                ResponseError(ResponseErrorCode.ContentModified, "Inputs changed during test discovery for $uri", null),
-            )
+            SnapshotQuery.Stale -> throw contentModified(uri)
             is SnapshotQuery.Failure -> throw result.cause
         }
     }
+
+    private fun contentModified(uri: URI) = ResponseErrorException(
+        ResponseError(ResponseErrorCode.ContentModified, "Inputs changed during test discovery for $uri", null),
+    )
 
     private fun extractSuites(uri: URI, parseResult: ParseResult): List<TestSuite> {
         val ast = parseResult.ast

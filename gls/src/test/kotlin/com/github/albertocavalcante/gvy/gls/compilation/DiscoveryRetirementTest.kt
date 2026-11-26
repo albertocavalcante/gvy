@@ -13,6 +13,8 @@ import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.mockk.every
+import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import java.net.URI
+import java.nio.charset.MalformedInputException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -34,7 +37,9 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DiscoveryRetirementTest {
@@ -89,6 +94,52 @@ class DiscoveryRetirementTest {
         } finally {
             hold.release.countDown()
             diagnostics.cancel()
+            scope.cancel()
+            compilation.shutdown()
+            registry.clear()
+            previous.forEach(registry::register)
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `closed file read failure is distinct from removal`(removed: Boolean, @TempDir root: Path) {
+        val source = "class Suite { @org.junit.jupiter.api.Test void known() {} }"
+        val file = Files.writeString(root.resolve("Suite.groovy"), source)
+        val uri = file.toUri()
+        val manager = spyk(WorkspaceManager())
+        every { manager.getWorkspaceSourceUris() } returns listOf(uri)
+        val compilation = GroovyCompilationService(
+            DiscoveryRetirementTest::class.java.classLoader,
+            workspaceManager = manager,
+        )
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val registry = TestFrameworkRegistry.default
+        val previous = registry.getDetectors()
+        try {
+            registry.registerIfAbsent(JUnit5TestDetector())
+            compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
+            val delegate = TestRequestDelegate(scope, compilation, buildToolManagerProvider = { null })
+            val params = DiscoverTestsParams(root.toUri().toString())
+            val known = delegate.discoverTests(params).get(10, TimeUnit.SECONDS).single()
+            assertEquals("Suite", known.suite)
+            assertEquals(listOf("known"), known.tests.map { it.test })
+
+            if (removed) {
+                Files.delete(file)
+            } else {
+                Files.write(file, byteArrayOf(0xC3.toByte(), 0x28))
+                assertTrue(Files.isRegularFile(file))
+            }
+            assertNotNull(compilation.onClosedSourceChanged(uri, keepIfUnchanged = false))
+            val pending = delegate.discoverTests(params)
+            if (removed) {
+                assertTrue(pending.get(10, TimeUnit.SECONDS).isEmpty())
+            } else {
+                val failed = assertFailsWith<ExecutionException> { pending.get(10, TimeUnit.SECONDS) }
+                assertIs<MalformedInputException>(failed.cause)
+            }
+        } finally {
             scope.cancel()
             compilation.shutdown()
             registry.clear()

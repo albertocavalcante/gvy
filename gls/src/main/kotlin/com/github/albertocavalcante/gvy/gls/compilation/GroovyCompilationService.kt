@@ -271,7 +271,11 @@ class GroovyCompilationService internal constructor(
     }
 
     /** Compute suites against the current source. Only compiler and index work is shared across requests. */
-    internal suspend fun <T> queryUncachedTestDiscovery(uri: URI, extract: (ParseResult) -> T): SnapshotQuery<T?> {
+    internal suspend fun <T> queryUncachedTestDiscovery(
+        uri: URI,
+        window: DiscoveryWindow,
+        extract: (ParseResult) -> T,
+    ): SnapshotQuery<T?> {
         val (ticket, publication) = ownership.acquire(uri) { semanticIndexer.begin(uri) }
         return publication.use {
             val source = orchestrator.snapshots.capture(uri, ticket)
@@ -279,8 +283,14 @@ class GroovyCompilationService internal constructor(
                 logger.warn(it) { "Failed to read $uri for test discovery" }
             }
             when (acquired) {
-                is SnapshotAcquisition.Available -> queryPreparedDiscovery(source, publication, acquired, extract)
-                SnapshotAcquisition.Missing -> SnapshotQuery.Missing
+                is SnapshotAcquisition.Available -> {
+                    window.retain(acquired.isCurrent)
+                    queryPreparedDiscovery(source, publication, acquired, extract)
+                }
+                SnapshotAcquisition.Missing -> {
+                    window.retain(source::isCurrent)
+                    SnapshotQuery.Missing
+                }
                 SnapshotAcquisition.Stale -> SnapshotQuery.Stale
                 is SnapshotAcquisition.Failure -> SnapshotQuery.Failure(acquired.cause)
             }
