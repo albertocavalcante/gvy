@@ -84,8 +84,11 @@ sealed interface SpockSourceContext {
             return from(module, isPartial = !result.isSuccessful)
         }
 
-        fun from(module: ModuleNode, isPartial: Boolean): Available {
-            val classifier = SpecificationClassifier(module)
+        fun from(module: ModuleNode, isPartial: Boolean): Available = from(module, isPartial) {}
+
+        /** Reports each foreign source module as its compiler binding is consulted. */
+        fun from(module: ModuleNode, isPartial: Boolean, onSource: (ModuleNode) -> Unit): Available {
+            val classifier = SpecificationClassifier(module, onSource)
             return Available(module.classes.map(classifier::classify), isPartial)
         }
     }
@@ -177,7 +180,7 @@ private const val SPECIFICATION_FQN = "spock.lang.Specification"
 private val SPECIFICATION_TARGET = setOf(SPECIFICATION_FQN)
 
 /** Applies Groovy name-binding precedence conservatively: anything the module cannot prove stays uncertain. */
-private class SpecificationClassifier(private val module: ModuleNode) {
+private class SpecificationClassifier(private val module: ModuleNode, private val onSource: (ModuleNode) -> Unit) {
     private val binder = SpockNameBinder(module)
 
     // Identity, not ClassNode equality: ClassNode compares by name, and duplicate names are common mid-edit.
@@ -258,8 +261,10 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         val target = type.redirect()
         val owner = target.module ?: return false
         val unit = module.unit ?: return false
-        return target.isPrimaryClassNode && !isStubSourceName(owner.context?.name) &&
+        val present = target.isPrimaryClassNode && !isStubSourceName(owner.context?.name) &&
             owner.unit === unit && unit.modules.any { it === owner }
+        if (present && owner !== module) onSource(owner)
+        return present
     }
 
     /**
@@ -285,6 +290,7 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     }
 
     private fun resolved(node: ClassNode, superClass: ClassNode): SpockClassContext {
+        onSource(module)
         val isSpecification = (sequenceOf(superClass) + superClass.superClassChain()).any {
             it.name == SPECIFICATION_FQN
         }

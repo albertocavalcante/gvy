@@ -10,6 +10,9 @@ import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRuleset
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.ProjectTypeDetector
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.every
@@ -24,6 +27,7 @@ import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -76,33 +80,40 @@ class CodeNarcRulesetReloadTest {
     fun `two open sources report one rejected configuration each and recover without popup`(): Unit = runTest {
         val ruleset = root.resolve(".codenarc")
         Files.writeString(ruleset, "ruleset { ruleset('rulesets/empty.xml') }")
-        val compilation = mockk<GroovyCompilationService>(relaxed = true)
-        every { compilation.workspaceManager.getWorkspaceRoot() } returns root
-        coEvery { compilation.compile(any(), any(), any()) } returns CompilationResult.failure(emptyList())
-        val client = mockk<LanguageClient>(relaxed = true)
         val documents = DocumentProvider()
-        val service = GroovyTextDocumentService(
-            coroutineScope = backgroundScope,
-            compilationService = compilation,
-            options = GroovyTextDocumentServiceOptions(documentProvider = documents, client = { client }),
-        )
-        val sources = listOf("First", "Second").map { name ->
-            root.resolve("$name.groovy").toUri() to "class $name {}\n"
-        }
-        sources.forEach { (uri, content) -> documents.put(uri, content) }
-        sources.forEach { (uri, content) ->
-            val notices = service.diagnose(uri, content).filter { it.code?.left == "gvy.providerFailure" }
-            assertEquals(1, notices.size)
-            assertEquals(ruleset.toUri().toString(), notices.single().relatedInformation.single().location.uri)
-        }
-        verify(exactly = 0) { client.showMessage(any()) }
+        val compilation = GroovyCompilationService(documentProvider = documents, workerSessionDecorator = {
+            object : WorkerSession {
+                override fun parse(request: ParseRequest): ParseResult = throw IOException("Worker unavailable")
+            }
+        })
+        compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
+        val client = mockk<LanguageClient>(relaxed = true)
+        try {
+            val service = GroovyTextDocumentService(
+                coroutineScope = backgroundScope,
+                compilationService = compilation,
+                options = GroovyTextDocumentServiceOptions(documentProvider = documents, client = { client }),
+            )
+            val sources = listOf("First", "Second").map { name ->
+                root.resolve("$name.groovy").toUri() to "class $name {}\n"
+            }
+            sources.forEach { (uri, content) -> documents.put(uri, content) }
+            sources.forEach { (uri, content) ->
+                val notices = service.diagnose(uri, content).filter { it.code?.left == "gvy.providerFailure" }
+                assertEquals(1, notices.size)
+                assertEquals(ruleset.toUri().toString(), notices.single().relatedInformation.single().location.uri)
+            }
+            verify(exactly = 0) { client.showMessage(any()) }
 
-        Files.writeString(ruleset, "ruleset { ruleset('rulesets/basic.xml') }")
-        service.reloadCodeNarcRulesets()
-        sources.forEach { (uri, content) ->
-            assertEquals(0, service.diagnose(uri, content).count { it.code?.left == "gvy.providerFailure" })
+            Files.writeString(ruleset, "ruleset { ruleset('rulesets/basic.xml') }")
+            service.reloadCodeNarcRulesets()
+            sources.forEach { (uri, content) ->
+                assertEquals(0, service.diagnose(uri, content).count { it.code?.left == "gvy.providerFailure" })
+            }
+            verify(exactly = 0) { client.showMessage(any()) }
+        } finally {
+            compilation.shutdown()
         }
-        verify(exactly = 0) { client.showMessage(any()) }
     }
 
     @Test

@@ -5,7 +5,9 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.FileTime
 
 /** Outcome of reading one workspace file for the cross-file scan. */
@@ -56,28 +58,46 @@ internal class WorkspaceTextCache(
     }
 
     /** Reads [path], from the cache when unchanged; files larger than [budgetChars] are not read. */
-    fun read(path: Path, budgetChars: Long): DiskText {
-        val stamp = stampOf(path) ?: return DiskText.Missing
-        if (stamp.size > budgetChars) return DiskText.TooLarge
-        val recent = clock() - stamp.lastModified.toMillis() < RECENT_MILLIS
-        val hit = if (recent) null else cached(path, stamp)
-        return hit?.let { DiskText.Text(it) } ?: load(path, stamp)
-    }
+    fun read(path: Path, budgetChars: Long): DiskText = readFile(path, budgetChars, allowCache = true)
 
-    private fun stampOf(path: Path): Stamp? = try {
-        if (Files.isRegularFile(path)) Stamp(Files.getLastModifiedTime(path), Files.size(path)) else null
+    /** Validate the exact text consumed by a rename even when a rewrite preserved the file's timestamp and size. */
+    fun readCurrent(path: Path, budgetChars: Long): DiskText = readFile(path, budgetChars, allowCache = false)
+
+    private fun readFile(path: Path, budgetChars: Long, allowCache: Boolean): DiskText = try {
+        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+        when {
+            !attributes.isRegularFile -> DiskText.Missing
+            attributes.size() > budgetChars -> DiskText.TooLarge
+            else -> {
+                val stamp = Stamp(attributes.lastModifiedTime(), attributes.size())
+                val recent = clock() - stamp.lastModified.toMillis() < RECENT_MILLIS
+                val hit = if (allowCache && !recent) cached(path, stamp) else null
+                hit?.let { DiskText.Text(it) } ?: load(path, stamp, budgetChars)
+            }
+        }
+    } catch (_: NoSuchFileException) {
+        DiskText.Missing
     } catch (_: IOException) {
-        null
+        DiskText.Unreadable
     }
 
     private fun cached(path: Path, stamp: Stamp): String? =
         synchronized(entries) { entries[path]?.takeIf { it.stamp == stamp }?.text }
 
-    private fun load(path: Path, stamp: Stamp): DiskText = try {
-        // Undecodable bytes become U+FFFD: one Latin-1 file must not make every rename unverifiable.
-        val text = String(Files.readAllBytes(path), Charsets.UTF_8)
-        store(path, Entry(stamp, text))
-        DiskText.Text(text)
+    private fun load(path: Path, stamp: Stamp, budgetChars: Long): DiskText = try {
+        // A file can grow between stat and read. Keep the scan bounded even during a rewrite.
+        val limit = budgetChars.coerceAtMost(Int.MAX_VALUE.toLong() - 1).toInt()
+        val bytes = Files.newInputStream(path).use { it.readNBytes(limit + 1) }
+        if (bytes.size > limit) {
+            DiskText.TooLarge
+        } else {
+            // Undecodable bytes become U+FFFD, matching the guard's treatment of legacy source encodings.
+            val text = String(bytes, Charsets.UTF_8)
+            store(path, Entry(stamp, text))
+            DiskText.Text(text)
+        }
+    } catch (_: NoSuchFileException) {
+        DiskText.Missing
     } catch (_: IOException) {
         DiskText.Unreadable
     }

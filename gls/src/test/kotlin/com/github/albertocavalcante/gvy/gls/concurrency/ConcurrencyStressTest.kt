@@ -22,9 +22,17 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceFolder
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import java.net.URI
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -112,6 +120,13 @@ class ConcurrencyStressTest {
                 awaitAll(writer, *readers.toTypedArray())
             }
 
+            // Once edits stop, a completion must succeed rather than reporting perpetual retirement.
+            val stable = server.textDocumentService.completion(
+                CompletionParams(TextDocumentIdentifier(uri), Position(3, 20)),
+            ).get(10, TimeUnit.SECONDS)
+            val stableItems = if (stable.isLeft) stable.left else stable.right.items
+            assertTrue(stableItems.isNotEmpty(), "Stable completion must survive the concurrent edits")
+
             server.shutdown().get()
         }
     }
@@ -147,6 +162,7 @@ class ConcurrencyStressTest {
     ): Int {
         var requests = 0
         while (System.currentTimeMillis() - startTime < duration) {
+            val source = server.compilationService.captureSnapshotSource(URI.create(uri))
             try {
                 val result = server.textDocumentService.completion(
                     CompletionParams().apply {
@@ -155,15 +171,17 @@ class ConcurrencyStressTest {
                     },
                 ).get()
 
-                // Just ensure we get a result and no exception thrown
-                if (result.isLeft) {
-                    assertTrue(result.left.isNotEmpty(), "Reader $id got empty completion list")
-                }
-                requests++
-                delay(Random.nextLong(10, 30))
+                val items = if (result.isLeft) result.left else result.right.items
+                assertTrue(items.isNotEmpty(), "Reader $id got empty completion list")
+            } catch (e: ExecutionException) {
+                val response = assertIs<ResponseErrorException>(e.cause).responseError
+                assertEquals(ResponseErrorCode.ContentModified.value, response.code)
+                assertFalse(source.isCurrent(), "ContentModified must follow an observed input retirement")
             } catch (e: Exception) {
                 throw IllegalStateException("Reader $id failed", e)
             }
+            requests++
+            delay(Random.nextLong(10, 30))
         }
         return requests
     }

@@ -35,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.jar.JarOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -219,7 +220,9 @@ class ShadowedListedSpellingTest {
         assertEquals(0, reads, "real-path reads on the request path")
 
         // A model that changes no root or listing (a dependency or target re-stamp) keeps every translation.
-        assertTrue(compilation.workspaceManager.updateDependencies(listOf(workspaceRoot.resolve("lib.jar"))))
+        val dependency = workspaceRoot.resolve("lib.jar")
+        JarOutputStream(Files.newOutputStream(dependency)).use { it.finish() }
+        assertTrue(compilation.workspaceManager.updateDependencies(listOf(dependency)))
         repeat(REQUESTS) { symbolUris("Shadowed") }
         assertEquals(0, reads, "real-path reads after a model change that keeps the roots and listing")
 

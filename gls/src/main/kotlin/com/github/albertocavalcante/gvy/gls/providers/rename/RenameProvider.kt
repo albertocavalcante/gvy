@@ -35,7 +35,10 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.io.IOException
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -46,11 +49,11 @@ import java.nio.file.Paths
  */
 class RenameProvider private constructor(
     private val compilationService: GroovyCompilationService,
-    private val documentSource: RenameDocumentSource,
-    private val openBuffers: () -> Map<URI, String> = { emptyMap() },
-    private val caches: RenameCaches = RenameCaches(),
-    private val scanLimits: ScanLimits = ScanLimits(),
-    private val extraRoots: () -> List<Path> = { emptyList() },
+    documentSource: RenameDocumentSource,
+    caches: RenameCaches = RenameCaches(),
+    scanLimits: ScanLimits = ScanLimits(),
+    extraRoots: () -> List<Path> = { emptyList() },
+    documents: DocumentProvider? = null,
 ) {
     /** Current text of a document (open buffer, else file on disk); null if unavailable. */
     constructor(
@@ -58,8 +61,14 @@ class RenameProvider private constructor(
         documentText: (URI) -> String? = ::readFromDisk,
     ) : this(
         compilationService,
-        RenameDocumentSource {
-            documentText(it)?.let { text -> DocumentSnapshot(text, null) }
+        RenameDocumentSource { uri ->
+            try {
+                documentText(uri)?.let { text -> DocumentSnapshot(text, null) }
+            } catch (_: IOException) {
+                renameChanged(uri)
+            } catch (_: SecurityException) {
+                renameChanged(uri)
+            }
         },
     )
 
@@ -79,40 +88,18 @@ class RenameProvider private constructor(
         RenameDocumentSource { uri ->
             documents.getSnapshot(uri) ?: readFromDisk(uri)?.let { DocumentSnapshot(it, null) }
         },
-        documents::snapshot,
         RenameCaches(diskText, walks),
         scanLimits,
         extraRoots,
+        documents,
     )
 
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
-    private val crossFileUses = CrossFileUseGuard(
-        checkNotNull(compilationService.getWorkspaceSymbolIndex()),
-        openBuffers,
-        WorkspaceLayout(
-            sources = compilationService.workspaceManager::getWorkspaceSources,
-            roots = {
-                (listOfNotNull(compilationService.workspaceManager.getWorkspaceRoot()) + extraRoots()).distinct()
-            },
-            sourceRoots = compilationService.workspaceManager::getSourceRoots,
-        ),
-        caches.walks,
-        caches.diskText,
-        scanLimits,
-    )
+    private val queries =
+        RenameRequestQuery(compilationService, documentSource, caches, scanLimits, extraRoots, documents)
 
-    // Groovy keywords that cannot be used as identifiers
-    private val groovyKeywords = setOf(
-        "abstract", "as", "assert", "boolean", "break", "byte", "case", "catch",
-        "char", "class", "const", "continue", "def", "default", "do", "double",
-        "else", "enum", "extends", "final", "finally", "float", "for", "goto",
-        "if", "implements", "import", "in", "instanceof", "int", "interface",
-        "long", "native", "new", "null", "package", "private", "protected",
-        "public", "return", "short", "static", "strictfp", "super", "switch",
-        "synchronized", "this", "throw", "throws", "trait", "transient", "try",
-        "void", "volatile", "while", "true", "false",
-    )
+    internal fun capture(uri: String, position: Position): RenameRequest = queries.capture(uri, position)
 
     /**
      * Perform a rename operation at the given position.
@@ -122,16 +109,26 @@ class RenameProvider private constructor(
      * @param newName The new name for the symbol
      * @return WorkspaceEdit containing all required changes, or throws ResponseError
      */
-    suspend fun provideRename(uri: String, position: Position, newName: String): WorkspaceEdit {
-        logger.debug { "Rename requested for $uri at ${position.line}:${position.character} to '$newName'" }
+    suspend fun provideRename(uri: String, position: Position, newName: String): WorkspaceEdit =
+        provideRename(capture(uri, position), newName)
 
-        // Validate the new name
+    internal suspend fun provideRename(request: RenameRequest, newName: String): WorkspaceEdit {
+        if (!queries.inputsCurrent(request)) renameChanged(request.source.uri)
         validateNewName(newName)
+        return queries.query(request) { compiled, sources ->
+            requireSemanticPhase(request.source.uri, compiled)
+            rename(captureTarget(request, compiled, sources), request.position, newName, sources)
+        }
+    }
 
-        val sources = RenameSourceSnapshots(documentSource)
-        val target = captureTarget(uri, position, sources)
+    private suspend fun rename(
+        target: RenameTarget,
+        position: Position,
+        newName: String,
+        sources: RenameSourceSnapshots,
+    ): WorkspaceEdit {
         if (!target.declaredHere) {
-            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, declaredHere = false)
+            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, false, sources)
         }
         if (target.oldName == newName) {
             throw createError(ResponseErrorCode.InvalidRequest, "New name is the same as the current name")
@@ -141,31 +138,18 @@ class RenameProvider private constructor(
         if (ClassRenameConstructors.startsOnName(target.node) && target.nameAt(position, nameLocations) == null) {
             throw createError(ResponseErrorCode.InvalidRequest, "No name to rename at the cursor")
         }
-        refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, target.declaredHere)
-        sources.validate()
+        refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, target.declaredHere, sources)
         return buildWorkspaceEdit(target.definition, newName, nameLocations, target.definitionLocation, sources)
     }
 
     /** Preparation proves eligibility against held source without constructing or applying edits. */
     suspend fun providePrepareRename(uri: String, position: Position): PrepareRenameResult? = try {
-        val sources = RenameSourceSnapshots(documentSource)
-        val target = captureTarget(uri, position, sources)
-        if (!target.declaredHere) {
-            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, declaredHere = false)
-        }
-        val location = target.nameAt(position, collectNameLocations(target, sources))
-        if (location == null) {
-            null
-        } else {
-            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, target.declaredHere)
-            sources.validate()
-            PrepareRenameResult(location.range, target.oldName)
-        }
-    } catch (e: RenameRefusedException) {
-        throw e // Unlike other ineligible targets, the client should show why before asking for a name.
+        providePrepareRename(capture(uri, position))
+    } catch (refused: RenameRefusedException) {
+        throw refused
     } catch (e: ResponseErrorException) {
+        // The legacy text-supplier API represents a changed caller-owned source as an unavailable offer.
         when (e.responseError.code) {
-            ResponseErrorCode.InvalidParams.value,
             ResponseErrorCode.InvalidRequest.value,
             ResponseErrorCode.ContentModified.value,
             -> null
@@ -175,13 +159,50 @@ class RenameProvider private constructor(
         null
     }
 
+    internal suspend fun providePrepareRename(request: RenameRequest): PrepareRenameResult? =
+        queries.query(request) { compiled, sources ->
+            requireSemanticPhase(request.source.uri, compiled)
+            try {
+                prepare(captureTarget(request, compiled, sources), request.position, sources)
+            } catch (refused: RenameRefusedException) {
+                throw refused
+            } catch (e: ResponseErrorException) {
+                when (e.responseError.code) {
+                    ResponseErrorCode.InvalidParams.value,
+                    ResponseErrorCode.InvalidRequest.value,
+                    -> null
+                    else -> throw e
+                }
+            }
+        }
+
+    private suspend fun prepare(
+        target: RenameTarget,
+        position: Position,
+        sources: RenameSourceSnapshots,
+    ): PrepareRenameResult? {
+        if (!target.declaredHere) {
+            refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, false, sources)
+        }
+        val location = target.nameAt(position, collectNameLocations(target, sources))
+        if (location == null) return null
+        refuseIfUsedElsewhere(target.documentUri, target.definition, target.oldName, target.declaredHere, sources)
+        return PrepareRenameResult(location.range, target.oldName)
+    }
+
     /**
      * Only this file is edited, so a target other files use would be silently broken. A class this file does not
      * declare is declared in a file that spells its name, or in a dependency: the guard names the other file, and a
      * class it lets through is refused all the same. Such a class is checked before its uses here are collected.
      */
-    private suspend fun refuseIfUsedElsewhere(uri: URI, definition: ASTNode, name: String, declaredHere: Boolean) {
-        val uses = crossFileUses.usesOutside(uri, definition, name)
+    private suspend fun refuseIfUsedElsewhere(
+        uri: URI,
+        definition: ASTNode,
+        name: String,
+        declaredHere: Boolean,
+        sources: RenameSourceSnapshots,
+    ) {
+        val uses = sources.guard.usesOutside(uri, definition, name)
         val message = when {
             !uses.isEmpty -> uses.message(name)
             !declaredHere -> ClassRenameUses.declaredElsewhere(name)
@@ -209,18 +230,16 @@ class RenameProvider private constructor(
 
     @Suppress("ThrowsCount") // Each invalid protocol target reports a specific validation error.
     private suspend fun captureTarget(
-        uri: String,
-        position: Position,
+        request: RenameRequest,
+        compiled: CompiledDocumentSnapshot,
         sources: RenameSourceSnapshots,
     ): RenameTarget {
-        val documentUri = URI.create(uri)
+        val documentUri = request.source.uri
+        val position = request.position
         val original = sources.capture(documentUri)
         val groovyPosition = TextIndex(original.content).codePointPosition(position)?.toGroovyPosition()
             ?: throw createError(ResponseErrorCode.InvalidParams, "Rename position is outside the document")
 
-        val compiled = requireSemanticCompilation(documentUri, original, sources)
-
-        // Get the node at the position (now guaranteed to be in cache)
         val visitor = compiled.parseResult.astModel
 
         // On a class name a type use spells (a parameter type, a type argument), the rename is the class's.
@@ -232,7 +251,8 @@ class RenameProvider private constructor(
             // spells the name, else as declared elsewhere.
             is ClassAtCursor.Foreign -> {
                 ClassRenameUses.dependencyName(atCursor.type)?.let(ClassRenameUses::refuseDependency)
-                refuseIfUsedElsewhere(documentUri, atCursor.type, atCursor.type.declaredName().orEmpty(), false)
+                val name = atCursor.type.declaredName().orEmpty()
+                refuseIfUsedElsewhere(documentUri, atCursor.type, name, false, sources)
             }
             is ClassAtCursor.Declared, null -> Unit
         }
@@ -254,7 +274,7 @@ class RenameProvider private constructor(
             ?: ClassRenameUses.dependencyName(definition)?.let(ClassRenameUses::refuseDependency)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine definition location")
 
-        if (!isInWorkspace(definitionLocation.uri, documentUri)) {
+        if (!isInWorkspace(definitionLocation.uri, sources)) {
             ClassRenameUses.refuseDependency(definitionLocation.uri)
         }
 
@@ -288,8 +308,8 @@ class RenameProvider private constructor(
         }
 
         // Check if any references are in dependencies
-        val workspaceLocations = locations.filter { isInWorkspace(it.uri, target.documentUri) }
-        val dependencyLocations = locations.filter { !isInWorkspace(it.uri, target.documentUri) }
+        val workspaceLocations = locations.filter { isInWorkspace(it.uri, sources) }
+        val dependencyLocations = locations.filter { !isInWorkspace(it.uri, sources) }
 
         if (dependencyLocations.isNotEmpty()) {
             logger.warn { "Found ${dependencyLocations.size} references in dependencies - these will not be renamed" }
@@ -318,22 +338,6 @@ class RenameProvider private constructor(
         } else {
             located
         }
-    }
-
-    private suspend fun requireSemanticCompilation(
-        uri: URI,
-        original: DocumentSnapshot,
-        sources: RenameSourceSnapshots,
-    ): CompiledDocumentSnapshot {
-        // Await active compilation, then hold the exact source/result pair for this request.
-        compilationService.ensureCompiled(uri)
-            ?: throw createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
-        val compiled = compilationService.getCompiledSnapshot(uri) ?: sources.changed(uri)
-        if (compiled.sourceText != original.content) sources.changed(uri)
-        if (compiled.parseResult.outcome.achievedPhase < Phases.SEMANTIC_ANALYSIS) {
-            throw createError(ResponseErrorCode.InvalidRequest, "Rename requires completed semantic analysis")
-        }
-        return compiled
     }
 
     private fun resolveDefinition(
@@ -373,45 +377,16 @@ class RenameProvider private constructor(
     }
 
     /**
-     * Validate the new name for the symbol.
-     */
-    @Suppress("ThrowsCount")
-    private fun validateNewName(newName: String) {
-        when {
-            newName.isBlank() -> throw createError(
-                ResponseErrorCode.InvalidParams,
-                "New name cannot be empty or blank",
-            )
-            newName in groovyKeywords -> throw createError(
-                ResponseErrorCode.InvalidParams,
-                "'$newName' is a Groovy keyword and cannot be used as an identifier",
-            )
-            !isJavaIdentifier(newName) -> throw createError(
-                ResponseErrorCode.InvalidParams,
-                "'$newName' is not a valid identifier",
-            )
-        }
-    }
-
-    private fun isJavaIdentifier(name: String): Boolean {
-        val first = name.codePointAt(0)
-        return Character.isJavaIdentifierStart(first) &&
-            name.codePoints().skip(1).allMatch {
-                Character.isJavaIdentifierPart(it) && !Character.isIdentifierIgnorable(it)
-            }
-    }
-
-    /**
      * Check if a URI is editable: inside any workspace folder (not a dependency). Without any folder
      * (single-file mode) only the document being renamed and other open buffers qualify.
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun isInWorkspace(uriString: String, documentUri: URI): Boolean {
-        val roots = (listOfNotNull(compilationService.workspaceManager.getWorkspaceRoot()) + extraRoots()).distinct()
+    private fun isInWorkspace(uriString: String, sources: RenameSourceSnapshots): Boolean {
+        val roots = sources.roots
         return try {
             val uri = URI.create(uriString)
             if (roots.isEmpty()) {
-                uri == documentUri || uri in openBuffers().keys
+                uri == sources.request.source.uri || sources.request.buffers?.documents?.containsKey(uri) == true
             } else {
                 val path = Paths.get(uri)
                 roots.any { path.startsWith(it) }
@@ -446,8 +421,6 @@ class RenameProvider private constructor(
         }
             .distinctBy { it.range.start.line to it.range.start.character }
     }
-
-    private fun Location.isSameAs(other: Location) = uri == other.uri && range == other.range
 
     /**
      * Build a WorkspaceEdit from the collected references.
@@ -538,16 +511,57 @@ class RenameProvider private constructor(
         logger.error(e) { "Could not create file rename operation" }
         null
     }
-
-    /**
-     * Create and throw a ResponseErrorException for error handling.
-     */
-    private fun createError(code: ResponseErrorCode, message: String): Nothing =
-        throw ResponseErrorException(ResponseError(code, message, null))
 }
 
-private fun readFromDisk(uri: URI): String? =
-    if (uri.scheme == "file") runCatching { java.nio.file.Files.readString(Paths.get(uri)) }.getOrNull() else null
+// Groovy keywords that cannot be used as identifiers
+private val groovyKeywords = setOf(
+    "abstract", "as", "assert", "boolean", "break", "byte", "case", "catch",
+    "char", "class", "const", "continue", "def", "default", "do", "double",
+    "else", "enum", "extends", "final", "finally", "float", "for", "goto",
+    "if", "implements", "import", "in", "instanceof", "int", "interface",
+    "long", "native", "new", "null", "package", "private", "protected",
+    "public", "return", "short", "static", "strictfp", "super", "switch",
+    "synchronized", "this", "throw", "throws", "trait", "transient", "try",
+    "void", "volatile", "while", "true", "false",
+)
+
+private fun validateNewName(newName: String) {
+    val error = when {
+        newName.isBlank() -> "New name cannot be empty or blank"
+        newName in groovyKeywords -> "'$newName' is a Groovy keyword and cannot be used as an identifier"
+        !isJavaIdentifier(newName) -> "'$newName' is not a valid identifier"
+        else -> return
+    }
+    createError(ResponseErrorCode.InvalidParams, error)
+}
+
+private fun isJavaIdentifier(name: String): Boolean {
+    val first = name.codePointAt(0)
+    return Character.isJavaIdentifierStart(first) &&
+        name.codePoints().skip(1).allMatch {
+            Character.isJavaIdentifierPart(it) && !Character.isIdentifierIgnorable(it)
+        }
+}
+
+private fun Location.isSameAs(other: Location) = uri == other.uri && range == other.range
+
+private fun requireSemanticPhase(uri: URI, compiled: CompiledDocumentSnapshot) {
+    if (compiled.parseResult.ast == null) {
+        createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
+    }
+    if (compiled.parseResult.outcome.achievedPhase < Phases.SEMANTIC_ANALYSIS) {
+        createError(ResponseErrorCode.InvalidRequest, "Rename requires completed semantic analysis")
+    }
+}
+
+private fun createError(code: ResponseErrorCode, message: String): Nothing =
+    throw ResponseErrorException(ResponseError(code, message, null))
+
+private fun readFromDisk(uri: URI): String? = try {
+    if (uri.scheme == "file") Files.readString(Paths.get(uri)) else null
+} catch (_: NoSuchFileException) {
+    null
+}
 
 private operator fun Position.compareTo(other: Position): Int =
     compareValuesBy(this, other, Position::getLine, Position::getCharacter)

@@ -3,11 +3,11 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.utils.skipSourceTrivia
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import groovyjarjarantlr4.v4.runtime.CharStreams

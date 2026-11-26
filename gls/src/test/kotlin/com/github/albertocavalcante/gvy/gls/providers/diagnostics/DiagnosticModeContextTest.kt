@@ -5,6 +5,8 @@ package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.CustomRulesProvider
@@ -122,9 +124,16 @@ class DiagnosticModeContextTest {
             "The AST fixture must report",
         )
         val result = CompilationResult(true, ast, emptyList(), source, parseCompleted = true)
-        coEvery { compilation.compile(uri, source) } answers {
+        val original = mockk<SnapshotSource> {
+            every { isCurrent() } returns true
+            every { workerCurrent() } returns true
+            every { workspace.root } returns null
+        }
+        every { compilation.captureSnapshotSource(uri) } returns original
+        coEvery { compilation.queryDiagnosticSnapshot<List<Diagnostic>>(original, source, any()) } coAnswers {
             current = configuration(laterMode)
-            result
+            val query = thirdArg<suspend (CompilationResult) -> List<Diagnostic>>()
+            SnapshotQuery.Answer(query(result), partial = false)
         }
         every { compilation.getAst(uri) } returns ast
         every { compilation.getDiagnostics(uri) } returns emptyList()

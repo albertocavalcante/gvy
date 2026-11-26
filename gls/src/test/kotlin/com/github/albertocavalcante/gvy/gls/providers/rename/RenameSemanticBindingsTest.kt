@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
@@ -31,6 +32,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
@@ -225,7 +227,7 @@ class RenameSemanticBindingsTest {
 
                 val documentChange = fixture.renameField().documentChanges.single()
 
-                val upgraded = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
+                val upgraded = assertNotNull(fixture.compilation.compilationCacheService.getOwned(fixture.uri)).snapshot
                 assertNotSame(fixture.parsed, upgraded.parseResult)
                 assertEquals(source, upgraded.sourceText)
                 assertEquals(Phases.CANONICALIZATION, upgraded.parseResult.outcome.requestedPhase)
@@ -254,10 +256,12 @@ class RenameSemanticBindingsTest {
                 assertEquals(Fallback.COMPILATION_FAILED, fixture.parsed.outcome.fallback)
                 assertEquals(Phases.CONVERSION, fixture.parsed.outcome.achievedPhase)
 
+                val acquired = fixture.compilation.acquireEditorSnapshot(fixture.uri)
+                val owned = assertIs<SnapshotAcquisition.Partial>(acquired)
                 val error = assertFailsWith<ResponseErrorException> { fixture.renameField() }
 
-                val retained = assertNotNull(fixture.compilation.getCompiledSnapshot(fixture.uri))
-                assertSame(fixture.parsed, retained.parseResult)
+                val retained = assertNotNull(fixture.compilation.compilationCacheService.getOwned(fixture.uri)).snapshot
+                assertSame(owned.snapshot.parseResult, retained.parseResult)
                 assertEquals(fixture.source, retained.sourceText)
                 assertEquals(Phases.CANONICALIZATION, retained.parseResult.outcome.requestedPhase)
                 assertEquals(Phases.CONVERSION, retained.parseResult.outcome.achievedPhase)

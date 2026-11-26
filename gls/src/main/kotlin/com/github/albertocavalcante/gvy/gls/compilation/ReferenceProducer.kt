@@ -78,6 +78,9 @@ internal class ReferenceProducer(
 
     fun matches(paths: List<Path>, worker: WorkerSession): Boolean = worker === session.get() && hasClasspath(paths)
 
+    /** A historic compiler binding may keep its environment without retaining the old source inventory. */
+    fun environment(): ReferenceProducer = ReferenceProducer(classpath, session)
+
     fun sameEnvironment(other: ReferenceProducer?): Boolean {
         val worker = other?.session?.get() ?: return false
         return matches(other.classpath, worker)

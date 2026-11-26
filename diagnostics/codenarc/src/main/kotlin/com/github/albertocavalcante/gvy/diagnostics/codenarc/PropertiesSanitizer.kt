@@ -8,7 +8,9 @@ import groovy.lang.MetaBeanProperty
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.Properties
 
 private val logger = KotlinLogging.logger {}
@@ -35,8 +37,10 @@ internal object PropertiesSanitizer {
     data class Result(val content: String, val rejectedKeys: List<String>)
 
     /** Returns the sanitized properties text, or null when [file] is unreadable, malformed or too large. */
-    fun sanitize(file: Path): Result? {
-        val properties = load(file) ?: return null
+    fun sanitize(file: Path): Result? = sanitize(file, null)
+
+    fun sanitize(file: Path, observeBytes: ((ByteArray) -> Unit)?): Result? {
+        val properties = load(file, observeBytes) ?: return null
         val rejected = mutableListOf<String>()
         val content = buildString {
             for (name in properties.stringPropertyNames().sorted()) {
@@ -55,11 +59,18 @@ internal object PropertiesSanitizer {
     }
 
     /** Reads at most [MAX_FILE_BYTES] from a regular, non-symlink file; null (logged) otherwise. */
-    private fun load(file: Path): Properties? {
+    private fun load(file: Path, observeBytes: ((ByteArray) -> Unit)?): Properties? {
         val problem = try {
-            readBounded(file)?.let { return Properties().apply { load(it.toString(Charsets.UTF_8).reader()) } }
-                ?: "is not a regular file or is larger than $MAX_FILE_BYTES bytes"
+            val bytes = readBounded(file, strictIo = observeBytes != null)
+            if (bytes != null) {
+                observeBytes?.invoke(bytes)
+                return Properties().apply { load(bytes.toString(Charsets.UTF_8).reader()) }
+            }
+            "is not a regular file or is larger than $MAX_FILE_BYTES bytes"
+        } catch (_: NoSuchFileException) {
+            "does not exist"
         } catch (e: java.io.IOException) {
+            if (observeBytes != null) throw e
             "is unreadable: ${e.message}"
         } catch (e: IllegalArgumentException) {
             "is malformed: ${e.message}"
@@ -68,8 +79,13 @@ internal object PropertiesSanitizer {
         return null
     }
 
-    private fun readBounded(file: Path): ByteArray? {
-        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) return null
+    private fun readBounded(file: Path, strictIo: Boolean): ByteArray? {
+        val regular = if (strictIo) {
+            Files.readAttributes(file, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).isRegularFile
+        } else {
+            Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+        }
+        if (!regular) return null
         val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_FILE_BYTES.toInt() + 1) }
         return bytes.takeIf { it.size <= MAX_FILE_BYTES }
     }

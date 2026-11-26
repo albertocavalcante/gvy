@@ -9,7 +9,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
-import com.github.albertocavalcante.gvy.gls.providers.symbols.searchWorkspaceSymbols
+import com.github.albertocavalcante.gvy.gls.providers.symbols.WorkspaceSymbolRequest
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -42,7 +42,6 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
@@ -379,22 +378,12 @@ class GroovyWorkspaceService(
     override fun symbol(
         params: WorkspaceSymbolParams,
     ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> {
-        val query = params.query.orEmpty()
-        // The scan covers every index, so it runs off the message thread.
+        val request = runCatching {
+            WorkspaceSymbolRequest(compilationService, symbolIndexer, params.query.orEmpty(), MAX_WORKSPACE_SYMBOLS)
+        }
         return coroutineScope.future(Dispatchers.Default) {
-            // An open buffer is indexed by its compile, which can still be running right after didOpen (#431).
-            textDocumentService?.awaitOpenDocumentsIndexed()
-            val results = searchWorkspaceSymbols(
-                symbolIndexer.getAllSymbolIndices(),
-                query,
-                MAX_WORKSPACE_SYMBOLS,
-                ::sourceTextOf,
-            )
+            val results = request.getOrThrow().search { textDocumentService?.awaitOpenDocumentsIndexed() }
             Either.forLeft<List<SymbolInformation>, List<WorkspaceSymbol>>(results)
         }
     }
-
-    /** The text a symbol range refers to: the compiled buffer if there is one, else the file on disk. */
-    private fun sourceTextOf(uri: URI): String? = compilationService.getCompiledSnapshot(uri)?.sourceText
-        ?: UriPathConverter.toPath(uri)?.let { path -> runCatching { Files.readString(path) }.getOrNull() }
 }

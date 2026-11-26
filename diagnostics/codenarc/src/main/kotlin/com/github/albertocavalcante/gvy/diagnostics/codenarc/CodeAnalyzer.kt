@@ -48,6 +48,8 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
 
     constructor() : this({ rulesetFileCache.getOrCreate(it) })
 
+    internal var readProperties: (Path) -> PropertiesSanitizer.Result? = PropertiesSanitizer::sanitize
+
     companion object {
         private val logger = KotlinLogging.logger {}
 
@@ -125,7 +127,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
     }
 
     internal fun sanitizedPropertiesUri(analysisDir: Path, propertiesFile: String): String? {
-        val sanitized = PropertiesSanitizer.sanitize(Paths.get(propertiesFile)) ?: return null
+        val sanitized = readProperties(Paths.get(propertiesFile)) ?: return null
         val target = analysisDir.resolve(".codenarc-sanitized.properties")
         Files.write(target, sanitized.content.toByteArray(StandardCharsets.UTF_8))
         return target.toUri().toString()

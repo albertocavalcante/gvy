@@ -6,16 +6,20 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcRequestInputs
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.compilation.deliverSignatureOrCompletion
 import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.deliverSignatureOrCompletion
+import com.github.albertocavalcante.gvy.gls.compilation.deliveryInputsCurrent
+import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
+import com.github.albertocavalcante.gvy.gls.diagnostics.consolidateProviderFailures
 import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.execution.discoverEntryPoints
 import com.github.albertocavalcante.gvy.gls.providers.SignatureHelpProvider
@@ -44,9 +48,10 @@ import com.github.albertocavalcante.gvy.gls.providers.symbols.flattenOutline
 import com.github.albertocavalcante.gvy.gls.providers.typedefinition.heldTypeDefinitions
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
-import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.failingAsInternalError
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.nativeapi.ParseMode
@@ -160,6 +165,9 @@ class GroovyTextDocumentService(
     private var codeNarcRulesetResolver: HierarchicalRulesetResolver? = null
 
     @Volatile
+    private var diagnosticSettingsGeneration = Any()
+
+    @Volatile
     private var definitionLinkSupport: Boolean = options.definitionLinkSupport
 
     // Read once from the client's initialize capabilities; see updateLabelDetailsSupport.
@@ -231,6 +239,7 @@ class GroovyTextDocumentService(
 
     @Synchronized
     fun updateConfiguration(configuration: ServerConfiguration) {
+        diagnosticSettingsGeneration = Any()
         serverConfiguration = configuration
         compilationService.updateServerConfiguration(configuration)
         if (diagnosticsOrchestratorDelegate.isInitialized()) {
@@ -243,18 +252,22 @@ class GroovyTextDocumentService(
      *
      * NOTE: This factory pattern allows for easy testing and future extension.
      */
-    private fun createDiagnosticsService(serverConfiguration: ServerConfiguration): DiagnosticsService {
-        val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
+    private fun createDiagnosticsService(
+        serverConfiguration: ServerConfiguration,
+        workspaceRoot: Path? = compilationService.workspaceManager.getWorkspaceRoot(),
+        requestInputs: CodeNarcRequestInputs? = null,
+    ): DiagnosticsService {
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
             val jenkinsFiles = JenkinsFileDetector(serverConfiguration.jenkinsConfig.filePatterns)
-            val codeNarcProvider = CodeNarcDiagnosticProvider(
-                workspaceContext,
-                // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
-                rulesetResolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
-                    .also { codeNarcRulesetResolver = it },
-            )
+            val resolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
+            val codeNarcProvider = if (requestInputs == null) {
+                codeNarcRulesetResolver = resolver
+                CodeNarcDiagnosticProvider(workspaceContext, rulesetResolver = resolver)
+            } else {
+                requestInputs.provider(workspaceContext, resolver)
+            }
             val codeNarcAdapter = DiagnosticProviderAdapter(
                 delegate = codeNarcProvider,
                 id = "codenarc",
@@ -325,13 +338,6 @@ class GroovyTextDocumentService(
         )
     }
 
-    private val semanticTypeResolver by lazy {
-        SemanticTypeResolver(
-            compilationService.classpathService.getTypeSolver(),
-            compilationService.getWorkspaceSymbolIndex(),
-        )
-    }
-
     private val semanticTokensHandler by lazy {
         SemanticTokensHandler(compilationService, documentProvider)
     }
@@ -359,7 +365,12 @@ class GroovyTextDocumentService(
 
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> {
         val captured = runCatching {
-            SignatureCompletionRequest(compilationService, documentProvider, URI.create(params.textDocument.uri), params.position)
+            SignatureCompletionRequest(
+                compilationService,
+                documentProvider,
+                URI.create(params.textDocument.uri),
+                params.position,
+            )
         }
         return coroutineScope.future {
             captured.deliverSignatureOrCompletion { SignatureHelpProvider.provideSignatureHelp(it) }
@@ -442,17 +453,34 @@ class GroovyTextDocumentService(
      * Public method to get diagnostics for a file, useful for CLI "check" command.
      */
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
-        // One immutable configuration applies throughout this request.
-        val configuration = serverConfiguration
-        val diagnosticsService = createDiagnosticsService(configuration)
-        val result = compilationService.compile(uri, content)
-        val parserEnabled = configuration.diagnosticConfig.isProviderEnabled(
-            "parser",
-            enabledByDefault = true,
+        val (configuration, generation) = synchronized(this) { serverConfiguration to diagnosticSettingsGeneration }
+        val source = compilationService.captureSnapshotSource(uri)
+        val ruleInputs = CodeNarcRequestInputs()
+        fun current() = generation === diagnosticSettingsGeneration && configuration === serverConfiguration &&
+            source.isCurrent() && source.workerCurrent()
+        fun changed(): Nothing = throw ResponseErrorException(
+            ResponseError(ResponseErrorCode.ContentModified, "Inputs changed during diagnostics for $uri", null),
         )
-        val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
-        val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return (parserDiagnostics + extraDiagnostics).take(configuration.maxNumberOfProblems.coerceAtLeast(0))
+        val result = runSuspendCatching {
+            val service = createDiagnosticsService(configuration, source.workspace.root, ruleInputs)
+            compilationService.queryDiagnosticSnapshot(source, content) { parsed ->
+                val parserEnabled = configuration.diagnosticConfig.isProviderEnabled("parser", enabledByDefault = true)
+                val parserDiagnostics = if (parserEnabled) parsed.diagnostics else emptyList()
+                val extras = service.collectCliDiagnostics(uri, content, parsed)
+                if (!deliveryInputsCurrent(::current, ruleInputs::isCurrent)) changed()
+                val failures = consolidateProviderFailures(emptyList(), extras.failures)
+                (parserDiagnostics + extras.diagnostics + failures).take(
+                    configuration.maxNumberOfProblems.coerceAtLeast(0),
+                )
+            }
+        }
+        if (!currentCoroutineContext().inputsCurrent(::current)) changed()
+        return when (val answer = result.getOrThrow()) {
+            is SnapshotQuery.Answer -> answer.value
+            SnapshotQuery.Stale -> changed()
+            SnapshotQuery.Missing -> error("Explicit diagnostic source is unavailable for $uri")
+            is SnapshotQuery.Failure -> throw answer.cause
+        }
     }
 
     fun refreshOpenDocuments() {
@@ -461,7 +489,13 @@ class GroovyTextDocumentService(
 
     override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> {
         val captured = runCatching {
-            SignatureCompletionRequest(compilationService, documentProvider, URI.create(params.textDocument.uri), params.position, completion = true)
+            SignatureCompletionRequest(
+                compilationService,
+                documentProvider,
+                URI.create(params.textDocument.uri),
+                params.position,
+                completion = true,
+            )
         }
         val labels = labelDetailsSupport
         val snippets = snippetSupport
@@ -567,81 +601,79 @@ class GroovyTextDocumentService(
             formattingService.format(params)
         }
 
+    private fun renameProvider() = RenameProvider(
+        compilationService,
+        documentProvider,
+        renameDiskText,
+        extraRoots = { workspaceFolders },
+        walks = renameWalks,
+    )
+
     override fun prepareRename(
         params: PrepareRenameParams,
-    ): CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>?> = coroutineScope.future {
-        RenameProvider(
-            compilationService,
-            documentProvider,
-            renameDiskText,
-            extraRoots = { workspaceFolders },
-            walks = renameWalks,
-        )
-            .providePrepareRename(params.textDocument.uri, params.position)
-            ?.let { Either3.forSecond<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>(it) }
+    ): CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>?> {
+        val provider = renameProvider()
+        val request = runCatching { provider.capture(params.textDocument.uri, params.position) }
+        return coroutineScope.future {
+            // A malformed URI or position has no eligible target.
+            val captured = request.getOrElse { if (it is IllegalArgumentException) return@future null else throw it }
+            provider.providePrepareRename(captured)
+                ?.let { Either3.forSecond<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>(it) }
+        }
+    }
+
+    override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit> {
+        val provider = renameProvider()
+        val captured = runCatching { provider.capture(params.textDocument.uri, params.position) to params.newName }
+        return coroutineScope.future {
+            renameResult {
+                val (request, newName) = captured.getOrThrow()
+                provider.provideRename(request, newName)
+            }
+        }
     }
 
     @Suppress("TooGenericExceptionCaught")
-    override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit> = coroutineScope.future {
-        logger.debug {
-            "Rename requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character} to '${params.newName}'"
-        }
-
-        try {
-            val renameProvider = RenameProvider(
-                compilationService,
-                documentProvider,
-                renameDiskText,
-                extraRoots = { workspaceFolders },
-                walks = renameWalks,
-            )
-            renameProvider.provideRename(
-                params.textDocument.uri,
-                params.position,
-                params.newName,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: RenameRefusedException) {
-            logger.info { "Rename refused: ${e.message}" }
-            throw e
-        } catch (e: ResponseErrorException) {
-            logger.error { "Rename failed: ${e.message}" }
-            throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments for rename" }
-            throw ResponseErrorException(
-                ResponseError(
-                    ResponseErrorCode.InvalidParams,
-                    e.message ?: "Invalid arguments for rename",
-                    null,
-                ),
-            )
-        } catch (e: Exception) {
-            logger.error(e) { "Unexpected error during rename" }
-            throw ResponseErrorException(
-                ResponseError(
-                    ResponseErrorCode.InternalError,
-                    e.message ?: "Unexpected error during rename",
-                    null,
-                ),
-            )
-        }
+    private suspend fun renameResult(operation: suspend () -> WorkspaceEdit): WorkspaceEdit = try {
+        operation()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: RenameRefusedException) {
+        logger.info { "Rename refused: ${e.message}" }
+        throw e
+    } catch (e: ResponseErrorException) {
+        logger.error { "Rename failed: ${e.message}" }
+        throw e
+    } catch (e: IllegalArgumentException) {
+        logger.error(e) { "Invalid arguments for rename" }
+        throw ResponseErrorException(
+            ResponseError(
+                ResponseErrorCode.InvalidParams,
+                e.message ?: "Invalid arguments for rename",
+                null,
+            ),
+        )
+    } catch (e: Exception) {
+        logger.error(e) { "Unexpected error during rename" }
+        throw ResponseErrorException(
+            ResponseError(
+                ResponseErrorCode.InternalError,
+                e.message ?: "Unexpected error during rename",
+                null,
+            ),
+        )
     }
 
-    override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> =
-        coroutineScope.future {
-            logger.debug {
-                "Code action requested for ${params.textDocument.uri} at " +
-                    "${params.range.start.line}:${params.range.start.character}"
+    override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> {
+        val request = runCatching { codeActionProvider.capture(params) }
+        return coroutineScope.future {
+            failingAsInternalError("computing code actions") {
+                codeActionProvider.provideCodeActions(request.getOrThrow()).map {
+                    Either.forRight<Command, CodeAction>(it)
+                }
             }
-
-            val actions = codeActionProvider.provideCodeActions(params)
-            logger.debug { "Returning ${actions.size} code actions" }
-
-            actions.map { Either.forRight<Command, CodeAction>(it) }
         }
+    }
 
     override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> {
         val request = runCatching {
@@ -770,6 +802,7 @@ class GroovyTextDocumentService(
     fun reloadCodeNarcRulesets() {
         logger.info { "CodeNarc ruleset reload requested" }
         // Clears the cached project detection and default rulesets; workspace ruleset files are read per analysis.
+        diagnosticSettingsGeneration = Any()
         codeNarcRulesetResolver?.reloadRulesets()
         diagnosticsOrchestrator.invalidateWorkspaceConfiguration()
     }
