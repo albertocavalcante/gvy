@@ -13,6 +13,7 @@ group = "com.github.albertocavalcante"
 version = rootProject.version
 
 dependencies {
+    implementation(project(":common:concurrent"))
     implementation(project(":viz:ast-model"))
     implementation(project(":parser:api"))
     implementation(project(":parser:core"))

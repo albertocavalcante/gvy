@@ -16,6 +16,7 @@ kt_library(
     tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
+        "//common/concurrent",
         "//parser/api",
         "//parser/core",
         "//parser/native",

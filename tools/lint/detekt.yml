@@ -143,7 +143,6 @@ gvy:
     # fails on a line whose module no longer uses java.util.concurrent.atomic in its main sources.
     - '**/gls/src/**'
     - '**/indexer/lsif/src/**'
-    - '**/viz/desktop/src/**'
 naming:
   active: true
   ClassNaming:
