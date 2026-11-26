@@ -91,6 +91,54 @@ class ReferenceRetentionOrderingTest {
         }
     }
 
+    @ParameterizedTest
+    @EnumSource(Window::class)
+    fun `same mode disk replay settles its ticket before a late different text`(window: Window, @TempDir root: Path) {
+        val text = "class Subject { void current() {} }"
+        val path = Files.writeString(root.resolve("Subject.groovy"), text)
+        val uri = path.toUri()
+        val work = ObservedWork(uri, window)
+        val compilation = GroovyCompilationService(workerSessionDecorator = work::decorate)
+        val index = assertNotNull(compilation.getWorkspaceSymbolIndex())
+        runBlocking {
+            try {
+                compilation.updateWorkspaceModel(root, emptyList(), listOf(root))
+                compilation.refreshClosedReferences(path, ParseMode.WORKSPACE)
+                val original = assertNotNull(index.getDocument(uri))
+                assertWorkspaceCoverage(compilation, uri, original)
+                val late = async(Dispatchers.IO) { compilation.compile(uri, LATE) }
+                work.late.awaitEntry()
+                if (window == Window.RETIRED) {
+                    assertNotNull(compilation.onClosedSourceChanged(uri, keepIfUnchanged = false))
+                }
+                compilation.refreshClosedReferences(path, ParseMode.WORKSPACE)
+                val replay = assertNotNull(index.getDocument(uri))
+                if (window == Window.RETIRED) assertNotSame(original, replay) else assertSame(original, replay)
+                assertEquals(Phases.CANONICALIZATION, compilation.semanticPhaseOf(uri))
+                assertWorkspaceCoverage(compilation, uri, replay)
+                val expected = if (window == Window.REPLACED) {
+                    Files.writeString(path, NEWEST)
+                    compilation.refreshClosedReferences(path, ParseMode.WORKSPACE)
+                    assertNotNull(index.getDocument(uri)).also { assertNotSame(replay, it) }
+                } else {
+                    replay
+                }
+
+                work.late.release()
+                val completed = late.await()
+                assertTrue(completed.isSuccess)
+                assertEquals(LATE, completed.sourceText)
+                val delivered = assertNotNull(index.getDocumentSnapshot(uri))
+                assertSame(expected, delivered.document, "The older text displaced a newer same-mode replay")
+                assertEquals(if (window == Window.REPLACED) NEWEST else text, delivered.sourceText)
+                assertWorkspaceCoverage(compilation, uri, expected)
+            } finally {
+                work.late.release()
+                compilation.shutdown()
+            }
+        }
+    }
+
     private suspend fun replaceWhileVerifying(
         compilation: GroovyCompilationService,
         path: Path,
