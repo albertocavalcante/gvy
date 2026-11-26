@@ -36,15 +36,32 @@ class CompletionImportFreshControlTest {
             compilation.onDocumentOpened(candidate)
             documents.put(candidate, classSource, DocumentVersion.of(1))
             assertTrue(compilation.compile(candidate, classSource).isSuccess)
-            assertTrue(compilation.symbolIndexingService.findClasses(ClassNameQuery.Prefix("Wid")).any { it.fullyQualifiedName == "example.Widget" })
+            assertTrue(
+                compilation.symbolIndexingService.findClasses(ClassNameQuery.Prefix("Wid")).any {
+                    it.fullyQualifiedName ==
+                        "example.Widget"
+                },
+            )
             compilation.onDocumentOpened(uri)
             documents.put(uri, "package demo\nimport java.util.List\n$line\n", DocumentVersion.of(1))
             assertNull(compilation.getCompiledSnapshot(uri))
-            val service = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = documents))
-            val answer = service.completion(CompletionParams(TextDocumentIdentifier(uri.toString()), Position(2, "List<Wid".length))).await()
+            val service =
+                GroovyTextDocumentService(
+                    scope,
+                    compilation,
+                    GroovyTextDocumentServiceOptions(documentProvider = documents),
+                )
+            val answer = service.completion(
+                CompletionParams(TextDocumentIdentifier(uri.toString()), Position(2, "List<Wid".length)),
+            ).await()
             val items = if (answer.isLeft) answer.left else answer.right.items
-            val item = assertNotNull(items.singleOrNull { it.detail == "example.Widget" && !it.additionalTextEdits.isNullOrEmpty() },
-                "expected Widget at $line, found ${items.map { it.label to it.detail }}")
+            val item = assertNotNull(
+                items.singleOrNull {
+                    it.detail == "example.Widget" &&
+                        !it.additionalTextEdits.isNullOrEmpty()
+                },
+                "expected Widget at $line, found ${items.map { it.label to it.detail }}",
+            )
             val edit = item.additionalTextEdits.single()
             assertEquals("import example.Widget\n", edit.newText)
             assertEquals(Position(2, 0), edit.range.start)

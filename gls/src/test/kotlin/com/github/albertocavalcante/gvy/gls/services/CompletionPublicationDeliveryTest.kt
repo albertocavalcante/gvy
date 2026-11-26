@@ -7,7 +7,9 @@ import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SignatureCompletionRequest
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider
+import com.github.albertocavalcante.gvy.gls.services.CompletionPublicationDeliveryTest.Input
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -26,10 +28,7 @@ class CompletionPublicationDeliveryTest {
     fun `a lookup that retired after contributing a completion cannot answer`(input: Input): Unit = runBlocking {
         val candidate = URI.create("file:///Widget.groovy")
         val uri = URI.create("file:///Completions.groovy")
-        val text = when (input) {
-            Input.WORKSPACE_CLASSES -> "import java.util.List\nList<Wid"
-            Input.CLASSPATH_NAMES -> "import java.util.ArrayL"
-        }
+        val text = CompletionPublicationCases.source(input)
         val documents = DocumentProvider().apply { put(uri, text) }
         val compilation = GroovyCompilationService(documentProvider = documents)
         try {
@@ -38,29 +37,56 @@ class CompletionPublicationDeliveryTest {
                 documents.put(candidate, declaration)
                 assertTrue(compilation.compile(candidate, declaration).isSuccess)
             }
-            val request = SignatureCompletionRequest(compilation, documents, uri,
-                Position(text.lines().lastIndex, text.lines().last().length), completion = true)
+            val request = SignatureCompletionRequest(
+                compilation,
+                documents,
+                uri,
+                Position(text.lines().lastIndex, text.lines().last().length),
+                completion = true,
+            )
             val error = assertFailsWith<ResponseErrorException> {
                 request.deliver {
                     val items = CompletionProvider.getContextualCompletions(request)
-                    when (input) {
-                        Input.WORKSPACE_CLASSES -> {
-                            assertTrue(items.any { it.detail == "example.Widget" && !it.additionalTextEdits.isNullOrEmpty() })
-                            compilation.symbolIndexingService.invalidate(candidate)
-                            assertTrue(compilation.symbolIndexingService.findClasses(ClassNameQuery.Prefix("Wid")).isEmpty())
-                        }
-                        Input.CLASSPATH_NAMES -> {
-                            assertTrue(items.any { it.label == "java.util.ArrayList" })
-                            compilation.classpathService.updateClasspath(emptyList())
-                        }
-                    }
-                    assertTrue(request.source.isCurrent(), "actual index retirement must be independent of the source ticket")
+                    CompletionPublicationCases.retire(input, items, compilation, candidate)
+                    assertTrue(
+                        request.source.isCurrent(),
+                        "actual index retirement must be independent of the source ticket",
+                    )
                     items
                 }
             }
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
         } finally {
             compilation.shutdown()
+        }
+    }
+}
+
+// jqwik #2063 cannot identify coroutine-local WhenMappings classes during JUnit discovery.
+private object CompletionPublicationCases {
+    fun source(input: Input): String = when (input) {
+        Input.WORKSPACE_CLASSES -> "import java.util.List\nList<Wid"
+        Input.CLASSPATH_NAMES -> "import java.util.ArrayL"
+    }
+
+    fun retire(input: Input, items: List<CompletionItem>, compilation: GroovyCompilationService, candidate: URI) {
+        when (input) {
+            Input.WORKSPACE_CLASSES -> {
+                assertTrue(
+                    items.any {
+                        it.detail == "example.Widget" &&
+                            !it.additionalTextEdits.isNullOrEmpty()
+                    },
+                )
+                compilation.symbolIndexingService.invalidate(candidate)
+                assertTrue(
+                    compilation.symbolIndexingService.findClasses(ClassNameQuery.Prefix("Wid")).isEmpty(),
+                )
+            }
+            Input.CLASSPATH_NAMES -> {
+                assertTrue(items.any { it.label == "java.util.ArrayList" })
+                compilation.classpathService.updateClasspath(emptyList())
+            }
         }
     }
 }

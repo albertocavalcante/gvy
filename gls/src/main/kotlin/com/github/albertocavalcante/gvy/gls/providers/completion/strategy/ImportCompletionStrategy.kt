@@ -4,14 +4,14 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
-import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionInputs
-import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
-import com.github.albertocavalcante.nativeapi.inputDocumentUri
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.HeldReceiverTypes
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionInputs
 import com.github.albertocavalcante.gvy.semantics.native.displayName
 import com.github.albertocavalcante.gvy.semantics.native.displayType
+import com.github.albertocavalcante.nativeapi.inputDocumentUri
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.Position
@@ -63,11 +63,13 @@ internal class ImportCompletionStrategy(
         // If className is not found, fall through to normal class completion
         // (it's likely a package path, e.g., "import static org.junit.")
 
-        val candidates = inputs?.classNames(prefix, MAX_IMPORT_COMPLETION_RESULTS, qualified = prefix.contains('.')) ?: if (prefix.contains('.')) {
-            classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
-        } else {
-            classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
-        }
+        val candidates =
+            inputs?.classNames(prefix, MAX_IMPORT_COMPLETION_RESULTS, qualified = prefix.contains('.'))
+                ?: if (prefix.contains('.')) {
+                    classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+                } else {
+                    classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+                }
 
         val range = Range(
             Position(ctx.line, ctx.replaceRange.start.character),
@@ -97,21 +99,9 @@ internal class ImportCompletionStrategy(
      * @return true if static member completions were added (indicating no need for further processing)
      */
     private fun tryAddStaticMemberCompletions(ctx: ImportContext, builder: CompletionsBuilder): Boolean {
-        // Only if we can actually find the class on the classpath
-        val staticClassName = when {
-            ctx.isStaticMemberCompletion -> ctx.staticClassName
-            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringBeforeLast('.')
-            else -> null
-        }
-        val staticMemberPrefix = when {
-            ctx.isStaticMemberCompletion -> ""
-            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringAfterLast('.')
-            else -> null
-        }
-
-        if (staticClassName == null) {
-            return false
-        }
+        if (!ctx.isStatic || !ctx.prefix.contains('.')) return false
+        val staticClassName = ctx.prefix.substringBeforeLast('.')
+        val staticMemberPrefix = ctx.prefix.substringAfterLast('.')
 
         val workspace = findWorkspaceClassSymbols(staticClassName)
         val selected = if (inputs == null) workspace else workspace.mapNotNull { heldStaticOwner(it, inputs) }
@@ -184,7 +174,12 @@ internal class ImportCompletionStrategy(
         }
         val owner = owners.firstOrNull() ?: return null
         if (owners.any { it !== owner } || !HeldReceiverTypes(inputs.native).isSource(owner)) return null
-        return candidate.copy(node = owner, methods = owner.methods, fields = owner.fields, properties = owner.properties)
+        return candidate.copy(
+            node = owner,
+            methods = owner.methods,
+            fields = owner.fields,
+            properties = owner.properties,
+        )
     }
 
     /**
@@ -301,7 +296,10 @@ internal class ImportCompletionStrategy(
         memberPrefix: String?,
         builder: CompletionsBuilder,
     ) {
-        val methods = (inputs?.native?.reflection?.getMethods(className) ?: compilationService.classpathService.getMethods(className))
+        val methods = (
+            inputs?.native?.reflection?.getMethods(className)
+                ?: compilationService.classpathService.getMethods(className)
+            )
             .filter { it.isStatic && it.isPublic }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
 
@@ -332,7 +330,10 @@ internal class ImportCompletionStrategy(
         memberPrefix: String?,
         builder: CompletionsBuilder,
     ) {
-        val fields = (inputs?.native?.reflection?.getFields(className) ?: compilationService.classpathService.getFields(className))
+        val fields = (
+            inputs?.native?.reflection?.getFields(className)
+                ?: compilationService.classpathService.getFields(className)
+            )
             .filter { it.isStatic && it.isPublic }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
 
@@ -378,16 +379,7 @@ internal class ImportCompletionStrategy(
         val canSuggestStatic: Boolean,
         val line: Int,
         val replaceRange: Range,
-    ) {
-        // Static member completion is when we have a fully qualified class name followed by a dot
-        // e.g., "import static java.lang.Math." (cursor after dot)
-        // NOT "import static java.lang.Math" (cursor at end of class name)
-        val isStaticMemberCompletion: Boolean
-            get() = isStatic && prefix.endsWith('.') && prefix.substringBeforeLast('.').contains('.')
-
-        val staticClassName: String?
-            get() = if (isStaticMemberCompletion) prefix.substringBeforeLast('.') else null
-    }
+    )
 
     companion object {
         private const val MAX_IMPORT_COMPLETION_RESULTS = 50

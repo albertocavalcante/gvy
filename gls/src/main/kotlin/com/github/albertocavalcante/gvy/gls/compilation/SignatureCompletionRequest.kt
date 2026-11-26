@@ -37,13 +37,18 @@ internal class SignatureCompletionRequest(
     private val consultedMembers = mutableListOf<HoverMemberLookup>()
 
     init {
-        if (documents !== compilation.documents || source.buffer?.snapshot !== documents.getSnapshot(uri)) throw changed()
+        if (documents !== compilation.documents ||
+            source.buffer?.snapshot !== documents.getSnapshot(uri)
+        ) {
+            throw changed()
+        }
     }
 
-    private fun current(): Boolean = publications.all { it() } && jenkinsFacts?.publicationsCurrent?.invoke() != false &&
-        classpathCurrent() && compilation.isHoverEngineCurrent(engine) &&
-        compilation.serverConfiguration === configuration && consultedMembers.all { it.isDatabaseCurrent() } &&
-        source.workerCurrent() && source.isCurrent()
+    private fun current(): Boolean =
+        publications.all { it() } && jenkinsFacts?.publicationsCurrent?.invoke() != false &&
+            classpathCurrent() && compilation.isHoverEngineCurrent(engine) &&
+            compilation.serverConfiguration === configuration && consultedMembers.all { it.isDatabaseCurrent() } &&
+            source.workerCurrent() && source.isCurrent()
 
     fun observePublication(current: () -> Boolean) {
         publications.add(current)
@@ -55,8 +60,9 @@ internal class SignatureCompletionRequest(
         if (!current()) throw changed()
     }
 
-    suspend fun completionJenkins(): JenkinsQueryFacts = jenkinsFacts ?: checkNotNull(jenkins).materialize(forHover = true)
-        .also { jenkinsFacts = it }
+    suspend fun completionJenkins(): JenkinsQueryFacts =
+        jenkinsFacts ?: checkNotNull(jenkins).materialize(forHover = true)
+            .also { jenkinsFacts = it }
 
     suspend fun <T> deliver(compute: suspend () -> T): T {
         if (!currentCoroutineContext().inputsCurrent(::current)) throw changed()

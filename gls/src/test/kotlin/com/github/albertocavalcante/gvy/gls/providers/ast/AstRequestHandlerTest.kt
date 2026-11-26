@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
@@ -19,11 +20,12 @@ import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
+import io.mockk.MockKMatcherScope
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +40,7 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
@@ -46,6 +49,8 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -55,10 +60,20 @@ import kotlin.test.assertTrue
 
 class AstRequestHandlerTest {
 
-    private val compilationService = mockk<GroovyCompilationService>()
     private val coreConverter = mockk<CoreAstConverter>()
     private val nativeConverter = mockk<NativeAstConverter>()
     private val documents = DocumentProvider()
+    private val worker = mockk<WorkerSession>()
+    private val compilationService = GroovyCompilationService(documentProvider = documents, workerSessionDecorator = { worker })
+
+    @AfterEach
+    fun closeCompiler() {
+        compilationService.shutdown()
+    }
+
+    private fun MockKMatcherScope.requestFor(uri: URI, content: String): ParseRequest = match {
+        it.uri == uri && it.content == content && it.compilePhase == Phases.CANONICALIZATION
+    }
 
     @Test
     fun `getAst returns Core AST when requested`(): Unit = runTest {
@@ -75,7 +90,7 @@ class AstRequestHandlerTest {
             assertNotNull(parseResult.ast)
 
             documents.put(URI.create(uri), source, DocumentVersion.of(1))
-            coEvery { compilationService.compileTransient(URI.create(uri), source, Phases.CANONICALIZATION) } returns
+            every { worker.parse(requestFor(URI.create(uri), source)) } returns
                 parseResult
             val handler = AstRequestHandler(
                 compilationService,
@@ -115,7 +130,7 @@ class AstRequestHandlerTest {
         )
         assertNotNull(parsed.ast)
         documents.put(uri, source, DocumentVersion.of(1))
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
+        every { worker.parse(requestFor(uri, source)) } returns parsed
         val realHandler =
             AstRequestHandler(
                 compilationService,
@@ -144,7 +159,7 @@ class AstRequestHandlerTest {
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
         documents.put(uri, source, DocumentVersion.of(7))
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
+        every { worker.parse(requestFor(uri, source)) } returns parsed
         val handler = AstRequestHandler(
             compilationService,
             CoreAstConverter(),
@@ -171,7 +186,7 @@ class AstRequestHandlerTest {
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
         documents.put(uri, source, DocumentVersion.of(1))
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
+        every { worker.parse(requestFor(uri, source)) } answers {
             documents.remove(uri)
             documents.put(uri, source, DocumentVersion.of(1))
             parsed
@@ -220,33 +235,41 @@ class AstRequestHandlerTest {
     fun `cancelling AST request cancels transient compilation`(): Unit = runTest {
         val uri = URI("file:///snapshot.groovy")
         val source = "class Fresh {}"
-        val started = CompletableDeferred<Unit>()
-        val blocked = CompletableDeferred<ParseResult>()
-        val cancelled = CompletableDeferred<Unit>()
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
         documents.put(uri, source, DocumentVersion.of(1))
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
-            started.complete(Unit)
+        every { worker.parse(requestFor(uri, source)) } answers {
+            val request = firstArg<ParseRequest>()
+            started.countDown()
+            check(release.await(30, TimeUnit.SECONDS))
             try {
-                blocked.await()
+                request.checkCancelled()
+                error("The parser did not observe request cancellation")
             } catch (error: CancellationException) {
-                cancelled.complete(Unit)
+                cancelled.countDown()
                 throw error
             }
         }
+        val owner = SupervisorJob()
         val handler = AstRequestHandler(
             compilationService,
             coreConverter,
             nativeConverter,
             documents,
-            supervisedScope(),
+            CoroutineScope(owner + Dispatchers.IO),
         )
-        val request = handler.getAst(AstParams(uri.toString(), "native"))
-        runCurrent()
-        assertTrue(started.isCompleted)
-        request.cancel(true)
-        runCurrent()
-        assertTrue(request.isCancelled)
-        assertTrue(cancelled.isCompleted)
+        try {
+            val request = handler.getAst(AstParams(uri.toString(), "native"))
+            assertTrue(started.await(30, TimeUnit.SECONDS))
+            request.cancel(true)
+            release.countDown()
+            assertTrue(request.isCancelled)
+            assertTrue(cancelled.await(30, TimeUnit.SECONDS))
+        } finally {
+            owner.cancel()
+            release.countDown()
+        }
     }
 
     @Test
@@ -257,7 +280,7 @@ class AstRequestHandlerTest {
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
         documents.put(uri, source, DocumentVersion.of(1))
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
+        every { worker.parse(requestFor(uri, source)) } answers {
             documents.update(uri, "class Newer {}", DocumentVersion.of(2))
             parsed
         }
@@ -282,7 +305,7 @@ class AstRequestHandlerTest {
             ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
         )
         documents.put(uri, source, DocumentVersion.of(1))
-        coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns parsed
+        every { worker.parse(requestFor(uri, source)) } returns parsed
         val dto = CoreAstNodeDto("node", "Module", null, emptyList(), emptyMap())
         every { nativeConverter.convert(any(), source) } answers {
             documents.update(uri, "class Newer {}", DocumentVersion.of(2))
@@ -326,7 +349,7 @@ class AstRequestHandlerTest {
                 other,
             )
             for (result in unavailable) {
-                coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } returns result
+                every { worker.parse(requestFor(uri, source)) } returns result
                 for (projection in listOf("native", "core")) {
                     val error = assertFailsWith<ResponseErrorException> {
                         handler.getAst(AstParams(uri.toString(), projection)).await()
@@ -362,7 +385,7 @@ class AstRequestHandlerTest {
             val compiled = fixture.compile(uri, source)
             val parsed = if (completion == LoaderCompletion.UNAVAILABLE_AST) compiled.copy(ast = null) else compiled
             documents.put(uri, source, DocumentVersion.of(1))
-            coEvery { compilationService.compileTransient(uri, source, Phases.CANONICALIZATION) } coAnswers {
+            every { worker.parse(requestFor(uri, source)) } answers {
                 // TODO(#2063): Investigate pinned jqwik/Platform discovery of coroutine enum dispatch.
                 //   Recheck anonymous enum helpers when qualifying the supported dependency stack.
                 //   See: https://github.com/albertocavalcante/gvy/issues/2063

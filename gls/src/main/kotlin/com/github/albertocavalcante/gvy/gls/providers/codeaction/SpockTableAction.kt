@@ -35,6 +35,7 @@ internal data class SpockTableRequest(
     val isPartial: Boolean = false,
     /** Remembered verdicts for this document (#1387); null disables recording and recall. */
     val verdicts: SpockVerdictMemory.Access? = null,
+    val onSource: (ModuleNode) -> Unit = {},
 )
 
 /**
@@ -64,7 +65,7 @@ internal object SpockTableAction {
         if (request.only?.any(::matchesKind) == false) return emptyList()
         val lines = request.content.lines()
         val module = request.module ?: return emptyList()
-        val source = SpockSourceContext.from(module, request.isPartial)
+        val source = SpockSourceContext.from(module, request.isPartial, request.onSource)
         val recalled = request.verdicts?.exchange(module, source).orEmpty()
         return source.classes
             .filter { !it.classNode.isScriptSafe() }

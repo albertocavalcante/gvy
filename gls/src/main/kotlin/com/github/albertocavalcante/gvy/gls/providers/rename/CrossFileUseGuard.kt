@@ -70,6 +70,7 @@ internal class CrossFileUseGuard(
     private val walks: WorkspaceWalkCache = WorkspaceWalkCache(),
     private val diskText: WorkspaceTextCache = WorkspaceTextCache(),
     private val limits: ScanLimits = ScanLimits(),
+    private val witness: RenameScanWitness? = null,
 ) {
     /** Known sources keyed for one workspace root; the source list is replaced, never mutated, on refresh. */
     private class KeyedSources(val list: List<Path>, val rootKeys: List<Path>, val byKey: Map<Path, Path>)
@@ -88,18 +89,27 @@ internal class CrossFileUseGuard(
             val self = SelfKey(keys, documentUri)
             val known = sourcesKeyed(keys)
             // In the workspace: under a root, or a known source (e.g. a Gradle srcDir outside the roots).
-            val used = index.findReferenceDocuments(symbolId).keys
-                .filter { uri ->
-                    keys.of(uri)?.let { !self.matches(it) && (keys.inScope(it) || it in known) } == true
-                }
-                .sortedBy { it.toString() }
+            witness?.begin(walks)
+            witness?.observe { FileKeys(layout.roots()).rootKeys == keys.rootKeys }
+            val references = witness?.references ?: index.captureReferences()
+            val rows = references.findReferenceDocuments(symbolId).filterKeys { uri ->
+                keys.of(uri)?.let { !self.matches(it) && (keys.inScope(it) || it in known) } == true
+            }
+            var remainingChars = limits.maxChars
+            val used = rows.filter { (uri, indexed) ->
+                context.ensureActive()
+                val budget = remainingChars
+                witness?.qualifies(uri, indexed, diskText, budget) { consumed -> remainingChars -= consumed } != false
+            }.keys.sortedBy { it.toString() }
+            // An unqualified positive row must still refuse, even when a fresh text scan cannot name the binding.
+            val unqualified = (rows.keys - used.toSet()).sortedBy { it.toString() }
+            if (unqualified.isNotEmpty()) return@withContext CrossFileUses(used = used, mentioned = unqualified)
             if (used.size >= MAX_REPORTED) return@withContext CrossFileUses(used = used, truncated = true)
 
-            val snapshot = index.implementationSnapshot
             val buffers = openBuffers()
             val walked = walkedFiles(keys) { context.ensureActive() }
             val found = CandidateCollector(keys, limits.maxFiles)
-                .collect(known, snapshot.keys + buffers.keys, walked)
+                .collect(known, references.visibleDocuments + buffers.keys, walked)
             val usedKeys = used.mapNotNullTo(HashSet(), keys::of)
             val candidates = found.files.filterKeys { !self.matches(it) && it !in usedKeys }
             if (found.overflow) {
@@ -109,9 +119,11 @@ internal class CrossFileUseGuard(
                 return@withContext CrossFileUses(used = used, unreadable = found.unreadable.map(Path::toUri))
             }
             val scan = Scan(
+                budget = remainingChars,
                 word = NameMatcher.pattern(name, definition),
-                indexed = snapshot.entries
-                    .mapNotNull { (uri, doc) -> keys.of(uri)?.let { it to doc.sourceText } }.toMap(),
+                indexed = references.visibleDocuments.mapNotNull { uri ->
+                    keys.of(uri)?.let { it to references.getDocumentSnapshot(uri)?.sourceText }
+                }.toMap(),
                 buffers = buffers.entries.mapNotNull { (uri, text) -> keys.of(uri)?.let { it to text } }.toMap(),
             )
             scan.run(candidates, used) { context.ensureActive() }
@@ -122,9 +134,20 @@ internal class CrossFileUseGuard(
         if (keys.rootKeys.isEmpty()) return Walked(emptyList(), overflow = false)
         val sourceRootKeys = layout.sourceRoots().map(keys::of)
         val request = listOf(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries)
-        return walks.get(request) {
-            walkWorkspace(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries, active)
+        fun walk(checkActive: () -> Unit) =
+            walkWorkspace(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries, checkActive)
+        val walked = walks.get(request) { walk(active) }
+        witness?.observe {
+            if (walks.stillLists(request, walked)) {
+                true
+            } else {
+                val validation = currentCoroutineContext()
+                val current = walk { validation.ensureActive() }
+                current.overflow == walked.overflow && current.unreadable.toSet() == walked.unreadable.toSet() &&
+                    current.files.toSet() == walked.files.toSet()
+            }
         }
+        return walked
     }
 
     /** Resolves the known sources' keys once per source list (they cost a filesystem call each). */
@@ -138,7 +161,12 @@ internal class CrossFileUseGuard(
     }
 
     /** One pass over the candidate files, tracking the character budget and stopping at [MAX_REPORTED] hits. */
-    private inner class Scan(val word: Regex, val indexed: Map<Path, String?>, val buffers: Map<Path, String>) {
+    private inner class Scan(
+        val budget: Long,
+        val word: Regex,
+        val indexed: Map<Path, String?>,
+        val buffers: Map<Path, String>,
+    ) {
         private var chars = 0L
         private val mentioned = mutableListOf<URI>()
         private val unsaved = mutableListOf<URI>()
@@ -164,21 +192,27 @@ internal class CrossFileUseGuard(
                 val stale = indexed[key]?.let { it != buffer } == true
                 (if (stale) unsaved else mentioned).add(path.toUri())
             }
-            return chars <= limits.maxChars
+            return chars <= budget
         }
 
-        private fun examineDisk(path: Path): Boolean = when (val read = diskText.read(path, limits.maxChars - chars)) {
-            is DiskText.Text -> {
-                chars += read.text.length
-                if (word.containsMatchIn(read.text)) mentioned.add(path.toUri())
-                chars <= limits.maxChars
+        private fun examineDisk(path: Path): Boolean {
+            val remaining = budget - chars
+            val physical = witness?.let { realKey(path) }
+            val read = diskText.read(path, remaining)
+            witness?.observe { realKey(path) == physical && diskText.readCurrent(path, remaining) == read }
+            return when (read) {
+                is DiskText.Text -> {
+                    chars += read.text.length
+                    if (word.containsMatchIn(read.text)) mentioned.add(path.toUri())
+                    chars <= budget
+                }
+                DiskText.TooLarge -> false
+                DiskText.Unreadable -> {
+                    mentioned.add(path.toUri())
+                    true
+                }
+                DiskText.Missing -> true
             }
-            DiskText.TooLarge -> false
-            DiskText.Unreadable -> {
-                mentioned.add(path.toUri())
-                true
-            }
-            DiskText.Missing -> true
         }
 
         private fun sorted(uris: List<URI>): List<URI> = uris.sortedBy { it.toString() }

@@ -245,6 +245,9 @@ internal class WorkspaceWalkCache(
         return walked
     }
 
+    fun stillLists(key: Any, walked: Walked): Boolean =
+        entry?.let { it.walked === walked && isFresh(it, key) } == true
+
     fun invalidate() {
         generation.incrementAndGet()
         entry = null

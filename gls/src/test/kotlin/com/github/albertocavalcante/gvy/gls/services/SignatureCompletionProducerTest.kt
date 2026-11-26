@@ -5,8 +5,8 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
 import com.github.albertocavalcante.gvy.gls.worker.WorkerCapabilities
 import com.github.albertocavalcante.gvy.gls.worker.WorkerConnector
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor

@@ -19,14 +19,20 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.net.URI
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 class GroovyTextDocumentServiceCodeActionTest {
 
@@ -55,6 +61,7 @@ class GroovyTextDocumentServiceCodeActionTest {
     @AfterEach
     fun tearDown() {
         coroutineScope.cancel()
+        compilationService.shutdown()
     }
 
     @Test
@@ -73,8 +80,30 @@ class GroovyTextDocumentServiceCodeActionTest {
     }
 
     @Test
+    fun `codeAction refuses a buffer owned by another document provider`() {
+        val otherDocuments = DocumentProvider().apply { put(uri, "def x = 1") }
+        val service = GroovyTextDocumentService(
+            coroutineScope,
+            compilationService,
+            GroovyTextDocumentServiceOptions(documentProvider = otherDocuments),
+        )
+        val params = CodeActionParams(
+            TextDocumentIdentifier(uri.toString()),
+            Range(Position(0, 0), Position(0, 0)),
+            CodeActionContext(emptyList()),
+        )
+        val failure = assertThrows<ExecutionException> {
+            service.codeAction(params).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        }
+        assertEquals(
+            ResponseErrorCode.ContentModified.value,
+            assertIs<ResponseErrorException>(failure.cause).responseError.code,
+        )
+    }
+
+    @Test
     fun `codeAction handles empty diagnostics`() {
-        val documentProvider = DocumentProvider().apply {
+        val documentProvider = compilationService.documents.apply {
             put(uri, "def x = 1")
         }
 
@@ -103,7 +132,7 @@ class GroovyTextDocumentServiceCodeActionTest {
 
     @Test
     fun `codeAction handles diagnostics without crashing`() {
-        val documentProvider = DocumentProvider().apply {
+        val documentProvider = compilationService.documents.apply {
             put(uri, "def x = UnknownClass.doSomething()")
         }
 
@@ -138,7 +167,7 @@ class GroovyTextDocumentServiceCodeActionTest {
 
     @Test
     fun `codeAction returns code actions not commands`() {
-        val documentProvider = DocumentProvider().apply {
+        val documentProvider = compilationService.documents.apply {
             put(uri, "class Test { }")
         }
 
@@ -169,7 +198,7 @@ class GroovyTextDocumentServiceCodeActionTest {
 
     @Test
     fun `codeAction handles concurrent requests`() {
-        val documentProvider = DocumentProvider().apply {
+        val documentProvider = compilationService.documents.apply {
             put(uri, "def x = 1\ndef y = 2")
         }
 

@@ -62,32 +62,33 @@ internal fun interface CompletionStrategy {
          * @return A composite strategy that collects all completions
          */
         @Suppress("TooGenericExceptionCaught")
-        fun aggregate(strategies: List<CompletionStrategy>, propagateFailures: Boolean = false): CompletionStrategy = CompletionStrategy { context ->
-            val allItems = mutableListOf<CompletionItem>()
+        fun aggregate(strategies: List<CompletionStrategy>, propagateFailures: Boolean = false): CompletionStrategy =
+            CompletionStrategy { context ->
+                val allItems = mutableListOf<CompletionItem>()
 
-            for (strategy in strategies) {
-                val result = try {
-                    strategy.complete(context)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Error) {
-                    throw e
-                } catch (e: Exception) {
-                    if (propagateFailures) throw e
-                    logger.debug(e) {
-                        "Completion strategy ${strategy::class.simpleName ?: "unknown"} threw unexpectedly"
+                for (strategy in strategies) {
+                    val result = try {
+                        strategy.complete(context)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Error) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (propagateFailures) throw e
+                        logger.debug(e) {
+                            "Completion strategy ${strategy::class.simpleName ?: "unknown"} threw unexpectedly"
+                        }
+                        notApplicable(strategy::class.simpleName ?: "unknown")
                     }
-                    notApplicable(strategy::class.simpleName ?: "unknown")
+
+                    result.fold(
+                        ifLeft = { /* skip non-applicable strategies */ },
+                        ifRight = { items -> allItems.addAll(items) },
+                    )
                 }
 
-                result.fold(
-                    ifLeft = { /* skip non-applicable strategies */ },
-                    ifRight = { items -> allItems.addAll(items) },
-                )
+                allItems.right()
             }
-
-            allItems.right()
-        }
 
         /** Convenience: strategy doesn't apply to this context */
         fun notApplicable(strategy: String = "unknown"): CompletionResult =

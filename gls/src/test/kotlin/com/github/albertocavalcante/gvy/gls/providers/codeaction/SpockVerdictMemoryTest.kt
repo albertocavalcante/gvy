@@ -77,6 +77,23 @@ class SpockVerdictMemoryTest {
     }
 
     @Test
+    fun `an older refresh cannot overwrite a verdict published while it was in flight`() {
+        val memory = SpockVerdictMemory()
+        val clean = parse(withBase = true)
+        val module = assertNotNull(clean.ast)
+        val contexts = SpockSourceContext.from(module, isPartial = false)
+        val older = memory.access(uri, "prior", clean.outcome, read, packageFiles)
+        val newer = memory.access(uri, "fp", clean.outcome, read, packageFiles)
+
+        newer.exchange(module, contexts)
+        val degraded = parse(withBase = false)
+        assertEquals(setOf("TableSpec"), memory.exchange(degraded), "new verdict must be recallable")
+        older.exchange(module, contexts)
+
+        assertEquals(setOf("TableSpec"), memory.exchange(degraded))
+    }
+
+    @Test
     fun `a record written by a request that started before close is discarded`() {
         val memory = SpockVerdictMemory()
         val clean = parse(withBase = true)
