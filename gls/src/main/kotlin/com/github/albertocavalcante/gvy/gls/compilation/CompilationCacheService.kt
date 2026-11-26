@@ -188,16 +188,6 @@ class CompilationCacheService(
         }
     }
 
-    /** Test discovery's structural pass follows the same source retirements as its canonical parse. */
-    internal fun detachSnapshotJobs(uri: URI? = null): RetiredCompilations {
-        val snapshots = if (uri == null) snapshotJobs.detach() else snapshotJobs.detach(uri)
-        val discoveries = if (uri == null) discoveryJobs.detach() else discoveryJobs.detach(uri)
-        return RetiredCompilations {
-            snapshots?.retire()
-            discoveries?.retire()
-        }
-    }
-
     /**
      * Gets cache statistics for monitoring and debugging.
      *
@@ -217,4 +207,14 @@ class CompilationCacheService(
 
     /** Changes the maximum number of cached results (open documents are exempt from eviction). */
     fun resize(maxEntries: Int) = cache.resize(maxEntries)
+}
+
+/** Test discovery's structural pass follows the same source retirements as its canonical parse. */
+internal fun CompilationCacheService.detachSnapshotJobs(uri: URI? = null): RetiredCompilations {
+    val snapshots = if (uri == null) snapshotJobs.detach() else snapshotJobs.detach(uri)
+    val discoveries = if (uri == null) discoveryJobs.detach() else discoveryJobs.detach(uri)
+    return RetiredCompilations {
+        snapshots?.retire()
+        discoveries?.retire()
+    }
 }

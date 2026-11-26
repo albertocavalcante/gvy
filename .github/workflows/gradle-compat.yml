@@ -20,7 +20,6 @@ jobs:
     permissions:
       contents: read
     env:
-      JAVA_TOOL_OPTIONS: -Xmx2g
       GRADLE_OPTS: -Xmx512m
     steps:
       - name: Checkout frozen baseline and tests
