@@ -139,8 +139,8 @@ gvy:
     - '**/bsp/bsp-core/src/**'
     - '**/bsp/maven-bsp/src/**'
     - '**/parser/core/src/**'
-    # No other module is excluded (#2474): every module the lint task reads is guarded. Kotlin outside src/main and
-    # src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
+    # No other module is excluded (#2474): every other module the lint task reads is guarded. Kotlin outside src/main
+    # and src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
 naming:
   active: true
   ClassNaming:
