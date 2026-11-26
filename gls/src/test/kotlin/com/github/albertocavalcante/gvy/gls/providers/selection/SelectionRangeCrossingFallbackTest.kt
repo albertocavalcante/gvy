@@ -55,8 +55,8 @@ class SelectionRangeCrossingFallbackTest {
         val source = "def result = receiver.aVeryLongMethodName(\n    value) // note\n"
         val uri = URI.create("file:///SelectionCall.groovy")
         val index = TextIndex(source)
-        val compilation = GroovyCompilationService()
         val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(7)) }
+        val compilation = GroovyCompilationService(documentProvider = documents)
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         try {
             compilation.compile(uri, source)

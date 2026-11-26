@@ -7,15 +7,15 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
-import io.mockk.coEvery
-import io.mockk.spyk
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SelectionRange
@@ -39,8 +39,20 @@ class SelectionRangeReadOnlyTest {
     private val uri = URI.create("file:///SelectionReadOnly.groovy")
     private val source = "def result = value + 1\n"
     private val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(7)) }
-    private val actual = GroovyCompilationService()
-    private val compilation = spyk(actual)
+    private var afterParse: () -> Unit = {}
+    private val actual = GroovyCompilationService(
+        documentProvider = documents,
+        workerSessionDecorator = { delegate ->
+            object : WorkerSession {
+                override fun parse(request: ParseRequest): ParseResult {
+                    val parsed = delegate.parse(request)
+                    afterParse()
+                    return parsed
+                }
+            }
+        },
+    )
+    private val compilation = actual
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(
         scope,
@@ -51,7 +63,7 @@ class SelectionRangeReadOnlyTest {
     @AfterEach
     fun close() {
         scope.cancel()
-        actual.clearCaches()
+        actual.shutdown()
     }
 
     @Test
@@ -65,19 +77,17 @@ class SelectionRangeReadOnlyTest {
     @Test
     fun `an older cached source remains untouched while current structure is selected`(): Unit = runBlocking {
         val prior = "def prior = 2\n"
+        documents.put(uri, prior, DocumentVersion.of(6))
         actual.compile(uri, prior)
+        documents.put(uri, source, DocumentVersion.of(7))
         val selected = assertNotNull(service.selectionRange(params()).get(5, TimeUnit.SECONDS)).single()
         assertTrue(Range(Position(0, 13), Position(0, 22)) in chain(selected))
         assertEquals(prior, assertNotNull(compilation.getCompiledSnapshot(uri)).sourceText)
     }
 
     @Test
-    fun `a raced publishing waiter cannot leave a stale AST after the request`(): Unit = runBlocking {
-        coEvery { compilation.ensureCompiled(uri) } coAnswers {
-            documents.put(uri, "def newer = 2\n", DocumentVersion.of(8))
-            actual.compile(uri, source)
-            null
-        }
+    fun `a retired query cannot leave stale legacy document state`(): Unit = runBlocking {
+        afterParse = { documents.put(uri, "def newer = 2\n", DocumentVersion.of(8)) }
         try {
             service.selectionRange(params()).get(5, TimeUnit.SECONDS)
         } catch (error: ExecutionException) {
@@ -91,12 +101,8 @@ class SelectionRangeReadOnlyTest {
     }
 
     @Test
-    fun `a document change during transient parsing rejects without publishing`(): Unit = runBlocking {
-        val parsed = actual.compileTransient(uri, source, Phases.CONVERSION)
-        coEvery { compilation.compileTransient(uri, source, any()) } coAnswers {
-            documents.put(uri, "def newer = 2\n", DocumentVersion.of(8))
-            parsed
-        }
+    fun `a document change during owned parsing rejects without publishing`(): Unit = runBlocking {
+        afterParse = { documents.put(uri, "def newer = 2\n", DocumentVersion.of(8)) }
         val error = assertThrows<ExecutionException> { service.selectionRange(params()).get(5, TimeUnit.SECONDS) }
         assertEquals(
             ResponseErrorCode.ContentModified.value,

@@ -7,7 +7,10 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import com.google.gson.Gson
 import io.mockk.coVerify
 import io.mockk.spyk
@@ -30,6 +33,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import java.net.URI
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -38,7 +42,20 @@ import kotlin.test.assertTrue
 class SelectionRangeRequestValidationTest {
     private val uri = URI.create("file:///SelectionValidation.groovy")
     private val documents = DocumentProvider().apply { put(uri, "x\r\n", DocumentVersion.of(7)) }
-    private val compilation = spyk(GroovyCompilationService())
+    private val parseCount = AtomicInteger()
+    private val compilation = spyk(
+        GroovyCompilationService(
+            documentProvider = documents,
+            workerSessionDecorator = { delegate ->
+                object : WorkerSession {
+                    override fun parse(request: ParseRequest): ParseResult {
+                        parseCount.incrementAndGet()
+                        return delegate.parse(request)
+                    }
+                }
+            },
+        ),
+    )
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val service = GroovyTextDocumentService(
         coroutineScope = scope,
@@ -89,6 +106,7 @@ class SelectionRangeRequestValidationTest {
         val result = service.selectionRange(params(emptyList())).get(5, TimeUnit.SECONDS)
         assertTrue(result!!.isEmpty())
         coVerify(exactly = 0) { compilation.ensureCompiled(any()) }
+        assertEquals(0, parseCount.get())
     }
 
     @Test
@@ -109,5 +127,6 @@ class SelectionRangeRequestValidationTest {
             assertIs<ResponseErrorException>(error.cause).responseError.code,
         )
         coVerify(exactly = 0) { compilation.ensureCompiled(any()) }
+        assertEquals(0, parseCount.get())
     }
 }

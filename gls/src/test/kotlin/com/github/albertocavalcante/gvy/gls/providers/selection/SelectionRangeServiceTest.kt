@@ -79,7 +79,7 @@ class SelectionRangeServiceTest {
             Range(Position(1, 13), Position(1, 18)),
         )
         val documents = DocumentProvider().apply { put(uri, source) }
-        val compilation = GroovyCompilationService()
+        val compilation = GroovyCompilationService(documentProvider = documents)
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         try {
             compilation.compile(uri, source)
@@ -117,7 +117,7 @@ class SelectionRangeServiceTest {
             val index = TextIndex(source)
             val offset = source.indexOf("fresh")
             val documents = DocumentProvider().apply { put(uri, source, DocumentVersion.of(7)) }
-            val compilation = GroovyCompilationService()
+            val compilation = GroovyCompilationService(documentProvider = documents)
             val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
             try {
                 compilation.compile(uri, source)

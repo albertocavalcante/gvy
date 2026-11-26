@@ -4,7 +4,14 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import { PassThrough } from "stream";
+import * as path from "path";
+import { createRequire } from "module";
 import proxyquire from "proxyquire";
+import {
+  DocumentSymbolRequest,
+  LSPErrorCodes,
+  ResponseError,
+} from "vscode-languageserver-protocol";
 
 type Deferred = {
   promise: Promise<void>;
@@ -28,8 +35,36 @@ interface FakeErrorHandler {
   closed: () => unknown;
 }
 
+type TestDocument = { uri: string; version: number; isClosed: boolean };
+type TestToken = {
+  isCancellationRequested: boolean;
+  onCancellationRequested?: (listener: () => void) => { dispose(): void };
+};
+
+class TestEvent<T> {
+  readonly listeners = new Set<(value: T) => void>();
+  readonly subscribe = (listener: (value: T) => void) => {
+    this.listeners.add(listener);
+    return { dispose: () => this.listeners.delete(listener) };
+  };
+  fire(value: T) {
+    for (const listener of this.listeners) listener(value);
+  }
+}
+
 interface FakeClientOptions {
   middleware?: {
+    provideDocumentSymbols?: (
+      document: TestDocument,
+      token: TestToken,
+      next: (document: TestDocument, token: TestToken) => Promise<unknown>,
+    ) => Promise<unknown>;
+    sendRequest?: (
+      type: string | { method: string },
+      params: unknown,
+      token: { isCancellationRequested: boolean },
+      next: SendRequest,
+    ) => Promise<unknown>;
     didOpen: (
       document: unknown,
       next: (document: unknown) => Promise<void>,
@@ -48,11 +83,29 @@ interface FakeClientOptions {
   errorHandler?: FakeErrorHandler;
 }
 
+type SendRequest = (
+  type: string | { method: string },
+  params: unknown,
+  token: { isCancellationRequested: boolean },
+) => Promise<unknown>;
+
 class FakeClient {
   static instances: FakeClient[] = [];
   registerFeature = sinon.stub();
   sendNotification = sinon.stub().resolves();
-  onNotification = sinon.stub().returns({ dispose: () => {} });
+  readonly stateEvent = new TestEvent<{ oldState: number; newState: number }>();
+  readonly onDidChangeState = this.stateEvent.subscribe;
+  // The pinned SDK keeps a single handler per wire method.
+  readonly notifications = new Map<string, (params: unknown) => void>();
+  readonly onNotification = sinon
+    .stub()
+    .callsFake((method: string, handler: (params: unknown) => void) => {
+      this.notifications.set(method, handler);
+      return { dispose: () => this.notifications.delete(method) };
+    });
+  status(quiescent: boolean) {
+    this.notifications.get("groovy/status")?.({ health: "ok", quiescent });
+  }
   static nextStart: (() => Promise<void>) | undefined;
   state = State.Stopped;
   initializeResult: unknown = { serverInfo: { name: "gls", version: "9.9.9" } };
@@ -115,13 +168,22 @@ describe("server/client lifecycle", () => {
   let createOutputChannel: sinon.SinonStub;
   let startTimeoutSeconds: number;
   let serverVmArgs: unknown;
+  const symbolUri = "untitled:Untitled-1";
+  let openDocuments: TestDocument[];
+  let edits: TestEvent<{ document: TestDocument }>;
+  let closes: TestEvent<TestDocument>;
+  let opens: TestEvent<TestDocument>;
 
   beforeEach(() => {
+    edits = new TestEvent();
+    closes = new TestEvent();
+    opens = new TestEvent();
     FakeClient.instances = [];
     FakeClient.nextStart = undefined;
     FakeClient.spawnLate = false;
     startTimeoutSeconds = 120;
     serverVmArgs = undefined;
+    openDocuments = [{ uri: symbolUri, version: 1, isClosed: false }];
     FakeClient.closedResult = () => ({ action: CloseAction.Restart });
     watchers = [];
     validateJava = sinon.stub().resolves({
@@ -136,6 +198,12 @@ describe("server/client lifecycle", () => {
 
     const vscodeMock = {
       workspace: {
+        get textDocuments() {
+          return openDocuments;
+        },
+        onDidChangeTextDocument: edits.subscribe,
+        onDidCloseTextDocument: closes.subscribe,
+        onDidOpenTextDocument: opens.subscribe,
         workspaceFolders: [{ uri: { fsPath: "/w" } }],
         getConfiguration: () => ({ get: (_k: string, d?: unknown) => d }),
         createFileSystemWatcher: () => {
@@ -190,6 +258,466 @@ describe("server/client lifecycle", () => {
     mod.initializeClient({
       subscriptions: [],
       asAbsolutePath: (p: string) => p,
+    });
+  });
+
+  describe("document symbol transport", () => {
+    const request = { textDocument: { uri: symbolUri } };
+    const stale = new ResponseError(
+      LSPErrorCodes.ContentModified,
+      "Document changed",
+    );
+    const symbols = [{ name: "AfterGdsl", children: [{ name: "hello" }] }];
+
+    function raw(
+      next: SendRequest,
+      token: TestToken,
+      type: string | { method: string } = DocumentSymbolRequest.type,
+    ) {
+      const middleware = FakeClient.instances[0].clientOptions.middleware;
+      return middleware?.sendRequest
+        ? middleware.sendRequest(type, request, token, next)
+        : next(type, request, token);
+    }
+
+    function provide(
+      document: TestDocument,
+      token: TestToken,
+      next: (document: TestDocument, token: TestToken) => Promise<unknown>,
+    ) {
+      const middleware = FakeClient.instances[0].clientOptions.middleware;
+      return middleware?.provideDocumentSymbols
+        ? middleware.provideDocumentSymbols(document, token, next)
+        : next(document, token);
+    }
+
+    async function send(
+      next: SendRequest,
+      token = { isCancellationRequested: false },
+      type: string | { method: string } = DocumentSymbolRequest.type,
+    ) {
+      await mod.startClient();
+      const document = openDocuments[0];
+      return document
+        ? provide(document, token, (_, forwarded) => raw(next, forwarded, type))
+        : raw(next, token, type);
+    }
+
+    it("forwards a raw request without a symbol provider invocation only once", async () => {
+      await mod.startClient();
+      const next = sinon.stub().rejects(stale);
+      await assert.rejects(
+        raw(next, { isCancellationRequested: false }),
+        (error) => error === stale,
+      );
+      assert.strictEqual(next.callCount, 1);
+    });
+
+    it("expires the provider binding when the SDK returns or fails", async () => {
+      await mod.startClient();
+      for (const fail of [false, true]) {
+        const token = { isCancellationRequested: false };
+        let transportToken = token;
+        const pending = provide(
+          openDocuments[0],
+          token,
+          async (_, forwarded) => {
+            transportToken = forwarded;
+            if (fail) throw stale;
+            return symbols;
+          },
+        );
+        if (fail) await assert.rejects(pending, (error) => error === stale);
+        else assert.strictEqual(await pending, symbols);
+        const next = sinon.stub().rejects(stale);
+        await assert.rejects(
+          raw(next, transportToken),
+          (error) => error === stale,
+        );
+        assert.strictEqual(next.callCount, 1);
+      }
+    });
+
+    it("does not retry across an edit while the SDK is flushing pending changes", async () => {
+      await mod.startClient();
+      const [document] = openDocuments;
+      const gate = deferred();
+      const next = sinon.stub().rejects(stale);
+      const pending = provide(
+        document,
+        { isCancellationRequested: false },
+        async (_, token) => {
+          await gate.promise;
+          return raw(next, token);
+        },
+      );
+      document.version++;
+      gate.resolve();
+      await assert.rejects(pending, (error) => error === stale);
+      assert.strictEqual(next.callCount, 1);
+    });
+
+    it("keeps overlapping providers separate after reopening the same URI and version", async () => {
+      await mod.startClient();
+      const [original] = openDocuments;
+      const sharedToken = { isCancellationRequested: false };
+      const oldGate = deferred();
+      const newGate = deferred();
+      const oldRpc = sinon.stub().rejects(stale);
+      const newRpc = sinon.stub();
+      newRpc.onFirstCall().rejects(stale);
+      newRpc.onSecondCall().resolves(symbols);
+      const first = provide(original, sharedToken, async (_, token) => {
+        await oldGate.promise;
+        return raw(oldRpc, token);
+      });
+      original.isClosed = true;
+      const reopened = {
+        uri: original.uri,
+        version: original.version,
+        isClosed: false,
+      };
+      openDocuments = [reopened];
+      const second = provide(reopened, sharedToken, async (_, token) => {
+        await newGate.promise;
+        return raw(newRpc, token);
+      });
+      oldGate.resolve();
+      newGate.resolve();
+      const [firstResult, secondResult] = await Promise.allSettled([
+        first,
+        second,
+      ]);
+      assert.deepStrictEqual(firstResult, {
+        status: "rejected",
+        reason: stale,
+      });
+      assert.deepStrictEqual(secondResult, {
+        status: "fulfilled",
+        value: symbols,
+      });
+      assert.strictEqual(oldRpc.callCount, 1);
+      assert.strictEqual(newRpc.callCount, 2);
+    });
+
+    it("discards a retry result when the document changes during SDK conversion", async () => {
+      await mod.startClient();
+      const next = sinon.stub();
+      next.onFirstCall().rejects(stale);
+      next.onSecondCall().resolves(symbols);
+      const converted = deferred();
+      const gate = deferred();
+      const [document] = openDocuments;
+      const pending = provide(
+        document,
+        { isCancellationRequested: false },
+        async (_, token) => {
+          const result = await raw(next, token);
+          converted.resolve();
+          await gate.promise;
+          return result;
+        },
+      );
+      await converted.promise;
+      document.version++;
+      gate.resolve();
+      assert.strictEqual(await pending, null);
+      assert.strictEqual(next.callCount, 2);
+    });
+
+    function sdkSymbolProvider(
+      client: FakeClient,
+      next: SendRequest,
+      drain: () => Promise<void>,
+    ) {
+      // Use the SDK's document-symbol provider and BaseLanguageClient.sendRequest. Control the
+      // open-notification drain and the wire, the same two asynchronous handoffs as the editor.
+      const sdk = path.resolve(
+        path.dirname(require.resolve("vscode-languageclient/node")),
+        "../common",
+      );
+      // Scope the host API stubs to this SDK load, preserving the protocol error identity in other fixtures.
+      const loadSdk = (
+        createRequire(__filename)("proxyquire") as typeof proxyquire
+      ).noCallThru();
+      const feature = loadSdk(path.join(sdk, "documentSymbol.js"), {
+        vscode: {
+          languages: {
+            registerDocumentSymbolProvider: () => ({ dispose() {} }),
+          },
+        },
+        "./features": { TextDocumentLanguageFeature: class {} },
+      }).DocumentSymbolFeature;
+      const hostTypes = [
+        "CallHierarchyItem",
+        "CodeLens",
+        "CompletionItem",
+        "DocumentLink",
+        "InlayHint",
+        "SymbolInformation",
+        "TypeHierarchyItem",
+        "CodeAction",
+        "Diagnostic",
+        "CancellationError",
+      ];
+      const sdkClientClass = loadSdk(path.join(sdk, "client.js"), {
+        vscode: {
+          ...Object.fromEntries(hostTypes.map((name) => [name, class {}])),
+          "@global": true,
+        },
+      }).BaseLanguageClient;
+      const sdkClient = {
+        middleware: client.clientOptions.middleware,
+        _clientOptions: client.clientOptions,
+        $start: async () => ({ sendRequest: next }),
+        _didOpenTextDocumentFeature: {
+          sendPendingOpenNotifications: drain,
+        },
+        _didChangeTextDocumentFeature: { syncKind: 0 },
+        sendRequest: sdkClientClass.prototype.sendRequest,
+        code2ProtocolConverter: { asDocumentSymbolParams: () => request },
+        protocol2CodeConverter: {
+          asDocumentSelector: () => [],
+          asSymbolInformations: (result: unknown) => result,
+        },
+        handleFailedRequest: () => null,
+      };
+      const [, provider] = feature.prototype.registerLanguageProvider.call(
+        { _client: sdkClient },
+        {},
+      );
+      return provider as {
+        provideDocumentSymbols(
+          document: TestDocument,
+          token: TestToken,
+        ): Promise<unknown>;
+      };
+    }
+
+    it("waits for server Ready before retrying a busy document symbol provider", async () => {
+      await mod.startClient();
+      const client = FakeClient.instances[0];
+      const sync = deferred();
+      const enteredSync = deferred();
+      const firstRpc = deferred();
+      const next = sinon.stub();
+      next.onFirstCall().callsFake(async () => {
+        firstRpc.resolve();
+        throw stale;
+      });
+      next.onSecondCall().resolves(symbols);
+
+      const provider = sdkSymbolProvider(client, next, async () => {
+        enteredSync.resolve();
+        await sync.promise;
+      });
+      const pending = provider.provideDocumentSymbols(openDocuments[0], {
+        isCancellationRequested: false,
+        onCancellationRequested: new TestEvent<void>().subscribe,
+      });
+      await enteredSync.promise;
+      client.status(false);
+      sync.resolve();
+      await firstRpc.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.strictEqual(
+        next.callCount,
+        1,
+        "a second RPC spent while startup is still busy cannot recover the outline",
+      );
+      client.status(false);
+      client.status(true);
+      assert.deepStrictEqual(await pending, symbols);
+      assert.strictEqual(next.callCount, 2);
+      assert.strictEqual(
+        edits.listeners.size + closes.listeners.size + opens.listeners.size,
+        0,
+      );
+    });
+
+    it("delivers a successful first response while busy without waiting for Ready", async () => {
+      await mod.startClient();
+      FakeClient.instances[0].status(false);
+      const next = sinon.stub().resolves(symbols);
+      assert.strictEqual(await send(next), symbols);
+      assert.strictEqual(next.callCount, 1);
+    });
+
+    it("forgets the previous busy period when the SDK starts another connection", async () => {
+      await mod.startClient();
+      const client = FakeClient.instances[0];
+      client.status(false);
+      client.stateEvent.fire({
+        oldState: State.Running,
+        newState: State.Starting,
+      });
+      client.stateEvent.fire({
+        oldState: State.Starting,
+        newState: State.Running,
+      });
+      const next = sinon.stub();
+      next.onFirstCall().rejects(stale);
+      next.onSecondCall().resolves(symbols);
+      assert.strictEqual(await send(next), symbols);
+      assert.strictEqual(next.callCount, 2);
+    });
+
+    for (const change of [
+      "edit",
+      "close",
+      "reopen",
+      "cancel",
+      "stop",
+      "restart",
+      "connection restart",
+    ]) {
+      it(`releases a busy symbol waiter after ${change} without Ready`, async () => {
+        await mod.startClient();
+        const client = FakeClient.instances[0];
+        client.status(false);
+        const cancel = new TestEvent<void>();
+        const token = {
+          isCancellationRequested: false,
+          onCancellationRequested: cancel.subscribe,
+        };
+        const next = sinon.stub();
+        next.onFirstCall().rejects(stale);
+        next.onSecondCall().resolves(symbols);
+        const pending = send(next, token);
+        const result = pending.then(
+          (value) => value,
+          (error: unknown) => error,
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.strictEqual(next.callCount, 1);
+        const document = openDocuments[0];
+        switch (change) {
+          case "edit":
+            document.version++;
+            edits.fire({ document });
+            break;
+          case "close":
+            document.isClosed = true;
+            closes.fire(document);
+            break;
+          case "reopen":
+            openDocuments = [{ ...document }];
+            closes.fire(document);
+            opens.fire(openDocuments[0]);
+            break;
+          case "cancel":
+            token.isCancellationRequested = true;
+            cancel.fire();
+            break;
+          case "stop":
+            await mod.stopClient();
+            break;
+          case "restart":
+            await mod.restartClient();
+            break;
+          case "connection restart":
+            client.state = State.Stopped;
+            client.stateEvent.fire({
+              oldState: State.Running,
+              newState: State.Stopped,
+            });
+            client.state = State.Running;
+            client.stateEvent.fire({
+              oldState: State.Stopped,
+              newState: State.Running,
+            });
+            break;
+        }
+        assert.strictEqual(await result, stale);
+        client.status(true);
+        assert.strictEqual(next.callCount, 1);
+        assert.strictEqual(
+          edits.listeners.size +
+            closes.listeners.size +
+            opens.listeners.size +
+            cancel.listeners.size,
+          0,
+        );
+      });
+    }
+
+    it("sends one fresh RPC after ContentModified for an unchanged open document", async () => {
+      const next = sinon.stub();
+      next.onFirstCall().rejects(stale);
+      next.onSecondCall().resolves(symbols);
+      const token = { isCancellationRequested: false };
+      assert.strictEqual(await send(next, token), symbols);
+      assert.strictEqual(next.callCount, 2);
+      for (const call of next.getCalls()) {
+        assert.deepStrictEqual(call.args, [
+          DocumentSymbolRequest.type,
+          request,
+          token,
+        ]);
+      }
+    });
+
+    it("propagates a second ContentModified without sending a third request", async () => {
+      const second = new ResponseError(
+        LSPErrorCodes.ContentModified,
+        "Retired again",
+      );
+      const next = sinon.stub();
+      next.onFirstCall().rejects(stale);
+      next.onSecondCall().rejects(second);
+      await assert.rejects(send(next), (error) => error === second);
+      assert.strictEqual(next.callCount, 2);
+    });
+
+    it("preserves an empty success and never retries a closed document", async () => {
+      const empty: unknown[] = [];
+      const next = sinon.stub().resolves(empty);
+      assert.strictEqual(await send(next), empty);
+      openDocuments = [];
+      next.rejects(stale);
+      await assert.rejects(send(next), (error) => error === stale);
+      assert.strictEqual(next.callCount, 2);
+    });
+
+    for (const change of ["edit", "close", "reopen", "cancel", "restart"]) {
+      it(`does not retry after ${change}`, async () => {
+        const token = { isCancellationRequested: false };
+        const next = sinon.stub().callsFake(async () => {
+          if (change === "edit") openDocuments[0].version++;
+          if (change === "close") openDocuments[0].isClosed = true;
+          if (change === "reopen") openDocuments = [{ ...openDocuments[0] }];
+          if (change === "cancel") token.isCancellationRequested = true;
+          if (change === "restart") await mod.restartClient();
+          throw stale;
+        });
+        await assert.rejects(send(next, token), (error) => error === stale);
+        assert.strictEqual(next.callCount, 1);
+      });
+    }
+
+    it("does not deliver a retry result after an edit", async () => {
+      const next = sinon.stub();
+      next.onFirstCall().rejects(stale);
+      next.onSecondCall().callsFake(async () => {
+        openDocuments[0].version++;
+        return symbols;
+      });
+      await assert.rejects(send(next), (error) => error === stale);
+      assert.strictEqual(next.callCount, 2);
+    });
+
+    it("forwards other request errors without retry", async () => {
+      const failure = new Error("transport disconnected");
+      const next = sinon.stub().rejects(failure);
+      await assert.rejects(send(next), (error) => error === failure);
+      assert.strictEqual(next.callCount, 1);
+      next.resetBehavior();
+      next.rejects(stale);
+      await assert.rejects(
+        send(next, undefined, "textDocument/hover"),
+        (error) => error === stale,
+      );
+      assert.strictEqual(next.callCount, 2);
     });
   });
 

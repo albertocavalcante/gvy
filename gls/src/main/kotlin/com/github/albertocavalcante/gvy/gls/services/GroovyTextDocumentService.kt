@@ -9,7 +9,9 @@ import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticP
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
@@ -46,12 +48,16 @@ import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.nativeapi.ParseMode
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -119,7 +125,7 @@ data class GroovyTextDocumentServiceOptions(
     val client: () -> LanguageClient? = { null },
     val documentAnalysisSupported: () -> Boolean = { false },
     val documentAnalysisSession: (URI) -> String? = { null },
-    val documentProvider: DocumentProvider = DocumentProvider(),
+    val documentProvider: DocumentProvider? = null,
     val formatter: Formatter = OpenRewriteFormatterAdapter(),
     val sourceNavigator: SourceNavigator = SourceNavigationService(),
     val definitionLinkSupport: Boolean = false,
@@ -143,7 +149,7 @@ class GroovyTextDocumentService(
     private val client: () -> LanguageClient? = options.client
     private val documentAnalysisSupported: () -> Boolean = options.documentAnalysisSupported
     private val documentAnalysisSession: (URI) -> String? = options.documentAnalysisSession
-    private val documentProvider: DocumentProvider = options.documentProvider
+    private val documentProvider: DocumentProvider = options.documentProvider ?: compilationService.documents
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
     private val codeNarcRulesetResolverFactory = options.codeNarcRulesetResolverFactory
@@ -590,19 +596,45 @@ class GroovyTextDocumentService(
 
     override fun documentSymbol(
         params: DocumentSymbolParams,
-    ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
-        val uri = URI.create(params.textDocument.uri)
-        // Startup worker selection can retire a compile while this request is waiting. Resolve through
-        // the shared ownership policy and retain its model instead of rereading a cache that may be cleared.
-        val compiled = compilationService.ensureCompiled(uri) ?: return@future emptyList()
-        val model = compiled.astModel ?: return@future emptyList()
-        val symbols = SymbolIndex().buildFromVisitor(model).getSymbols(uri)
-        val outline = buildDocumentOutline(symbols, compiled.sourceText?.let(::TextIndex))
-        if (hierarchicalDocumentSymbolSupport) {
-            outline.map { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
-        } else {
-            flattenOutline(params.textDocument.uri, outline).map {
-                Either.forLeft<SymbolInformation, DocumentSymbol>(it)
+    ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> {
+        val request = runCatching {
+            val uriText = params.textDocument.uri
+            val uri = URI.create(uriText)
+            val source = compilationService.captureSnapshotSource(uri)
+            Triple(uriText, source, documentProvider.getSnapshot(uri))
+        }
+        val hierarchical = hierarchicalDocumentSymbolSupport
+        return coroutineScope.future {
+            val (uriText, source, original) = request.getOrThrow()
+            val uri = source.uri
+            if (documentProvider !== compilationService.documents || source.buffer?.snapshot !== original) {
+                throw ResponseErrorException(
+                    ResponseError(ResponseErrorCode.ContentModified, "Document changed during symbol discovery", null),
+                )
+            }
+            val query: suspend (CompiledDocumentSnapshot) ->
+            List<Either<SymbolInformation, DocumentSymbol>> = { held ->
+                val symbols = SymbolIndex().buildFromVisitor(held.parseResult.astModel).getSymbols(uri)
+                val outline = buildDocumentOutline(symbols, TextIndex(held.sourceText))
+                if (hierarchical) {
+                    outline.map { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
+                } else {
+                    flattenOutline(uriText, outline).map { Either.forLeft<SymbolInformation, DocumentSymbol>(it) }
+                }
+            }
+            val result = compilationService.querySymbolsWithWorkerRetry(
+                source,
+                Phases.CANONICALIZATION,
+                if (source.buffer == null) ParseMode.MINIMAL else ParseMode.WORKSPACE,
+                query,
+            )
+            when (result) {
+                is SnapshotQuery.Answer -> result.value
+                SnapshotQuery.Missing -> emptyList()
+                SnapshotQuery.Stale -> throw ResponseErrorException(
+                    ResponseError(ResponseErrorCode.ContentModified, "Document changed during symbol discovery", null),
+                )
+                is SnapshotQuery.Failure -> throw result.cause
             }
         }
     }
@@ -688,16 +720,69 @@ class GroovyTextDocumentService(
             actions.map { Either.forRight<Command, CodeAction>(it) }
         }
 
-    override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> = coroutineScope.future {
-        logger.debug { "CodeLens requested for ${params.textDocument.uri}" }
-        val uri = URI.create(params.textDocument.uri)
+    override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> {
+        val request = runCatching {
+            val uri = URI.create(params.textDocument.uri)
+            val source = compilationService.captureSnapshotSource(uri)
+            Triple(source, documentProvider.getSnapshot(uri), testCodeLensProvider.captureDetectors())
+        }
+        return coroutineScope.future {
+            val (source, original, detectors) = request.getOrThrow()
+            val uri = source.uri
+            if (documentProvider !== compilationService.documents || source.buffer?.snapshot !== original) {
+                throw ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.ContentModified,
+                        "Document changed during code lens discovery",
+                        null,
+                    ),
+                )
+            }
+            val query: suspend (CompiledDocumentSnapshot) ->
+            List<CodeLens> = { held ->
+                val parsed = held.parseResult
+                val testLenses = testCodeLensProvider.provideCodeLenses(uri, parsed, detectors)
+                val executionLenses = executionCodeLenses(uri, parsed.ast)
+                requireCurrentTestDetectors(detectors)
+                testLenses + executionLenses
+            }
+            val result = compilationService.queryCapturedSnapshot(
+                source,
+                Phases.CANONICALIZATION,
+                if (source.buffer == null) ParseMode.MINIMAL else ParseMode.WORKSPACE,
+                query,
+            )
+            when (result) {
+                is SnapshotQuery.Answer -> {
+                    requireCurrentTestDetectors(detectors)
+                    currentCoroutineContext().ensureActive()
+                    result.value
+                }
+                SnapshotQuery.Missing -> emptyList()
+                SnapshotQuery.Stale -> throw ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.ContentModified,
+                        "Document changed during code lens discovery",
+                        null,
+                    ),
+                )
+                is SnapshotQuery.Failure -> throw result.cause
+            }
+        }
+    }
 
-        // Ensure file is compiled before providing CodeLenses
-        compilationService.ensureCompiled(uri)
+    private fun requireCurrentTestDetectors(
+        detectors: List<com.github.albertocavalcante.gvy.testing.api.TestFrameworkDetector>,
+    ) {
+        if (!testCodeLensProvider.detectorsCurrent(detectors)) {
+            throw ResponseErrorException(
+                ResponseError(ResponseErrorCode.ContentModified, "Test frameworks changed during discovery", null),
+            )
+        }
+    }
 
-        val testLenses = testCodeLensProvider.provideCodeLenses(uri)
-        val module = compilationService.getAst(uri) as? ModuleNode
-        val executionLenses = module?.let { discoverEntryPoints(it) }.orEmpty().map { entry ->
+    private fun executionCodeLenses(uri: URI, module: ModuleNode?): List<CodeLens> =
+        module?.let { discoverEntryPoints(it) }.orEmpty().map { entry ->
             val position = Position(entry.line, 0)
             CodeLens(
                 Range(position, position),
@@ -709,14 +794,16 @@ class GroovyTextDocumentService(
                 null,
             )
         }
-        testLenses + executionLenses
+
+    override fun selectionRange(params: SelectionRangeParams): CompletableFuture<List<SelectionRange>?> {
+        val request = runCatching { selectionRangeProvider.capture(params) }
+        return coroutineScope.future { selectionRangeProvider.provide(request.getOrThrow()) }
     }
 
-    override fun selectionRange(params: SelectionRangeParams): CompletableFuture<List<SelectionRange>?> =
-        coroutineScope.future { selectionRangeProvider.provide(params) }
-
-    override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
-        coroutineScope.future { foldingRangeHandler.provide(params) }
+    override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> {
+        val request = runCatching { foldingRangeHandler.capture(params) }
+        return coroutineScope.future { foldingRangeHandler.provide(request.getOrThrow()) }
+    }
 
     override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> = coroutineScope.future {
         logger.debug { "Inlay hints requested for ${params.textDocument.uri}" }

@@ -15,6 +15,7 @@ suite("GDSL cold startup", () => {
   const previousUpdates = config.inspect<boolean>(
     "update.checkOnStartup",
   )?.globalValue;
+  const previousTrace = config.inspect<string>("trace.server")?.globalValue;
 
   suiteTeardown(async () => {
     await config.update(
@@ -30,6 +31,11 @@ suite("GDSL cold startup", () => {
     await config.update(
       "update.checkOnStartup",
       previousUpdates,
+      vscode.ConfigurationTarget.Global,
+    );
+    await config.update(
+      "trace.server",
+      previousTrace,
       vscode.ConfigurationTarget.Global,
     );
     await vscode.commands.executeCommand(
@@ -97,6 +103,7 @@ suite("GDSL cold startup", () => {
   });
 
   test("starts the language service when a Groovy document opens afterward", async () => {
+    const extension = vscode.extensions.getExtension("albertocavalcante.gvy");
     const extensionRoot = path.resolve(__dirname, "../../../..");
     const server = process.env.GVY_TEST_EXTENSION_ROOT
       ? path.join(process.env.GVY_TEST_EXTENSION_ROOT, "server", "gls.jar")
@@ -113,19 +120,54 @@ suite("GDSL cold startup", () => {
       server,
       vscode.ConfigurationTarget.Global,
     );
+    await config.update(
+      "trace.server",
+      "verbose",
+      vscode.ConfigurationTarget.Global,
+    );
     const document = await vscode.workspace.openTextDocument({
       language: "groovy",
       content: "class AfterGdsl { String hello() { 'hello' } }",
     });
     await vscode.window.showTextDocument(document);
-    const deadline = Date.now() + 20_000;
+    const startedAt = Date.now();
+    const deadline = startedAt + 20_000;
+    type SymbolResult = vscode.DocumentSymbol | vscode.SymbolInformation;
+    let lastSymbols: SymbolResult[] | undefined;
     while (Date.now() < deadline) {
-      const symbols = await vscode.commands.executeCommand<
-        vscode.DocumentSymbol[]
-      >("vscode.executeDocumentSymbolProvider", document.uri);
-      if (symbols?.some((symbol) => symbol.name === "AfterGdsl")) return;
+      try {
+        lastSymbols = await vscode.commands.executeCommand<SymbolResult[]>(
+          "vscode.executeDocumentSymbolProvider",
+          document.uri,
+        );
+      } catch (error) {
+        console.error("GDSL cold startup document-symbol request failed", {
+          documentUri: document.uri.toString(),
+          extensionActive: extension?.isActive,
+          elapsedMs: Date.now() - startedAt,
+          error,
+        });
+        throw error;
+      }
+      if (lastSymbols?.some((symbol) => symbol.name === "AfterGdsl")) return;
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
+    console.error("GDSL cold startup timed out waiting for AfterGdsl symbol", {
+      documentUri: document.uri.toString(),
+      extensionActive: extension?.isActive,
+      elapsedMs: Date.now() - startedAt,
+      symbolResult:
+        lastSymbols === undefined
+          ? "undefined"
+          : lastSymbols.slice(0, 20).map((symbol) => ({
+              name: symbol.name,
+              kind: symbol.kind,
+              children:
+                "children" in symbol
+                  ? symbol.children.slice(0, 20).map((child) => child.name)
+                  : undefined,
+            })),
+    });
     assert.fail(
       "The real Groovy language service did not start after GDSL editing",
     );

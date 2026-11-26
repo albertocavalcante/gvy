@@ -3,30 +3,39 @@
 
 package com.github.albertocavalcante.gvy.gls
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.ClientInfo
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.DocumentSymbolCapabilities
+import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.TextDocumentClientCapabilities
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.WorkspaceFolder
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class GroovyLanguageServerTest {
 
@@ -116,6 +125,54 @@ class GroovyLanguageServerTest {
         val content = result.contents.right
         assertEquals(MarkupKind.MARKDOWN, content.kind)
         assertTrue(content.value.isBlank(), content.value)
+    }
+
+    @Test
+    fun `default server returns untitled symbols in a GDSL only workspace`(): Unit = runBlocking {
+        Files.writeString(
+            workspace.resolve("pipeline.gdsl"),
+            "contributor(context(scope: scriptScope())) { property(name: 'buildInfo', type: 'java.util.Map') }",
+        )
+        server.initialize(
+            InitializeParams().apply {
+                workspaceFolders = listOf(WorkspaceFolder(workspace.toUri().toString(), "gdsl"))
+                capabilities = ClientCapabilities().apply {
+                    textDocument = TextDocumentClientCapabilities().apply {
+                        documentSymbol = DocumentSymbolCapabilities().apply {
+                            hierarchicalDocumentSymbolSupport = true
+                        }
+                    }
+                }
+            },
+        ).get(30, TimeUnit.SECONDS)
+        server.initialized(InitializedParams())
+
+        val uri = "untitled:Untitled-1"
+        server.textDocumentService.didOpen(
+            DidOpenTextDocumentParams(
+                TextDocumentItem(uri, "groovy", 1, "class AfterGdsl { String hello() { 'hello' } }"),
+            ),
+        )
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        var observation = "not requested"
+        while (System.nanoTime() < deadline) {
+            val symbols = try {
+                assertNotNull(
+                    server.textDocumentService.documentSymbol(DocumentSymbolParams(TextDocumentIdentifier(uri)))
+                        .get(5, TimeUnit.SECONDS),
+                )
+            } catch (error: ExecutionException) {
+                val response = error.cause as? ResponseErrorException ?: throw error
+                if (response.responseError.code != ResponseErrorCode.ContentModified.value) throw error
+                observation = "ContentModified"
+                delay(100)
+                continue
+            }
+            observation = symbols.map { if (it.isRight) it.right.name else "flat response" }.toString()
+            if (symbols.any { it.isRight && it.right.name == "AfterGdsl" }) return@runBlocking
+            delay(100)
+        }
+        fail("The default server did not return AfterGdsl symbols: $observation")
     }
 
     @Test

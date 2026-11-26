@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.common
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -19,6 +20,14 @@ class UriPathConverterTest {
         val uri = URI.create("file:///workspace/Jenkinsfile")
         val result = UriPathConverter.toPath(uri)
         assertNotNull(result, "Should return Path for file:// URI")
+    }
+
+    @Test
+    fun `mixed case file scheme converts to the same path`() {
+        val lower = URI.create("file:///workspace/file.groovy")
+        val mixed = URI.create("FiLe:///workspace/file.groovy")
+        assertTrue(UriPathConverter.isFileUri(mixed))
+        assertEquals(UriPathConverter.toPath(lower), UriPathConverter.toPath(mixed))
     }
 
     @Test

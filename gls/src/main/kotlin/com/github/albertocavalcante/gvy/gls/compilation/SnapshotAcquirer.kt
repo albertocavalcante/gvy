@@ -97,12 +97,18 @@ internal class SnapshotSource(
     private val buffers = provider?.withLifecycleLock { provider.getBuffer(uri) to provider.snapshotIdentities() }
     val buffer = buffers?.first
     val documents = buffers?.second.orEmpty()
+    private val worker = dependencies.workerSessionManager.current()
 
     private fun sameDocuments(other: Map<URI, DocumentSnapshot>): Boolean =
         documents.size == other.size && documents.all { (uri, state) -> other[uri] === state }
 
-    fun matches(other: SnapshotSource): Boolean = ticket.sharesInputs(other.ticket) && workspace === other.workspace &&
+    private fun sameSource(other: SnapshotSource): Boolean = workspace === other.workspace &&
         buffer?.incarnation === other.buffer?.incarnation && sameDocuments(other.documents)
+
+    fun matches(other: SnapshotSource): Boolean = ticket.sharesInputs(other.ticket) && sameSource(other)
+
+    fun canRetryWith(other: SnapshotSource): Boolean = buffer != null && worker !== other.worker &&
+        sameSource(other) && other.isCurrent()
 
     fun isCurrent(): Boolean = dependencies.workspaceManager.current() === workspace &&
         provider?.getIncarnation(uri) === buffer?.incarnation &&
@@ -193,8 +199,23 @@ internal class SnapshotAcquirer(
         currentCoroutineContext().ensureActive()
         dependencies.waiterScope.coroutineContext.ensureActive()
         val source = SnapshotSource(dependencies, uri)
+        return acquireSource(source, phase, mode)
+    }
+
+    fun capture(uri: URI): SnapshotSource = SnapshotSource(dependencies, uri)
+
+    /** Retry only an unchanged open source after a real worker replacement, using a wholly fresh producer. */
+    fun captureWorkerReplacement(original: SnapshotSource): SnapshotSource? {
+        val fresh = capture(original.uri)
+        return fresh.takeIf(original::canRetryWith)
+    }
+
+    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode): SnapshotAcquisition {
+        currentCoroutineContext().ensureActive()
+        dependencies.waiterScope.coroutineContext.ensureActive()
+        if (!source.isCurrent()) return SnapshotAcquisition.Stale
         val content = try {
-            source.buffer?.snapshot?.content ?: UriPathConverter.toPath(uri)?.let { path ->
+            source.buffer?.snapshot?.content ?: UriPathConverter.toPath(source.uri)?.let { path ->
                 withContext(dependencies.ioDispatcher) {
                     val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
                     if (attributes.isRegularFile) Files.readString(path) else null
@@ -205,8 +226,11 @@ internal class SnapshotAcquirer(
         } catch (error: IOException) {
             return source.unlessRetired(SnapshotAcquisition.Failure(error))
         }
-        if (content == null) return source.unlessRetired(SnapshotAcquisition.Missing)
-        return resolve(CapturedCompilation(selectSources, source, content, phase, mode))
+        return if (content == null) {
+            source.unlessRetired(SnapshotAcquisition.Missing)
+        } else {
+            resolve(CapturedCompilation(selectSources, source, content, phase, mode))
+        }
     }
 
     private suspend fun resolve(capture: CapturedCompilation): SnapshotAcquisition {

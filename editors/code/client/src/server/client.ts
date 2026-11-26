@@ -14,6 +14,12 @@ import {
   State,
 } from "vscode-languageclient/node";
 import {
+  type DocumentSymbolParams,
+  DocumentSymbolRequest,
+  LSPErrorCodes,
+  ResponseError,
+} from "vscode-languageserver-protocol";
+import {
   validateJava,
   showJavaError,
   getJavaExecutable,
@@ -22,6 +28,7 @@ import { setClient, getStatusBarManager } from "../ui/statusBar";
 import { getConfiguration } from "../configuration/settings";
 import { buildJavaArgs, envJavaOptions } from "./launchArgs";
 import { toProtocolUri } from "./uri";
+import { onGroovyStatus, SymbolStartup } from "./serverStatus";
 import { ServerResolver } from "../services/ServerResolver";
 import { pipeServerStderr, pipeServerStdout } from "./stderrRouter";
 
@@ -48,6 +55,7 @@ const GROOVY_FILE_EVENTS_GLOB =
   "{**/*.{groovy,gvy,gy,gsh,gradle,Jenkinsfile},**/Jenkinsfile}";
 
 let client: LanguageClient | undefined;
+let symbolStartup: SymbolStartup | undefined;
 let context: ExtensionContext | undefined;
 /** Server log channel, remembered so restarts keep writing to the same one. */
 let serverOutputChannel: vscode.LogOutputChannel | undefined;
@@ -433,9 +441,15 @@ function getTraceOutputChannel(): vscode.LogOutputChannel {
 
 function createClientOptions(
   fileWatcher: vscode.FileSystemWatcher,
+  isCurrentClient: () => boolean,
+  startup: SymbolStartup,
   outputChannel?: vscode.LogOutputChannel,
 ): LanguageClientOptions {
   const pendingSessions = new Map<string, string[]>();
+  const symbolRequests = new WeakMap<
+    vscode.CancellationToken,
+    { uri: string; token: vscode.CancellationToken; isCurrent: () => boolean }
+  >();
   const clientOptions: LanguageClientOptions = {
     // Register the server for Groovy and Jenkinsfile documents
     documentSelector: [
@@ -450,6 +464,69 @@ function createClientOptions(
     },
     initializationOptions: buildInitializationOptions(),
     middleware: {
+      provideDocumentSymbols: async (document, token, next) => {
+        const version = document.version;
+        const sameConnection = startup.captureConnection();
+        const isCurrent = () =>
+          sameConnection() &&
+          isCurrentClient() &&
+          !token.isCancellationRequested &&
+          !document.isClosed &&
+          document.version === version &&
+          workspace.textDocuments.includes(document);
+        // The SDK awaits document sync before invoking transport middleware.
+        // It passes this token through unchanged, even for concurrent requests.
+        const requestToken: vscode.CancellationToken = {
+          get isCancellationRequested() {
+            return token.isCancellationRequested;
+          },
+          get onCancellationRequested() {
+            return token.onCancellationRequested;
+          },
+        };
+        symbolRequests.set(requestToken, {
+          uri: toProtocolUri(document.uri.toString()),
+          token,
+          isCurrent,
+        });
+        try {
+          const result = await next(document, requestToken);
+          return isCurrent() ? result : null;
+        } finally {
+          symbolRequests.delete(requestToken);
+        }
+      },
+      sendRequest: async (type, params, token, next) => {
+        const method = typeof type === "string" ? type : type.method;
+        if (method !== DocumentSymbolRequest.method)
+          return next(type, params, token);
+        const request = token && symbolRequests.get(token);
+        const uri = (params as DocumentSymbolParams | undefined)?.textDocument
+          ?.uri;
+        if (!request || request.uri !== uri) return next(type, params, token);
+        try {
+          return await next(type, params, request.token);
+        } catch (error) {
+          // The SDK turns ContentModified into an empty outline. Give the same
+          // open document one new server request before that result is cached.
+          if (
+            !(error instanceof ResponseError) ||
+            error.code !== LSPErrorCodes.ContentModified ||
+            !request.isCurrent()
+          ) {
+            throw error;
+          }
+          const result = await startup.retry(
+            workspace,
+            request.token,
+            request.isCurrent,
+            error,
+            () => next(type, params, request.token),
+          );
+          if (!request.isCurrent()) throw error;
+          return result;
+        }
+      },
       didOpen: (document, next) => {
         const experimental = client?.initializeResult?.capabilities
           ?.experimental as { groovyDocumentAnalysis?: unknown } | undefined;
@@ -569,7 +646,14 @@ async function doStart(): Promise<void> {
 
   try {
     const { serverOptions, launch } = await createServerOptions();
-    const clientOptions = createClientOptions(fileWatcher, serverOutputChannel);
+    const startup = new SymbolStartup();
+    symbolStartup = startup;
+    const clientOptions = createClientOptions(
+      fileWatcher,
+      () => client === created && created.isRunning(),
+      startup,
+      serverOutputChannel,
+    );
     let abandoned = false;
     let defaultErrorHandler: ErrorHandler | undefined;
     clientOptions.errorHandler = abandonableErrorHandler(
@@ -587,6 +671,14 @@ async function doStart(): Promise<void> {
       clientOptions,
     );
     client = created;
+    clientResources.push(
+      onGroovyStatus(created, (status) => startup.observe(status)),
+    );
+    clientResources.push(
+      created.onDidChangeState(({ newState }) => {
+        if (newState !== State.Running) startup.retireConnection();
+      }),
+    );
     created.registerFeature({
       fillClientCapabilities: (capabilities) => {
         capabilities.experimental = {
@@ -646,6 +738,8 @@ async function doStop(): Promise<void> {
   analysisUi?.setClient(undefined);
   const current = client;
   client = undefined;
+  symbolStartup?.retireConnection();
+  symbolStartup = undefined;
   setClient(undefined);
   const resources = clientResources;
   clientResources = [];

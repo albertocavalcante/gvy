@@ -4,9 +4,12 @@
 package com.github.albertocavalcante.gvy.gls.providers.selection
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.control.Phases
@@ -24,20 +27,15 @@ internal class SelectionRangeProvider(
     private val compilation: GroovyCompilationService,
     private val documents: DocumentProvider,
 ) {
-    suspend fun provide(params: SelectionRangeParams): List<SelectionRange>? {
-        val context = currentCoroutineContext()
-        context.ensureActive()
-        val requested = params.positions ?: fail(ResponseErrorCode.InvalidParams, "Missing selection positions")
-        if (requested.size > MAX_SELECTION_POSITIONS) {
-            fail(ResponseErrorCode.InvalidParams, "At most $MAX_SELECTION_POSITIONS selection positions are supported")
-        }
-        val copied = requested.map { position ->
-            if (position == null) fail(ResponseErrorCode.InvalidParams, "Null selection position")
-            if (position.line < 0 || position.character < 0) {
-                fail(ResponseErrorCode.InvalidParams, "Negative selection position")
-            }
-            Position(position.line, position.character)
-        }
+    internal data class Request(
+        val uri: URI,
+        val source: SnapshotSource,
+        val original: DocumentSnapshot?,
+        val positions: List<Position>,
+    )
+
+    fun capture(params: SelectionRangeParams): Request {
+        val positions = copyRequestedPositions(params)
         val documentUri =
             params.textDocument?.uri ?: fail(ResponseErrorCode.InvalidParams, "Missing selection document")
         val uri = try {
@@ -45,40 +43,62 @@ internal class SelectionRangeProvider(
         } catch (_: IllegalArgumentException) {
             fail(ResponseErrorCode.InvalidParams, "Invalid selection document URI")
         }
+        val source = compilation.captureSnapshotSource(uri)
+        return Request(uri, source, documents.getSnapshot(uri), positions)
+    }
+
+    suspend fun provide(request: Request): List<SelectionRange>? {
+        val context = currentCoroutineContext()
+        context.ensureActive()
+        val uri = request.uri
+        val source = request.source
+        val original = request.original
+        val copied = request.positions
+        if (documents !== compilation.documents || !source.isCurrent() || source.buffer?.snapshot !== original) {
+            fail(ResponseErrorCode.ContentModified, "Document changed during selection")
+        }
         if (copied.isEmpty()) return emptyList()
-        val original = documents.getSnapshot(uri) ?: return null
+        if (original == null) return null
         val index = TextIndex(original.content)
         val positions = copied.map { position ->
             val line = index.lineRange(position.line)
                 ?: fail(ResponseErrorCode.InvalidParams, "Selection line is outside the document")
             Position(position.line, minOf(position.character, line.end.character))
         }
-        // Never publish document state from this read-only request, even while background compilation changes.
-        val cached = compilation.getCompiledSnapshot(uri)?.takeIf { it.sourceText == original.content }
-        requireCurrent(uri, original)
-        val parsed = cached?.parseResult ?: compilation.compileTransient(uri, original.content, Phases.CONVERSION)
-        context.ensureActive()
-        requireCurrent(uri, original)
-        val model = parsed.astModel
-        val structures = model.getNodes(uri).mapNotNull { node ->
-            context.ensureActive()
-            if (model.getUri(node) != uri) return@mapNotNull null
-            index.utf16Range(
-                Range(
-                    Position(node.lineNumber - 1, node.columnNumber - 1),
-                    Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
-                ),
-            )
+        return when (
+            val result = compilation.queryCapturedSnapshot(source, Phases.CONVERSION, ParseMode.WORKSPACE) {
+                val model = it.parseResult.astModel
+                val structures = model.getNodes(uri).mapNotNull { node ->
+                    context.ensureActive()
+                    if (model.getUri(node) != uri) return@mapNotNull null
+                    index.utf16Range(
+                        Range(
+                            Position(node.lineNumber - 1, node.columnNumber - 1),
+                            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
+                        ),
+                    )
+                }
+                SelectionRangeBuilder(index, structures).build(positions) { context.ensureActive() }
+            }
+        ) {
+            is SnapshotQuery.Answer -> result.value
+            SnapshotQuery.Missing -> null
+            SnapshotQuery.Stale -> fail(ResponseErrorCode.ContentModified, "Document changed during selection")
+            is SnapshotQuery.Failure -> throw result.cause
         }
-        val result = SelectionRangeBuilder(index, structures).build(positions) { context.ensureActive() }
-        context.ensureActive()
-        requireCurrent(uri, original)
-        return result
     }
 
-    private fun requireCurrent(uri: URI, original: DocumentSnapshot) {
-        if (documents.getSnapshot(uri) != original) {
-            fail(ResponseErrorCode.ContentModified, "Document changed during selection")
+    private fun copyRequestedPositions(params: SelectionRangeParams): List<Position> {
+        val requested = params.positions ?: fail(ResponseErrorCode.InvalidParams, "Missing selection positions")
+        if (requested.size > MAX_SELECTION_POSITIONS) {
+            fail(ResponseErrorCode.InvalidParams, "At most $MAX_SELECTION_POSITIONS selection positions are supported")
+        }
+        return requested.map { position ->
+            if (position == null) fail(ResponseErrorCode.InvalidParams, "Null selection position")
+            if (position.line < 0 || position.character < 0) {
+                fail(ResponseErrorCode.InvalidParams, "Negative selection position")
+            }
+            Position(position.line, position.character)
         }
     }
 

@@ -263,6 +263,37 @@ describe("StatusBar", () => {
       statusBarModule.registerStatusBarItem();
     });
 
+    it("shares one status wire handler and detaches it after the last observer", () => {
+      const disposeWire = sinon.stub();
+      let receive: ((params: StatusNotification) => void) | undefined;
+      clientStub.onNotification.callsFake(
+        (_method: string, handler: typeof receive) => {
+          receive = handler;
+          return { dispose: disposeWire };
+        },
+      );
+      const first = statusBarModule.registerStatusBarItem(clientStub);
+      const second = statusBarModule.registerStatusBarItem(clientStub);
+      assert.strictEqual(
+        clientStub.onNotification.withArgs("groovy/status").callCount,
+        1,
+      );
+      const notice = {
+        health: "error",
+        quiescent: false,
+        errorCode: "FAIL",
+        errorDetails: {},
+      };
+      receive?.(notice);
+      assert.strictEqual(showErrorNotificationStub.callCount, 2);
+      first.dispose();
+      assert.strictEqual(disposeWire.callCount, 0);
+      receive?.(notice);
+      assert.strictEqual(showErrorNotificationStub.callCount, 3);
+      second.dispose();
+      assert.strictEqual(disposeWire.callCount, 1);
+    });
+
     it("should clean up previous listeners when setting new client", () => {
       const firstClient = {
         ...clientStub,

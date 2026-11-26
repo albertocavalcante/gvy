@@ -110,6 +110,7 @@ class CodeNarcRulesetReloadTest {
         val ruleset = root.resolve(".codenarc")
         Files.writeString(ruleset, "ruleset { ruleset('rulesets/empty.xml') }")
         val compilation = mockk<GroovyCompilationService>(relaxed = true)
+        every { compilation.documents } returns DocumentProvider()
         every { compilation.workspaceManager.getWorkspaceRoot() } returns root
         coEvery { compilation.compileAsync(any(), any(), any()) } answers {
             val content = thirdArg<String>()

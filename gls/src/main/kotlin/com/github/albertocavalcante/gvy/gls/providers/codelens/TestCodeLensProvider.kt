@@ -4,8 +4,10 @@
 package com.github.albertocavalcante.gvy.gls.providers.codelens
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.testing.api.TestFrameworkDetector
 import com.github.albertocavalcante.gvy.testing.api.TestItemKind
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeLens
 import org.eclipse.lsp4j.Command
@@ -48,13 +50,29 @@ class TestCodeLensProvider(
      */
     fun provideCodeLenses(uri: URI): List<CodeLens> {
         val parseResult = compilationService.getParseResult(uri) ?: return emptyList()
+        return provideCodeLenses(uri, parseResult, captureDetectors())
+    }
+
+    internal fun captureDetectors(): List<TestFrameworkDetector> = registry.getDetectors()
+
+    internal fun detectorsCurrent(captured: List<TestFrameworkDetector>): Boolean {
+        val current = registry.getDetectors()
+        return current.size == captured.size && current.indices.all { current[it] === captured[it] }
+    }
+
+    internal fun provideCodeLenses(
+        uri: URI,
+        parseResult: ParseResult,
+        detectors: List<TestFrameworkDetector>,
+    ): List<CodeLens> {
         val ast = parseResult.ast ?: return emptyList()
         val classLoader = parseResult.compilationUnit.classLoader
 
         val codeLenses = mutableListOf<CodeLens>()
 
         for (classNode in ast.classes) {
-            val tests = registry.extractTests(classNode, ast, classLoader)
+            val tests = detectors.firstOrNull { it.appliesTo(classNode, ast, classLoader) }
+                ?.extractTests(classNode).orEmpty()
             if (tests.isEmpty()) continue
 
             addClassLevelCodeLenses(tests, uri, codeLenses)
