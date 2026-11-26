@@ -30,6 +30,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.EnumSource
@@ -225,7 +226,7 @@ class OutgoingCallBindingTest {
     @ValueSource(booleans = [true, false])
     fun `script prepare checks the concrete argument against the only one argument overload`(applicable: Boolean) {
         val parameter = if (applicable) "String" else "java.time.Instant"
-        val argument = if (applicable) "'x'" else "new java.util.ArrayList()"
+        val argument = if (applicable) "'x'" else "new java.lang.Object()"
         open("def target() { 'zero' }", "def target($parameter value) { 'one' }", "target($argument)")
         val script = assertNotNull(parse.ast).classes.single { it.isScript }
         val method = script.getDeclaredMethods("target").single { it.parameters.size == 1 }
@@ -244,11 +245,11 @@ class OutgoingCallBindingTest {
                 assertEquals("one", fixture.run())
             } else {
                 val concrete = assertIs<ConstructorCallExpression>(actual).type.redirect()
-                assertEquals(java.util.ArrayList::class.java, concrete.typeClass)
+                assertEquals(Any::class.java, concrete.typeClass)
                 assertEquals(java.time.Instant::class.java, formal.typeClass)
                 val failure = assertFailsWith<MissingMethodException> { fixture.run() }
                 assertEquals("target", failure.method)
-                assertEquals<Class<*>>(java.util.ArrayList::class.java, failure.arguments.single().javaClass)
+                assertEquals<Class<*>>(Any::class.java, failure.arguments.single().javaClass)
             }
         }
 
@@ -258,6 +259,35 @@ class OutgoingCallBindingTest {
             assertEquals(uri.toString(), prepared.single().uri)
         } else {
             assertTrue(prepared.isEmpty(), "Groovy rejected this call: $prepared")
+        }
+    }
+
+    @Test
+    fun `an empty list which dispatches to the zero argument script method cannot prepare the Instant overload`() {
+        open(
+            "def target() { 'zero' }",
+            "def target(java.time.Instant value) { 'one' }",
+            "target(new java.util.ArrayList())",
+        )
+        val call = calls("target").single()
+        assertTrue(call.isImplicitThis)
+        assertNull(call.methodTarget)
+        assertNull(call.getNodeMetaData<MethodNode>(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET))
+        val argument = assertIs<TupleExpression>(call.arguments).expressions.single()
+        val concrete = assertIs<ConstructorCallExpression>(argument).type.redirect()
+        assertEquals(java.util.ArrayList::class.java, concrete.typeClass)
+        val script = assertNotNull(parse.ast).classes.single { it.isScript }
+        val typed = script.getDeclaredMethods("target").single { it.parameters.size == 1 }
+        assertEquals(java.time.Instant::class.java, typed.parameters.single().type.redirect().typeClass)
+        val shell = GroovyShell()
+        shell.classLoader.use {
+            assertEquals("zero", shell.parse(lines.joinToString("\n")).run())
+        }
+        val prepared = prepare(span(2, "target"))
+        if (prepared.isNotEmpty()) {
+            val item = prepared.single()
+            assertEquals(uri.toString(), item.uri)
+            assertEquals(span(0, "target"), item.selectionRange)
         }
     }
 }
