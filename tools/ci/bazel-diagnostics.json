@@ -45,6 +45,15 @@
     "expires": "2026-12-11"
   },
   {
+    "diagnostic": "INFO: ** Please remove the following dependencies: @maven//:org_jetbrains_kotlin_kotlin_test_junit5 from //common/concurrent:concurrent_test",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1601",
+    "reason": "KMP commonTest imports the compile-time kotlin.test.Test typealias; jdeps cannot see the erased metadata dependency.",
+    "nextAction": "Add an upstream metadata dependency regression and adopt corrected unused-dependency accounting.",
+    "acceptance": "Platform-neutral tests compile and dependency analysis no longer reports their required annotation adapter.",
+    "expires": "2026-12-11"
+  },
+  {
     "diagnostic": "INFO: ** Please remove the following dependencies: @maven//:org_jetbrains_kotlin_kotlin_test_junit5 from //viz/ast-model:ast-model_test",
     "owner": "build tooling maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1601",

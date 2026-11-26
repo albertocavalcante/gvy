@@ -55,6 +55,14 @@ const koverLazyVisibilityOrigins = new Set([
   'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
 ]);
 
+// The configuration-cache readers that decode KGP's Native bundle attribute, by first real caller frame.
+const nativeBundleCodecCaller = new RegExp('^org\\.gradle\\.internal\\.serialize\\.(?:' + [
+  'codecs\\.dm\\.transform\\.(?:CalculateArtifactsCodec|DefaultTransformCodec)\\.decode',
+  'codecs\\.dm\\.LocalFileDependencyBackedArtifactSetCodec\\.decode',
+  'graph\\.CombinatorsKt\\.readMapEntriesInto',
+  'graph\\.BeanPropertyExtensionsKt\\.readPropertyValue',
+].join('|') + ')\\([^()]+:\\d+\\)$');
+
 function deprecationOrigin(message, origin) {
   // Kover 0.9.11 registers these actions lazily; they can run after all projects
   // are evaluated. The last displayed project does not identify their owner.
@@ -65,9 +73,11 @@ function deprecationOrigin(message, origin) {
   // NOTE: These Native consumers run outside reliable project/task output. Keep
   // the first real codec caller, not the common Attribute.of validation frame or
   // a deeper codec caller. Exact messages and origins are still policy keys.
-  // Historical traces and their source/job hashes are in fixtures/gradle-native-*.
+  // Historical traces and their source/job hashes are in fixtures/gradle-native-*;
+  // the artifact-set, map and bean-property readers appear once a project with
+  // both JVM tests and Native targets is in the task graph (#2474).
   if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.') &&
-      /^org\.gradle\.internal\.serialize\.codecs\.dm\.transform\.(?:CalculateArtifactsCodec|DefaultTransformCodec)\.decode\([^()]+:\d+\)$/.test(origin)) {
+      nativeBundleCodecCaller.test(origin)) {
     return { origin, context: 'emitter gradle configuration-cache' };
   }
   if (/^(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.)/.test(origin)) return undefined;

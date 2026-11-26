@@ -1,0 +1,54 @@
+{
+  "kind": "selective-native-codec-consumer-traces",
+  "sourceHead": "572b3ee7c6f579238cb4a56c0be964faee386380",
+  "testedSha": "d9ac0603654a54d30b00df4e2d5bafed722faed9",
+  "runId": "45861379962",
+  "runAttempt": 1,
+  "limits": [
+    "Selective real traces, not complete command evidence or a fresh validation of the landed tree.",
+    "The fixture keeps the observed header line and every KotlinNativeBundleArtifactsTypes event with its logged stack, byte for byte.",
+    "The last emitted :viz:desktop header does not establish project ownership; the events decode the configuration cache once :common:concurrent, with JVM tests and Native targets, is in the unit-test task graph."
+  ],
+  "fixtures": [
+    {
+      "file": "gradle-native-codec-consumers.txt",
+      "sha256": "a584e2bfbc1074ad325424f3cf2a15e2347239bfb043aa56b8f45a3f2f99ca3a",
+      "producer": "unit",
+      "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/45861379962/job/140054577962",
+      "image": "ubuntu-24.04",
+      "rawLogBytes": 261991,
+      "rawLogSha256": "60b690fd62284f4099e9b8923be81079cba6a145125d4633e6131855fa4811e9",
+      "rawLogHeaderLine": 1952,
+      "events": [
+        {
+          "eventId": "unit-01",
+          "rawLogStartLine": 1965,
+          "rawLogEndLine": 1977,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.LocalFileDependencyBackedArtifactSetCodec.decode(LocalFileDependencyBackedArtifactSetCodec.kt:137)"
+        },
+        {
+          "eventId": "unit-02",
+          "rawLogStartLine": 1978,
+          "rawLogEndLine": 1989,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.graph.CombinatorsKt.readMapEntriesInto(Combinators.kt:235)"
+        },
+        {
+          "eventId": "unit-03",
+          "rawLogStartLine": 1990,
+          "rawLogEndLine": 2006,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.graph.BeanPropertyExtensionsKt.readPropertyValue(BeanPropertyExtensions.kt:61)"
+        },
+        {
+          "eventId": "unit-04",
+          "rawLogStartLine": 2007,
+          "rawLogEndLine": 2038,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)"
+        }
+      ]
+    }
+  ]
+}
