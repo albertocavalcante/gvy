@@ -51,17 +51,23 @@ internal data class SemanticPublicationSource(val fromBuffer: Boolean = true, va
  * - for the same content and phase, a document begun after [retireAllPublications] replaces one stored
  *   before it: the inputs besides the text (the source list, the classpath) changed, so the kept document
  *   may resolve names the newer one resolves differently;
+ * - a weaker parse in a different mode can keep a stronger document only after validating its original inputs;
  * - a document from disk never replaces the one built from an open editor buffer ([isOpen]);
  * - for different content, a publication begun earlier never lands after one begun later, even if that
  *   one failed or was upgraded meanwhile, so builds that finish out of order cannot bring back older text.
  */
-class SemanticIndexer(
+class SemanticIndexer internal constructor(
     private val index: WorkspaceSymbolIndex,
-    private val isOpen: (URI) -> Boolean = { false },
-    private val build: (ModuleNode, URI) -> SemanticDocument = { ast, uri ->
-        SemanticDocumentBuilder(ast, uri).build()
-    },
+    private val isOpen: (URI) -> Boolean,
+    private val currentProducer: (URI, String, ReferenceProducer) -> Boolean,
+    private val build: (ModuleNode, URI) -> SemanticDocument = ::buildSemanticDocument,
 ) {
+    constructor(
+        index: WorkspaceSymbolIndex,
+        isOpen: (URI) -> Boolean = { false },
+        build: (ModuleNode, URI) -> SemanticDocument = ::buildSemanticDocument,
+    ) : this(index, isOpen, { _, _, _ -> false }, build)
+
     /** [generation]: the [retireAllPublications] generation of the publication that stored it. */
     private data class Entry(
         val contentHash: String,
@@ -76,6 +82,17 @@ class SemanticIndexer(
             if (phase != existing.phase) return phase > existing.phase
             if (generation != existing.generation) return generation > existing.generation
             return producer?.complete == true && existing.producer?.complete != true
+        }
+
+        /** A different policy may leave a better document installed only under its own live producer proof. */
+        fun keepsCoverageOver(candidate: Entry, current: (ReferenceProducer, SemanticDocument) -> Boolean): Boolean {
+            val previous = producer ?: return false
+            val weaker = candidate.producer?.complete != true || candidate.phase < phase
+            return weaker && previous.complete && phase >= Phases.SEMANTIC_ANALYSIS &&
+                contentHash == candidate.contentHash && generation == candidate.generation &&
+                (diskConfirmed || !candidate.diskConfirmed) &&
+                previous.sharesInputsAcrossModes(candidate.producer) &&
+                stored?.get()?.let { current(previous, it) } == true
         }
 
         fun matchesDisk(hash: String, activeGeneration: AnalysisGeneration, current: (ReferenceProducer) -> Boolean) =
@@ -177,18 +194,41 @@ class SemanticIndexer(
             diskConfirmed = !source.fromBuffer,
             producer = source.producer,
         )
-        if (!replaces(entries[uri], publication, candidate)) return
-        val built = buildOrNull(ast, uri)
-        // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
-        swap.read {
-            entries.computeIfPresent(uri) { _, state ->
-                if (replaces(state, publication, candidate)) {
-                    state.entry = store(uri, built, content)?.let { candidate.copy(stored = WeakReference(it)) }
-                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
-                }
-                state
+        val built by lazy(LazyThreadSafetyMode.NONE) { buildOrNull(ast, uri) }
+        do {
+            val state = entries[uri]
+            val existing = state?.entry
+            if (!replaces(state, publication, candidate)) return
+            // Compiler strategies and source lookups can re-enter publication. Run them outside the index locks.
+            val keep = existing?.keepsCoverageOver(candidate) { producer, document ->
+                currentProducer(uri, content, producer) && index.getDocument(uri) === document
+            } == true
+            if (keep) {
+                if (entries[uri]?.entry === existing) return
+            } else if (storeIfUnchanged(publication, existing, candidate, built, content)) {
+                return
             }
+        } while (true)
+    }
+
+    /** Retry against a competing postimage. Reuse the already built document across attempts. */
+    private fun storeIfUnchanged(
+        publication: Publication,
+        existing: Entry?,
+        candidate: Entry,
+        built: Built?,
+        content: String,
+    ): Boolean = swap.read {
+        var unchanged = true
+        entries.computeIfPresent(publication.uri) { uri, state ->
+            unchanged = state.entry === existing
+            if (unchanged && replaces(state, publication, candidate)) {
+                state.entry = store(uri, built, content)?.let { candidate.copy(stored = WeakReference(it)) }
+                state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+            }
+            state
         }
+        unchanged
     }
 
     /** Different bindings, like different source, replace only in publication order. */
@@ -330,3 +370,6 @@ class SemanticIndexer(
         }
     }
 }
+
+private fun buildSemanticDocument(ast: ModuleNode, uri: URI): SemanticDocument =
+    SemanticDocumentBuilder(ast, uri).build()

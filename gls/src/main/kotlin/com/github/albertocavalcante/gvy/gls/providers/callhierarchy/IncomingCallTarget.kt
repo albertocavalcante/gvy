@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ClassExpression
@@ -48,12 +49,16 @@ internal class IncomingCallTarget(private val uri: URI, private val declaration:
             .map { Position(it.range.startLine, it.range.startColumn) }.toSet()
     }.orEmpty()
 
-    /** The class reference scan includes class literals and imported type names alongside constructors. */
+    /** Class references also include imports, literals and the types named in class headers. */
     fun isNonCallTypeUse(site: ASTNode, model: GroovyAstModel): Boolean {
         if (declaration !is ClassNode) return false
         return when (site) {
             is ClassExpression -> true
-            is ClassNode -> model.getParent(site) is ImportNode
+            is ClassNode -> when (val parent = model.getParent(site)) {
+                is ImportNode -> true
+                is ClassNode -> parent.unresolvedSuperClass === site || parent.unresolvedInterfaces.any { it === site }
+                else -> false
+            }
             // Inside annotated imports only the tracked imported type itself is a proven non-call.
             is ImportNode -> site.annotations.isEmpty()
             else -> false
@@ -65,7 +70,7 @@ internal class IncomingCallTarget(private val uri: URI, private val declaration:
             is MethodCallExpression -> matchesMethod(call, enclosing, model, sites)
             is StaticMethodCallExpression ->
                 matchesDeclaration(call.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET))
-            is ConstructorCallExpression -> declaration is ClassNode && matchesOwner(call.type.redirect())
+            is ConstructorCallExpression -> matchesConstructor(call, sites)
             else -> false
         }
         if (!matches) unavailable()
@@ -77,18 +82,24 @@ internal class IncomingCallTarget(private val uri: URI, private val declaration:
             site is MethodCallExpression -> site
             site is StaticMethodCallExpression -> site
             site is ConstructorCallExpression -> site
-            parent is MethodCallExpression && parent.isMethodToken(site) -> parent
+            parent is MethodCallExpression && isMethodToken(parent, site) -> parent
             parent is ConstructorCallExpression && parent.type === site -> parent
             else -> null
         }
     }
 
-    /** Native position lookup can choose the implicit receiver placed at the very same token as the name. */
-    private fun MethodCallExpression.isMethodToken(site: ASTNode): Boolean = method === site ||
-        (
-            isImplicitThis && objectExpression === site &&
-                site.lineNumber == method.lineNumber && site.columnNumber == method.columnNumber
-            )
+    private fun matchesConstructor(call: ConstructorCallExpression, sites: Set<Position>): Boolean {
+        val type = call.type.redirect()
+        if (!matchesOwner(type)) return false
+        if (declaration is ClassNode) return true
+        if (declaration !is ConstructorNode || call.isUsingAnonymousInnerClass || call.isSpecialCall) return false
+        // The constructor CALL spans from 'new' through the type. The class CALL starts at the type itself.
+        if (Position(call.lineNumber - 1, call.columnNumber - 1) !in sites) return false
+        val constructor = type.declaredConstructors.singleOrNull {
+            SemanticDocumentBuilder.createMethodSymbolId(type, it).id == methodId
+        }
+        return matchesDeclaration(constructor)
+    }
 
     private fun matchesMethod(
         call: MethodCallExpression,
@@ -119,6 +130,7 @@ internal class IncomingCallTarget(private val uri: URI, private val declaration:
             }
             receiver is VariableExpression -> receiver.accessedVariable?.type
             receiver is ClassExpression -> receiver.type
+            receiver is ConstructorCallExpression -> receiver.type.takeUnless { receiver.isUsingAnonymousInnerClass }
             else -> null
         }?.redirect()
     }
@@ -183,3 +195,10 @@ internal class IncomingCallTarget(private val uri: URI, private val declaration:
         )
     }
 }
+
+/** Native position lookup can choose the implicit receiver placed at the very same token as the name. */
+internal fun isMethodToken(call: MethodCallExpression, site: ASTNode): Boolean = call.method === site ||
+    (
+        call.isImplicitThis && call.objectExpression === site &&
+            site.lineNumber == call.method.lineNumber && site.columnNumber == call.method.columnNumber
+    )
