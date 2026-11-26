@@ -55,6 +55,16 @@ const koverLazyVisibilityOrigins = new Set([
   'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
 ]);
 
+// Frames shared by every decode of KGP's Native bundle attribute, from the Attribute.of validation down to the read
+// that dispatches to the real caller. The first frame below them is the caller.
+const nativeBundleWrapperFrame = new RegExp('^org\\.gradle\\.(?:' + [
+  'api\\.attributes\\.Attribute\\.(?:validateSupportedType|of)',
+  'internal\\.serialize\\.codecs\\.dm\\.AttributeContainerCodecsKt\\.(?:readAttribute|readAttributesUsing|access\\$readAttributesUsing)',
+  'internal\\.serialize\\.codecs\\.dm\\.ImmutableAttributesCodec\\.decode',
+  'internal\\.serialize\\.graph\\.codecs\\.BindingsBackedCodec\\.decode',
+  'internal\\.serialize\\.graph\\.DefaultReadContext\\.read',
+  'internal\\.serialize\\.graph\\.CodecKt\\.readNonNull',
+].join('|') + ')\\(');
 // The configuration-cache readers that decode KGP's Native bundle attribute, by first real caller frame.
 const nativeBundleCodecCaller = new RegExp('^org\\.gradle\\.internal\\.serialize\\.(?:' + [
   'codecs\\.dm\\.transform\\.(?:CalculateArtifactsCodec|DefaultTransformCodec)\\.decode',
@@ -77,8 +87,11 @@ function deprecationOrigin(message, origin) {
   // the artifact-set, map and bean-property readers appear once a project with
   // both JVM tests and Native targets is in the task graph (#2474).
   if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.') &&
-      nativeBundleCodecCaller.test(origin)) {
-    return { origin, context: 'emitter gradle configuration-cache' };
+      origin.startsWith('org.gradle.')) {
+    if (nativeBundleWrapperFrame.test(origin)) return undefined;
+    // Decide at the first caller below the wrappers: a deeper recognised reader must not stand in for an unknown one.
+    if (nativeBundleCodecCaller.test(origin)) return { origin, context: 'emitter gradle configuration-cache' };
+    return { unattributed: true };
   }
   if (/^(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.)/.test(origin)) return undefined;
   if (message.startsWith('Declaring dependencies using multi-string notation has been deprecated.') &&
@@ -129,6 +142,10 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     const origin = line.match(/^at ([^ ]+\([^()]+\))$/);
     if (pending && /deprecated/.test(pending.message) && origin) {
       const attribution = deprecationOrigin(pending.message, origin[1]);
+      if (attribution?.unattributed) {
+        flush();
+        continue;
+      }
       if (attribution) {
         pending.context = attribution.context ?? pending.context;
         pending.attribution = ` [origin ${attribution.origin}]`;

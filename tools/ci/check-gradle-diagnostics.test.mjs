@@ -564,6 +564,18 @@ test('changed Native codec consumer frames and call sites remain unexpected', ()
   assert.equal(evaluate(renamed, exceptions, now).unexpected.length, 1);
 });
 
+test('an unknown first Native codec caller is not attributed to a deeper recognised reader', () => {
+  // The fourth event's stack continues past DefaultTransformCodec into BeanPropertyExtensionsKt.readPropertyValue,
+  // the third event's caller. An unknown codec in its place must not borrow that identity and merge with it.
+  const before = 'transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)';
+  assert.ok(codecConsumerLog.includes(before));
+  const unknown = collectDiagnostics(codecConsumerLog.replace(before, 'transform.OtherTransformCodec.decode(OtherTransformCodec.kt:66)'));
+  assert.equal(unknown.length, 4);
+  assert.ok(unknown.includes(`[project :viz:desktop] ${nativeBundleMessage}`));
+  assert.equal(unknown.filter(line => line.endsWith('BeanPropertyExtensions.kt:61)]')).length, 1);
+  assert.equal(evaluate(unknown, gradleExceptions(), now).unexpected.length, 1);
+});
+
 test('Native attribution cannot accept unrelated Gradle deprecations or bypass missing and expired policy', () => {
   const exceptions = gradleExceptions();
   const log = `${warning}\n\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n` +
