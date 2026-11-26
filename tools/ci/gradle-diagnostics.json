@@ -189,6 +189,24 @@
     "expires": "2026-12-11"
   },
   {
+    "diagnostic": "[project :common:concurrent] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 mutates obsolete visibility in these traced Gradle 9.8.2 callers; removal in Gradle 11 blocks that pinned plugin. Inspected 2.3.20 sources remove factory visibility calls, but gvy candidate integration is pending; this is not a claim that latest Kotlin remains affected.",
+    "nextAction": "Kotlin/build maintainers must test the smaller released 2.3.20 candidate across gvy Kotlin/JVM, KMP, Compose, generation and lint paths before adopting it and retiring proven-obsolete exceptions.",
+    "acceptance": "The adopted Kotlin plugin passes relevant gvy compilation, test and publication checks without these exact visibility warnings; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :common:concurrent] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:64)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 mutates obsolete visibility in these traced Gradle 9.8.2 callers; removal in Gradle 11 blocks that pinned plugin. Inspected 2.3.20 sources remove factory visibility calls, but gvy candidate integration is pending; this is not a claim that latest Kotlin remains affected.",
+    "nextAction": "Kotlin/build maintainers must test the smaller released 2.3.20 candidate across gvy Kotlin/JVM, KMP, Compose, generation and lint paths before adopting it and retiring proven-obsolete exceptions.",
+    "acceptance": "The adopted Kotlin plugin passes relevant gvy compilation, test and publication checks without these exact visibility warnings; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
     "diagnostic": "[project :viz:ast-model] The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration [origin org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",

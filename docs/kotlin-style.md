@@ -120,6 +120,8 @@ State that several threads read and write needs a primitive that says what it is
 - Use `kotlin.concurrent.atomics` only inside `:common:concurrent`; detekt's `ForbiddenImport` enforces this. The API is
   experimental, and confining it keeps an upstream change to one module. Prefer the gvy types over
   `java.util.concurrent.atomic` in new code too.
+- Modules published on their own, without other gvy modules (`bsp/bsp-core`, `bsp/maven-bsp`), use
+  `java.util.concurrent.atomic` instead, so their published dependencies do not include an unpublished module.
 - `SharedValue.update` can run its transform more than once under contention, so the transform must not have side
   effects. Reading `value` and then calling `set` can lose a concurrent change.
 - Coroutine code can instead confine state to one coroutine or guard it with a `Mutex`; see Kotlin's
