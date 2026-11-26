@@ -46,9 +46,10 @@ class IndexedCandidateDeliveryTest {
                 documents.put(uri, "class Use {}")
                 assertNotNull(compilation.symbolIndexingService.indexFile(file.toUri()))
                 assertNull(documents.getSnapshot(file.toUri()))
-                suspend fun request(afterSelection: () -> Unit): String = when (provider) {
-                    Provider.IMPORT -> importCandidate(compilation, uri, afterSelection)
-                    Provider.COMPLETION -> completionCandidate(compilation, uri, afterSelection)
+                suspend fun request(afterSelection: () -> Unit): String = if (provider == Provider.IMPORT) {
+                    importCandidate(compilation, uri, afterSelection)
+                } else {
+                    completionCandidate(compilation, uri, afterSelection)
                 }
                 assertEquals("Widget", request {})
                 val (_, publicationCurrent) = compilation.symbolIndexingService.captureRows()

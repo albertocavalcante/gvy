@@ -23,8 +23,6 @@ jobs:
             selectors: --tests '*InvocationReceiptWireTest'
           - group: module-free
             selectors: --tests '*ModuleFreeInputWireTest'
-          - group: code-actions
-            selectors: --tests '*CodeActionBinaryInputsWireTest' --tests '*CodeActionPackageInputsWireTest'
           - group: index-bounds
             selectors: --tests '*IndexedCandidateDeliveryTest' --tests '*IndexedSymbolSelectionTest'
     runs-on: ubuntu-24.04

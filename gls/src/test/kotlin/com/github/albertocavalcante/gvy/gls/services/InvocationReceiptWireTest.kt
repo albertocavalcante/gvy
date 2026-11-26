@@ -18,6 +18,7 @@ import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
@@ -149,6 +150,7 @@ internal suspend fun withInvocationProof(
     try {
         harness.verify()
     } finally {
+        coroutineContext.cancelChildren()
         harness.compiler.shutdown()
     }
 }
