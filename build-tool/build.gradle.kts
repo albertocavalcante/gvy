@@ -17,6 +17,9 @@ dependencies {
     // Coroutines
     implementation(libs.kotlin.coroutines.core)
 
+    // Thread-safe state primitives
+    implementation(project(":common:concurrent"))
+
     // Gradle Tooling API
     implementation(libs.gradle.tooling.api)
 

@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -127,8 +129,8 @@ class BoundedProcessRunnerTest {
 
         assertFalse(runner.isAlive, "run() must return after an interrupt")
         assertTrue(failure.get() is InterruptedException)
-        assertTrue(process.destroyed, "the process must be killed")
-        assertTrue(process.streamClosed, "a reader that does not drain must have its stream closed")
+        assertTrue(process.destroyed.isSet, "the process must be killed")
+        assertTrue(process.streamClosed.isSet, "a reader that does not drain must have its stream closed")
         assertTrue(process.readerInterrupted.await(10, TimeUnit.SECONDS), "a blocked reader must be interrupted")
     }
 
@@ -254,17 +256,17 @@ class BoundedProcessRunnerTest {
 
     /** A descendant whose death is [dyingMillis] after the kill request. */
     private class LateHandle(private val dyingMillis: Long) : ProcessHandle {
-        @Volatile private var diesAtNanos = Long.MAX_VALUE
+        private val diesAtNanos = SharedValue(Long.MAX_VALUE)
         private val exit = CompletableFuture<ProcessHandle>()
 
         override fun pid(): Long = DESCENDANT_PID
 
-        override fun isAlive(): Boolean = System.nanoTime() < diesAtNanos
+        override fun isAlive(): Boolean = System.nanoTime() < diesAtNanos.value
 
         override fun onExit(): CompletableFuture<ProcessHandle> = exit
 
         override fun destroyForcibly(): Boolean {
-            diesAtNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(dyingMillis)
+            diesAtNanos.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(dyingMillis))
             CompletableFuture.delayedExecutor(dyingMillis, TimeUnit.MILLISECONDS).execute { exit.complete(this) }
             return true
         }
@@ -298,9 +300,9 @@ class BoundedProcessRunnerTest {
     ) : Process() {
         val running = CountDownLatch(1)
 
-        @Volatile private var diesAtNanos = Long.MAX_VALUE
+        private val diesAtNanos = SharedValue(Long.MAX_VALUE)
 
-        override fun isAlive(): Boolean = System.nanoTime() < diesAtNanos
+        override fun isAlive(): Boolean = System.nanoTime() < diesAtNanos.value
 
         override fun getOutputStream(): OutputStream = OutputStream.nullOutputStream()
 
@@ -321,7 +323,8 @@ class BoundedProcessRunnerTest {
 
         override fun destroy() {
             val delay = dyingMillis ?: return
-            diesAtNanos = minOf(diesAtNanos, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay))
+            val dies = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay)
+            diesAtNanos.update { current -> minOf(current, dies) }
         }
 
         override fun descendants(): Stream<ProcessHandle> = descendants.stream()
@@ -339,9 +342,9 @@ class BoundedProcessRunnerTest {
         val readerBlocked = CountDownLatch(1)
         val readerInterrupted = CountDownLatch(1)
 
-        @Volatile var streamClosed = false
+        val streamClosed = OnceFlag()
 
-        @Volatile var destroyed = false
+        val destroyed = OnceFlag()
 
         private val input = object : InputStream() {
             override fun read(): Int = block()
@@ -349,7 +352,7 @@ class BoundedProcessRunnerTest {
             override fun read(b: ByteArray, off: Int, len: Int): Int = block()
 
             override fun close() {
-                streamClosed = true
+                streamClosed.trySet()
             }
 
             private fun block(): Int {
@@ -382,7 +385,7 @@ class BoundedProcessRunnerTest {
         override fun exitValue(): Int = throw IllegalThreadStateException()
 
         override fun destroy() {
-            destroyed = true
+            destroyed.trySet()
         }
 
         override fun descendants(): Stream<ProcessHandle> = Stream.empty()

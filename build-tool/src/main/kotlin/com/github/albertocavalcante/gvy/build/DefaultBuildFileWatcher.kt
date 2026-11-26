@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -56,8 +57,8 @@ internal class DefaultBuildFileWatcher(
 ) : BuildToolFileWatcher {
     private val logger = KotlinLogging.logger {}
 
-    @Volatile
-    private var session: WatchSession? = null
+    // Replaced under this object's lock; isWatching() reads it without the lock.
+    private val session = SharedValue<WatchSession?>(null)
 
     private data class ChangeSession(val root: Path, val scope: CoroutineScope, val changes: BuildFileChangeDebouncer)
 
@@ -71,8 +72,12 @@ internal class DefaultBuildFileWatcher(
     ) : Closeable {
         private val cleanupStarted = AtomicBoolean(false)
 
-        @Volatile
-        var job: Job? = null
+        /** The watch loop, set once it is launched; null until then. */
+        val job = SharedValue<Job?>(null)
+
+        /** Whether the watch loop is running; distinct from [scope], which outlives a finished loop until close. */
+        val isLoopActive: Boolean
+            get() = job.value?.isActive == true
 
         override fun close() {
             // Claim cleanup before cancellation can reenter close() through job completion.
@@ -96,7 +101,7 @@ internal class DefaultBuildFileWatcher(
 
     @Synchronized
     override fun startWatching(projectDir: Path) {
-        if (session?.job?.isActive == true) {
+        if (session.value?.isLoopActive == true) {
             logger.debug { "$logLabel build file watcher already active for project" }
             return
         }
@@ -109,9 +114,9 @@ internal class DefaultBuildFileWatcher(
         changeSession = ChangeSession(projectDir, changeScope, changes)
         try {
             val created = createSession(projectDir, changeScope, changes)
-            session = created
+            session.set(created)
             val job = created.scope.launch(Dispatchers.IO) { watchLoop(created) }
-            created.job = job
+            created.job.set(job)
             job.invokeOnCompletion { closeSession(created) }
             logger.info { "Started watching $logLabel build files in: $projectDir" }
         } catch (e: IOException) {
@@ -123,8 +128,7 @@ internal class DefaultBuildFileWatcher(
 
     @Synchronized
     override fun stopWatching() {
-        val stopping = session
-        session = null
+        val stopping = session.exchange(null)
         changeSession?.scope?.cancel()
         changeSession = null
         if (stopping != null) closeSession(stopping)
@@ -312,7 +316,7 @@ internal class DefaultBuildFileWatcher(
         }
     }
 
-    override fun isWatching(): Boolean = session?.job?.isActive == true
+    override fun isWatching(): Boolean = session.value?.isLoopActive == true
 
     @Synchronized
     override fun onFileChanged(path: Path) {

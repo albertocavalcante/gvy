@@ -9,6 +9,7 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
 import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
 import com.github.albertocavalcante.gvy.gdsl.GdslLoader
@@ -162,14 +163,14 @@ class JenkinsContext private constructor(
                 publishStubSet(
                     stubsDir,
                     scanned?.let {
-                        withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata)
+                        withGdsl(buildMergedMetadata(it), gdslSnapshot.value?.metadata)
                     },
                     scanKey,
                 )
             },
             // Removes sets no cached classpath uses, keeping the one just published (#1367).
             evict = { stubsDir, published ->
-                val live = scans.get().byClasspath.values.mapNotNullTo(mutableSetOf()) { it.stubKey }
+                val live = scans.get().byClasspath.values.mapNotNullTo(mutableSetOf()) { it.stubKey.value }
                 stubSets(stubsDir).evict(live + setOfNotNull(published?.fileName?.toString()))
             },
         )
@@ -203,7 +204,7 @@ class JenkinsContext private constructor(
         val unscanned = { stubHooks.generator.render(getAllMetadata(null)) }
         val dir = own?.let { sets.publishFirst({ stubHooks.generator.render(it) }, unscanned) }
             ?: sets.publishFirst(unscanned)
-        scans.get().byClasspath[scanKey]?.stubKey = dir?.fileName?.toString()
+        scans.get().byClasspath[scanKey]?.stubKey?.set(dir?.fileName?.toString())
         return dir
     }
 
@@ -373,11 +374,11 @@ class JenkinsContext private constructor(
                 }
             }
 
-            gdslSnapshot = null
+            gdslSnapshot.set(null)
             return results
         }
 
-        gdslSnapshot = GdslSnapshot(readGdsl(results))
+        gdslSnapshot.set(GdslSnapshot(readGdsl(results)))
         return results
     }
 
@@ -414,12 +415,10 @@ class JenkinsContext private constructor(
      * [view] memoizes the merged view over it for one GDSL snapshot.
      */
     private class ScanSnapshot(val generation: Long, val classpath: List<Path>, val metadata: BundledJenkinsMetadata) {
-        @Volatile
-        var view: MergedSnapshot? = null
+        val view = SharedValue<MergedSnapshot?>(null)
 
         /** Key of the plugin stub set this classpath compiles against; eviction keeps it (#1367). */
-        @Volatile
-        var stubKey: String? = null
+        val stubKey = SharedValue<String?>(null)
     }
 
     /**
@@ -463,12 +462,10 @@ class JenkinsContext private constructor(
     /** Hands out scan request generations, in the order requests start. */
     private val scanRequests = AtomicLong()
 
-    @Volatile
-    private var gdslSnapshot: GdslSnapshot? = null
+    private val gdslSnapshot = SharedValue<GdslSnapshot?>(null)
 
     /** Memoized view with no scan: bundled metadata and GDSL only. */
-    @Volatile
-    private var unscannedView: MergedSnapshot? = null
+    private val unscannedView = SharedValue<MergedSnapshot?>(null)
 
     /**
      * Combined metadata (bundled + GDSL + the library steps scanned from [classpath]) for a file compiled with
@@ -487,14 +484,14 @@ class JenkinsContext private constructor(
         viewOf(classpath?.let { scans.get().byClasspath[it] })
 
     private fun viewOf(scan: ScanSnapshot?): MergedJenkinsMetadata {
-        val gdsl = gdslSnapshot
-        val memo = if (scan != null) scan.view else unscannedView
-        memo?.takeIf { it.gdsl === gdsl }?.let { return it.metadata }
+        val gdsl = gdslSnapshot.value
+        val memo = scan?.view ?: unscannedView
+        memo.value?.takeIf { it.gdsl === gdsl }?.let { return it.metadata }
 
         // Racing callers may compute the same view twice; both results are equal and the
         // expensive bundled load is guarded by its own lazy initializer.
         val view = MergedSnapshot(gdsl, withGdsl(buildMergedMetadata(scan?.metadata), gdsl?.metadata))
-        if (scan != null) scan.view = view else unscannedView = view
+        memo.set(view)
         return view.metadata
     }
 

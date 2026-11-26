@@ -20,6 +20,9 @@ dependencies {
     // Groovy REPL execution
     api(project(":repl"))
 
+    // Thread-safe state primitives
+    implementation(project(":common:concurrent"))
+
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)

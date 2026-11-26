@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.jupyter.core.kernel
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.jupyter.core.handlers.ExecuteHandler
 import com.github.albertocavalcante.gvy.jupyter.core.handlers.HeartbeatHandler
 import com.github.albertocavalcante.gvy.jupyter.core.handlers.KernelInfoHandler
@@ -30,9 +31,11 @@ class KernelServer(
 ) : Closeable {
     private val logger = KotlinLogging.logger {}
 
-    @Volatile
-    var isRunning: Boolean = true
-        private set
+    private val stopRequested = OnceFlag()
+
+    /** True until [shutdown] is called; the polling loop stops at its next check. */
+    val isRunning: Boolean
+        get() = !stopRequested.isSet
 
     /**
      * Find a handler that can process the given message type.
@@ -88,7 +91,7 @@ class KernelServer(
      */
     fun shutdown() {
         logger.info { "Shutdown requested" }
-        isRunning = false
+        stopRequested.trySet() // Idempotent: a later call finds it already set.
     }
 
     override fun close() {

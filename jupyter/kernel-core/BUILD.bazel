@@ -9,6 +9,7 @@ kt_library(
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
+        "//common/concurrent",
         "//repl",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",

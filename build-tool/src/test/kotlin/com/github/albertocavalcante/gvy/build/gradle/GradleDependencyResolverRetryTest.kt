@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.ResolutionCancellation
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -386,14 +387,16 @@ class GradleDependencyResolverRetryTest {
         private val retryConfig: GradleDependencyResolver.RetryConfig = ZERO_DELAY_RETRIES,
         onModelFetch: ModelFetchFixture.(Int) -> Unit,
     ) {
-        @Volatile
-        var modelCalls = 0
-            private set
+        private val modelCallCount = Counter()
+        private val connectionCount = Counter()
+
+        /** IdeaProject fetches started. */
+        val modelCalls: Int
+            get() = modelCallCount.value.toInt()
 
         /** Connections requested, including the isolated-user-home fallback. */
-        @Volatile
-        var connectionsOpened = 0
-            private set
+        val connectionsOpened: Int
+            get() = connectionCount.value.toInt()
 
         /** Tooling API tokens attached to IdeaProject fetches, in call order. */
         val tokens = CopyOnWriteArrayList<CancellationToken>()
@@ -413,8 +416,8 @@ class GradleDependencyResolverRetryTest {
             every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
             every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
             every { modelBuilder.get() } answers {
-                modelCalls++
-                onModelFetch(modelCalls)
+                // The call's own number, even when fetches overlap.
+                onModelFetch(modelCallCount.increment().toInt())
                 ideaProject
             }
             val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
@@ -427,7 +430,7 @@ class GradleDependencyResolverRetryTest {
             every { buildEnvironment.gradle.gradleVersion } returns "8.5"
             every { connection.model(IdeaProject::class.java) } returns modelBuilder
             every { connectionFactory.getConnection(any(), any()) } answers {
-                connectionsOpened++
+                connectionCount.increment()
                 connection
             }
         }
