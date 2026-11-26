@@ -197,12 +197,13 @@ private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequenc
 internal fun heldGdkMethods(
     reflection: ClasspathReflection,
     receiverName: String,
-    name: String,
+    name: String? = null,
 ): List<QualifiedGdkMethod> {
     val receiver = reflection.loadClass(receiverName) ?: return emptyList()
     val methods = GDK_CLASSES.asSequence().mapNotNull(reflection::loadClass).flatMap { owner ->
         owner.methods.asSequence().filter { method ->
-            method.name == name && Modifier.isPublic(method.modifiers) && Modifier.isStatic(method.modifiers) &&
+            (name == null || method.name == name) && Modifier.isPublic(method.modifiers) &&
+                Modifier.isStatic(method.modifiers) &&
                 method.parameterCount > 0 && method.parameterTypes.first().isAssignableFrom(receiver)
         }.map { method -> method.parameterTypes.first() to method.qualifiedGdk(owner, null) }
     }.groupBy({ it.first }, { it.second })
