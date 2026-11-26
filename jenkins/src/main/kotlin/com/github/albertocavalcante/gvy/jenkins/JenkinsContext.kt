@@ -9,6 +9,7 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
 import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
@@ -37,8 +38,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -170,7 +169,7 @@ class JenkinsContext private constructor(
             },
             // Removes sets no cached classpath uses, keeping the one just published (#1367).
             evict = { stubsDir, published ->
-                val live = scans.get().byClasspath.values.mapNotNullTo(mutableSetOf()) { it.stubKey.value }
+                val live = scans.value.byClasspath.values.mapNotNullTo(mutableSetOf()) { it.stubKey.value }
                 stubSets(stubsDir).evict(live + setOfNotNull(published?.fileName?.toString()))
             },
         )
@@ -204,7 +203,7 @@ class JenkinsContext private constructor(
         val unscanned = { stubHooks.generator.render(getAllMetadata(null)) }
         val dir = own?.let { sets.publishFirst({ stubHooks.generator.render(it) }, unscanned) }
             ?: sets.publishFirst(unscanned)
-        scans.get().byClasspath[scanKey]?.stubKey?.set(dir?.fileName?.toString())
+        scans.value.byClasspath[scanKey]?.stubKey?.set(dir?.fileName?.toString())
         return dir
     }
 
@@ -457,10 +456,10 @@ class JenkinsContext private constructor(
     private class MergedSnapshot(val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
 
     /** Replaced in [scanClasspath] without the context lock; per classpath, the newest request wins. */
-    private val scans = AtomicReference(ScanCache(emptyMap()))
+    private val scans = SharedValue(ScanCache(emptyMap()))
 
     /** Hands out scan request generations, in the order requests start. */
-    private val scanRequests = AtomicLong()
+    private val scanRequests = Counter()
 
     private val gdslSnapshot = SharedValue<GdslSnapshot?>(null)
 
@@ -481,7 +480,7 @@ class JenkinsContext private constructor(
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
     fun getAllMetadata(classpath: List<Path>?): MergedJenkinsMetadata =
-        viewOf(classpath?.let { scans.get().byClasspath[it] })
+        viewOf(classpath?.let { scans.value.byClasspath[it] })
 
     private fun viewOf(scan: ScanSnapshot?): MergedJenkinsMetadata {
         val gdsl = gdslSnapshot.value
@@ -546,14 +545,14 @@ class JenkinsContext private constructor(
      * previous snapshot in place.
      */
     fun scanClasspath(classpath: List<Path>): BundledJenkinsMetadata? {
-        val cached = scans.get().byClasspath[classpath]
+        val cached = scans.value.byClasspath[classpath]
         if (cached != null) {
             logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
-            scans.updateAndGet { it.touched(classpath) }
+            scans.update { it.touched(classpath) }
             return cached.metadata
         }
 
-        val generation = scanRequests.incrementAndGet()
+        val generation = scanRequests.increment()
         val snapshot = classpath.toList()
         val metadata = try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
@@ -563,7 +562,7 @@ class JenkinsContext private constructor(
             return null
         }
         val scanned = ScanSnapshot(generation, snapshot, metadata)
-        scans.updateAndGet { it.with(scanned) }
+        scans.update { it.with(scanned) }
         return metadata
     }
 

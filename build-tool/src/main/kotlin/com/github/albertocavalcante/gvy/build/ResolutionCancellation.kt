@@ -3,12 +3,12 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Cooperative cancellation for a blocking dependency resolution.
@@ -24,11 +24,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * keeps running must catch the exception at the `resolve` call; otherwise the coroutine ends silently, as cancelled.
  */
 class ResolutionCancellation {
-    private val cancelled = AtomicBoolean(false)
+    private val cancelled = OnceFlag()
     private val signal = CountDownLatch(1)
     private val listeners = CopyOnWriteArrayList<Registration>()
 
-    val isCancelled: Boolean get() = cancelled.get()
+    val isCancelled: Boolean get() = cancelled.isSet
 
     /** Registrations still held, for tests. */
     internal val registeredListeners: Int get() = listeners.size
@@ -39,7 +39,7 @@ class ResolutionCancellation {
      * caller.
      */
     fun cancel() {
-        if (!cancelled.compareAndSet(false, true)) return
+        if (!cancelled.trySet()) return
         signal.countDown()
         listeners.forEach { it.fire() }
         // Nothing runs a registration after this; one added meanwhile is fired and removed by onCancel.
@@ -78,11 +78,11 @@ class ResolutionCancellation {
     }
 
     private class Registration(private val action: () -> Unit) {
-        private val done = AtomicBoolean(false)
+        private val done = OnceFlag()
 
         @Suppress("TooGenericExceptionCaught") // one failing listener must not skip the others or fail cancel()
         fun fire() {
-            if (!done.compareAndSet(false, true)) return
+            if (!done.trySet()) return
             try {
                 action()
             } catch (e: Exception) {
@@ -91,7 +91,7 @@ class ResolutionCancellation {
         }
 
         fun close() {
-            done.set(true)
+            done.trySet()
         }
     }
 }

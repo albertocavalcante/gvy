@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -25,7 +26,6 @@ import java.nio.file.WatchKey
 import java.nio.file.WatchService
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.exists
 import kotlin.io.path.name
 
@@ -70,7 +70,7 @@ internal class DefaultBuildFileWatcher(
         val changes: BuildFileChangeDebouncer,
         val keys: ConcurrentHashMap<WatchKey, Path>,
     ) : Closeable {
-        private val cleanupStarted = AtomicBoolean(false)
+        private val cleanupStarted = OnceFlag()
 
         /** The watch loop, set once it is launched; null until then. */
         val job = SharedValue<Job?>(null)
@@ -81,7 +81,7 @@ internal class DefaultBuildFileWatcher(
 
         override fun close() {
             // Claim cleanup before cancellation can reenter close() through job completion.
-            val ownsCleanup = cleanupStarted.compareAndSet(false, true)
+            val ownsCleanup = cleanupStarted.trySet()
 
             // The parent owns callbacks even before launch() returns their Job to the coordinator.
             scope.cancel()

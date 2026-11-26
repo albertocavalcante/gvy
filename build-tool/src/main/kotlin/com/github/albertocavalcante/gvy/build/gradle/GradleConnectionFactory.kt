@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import org.gradle.tooling.ProjectConnection
 import java.io.File
 import java.nio.file.Path
@@ -16,10 +17,10 @@ fun interface GradleConnectionFactory {
 
 /** A connection borrowed for one operation; [close] ends the borrow (it never closes the connection itself). */
 class ConnectionLease(val connection: ProjectConnection, private val onRelease: () -> Unit = {}) : AutoCloseable {
-    private val released = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val released = OnceFlag()
 
     override fun close() {
-        if (released.compareAndSet(false, true)) onRelease()
+        if (released.trySet()) onRelease()
     }
 }
 
