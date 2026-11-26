@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -142,7 +143,7 @@ class HoverSnapshotTest {
                 assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
                 assertEquals(1, fixture.parseCount.get())
                 assertEquals(0, traversals.get())
-                verify(exactly = 0) { fixture.compilation.getHoverSession(fixture.uri, any(), any(), any()) }
+                verify(exactly = 0) { fixture.compilation.getHoverSession(any(), any(), any(), any()) }
             } finally {
                 releaseFirst.countDown()
             }
@@ -184,7 +185,7 @@ class HoverSnapshotTest {
                 assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
                 assertEquals(2, fixture.parseCount.get())
                 assertEquals(0, traversals.get())
-                verify(exactly = 0) { fixture.compilation.getHoverSession(fixture.uri, any(), any(), any()) }
+                verify(exactly = 0) { fixture.compilation.getHoverSession(any(), any(), any(), any()) }
             } finally {
                 releaseFirst.countDown()
                 releaseSecond.countDown()
@@ -533,13 +534,18 @@ class HoverSnapshotTest {
     @Test
     fun `hover rejects a version change while creating the session`(): Unit = runBlocking {
         fixture().use { fixture ->
-            every { fixture.compilation.getHoverSession(fixture.uri, any(), any(), any()) } answers {
+            val captured = AtomicReference<SnapshotSource>()
+            every { fixture.compilation.captureSnapshotSource(fixture.uri) } answers {
+                callOriginal().also(captured::set)
+            }
+            every { fixture.compilation.getHoverSession(any(), any(), any(), any()) } answers {
+                assertSame(captured.get(), firstArg<SnapshotSource>())
                 callOriginal().also { fixture.documents.put(fixture.uri, ORIGINAL_SOURCE, DocumentVersion.of(42)) }
             }
 
             val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
 
-            verify(exactly = 1) { fixture.compilation.getHoverSession(fixture.uri, any(), any(), any()) }
+            verify(exactly = 1) { fixture.compilation.getHoverSession(captured.get(), any(), any(), any()) }
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
         }
     }

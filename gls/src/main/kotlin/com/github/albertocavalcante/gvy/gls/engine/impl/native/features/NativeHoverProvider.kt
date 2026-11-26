@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.resolution.typesolvers.Reflecti
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.HoverMemberLookup
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
@@ -31,7 +32,6 @@ import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import java.net.URI
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider as DelegateHoverProvider
 
 /**
@@ -67,14 +67,18 @@ class NativeHoverProvider(
         )
     }
 
-    internal fun forSnapshot(held: CompiledDocumentSnapshot, uri: URI, jenkins: JenkinsQuerySnapshot): HoverProvider =
+    internal fun forSnapshot(
+        held: CompiledDocumentSnapshot,
+        source: SnapshotSource,
+        jenkins: JenkinsQuerySnapshot,
+    ): HoverProvider =
         object : HeldHoverProvider {
             override suspend fun prepareHover(params: HoverParams): HeldHover {
                 val facts = jenkins.materialize(forHover = true)
                 require(held.parseResult === parseResult)
                 val loader = bytecodeOnlyClassLoader(parseResult.compilationUnit.classLoader)
                 val reflection = JvmClasspathReflection { loader }
-                val members = HoverMemberLookup.forRequest(compilationService, uri, held)
+                val members = HoverMemberLookup.forRequest(held) { compilationService.referenceReadiness(source) }
                 val types = SemanticTypeResolver(ReflectionTypeSolver(jreOnly = false, classLoader = loader), members)
                 val methods = MethodCallMetadataResolver(
                     reflection::getMethods,
@@ -101,7 +105,7 @@ class NativeHoverProvider(
                     }
                 }
                 val answer = withContext(loader.context) {
-                    provider.provideHover(uri.toString(), params.position, held)
+                    provider.provideHover(source.uri.toString(), params.position, held)
                 }
                 return HeldHover(
                     answer ?: Hover(MarkupContent(MarkupKind.MARKDOWN, "")),

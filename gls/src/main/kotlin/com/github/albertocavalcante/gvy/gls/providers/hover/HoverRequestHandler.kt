@@ -81,7 +81,7 @@ internal class HoverRequestHandler(
             if (!compilation.isHoverEngineCurrent(request.engine) || !request.jenkins.isCurrent()) {
                 throw hoverChanged(uri)
             }
-            val session = compilation.getHoverSession(uri, held, request.engine, request.jenkins)
+            val session = compilation.getHoverSession(acquired.source, held, request.engine, request.jenkins)
             val provider = session.features.hoverProvider
             if (provider is HeldHoverProvider) {
                 provider.prepareHover(request.params)

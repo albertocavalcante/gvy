@@ -290,17 +290,22 @@ class GroovyCompilationService internal constructor(
 
     /** Retains a request's source and native parse together, independently of later cache changes. */
     internal fun getHoverSession(uri: URI, snapshot: CompiledDocumentSnapshot): LanguageSession =
-        getHoverSession(uri, snapshot, engineManager.activeEngine, JenkinsQuerySnapshot.capture(this, uri))
+        getHoverSession(
+            captureSnapshotSource(uri),
+            snapshot,
+            engineManager.activeEngine,
+            JenkinsQuerySnapshot.capture(this, uri),
+        )
 
     internal fun getHoverSession(
-        uri: URI,
+        source: SnapshotSource,
         snapshot: CompiledDocumentSnapshot,
         engine: LanguageEngine,
         jenkins: JenkinsQuerySnapshot,
     ): LanguageSession = if (engine is NativeLanguageEngine) {
-        engine.createHoverSession(snapshot, uri, jenkins)
+        engine.createHoverSession(snapshot, source, jenkins)
     } else {
-        engine.createSession(uri, snapshot.sourceText)
+        engine.createSession(source.uri, snapshot.sourceText)
     }
 
     fun updateGroovyVersion(info: GroovyVersionInfo) = engineManager.updateGroovyVersion(info)

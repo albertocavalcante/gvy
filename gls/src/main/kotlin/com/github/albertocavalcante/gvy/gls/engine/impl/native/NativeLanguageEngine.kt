@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.engine.impl.native
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.engine.adapters.NativeParserAdapter
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit
 import com.github.albertocavalcante.gvy.gls.engine.api.CompletionProvider
@@ -64,10 +65,10 @@ class NativeLanguageEngine(
     /** Uses the held compiled facts only for a request that explicitly acquired a hover snapshot. */
     internal fun createHoverSession(
         held: CompiledDocumentSnapshot,
-        uri: URI,
+        source: SnapshotSource,
         jenkins: JenkinsQuerySnapshot,
     ): LanguageSession {
-        val session = createSession(held.parseResult, uri.toString(), held.sourceText)
+        val session = createSession(held.parseResult, source.uri.toString(), held.sourceText)
         return object : LanguageSession {
             override val result = session.result
             override val features = object : FeatureSet {
@@ -76,7 +77,7 @@ class NativeLanguageEngine(
                     compilationService,
                     documentProvider,
                     sourceNavigator,
-                ).forSnapshot(held, uri, jenkins)
+                ).forSnapshot(held, source, jenkins)
                 override val documentSymbolProvider get() = session.features.documentSymbolProvider
                 override val definitionProvider get() = session.features.definitionProvider
                 override val completionProvider get() = session.features.completionProvider

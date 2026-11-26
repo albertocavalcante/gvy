@@ -25,6 +25,7 @@ internal class HoverMemberLookup(
     capture: () -> CapturedWorkspaceReferences,
     private val qualify: (URI, SemanticDocumentSnapshot) -> (() -> Boolean)?,
     localTypes: () -> Set<String> = { emptySet() },
+    private val probeUnboundNames: Boolean = false,
 ) : HoverMemberQueries(),
     ReceiverBoundMemberLookup {
     companion object {
@@ -32,9 +33,19 @@ internal class HoverMemberLookup(
             compilation: GroovyCompilationService,
             uri: URI,
             held: CompiledDocumentSnapshot,
+        ): HoverMemberLookup = create(held, probeUnboundNames = true) { compilation.referenceReadiness(uri) }
+
+        fun forRequest(held: CompiledDocumentSnapshot, prepare: () -> ReferenceReadiness): HoverMemberLookup =
+            create(held, probeUnboundNames = false, prepare = prepare)
+
+        private fun create(
+            held: CompiledDocumentSnapshot,
+            probeUnboundNames: Boolean,
+            prepare: () -> ReferenceReadiness,
         ): HoverMemberLookup {
-            val readiness = lazy { compilation.referenceReadiness(uri) }
+            val readiness = lazy(prepare)
             return HoverMemberLookup(
+                probeUnboundNames = probeUnboundNames,
                 capture = { readiness.value.captureMembersView() },
                 qualify = { owner, document -> readiness.value.qualifyMember(owner, document, held) },
                 localTypes = {
@@ -59,8 +70,9 @@ internal class HoverMemberLookup(
         }
     }
 
-    // An unbound call has no foreign declaration it can consult.
-    override fun members(classFqn: String): List<SymbolInfo> = members(classFqn, null)
+    // The URI convenience lookup probes visibility for unbound names. Captured queries need a selected receiver.
+    override fun members(classFqn: String): List<SymbolInfo> =
+        if (probeUnboundNames) members(classFqn, null) else emptyList()
 
     private fun members(classFqn: String, boundSource: URI?): List<SymbolInfo> {
         // NativeTypeContext already tried this held module. A local miss is not a cross-file index lookup,
