@@ -4,13 +4,12 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.types.Position as AstPosition
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.source.DocumentVersion
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
-import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,14 +34,15 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import com.github.albertocavalcante.groovyparser.ast.types.Position as AstPosition
 
 class EditorFactAcquisitionTest {
     enum class Route { HIGHLIGHT, PREPARE_CALL }
@@ -107,7 +107,8 @@ class EditorFactAcquisitionTest {
             fixture.assertFullAnswer(fixture.request().get(10, TimeUnit.SECONDS))
             val parsed = fixture.results.single()
             assertTrue(
-                parsed.outcome.isDegraded || !parsed.isSuccessful || parsed.outcome.achievedPhase < Phases.CANONICALIZATION,
+                parsed.outcome.isDegraded || !parsed.isSuccessful ||
+                    parsed.outcome.achievedPhase < Phases.CANONICALIZATION,
                 "the fixture must exercise a partial or degraded current parse",
             )
         }
@@ -160,7 +161,10 @@ class EditorFactAcquisitionTest {
 
     private fun assertModified(answer: CompletableFuture<*>) {
         val error = assertThrows<ExecutionException> { answer.get(10, TimeUnit.SECONDS) }
-        assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(error.cause).responseError.code)
+        assertEquals(
+            ResponseErrorCode.ContentModified.value,
+            assertIs<ResponseErrorException>(error.cause).responseError.code,
+        )
     }
 
     private class Fixture(
@@ -197,17 +201,24 @@ class EditorFactAcquisitionTest {
                             results.add(parsed)
                             if (stage == Stage.PARSED) hold()
                             val model = parsed.astModel
-                            return parsed.copy(astModel = object : GroovyAstModel by model {
-                                override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
-                                    if (stage == Stage.QUERY) hold()
-                                    return model.getNodeAt(uri, position)
-                                }
-                            })
+                            return parsed.copy(
+                                astModel = object : GroovyAstModel by model {
+                                    override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
+                                        if (stage == Stage.QUERY) hold()
+                                        return model.getNodeAt(uri, position)
+                                    }
+                                },
+                            )
                         }
                     }
                 },
             )
-            service = GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = documents))
+            service =
+                GroovyTextDocumentService(
+                    scope,
+                    compilation,
+                    GroovyTextDocumentServiceOptions(documentProvider = documents),
+                )
             if (open) {
                 compilation.onDocumentOpened(uri)
                 documents.put(uri, source, DocumentVersion.of(7))
@@ -235,7 +246,10 @@ class EditorFactAcquisitionTest {
                 assertTrue(parses.get() > 1, "a successful retry must use a new producer")
                 assertFullAnswer(result)
             } catch (error: ExecutionException) {
-                assertEquals(ResponseErrorCode.ContentModified.value, assertIs<ResponseErrorException>(error.cause).responseError.code)
+                assertEquals(
+                    ResponseErrorCode.ContentModified.value,
+                    assertIs<ResponseErrorException>(error.cause).responseError.code,
+                )
             }
         }
 

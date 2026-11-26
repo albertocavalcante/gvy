@@ -166,9 +166,11 @@ class GroovySemanticDB {
             val view = currentView()
             view.references ?: ReferenceIndexSnapshot(
                 view.declarations,
-                Collections.unmodifiableMap(documents.mapValues { (_, stored) ->
-                    SemanticDocumentSnapshot(stored.document, stored.sourceText)
-                }),
+                Collections.unmodifiableMap(
+                    documents.mapValues { (_, stored) ->
+                        SemanticDocumentSnapshot(stored.document, stored.sourceText)
+                    },
+                ),
                 occurrenceIndex.snapshotFiles(),
             ).also { view.references = it }
         }

@@ -59,6 +59,7 @@ class ArtifactOwnership {
         internal val order: BufferOrder? = null,
     ) {
         internal val sourceIdentity: String get() = "${state.identity}:$stamp:$epoch:$lastRetirement"
+
         /** Query captures may share only when both observed the same file and workspace input retirements. */
         internal fun sharesInputs(other: Ticket): Boolean = state === other.state && stamp == other.stamp &&
             epoch == other.epoch && lastRetirement == other.lastRetirement
