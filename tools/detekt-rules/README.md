@@ -97,13 +97,12 @@ The rule cannot resolve names, so it errs in these documented ways:
    `detekt.source` (as `launcher` and `common/concurrent` do). Other Kotlin, such as `tests/e2e` and the Kotlin
    Multiplatform sources of `viz/ast-model`, is not seen by any detekt rule yet (#2480).
 
-### Enabling a module
+### Coverage
 
-The modules listed under `gvy > VolatileProperty > excludes` in `tools/lint/detekt.yml` still have `@Volatile` fields,
-in main or test code. In the pull request that migrates a module, remove its line so the rule guards it. Never add an
-`excludes` line or a detekt baseline entry for a clean module (#2474). `tools/ci/detekt-volatile-excludes.test.mjs`
-enforces this: the rule must stay active, and every line must name a module whose `src/main/kotlin` or `src/test/kotlin`
-(or their `java` folders) still applies `@Volatile` outside comments and strings.
+The rule guards every module the lint task reads: the migration in #2474 removed the last `excludes` line, and no
+baseline entry exists. `tools/ci/detekt-volatile-excludes.test.mjs` keeps it so: the rule must stay active, and any
+future `excludes` line must name a module whose `src/main/kotlin` or `src/test/kotlin` (or their `java` folders) still
+applies `@Volatile` outside comments and strings, so a clean or unlinted module can never be excluded.
 
 ## Running the tests
 

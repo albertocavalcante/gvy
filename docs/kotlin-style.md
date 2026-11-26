@@ -116,7 +116,7 @@ State that several threads read and write needs a primitive that says what it is
 | Several fields that change together                                           | One immutable value in a `SharedValue`, or one lock      |
 
 - Do not add `@Volatile` fields. They make single reads and writes visible, but not `x++`, check-then-act or a read of
-  two related fields. The remaining sites are being migrated (#2474).
+  two related fields. detekt's `VolatileProperty` rule reports them (#2474).
 - Use `kotlin.concurrent.atomics` only inside `:common:concurrent`; detekt's `ForbiddenImport` enforces this. The API is
   experimental, and confining it keeps an upstream change to one module. Prefer the gvy types over
   `java.util.concurrent.atomic` in new code too.
