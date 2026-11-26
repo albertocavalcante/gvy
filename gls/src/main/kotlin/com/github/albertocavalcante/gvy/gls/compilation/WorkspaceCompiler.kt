@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
@@ -65,8 +66,7 @@ class WorkspaceCompiler(
     private val logger = KotlinLogging.logger {}
 
     // Set once the eager workspace compile has run: from then on every workspace source has a document.
-    @Volatile
-    private var workspaceCompiled = false
+    private val workspaceCompiled = OnceFlag()
 
     /**
      * Compiles all workspace files together for full cross-file semantic resolution.
@@ -99,7 +99,7 @@ class WorkspaceCompiler(
 
         // Compile all files together
         val result = compileFiles(workspaceSources, workspace)
-        workspaceCompiled = true
+        workspaceCompiled.trySet()
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
@@ -124,10 +124,10 @@ class WorkspaceCompiler(
         val stale = uris.filter(::needsRefresh)
         when {
             stale.isEmpty() -> Unit
-            workspaceCompiled && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
+            workspaceCompiled.isSet && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
             else -> {
                 val workspace = workspaceManager.current()
-                stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
+                stale.filter { workspaceCompiled.isSet || it in semanticIndexer }.forEach { uri ->
                     compileFileWithWorkspaceContext(
                         checkNotNull(UriPathConverter.toPath(uri)),
                         workspace.sources,

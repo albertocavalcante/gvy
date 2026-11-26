@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
@@ -73,13 +74,13 @@ class GroovyCompilationService internal constructor(
     private val errorHandler = CompilationErrorHandler()
     internal val documents: DocumentProvider = documentProvider ?: DocumentProvider()
 
-    @Volatile
-    var serverConfiguration: ServerConfiguration =
-        ServerConfiguration()
-        private set
+    private val currentConfiguration = SharedValue(ServerConfiguration())
+
+    val serverConfiguration: ServerConfiguration
+        get() = currentConfiguration.value
 
     internal fun updateServerConfiguration(configuration: ServerConfiguration) {
-        serverConfiguration = configuration
+        currentConfiguration.set(configuration)
     }
 
     private val parser = GroovyParserFacade(parentClassLoader)

@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
@@ -49,11 +50,12 @@ class SemanticIndexer(
     /** [generation]: the [retireAllPublications] generation of the publication that stored it. */
     private class Entry(val contentHash: String, val phase: Int, val generation: AnalysisGeneration)
 
-    private class State {
-        @Volatile var entry: Entry? = null
+    /** Written only inside [entries]' compute for its key; [entry] and [highestTicket] are also read lock-free. */
+    private class State(initialEntry: Entry? = null, initialHighestTicket: Long = 0L) {
+        val entry = SharedValue(initialEntry)
 
         /** Highest ticket that reached a decision; kept when the entry is upgraded or dropped. */
-        @Volatile var highestTicket = 0L
+        val highestTicket = SharedValue(initialHighestTicket)
         var publications = 0
     }
 
@@ -82,12 +84,13 @@ class SemanticIndexer(
      * finishes on the old map and old graph first, and a later one sees only the new pair. Reads stay lock-free;
      * they see the old or the new map, and a pre-clear publication can never match an entry of the new one.
      */
-    @Volatile private var entries = ConcurrentHashMap<URI, State>()
+    private val current = SharedValue(ConcurrentHashMap<URI, State>())
+    private val entries: ConcurrentHashMap<URI, State> get() = current.value
     private val swap = ReentrantReadWriteLock()
     private val tickets = AtomicLong()
 
     // Read under [swap]'s read lock, bumped under its write lock: see [retireAllPublications]
-    @Volatile private var generation = AnalysisGeneration.INITIAL
+    private val generation = SharedValue(AnalysisGeneration.INITIAL)
 
     /** Acquire before reading/enqueueing source. Removal invalidates every outstanding publication. */
     internal fun begin(uri: URI): Publication {
@@ -97,14 +100,14 @@ class SemanticIndexer(
                     (existing ?: State()).also { it.publications++ }
                 },
             )
-            state to generation
+            state to generation.value
         }
         return Publication(uri, state, tickets.incrementAndGet(), began) {
             swap.read {
                 entries.computeIfPresent(uri) { _, current ->
                     if (current === state) {
                         current.publications--
-                        current.takeUnless { it.publications == 0 && it.entry == null }
+                        current.takeUnless { it.publications == 0 && it.entry.value == null }
                     } else {
                         current
                     }
@@ -144,8 +147,8 @@ class SemanticIndexer(
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
                 if (replaces(state, publication, hash, phase, fromBuffer)) {
-                    state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
-                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                    state.entry.set(Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) })
+                    state.highestTicket.update { highest -> maxOf(highest, publication.ticket) }
                 }
                 state
             }
@@ -160,14 +163,17 @@ class SemanticIndexer(
         phase: Int,
         fromBuffer: Boolean,
     ): Boolean {
-        val existing = state?.entry
+        val existing = state?.entry?.value
         val supersedes = if (existing != null && existing.contentHash == hash) {
             phase > existing.phase || (phase == existing.phase && publication.generation > existing.generation)
         } else {
-            publication.ticket > (state?.highestTicket ?: 0L)
+            publication.ticket > (state?.highestTicket?.value ?: 0L)
         }
-        return state === publication.identity && publication.generation == generation && !publication.isClosed &&
-            (fromBuffer || !isOpen(publication.uri)) && supersedes
+        return state === publication.identity &&
+            publication.generation == generation.value &&
+            !publication.isClosed &&
+            (fromBuffer || !isOpen(publication.uri)) &&
+            supersedes
     }
 
     /**
@@ -205,13 +211,13 @@ class SemanticIndexer(
     fun followsBuffer(uri: URI): Boolean = isOpen(uri)
 
     /** Whether a document is stored for [uri]. */
-    operator fun contains(uri: URI): Boolean = entries[uri]?.entry != null
+    operator fun contains(uri: URI): Boolean = entries[uri]?.entry?.value != null
 
     /** The compile phase of the document stored for [uri], or null when there is none. */
-    fun phaseOf(uri: URI): Int? = entries[uri]?.entry?.phase
+    fun phaseOf(uri: URI): Int? = entries[uri]?.entry?.value?.phase
 
     /** Whether the stored document was built from exactly [content]. */
-    fun isCurrent(uri: URI, content: String): Boolean = entries[uri]?.entry?.contentHash == contentHash(content)
+    fun isCurrent(uri: URI, content: String): Boolean = entries[uri]?.entry?.value?.contentHash == contentHash(content)
 
     /**
      * Makes every outstanding publication for [uri] stale while keeping its stored document: the buffer it
@@ -221,12 +227,7 @@ class SemanticIndexer(
     internal fun retirePublications(uri: URI) {
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
-                state.entry?.let { kept ->
-                    State().also {
-                        it.entry = kept
-                        it.highestTicket = state.highestTicket
-                    }
-                }
+                state.entry.value?.let { kept -> State(kept, state.highestTicket.value) }
             }
         }
     }
@@ -239,7 +240,7 @@ class SemanticIndexer(
      * again. Waits for in-flight writes, as [clear].
      */
     internal fun retireAllPublications() {
-        swap.write { generation = generation.next() }
+        swap.write { generation.update { it.next() } }
     }
 
     fun remove(uri: URI) {
@@ -257,7 +258,7 @@ class SemanticIndexer(
      */
     fun clear() {
         swap.write {
-            entries = ConcurrentHashMap()
+            current.set(ConcurrentHashMap())
             index.clear()
         }
     }
