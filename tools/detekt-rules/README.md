@@ -63,8 +63,8 @@ clean (#2420).
 
 `@Volatile` makes single reads and writes of a field visible to other threads, but not a compound update: `x++`,
 check-then-act (`if (!closed) { closed = true; ... }`) and two related fields read one after the other all still race,
-with no compiler warning. The rule reports every `@Volatile` annotation. Replace the field with the type that says what
-it is for (see [Shared mutable state](../../docs/kotlin-style.md#shared-mutable-state)):
+with no compiler warning. The rule reports `@Volatile` annotations in the code the lint task reads. Replace the field
+with the type that says what it is for (see [Shared mutable state](../../docs/kotlin-style.md#shared-mutable-state)):
 
 | The field holds                                  | Use                                                                         |
 | ------------------------------------------------ | --------------------------------------------------------------------------- |
@@ -76,22 +76,31 @@ it is for (see [Shared mutable state](../../docs/kotlin-style.md#shared-mutable-
 
 The rule recognises `@Volatile`, `@field:Volatile`, `@[Volatile]`, `@kotlin.jvm.Volatile`, `@kotlin.concurrent.Volatile`
 and import aliases of the last two. Mentions in comments, KDoc and strings are not annotations. When a file imports a
-different annotation named `Volatile`, the unqualified name refers to that one and is not reported.
+different symbol named `Volatile`, the unqualified name refers to that one and is not reported.
 
-A field that an `AtomicXxxFieldUpdater` or `VarHandle` updates must be declared volatile. That, or a hot path where a
-measured benchmark shows the extra object matters, is the only accepted reason for `@Suppress("VolatileProperty")`, with
-a comment that says which applies.
+A field that an `AtomicIntegerFieldUpdater`, `AtomicLongFieldUpdater` or `AtomicReferenceFieldUpdater` updates must be
+declared volatile: the updater rejects any other field. That, or a hot path where a measured benchmark shows the extra
+object matters, is the only accepted reason for `@Suppress("VolatileProperty")`, with a comment that says which applies.
+A `VarHandle` needs no volatile field; its access mode supplies the ordering.
 
 ### Known limits
 
-Without type resolution, a file-local declaration named `Volatile` (`annotation class Volatile`) is not told apart from
-Kotlin's: its unqualified use is reported. Suppress that site with a reason, or rename the declaration.
+The rule cannot resolve names, so it errs in these documented ways:
+
+1. A declaration named `Volatile` in the same file or package (`annotation class Volatile`) is not told apart from
+   Kotlin's: its unqualified use is reported. Suppress that site with a reason, or rename the declaration.
+2. An import of any other symbol named `Volatile`, even a function, makes the unqualified name count as that symbol, so
+   a Kotlin `@Volatile` in that file is missed. Qualified uses are still reported.
+3. A typealias of the annotation (`typealias V = kotlin.jvm.Volatile`, then `@V`) is missed. gvy has none.
+4. Kotlin outside `src/main` and `src/test`, such as `tests/e2e` and the Kotlin Multiplatform sources of
+   `viz/ast-model`, is not read by the lint task, so no detekt rule sees it yet (#2480).
 
 ### Enabling a module
 
 The modules listed under `gvy > VolatileProperty > excludes` in `tools/lint/detekt.yml` still have `@Volatile` fields,
 in main or test code. In the pull request that migrates a module, remove its line so the rule guards it. Never add an
-`excludes` line or a detekt baseline entry for a clean module (#2474).
+`excludes` line or a detekt baseline entry for a clean module (#2474). `tools/ci/detekt-volatile-excludes.test.mjs`
+enforces this: every line must name a module's `src` tree that still holds a `@Volatile` annotation.
 
 ## Running the tests
 

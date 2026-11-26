@@ -49,6 +49,40 @@ class VolatilePropertyTest {
     }
 
     @Test
+    fun `a file that imports another Volatile still reports Kotlin's by its qualified name`() {
+        val source = """
+            import com.example.annotations.Volatile
+
+            class A {
+                @Volatile var theirs = false
+                @com.example.annotations.Volatile var theirsQualified = false
+                @kotlin.jvm.Volatile var ours = false
+            }
+        """.trimIndent()
+
+        assertThat(flaggedLines(source)).containsExactly(6)
+    }
+
+    @Test
+    fun `explicit and star imports of Kotlin's annotation keep the plain name reported`() {
+        val directives = listOf(
+            "import kotlin.concurrent.Volatile",
+            "import kotlin.concurrent.*",
+            "import kotlin.jvm.*",
+        )
+        for (directive in directives) {
+            val source = "$directive\n\nclass A {\n    @Volatile var flag = false\n}"
+
+            assertThat(flaggedLines(source)).describedAs(directive).containsExactly(4)
+        }
+    }
+
+    @Test
+    fun `a use-site target on an annotation list is reported`() {
+        assertThat(flaggedLines("class A {\n    @field:[Volatile] var flag = false\n}")).containsExactly(2)
+    }
+
+    @Test
     fun `a suppression silences only the field it annotates`() {
         val source = """
             class A {
