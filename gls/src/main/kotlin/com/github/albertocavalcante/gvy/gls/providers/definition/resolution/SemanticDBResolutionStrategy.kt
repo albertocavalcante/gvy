@@ -4,13 +4,17 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.gvy.gls.converters.toProtocolRange
+import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
+import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionInputs
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.semantics.db.Symbol
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import java.net.URI
 
 /**
  * Resolves symbols using SemanticDB and WorkspaceSymbolIndex for full cross-file resolution.
@@ -69,16 +73,7 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
 
         val occurrence = document.occurrences
             .filter { it.range.contains(line, char) && it.range.startLine == it.range.endLine }
-            .minByOrNull {
-                // Calculate total characters roughly or use lexicographical comparison
-                val lineDiff = it.range.endLine - it.range.startLine
-                if (lineDiff == 0) {
-                    it.range.endColumn - it.range.startColumn
-                } else {
-                    // Prioritize line count for multi-lines, add large constant to differentiate from single line
-                    lineDiff * MULTI_LINE_PRIORITY_WEIGHT + (it.range.endColumn)
-                }
-            }
+            .minByOrNull { it.range.endColumn - it.range.startColumn }
         if (occurrence == null) {
             logger.debug {
                 "No occurrence found at ${context.documentUri}:${context.position.line}:${context.position.character}"
@@ -89,38 +84,51 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
         logger.debug { "Found occurrence for symbol: ${occurrence.symbol} at cursor position" }
 
         if (graph != null && inputs != null) {
-            val (uri, info) = graph.uniqueDefinition(occurrence.symbol)
-                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            val indexed = checkNotNull(graph.getDocumentSnapshot(uri))
-            inputs.qualify(uri, indexed)
-            if (uri != context.documentUri && selected?.let(inputs::declarationUri) != uri) {
-                return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            }
-            val raw = info.range
-            val range = Range(Position(raw.startLine, raw.startColumn), Position(raw.endLine, raw.endColumn))
-            return SymbolResolutionStrategy.found(
-                DefinitionResolver.DefinitionResult.Binary(uri, info.name, range.toProtocolRange(indexed.sourceText)),
-            )
+            return resolveCaptured(graph, inputs, context.documentUri, selected, occurrence.symbol)
         }
+        return resolveIndexed(occurrence.symbol)
+    }
 
+    private suspend fun resolveCaptured(
+        graph: CapturedWorkspaceReferences,
+        inputs: DefinitionInputs,
+        origin: URI,
+        selected: ClassNode?,
+        symbol: String,
+    ): ResolutionResult {
+        val (uri, info) = graph.uniqueDefinition(symbol)
+            ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        val indexed = checkNotNull(graph.getDocumentSnapshot(uri))
+        inputs.qualify(uri, indexed)
+        if (uri != origin && selected?.let(inputs::declarationUri) != uri) {
+            return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        }
+        val raw = info.range
+        val range = Range(Position(raw.startLine, raw.startColumn), Position(raw.endLine, raw.endColumn))
+        return SymbolResolutionStrategy.found(
+            DefinitionResolver.DefinitionResult.Binary(uri, info.name, range.toProtocolRange(indexed.sourceText)),
+        )
+    }
+
+    private fun resolveIndexed(symbol: String): ResolutionResult {
         // 3. Use WorkspaceSymbolIndex to find definition
-        val location = workspaceSymbolIndex.findDefinition(occurrence.symbol)
+        val location = workspaceSymbolIndex.findDefinition(symbol)
         if (location == null) {
-            logger.debug { "Symbol ${occurrence.symbol} not found in workspace index" }
+            logger.debug { "Symbol $symbol not found in workspace index" }
             return SymbolResolutionStrategy.notFound("Symbol not found in workspace index", STRATEGY_NAME)
         }
 
-        logger.debug { "Resolved symbol ${occurrence.symbol} to ${location.uri}" }
+        logger.debug { "Resolved symbol $symbol to ${location.uri}" }
 
         // 4. Get symbol info to extract the name
-        val symbolInfo = workspaceSymbolIndex.findSymbol(occurrence.symbol)
-        val symbolName = symbolInfo?.name ?: Symbol(occurrence.symbol).member
+        val symbolInfo = workspaceSymbolIndex.findSymbol(symbol)
+        val symbolName = symbolInfo?.name ?: Symbol(symbol).member
 
         // 5. Return DefinitionResult.Binary (we don't have access to AST nodes in this strategy)
         // The LSP will handle loading the source when the user navigates to the definition
         return SymbolResolutionStrategy.found(
             DefinitionResolver.DefinitionResult.Binary(
-                uri = java.net.URI(location.uri),
+                uri = URI(location.uri),
                 name = symbolName,
                 range = location.range,
             ),
@@ -129,13 +137,5 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
 
     companion object {
         private const val STRATEGY_NAME = "SemanticDB"
-
-        /**
-         * Priority weight for multi-line occurrences.
-         *
-         * NOTE: Value chosen to ensure any multi-line range is deprioritized
-         * compared to single-line ranges (max ~200 chars/line). 10000 >> 200.
-         */
-        private const val MULTI_LINE_PRIORITY_WEIGHT = 10000
     }
 }

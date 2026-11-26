@@ -9,8 +9,13 @@ package com.github.albertocavalcante.gvy.gls.providers.crossfile
 
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationEnsurer
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.ReferenceReadiness
+import com.github.albertocavalcante.gvy.gls.compilation.SemanticSnapshotGuard
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
+import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
+import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionInputs
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionProvider
@@ -116,16 +121,26 @@ class CrossFileOperationsHandler(
     internal suspend fun references(request: NavigationRequest, includeDeclaration: Boolean): List<Location> =
         failingAsInternalError("finding references") {
             request.query(compilationService, emptyList()) { held ->
-                referenceProvider.navigationReferences(request.uri, request.position, held, includeDeclaration) { scan ->
+                referenceProvider.navigationReferences(
+                    request.uri,
+                    request.position,
+                    held,
+                    includeDeclaration,
+                ) { scan ->
+                    if (held.referenceProducer?.complete != true) {
+                        throw navigationUnavailable("Complete references require a complete origin parse")
+                    }
                     ensureAllOpenDocumentsCompiled()
                     request.readiness.prepareOpenSources(compilationService)
                     if (request.source.buffer == null) compilationService.ensureCompiled(request.uri)
-                    when (val graph = request.readiness.query { qualified ->
-                        if (!qualified.matches(request.uri, held)) {
-                            throw navigationUnavailable("Reference origin and index have different producers")
+                    when (
+                        val graph = request.readiness.query { qualified ->
+                            if (!qualified.matches(request.uri, held)) {
+                                throw navigationUnavailable("Reference origin and index have different producers")
+                            }
+                            scan(qualified)
                         }
-                        scan(qualified)
-                    }) {
+                    ) {
                         is SnapshotQuery.Answer -> graph.value
                         SnapshotQuery.Stale -> throw navigationChanged("Reference inputs changed")
                         SnapshotQuery.Missing -> throw navigationUnavailable("Reference index is missing")
@@ -250,6 +265,14 @@ class CrossFileOperationsHandler(
     private fun contentModified(message: String) =
         ResponseErrorException(ResponseError(ResponseErrorCode.ContentModified, message, null))
 
+    internal suspend fun implementations(request: NavigationRequest): Either<List<Location>, List<LocationLink>> =
+        failingAsInternalError("finding implementations") {
+            val locations = request.query(compilationService, emptyList()) { held ->
+                implementations(request.uri, request.position, held)
+            }
+            Either.forLeft(locations)
+        }
+
     /**
      * Get implementations of the symbol at the given position.
      *
@@ -268,42 +291,71 @@ class CrossFileOperationsHandler(
 
         return failingAsInternalError("finding implementations") {
             withCurrentOrigin(documentUri) {
-                val snapshot = acquireImplementationSnapshot(documentUri)
-                if (snapshot == null) {
-                    logger.warn { "Document $documentUri not compiled, cannot provide implementations" }
-                    Either.forLeft(emptyList())
-                } else {
-                    implementationProvider.provideImplementations(documentUri, position, snapshot)
-                        .toList()
-                        .also { logger.debug { "Found ${it.size} implementations" } }
-                        .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
-                }
+                Either.forLeft(implementations(documentUri, position, null))
             }
         }
     }
 
-    private suspend fun acquireImplementationSnapshot(uri: URI): Map<URI, ImplementationDocument>? {
+    private suspend fun implementations(
+        uri: URI,
+        position: Position,
+        origin: CompiledDocumentSnapshot?,
+    ): List<Location> {
+        val snapshot = acquireImplementationSnapshot(uri) ?: return emptyList()
+        return snapshot.query(origin) { implementationProvider.provideImplementations(uri, position, it).toList() }
+    }
+
+    private class ImplementationSnapshot(
+        val documents: Map<URI, ImplementationDocument>,
+        private val view: CapturedWorkspaceReferences,
+        private val readiness: ReferenceReadiness,
+    ) {
+        suspend fun <T> query(
+            origin: CompiledDocumentSnapshot?,
+            compute: suspend (Map<URI, ImplementationDocument>) -> T,
+        ): T {
+            val caller = currentCoroutineContext()
+            val current = { readiness.implementationInputsCurrent(view, documents, origin) }
+            if (!caller.inputsCurrent(current)) throw navigationChanged("Implementation inputs changed")
+            val result = runSuspendCatching { compute(documents) }
+            if (!caller.inputsCurrent(current)) throw navigationChanged("Implementation inputs changed")
+            return result.getOrThrow()
+        }
+    }
+
+    private fun captureImplementations(
+        readiness: ReferenceReadiness,
+        generation: SemanticSnapshotGuard.Generation,
+        include: (URI, ImplementationDocument) -> Boolean = { _, _ -> true },
+    ): ImplementationSnapshot? {
+        val view = readiness.captureMembersView()
+        val detached = compilationService.captureImplementationSnapshot(generation) ?: return null
+        if (view.visibleDocuments != detached.keys || !view.isCurrent()) return null
+        return ImplementationSnapshot(detached.filter { (uri, facts) -> include(uri, facts) }, view, readiness)
+    }
+
+    private suspend fun acquireImplementationSnapshot(uri: URI): ImplementationSnapshot? {
         repeat(MAX_IMPLEMENTATION_SNAPSHOT_ATTEMPTS) {
             currentCoroutineContext().ensureActive()
             val generation = compilationService.beginImplementationQuery()
             ensureAllOpenDocumentsCompiled()
             val origin = ensureCompiledOrCompileNow(uri) ?: return null
-            val snapshot = compilationService.captureImplementationSnapshot(generation) ?: return@repeat
+            val readiness = compilationService.referenceReadiness(uri)
+            readiness.prepareOpenSources(compilationService)
+            val snapshot = captureImplementations(readiness, generation) ?: return@repeat
             val required = documentProvider.snapshot().toMutableMap()
             origin.sourceText?.let { required.putIfAbsent(uri, it) }
             val missing = required.filter { (document, text) ->
-                snapshot[document]?.sourceText != text
+                snapshot.documents[document]?.sourceText != text
             }
             if (missing.isEmpty()) return snapshot
             // An old compile can restore AST/symbol caches after its semantic publication was invalidated.
             // Cache-hit compilation republishes missing facts; an unrelated malformed buffer may still have none.
             missing.forEach { (document, text) -> compilationService.compile(document, text) }
-            compilationService.captureImplementationSnapshot(generation)?.let { repaired ->
-                // Failed parsing can leave the prior document in the database; never navigate its stale text.
-                return repaired.filter { (document, facts) ->
-                    document !in required || facts.sourceText == required[document]
-                }
-            }
+            // Failed parsing can leave the prior document in the database; never navigate its stale text.
+            captureImplementations(readiness, generation) { document, facts ->
+                document !in required || facts.sourceText == required[document]
+            }?.let { return it }
         }
         // Retry only after an observed invalidation, never because a valid query has no implementations.
         throw contentModified("Workspace changed during implementation acquisition")

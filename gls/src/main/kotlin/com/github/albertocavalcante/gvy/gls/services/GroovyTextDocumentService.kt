@@ -549,8 +549,9 @@ class GroovyTextDocumentService(
 
     override fun implementation(
         params: ImplementationParams,
-    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
-        crossFileOperationsHandler.getImplementations(params.textDocument.uri, params.position)
+    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+        val request = runCatching { crossFileOperationsHandler.capture(params.textDocument.uri, params.position) }
+        return coroutineScope.future { crossFileOperationsHandler.implementations(request.getOrThrow()) }
     }
 
     override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> =

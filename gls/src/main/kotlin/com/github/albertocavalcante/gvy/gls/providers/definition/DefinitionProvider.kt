@@ -57,10 +57,9 @@ class DefinitionProvider(
         uri: String,
         position: Position,
         inputs: DefinitionInputs? = null,
-    ): Result<List<Location>> =
-        lookup(uri, position, inputs, spockTarget = { it }, render = {
-            locationOf(it.result, it.context, it.documentUri)
-        })
+    ): Result<List<Location>> = lookup(uri, position, inputs, spockTarget = { it }, render = {
+        locationOf(it.result, it.context, it.documentUri)
+    })
 
     /** Like [lookupDefinitions], as [LocationLink]s, resolving the position once. */
     internal suspend fun lookupDefinitionLinks(
@@ -74,7 +73,7 @@ class DefinitionProvider(
         spockTarget = { LocationLink(it.uri, it.range, it.range) },
         render = {
             val originNode = it.context.visitor.getNodeAt(it.documentUri, it.position)
-            createLocationLink(it.result, originNode, it.context, it.documentUri)
+            createLocationLink(it.result, originNode, it.context, it.documentUri, position)
         },
     )
 
@@ -103,7 +102,7 @@ class DefinitionProvider(
     ): Result<List<T>> {
         val documentUri = parseUriOrReport(uri) ?: return Result.success(emptyList())
         val attempt = try {
-            runSuspendCatching { attemptLookup(uri, documentUri, position, inputs, spockTarget, render) }
+            runSuspendCatching { attemptLookup(documentUri, position, inputs, spockTarget, render) }
         } catch (e: CancellationException) {
             logger.debug { "Definition resolution cancelled by client for: $uri" }
             telemetrySink.report(
@@ -120,13 +119,13 @@ class DefinitionProvider(
     }
 
     private suspend fun <T> attemptLookup(
-        uri: String,
         documentUri: URI,
         position: Position,
         inputs: DefinitionInputs?,
         spockTarget: (Location) -> T,
         render: suspend (Resolved) -> T,
     ): Verdict<T> {
+        val uri = documentUri.toString()
         // One snapshot supplies text, AST and symbols, so a concurrent recompile cannot mix generations.
         val snapshot = inputs?.origin ?: compilationService.getCompiledSnapshot(documentUri)
         spockDefinition(documentUri, position, snapshot)?.let {
@@ -187,8 +186,9 @@ class DefinitionProvider(
         originNode: ASTNode?,
         context: DefinitionContext,
         documentUri: URI,
+        position: Position,
     ): LocationLink {
-        val originSelectionRange = originNode?.let {
+        val originSelectionRange = context.inputs?.origin?.importSelectionAt(position) ?: originNode?.let {
             computeOriginSelectionRange(it)?.toProtocolRange(context.sourceText) ?: EMPTY_RANGE
         }
 
@@ -420,10 +420,10 @@ class DefinitionProvider(
             // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
             // (e.g., Jenkins vars) that aren't in the visitor's AST.
             val targetUri = context.inputs?.targetUri(result)?.toString()
-                    ?: result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
+                ?: result.node.toLspLocation(context.visitor)?.uri ?: result.uri.toString()
             val range = result.node.toProtocolRange(
                 context.inputs?.textOf(URI.create(targetUri))
-                        ?: compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
+                    ?: compilationService.compiledTextOf(targetUri, documentUri, context.sourceText),
             ) ?: EMPTY_RANGE
             Location(targetUri, range)
         }
@@ -495,5 +495,15 @@ fun interface DefinitionTelemetrySink {
 
     companion object {
         val NO_OP: DefinitionTelemetrySink = DefinitionTelemetrySink { _ -> }
+    }
+}
+
+private fun CompiledDocumentSnapshot.importSelectionAt(position: Position): Range? {
+    val module = parseResult.ast ?: return null
+    val imports = module.imports + module.staticImports.values + module.staticStarImports.values
+    val annotations = parseResult.sourceAnnotations
+    val node = annotations.importAt(imports, position.line, position.character) ?: return null
+    return annotations.importSelectionRange(node)?.let { range ->
+        Range(Position(range.start.line, range.start.character), Position(range.end.line, range.end.character))
     }
 }

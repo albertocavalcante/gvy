@@ -4,11 +4,13 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionInputs
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
-import com.github.albertocavalcante.gvy.gls.sources.definitionFor
 import com.github.albertocavalcante.gvy.gls.sources.binaryResourceUri
+import com.github.albertocavalcante.gvy.gls.sources.definitionFor
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ImportNode
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
@@ -45,22 +47,7 @@ class ClasspathResolutionStrategy(
                 return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
             }
 
-        context.inputs?.let { inputs ->
-            val selected = inputs.binaryType(boundType(context.targetNode))
-                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            if (selected.name != className) return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            val resource = selected.binaryResourceUri() ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            val member = importNode?.takeIf { it.isStatic }?.fieldName
-            val result = sourceNavigator?.definitionFor(selected, member, inputs::observeAttachment)
-            if (result is SourceNavigator.SourceResult.SourceLocation) {
-                return SymbolResolutionStrategy.found(
-                    DefinitionResolver.DefinitionResult.Binary(
-                        result.uri, selected.name, result.lineNumber?.let(::toZeroBasedLineRange),
-                    ),
-                )
-            }
-            return resolveBinaryFallback(resource, selected.name)
-        }
+        context.inputs?.let { return resolveSelected(context.targetNode, className, it) }
 
         val classpathUri = compilationService.findClasspathClass(className)
             ?: run {
@@ -88,6 +75,26 @@ class ClasspathResolutionStrategy(
         }
 
         return resolveBinaryFallback(classpathUri, className)
+    }
+
+    private suspend fun resolveSelected(node: ASTNode, className: String, inputs: DefinitionInputs): ResolutionResult {
+        val selected = inputs.binaryType(boundType(node))
+            ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        if (selected.name != className) return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        val resource = selected.binaryResourceUri() ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        val member = (node as? ImportNode)?.takeIf { it.isStatic }?.fieldName
+        val result = sourceNavigator?.definitionFor(selected, member, inputs::observeAttachment)
+        return if (result is SourceNavigator.SourceResult.SourceLocation) {
+            SymbolResolutionStrategy.found(
+                DefinitionResolver.DefinitionResult.Binary(
+                    result.uri,
+                    selected.name,
+                    result.lineNumber?.let(::toZeroBasedLineRange),
+                ),
+            )
+        } else {
+            resolveBinaryFallback(resource, selected.name)
+        }
     }
 
     private suspend fun navigateToSourceIfPossible(

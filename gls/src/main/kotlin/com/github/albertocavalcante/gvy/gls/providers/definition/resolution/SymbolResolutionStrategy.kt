@@ -13,6 +13,7 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResol
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.codehaus.groovy.ast.ASTNode
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import java.net.URI
 
 /**
@@ -128,13 +129,13 @@ fun interface SymbolResolutionStrategy {
                         throw e
                     } catch (e: Error) {
                         throw e
+                    } catch (e: ResponseErrorException) {
+                        if (context.inputs != null) throw e
+                        val thrown = strategy.failure(e)
+                        if (firstThrow == null) firstThrow = thrown
+                        thrown.left()
                     } catch (e: Exception) {
-                        if (context.inputs != null && e is org.eclipse.lsp4j.jsonrpc.ResponseErrorException) throw e
-                        // Broad on purpose: any strategy bug is reported as a typed failure carrying the throwable,
-                        // never as "not found" and never swallowed.
-                        val name = strategy::class.simpleName ?: "unknown"
-                        logger.debug(e) { "Resolution strategy $name threw unexpectedly" }
-                        val thrown = ResolutionError("Strategy threw: ${e.message ?: e::class.simpleName}", name, e)
+                        val thrown = strategy.failure(e)
                         if (firstThrow == null) firstThrow = thrown
                         thrown.left()
                     }
@@ -142,6 +143,12 @@ fun interface SymbolResolutionStrategy {
 
                 if (result.isRight()) result else (firstThrow?.left() ?: result)
             }
+
+        private fun SymbolResolutionStrategy.failure(error: Exception): ResolutionError {
+            val name = this::class.simpleName ?: "unknown"
+            logger.debug(error) { "Resolution strategy $name threw unexpectedly" }
+            return ResolutionError("Strategy threw: ${error.message ?: error::class.simpleName}", name, error)
+        }
 
         fun pipeline(vararg strategies: SymbolResolutionStrategy): SymbolResolutionStrategy =
             pipeline(strategies.asList())

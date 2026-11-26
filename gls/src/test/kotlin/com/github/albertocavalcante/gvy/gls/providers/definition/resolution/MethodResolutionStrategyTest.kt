@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
+import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
@@ -130,9 +131,7 @@ class MethodResolutionStrategyTest {
             every { classExpr.type } returns classNode
             every { classNode.name } returns "java.lang.Integer"
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val reflectedMethod = createReflectedMethod(
                 name = "valueOf",
@@ -168,9 +167,7 @@ class MethodResolutionStrategyTest {
             every { methodCall.isImplicitThis } returns true
             every { methodCall.arguments } returns ArgumentListExpression(emptyList())
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val result = strategy.resolve(context)
 
@@ -204,9 +201,7 @@ class MethodResolutionStrategyTest {
             every { classExpr.type } returns classNode
             every { classNode.name } returns "java.lang.String"
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             every { classpathService.getMethods("java.lang.String") } returns emptyList()
 
@@ -236,9 +231,7 @@ class MethodResolutionStrategyTest {
             every { classExpr.type } returns classNode
             every { classNode.name } returns "java.lang.String"
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             // Two overloads: substring(int) and substring(int, int)
             val method1Arg = createReflectedMethod(
@@ -294,9 +287,7 @@ class MethodResolutionStrategyTest {
             every { classExpr.type } returns classNode
             every { classNode.name } returns "java.lang.String"
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             // Multiple overloads with different arg counts
             val method1Arg = createReflectedMethod("format", listOf("String"), "java.lang.String")
@@ -349,9 +340,7 @@ class MethodResolutionStrategyTest {
             every { classExpr.type } returns classNode
             every { classNode.name } returns "com.example.MyClass"
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val method = createReflectedMethod("someMethod", listOf("Object", "Object"), "com.example.MyClass")
             every { classpathService.getMethods("com.example.MyClass") } returns listOf(method)
@@ -384,9 +373,7 @@ class MethodResolutionStrategyTest {
         fun `returns found with line number from source location`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "format", 1)
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val method = createReflectedMethod("format", listOf("String"), "java.lang.String")
             every { classpathService.getMethods("java.lang.String") } returns listOf(method)
@@ -418,9 +405,7 @@ class MethodResolutionStrategyTest {
         fun `returns not found when source navigator returns BinaryOnly`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "format", 1)
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val method = createReflectedMethod("format", listOf("String"), "java.lang.String")
             every { classpathService.getMethods("java.lang.String") } returns listOf(method)
@@ -449,9 +434,7 @@ class MethodResolutionStrategyTest {
 
             val methodCall = createStaticMethodCall("java.lang.String", "length", 0)
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val method = createReflectedMethod("length", emptyList(), "java.lang.String")
             every { classpathService.getMethods("java.lang.String") } returns listOf(method)
@@ -478,9 +461,7 @@ class MethodResolutionStrategyTest {
         fun `does not match private methods`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "privateHelper", 0)
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             val privateMethod = ReflectedMethod(
                 name = "privateHelper",
@@ -517,9 +498,7 @@ class MethodResolutionStrategyTest {
             // Mock type resolution to return ArrayList
             every { compilationService.getAst(any()) } returns mockk()
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             // ArrayList doesn't define toString, it's inherited
             every { classpathService.getMethods("java.util.ArrayList") } returns emptyList()
@@ -540,9 +519,7 @@ class MethodResolutionStrategyTest {
             // String.format(String, Object...) should match calls with any number of args
             val methodCall = createStaticMethodCall("java.lang.String", "format", 5) // format + 4 varargs
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             // Only one format method with varargs
             val formatMethod = ReflectedMethod(
@@ -587,9 +564,7 @@ class MethodResolutionStrategyTest {
             every { methodCall.isImplicitThis } returns false
             every { methodCall.arguments } returns ArgumentListExpression(emptyList())
 
-            val context = mockk<ResolutionContext>()
-            every { context.targetNode } returns methodCall
-            every { context.documentUri } returns URI("file:///test.groovy")
+            val context = methodContext(methodCall)
 
             // String doesn't have each()
             every { classpathService.getMethods("java.lang.String") } returns emptyList()
@@ -621,6 +596,9 @@ class MethodResolutionStrategyTest {
         isPublic = true,
         doc = "",
     )
+
+    private fun methodContext(call: MethodCallExpression) =
+        ResolutionContext(call, URI("file:///test.groovy"), Position(0, 0))
 
     private fun createStaticMethodCall(className: String, methodName: String, argCount: Int): MethodCallExpression {
         val methodCall = mockk<MethodCallExpression>()

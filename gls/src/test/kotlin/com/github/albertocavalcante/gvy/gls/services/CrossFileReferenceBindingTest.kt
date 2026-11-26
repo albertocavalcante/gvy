@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseMode
+import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +27,7 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ExecutionException
@@ -79,18 +81,7 @@ class CrossFileReferenceBindingTest {
                     val sourceMethod = owner.getDeclaredMethods(method).single()
                     val sourceId = SemanticDocumentBuilder.createMethodSymbolId(owner, sourceMethod).id
                     val binaryParse = parses.getValue(caller)
-                    val expression = binaryParse.astModel.getNodes(caller).filterIsInstance<MethodCallExpression>()
-                        .single { it.methodAsString == method }
-                    val parameter = assertNotNull(binaryParse.ast).classes.single { it.name == "Caller" }
-                        .getDeclaredMethods("binaryCaller").single().parameters.single()
-                    assertSame(parameter, assertIs<VariableExpression>(expression.objectExpression).accessedVariable)
-                    val binary = parameter.type.redirect()
-                    assertEquals(OWNER, binary.name)
-                    assertFalse(binary.isPrimaryClassNode)
-                    assertTrue(binary.isResolved)
-                    assertNull(binary.module)
-                    val binaryMethod = binary.getDeclaredMethods(method).single()
-                    assertEquals(sourceId, SemanticDocumentBuilder.createMethodSymbolId(binary, binaryMethod).id)
+                    assertBinaryBinding(binaryParse, caller, method, sourceId)
                     val indexed = assertNotNull(qualified.index.getDocumentSnapshot(caller))
                     assertEquals(callerText, indexed.sourceText)
                     assertTrue(indexed.document.occurrences.any { it.symbol == sourceId })
@@ -108,6 +99,21 @@ class CrossFileReferenceBindingTest {
                 compilation.shutdown()
             }
         }
+
+    private fun assertBinaryBinding(binaryParse: ParseResult, caller: URI, method: String, sourceId: String) {
+        val expression = binaryParse.astModel.getNodes(caller).filterIsInstance<MethodCallExpression>()
+            .single { it.methodAsString == method }
+        val parameter = assertNotNull(binaryParse.ast).classes.single { it.name == "Caller" }
+            .getDeclaredMethods("binaryCaller").single().parameters.single()
+        assertSame(parameter, assertIs<VariableExpression>(expression.objectExpression).accessedVariable)
+        val binary = parameter.type.redirect()
+        assertEquals(OWNER, binary.name)
+        assertFalse(binary.isPrimaryClassNode)
+        assertTrue(binary.isResolved)
+        assertNull(binary.module)
+        val binaryMethod = binary.getDeclaredMethods(method).single()
+        assertEquals(sourceId, SemanticDocumentBuilder.createMethodSymbolId(binary, binaryMethod).id)
+    }
 
     private companion object {
         const val OWNER = "java.util.concurrent.Semaphore"

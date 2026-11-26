@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionInputs
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.sources.definitionFor
@@ -51,26 +52,7 @@ class MethodResolutionStrategy(
         val methodName = methodCall.methodAsString
             ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
 
-        context.inputs?.let { inputs ->
-            if (methodCall.isImplicitThis || sourceNavigator == null) {
-                return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            }
-            val owner = inputs.binaryType(boundType(methodCall))
-                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            val arity = (methodCall.arguments as? TupleExpression)?.expressions?.size
-            val declaration = withContext(inputs.binaryContext) {
-                owner.methods.filter { it.name == methodName && (arity == null || it.parameterCount == arity) }
-                    .map { it.declaringClass }.distinct().singleOrNull()
-            } ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            val location = sourceNavigator.definitionFor(declaration, methodName, inputs::observeAttachment)
-                as? SourceNavigator.SourceResult.SourceLocation
-                ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
-            return SymbolResolutionStrategy.found(
-                DefinitionResolver.DefinitionResult.Binary(
-                    location.uri, methodName, location.lineNumber?.let(::toZeroBasedLineRange),
-                ),
-            )
-        }
+        context.inputs?.let { return resolveSelected(methodCall, methodName, it) }
 
         // Resolve the receiver type
         val receiverType = resolveReceiverType(methodCall, context)
@@ -116,6 +98,42 @@ class MethodResolutionStrategy(
             "Method found but source navigation not available",
             STRATEGY_NAME,
         )
+    }
+
+    private suspend fun resolveSelected(
+        methodCall: MethodCallExpression,
+        methodName: String,
+        inputs: DefinitionInputs,
+    ): ResolutionResult {
+        if (methodCall.isImplicitThis || sourceNavigator == null) {
+            return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        }
+        val declaration = binaryDeclaration(methodCall, methodName, inputs)
+            ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        val location = sourceNavigator.definitionFor(declaration, methodName, inputs::observeAttachment)
+            as? SourceNavigator.SourceResult.SourceLocation
+            ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        return SymbolResolutionStrategy.found(
+            DefinitionResolver.DefinitionResult.Binary(
+                location.uri,
+                methodName,
+                location.lineNumber?.let(::toZeroBasedLineRange),
+            ),
+        )
+    }
+
+    private suspend fun binaryDeclaration(
+        methodCall: MethodCallExpression,
+        methodName: String,
+        inputs: DefinitionInputs,
+    ): Class<*>? {
+        val owner = inputs.binaryType(boundType(methodCall))
+            ?: return null
+        val arity = (methodCall.arguments as? TupleExpression)?.expressions?.size
+        return withContext(inputs.binaryContext) {
+            owner.methods.filter { it.name == methodName && (arity == null || it.parameterCount == arity) }
+                .map { it.declaringClass }.distinct().singleOrNull()
+        }
     }
 
     /**

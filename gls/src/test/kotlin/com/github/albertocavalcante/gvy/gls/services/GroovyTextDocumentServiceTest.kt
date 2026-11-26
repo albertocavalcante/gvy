@@ -4,55 +4,38 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
-import io.mockk.coEvery
-import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.cancel
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import kotlin.test.assertTrue
 
 class GroovyTextDocumentServiceTest {
 
     @Test
-    fun `test definition returns empty list when compilation fails or is missing`(): Unit = runBlocking {
-        // Mock dependencies
-        val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-        val workspaceManager = mockk<WorkspaceManager>(relaxed = true)
+    fun `test definition returns empty list when compilation fails or is missing`(@TempDir root: Path) {
+        val documents = DocumentProvider()
+        val compilation = GroovyCompilationService(documentProvider = documents)
         val scope = CoroutineScope(Dispatchers.Unconfined)
-
-        // Mock workspaceManager property which is accessed by CompilationEnsurer
-        every { compilationService.workspaceManager } returns workspaceManager
-
-        // Create service under test
-        val service = GroovyTextDocumentService(
-            coroutineScope = scope,
-            compilationService = compilationService,
-            options = GroovyTextDocumentServiceOptions(
-                client = { null },
-            ),
-        )
-
-        val uri = "file:///test/Test.groovy"
-        val params = DefinitionParams(
-            TextDocumentIdentifier(uri),
-            Position(0, 0),
-        )
-
-        // Mock ensureCompiled to return null (simulating missing compilation)
-        coEvery { compilationService.ensureCompiled(any()) } returns null
-
-        // Execute
-        val resultFuture = service.definition(params)
-        val result = resultFuture.get()
-
-        // Verify
-        assertTrue(result.isLeft, "Result should be Left (List<Location>)")
-        assertTrue(result.left.isEmpty(), "Result should be empty list when compilation is missing")
+        try {
+            val service = GroovyTextDocumentService(
+                scope,
+                compilation,
+                GroovyTextDocumentServiceOptions(documentProvider = documents),
+            )
+            val uri = root.resolve("Missing.groovy").toUri().toString()
+            val params = DefinitionParams(TextDocumentIdentifier(uri), Position(0, 0))
+            val result = service.definition(params).get()
+            assertTrue(result.isLeft, "Result should be Left (List<Location>)")
+            assertTrue(result.left.isEmpty(), "Result should be empty list when compilation is missing")
+        } finally {
+            scope.cancel()
+            compilation.shutdown()
+        }
     }
 }

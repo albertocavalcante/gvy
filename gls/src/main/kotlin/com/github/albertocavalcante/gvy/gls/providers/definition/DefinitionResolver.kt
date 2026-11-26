@@ -58,7 +58,6 @@ class DefinitionResolver internal constructor(
         workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
     ) : this(astVisitor, symbolTable, compilationService, sourceNavigator, workspaceSymbolIndex, null)
 
-
     private val logger = KotlinLogging.logger {}
 
     /**
@@ -78,7 +77,9 @@ class DefinitionResolver internal constructor(
         run {
             val strategies = buildList {
                 compilationService?.let { service ->
-                    val capabilities = if (inputs != null) inputs.jenkins.capability else {
+                    val capabilities = if (inputs != null) {
+                        inputs.jenkins.capability
+                    } else {
                         service.workspaceManager.getJenkinsCapabilities()
                     }
                     capabilities?.let {
@@ -88,12 +89,18 @@ class DefinitionResolver internal constructor(
                                 // Same mode decision as Jenkins hover/completion; read the configuration per
                                 // request so a groovy.mode change applies without rebuilding the resolver.
                                 isJenkinsModeEnabled = { uri ->
-                                    (inputs?.jenkins?.mode ?: ModeResolver.fromConfig(service.serverConfiguration, capabilities))
+                                    (
+                                        inputs?.jenkins?.mode
+                                            ?: ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                        )
                                         .isJenkinsModeEnabled(uri)
                                 },
                                 astModel = astVisitor,
                                 isGroovyOnlyMode = {
-                                    (inputs?.jenkins?.mode ?: ModeResolver.fromConfig(service.serverConfiguration, capabilities))
+                                    (
+                                        inputs?.jenkins?.mode
+                                            ?: ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                        )
                                         .isGroovyOnlyMode()
                                 },
                             ),
@@ -195,7 +202,13 @@ class DefinitionResolver internal constructor(
      * Prefers more specific nodes over broad containers (ClassNode, BlockStatement, etc.)
      */
     private fun selectBestNode(uri: URI, position: Position, trackedNode: ASTNode?): ASTNode {
-        val module = if (inputs != null) inputs.origin.parseResult.ast else compilationService?.getAst(uri) as? ModuleNode
+        val module = if (inputs !=
+            null
+        ) {
+            inputs.origin.parseResult.ast
+        } else {
+            compilationService?.getAst(uri) as? ModuleNode
+        }
         val fallbackNode = module?.findNodeAt(position.line, position.character)
 
         return when {

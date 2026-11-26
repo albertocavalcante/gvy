@@ -91,25 +91,11 @@ class CrossFileDefinitionOwnershipTest {
             val (binary, name) = reached.get(15, TimeUnit.SECONDS)
             assertEquals("java.util.ArrayList", name)
             assertEquals(URI.create("jrt:/java.base/java/util/ArrayList.class"), binary)
-            val (request, parsed) = parses.last { it.first.compilePhase == Phases.CANONICALIZATION }
-            assertEquals(text, request.content)
-            assertEquals(ParseMode.WORKSPACE, request.parseMode)
-            assertEquals(emptyList(), request.classpath)
-            val bound = assertNotNull(parsed.ast).imports.single { it.className == name }.type.redirect()
-            assertTrue(bound.isResolved)
-            assertFalse(bound.isPrimaryClassNode)
-
+            assertNativeImport(parses, text, name)
             when (change) {
                 Change.NONE -> Unit
                 Change.WORKER -> {
-                    val worker = WorkerDescriptor(
-                        id = "definition-replacement",
-                        supportedRange = GroovyVersionRange(parseGroovyVersion("1.0.0"), parseGroovyVersion("5.0.0")),
-                        capabilities = WorkerCapabilities(),
-                        connector = WorkerConnector.InProcess,
-                    )
-                    assertTrue(compilation.updateSelectedWorker(worker))
-                    assertEquals(worker, compilation.getSelectedWorker())
+                    replaceWorker(compilation)
                 }
                 Change.CLASSPATH_DURING_SOURCE_FAILURE -> {
                     val fingerprint = compilation.workspaceManager.fingerprintFor(origin)
@@ -134,5 +120,26 @@ class CrossFileDefinitionOwnershipTest {
             scope.cancel()
             compilation.shutdown()
         }
+    }
+
+    private fun assertNativeImport(parses: List<Pair<ParseRequest, ParseResult>>, text: String, name: String) {
+        val (request, parsed) = parses.last { it.first.compilePhase == Phases.CANONICALIZATION }
+        assertEquals(text, request.content)
+        assertEquals(ParseMode.WORKSPACE, request.parseMode)
+        assertEquals(emptyList(), request.classpath)
+        val bound = assertNotNull(parsed.ast).imports.single { it.className == name }.type.redirect()
+        assertTrue(bound.isResolved)
+        assertFalse(bound.isPrimaryClassNode)
+    }
+
+    private fun replaceWorker(compilation: GroovyCompilationService) {
+        val worker = WorkerDescriptor(
+            id = "definition-replacement",
+            supportedRange = GroovyVersionRange(parseGroovyVersion("1.0.0"), parseGroovyVersion("5.0.0")),
+            capabilities = WorkerCapabilities(),
+            connector = WorkerConnector.InProcess,
+        )
+        assertTrue(compilation.updateSelectedWorker(worker))
+        assertEquals(worker, compilation.getSelectedWorker())
     }
 }

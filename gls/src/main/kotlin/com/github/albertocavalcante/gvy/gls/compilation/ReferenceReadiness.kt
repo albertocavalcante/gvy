@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.indexing.CapturedWorkspaceReferences
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
 import com.github.albertocavalcante.nativeapi.ParseMode
 import kotlinx.coroutines.Dispatchers
@@ -131,8 +132,44 @@ internal class ReferenceReadiness(
         null
     }
 
+    /** Bind detached hierarchy records to the publications which supplied their edges and method signatures. */
+    fun implementationInputsCurrent(
+        view: CapturedWorkspaceReferences,
+        documents: Map<URI, ImplementationDocument>,
+        origin: CompiledDocumentSnapshot?,
+    ): Boolean {
+        val selected = currentPublication(source.uri)?.producer
+        val sameOrigin = origin == null || (
+            origin.referenceProducer?.complete == true && documents[source.uri]?.sourceText == origin.sourceText &&
+                selected?.matches(origin.referenceProducer) == true
+            )
+        return sameOrigin && documents.all { (uri, facts) ->
+            val indexed = view.getDocumentSnapshot(uri)
+            indexed != null && indexed.document === facts.document && indexed.sourceText == facts.sourceText &&
+                implementationRowCurrent(uri, facts, selected)
+        } && view.isCurrent() && source.isCurrent()
+    }
+
+    private fun implementationRowCurrent(
+        uri: URI,
+        facts: ImplementationDocument,
+        environment: ReferenceProducer?,
+    ): Boolean {
+        val publication = currentPublication(uri) ?: return false
+        val producer = publication.producer ?: return false
+        val content = facts.sourceText ?: return false
+        return publication.covers(facts.document) && producer.sameEnvironment(environment) &&
+            matchesSource(uri, content, publication) && producer.isCurrent(source, uri, content, selectSources)
+    }
+
     /** A closed document may have been indexed by a workspace parse. This selects its mode only. */
-    fun closedMode(uri: URI): ParseMode? = if (uri in source.documents) null else currentPublication(uri)?.producer?.mode
+    fun closedMode(uri: URI): ParseMode? = if (uri in
+        source.documents
+    ) {
+        null
+    } else {
+        currentPublication(uri)?.producer?.mode
+    }
 
     /** Qualify a consumed index record against the actual held parse of that same document. */
     fun qualifyDocument(uri: URI, indexed: SemanticDocumentSnapshot, held: CompiledDocumentSnapshot): (() -> Boolean)? {
@@ -142,7 +179,9 @@ internal class ReferenceReadiness(
         val producer = publication.producer ?: return null
         if (!publication.covers(indexed.document) || !producer.matches(expected) ||
             !matchesSource(uri, held.sourceText, publication)
-        ) return null
+        ) {
+            return null
+        }
         val current = {
             producer.isCurrent(source, uri, held.sourceText, selectSources) &&
                 currentPublication(uri)?.let { it.covers(indexed.document) && it.producer === producer } == true &&

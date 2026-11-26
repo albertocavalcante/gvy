@@ -24,6 +24,8 @@ import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import java.net.URI
 
 /**
@@ -102,15 +104,12 @@ class JenkinsVarsResolutionStrategy(
         // Uses the callLineNumber parsed from the vars file to navigate directly to `def call(...)`.
         val uri = matchingVar.path.toUri()
         val inputs = context.inputs
-        val callLine = if (inputs == null) matchingVar.callLineNumber else {
-            // The Jenkins inventory is read from disk. An open vars file may have moved its call declaration.
-            val module = inputs.target(uri).parseResult.ast
-                ?: throw com.github.albertocavalcante.gvy.gls.providers.crossfile.navigationUnavailable(
-                    "Missing Jenkins global source at $uri",
-                )
-            module.classes.filter { it.isScript }.flatMap { it.getDeclaredMethods("call") }
-                .map { it.lineNumber }.filter { it > 0 }.minOrNull() ?: 1
+        if (inputs != null) {
+            val line = inputs.jenkinsCallLine(uri) - 1
+            val range = Range(Position(line, 0), Position(line, 0))
+            return SymbolResolutionStrategy.found(DefinitionResolver.DefinitionResult.Binary(uri, varName, range))
         }
+        val callLine = matchingVar.callLineNumber
         val syntheticNode = ClassNode(matchingVar.name, 0, null).apply {
             lineNumber = callLine
             columnNumber = 1

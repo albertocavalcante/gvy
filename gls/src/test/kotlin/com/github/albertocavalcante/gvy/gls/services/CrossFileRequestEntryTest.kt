@@ -29,6 +29,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import java.net.URI
 import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
@@ -80,11 +81,7 @@ class CrossFileRequestEntryTest {
                 }
                 release.countDown()
                 if (reopen) {
-                    for (answer in listOf(definition, references)) {
-                        val failure = assertThrows<ExecutionException> { answer.get(15, TimeUnit.SECONDS) }
-                        val error = assertIs<ResponseErrorException>(failure.cause).responseError
-                        assertEquals(ResponseErrorCode.ContentModified.value, error.code)
-                    }
+                    assertRetired(listOf(definition, references))
                 } else {
                     assertEquals(listOf(declaration), definition.get(15, TimeUnit.SECONDS).left)
                     assertEquals(listOf(use), references.get(15, TimeUnit.SECONDS))
@@ -136,13 +133,24 @@ class CrossFileRequestEntryTest {
             assertThrows<CancellationException> { first.get(15, TimeUnit.SECONDS) }
             assertEquals(listOf(expected), second.get(15, TimeUnit.SECONDS).left)
             assertEquals(setOf(source), invocations.map { it.content }.toSet())
-            assertEquals(listOf(Phases.CANONICALIZATION to ParseMode.WORKSPACE), invocations.map {
-                it.compilePhase to it.parseMode
-            })
+            assertEquals(
+                listOf(Phases.CANONICALIZATION to ParseMode.WORKSPACE),
+                invocations.map {
+                    it.compilePhase to it.parseMode
+                },
+            )
         } finally {
             release.countDown()
             scope.cancel()
             compilation.shutdown()
+        }
+    }
+
+    private fun assertRetired(answers: List<CompletableFuture<*>>) {
+        for (answer in answers) {
+            val failure = assertThrows<ExecutionException> { answer.get(15, TimeUnit.SECONDS) }
+            val error = assertIs<ResponseErrorException>(failure.cause).responseError
+            assertEquals(ResponseErrorCode.ContentModified.value, error.code)
         }
     }
 }

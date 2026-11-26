@@ -67,22 +67,7 @@ class CrossFileReferenceOwnershipTest {
         }
         val duringLookup = AtomicReference<(() -> Unit)?>(null)
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val compilation = GroovyCompilationService(documentProvider = documents, workerSessionDecorator = { worker ->
-            object : WorkerSession {
-                override fun parse(request: ParseRequest): ParseResult {
-                    val parsed = worker.parse(request)
-                    if (request.uri != origin) return parsed
-                    val model = parsed.astModel
-                    return parsed.copy(astModel = object : GroovyAstModel by model {
-                        override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
-                            val node = model.getNodeAt(uri, position)
-                            if (uri == origin && node != null) duringLookup.getAndSet(null)?.invoke()
-                            return node
-                        }
-                    })
-                }
-            }
-        })
+        val compilation = observedCompilation(documents, origin, duringLookup)
         val options = GroovyTextDocumentServiceOptions(documentProvider = documents)
         val service = GroovyTextDocumentService(scope, compilation, options)
         try {
@@ -92,18 +77,7 @@ class CrossFileReferenceOwnershipTest {
             val params = ReferenceParams(document, Position(1, 12), ReferenceContext(false))
             val expected = listOf(Location(caller.toString(), Range(Position(2, 16), Position(2, 21))))
             assertEquals(expected, service.references(params).get(15, TimeUnit.SECONDS))
-            val qualified = compilation.referenceReadiness(origin).query { view ->
-                for ((uri, text) in texts) {
-                    assertEquals(ParseMode.WORKSPACE, view.modeFor(uri))
-                    val held = assertIs<SnapshotAcquisition.Ready>(compilation.acquireSnapshot(uri))
-                    assertTrue(held.isCurrent())
-                    assertEquals(text, held.snapshot.sourceText)
-                    assertTrue(held.snapshot.parseResult.outcome.achievedPhase >= Phases.CANONICALIZATION)
-                    assertTrue(view.matches(uri, held.snapshot))
-                }
-                view.index
-            }
-            val graph = assertIs<SnapshotQuery.Answer<CapturedWorkspaceReferences>>(qualified).value
+            val graph = qualifiedGraph(compilation, origin, texts)
             val indexed = assertNotNull(graph.getDocumentSnapshot(caller))
             assertEquals(callerText, indexed.sourceText)
             assertTrue(graph.isCurrent())
@@ -152,5 +126,47 @@ class CrossFileReferenceOwnershipTest {
             scope.cancel()
             compilation.shutdown()
         }
+    }
+
+    private fun observedCompilation(
+        documents: DocumentProvider,
+        origin: URI,
+        duringLookup: AtomicReference<(() -> Unit)?>,
+    ) = GroovyCompilationService(documentProvider = documents, workerSessionDecorator = { worker ->
+        object : WorkerSession {
+            override fun parse(request: ParseRequest): ParseResult {
+                val parsed = worker.parse(request)
+                if (request.uri != origin) return parsed
+                val model = parsed.astModel
+                return parsed.copy(
+                    astModel = object : GroovyAstModel by model {
+                        override fun getNodeAt(uri: URI, position: AstPosition): ASTNode? {
+                            val node = model.getNodeAt(uri, position)
+                            if (uri == origin && node != null) duringLookup.getAndSet(null)?.invoke()
+                            return node
+                        }
+                    },
+                )
+            }
+        }
+    })
+
+    private suspend fun qualifiedGraph(
+        compilation: GroovyCompilationService,
+        origin: URI,
+        texts: Map<URI, String>,
+    ): CapturedWorkspaceReferences {
+        val qualified = compilation.referenceReadiness(origin).query { view ->
+            for ((uri, text) in texts) {
+                assertEquals(ParseMode.WORKSPACE, view.modeFor(uri))
+                val held = assertIs<SnapshotAcquisition.Ready>(compilation.acquireSnapshot(uri))
+                assertTrue(held.isCurrent())
+                assertEquals(text, held.snapshot.sourceText)
+                assertTrue(held.snapshot.parseResult.outcome.achievedPhase >= Phases.CANONICALIZATION)
+                assertTrue(view.matches(uri, held.snapshot))
+            }
+            view.index
+        }
+        return assertIs<SnapshotQuery.Answer<CapturedWorkspaceReferences>>(qualified).value
     }
 }

@@ -7,20 +7,21 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.ReferenceReadiness
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.project.JenkinsQuerySnapshot
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.URI
-import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 
 /** Mutable protocol fields and input authorities are captured before the request coroutine is scheduled. */
 internal class NavigationRequest(
@@ -70,3 +71,13 @@ internal fun navigationChanged(reason: String) =
 
 internal fun navigationUnavailable(reason: String) =
     ResponseErrorException(ResponseError(ResponseErrorCode.RequestFailed, reason, null))
+
+internal fun SnapshotAcquisition.requireNavigationSource(uri: URI): SnapshotAcquisition.Available = when (this) {
+    is SnapshotAcquisition.Available -> this
+    is SnapshotAcquisition.Failure -> throw cause
+    SnapshotAcquisition.Stale, SnapshotAcquisition.Missing -> throw if (this === SnapshotAcquisition.Stale) {
+        navigationChanged("Navigation source changed at $uri")
+    } else {
+        navigationUnavailable("Navigation source unavailable at $uri")
+    }
+}

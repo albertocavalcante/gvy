@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.SnapshotAcquisition
 import com.github.albertocavalcante.gvy.gls.compilation.inputsCurrent
 import com.github.albertocavalcante.gvy.gls.providers.crossfile.navigationChanged
 import com.github.albertocavalcante.gvy.gls.providers.crossfile.navigationUnavailable
+import com.github.albertocavalcante.gvy.gls.providers.crossfile.requireNavigationSource
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.nativeapi.inputDocumentUri
@@ -58,7 +59,8 @@ internal class ReferenceBindings(
             it.methodAsString == name && it.method.lineNumber == at.line + 1 &&
                 at.character + 1 in it.method.columnNumber until it.method.lastColumnNumber
         }
-        val direct = call?.methodTarget ?: call?.getNodeMetaData<MethodNode>(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET)
+        val direct =
+            call?.methodTarget ?: call?.getNodeMetaData<MethodNode>(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET)
         val owner = if (direct != null) {
             direct.declaringClass
         } else if (call != null) {
@@ -90,20 +92,23 @@ internal class ReferenceBindings(
     private suspend fun capture(uri: URI): CompiledDocumentSnapshot {
         if (uri == origin) return originParse
         peers[uri]?.let { return it.snapshot }
-        val captured = compilation.acquireSnapshot(uri, mode = graph.modeFor(uri))
-        val ready = when (captured) {
-            is SnapshotAcquisition.Ready -> captured
-            SnapshotAcquisition.Stale -> throw navigationChanged("Reference source changed at $uri")
-            is SnapshotAcquisition.Failure -> throw captured.cause
-            else -> throw navigationUnavailable("Reference source unavailable at $uri")
+        val available = compilation.acquireSnapshot(uri, mode = graph.modeFor(uri)).requireNavigationSource(uri)
+        val ready = available as? SnapshotAcquisition.Ready
+            ?: throw navigationUnavailable("Incomplete reference source at $uri")
+        if (!graph.matches(uri, ready.snapshot) || ready.snapshot.referenceProducer?.complete != true) {
+            throw navigationUnavailable("Unqualified reference source at $uri")
         }
-        if (!graph.matches(uri, ready.snapshot)) throw navigationUnavailable("Unqualified reference source at $uri")
         peers[uri] = ready
         return ready.snapshot
     }
 
     suspend fun validate() {
         val context = currentCoroutineContext()
-        if (peers.values.any { !context.inputsCurrent(it.isCurrent) }) throw navigationChanged("Reference source changed")
+        if (peers.values.any {
+                !context.inputsCurrent(it.isCurrent)
+            }
+        ) {
+            throw navigationChanged("Reference source changed")
+        }
     }
 }

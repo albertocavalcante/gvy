@@ -20,12 +20,23 @@ internal suspend fun SourceNavigator.definitionFor(
     val resource = type.binaryResourceUri() ?: return null
     observe { type.binaryResourceUri() == resource }
     if (this is SourceNavigationService) return selectedDefinition(type, resource, method, observe)
+    return navigateWithAttachment(type, resource, method, observe)
+}
+
+private suspend fun SourceNavigator.navigateWithAttachment(
+    type: Class<*>,
+    resource: URI,
+    method: String?,
+    observe: (suspend () -> Boolean) -> Unit,
+): SourceNavigator.SourceResult? {
     val binary = parseJarClassResource(resource)
     if (binary != null) {
         val original = withContext(Dispatchers.IO) { classDigest(binary) } ?: return null
         observe { withContext(Dispatchers.IO) { classDigest(binary) == original } }
     }
-    val result = if (method == null) navigateToSource(resource, type.name) else {
+    val result = if (method == null) {
+        navigateToSource(resource, type.name)
+    } else {
         navigateToMethodSource(resource, type.name, method)
     }
     // Alternate navigators own the association with the supplied binary resource.
@@ -39,11 +50,7 @@ internal suspend fun SourceNavigator.definitionFor(
     return result
 }
 
-internal class SelectedSourceArchive(
-    val input: SourceArchiveInput?,
-    val prefix: String,
-    val current: () -> Boolean,
-)
+internal class SelectedSourceArchive(val input: SourceArchiveInput?, val prefix: String, val current: () -> Boolean)
 
 internal fun selectedSourceArchive(
     type: Class<*>,
@@ -74,9 +81,8 @@ internal fun selectedSourceArchive(
 
 private fun classDigest(resource: JarClassResource): String? = try {
     ZipFile(resource.archive.toFile()).use { zip ->
-        zip.getEntry(resource.entryName)?.let { entry ->
-            zip.getInputStream(entry).use { copyAndDigest(it, SourceStoreLimits().maxEntryBytes) }
-        }
+        val entry = zip.getEntry(resource.entryName) ?: return@use null
+        zip.getInputStream(entry).use { copyAndDigest(it, SourceStoreLimits().maxEntryBytes) }
     }
 } catch (_: IOException) {
     null

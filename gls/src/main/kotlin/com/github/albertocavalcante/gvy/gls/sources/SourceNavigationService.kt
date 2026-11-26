@@ -66,11 +66,16 @@ class SourceNavigationService(
         SourceContentStore(sourceExtractor.extractionDir.resolve("selected"), limits).use { store ->
             val archive = store.importArchive(input)
             if (input is SourceArchiveInput.Local) {
-                observe { withContext(Dispatchers.IO) { fileDigest(input.path, limits.maxArchiveBytes) == archive.sha256 } }
+                observe {
+                    withContext(Dispatchers.IO) { fileDigest(input.path, limits.maxArchiveBytes) == archive.sha256 }
+                }
             }
             val source = store.sourceFor(archive, type.name, selection.prefix) ?: return@withContext absent
             observe {
-                withContext(Dispatchers.IO) { fileDigest(source.contentPath, limits.maxEntryBytes) == source.contentDigest }
+                withContext(Dispatchers.IO) {
+                    fileDigest(source.contentPath, limits.maxEntryBytes) ==
+                        source.contentDigest
+                }
             }
             val declaration = if (method == null) {
                 inspectClassDefinition(source.contentPath, type.name)
@@ -404,34 +409,7 @@ class SourceNavigationService(
         return null
     }
 
-    /**
-     * Strip all block comments from a line of text.
-     *
-     * Handles multiple block comments on the same line (e.g., `def x /* c1 */ = foo /* c2 */ bar`).
-     * If an unclosed block comment is found, sets the callback to true to indicate continuation.
-     *
-     * @param text The line of text to process
-     * @param setBlockCommentState Callback to set whether we're in an unclosed block comment
-     * @return The text with all block comments removed
-     */
-    private inline fun stripBlockComments(text: String, setBlockCommentState: (Boolean) -> Unit): String {
-        var result = text
-        while (true) {
-            val start = result.indexOf("/*")
-            if (start < 0) break
 
-            val end = result.indexOf("*/", start + 2)
-            result = if (end >= 0) {
-                // Complete block comment found - remove it and continue looking for more
-                result.removeRange(start, end + 2)
-            } else {
-                // Unclosed block comment - rest of line is comment
-                setBlockCommentState(true)
-                result.substring(0, start)
-            }
-        }
-        return result
-    }
 
     /**
      * Derive Maven coordinates from a JAR file path.
@@ -544,4 +522,33 @@ private fun findAdjacentSourceJar(binaryJarPath: Path): Path? {
     } else {
         null
     }
+}
+
+/**
+ * Strip all block comments from a line of text.
+ *
+ * Handles multiple block comments on the same line (e.g., `def x /* c1 */ = foo /* c2 */ bar`).
+ * If an unclosed block comment is found, sets the callback to true to indicate continuation.
+ *
+ * @param text The line of text to process
+ * @param setBlockCommentState Callback to set whether we're in an unclosed block comment
+ * @return The text with all block comments removed
+ */
+private inline fun stripBlockComments(text: String, setBlockCommentState: (Boolean) -> Unit): String {
+    var result = text
+    while (true) {
+        val start = result.indexOf("/*")
+        if (start < 0) break
+
+        val end = result.indexOf("*/", start + 2)
+        result = if (end >= 0) {
+            // Complete block comment found - remove it and continue looking for more
+            result.removeRange(start, end + 2)
+        } else {
+            // Unclosed block comment - rest of line is comment
+            setBlockCommentState(true)
+            result.substring(0, start)
+        }
+    }
+    return result
 }
