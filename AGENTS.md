@@ -34,6 +34,23 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
 
 > [!IMPORTANT] **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
 
+## Small deliveries and deterministic tools
+
+Before implementation, state one observable outcome, its prerequisites, owned paths and focused checks. Finish the
+current slice's review, checks, merge and cleanup before starting its next dependent slice. If a new prerequisite or
+outcome expands the scope, record it and split the work; preserve complete invariants and regression cases rather than
+cutting code to meet a line count. Bounded investigation and independent review can run in parallel.
+
+When Node and `gh` are available, start PR triage with
+`node tools/ci/pr-snapshot.mjs --repo albertocavalcante/gvy <number>`. It reports the pinned head, diff size, unresolved
+review locations and observed checks. Use `--json` for machine-readable metadata; follow the
+[review workflow](.agent/workflows/review.md) for full comments and dispositions. A snapshot does not replace the
+independent review, diagnostics or merge gates below.
+
+Reuse repository tools for repeated mechanical work. When a useful repeated operation lacks a helper, add the smallest
+tested reusable command and exercise it on real input. Keep full evidence in artifacts; inspect structured summaries and
+selected failures instead of repeatedly pasting whole logs or asking a model to count or track machine state.
+
 ## Rules (ALWAYS APPLY)
 
 1. **Worktrees**: Use the workspace manager (`wt new <branch>` in the worker-pool workspace); otherwise create an
