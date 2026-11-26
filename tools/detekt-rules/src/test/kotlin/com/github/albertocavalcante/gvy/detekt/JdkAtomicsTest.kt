@@ -47,6 +47,29 @@ class JdkAtomicsTest {
         assertThat(findings.single().message).contains("OnceFlag").contains("SharedValue").contains("Counter")
     }
 
+    @Test
+    fun `a suppression silences only the declaration it annotates`() {
+        val source = """
+            class A {
+                @Suppress("JdkAtomics") // A field updater needs the JDK type itself.
+                val suppressed = java.util.concurrent.atomic.AtomicIntegerFieldUpdater.newUpdater(A::class.java, "n")
+
+                val other = java.util.concurrent.atomic.AtomicIntegerFieldUpdater.newUpdater(A::class.java, "n")
+            }
+        """.trimIndent()
+
+        assertThat(flaggedLines(source)).containsExactly(5)
+    }
+
+    @Test
+    fun `a name split across lines is reported once, at its first line, by its type name`() {
+        val source = "val holder = java.util.concurrent\n    .atomic\n    .AtomicReference(\"not started\")\n"
+        val findings = rule.lint(source)
+        assertThat(findings.map { it.entity.location.source.line }).containsExactly(1)
+        val message = findings.single().message
+        assertThat(message).startsWith("`java.util.concurrent.atomic.AtomicReference` is a JDK atomic.")
+    }
+
     private fun ruleFrom(resource: String): JdkAtomics {
         val ruleSetConfig = yamlConfig(resource).subConfig("gvy")
         return GvyRuleSetProvider().instance(ruleSetConfig).rules.filterIsInstance<JdkAtomics>().single()
