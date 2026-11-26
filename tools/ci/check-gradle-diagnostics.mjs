@@ -55,6 +55,24 @@ const koverLazyVisibilityOrigins = new Set([
   'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
 ]);
 
+// Frames shared by every decode of KGP's Native bundle attribute, from the Attribute.of validation down to the read
+// that dispatches to the real caller. The first frame below them is the caller.
+const nativeBundleWrapperFrame = new RegExp('^org\\.gradle\\.(?:' + [
+  'api\\.attributes\\.Attribute\\.(?:validateSupportedType|of)',
+  'internal\\.serialize\\.codecs\\.dm\\.AttributeContainerCodecsKt\\.(?:readAttribute|readAttributesUsing|access\\$readAttributesUsing)',
+  'internal\\.serialize\\.codecs\\.dm\\.ImmutableAttributesCodec\\.decode',
+  'internal\\.serialize\\.graph\\.codecs\\.BindingsBackedCodec\\.decode',
+  'internal\\.serialize\\.graph\\.DefaultReadContext\\.read',
+  'internal\\.serialize\\.graph\\.CodecKt\\.readNonNull',
+].join('|') + ')\\(');
+// The configuration-cache readers that decode KGP's Native bundle attribute, by first real caller frame.
+const nativeBundleCodecCaller = new RegExp('^org\\.gradle\\.internal\\.serialize\\.(?:' + [
+  'codecs\\.dm\\.transform\\.(?:CalculateArtifactsCodec|DefaultTransformCodec)\\.decode',
+  'codecs\\.dm\\.LocalFileDependencyBackedArtifactSetCodec\\.decode',
+  'graph\\.CombinatorsKt\\.readMapEntriesInto',
+  'graph\\.BeanPropertyExtensionsKt\\.readPropertyValue',
+].join('|') + ')\\([^()]+:\\d+\\)$');
+
 function deprecationOrigin(message, origin) {
   // Kover 0.9.11 registers these actions lazily; they can run after all projects
   // are evaluated. The last displayed project does not identify their owner.
@@ -65,10 +83,16 @@ function deprecationOrigin(message, origin) {
   // NOTE: These Native consumers run outside reliable project/task output. Keep
   // the first real codec caller, not the common Attribute.of validation frame or
   // a deeper codec caller. Exact messages and origins are still policy keys.
-  // Historical traces and their source/job hashes are in fixtures/gradle-native-*.
-  if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.') &&
-      /^org\.gradle\.internal\.serialize\.codecs\.dm\.transform\.(?:CalculateArtifactsCodec|DefaultTransformCodec)\.decode\([^()]+:\d+\)$/.test(origin)) {
-    return { origin, context: 'emitter gradle configuration-cache' };
+  // Historical traces and their source/job hashes are in fixtures/gradle-native-*;
+  // the artifact-set, map and bean-property readers appear once a project with
+  // both JVM tests and Native targets is in the task graph (#2474).
+  if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.')) {
+    if (nativeBundleWrapperFrame.test(origin)) return undefined;
+    // Decide at the first frame below the wrappers, whatever its package: a deeper recognised reader must not
+    // stand in for an unknown caller. An unknown caller, like the plugin's own initializer, keeps the last header
+    // and names its frame, so it stays unexpected and identifiable.
+    if (nativeBundleCodecCaller.test(origin)) return { origin, context: 'emitter gradle configuration-cache' };
+    return { origin };
   }
   if (/^(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.)/.test(origin)) return undefined;
   if (message.startsWith('Declaring dependencies using multi-string notation has been deprecated.') &&

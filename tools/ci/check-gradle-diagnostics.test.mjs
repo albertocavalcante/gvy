@@ -522,6 +522,86 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
   }
 });
 
+const codecConsumerLog = readFileSync(new URL('./fixtures/gradle-native-codec-consumers.txt', import.meta.url), 'utf8');
+const nativeBundleMessage = codecConsumerLog.split('\n').find(line => line.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes'));
+
+test('Native codec consumers of a project with JVM tests bind to their source job and use the emitter identity', () => {
+  const provenance = JSON.parse(readFileSync(new URL('./fixtures/gradle-native-codec-consumers-provenance.json', import.meta.url)));
+  assert.equal(provenance.sourceHead, '572b3ee7c6f579238cb4a56c0be964faee386380');
+  assert.equal(provenance.runId, '45861379962');
+  assert.equal(provenance.runAttempt, 1);
+  const [fixture] = provenance.fixtures;
+  assert.equal(createHash('sha256').update(codecConsumerLog).digest('hex'), fixture.sha256);
+  assert.equal(fixture.events.length, 4);
+  assert.equal(codecConsumerLog.match(/^Using the enum type KotlinNativeBundleArtifactsTypes\b/gm).length, 4);
+  assert.equal(codecConsumerLog.includes('BUILD SUCCESSFUL'), false, 'selective traces do not invent command completion');
+  const expected = fixture.events.map(event => `[emitter gradle configuration-cache] ${nativeBundleMessage} [origin ${event.origin}]`);
+  const diagnostics = collectDiagnostics(codecConsumerLog);
+  assert.deepEqual(diagnostics, [...expected].sort());
+  for (const header of ['> Configure project :unrelated', '> Task :unrelated:work']) {
+    assert.deepEqual(collectDiagnostics(codecConsumerLog.replace('> Configure project :viz:desktop', header)), diagnostics);
+  }
+  assert.equal(evaluate(diagnostics, gradleExceptions(), now).ok, true);
+  assert.equal(evaluate(diagnostics, [], now).unexpected.length, 4);
+});
+
+test('changed Native codec consumer frames and call sites remain unexpected', () => {
+  const exceptions = gradleExceptions();
+  for (const before of [
+    'LocalFileDependencyBackedArtifactSetCodec.kt:137',
+    'Combinators.kt:235',
+    'BeanPropertyExtensions.kt:61',
+  ]) {
+    assert.ok(codecConsumerLog.includes(before), before);
+    const moved = before.replace(/:(\d+)$/, (_, line) => `:${Number(line) + 1}`);
+    const result = evaluate(collectDiagnostics(codecConsumerLog.replaceAll(before, moved)), exceptions, now);
+    assert.equal(result.ok, false, before);
+    assert.equal(result.unexpected.length, 1, before);
+  }
+  // Another reader in the same package is not a recognised caller: it keeps the last header and names its frame.
+  const renamed = collectDiagnostics(codecConsumerLog.replace('CombinatorsKt.readMapEntriesInto(', 'CombinatorsKt.readOtherEntries('));
+  assert.ok(renamed.includes(
+    `[project :viz:desktop] ${nativeBundleMessage} [origin org.gradle.internal.serialize.graph.CombinatorsKt.readOtherEntries(Combinators.kt:235)]`,
+  ));
+  assert.equal(evaluate(renamed, exceptions, now).unexpected.length, 1);
+});
+
+test('an unknown first Native codec caller is not attributed to a deeper recognised reader', () => {
+  // The fourth event's stack continues past DefaultTransformCodec into BeanPropertyExtensionsKt.readPropertyValue,
+  // the third event's caller. An unknown codec in its place must not borrow that identity and merge with it.
+  const before = 'transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)';
+  assert.ok(codecConsumerLog.includes(before));
+  const unknown = collectDiagnostics(codecConsumerLog.replace(before, 'transform.OtherTransformCodec.decode(OtherTransformCodec.kt:66)'));
+  assert.equal(unknown.length, 4);
+  assert.ok(unknown.includes(
+    `[project :viz:desktop] ${nativeBundleMessage} [origin org.gradle.internal.serialize.codecs.dm.transform.OtherTransformCodec.decode(OtherTransformCodec.kt:66)]`,
+  ));
+  assert.equal(unknown.filter(line => line.endsWith('BeanPropertyExtensions.kt:61)]')).length, 1);
+  assert.equal(evaluate(unknown, gradleExceptions(), now).unexpected.length, 1);
+});
+
+test('any frame between the Native bundle wrappers and a recognised reader decides the attribution', () => {
+  // The generic rule skips java/kotlin frames for other warnings; for this one they are a different caller.
+  const caller = '\tat org.gradle.internal.serialize.codecs.dm.LocalFileDependencyBackedArtifactSetCodec.decode(';
+  assert.ok(codecConsumerLog.includes(caller));
+  const interposed = collectDiagnostics(codecConsumerLog.replace(caller, `\tat kotlin.collections.CollectionsKt.forEach(Collections.kt:10)\n${caller}`));
+  assert.ok(interposed.includes(
+    `[project :viz:desktop] ${nativeBundleMessage} [origin kotlin.collections.CollectionsKt.forEach(Collections.kt:10)]`,
+  ));
+  assert.equal(evaluate(interposed, gradleExceptions(), now).unexpected.length, 1);
+});
+
+test('the general configuration-cache readers identify the caller, not the bean or map being decoded', () => {
+  // readPropertyValue and readMapEntriesInto decode any bean field or map, and the logged stack never names which.
+  // Another decode of this same enum through them therefore shares their identity: the same plugin defect (#1603).
+  const lines = codecConsumerLog.split('\n');
+  const start = lines.findIndex(line => line.includes('BeanPropertyExtensionsKt.readPropertyValue(BeanPropertyExtensions.kt:61)'));
+  const end = lines.findIndex((line, index) => index > start && !line.startsWith('\tat '));
+  assert.ok(start > 0 && end > start);
+  const deeper = [...lines.slice(0, start + 1), '\tat org.gradle.internal.serialize.graph.codecs.OtherBeanCodec.decode(OtherBeanCodec.kt:7)', ...lines.slice(end)];
+  assert.deepEqual(collectDiagnostics(deeper.join('\n')), collectDiagnostics(codecConsumerLog));
+});
+
 test('Native attribution cannot accept unrelated Gradle deprecations or bypass missing and expired policy', () => {
   const exceptions = gradleExceptions();
   const log = `${warning}\n\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n` +
@@ -552,8 +632,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 47);
-  assert.equal(exceptions.length, 52);
+  assert.equal(plugins.length, 52);
+  assert.equal(exceptions.length, 57);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {

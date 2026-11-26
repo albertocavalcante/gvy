@@ -189,6 +189,24 @@
     "expires": "2026-12-11"
   },
   {
+    "diagnostic": "[project :common:concurrent] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 mutates obsolete visibility in these traced Gradle 9.8.2 callers; removal in Gradle 11 blocks that pinned plugin. Inspected 2.3.20 sources remove factory visibility calls, but gvy candidate integration is pending; this is not a claim that latest Kotlin remains affected.",
+    "nextAction": "Kotlin/build maintainers must test the smaller released 2.3.20 candidate across gvy Kotlin/JVM, KMP, Compose, generation and lint paths before adopting it and retiring proven-obsolete exceptions.",
+    "acceptance": "The adopted Kotlin plugin passes relevant gvy compilation, test and publication checks without these exact visibility warnings; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :common:concurrent] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:64)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 mutates obsolete visibility in these traced Gradle 9.8.2 callers; removal in Gradle 11 blocks that pinned plugin. Inspected 2.3.20 sources remove factory visibility calls, but gvy candidate integration is pending; this is not a claim that latest Kotlin remains affected.",
+    "nextAction": "Kotlin/build maintainers must test the smaller released 2.3.20 candidate across gvy Kotlin/JVM, KMP, Compose, generation and lint paths before adopting it and retiring proven-obsolete exceptions.",
+    "acceptance": "The adopted Kotlin plugin passes relevant gvy compilation, test and publication checks without these exact visibility warnings; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
     "diagnostic": "[project :viz:ast-model] The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration [origin org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
@@ -336,27 +354,54 @@
     "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
     "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
-    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
     "expires": "2026-12-11"
   },
   {
     "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
     "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
-    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
     "expires": "2026-12-11"
   },
   {
     "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
     "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
-    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.LocalFileDependencyBackedArtifactSetCodec.decode(LocalFileDependencyBackedArtifactSetCodec.kt:137)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.graph.CombinatorsKt.readMapEntriesInto(Combinators.kt:235)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.graph.BeanPropertyExtensionsKt.readPropertyValue(BeanPropertyExtensions.kt:61)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
     "expires": "2026-12-11"
   },
   {
@@ -453,9 +498,9 @@
     "diagnostic": "[project :launcher] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and six configuration-cache callers are traced separately; the emitting project cannot be inferred from the last header. Two callers, readPropertyValue and readMapEntriesInto, are general readers, so another decode of this same enum through them shares their identity: the same plugin defect, not a new one. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
     "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
-    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the six codec diagnostics; remove all seven exact exceptions.",
     "expires": "2026-12-11"
   },
   {
