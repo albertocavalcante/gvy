@@ -20,12 +20,14 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
-import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
-import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.transform.stc.StaticTypesMarker
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -72,41 +74,49 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         astModel: GroovyAstModel,
         symbolTable: SymbolTable,
     ): ASTNode {
-        // Resolve definitions
-        // If it's a call, we want the definition. If it's a def, we want itself.
-        val resolved = node.resolveToDefinition(astModel, symbolTable, strict = false) ?: node
-        // HEURISTIC: Fallback for script method calls.
-        // In top-level scripts, method calls often appear as VariableExpression (dynamic) or ConstantExpression
-        // (the method name leaf) when the parser can't fully resolve the implicit 'this' or script context.
-        // The core resolveToDefinition might fail to link these to the script's MethodNode.
-        // TODO(#564): Improve parser to resolve strict methods better.
-        //   See: https://github.com/albertocavalcante/gvy/issues/564
-        return if (resolved !== node) {
-            resolved
-        } else {
-            extractEnclosingMethodCall(node, astModel)
-                ?.takeIf { it.isImplicitThis }
-                ?.let { findScriptMethodFallback(it, astModel) } ?: node
+        val parent = astModel.getParent(node)
+        val call = when {
+            node is MethodCallExpression -> node
+            parent is MethodCallExpression && isMethodToken(parent, node) -> parent
+            else -> null
         }
+        if (call != null && call.isImplicitThis) {
+            val enclosing = getEnclosingMethodOrClass(call, astModel)
+            val owner = when (enclosing) {
+                is MethodNode -> enclosing.declaringClass
+                is ClassNode -> enclosing
+                // The top-level statement block can be tracked directly under the module.
+                else -> astModel.getAllClassNodes().singleOrNull { it.isScript }
+            }
+            if (owner?.isScript == true) {
+                // The general position resolver may select the first same-name declaration.
+                return scriptMethod(call, owner, astModel, enclosing) ?: node
+            }
+        }
+        return node.resolveToDefinition(astModel, symbolTable, strict = false) ?: node
     }
 
-    private fun extractEnclosingMethodCall(node: ASTNode, astModel: GroovyAstModel): MethodCallExpression? {
-        if (node is MethodCallExpression) {
-            return node
-        }
-        if (node is ConstantExpression || node is VariableExpression) {
-            return astModel.getParent(node) as? MethodCallExpression
-        }
-        return null
-    }
+    private fun scriptMethod(
+        call: MethodCallExpression,
+        script: ClassNode,
+        model: GroovyAstModel,
+        enclosing: ASTNode?,
+    ): MethodNode? {
+        val direct = call.methodTarget ?: call.getNodeMetaData<MethodNode>(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET)
+        if (direct != null) return direct
+        val name = call.methodAsString ?: return null
+        val arguments = (call.arguments as? TupleExpression)?.expressions ?: return null
+        val ancestors = generateSequence<ASTNode>(call, model::getParent).takeWhile { it !== enclosing }
+        if (ancestors.any { it is ClosureExpression } || arguments.any { it is SpreadExpression }) return null
 
-    private fun findScriptMethodFallback(call: MethodCallExpression, astModel: GroovyAstModel): MethodNode? {
-        val methodName = call.methodAsString ?: return null
-        return astModel.getAllNodes()
-            .asSequence()
-            .filterIsInstance<MethodNode>()
-            .filter { it.name == methodName && it.declaringClass?.isScript == true }
-            .singleOrNull()
+        val candidate = script.getMethods(name).singleOrNull { method ->
+            val parameters = method.parameters
+            val varargs = parameters.lastOrNull()?.type?.isArray == true
+            val fixed = if (varargs) parameters.dropLast(1) else parameters.asList()
+            val required = fixed.count { !it.hasInitialExpression() }
+            arguments.size >= required && (varargs || arguments.size <= parameters.size)
+        }
+        return candidate?.takeIf { it.declaringClass === script }
     }
 
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> =

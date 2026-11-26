@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/g6-evidence" --producer combined-unit
-          :gls:test --tests '*CompileReuseWindowTest' --tests '*ReferenceModeQualityTest' --tests '*NativeCallHierarchyBindingTest'
+          :gls:test --tests '*ReferenceRetentionOrderingTest' --tests '*OutgoingCallBindingTest'
           --continue --no-daemon --no-parallel --max-workers=1 --no-configuration-cache --stacktrace '-Dorg.gradle.jvmargs=-Xms256m -Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
       - name: Preserve exact formatter delta and resulting file hashes
         if: always()
