@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Keeps the VolatileProperty excludes a ratchet that only shrinks (#2474). The rule must stay active, and each exclude
-// must name one module's src tree whose linted sources (src/main/kotlin and src/test/kotlin, what the lint task's
-// detekt run reads by default) still apply @Volatile outside comments and strings. A pull request that migrates a
-// module therefore has to drop its line, and a line for an unlinted path such as tests/e2e (#2480) or for a clean
-// module cannot be added.
+// must name one module's src tree whose linted sources still apply @Volatile outside comments and strings. Linted
+// sources are the kotlin and java folders of src/main and src/test, what the lint task's detekt run reads by default.
+// A pull request that migrates a module therefore has to drop its line, and a line for an unlinted path such as
+// tests/e2e (#2480) or for a clean module cannot be added.
 
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const lintedRoots = ['src/main/kotlin', 'src/test/kotlin'];
+const lintedRoots = ['src/main/kotlin', 'src/main/java', 'src/test/kotlin', 'src/test/java'];
 const kotlinVolatile = new Set(['kotlin.jvm.Volatile', 'kotlin.concurrent.Volatile']);
 const literalOrComment =
   /^(?:\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|"""[\s\S]*?(?:"""|$)|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?)/;
@@ -32,7 +32,8 @@ function volatilePropertyConfig(config) {
   let active;
   const excludes = [];
   for (const line of lines.slice(start + 1)) {
-    if (line.trim() === '' || /^ {4}#/.test(line)) continue;
+    // A comment at any indentation is still inside the block for YAML, so it must not end it.
+    if (/^\s*(?:#.*)?$/.test(line)) continue;
     if (!line.startsWith('    ')) break;
     const setting = line.match(/^ {4}active: (true|false)$/);
     const entry = line.match(/^ {4}- '([^']+)'$/);
@@ -90,6 +91,8 @@ test('the configuration reader takes only the gvy VolatileProperty block and rej
     '    excludes:',
     '    # A comment between entries.',
     "    - '**/first/src/**'",
+    '  # A comment at another indentation does not end the block.',
+    '# Nor does one at the first column.',
     "    - '**/second/module/src/**'",
     'naming:',
     "    - '**/not-an-exclude/src/**'",
