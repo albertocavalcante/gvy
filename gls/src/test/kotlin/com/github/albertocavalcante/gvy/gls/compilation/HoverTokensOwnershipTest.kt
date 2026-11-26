@@ -184,29 +184,28 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["hover", "tokens"])
-    fun `equal text and version reopened during actual parse cannot return old facts`(
-        endpoint: String
-    ): Unit = runBlocking {
-        val entered = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        val fixture = Fixture(afterParse = {
-            entered.countDown()
-            check(release.await(10, TimeUnit.SECONDS))
-        })
-        try {
-            val answer = async(start = CoroutineStart.UNDISPATCHED) { runCatching { fixture.request(endpoint) } }
-            assertTrue(entered.await(5, TimeUnit.SECONDS))
-            fixture.documents.remove(fixture.uri)
-            fixture.service.onClosedSourceChanged(fixture.uri)
-            fixture.service.onDocumentOpened(fixture.uri)
-            fixture.documents.put(fixture.uri, SOURCE, VERSION)
-            release.countDown()
-            fixture.assertModified(answer.await())
-        } finally {
-            release.countDown()
-            fixture.service.shutdown()
+    fun `equal text and version reopened during actual parse cannot return old facts`(endpoint: String): Unit =
+        runBlocking {
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val fixture = Fixture(afterParse = {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+            })
+            try {
+                val answer = async(start = CoroutineStart.UNDISPATCHED) { runCatching { fixture.request(endpoint) } }
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                fixture.documents.remove(fixture.uri)
+                fixture.service.onClosedSourceChanged(fixture.uri)
+                fixture.service.onDocumentOpened(fixture.uri)
+                fixture.documents.put(fixture.uri, SOURCE, VERSION)
+                release.countDown()
+                fixture.assertModified(answer.await())
+            } finally {
+                release.countDown()
+                fixture.service.shutdown()
+            }
         }
-    }
 
     @ParameterizedTest
     @ValueSource(strings = ["hover", "tokens"])
@@ -362,7 +361,7 @@ class HoverTokensOwnershipTest {
                 val parsed = available.snapshot.parseResult
                 val classes = parsed.astModel.getAllClassNodes().map { it.nameWithoutPackage }.sorted()
                 val methods = parsed.astModel.getNodes(
-                    fixture.uri
+                    fixture.uri,
                 ).filterIsInstance<MethodNode>().map { it.name }.sorted()
                 val evidence = "case=$label ast=${parsed.ast != null} " +
                     "requested=${parsed.outcome.requestedPhase} achieved=${parsed.outcome.achievedPhase} " +
@@ -405,36 +404,35 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["engine", "source"])
-    fun `hover rejects authority changed by a freshness callback after AST traversal`(
-        authority: String
-    ): Unit = runBlocking {
-        val manager = spyk(WorkspaceManager())
-        val armed = AtomicBoolean(false)
-        val changed = AtomicBoolean(false)
-        lateinit var fixture: Fixture
-        every { manager.compileContextFor(any(), any(), any()) } answers {
-            val context = callOriginal()
-            if (armed.get() && changed.compareAndSet(false, true)) {
-                if (authority == "engine") {
-                    fixture.service.updateEngineConfiguration(
-                        EngineConfiguration(features = EngineFeatures(typeInference = false)),
-                    )
-                } else {
-                    fixture.documents.put(fixture.uri, SOURCE, DocumentVersion.of(8))
+    fun `hover rejects authority changed by a freshness callback after AST traversal`(authority: String): Unit =
+        runBlocking {
+            val manager = spyk(WorkspaceManager())
+            val armed = AtomicBoolean(false)
+            val changed = AtomicBoolean(false)
+            lateinit var fixture: Fixture
+            every { manager.compileContextFor(any(), any(), any()) } answers {
+                val context = callOriginal()
+                if (armed.get() && changed.compareAndSet(false, true)) {
+                    if (authority == "engine") {
+                        fixture.service.updateEngineConfiguration(
+                            EngineConfiguration(features = EngineFeatures(typeInference = false)),
+                        )
+                    } else {
+                        fixture.documents.put(fixture.uri, SOURCE, DocumentVersion.of(8))
+                    }
                 }
+                context
             }
-            context
+            fixture = Fixture(manager = manager, onTraversal = { armed.set(true) })
+            try {
+                val outcome = runCatching { fixture.request("hover") }
+                assertTrue(armed.get(), "The held AST traversal must execute first")
+                assertTrue(changed.get(), "A real compile-context freshness callback must change the authority")
+                fixture.assertModified(outcome)
+            } finally {
+                fixture.service.shutdown()
+            }
         }
-        fixture = Fixture(manager = manager, onTraversal = { armed.set(true) })
-        try {
-            val outcome = runCatching { fixture.request("hover") }
-            assertTrue(armed.get(), "The held AST traversal must execute first")
-            assertTrue(changed.get(), "A real compile-context freshness callback must change the authority")
-            fixture.assertModified(outcome)
-        } finally {
-            fixture.service.shutdown()
-        }
-    }
 
     @Test
     fun `tokens reject Jenkins file policy changed during AST traversal`(): Unit = runBlocking {
@@ -459,45 +457,44 @@ class HoverTokensOwnershipTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["hover", "tokens"])
-    fun `final compiler qualification cannot replace consulted Jenkins variables`(
-        endpoint: String
-    ): Unit = runBlocking {
-        val capability = mockk<JenkinsCapabilities>()
-        val manager = spyk(WorkspaceManager())
-        val step = "sharedStep"
-        val previous = GlobalVariable(step, workspace.resolve("vars/$step.groovy"), "original vars documentation")
-        val traversed = AtomicBoolean(false)
-        val changed = AtomicBoolean(false)
-        val race = AtomicBoolean(false)
-        every { manager.getJenkinsCapabilities() } returns capability
-        every { capability.isJenkinsFile(any()) } returns true
-        every { capability.getAllMetadata(any()) } returns null
-        every { capability.getGlobalVariables() } answers { if (changed.get()) emptyList() else listOf(previous) }
-        every { manager.compileContextFor(any(), any(), any()) } answers {
-            val context = callOriginal()
-            if (race.get() && traversed.get()) changed.set(true)
-            context
-        }
-        val fixture = Fixture(source = "$step()\n", manager = manager, onTraversal = { traversed.set(true) })
-        try {
-            val stable = fixture.request(endpoint, 1)
-            if (endpoint == "hover") {
-                val hover = assertIs<org.eclipse.lsp4j.Hover>(stable)
-                assertContains(hover.contents.right.value, previous.documentation)
-            } else {
-                val tokens = assertIs<SemanticTokens>(stable).data.chunked(5)
-                assertTrue(tokens.any { it[2] == step.length && it[3] == 12 }, "Expected the vars function token")
+    fun `final compiler qualification cannot replace consulted Jenkins variables`(endpoint: String): Unit =
+        runBlocking {
+            val capability = mockk<JenkinsCapabilities>()
+            val manager = spyk(WorkspaceManager())
+            val step = "sharedStep"
+            val previous = GlobalVariable(step, workspace.resolve("vars/$step.groovy"), "original vars documentation")
+            val traversed = AtomicBoolean(false)
+            val changed = AtomicBoolean(false)
+            val race = AtomicBoolean(false)
+            every { manager.getJenkinsCapabilities() } returns capability
+            every { capability.isJenkinsFile(any()) } returns true
+            every { capability.getAllMetadata(any()) } returns null
+            every { capability.getGlobalVariables() } answers { if (changed.get()) emptyList() else listOf(previous) }
+            every { manager.compileContextFor(any(), any(), any()) } answers {
+                val context = callOriginal()
+                if (race.get() && traversed.get()) changed.set(true)
+                context
             }
-            traversed.set(false)
-            race.set(true)
-            val result = runCatching { fixture.request(endpoint, 1) }
-            assertTrue(traversed.get())
-            assertTrue(changed.get(), "A real compiler qualification must replace the consulted vars")
-            fixture.assertModified(result)
-        } finally {
-            fixture.service.shutdown()
+            val fixture = Fixture(source = "$step()\n", manager = manager, onTraversal = { traversed.set(true) })
+            try {
+                val stable = fixture.request(endpoint, 1)
+                if (endpoint == "hover") {
+                    val hover = assertIs<org.eclipse.lsp4j.Hover>(stable)
+                    assertContains(hover.contents.right.value, previous.documentation)
+                } else {
+                    val tokens = assertIs<SemanticTokens>(stable).data.chunked(5)
+                    assertTrue(tokens.any { it[2] == step.length && it[3] == 12 }, "Expected the vars function token")
+                }
+                traversed.set(false)
+                race.set(true)
+                val result = runCatching { fixture.request(endpoint, 1) }
+                assertTrue(traversed.get())
+                assertTrue(changed.get(), "A real compiler qualification must replace the consulted vars")
+                fixture.assertModified(result)
+            } finally {
+                fixture.service.shutdown()
+            }
         }
-    }
 
     @Test
     fun `trivia in a Jenkins file never reads variables or metadata`(): Unit = runBlocking {

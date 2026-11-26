@@ -71,55 +71,54 @@ class NativeHoverProvider(
         held: CompiledDocumentSnapshot,
         source: SnapshotSource,
         jenkins: JenkinsQuerySnapshot,
-    ): HoverProvider =
-        object : HeldHoverProvider {
-            override suspend fun prepareHover(params: HoverParams): HeldHover {
-                val facts = jenkins.materialize(forHover = true)
-                require(held.parseResult === parseResult)
-                val loader = bytecodeOnlyClassLoader(parseResult.compilationUnit.classLoader)
-                val reflection = JvmClasspathReflection { loader }
-                val members = HoverMemberLookup.forRequest(held) { compilationService.referenceReadiness(source) }
-                val types = SemanticTypeResolver(ReflectionTypeSolver(jreOnly = false, classLoader = loader), members)
-                val methods = MethodCallMetadataResolver(
-                    reflection::getMethods,
-                    reflection::loadClass,
-                    { receiver, name ->
-                        if (receiver.isPrimaryClassNode || !receiver.isResolved) {
-                            emptyList()
-                        } else {
-                            heldGdkMethods(reflection, receiver.name, name)
-                        }
-                    },
-                    types,
-                )
-                val provider = DelegateHoverProvider(
-                    compilationService,
-                    documentProvider,
-                    HoverContentGenerator(types, methods),
-                    facts,
-                ) { type ->
-                    sourceNavigator?.let { navigator ->
-                        reflection.loadClass(type.name)?.let { binary ->
-                            navigator.documentationForSelectedBinary(binary)
-                        }
+    ): HoverProvider = object : HeldHoverProvider {
+        override suspend fun prepareHover(params: HoverParams): HeldHover {
+            val facts = jenkins.materialize(forHover = true)
+            require(held.parseResult === parseResult)
+            val loader = bytecodeOnlyClassLoader(parseResult.compilationUnit.classLoader)
+            val reflection = JvmClasspathReflection { loader }
+            val members = HoverMemberLookup.forRequest(held) { compilationService.referenceReadiness(source) }
+            val types = SemanticTypeResolver(ReflectionTypeSolver(jreOnly = false, classLoader = loader), members)
+            val methods = MethodCallMetadataResolver(
+                reflection::getMethods,
+                reflection::loadClass,
+                { receiver, name ->
+                    if (receiver.isPrimaryClassNode || !receiver.isResolved) {
+                        emptyList()
+                    } else {
+                        heldGdkMethods(reflection, receiver.name, name)
+                    }
+                },
+                types,
+            )
+            val provider = DelegateHoverProvider(
+                compilationService,
+                documentProvider,
+                HoverContentGenerator(types, methods),
+                facts,
+            ) { type ->
+                sourceNavigator?.let { navigator ->
+                    reflection.loadClass(type.name)?.let { binary ->
+                        navigator.documentationForSelectedBinary(binary)
                     }
                 }
-                val answer = withContext(loader.context) {
-                    provider.provideHover(source.uri.toString(), params.position, held)
-                }
-                return HeldHover(
-                    answer ?: Hover(MarkupContent(MarkupKind.MARKDOWN, "")),
-                    publicationsCurrent = {
-                        val classpath = facts.classpath
-                        (classpath == null || held.referenceProducer?.hasClasspath(classpath) == true) &&
-                            facts.publicationsCurrent() &&
-                            members.isDatabaseCurrent()
-                    },
-                ) {
-                    currentCoroutineContext().inputsCurrent(members::isCurrent) && facts.isCurrent()
-                }
+            }
+            val answer = withContext(loader.context) {
+                provider.provideHover(source.uri.toString(), params.position, held)
+            }
+            return HeldHover(
+                answer ?: Hover(MarkupContent(MarkupKind.MARKDOWN, "")),
+                publicationsCurrent = {
+                    val classpath = facts.classpath
+                    (classpath == null || held.referenceProducer?.hasClasspath(classpath) == true) &&
+                        facts.publicationsCurrent() &&
+                        members.isDatabaseCurrent()
+                },
+            ) {
+                currentCoroutineContext().inputsCurrent(members::isCurrent) && facts.isCurrent()
             }
         }
+    }
 
     override suspend fun getHover(params: HoverParams): Hover = runCatching {
         delegate.provideHover(params.textDocument.uri, params.position) ?: emptyHover()

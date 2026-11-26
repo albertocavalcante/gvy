@@ -122,27 +122,26 @@ class NativeHoverInputsTest {
     @Test
     fun `replacing the manager inside the same Jenkins capability retires the captured facts`(
         @TempDir root: Path,
-    ): Unit =
-        runBlocking {
-            val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-            val strategy = JenkinsProjectStrategy(scope)
-            val manager = spyk(WorkspaceManager())
-            every { manager.getJenkinsCapabilities() } returns strategy
-            val service = GroovyCompilationService(workspaceManager = manager)
-            try {
-                val config = ServerConfiguration()
-                strategy.initialize(root, config)?.join()
-                val request = JenkinsQuerySnapshot.capture(service, root.resolve("Jenkinsfile").toUri())
-                val facts = request.materialize()
-                assertTrue(facts.isJenkinsFile)
-                assertTrue(facts.isCurrent())
-                strategy.initialize(root, config)?.join()
-                assertFalse(facts.isCurrent())
-            } finally {
-                service.shutdown()
-                scope.cancel()
-            }
+    ): Unit = runBlocking {
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val strategy = JenkinsProjectStrategy(scope)
+        val manager = spyk(WorkspaceManager())
+        every { manager.getJenkinsCapabilities() } returns strategy
+        val service = GroovyCompilationService(workspaceManager = manager)
+        try {
+            val config = ServerConfiguration()
+            strategy.initialize(root, config)?.join()
+            val request = JenkinsQuerySnapshot.capture(service, root.resolve("Jenkinsfile").toUri())
+            val facts = request.materialize()
+            assertTrue(facts.isJenkinsFile)
+            assertTrue(facts.isCurrent())
+            strategy.initialize(root, config)?.join()
+            assertFalse(facts.isCurrent())
+        } finally {
+            service.shutdown()
+            scope.cancel()
         }
+    }
 
     @Test
     fun `external docs come from the source archive paired with the held binary`(@TempDir root: Path): Unit =

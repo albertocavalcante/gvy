@@ -110,12 +110,14 @@ class HoverCapturedMemberSourceTest {
                     check(release.await(15, TimeUnit.SECONDS))
                 }
                 val model = result.astModel
-                return result.copy(astModel = object : GroovyAstModel by model {
-                    override fun getNodeAt(uri: URI, position: GroovyPosition): ASTNode? {
-                        inModel.set(true)
-                        return model.getNodeAt(uri, position)
-                    }
-                })
+                return result.copy(
+                    astModel = object : GroovyAstModel by model {
+                        override fun getNodeAt(uri: URI, position: GroovyPosition): ASTNode? {
+                            inModel.set(true)
+                            return model.getNodeAt(uri, position)
+                        }
+                    },
+                )
             }
         }
 

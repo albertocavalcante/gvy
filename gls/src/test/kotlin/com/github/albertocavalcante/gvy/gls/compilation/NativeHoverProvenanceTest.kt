@@ -55,7 +55,7 @@ class NativeHoverProvenanceTest {
         val service = GroovyCompilationService(
             documentProvider = documents,
             workspaceManager = manager,
-            sourceNavigator = navigator
+            sourceNavigator = navigator,
         )
         try {
             val parsed = assertIs<SnapshotAcquisition.Ready>(service.acquireEditorSnapshot(caller)).snapshot.parseResult
@@ -141,11 +141,11 @@ class NativeHoverProvenanceTest {
                 val stored = assertNotNull(service.getWorkspaceSymbolIndex()?.getDocument(peer))
                 assertEquals(
                     SemanticType.Known("java.lang.String"),
-                    stored.symbols.single { it.name == "drainPermits" }.type
+                    stored.symbols.single { it.name == "drainPermits" }.type,
                 )
                 val held = assertIs<SnapshotAcquisition.Ready>(service.acquireEditorSnapshot(caller)).snapshot
                 val receiver = held.parseResult.ast!!.classes.single().getMethods(
-                    "use"
+                    "use",
                 ).single().parameters.single().type.redirect()
                 assertFalse(receiver.isPrimaryClassNode)
                 assertTrue(receiver.isResolved)
