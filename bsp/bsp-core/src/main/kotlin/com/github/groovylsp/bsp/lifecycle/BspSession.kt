@@ -188,6 +188,10 @@ class BspSession(
      */
     fun isActive(): Boolean = !closed.get() && !connection.isClosed() && serverProcess.isAlive
 
+    /**
+     * Closes the connection and stops the server process. Only the first call cleans up; a concurrent or later call
+     * returns at once, without waiting for that cleanup to finish.
+     */
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
 

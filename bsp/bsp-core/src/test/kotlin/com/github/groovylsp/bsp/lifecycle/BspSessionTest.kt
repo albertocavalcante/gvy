@@ -10,7 +10,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.Callable
 import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
@@ -57,21 +59,28 @@ class BspSessionTest {
     @Test
     @Timeout(value = TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
     fun `racing closes stop the server process once per session`() {
-        // A check-then-set close lets both racers through when they pass the check together; each attempt releases
-        // two threads at once to give that window every chance.
+        // A check-then-set close lets both racers through when they pass the check together. Each attempt releases
+        // two threads at once; the log line the old close() wrote between its check and its set widened that window.
         val process = CountingProcess()
+        val racers = Executors.newFixedThreadPool(2)
 
-        repeat(ATTEMPTS) {
-            val session = session(process)
-            val barrier = CyclicBarrier(2)
-            val racers = List(2) {
-                Thread {
-                    barrier.await()
-                    session.close()
+        try {
+            repeat(ATTEMPTS) {
+                val session = session(process)
+                val barrier = CyclicBarrier(2)
+                val closes = List(2) {
+                    racers.submit(
+                        Callable {
+                            barrier.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                            session.close()
+                        },
+                    )
                 }
+                // get() rethrows a racer's failure with its cause rather than leaving only a wrong count.
+                closes.forEach { it.get(TIMEOUT_SECONDS, TimeUnit.SECONDS) }
             }
-            racers.forEach(Thread::start)
-            racers.forEach(Thread::join)
+        } finally {
+            racers.shutdownNow()
         }
 
         assertEquals(ATTEMPTS, process.destroyCalls.get())
