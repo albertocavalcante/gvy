@@ -48,7 +48,7 @@ class CompilationCacheService(
         requester: CompilationRequestContext,
         phase: Int,
         mode: ParseMode,
-    ) = cache.getForCompile(uri, content, requester, phase, mode)
+    ): CachedParse? = cache.getForCompile(uri, content, requester, phase, mode)
 
     /**
      * Gets the cached content and ParseResult, if they were compiled under [configFingerprint].

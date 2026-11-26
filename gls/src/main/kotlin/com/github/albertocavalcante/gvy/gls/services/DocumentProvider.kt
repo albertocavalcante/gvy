@@ -10,10 +10,13 @@ import com.github.albertocavalcante.gvy.source.DocumentChangeResult
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import com.github.albertocavalcante.gvy.source.applyOrderedDocumentChanges
 import java.net.URI
+import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** Text and the client's version captured from the same buffer state. Null means unversioned input. */
 data class DocumentSnapshot(val content: String, val version: DocumentVersion?) {
+    internal val sourceIdentity: String = UUID.randomUUID().toString()
     /** SHA-256 of [content], computed once per buffer state (readiness checks run on every navigation). */
     internal val contentHash: String by lazy { contentHash(content) }
 }
@@ -23,6 +26,15 @@ internal class DocumentIncarnation(val analysisSessionId: String? = null)
 
 /** A buffer's state and the lifecycle it belongs to, read together. */
 internal class OpenBuffer(val snapshot: DocumentSnapshot, val incarnation: DocumentIncarnation)
+
+/** One editor inventory. A long-lived producer can retain its identity without retaining any buffer text. */
+internal class OpenDocuments(val documents: Map<URI, DocumentSnapshot>) {
+    val identity = Any()
+
+    companion object {
+        val absent = OpenDocuments(emptyMap())
+    }
+}
 
 internal sealed interface BufferChangeResult {
     data class Applied(val snapshot: DocumentSnapshot) : BufferChangeResult
@@ -39,6 +51,7 @@ class DocumentProvider {
 
     private val documents = ConcurrentHashMap<URI, OpenDocument>()
     private val lifecycleLock = Any()
+    private var cachedDocuments: OpenDocuments? = null
 
     fun get(uri: URI): String? = documents[uri]?.snapshot?.content
 
@@ -51,6 +64,7 @@ class DocumentProvider {
     /** Replace an unversioned buffer, retaining the existing API for internal callers. */
     fun put(uri: URI, content: String) {
         synchronized(lifecycleLock) {
+            cachedDocuments = null
             documents[uri] = OpenDocument(DocumentSnapshot(content, null))
         }
     }
@@ -60,6 +74,7 @@ class DocumentProvider {
 
     internal fun put(uri: URI, content: String, version: DocumentVersion, analysisSessionId: String?) {
         synchronized(lifecycleLock) {
+            cachedDocuments = null
             documents[uri] = OpenDocument(DocumentSnapshot(content, version), DocumentIncarnation(analysisSessionId))
         }
     }
@@ -74,6 +89,7 @@ class DocumentProvider {
             null
         } else {
             DocumentSnapshot(content ?: current.snapshot.content, version).also {
+                cachedDocuments = null
                 documents[uri] = OpenDocument(it, current.incarnation)
             }
         }
@@ -113,6 +129,7 @@ class DocumentProvider {
                     )
                     is DocumentChangeResult.Applied -> {
                         val accepted = DocumentSnapshot(prepared.text, version)
+                        cachedDocuments = null
                         documents[uri] = OpenDocument(accepted, current.incarnation)
                         BufferChangeResult.Applied(accepted)
                     }
@@ -123,7 +140,7 @@ class DocumentProvider {
 
     fun remove(uri: URI) {
         synchronized(lifecycleLock) {
-            documents.remove(uri)
+            if (documents.remove(uri) != null) cachedDocuments = null
         }
     }
 
@@ -152,6 +169,7 @@ class DocumentProvider {
                 false
             } else {
                 documents.remove(uri)
+                cachedDocuments = null
                 afterRemove()
                 true
             }
@@ -160,8 +178,11 @@ class DocumentProvider {
     fun snapshot(): Map<URI, String> = documents.mapValues { it.value.snapshot.content }
 
     /** Captures reference identities so a changed-and-restored companion is still detectable. */
-    internal fun snapshotIdentities(): Map<URI, DocumentSnapshot> = synchronized(lifecycleLock) {
-        documents.mapValues { it.value.snapshot }
+    internal fun snapshotIdentities(): Map<URI, DocumentSnapshot> = captureDocuments().documents
+
+    internal fun captureDocuments(): OpenDocuments = synchronized(lifecycleLock) {
+        cachedDocuments ?: OpenDocuments(Collections.unmodifiableMap(documents.mapValues { it.value.snapshot }))
+            .also { cachedDocuments = it }
     }
 
     fun getAllUris(): Set<URI> = documents.keys.toSet()

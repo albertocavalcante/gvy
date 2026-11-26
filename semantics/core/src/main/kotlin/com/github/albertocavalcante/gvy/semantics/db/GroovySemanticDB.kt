@@ -45,7 +45,11 @@ class GroovySemanticDB {
     private val versionCounter = AtomicLong()
 
     // Guarded by lock; invalidated by every successful document graph mutation.
-    private var cachedDeclarations: DeclarationIndexSnapshot? = null
+    private var cachedView: PublishedView? = null
+
+    private class PublishedView(val declarations: DeclarationIndexSnapshot) {
+        var references: ReferenceIndexSnapshot? = null
+    }
 
     /**
      * Increases whenever a stored document's declarations change (a class, method, field or property added,
@@ -105,7 +109,7 @@ class GroovySemanticDB {
             documents[uri] = StoredDocument(snapshot, sourceText, facts)
             previous?.let { removeFromIndexes(uri, it.document) }
             addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex, ownerIndex)
-            cachedDeclarations = null
+            cachedView = null
             if (declarationsChanged) {
                 versionCounter.incrementAndGet()
             }
@@ -119,7 +123,7 @@ class GroovySemanticDB {
         lock.write {
             documents.remove(uri)?.let {
                 removeFromIndexes(uri, it.document)
-                cachedDeclarations = null
+                cachedView = null
                 if (declarations(it.document).isNotEmpty()) versionCounter.incrementAndGet()
             }
         }
@@ -131,19 +135,37 @@ class GroovySemanticDB {
      * alone does not identify this view: range, body and ordering changes also retire it.
      */
     fun snapshotDeclarations(): DeclarationIndexSnapshot {
-        lock.read { cachedDeclarations?.let { return it } }
-        return lock.write {
-            cachedDeclarations ?: DeclarationIndexSnapshot(
-                versionCounter.get(),
-                symbolIndex.snapshot(),
-                ownerIndex.snapshot(),
-            ).also { cachedDeclarations = it }
-        }
+        lock.read { cachedView?.let { return it.declarations } }
+        return lock.write { currentView().declarations }
     }
+
+    // Caller holds the write lock. Both views share the publication identity retired by every graph mutation.
+    private fun currentView(): PublishedView = cachedView ?: PublishedView(
+        DeclarationIndexSnapshot(versionCounter.get(), symbolIndex.snapshot(), ownerIndex.snapshot()),
+    ).also { cachedView = it }
 
     /** True only while [snapshot] is this database's current cached declaration view; never rebuilds it. */
     fun isCurrentDeclarationSnapshot(snapshot: DeclarationIndexSnapshot): Boolean =
-        lock.read { cachedDeclarations === snapshot }
+        lock.read { cachedView?.declarations === snapshot }
+
+    /** Captures ordered reference files, declarations, and their immutable source documents under one lock. */
+    fun snapshotReferences(): ReferenceIndexSnapshot {
+        lock.read { cachedView?.references?.let { return it } }
+        return lock.write {
+            val view = currentView()
+            view.references ?: ReferenceIndexSnapshot(
+                view.declarations,
+                Collections.unmodifiableMap(documents.mapValues { (_, stored) ->
+                    SemanticDocumentSnapshot(stored.document, stored.sourceText)
+                }),
+                occurrenceIndex.snapshotFiles(),
+            ).also { view.references = it }
+        }
+    }
+
+    /** Constant-time identity check, including occurrence-only edits and an identical republication. */
+    fun isCurrentReferenceSnapshot(snapshot: ReferenceIndexSnapshot): Boolean =
+        lock.read { cachedView?.references === snapshot }
 
     /**
      * Get all documents
@@ -238,7 +260,7 @@ class GroovySemanticDB {
             symbolIndex = SymbolIndex()
             occurrenceIndex = SymbolIndex()
             ownerIndex = SymbolIndex()
-            cachedDeclarations = null
+            cachedView = null
             versionCounter.incrementAndGet()
         }
     }
@@ -307,6 +329,10 @@ private class SymbolIndex<T> {
 
     fun all(id: String): List<Pair<URI, T>> =
         bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()
+
+    fun snapshotFiles(): Map<String, List<URI>> = Collections.unmodifiableMap(
+        bySymbol.mapValues { (_, files) -> Collections.unmodifiableList(files.keys.toList()) },
+    )
 
     fun snapshot(): Map<String, List<Pair<URI, T>>> = Collections.unmodifiableMap(
         bySymbol.mapValues { (_, files) ->

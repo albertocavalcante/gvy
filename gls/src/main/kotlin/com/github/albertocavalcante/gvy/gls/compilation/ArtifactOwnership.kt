@@ -9,6 +9,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
 import java.net.URI
+import java.util.UUID
 
 /**
  * The open-buffer version a compile read, for ordering its writes against other compiles of the same buffer
@@ -40,6 +41,7 @@ internal class BufferOrder(val incarnation: Any, val version: DocumentVersion, v
 class ArtifactOwnership {
     /** One file's generation. Referenced strongly only by its tickets, so it lives exactly as long as they do. */
     internal class FileState {
+        val identity: String = UUID.randomUUID().toString()
         var stamp = 0L
     }
 
@@ -56,6 +58,7 @@ class ArtifactOwnership {
         internal val lastRetirement: Long,
         internal val order: BufferOrder? = null,
     ) {
+        internal val sourceIdentity: String get() = "${state.identity}:$stamp:$epoch:$lastRetirement"
         /** Query captures may share only when both observed the same file and workspace input retirements. */
         internal fun sharesInputs(other: Ticket): Boolean = state === other.state && stamp == other.stamp &&
             epoch == other.epoch && lastRetirement == other.lastRetirement

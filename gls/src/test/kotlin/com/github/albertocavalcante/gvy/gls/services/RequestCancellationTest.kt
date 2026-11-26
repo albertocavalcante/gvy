@@ -67,19 +67,29 @@ class RequestCancellationTest {
 
     @Test
     fun `a cancelled document highlight ends cancelled instead of empty`(): Unit = runBlocking {
-        coEvery { compilation.ensureCompiled(uri) } throws CancellationException("compile cancelled")
-        val service =
-            GroovyTextDocumentService(
+        val cancelling = GroovyCompilationService(
+            documentProvider = documents,
+            workerSessionDecorator = {
+                object : WorkerSession {
+                    override fun parse(request: ParseRequest): ParseResult = throw CancellationException("compile cancelled")
+                }
+            },
+        )
+        try {
+            val service = GroovyTextDocumentService(
                 scope,
-                compilation,
+                cancelling,
                 GroovyTextDocumentServiceOptions(documentProvider = documents),
             )
 
-        val highlight = service.documentHighlight(
-            DocumentHighlightParams(TextDocumentIdentifier(uri.toString()), Position(0, 30)),
-        )
+            val highlight = service.documentHighlight(
+                DocumentHighlightParams(TextDocumentIdentifier(uri.toString()), Position(0, 30)),
+            )
 
-        assertFailsWith<CancellationException> { highlight.await() }
+            assertFailsWith<CancellationException> { highlight.await() }
+        } finally {
+            cancelling.shutdown()
+        }
     }
 
     @Test

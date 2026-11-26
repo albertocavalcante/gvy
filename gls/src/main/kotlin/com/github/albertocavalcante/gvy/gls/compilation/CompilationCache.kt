@@ -18,6 +18,7 @@ internal data class CachedParse(
     val mode: ParseMode?,
     val owned: OwnedSnapshot? = null,
     val fallback: CapturedCompilation? = null,
+    val referenceProducer: ReferenceProducer? = null,
 )
 
 /** Context-owned and legacy parses share a single LRU budget, but only legacy publication writes global indexes. */
@@ -65,7 +66,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         requester: CompilationRequestContext,
         phase: Int,
         mode: ParseMode,
-    ): ParseResult? {
+    ): CachedParse? {
         val key = CacheKey(uri)
         val entry = synchronized(lock) { entries[key] } ?: return null
         val outcome = entry.parseResult.outcome
@@ -76,11 +77,11 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         if (!matches) return null
         val fallback = entry.fallback
         return when {
-            outcome.achievedPhase >= phase -> entry.parseResult
+            outcome.achievedPhase >= phase -> entry
             // Input validation can invoke a strategy. Never run it under the LRU monitor, and never return
             // a fallback that was replaced while its original producer's inputs were being checked.
             fallback?.canServe(requester) == true -> synchronized(lock) {
-                entries[key]?.takeIf { it === entry }?.parseResult
+                entries[key]?.takeIf { it === entry }
             }
             else -> null
         }

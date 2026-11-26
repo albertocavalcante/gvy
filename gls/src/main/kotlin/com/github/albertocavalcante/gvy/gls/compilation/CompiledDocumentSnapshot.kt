@@ -12,25 +12,18 @@ import java.util.stream.BaseStream
 import kotlin.coroutines.CoroutineContext
 
 /** Source and parse components captured from one cache entry. Consumers treat the AST as read-only. */
-internal data class CompiledDocumentSnapshot(val sourceText: String, val parseResult: ParseResult)
+internal data class CompiledDocumentSnapshot(
+    val sourceText: String,
+    val parseResult: ParseResult,
+    val referenceProducer: ReferenceProducer? = null,
+    val sourceIdentity: String? = null,
+)
 
 /** Result of acquiring source and parser facts under one ownership fence. */
 internal sealed interface SnapshotAcquisition {
     sealed class Available(val snapshot: CompiledDocumentSnapshot, val isCurrent: () -> Boolean) : SnapshotAcquisition {
-        suspend fun <T> query(compute: suspend (CompiledDocumentSnapshot) -> T): SnapshotQuery<T> {
-            val caller = currentCoroutineContext()
-            caller.ensureActive()
-            if (!currentFor(caller)) return SnapshotQuery.Stale
-            val result = compute(snapshot)
-            requireEagerResult(result, caller)
-            return if (currentFor(caller)) SnapshotQuery.Answer(result, this is Partial) else SnapshotQuery.Stale
-        }
-
-        private fun currentFor(caller: CoroutineContext): Boolean {
-            val current = isCurrent()
-            caller.ensureActive()
-            return current
-        }
+        suspend fun <T> query(compute: suspend (CompiledDocumentSnapshot) -> T): SnapshotQuery<T> =
+            queryCurrentSnapshot(isCurrent, partial = this is Partial) { compute(snapshot) }
     }
 
     class Ready(snapshot: CompiledDocumentSnapshot, isCurrent: () -> Boolean) : Available(snapshot, isCurrent)
@@ -46,6 +39,27 @@ internal sealed interface SnapshotQuery<out T> {
     data object Missing : SnapshotQuery<Nothing>
     data object Stale : SnapshotQuery<Nothing>
     class Failure(val cause: Exception) : SnapshotQuery<Nothing>
+}
+
+/** Freshness suppliers may call strategies and shadow lookups, both of which can cancel their caller. */
+internal fun CoroutineContext.inputsCurrent(check: () -> Boolean): Boolean {
+    ensureActive()
+    val current = check()
+    ensureActive()
+    return current
+}
+
+/** Validate on both sides of eager computation, including cancellation inside either freshness check. */
+internal suspend fun <T> queryCurrentSnapshot(
+    isCurrent: () -> Boolean,
+    partial: Boolean = false,
+    compute: suspend () -> T,
+): SnapshotQuery<T> {
+    val caller = currentCoroutineContext()
+    if (!caller.inputsCurrent(isCurrent)) return SnapshotQuery.Stale
+    val result = compute()
+    requireEagerResult(result, caller)
+    return if (caller.inputsCurrent(isCurrent)) SnapshotQuery.Answer(result, partial) else SnapshotQuery.Stale
 }
 
 private const val LAZY_QUERY_RESULT = "Consume traversal results inside the snapshot query"

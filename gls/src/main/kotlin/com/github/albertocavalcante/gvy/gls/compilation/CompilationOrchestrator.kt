@@ -111,6 +111,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
     private class Claim(
         val ticket: ArtifactOwnership.Ticket,
         val publication: SemanticIndexer.Publication?,
+        val origin: Origin,
         val isValid: () -> Boolean,
     )
 
@@ -144,7 +145,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                 { true }
             }
         }
-        return Claim(ticket, publication, isValid)
+        return Claim(ticket, publication, origin, isValid)
     }
 
     /** Stops compiles started for waiters (server shutdown); later waiters fail fast. */
@@ -176,14 +177,20 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
             val context = workspaceManager.compileContextFor(uri, content, workspace).captureClasspath()
 
             val requester = CompilationRequestContext(claim.ticket, workspace, context)
-            val cachedResult = cacheService.getForCompile(
+            val cached = cacheService.getForCompile(
                 uri,
                 content,
                 requester,
                 compilePhase,
                 ParseMode.WORKSPACE,
             )
-            if (cachedResult != null) {
+            val source = SnapshotSource(dependencies, uri, claim.ticket, workspace)
+            val compatible = cached?.referenceProducer?.let {
+                it.matches(context.classpath, workerSessionManager.current()) &&
+                    it.isCurrent(source, uri, content, ::referenceSources)
+            }
+            if (cached != null && compatible != false) {
+                val cachedResult = cached.parseResult
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
 
@@ -202,7 +209,13 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                     val indexed = symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel } != null
                     cachedResult.ast?.takeIf { indexed }?.let {
                         publication?.let { token ->
-                            semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
+                            semanticIndexer?.publish(
+                                token,
+                                content,
+                                it,
+                                cachedResult.outcome.achievedPhase,
+                                producer = cached.referenceProducer,
+                            )
                         }
                     }
                     resultMapper.map(cachedResult, content)
@@ -250,7 +263,15 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
             val outcome = parseResult.outcome
             val fallback = capture.takeIf { outcome.typesUnresolved && outcome.fallback != null }
-            val entry = CachedParse(content, parseResult, capture.context.fingerprint, parseMode, fallback = fallback)
+            val producer = capture.referenceProducer(parseResult)
+            val entry = CachedParse(
+                content,
+                parseResult,
+                capture.context.fingerprint,
+                parseMode,
+                fallback = fallback,
+                referenceProducer = producer,
+            )
             val published = cacheService.publishCompile(claim.ticket, entry, claim.isValid) {
                 symbolIndexer.install(uri, symbols)
             }
@@ -258,7 +279,14 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
             if (published) {
                 // Semantic document for cross-file resolution
                 claim.publication?.let {
-                    semanticIndexer?.publish(it, content, ast, parseResult.outcome.achievedPhase)
+                    semanticIndexer?.publish(
+                        it,
+                        content,
+                        ast,
+                        parseResult.outcome.achievedPhase,
+                        fromBuffer = claim.origin != Origin.DISK,
+                        producer = producer,
+                    )
                 }
             } else {
                 logger.debug { "Discarded the result of a retired compile of $uri" }
@@ -500,6 +528,9 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return Awaited.Done(null)
     }
+
+    internal fun referenceSources(uri: URI, workspace: WorkspaceModel): List<Path> =
+        getWorkspaceSourcesForCompilation(uri, workspace)
 
     /**
      * Gets workspace sources, using bounded selection when dependency info is available.

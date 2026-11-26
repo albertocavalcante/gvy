@@ -4,7 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
-import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.services.OpenDocuments
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -94,16 +94,15 @@ internal class SnapshotSource(
     val workspace: WorkspaceModel = dependencies.workspaceManager.current(),
 ) {
     private val provider = dependencies.documentProvider
-    private val buffers = provider?.withLifecycleLock { provider.getBuffer(uri) to provider.snapshotIdentities() }
+    private val buffers = provider?.withLifecycleLock { provider.getBuffer(uri) to provider.captureDocuments() }
     val buffer = buffers?.first
-    val documents = buffers?.second.orEmpty()
+    val inventory = buffers?.second ?: OpenDocuments.absent
+    val documents = inventory.documents
+    val sourceIdentity: String = buffer?.snapshot?.sourceIdentity ?: ticket.sourceIdentity
     private val worker = dependencies.workerSessionManager.current()
 
-    private fun sameDocuments(other: Map<URI, DocumentSnapshot>): Boolean =
-        documents.size == other.size && documents.all { (uri, state) -> other[uri] === state }
-
     private fun sameSource(other: SnapshotSource): Boolean = workspace === other.workspace &&
-        buffer?.incarnation === other.buffer?.incarnation && sameDocuments(other.documents)
+        buffer?.incarnation === other.buffer?.incarnation && inventory.identity === other.inventory.identity
 
     fun matches(other: SnapshotSource): Boolean = ticket.sharesInputs(other.ticket) && sameSource(other)
 
@@ -112,7 +111,7 @@ internal class SnapshotSource(
 
     fun isCurrent(): Boolean = dependencies.workspaceManager.current() === workspace &&
         provider?.getIncarnation(uri) === buffer?.incarnation &&
-        sameDocuments(provider?.snapshotIdentities().orEmpty()) &&
+        inventory.identity === (provider?.captureDocuments() ?: OpenDocuments.absent).identity &&
         dependencies.cacheService.ownership.inputsCurrent(ticket)
 
     fun unlessRetired(outcome: SnapshotAcquisition) = if (isCurrent()) outcome else SnapshotAcquisition.Stale
@@ -132,6 +131,7 @@ internal class CapturedCompilation(
 ) {
     private val dependencies = source.dependencies
     val uri: URI get() = source.uri
+    val sourceIdentity: String by lazy { "${source.sourceIdentity}/${contentHash(content)}" }
     val delivery = PendingDelivery(uri)
     val ticket: ArtifactOwnership.Ticket get() = source.ticket
     private val workspace = source.workspace
@@ -143,6 +143,21 @@ internal class CapturedCompilation(
     private val sources = selectSources(uri, workspace)
     private val locator = dependencies.symbolIndexer.classLocator(sourcePath)
     private val lookups = ConcurrentHashMap<String, List<Path>>()
+
+    /** Freeze only what this finished invocation consumed. The retained witness owns no compiler or source text. */
+    fun referenceProducer(result: ParseResult): ReferenceProducer = ReferenceProducer(
+        context.classpath,
+        session,
+        ReferenceSources(
+            workspace,
+            ticket,
+            source.inventory.identity,
+            mode,
+            sources,
+            lookups.mapValues { (_, answer) -> answer.toList() },
+        ),
+        result.isSuccessful && !result.outcome.isDegraded,
+    )
 
     /** Repeated lookups see their first answer, including a miss. Only names this worker asks for are retained. */
     private fun locate(name: String): List<Path> = lookups.computeIfAbsent(name, locator)
@@ -195,7 +210,10 @@ internal class SnapshotAcquirer(
 ) {
     private val cache = dependencies.cacheService
 
-    suspend fun acquire(uri: URI, phase: Int, mode: ParseMode): SnapshotAcquisition {
+    /** Fence all source inputs before preparing the workspace reference index. */
+    fun referenceSource(uri: URI): SnapshotSource = SnapshotSource(dependencies, uri)
+
+    suspend fun acquire(uri: URI, phase: Int, mode: ParseMode?): SnapshotAcquisition {
         currentCoroutineContext().ensureActive()
         dependencies.waiterScope.coroutineContext.ensureActive()
         val source = SnapshotSource(dependencies, uri)
@@ -210,7 +228,7 @@ internal class SnapshotAcquirer(
         return fresh.takeIf(original::canRetryWith)
     }
 
-    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode): SnapshotAcquisition {
+    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition {
         currentCoroutineContext().ensureActive()
         dependencies.waiterScope.coroutineContext.ensureActive()
         if (!source.isCurrent()) return SnapshotAcquisition.Stale
@@ -229,7 +247,8 @@ internal class SnapshotAcquirer(
         return if (content == null) {
             source.unlessRetired(SnapshotAcquisition.Missing)
         } else {
-            resolve(CapturedCompilation(selectSources, source, content, phase, mode))
+            val selectedMode = mode ?: if (source.buffer != null) ParseMode.WORKSPACE else ParseMode.MINIMAL
+            resolve(CapturedCompilation(selectSources, source, content, phase, selectedMode))
         }
     }
 
@@ -292,7 +311,13 @@ internal class SnapshotAcquirer(
         } catch (error: CompilationFailedException) {
             return failure(capture, error)
         }
-        return publish(OwnedSnapshot(capture, CompiledDocumentSnapshot(capture.content, result)), previous)
+        val snapshot = CompiledDocumentSnapshot(
+            capture.content,
+            result,
+            referenceProducer = capture.referenceProducer(result),
+            sourceIdentity = capture.sourceIdentity,
+        )
+        return publish(OwnedSnapshot(capture, snapshot), previous)
     }
 
     /** The worker transfers its unpublished native loader here. Published results may outlive this job. */
