@@ -4,12 +4,12 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
-import com.github.albertocavalcante.gvy.gls.services.ClassInfo
-import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.services.ClassInfo
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.utils.ImportUtils
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CompletionItem
@@ -53,7 +53,8 @@ object AutoImportCompletionProvider {
         // This public convenience API also serves callers without an owned parsing copy.
         val module = compilationService.getAst(uri) as? ModuleNode
         return candidates(
-            content, module,
+            content,
+            module,
             workspace = { compilationService.symbolIndexingService.findClasses(ClassNameQuery.Prefix(prefix)) },
             classpath = {
                 runSuspendCatching { classpathService.findClassesByPrefix(prefix, MAX_RESULTS) }.getOrElse {
@@ -67,7 +68,8 @@ object AutoImportCompletionProvider {
     internal fun getTypeCompletions(prefix: String, content: String, inputs: CompletionInputs): List<CompletionItem> {
         if (prefix.isBlank()) return emptyList()
         return candidates(
-            content, inputs.native.held.parseResult.ast,
+            content,
+            inputs.native.held.parseResult.ast,
             workspace = { inputs.workspaceClasses(ClassNameQuery.Prefix(prefix)) },
             classpath = { inputs.classNames(prefix, MAX_RESULTS) },
         )

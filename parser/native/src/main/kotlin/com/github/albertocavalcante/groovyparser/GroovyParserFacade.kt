@@ -16,15 +16,18 @@ import com.github.albertocavalcante.groovyparser.internal.SyntaxSourceContext
 import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.nativeapi.CompiledDocumentInput
 import com.github.albertocavalcante.nativeapi.DocumentReaderSource
 import com.github.albertocavalcante.nativeapi.ExcludedSource
 import com.github.albertocavalcante.nativeapi.Fallback
 import com.github.albertocavalcante.nativeapi.NativeClasspathInputs
+import com.github.albertocavalcante.nativeapi.NativeSourceMembership
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
+import com.github.albertocavalcante.nativeapi.WorkspaceFileReaderSource
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
@@ -123,6 +126,23 @@ private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequ
 } finally {
     // The unit is cached with the result; don't keep the caller's job alive through it.
     compilationUnit.progressCallback = null
+}
+
+private fun compileWithSourceMembership(
+    classLoader: SdkFallbackGroovyClassLoader,
+    compilationUnit: CompilationUnit,
+    request: ParseRequest,
+): CompileFailure? {
+    classLoader.beginSourceSearch()
+    return try {
+        compileCatching(compilationUnit, request)
+    } finally {
+        classLoader.finishSourceSearch()?.let { membership ->
+            compilationUnit.ast.modules.forEach { module ->
+                module.putNodeMetaData(NativeSourceMembership::class.java, membership)
+            }
+        }
+    }
 }
 
 /**
@@ -566,7 +586,7 @@ class GroovyParserFacade internal constructor(
                 lookup.buffers,
             )
 
-            val failure = compileCatching(compilationUnit, request)
+            val failure = compileWithSourceMembership(classLoader, compilationUnit, request)
             observeCompilation?.invoke(compilationUnit)
             lookup.onCompileFailure(failure)
             val compilationFailed = failure != null
@@ -673,6 +693,7 @@ class GroovyParserFacade internal constructor(
             CompilerConfiguration.GROOVYDOC to true,
         )
         sourceEncoding = "UTF-8"
+        pluginFactory = CompiledDocumentInput.capture(pluginFactory)
 
         // Scan and disable external AST transformations to prevent classloader conflicts
         val externalTransforms = scanForAstTransformations(classpath)
@@ -787,7 +808,10 @@ class GroovyParserFacade internal constructor(
             .forEach { path ->
                 runCatching {
                     logger.trace { "Adding workspace source: $path" }
-                    compilationUnit.addSource(path.toFile())
+                    val source = WorkspaceFileReaderSource(path.toFile(), config)
+                    compilationUnit.addSource(
+                        SourceUnit(path.toString(), source, config, classLoader, compilationUnit.errorCollector),
+                    )
                 }.onFailure { throwable ->
                     logger.trace { "Failed adding workspace source $path: ${throwable.message}" }
                 }

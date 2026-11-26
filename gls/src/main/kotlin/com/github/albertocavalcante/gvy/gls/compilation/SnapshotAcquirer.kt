@@ -19,6 +19,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.CompilationFailedException
+import org.codehaus.groovy.control.Phases
 import java.io.Closeable
 import java.io.IOException
 import java.net.URI
@@ -248,11 +249,13 @@ internal class SnapshotAcquirer(
         content: String,
         phase: Int,
         mode: ParseMode,
+        inspectCompilerInputs: Boolean,
         query: suspend (CompiledDocumentSnapshot) -> T,
     ): SnapshotQuery<T> {
         val caller = currentCoroutineContext()
         fun sourceCurrent() = source.isCurrent() && source.workerCurrent()
         if (!caller.inputsCurrent(::sourceCurrent)) return SnapshotQuery.Stale
+        var physical: RequestParseInputs? = null
         var captured: CapturedCompilation? = null
         val answer = runSuspendCatching {
             val producer = CapturedCompilation(selectSources, source, content, phase, mode)
@@ -260,6 +263,7 @@ internal class SnapshotAcquirer(
             if (!caller.inputsCurrent { producer.isCurrent() && sourceCurrent() }) return SnapshotQuery.Stale
             val parsed = producer.parse()
             parsed.compilationUnit.classLoader.use {
+                if (inspectCompilerInputs) physical = RequestParseInputs(parsed)
                 val held = CompiledDocumentSnapshot(
                     content,
                     parsed,
@@ -274,13 +278,47 @@ internal class SnapshotAcquirer(
         // Closing this unpublished loader may itself run code or throw. Revalidate after cleanup and
         // after any effectful producer checks, including when the worker or the consumer failed.
         return runSuspendCatching {
-            if (deliveryInputsCurrent(::sourceCurrent) { captured?.isCurrent() != false }) {
+            val qualified = deliveryInputsCurrent(::sourceCurrent) {
+                physical?.isCurrent(source, content, caller::ensureActive) != false && captured?.isCurrent() != false
+            }
+            if (qualified) {
                 answer.getOrThrow()
             } else {
                 SnapshotQuery.Stale
             }
         }.getOrElse { cause ->
             if (cause is Exception) SnapshotQuery.Failure(cause) else throw cause
+        }
+    }
+
+    /** Explicit CLI text can precede creation of a file. Share only a producer for that exact content and policy. */
+    suspend fun <T> queryDiagnostics(
+        source: SnapshotSource,
+        content: String,
+        query: suspend (CompilationResult) -> T,
+    ): SnapshotQuery<T> {
+        val caller = currentCoroutineContext()
+        caller.ensureActive()
+        dependencies.waiterScope.coroutineContext.ensureActive()
+        val capture = CapturedCompilation(selectSources, source, content, Phases.CANONICALIZATION, ParseMode.WORKSPACE)
+        fun current() = source.workerCurrent() && capture.isCurrent()
+        val acquisition = resolve(capture, checkCachedInputs = true, reportWorkerFailure = true).outcome
+        return when (acquisition) {
+            is SnapshotAcquisition.Available -> {
+                val held = acquisition.snapshot
+                val physical = RequestParseInputs(held.parseResult)
+                fun qualified() = physical.isCurrent(source, content, caller::ensureActive) &&
+                    acquisition.isCurrent() && current()
+                queryCurrentSnapshot(::qualified, partial = acquisition is SnapshotAcquisition.Partial) {
+                    query(dependencies.resultMapper.map(held.parseResult, content))
+                }
+            }
+            is SnapshotAcquisition.Failure -> queryCurrentSnapshot(::current, partial = true) {
+                val failed = dependencies.errorHandler.handleException(acquisition.cause, source.uri)
+                query(failed.copy(sourceText = content))
+            }
+            SnapshotAcquisition.Stale -> SnapshotQuery.Stale
+            SnapshotAcquisition.Missing -> SnapshotQuery.Missing
         }
     }
 
@@ -329,8 +367,12 @@ internal class SnapshotAcquirer(
         ParseMode.WORKSPACE,
     )
 
-    suspend fun acquireSource(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition =
-        whileCallerActive { acquireCurrent(source, phase, mode) }
+    suspend fun acquireSource(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode?,
+        checkCachedInputs: Boolean = false,
+    ): SnapshotAcquisition = whileCallerActive { acquireCurrent(source, phase, mode, checkCachedInputs) }
 
     private suspend inline fun whileCallerActive(acquire: () -> SnapshotAcquisition): SnapshotAcquisition {
         val caller = currentCoroutineContext()
@@ -342,7 +384,12 @@ internal class SnapshotAcquirer(
         return result.getOrThrow()
     }
 
-    private suspend fun acquireCurrent(source: SnapshotSource, phase: Int, mode: ParseMode?): SnapshotAcquisition {
+    private suspend fun acquireCurrent(
+        source: SnapshotSource,
+        phase: Int,
+        mode: ParseMode?,
+        checkCachedInputs: Boolean = false,
+    ): SnapshotAcquisition {
         if (!source.isCurrent()) return SnapshotAcquisition.Stale
         val content = try {
             source.buffer?.snapshot?.content ?: UriPathConverter.toPath(source.uri)?.let { path ->
@@ -360,7 +407,8 @@ internal class SnapshotAcquirer(
             source.unlessRetired(SnapshotAcquisition.Missing)
         } else {
             val selectedMode = mode ?: if (source.buffer != null) ParseMode.WORKSPACE else ParseMode.MINIMAL
-            resolve(CapturedCompilation(selectSources, source, content, phase, selectedMode)).outcome
+            val capture = CapturedCompilation(selectSources, source, content, phase, selectedMode)
+            resolve(capture, checkCachedInputs).outcome
         }
     }
 
@@ -369,11 +417,21 @@ internal class SnapshotAcquirer(
         val retiredProducer = selected.takeIf { outcome === SnapshotAcquisition.Stale }
     }
 
-    private suspend fun resolve(capture: CapturedCompilation): Resolution {
-        currentCoroutineContext().ensureActive()
+    private suspend fun resolve(
+        capture: CapturedCompilation,
+        checkCachedInputs: Boolean = false,
+        reportWorkerFailure: Boolean = false,
+    ): Resolution {
+        val caller = currentCoroutineContext()
+        caller.ensureActive()
         if (!capture.isCurrent()) return Resolution(checked(SnapshotAcquisition.Stale))
         val previous = cache.getOwned(capture.uri)
-        if (previous != null && capture.canShare(previous.capture)) {
+        if (previous != null && capture.canShare(previous.capture) &&
+            (
+                !checkCachedInputs || RequestParseInputs(previous.snapshot.parseResult)
+                    .isCurrent(capture.source, capture.content, caller::ensureActive)
+                )
+        ) {
             val outcome = previous.outcome()
             val answer = checked(if (capture.isCurrent()) outcome else SnapshotAcquisition.Stale)
             return Resolution(answer, previous.capture)
@@ -385,7 +443,13 @@ internal class SnapshotAcquirer(
         }
         var answer: Resolution? = null
         try {
-            answer = awaitCurrent(capture, pending)
+            answer = try {
+                awaitCurrent(capture, pending)
+            } catch (error: WorkerFailure) {
+                caller.ensureActive()
+                if (!reportWorkerFailure) throw error.failure
+                Resolution(failure(pending.identity, error.failure))
+            }
             return answer
         } finally {
             // After this final checked handoff the caller may use the parser, even if it is cancelled later.
@@ -429,6 +493,12 @@ internal class SnapshotAcquirer(
             return failure(capture, error)
         } catch (error: CompilationFailedException) {
             return failure(capture, error)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // Other parse errors remain exceptions for editor callers. Only CLI converts worker failures
+            // into diagnostics. IO/strategy failures outside parse() must keep their original identity.
+            throw WorkerFailure(error)
         }
         val snapshot = CompiledDocumentSnapshot(
             capture.content,
@@ -458,6 +528,8 @@ internal class SnapshotAcquirer(
             if (!transferred) loader.close()
         }
     }
+
+    private class WorkerFailure(val failure: Exception) : RuntimeException(failure)
 
     private fun failure(capture: CapturedCompilation, error: Exception): SnapshotAcquisition =
         if (capture.isCurrent()) SnapshotAcquisition.Failure(error) else SnapshotAcquisition.Stale

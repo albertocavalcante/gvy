@@ -206,7 +206,9 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
                     // Semantics follow the symbol commit: published only when this ticket's index is current
-                    val indexed = symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel } != null
+                    val inputs = cached.symbolInputs
+                    val indexed =
+                        symbolIndexer.ensureIndexed(claim.ticket, content, inputs) { cachedResult.astModel } != null
                     cachedResult.ast?.takeIf { indexed }?.let {
                         publication?.let { token ->
                             semanticIndexer?.publish(
@@ -260,10 +262,15 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
         if (ast != null) {
             // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
             // index, as one commit that a retired compile cannot make (#1184)
-            val symbols = symbolIndexer.prepare(content, parseResult.astModel)
             val outcome = parseResult.outcome
             val fallback = capture.takeIf { outcome.typesUnresolved && outcome.fallback != null }
             val producer = capture.referenceProducer(parseResult)
+            val contextForSymbols = capture.context
+            val inputs = SymbolIndexingService.Inputs(parseResult) { request ->
+                producer.isCurrent(request, uri, content, ::referenceSources) &&
+                    workspaceManager.compileContextFor(uri, content, request.workspace) == contextForSymbols
+            }
+            val symbols = symbolIndexer.prepare(content, parseResult.astModel, inputs)
             val entry = CachedParse(
                 content,
                 parseResult,
@@ -271,6 +278,7 @@ class CompilationOrchestrator(private val dependencies: CompilationOrchestratorD
                 parseMode,
                 fallback = fallback,
                 referenceProducer = producer,
+                symbolInputs = inputs,
             )
             val published = cacheService.publishCompile(claim.ticket, entry, claim.isValid) {
                 symbolIndexer.install(uri, symbols)

@@ -19,6 +19,8 @@ internal data class CachedParse(
     val owned: OwnedSnapshot? = null,
     val fallback: CapturedCompilation? = null,
     val referenceProducer: ReferenceProducer? = null,
+    /** A restored symbol index must retain the original parse window, including its selected target. */
+    val symbolInputs: SymbolIndexingService.Inputs? = null,
 )
 
 /** Context-owned and legacy parses share a single LRU budget, but only legacy publication writes global indexes. */

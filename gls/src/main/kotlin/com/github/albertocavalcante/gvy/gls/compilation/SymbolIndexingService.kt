@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -63,11 +64,17 @@ class SymbolIndexingService(
     }
 
     /** An index together with the hash of the content it was built from, built before it is committed. */
-    internal class Prepared(val contentHash: String, val index: SymbolIndex) {
+    internal class Prepared(val content: String, val index: SymbolIndex, val inputs: Inputs? = null) {
+        val contentHash: String = contentHash(content)
+
         /** Classes this file declares; feeds the class-name lookup (#861). */
         val classes: List<Symbol.Class> by lazy {
             index.getUris().flatMap(index::getSymbols).filterIsInstance<Symbol.Class>()
         }
+    }
+
+    internal class Inputs(parsed: ParseResult, val producerCurrent: (SnapshotSource) -> Boolean) {
+        val physical = RequestParseInputs(parsed)
     }
 
     private val logger = KotlinLogging.logger {}
@@ -84,7 +91,8 @@ class SymbolIndexingService(
     fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
 
     /** Builds the index of [astModel], compiled from [content], without storing it: see [install]. */
-    internal fun prepare(content: String, astModel: GroovyAstModel): Prepared = build(contentHash(content), astModel)
+    internal fun prepare(content: String, astModel: GroovyAstModel, inputs: Inputs? = null): Prepared =
+        Prepared(content, SymbolIndex().buildFromVisitor(astModel), inputs)
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
@@ -106,6 +114,7 @@ class SymbolIndexingService(
     internal fun ensureIndexed(
         ticket: ArtifactOwnership.Ticket,
         content: String,
+        inputs: Inputs? = null,
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
         val hash = contentHash(content)
@@ -115,7 +124,7 @@ class SymbolIndexingService(
             return stored.index.takeIf { ownership.isCurrent(ticket) }
         }
         val astModel = astModelProvider() ?: return null
-        val prepared = build(hash, astModel)
+        val prepared = prepare(content, astModel, inputs)
         return prepared.index.takeIf { ownership.commit(ticket) { install(ticket.uri, prepared) } }
     }
 
@@ -252,8 +261,19 @@ class SymbolIndexingService(
 
     // Private helper methods
 
-    private fun build(contentHash: String, astModel: GroovyAstModel) =
-        Prepared(contentHash, SymbolIndex().buildFromVisitor(astModel))
+    /** Snapshot the ordered rows and publication under the writer lock. Shadow resolution runs outside it. */
+    internal fun captureRows() = classNames.read { entries.toMap() }
+
+    internal fun hiddenRows() = shadowed()
+
+    internal fun captureEnvironment(): () -> Boolean {
+        val workspace = workspaceManager.current()
+        val worker = workerSessionManager.current()
+        val inputsCurrent = ownership.captureInputGeneration()
+        return {
+            workspaceManager.current() === workspace && workerSessionManager.current() === worker && inputsCurrent()
+        }
+    }
 
     /**
      * Applies a disk-derived [write] while [ticket] is current and no buffer is open, checked under the same
@@ -287,7 +307,8 @@ class SymbolIndexingService(
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
         // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
         val workspace = workspaceManager.current()
-        val parseResult = workerSessionManager.parse(
+        val worker = workerSessionManager.current()
+        val parseResult = worker.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
@@ -299,7 +320,11 @@ class SymbolIndexingService(
         )
 
         // Opened (or retired) while it was parsed: the newer facts win over this disk copy.
-        val prepared = build(hash, parseResult.astModel)
+        val inputs = Inputs(parseResult) { source ->
+            source.workspace === workspace && workerSessionManager.current() === worker &&
+                ownership.isCurrent(ticket) && source.buffer == null
+        }
+        val prepared = prepare(content, parseResult.astModel, inputs)
         if (commitFromDisk(ticket) { install(uri, prepared) }) {
             logger.debug { "Indexed workspace file: $uri" }
             prepared.index

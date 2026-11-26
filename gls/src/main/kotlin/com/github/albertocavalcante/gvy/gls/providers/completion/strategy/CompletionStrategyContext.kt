@@ -3,8 +3,8 @@
 
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
-import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
+import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
@@ -33,7 +33,8 @@ internal data class CompletionStrategyContext(
     val isJenkinsFile: Boolean,
     val jenkinsMetadata: MergedJenkinsMetadata? = null,
     val jenkinsBlockContext: JenkinsBlockContext? = null,
-    val jenkinsCapabilities: JenkinsCapabilities? = baseContext.compilationService.workspaceManager.getJenkinsCapabilities(),
+    val jenkinsCapabilities: JenkinsCapabilities? = baseContext.compilationService.workspaceManager
+        .getJenkinsCapabilities(),
 )
 
 /**

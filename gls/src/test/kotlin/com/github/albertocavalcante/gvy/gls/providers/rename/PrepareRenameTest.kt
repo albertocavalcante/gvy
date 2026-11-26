@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SnapshotSource
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
@@ -131,7 +132,8 @@ class PrepareRenameTest {
             val source = "class Cases { def call(value) { value } }"
             fixture(source).use {
                 val compilation = spyk(it.compilation)
-                coEvery { compilation.ensureCompiled(it.uri) } throws CancellationException("cancelled")
+                coEvery { compilation.acquireEditorSnapshot(any<SnapshotSource>()) } throws
+                    CancellationException("cancelled")
                 val provider = RenameProvider(compilation) { uri -> it.documents.get(uri) }
                 assertFailsWith<CancellationException> {
                     provider.providePrepareRename(

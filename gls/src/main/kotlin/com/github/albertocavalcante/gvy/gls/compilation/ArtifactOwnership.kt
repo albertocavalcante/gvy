@@ -106,6 +106,13 @@ class ArtifactOwnership {
         ticket.epoch == epoch && ticket.lastRetirement == lastStamp
     }
 
+    /** Workspace queries can have no primary URI, including a search of an empty index. */
+    internal fun captureInputGeneration(): () -> Boolean = synchronized(monitor) {
+        val capturedEpoch = epoch
+        val capturedRetirement = lastStamp
+        return@synchronized { synchronized(monitor) { epoch == capturedEpoch && lastStamp == capturedRetirement } }
+    }
+
     /**
      * Runs [write] only while [ticket] is current and, for buffer work, while no newer version of the same
      * buffer lifecycle has already been written: the newest version wins whatever the completion order

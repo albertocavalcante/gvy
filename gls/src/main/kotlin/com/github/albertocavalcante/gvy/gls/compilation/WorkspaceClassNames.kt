@@ -33,6 +33,7 @@ internal class WorkspaceClassNames {
     // after a clear. Lock-free readers see the old or the new map (#1342).
     @Volatile private var files = ConcurrentSkipListMap<String, MutableSet<URI>>()
     private val lock = Any()
+
     @Volatile private var publication = Any()
 
     /** A name lookup and its retirement witness both see the same committed set of file entries. */
