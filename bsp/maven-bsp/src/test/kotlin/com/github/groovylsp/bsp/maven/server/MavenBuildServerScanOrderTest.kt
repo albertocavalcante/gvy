@@ -3,9 +3,11 @@
 
 package com.github.groovylsp.bsp.maven.server
 
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createInitParams
 import com.github.groovylsp.bsp.maven.workspace.MavenModuleInfo
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -71,5 +73,38 @@ class MavenBuildServerScanOrderTest {
 
         // Then: the server keeps the modules of the reload that was requested last
         assertThat(targetIds(server)).containsExactly("maven:com.example:fresh", "maven:com.example:fresh:test")
+    }
+
+    @Test
+    fun `a request made during a reload waits for it and answers from its modules`() {
+        // Given: an initialized server whose reload scan is held
+        val reload = scanOf("after")
+        val server = serverScanning(scanOf("before").released(), reload)
+        server.buildInitialize(createInitParams(tempDir)).get(WAIT_SECONDS, TimeUnit.SECONDS)
+        val reloading = server.workspaceReload()
+
+        // When: a request arrives before that scan returns
+        val targets = server.workspaceBuildTargets()
+
+        // Then: the request waits for the scan, and its answer has the reloaded modules
+        assertThat(targets).isNotDone()
+        reload.release.countDown()
+        reloading.get(WAIT_SECONDS, TimeUnit.SECONDS)
+        assertThat(targets.get(WAIT_SECONDS, TimeUnit.SECONDS).targets.map { it.id.uri })
+            .containsExactly("maven:com.example:after", "maven:com.example:after:test")
+    }
+
+    @Test
+    fun `a failed reload keeps the modules of the scan before it`() {
+        // Given: an initialized server whose next scan fails
+        val server = serverScanning(scanOf("kept").released(), Scan { error("unreadable pom") }.released())
+        server.buildInitialize(createInitParams(tempDir)).get(WAIT_SECONDS, TimeUnit.SECONDS)
+
+        // When: the reload fails
+        assertThatThrownBy { server.workspaceReload().get(WAIT_SECONDS, TimeUnit.SECONDS) }
+            .hasCauseInstanceOf(IllegalStateException::class.java)
+
+        // Then: requests still answer from the modules the initialize scan found
+        assertThat(targetIds(server)).containsExactly("maven:com.example:kept", "maven:com.example:kept:test")
     }
 }

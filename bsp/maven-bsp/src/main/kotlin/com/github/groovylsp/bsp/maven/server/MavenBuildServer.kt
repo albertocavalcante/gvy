@@ -75,12 +75,18 @@ class MavenBuildServer internal constructor(
     private val sourceProvider = MavenSourceProvider()
     private val dependencyProvider = MavenDependencyProvider(repositorySystem, sessionSupplier)
 
-    private var modules: List<MavenModuleInfo> = emptyList()
-    private var client: BuildClient? = null
-
     // This published module keeps java.util.concurrent rather than depending on :common:concurrent (#2474).
     private val exitListener = AtomicReference<(() -> Unit)?>(null)
     private val shutdown = AtomicBoolean(false)
+
+    /**
+     * The modules of the scan requested last, as a future that never fails. A scan swaps its future in before it
+     * starts, so a request made after a reload waits for that reload's scan, and an older scan that finishes later
+     * changes nothing a request can see. A scan that fails passes on the modules of the scan before it.
+     */
+    private val latestModules = AtomicReference<CompletableFuture<List<MavenModuleInfo>>>(
+        CompletableFuture.completedFuture(emptyList()),
+    )
 
     /** True once `build/shutdown` was received; the standalone launcher maps it to the process exit code. */
     val shutdownRequested: Boolean
@@ -93,9 +99,12 @@ class MavenBuildServer internal constructor(
         sessionSupplier: () -> RepositorySystemSession,
     ) : this(workspaceRoot, repositorySystem, sessionSupplier, MavenWorkspaceScanner()::scan)
 
-    fun connect(client: BuildClient) {
-        this.client = client
-    }
+    /**
+     * Accepts the client proxy. The server sends the client no notifications yet (#821), so it keeps no reference to
+     * it; the method stays for the launcher and for existing callers of the published API.
+     */
+    @Suppress("UnusedParameter") // Preserve the published signature; notifications will need the client.
+    fun connect(client: BuildClient) = Unit
 
     /**
      * Registers the owner's reaction to `build/exit`. The server never terminates the process itself:
@@ -110,8 +119,7 @@ class MavenBuildServer internal constructor(
     override fun buildInitialize(params: InitializeBuildParams): CompletableFuture<InitializeBuildResult> {
         logger.info { "Initializing Maven BSP server for workspace: ${params.rootUri}" }
 
-        return CompletableFuture.supplyAsync {
-            modules = scan(workspaceRoot)
+        return scanWorkspace().thenApply { modules ->
             logger.info { "Found ${modules.size} Maven modules" }
 
             InitializeBuildResult(
@@ -140,36 +148,56 @@ class MavenBuildServer internal constructor(
 
     // === Workspace Operations ===
 
-    override fun workspaceBuildTargets(): CompletableFuture<WorkspaceBuildTargetsResult> =
-        CompletableFuture.supplyAsync {
-            val targets = targetProvider.createTargets(modules)
-            logger.info { "Returning ${targets.size} build targets" }
-            WorkspaceBuildTargetsResult(targets)
-        }
-
-    override fun workspaceReload(): CompletableFuture<Any> = CompletableFuture.supplyAsync {
-        logger.info { "Reloading workspace" }
-        modules = scan(workspaceRoot)
-        logger.info { "Reload complete: ${modules.size} modules" }
-        null
+    override fun workspaceBuildTargets(): CompletableFuture<WorkspaceBuildTargetsResult> = withModules { modules ->
+        val targets = targetProvider.createTargets(modules)
+        logger.info { "Returning ${targets.size} build targets" }
+        WorkspaceBuildTargetsResult(targets)
     }
+
+    override fun workspaceReload(): CompletableFuture<Any> {
+        logger.info { "Reloading workspace" }
+        return scanWorkspace().thenApply { modules ->
+            logger.info { "Reload complete: ${modules.size} modules" }
+            null
+        }
+    }
+
+    /**
+     * Scans the workspace and makes the result what later requests see. The returned future fails when the scan
+     * does; requests then keep the modules of the scan before it.
+     */
+    private fun scanWorkspace(): CompletableFuture<List<MavenModuleInfo>> {
+        val published = CompletableFuture<List<MavenModuleInfo>>()
+        val previous = latestModules.getAndSet(published)
+        val scanned = CompletableFuture.supplyAsync { scan(workspaceRoot) }
+        return scanned.whenComplete { found, failure ->
+            if (failure == null) {
+                published.complete(found)
+            } else {
+                previous.thenAccept { kept -> published.complete(kept) }
+            }
+        }
+    }
+
+    /** Runs [handler] on one snapshot of the modules, once the scan requested last has finished. */
+    private fun <T> withModules(handler: (List<MavenModuleInfo>) -> T): CompletableFuture<T> =
+        latestModules.get().thenApplyAsync { modules -> handler(modules) }
 
     // === Build Target Operations ===
 
-    override fun buildTargetSources(params: SourcesParams): CompletableFuture<SourcesResult> =
-        CompletableFuture.supplyAsync {
-            val requestedTargets = params.targets.map { it.uri }.toSet()
-            val relevantModules = modules.filter { module ->
-                val mainUri = targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri
-                val testUri = targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.TEST).uri
-                mainUri in requestedTargets || testUri in requestedTargets
-            }
-            sourceProvider.getSources(relevantModules)
+    override fun buildTargetSources(params: SourcesParams): CompletableFuture<SourcesResult> = withModules { modules ->
+        val requestedTargets = params.targets.map { it.uri }.toSet()
+        val relevantModules = modules.filter { module ->
+            val mainUri = targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri
+            val testUri = targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.TEST).uri
+            mainUri in requestedTargets || testUri in requestedTargets
         }
+        sourceProvider.getSources(relevantModules)
+    }
 
     override fun buildTargetDependencyModules(
         params: DependencyModulesParams,
-    ): CompletableFuture<DependencyModulesResult> = CompletableFuture.supplyAsync {
+    ): CompletableFuture<DependencyModulesResult> = withModules { modules ->
         val requestedTargets = params.targets.map { it.uri }.toSet()
         val relevantModules = modules.filter { module ->
             val mainUri = targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri
@@ -181,7 +209,7 @@ class MavenBuildServer internal constructor(
 
     override fun buildTargetDependencySources(
         params: DependencySourcesParams,
-    ): CompletableFuture<DependencySourcesResult> = CompletableFuture.supplyAsync {
+    ): CompletableFuture<DependencySourcesResult> = withModules { modules ->
         val requestedTargets = params.targets.map { it.uri }.toSet()
         val relevantModules = modules.filter { module ->
             val mainUri = targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri
@@ -192,9 +220,9 @@ class MavenBuildServer internal constructor(
     }
 
     override fun buildTargetResources(params: ResourcesParams): CompletableFuture<ResourcesResult> =
-        CompletableFuture.supplyAsync {
+        withModules { modules ->
             val items = params.targets.map { targetId ->
-                val resolved = findModuleForTarget(targetId)
+                val resolved = findModuleForTarget(modules, targetId)
                 val resources = if (resolved != null) {
                     val (module, isTest) = resolved
                     val baseDir = module.baseDir
@@ -217,7 +245,7 @@ class MavenBuildServer internal constructor(
         }
 
     override fun buildTargetInverseSources(params: InverseSourcesParams): CompletableFuture<InverseSourcesResult> =
-        CompletableFuture.supplyAsync {
+        withModules { modules ->
             // Find which target contains this source file
             val sourceUri = params.textDocument.uri
             val sourcePath = Path.of(java.net.URI.create(sourceUri))
@@ -248,9 +276,9 @@ class MavenBuildServer internal constructor(
         unsupported("buildTarget/cleanCache")
 
     override fun buildTargetOutputPaths(params: OutputPathsParams): CompletableFuture<OutputPathsResult> =
-        CompletableFuture.supplyAsync {
+        withModules { modules ->
             val items = params.targets.map { targetId ->
-                val resolved = findModuleForTarget(targetId)
+                val resolved = findModuleForTarget(modules, targetId)
                 val outputPaths = if (resolved != null) {
                     val (module, isTest) = resolved
                     val baseDir = module.baseDir
@@ -291,7 +319,10 @@ class MavenBuildServer internal constructor(
      * Resolves a target to its module and whether it is the test target, by exact ID. A suffix check would mistake
      * the main target of a module whose artifactId is `test` (`maven:g:test`) for a test target.
      */
-    private fun findModuleForTarget(targetId: BuildTargetIdentifier): Pair<MavenModuleInfo, Boolean>? {
+    private fun findModuleForTarget(
+        modules: List<MavenModuleInfo>,
+        targetId: BuildTargetIdentifier,
+    ): Pair<MavenModuleInfo, Boolean>? {
         for (module in modules) {
             if (targetProvider.buildTargetId(module, MavenBuildTargetProvider.Scope.MAIN).uri == targetId.uri) {
                 return module to false
