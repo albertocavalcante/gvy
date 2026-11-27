@@ -13,8 +13,8 @@ replacing `@Volatile` fields and direct atomics with them.
 
 - **Backed by the stdlib's `kotlin.concurrent.atomics`**, which is experimental (`@ExperimentalAtomicApi`; stabilization
   is [KT-82228](https://youtrack.jetbrains.com/issue/KT-82228)). This module is the only place gvy opts in. Elsewhere,
-  using the package without an opt-in fails to compile, and detekt's `ForbiddenImport` keeps other modules from adding
-  one.
+  using the package without an opt-in fails to compile, and detekt's `StdlibAtomics` rule reports any use in another
+  module, opt-in or not.
 - **No behavior risk on the JVM.** There the stdlib atomics compile to `java.util.concurrent.atomic`. An upstream API
   change breaks compilation in this module and nowhere else.
 - **Plain final classes**, not inline or value classes, so their representation stays private. A different

@@ -26,14 +26,20 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
 
 - `RegexInFunctionBody`: reports `Regex(...)`, `Regex.fromLiteral(...)`, `"...".toRegex()`, `"...".toPattern()` and
   `Pattern.compile(...)` with a constant pattern inside a function, accessor, secondary constructor, class `init` or
-  lambda (except the argument of `lazy`). Hoist the regex into a file-scope, `object` or `companion object` property.
-  Patterns built from a runtime value (parameter, interpolated expression, call, `var`) cannot be hoisted and are not
-  reported. Modules that are not hoisted yet are listed under the rule's `excludes` in `detekt.yml`; remove a module's
-  line in the pull request that hoists it. Do not add detekt baseline entries for this rule (#2420).
-- `VolatileProperty`: reports `@Volatile` annotations, including `@field:Volatile`, qualified names and import aliases.
-  Use `OnceFlag`, `SharedValue` or `Counter` from `:common:concurrent`, `lazy`, or a lock instead. It guards every
-  linted module; it has no excludes, and neither an exclude nor a baseline entry may be added (#2474).
+  lambda. A lambda passed directly to `lazy`, `run`, `let`, `also`, `apply`, `with`, `buildList`, `buildMap`, `buildSet`
+  or `buildString` runs where that call runs, so only the enclosing scope counts for it: such a lambda at file, `object`
+  or `companion object` scope is not reported. Hoist the regex into a file-scope, `object` or `companion object`
+  property. Patterns built from a runtime value (parameter, interpolated expression, call, `var`) cannot be hoisted and
+  are not reported. Modules that are not hoisted yet are listed under the rule's `excludes` in `detekt.yml`; remove a
+  module's line in the pull request that hoists it. Do not add detekt baseline entries for this rule (#2420).
+- `VolatileProperty`: reports `@Volatile` annotations, including `@field:Volatile`, qualified names and import aliases,
+  and a typealias of the annotation where it is declared. Use `OnceFlag`, `SharedValue` or `Counter` from
+  `:common:concurrent`, `lazy`, or a lock instead. It guards every linted module; it has no excludes, and neither an
+  exclude nor a baseline entry may be added (#2474).
 - `JdkAtomics`: reports imports and qualified uses of `java.util.concurrent.atomic` outside tests, `common/concurrent`
   and the standalone published modules (`bsp/*`, `parser/core`). Use the `:common:concurrent` types, or a plain field
   for state one thread owns. No other module is excluded, and neither an exclude nor a baseline entry may be added
   (#2474).
+- `StdlibAtomics`: reports imports, star imports included, and qualified uses of the experimental
+  `kotlin.concurrent.atomics` outside `common/concurrent`, the one module that opts into it. Use the
+  `:common:concurrent` types. It replaces a `ForbiddenImport` pattern that missed star imports and qualified uses.

@@ -31,7 +31,8 @@ the parser modules, `com/github/groovylsp/bsp` for `bsp/*`); the full path state
 Where this audit recommends `@Volatile` (H22 in §1.1, F4, F15, F17, J13, the §2.2 example and the Part 4 plan), #2474
 supersedes it: shared state uses `OnceFlag`, `SharedValue` or `Counter` from `:common:concurrent` (standalone published
 modules use `java.util.concurrent.atomic`). detekt's `VolatileProperty` rule reports `@Volatile` in every linted module,
-and `JdkAtomics` reports the JDK atomics outside tests, `:common:concurrent` and those published modules (Kotlin outside
+`JdkAtomics` reports the JDK atomics outside tests, `:common:concurrent` and those published modules, and
+`StdlibAtomics` reports the experimental `kotlin.concurrent.atomics` outside `:common:concurrent` (Kotlin outside
 `src/main` and `src/test` is not linted, #2480).
 
 To refresh: fetch `main`, list what changed since the commit above with `git log 9632a55e..origin/main -- <path>` for
