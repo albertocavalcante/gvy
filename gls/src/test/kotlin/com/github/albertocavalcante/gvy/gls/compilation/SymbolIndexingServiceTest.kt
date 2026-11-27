@@ -11,12 +11,17 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createFile
 import kotlin.io.path.writeText
 import kotlin.test.BeforeTest
@@ -241,6 +246,33 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
+    fun `indexAllWorkspaceSources never reports an earlier count after a later one`(): Unit = runBlocking {
+        val uris = (1..2).map { n ->
+            val file = tempDir.resolve("order$n.groovy")
+            file.writeText("class Order$n {}")
+            file.toUri()
+        }
+        coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns createMockParseResult()
+        val reported = CopyOnWriteArrayList<Int>()
+        val finalReported = CountDownLatch(1)
+
+        val pool = Executors.newFixedThreadPool(uris.size).asCoroutineDispatcher()
+        pool.use {
+            val parallel = SymbolIndexingService(pool, workerSessionManager, workspaceManager, ownership)
+            parallel.indexAllWorkspaceSources(uris) { indexed, total ->
+                // A report of an earlier count that is slow to reach the client (a blocking write) must not be
+                // overtaken by the final one: wait until the final count was reported, then record this one.
+                if (indexed < total) finalReported.await(WAIT_SECONDS, TimeUnit.SECONDS)
+                reported += indexed
+                if (indexed == total) finalReported.countDown()
+            }
+        }
+
+        assertEquals(reported.sorted(), reported.toList(), "progress went backwards: $reported")
+        assertEquals(uris.size, reported.last())
+    }
+
+    @Test
     fun `indexAllWorkspaceSources continues on individual failures`(): Unit = runBlocking {
         val validFile = tempDir.resolve("valid.groovy").apply {
             createFile()
@@ -350,5 +382,9 @@ class SymbolIndexingServiceTest {
             compilationUnit = mockk(relaxed = true),
             sourceUnit = mockk(relaxed = true),
         )
+    }
+
+    private companion object {
+        const val WAIT_SECONDS = 10L
     }
 }
