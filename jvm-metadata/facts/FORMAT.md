@@ -100,10 +100,10 @@ and digest as given.
 A section is decoded from its raw bytes. Five sections make two groups, so that a reader that wants the names never
 decodes a string only the types need:
 
-| Group | Sections                            | Decoding them needs                           |
-| ----- | ----------------------------------- | --------------------------------------------- |
-| Names | 1 names pool, 2 names, 3 extensions | The names pool, then the section itself       |
-| Types | 4 type pool, 5 types                | The names group's pool and names, and its own |
+| Group | Sections                            | Decoding them needs                               |
+| ----- | ----------------------------------- | ------------------------------------------------- |
+| Names | 1 names pool, 2 names, 3 extensions | The pool, then the names, then the section itself |
+| Types | 4 type pool, 5 types                | The whole names group, then its own               |
 
 - A `string` in the names or extensions section indexes the **names pool** (section 1).
 - A `string` or `string?` in the types section indexes the **type pool** (section 4). The class a types entry describes
@@ -133,11 +133,11 @@ raw bytes is corrupt, not truncated: truncation means the file ends too soon.
 item: a pooled string, a package, a class of the names section, an extension entry, a types entry, an interface, a
 member and a parameter name. A reader charges the count of each repeated item against one budget per opened file, after
 the count has passed the byte check and before it allocates anything for it, and rejects a count that overspends the
-budget as oversized. A section is decoded, and so charged, once per file, however often it is asked for. The default
-budget of the reference reader is 3,000,000 items: a full JDK image needs about one million (about 40 thousand classes,
-counted in the names and in the types section, 60 thousand interface references, 500 thousand members, 250 thousand
-pooled strings and 100 thousand parameter names), and 3,000,000 items take about 324 MB of heap at the worst measured
-108 bytes per item.
+budget as oversized. A section is decoded, and so charged, once per file, however often it is asked for, and always
+after the sections before it in the decoding order. The default budget of the reference reader is 3,000,000 items: a
+full JDK image needs about one million (about 40 thousand classes, counted in the names and in the types section, 60
+thousand interface references, 500 thousand members, 250 thousand pooled strings and 100 thousand parameter names), and
+3,000,000 items take about 324 MB of heap at the estimated 108 bytes per item, plus the contents of the strings.
 
 **Order of keys.** Every table's keys must be strictly increasing, so a table is written one way and a key is unique.
 The key is stated with each table below; a key that is repeated or smaller than the one before it is corrupt. A reader
@@ -231,14 +231,15 @@ A file that breaks several rules in one place is rejected for the first of these
 7. The caller's expected input SHA-256 differs: input mismatch.
 
 **Decoding.** Whichever call asks, sections are decoded in this order: names pool, names, extensions, type pool, types.
-A call decodes the sections it depends on, in that order, and the first rejection ends it:
+A call decodes a prefix of that order, and the first rejection ends it, so the budget left at each section does not
+depend on which calls came before:
 
-| Call       | Decodes                             |
-| ---------- | ----------------------------------- |
-| names      | names pool, names                   |
-| extensions | names pool, extensions              |
-| types      | names pool, names, type pool, types |
-| all        | all five                            |
+| Call       | Decodes                       |
+| ---------- | ----------------------------- |
+| names      | names pool, names             |
+| extensions | names pool, names, extensions |
+| types      | all five                      |
+| all        | all five                      |
 
 For one section:
 
@@ -286,5 +287,5 @@ needs to verify a stored blob uses a hash of that blob.
 | Truncated header, table or sections | Any read past the end of the file             | truncated                      |
 | CRC, varint, UTF-8, lengths, counts | As described above, and values out of range   | corrupt                        |
 | Key order, repeated id              | Strictly increasing keys; each id once        | corrupt                        |
-| Pool or class index                 | Index outside its table                       | index out of range             |
+| Pool, package or class index        | Index outside its table                       | index out of range             |
 | Caller-supplied input SHA-256       | Differs from the header's                     | input mismatch                 |

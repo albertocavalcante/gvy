@@ -52,14 +52,14 @@ public sealed interface LoadResult<out T> {
  * larger than the file cap says a file may be, and an honest JDK image is far smaller.
  *
  * [maxDecodedItems] bounds what the objects decoded from the sections can cost. The smallest items, a class without
- * members or a one-byte string, take about 108 heap bytes each, tens of times their encoded size, so the raw size
- * alone does not bound the heap. One budget serves a [FactsFile]: every pooled string, package, class, interface,
- * member, parameter name, extension entry and types entry costs one item, charged before the objects are
- * allocated, and a section is decoded and charged once however often it is asked for. The default, 3 million
- * items, is three times the roughly 1 million a full JDK image needs (about 40 thousand classes, counted in the
- * names and the types section, 60 thousand interface references, 500 thousand members, 250 thousand pooled
- * strings and 100 thousand parameter names), and 3 million items take about 324 MB in the worst case, far below
- * the 1 GiB heap the experiment runs with.
+ * members or a one-byte string, take about 108 heap bytes each, tens of times their encoded size (an estimate, plus
+ * the contents of the strings), so the raw size alone does not bound the heap. One budget serves a [FactsFile]:
+ * every pooled string, package, class, interface, member, parameter name, extension entry and types entry costs one
+ * item, charged before the objects are allocated, and a section is decoded and charged once however often it is
+ * asked for. The default, 3 million items, is three times the roughly 1 million a full JDK image needs (about 40
+ * thousand classes, counted in the names and the types section, 60 thousand interface references, 500 thousand
+ * members, 250 thousand pooled strings and 100 thousand parameter names), and 3 million items take about 324 MB at
+ * that estimate, below the 1 GiB heap the experiment runs with.
  */
 public class ReadLimits(
     public val maxFileBytes: Int = DEFAULT_MAX_FILE_BYTES,
@@ -94,15 +94,14 @@ private class Memo<T : Any>(private val decode: () -> T) {
 
 /**
  * A facts file whose header and section table were checked and whose sections are decoded on demand. Opening reads
- * no section. [names] decodes the names pool and the names section; [extensions] the names pool and the extensions
- * section; [types] those of the names, plus the type pool and the types section; [loadAll] everything. A section is
- * never decoded unless a call needs it, so a file with a damaged [types] section or type pool still yields [names]
- * and [extensions].
+ * no section. Sections are decoded in this order: names pool, names, extensions, type pool, types. A call decodes
+ * a prefix of that order: [names] the first two, [extensions] the first three, [types] and [loadAll] all five. So a
+ * file with a damaged [types] section or type pool still yields [names] and [extensions], and every call reports
+ * the same rejection for the same file, because the budget left at each section does not depend on which calls came
+ * before.
  *
- * Methods never throw for malformed input. Sections are decoded in this order whichever call needs them: names
- * pool, names, extensions, type pool, types; so every call reports the same rejection for the same file. Each
- * section is decoded, and charged to [ReadLimits.maxDecodedItems], once, and the result is kept. The file keeps the
- * byte array given to [open] and does not copy it.
+ * Methods never throw for malformed input. Each section is decoded, and charged to [ReadLimits.maxDecodedItems],
+ * once, and the result is kept. The file keeps the byte array given to [open] and does not copy it.
  *
  * It is safe to share between threads: decoding runs under one lock, decoded values are immutable, and the byte
  * array is only read, so callers must not change it while the file is in use.
@@ -132,11 +131,13 @@ public class FactsFile internal constructor(
         decodeNames(rawSection(SECTION_NAMES), pool, budget)
     }
     private val extensions = Memo {
+        names.get()
         val pool = namePool.get()
         decodeExtensions(rawSection(SECTION_EXTENSIONS), pool, budget)
     }
     private val typePool = Memo { decodeStringPool(rawSection(SECTION_TYPE_STRINGS), budget) }
     private val types = Memo {
+        extensions.get()
         val classes = names.get().classes
         val pool = typePool.get()
         decodeTypes(rawSection(SECTION_TYPES), classes, pool, budget)
@@ -145,14 +146,12 @@ public class FactsFile internal constructor(
     /** Decodes the package and class names. */
     public fun names(): LoadResult<NamesSection> = load(listOf(SECTION_NAME_STRINGS, SECTION_NAMES)) { names.get() }
 
-    /** Decodes the supertypes and members. This needs the names, whose class table the types section indexes. */
-    public fun types(): LoadResult<TypesSection> = load(
-        listOf(SECTION_NAME_STRINGS, SECTION_NAMES, SECTION_TYPE_STRINGS, SECTION_TYPES),
-    ) { types.get() }
+    /** Decodes the supertypes and members, after every other section: the names' class table is what it indexes. */
+    public fun types(): LoadResult<TypesSection> = load(ALL_SECTIONS) { types.get() }
 
-    /** Decodes the extension holders. */
+    /** Decodes the extension holders, after the names. */
     public fun extensions(): LoadResult<ExtensionsSection> =
-        load(listOf(SECTION_NAME_STRINGS, SECTION_EXTENSIONS)) { extensions.get() }
+        load(listOf(SECTION_NAME_STRINGS, SECTION_NAMES, SECTION_EXTENSIONS)) { extensions.get() }
 
     /** Decodes every section; one rejected section rejects the result. */
     public fun loadAll(): LoadResult<Facts> = load(ALL_SECTIONS) {
