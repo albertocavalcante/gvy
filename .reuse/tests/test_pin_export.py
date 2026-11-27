@@ -105,13 +105,19 @@ class PinOriginTests(unittest.TestCase):
                 pin_export.pin_origin_ref(config, WORKFLOW, REVISION)
 
     def test_source_url_binding_must_be_unambiguous(self) -> None:
-        config = CONFIG.replace(b'"https://github.com/albertocavalcante/gvy.git"', b"sourceUrl")
-        prefix = b'sourceUrl = "https://github.com/albertocavalcante/gvy.git"\n'
+        config = CONFIG.replace(b'"https://github.com/albertocavalcante/gvy.git"', b"SOURCE_URL")
+        prefix = b'SOURCE_URL = "https://github.com/albertocavalcante/gvy.git"\n'
         self.assertEqual(
             (prefix + config).replace(b'ref = "main"', f'ref = "{REVISION}"'.encode()),
             pin_export.pin_origin_ref(prefix + config, WORKFLOW, REVISION),
         )
-        for bad_prefix in (b"", prefix + prefix, prefix + b'sourceUrl = "other"\n', b"sourceUrl = compute()\n"):
+        for bad_prefix in (
+            b"",
+            prefix + prefix,
+            prefix + b'SOURCE_URL = "other"\n',
+            b'SOURCE_URL = "other"\n',
+            b"SOURCE_URL = compute()\n",
+        ):
             with self.subTest(prefix=bad_prefix), self.assertRaises(ValueError):
                 pin_export.pin_origin_ref(bad_prefix + config, WORKFLOW, REVISION)
 

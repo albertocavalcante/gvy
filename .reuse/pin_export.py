@@ -15,6 +15,8 @@ from pathlib import Path
 MAX_CONFIG_BYTES = 256 * 1024
 MAX_GIT_DIAGNOSTICS_BYTES = 64 * 1024
 SOURCE_URL = "https://github.com/albertocavalcante/gvy.git"
+# Name the Copybara configurations may bind to SOURCE_URL; distinct from the Python constant above.
+SOURCE_URL_NAME = "SOURCE_URL"
 CONFIG_PATHS = {
     "push-to-vscode-groovy": Path("infra/copybara/vscode-groovy.bara.sky"),
     "push-to-rewrite-codenarc": Path("infra/copybara/rewrite-codenarc.bara.sky"),
@@ -53,12 +55,12 @@ def _keywords(call: ast.Call) -> dict[str, ast.expr]:
 def _validate_source_url(module: ast.Module, expression: ast.expr) -> None:
     if isinstance(expression, ast.Constant) and expression.value == SOURCE_URL:
         return
-    if not isinstance(expression, ast.Name) or expression.id != "sourceUrl":
+    if not isinstance(expression, ast.Name) or expression.id != SOURCE_URL_NAME:
         raise ValueError("unsupported source URL; expected the gvy repository")
     assignments = [
         node
         for node in ast.walk(module)
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == "sourceUrl"
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == SOURCE_URL_NAME
     ]
     declarations = [
         statement
@@ -66,12 +68,12 @@ def _validate_source_url(module: ast.Module, expression: ast.expr) -> None:
         if isinstance(statement, ast.Assign)
         and len(statement.targets) == 1
         and isinstance(statement.targets[0], ast.Name)
-        and statement.targets[0].id == "sourceUrl"
+        and statement.targets[0].id == SOURCE_URL_NAME
         and isinstance(statement.value, ast.Constant)
         and statement.value.value == SOURCE_URL
     ]
     if len(assignments) != 1 or len(declarations) != 1:
-        raise ValueError("sourceUrl must have exactly one literal gvy repository declaration")
+        raise ValueError(f"{SOURCE_URL_NAME} must have exactly one literal gvy repository declaration")
 
 
 def pin_origin_ref(config: bytes, workflow: str, revision: str) -> bytes:
