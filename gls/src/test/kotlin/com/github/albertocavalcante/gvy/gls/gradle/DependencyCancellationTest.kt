@@ -49,7 +49,11 @@ class DependencyCancellationTest {
     @Test
     fun `a new workspace signals the superseded attempt`() {
         exerciseCancellation { manager, _ ->
-            manager.startAsyncResolution(root.resolve("next"), onComplete = {}, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root.resolve("next"),
+                callbacks = ResolutionCallbacks(onComplete = {}),
+                enableFileWatching = false,
+            )
         }
     }
 
@@ -86,14 +90,19 @@ class DependencyCancellationTest {
         try {
             manager.startAsyncResolution(
                 root,
-                onComplete = { completed.countDown() },
-                onCancelled = { cancellations.incrementAndGet() },
+                callbacks = ResolutionCallbacks(
+                    onComplete = { completed.countDown() },
+                    onCancelled = { cancellations.incrementAndGet() },
+                ),
             )
             assertTrue(resolving.await(5, TimeUnit.SECONDS))
+            val firstAttempt = scope.coroutineContext[Job]!!.children.single()
 
             onChange(root.resolve("build.gradle"))
 
             assertTrue(completed.await(5, TimeUnit.SECONDS), "the refresh completes the request")
+            // The superseded attempt's completion handler has run once its job is complete
+            runBlocking { withTimeout(5_000) { firstAttempt.join() } }
             assertEquals(0, cancellations.get(), "a refresh is not a cancellation of the request")
         } finally {
             manager.cancel()
@@ -117,9 +126,15 @@ class DependencyCancellationTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val manager = DependencyManager(tools, scope)
         try {
-            manager.startAsyncResolution(root, onComplete = { firstDone.countDown() })
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { firstDone.countDown() }),
+            )
             assertTrue(firstDone.await(5, TimeUnit.SECONDS))
-            manager.startAsyncResolution(root.resolve("next"), onComplete = { nextDone.countDown() })
+            manager.startAsyncResolution(
+                root.resolve("next"),
+                callbacks = ResolutionCallbacks(onComplete = { nextDone.countDown() }),
+            )
             assertTrue(nextDone.await(5, TimeUnit.SECONDS))
             assertEquals(DependencyManager.State.COMPLETED, manager.getState())
         } finally {
@@ -157,7 +172,10 @@ class DependencyCancellationTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val manager = DependencyManager(tools, scope)
         try {
-            manager.startAsyncResolution(root, onComplete = { completed.countDown() })
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { completed.countDown() }),
+            )
             assertTrue(completed.await(5, TimeUnit.SECONDS))
             val event = Thread { manager.onWatchedFilesChanged(listOf(root.resolve("build.gradle"))) }
             event.start()
@@ -196,10 +214,15 @@ class DependencyCancellationTest {
         val manager = DependencyManager(tools, scope)
         try {
             // The watcher is installed before resolving, so it is current while the callback holds the lock.
-            manager.startAsyncResolution(root, onComplete = {
-                callbackEntered.countDown()
-                check(releaseCallback.await(30, TimeUnit.SECONDS))
-            })
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(
+                    onComplete = {
+                        callbackEntered.countDown()
+                        check(releaseCallback.await(30, TimeUnit.SECONDS))
+                    },
+                ),
+            )
             assertTrue(callbackEntered.await(5, TimeUnit.SECONDS))
 
             // The LSP message thread delivers this; a blocked event would stall every later client message.
@@ -225,9 +248,11 @@ class DependencyCancellationTest {
         scope.cancel()
         manager.startAsyncResolution(
             root,
-            onProgress = { _, _ -> callbacks.incrementAndGet() },
-            onComplete = { callbacks.incrementAndGet() },
-            onError = { callbacks.incrementAndGet() },
+            callbacks = ResolutionCallbacks(
+                onProgress = { _, _ -> callbacks.incrementAndGet() },
+                onComplete = { callbacks.incrementAndGet() },
+                onError = { callbacks.incrementAndGet() },
+            ),
             enableFileWatching = false,
         )
         assertEquals(DependencyManager.State.NOT_STARTED, manager.getState())
@@ -248,7 +273,11 @@ class DependencyCancellationTest {
     @Test
     fun `supersede signals the transport before waiting for a progress callback`() {
         signalBeforeProgressReturns { manager ->
-            manager.startAsyncResolution(root.resolve("next"), onComplete = {}, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root.resolve("next"),
+                callbacks = ResolutionCallbacks(onComplete = {}),
+                enableFileWatching = false,
+            )
         }
     }
 
@@ -273,12 +302,19 @@ class DependencyCancellationTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val manager = DependencyManager(tools, scope)
         try {
-            manager.startAsyncResolution(root, onProgress = { _, message ->
-                if (message == "in flight") {
-                    entered.countDown()
-                    check(release.await(30, TimeUnit.SECONDS))
-                }
-            }, onComplete = {}, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(
+                    onProgress = { _, message ->
+                        if (message == "in flight") {
+                            entered.countDown()
+                            check(release.await(30, TimeUnit.SECONDS))
+                        }
+                    },
+                    onComplete = {},
+                ),
+                enableFileWatching = false,
+            )
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             val caller = Thread { transition(manager) }
             caller.start()
@@ -319,7 +355,11 @@ class DependencyCancellationTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         manager = DependencyManager(tools, scope)
         try {
-            manager.startAsyncResolution(root, onComplete = {}, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = {}),
+                enableFileWatching = false,
+            )
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             manager.cancel()
             assertTrue(released.await(5, TimeUnit.SECONDS))
@@ -337,10 +377,12 @@ class DependencyCancellationTest {
         try {
             manager.startAsyncResolution(
                 root,
-                onProgress = { _, _ ->
-                    kotlin.test.assertFailsWith<IllegalStateException> { manager.cancel() }
-                },
-                onComplete = {},
+                callbacks = ResolutionCallbacks(
+                    onProgress = { _, _ ->
+                        kotlin.test.assertFailsWith<IllegalStateException> { manager.cancel() }
+                    },
+                    onComplete = {},
+                ),
                 enableFileWatching = false,
             )
         } finally {
@@ -371,18 +413,30 @@ class DependencyCancellationTest {
         val manager = DependencyManager(tools, scope)
         val next = root.resolve("next")
         try {
-            manager.startAsyncResolution(root, onComplete = {
-                oldCallbackEntered.countDown()
-                check(releaseOldCallback.await(30, TimeUnit.SECONDS))
-                published.set(root)
-                oldCallbackDone.countDown()
-            }, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(
+                    onComplete = {
+                        oldCallbackEntered.countDown()
+                        check(releaseOldCallback.await(30, TimeUnit.SECONDS))
+                        published.set(root)
+                        oldCallbackDone.countDown()
+                    },
+                ),
+                enableFileWatching = false,
+            )
             assertTrue(oldCallbackEntered.await(5, TimeUnit.SECONDS))
             val startNext = Thread {
-                manager.startAsyncResolution(next, onComplete = {
-                    published.set(next)
-                    newCallbackDone.countDown()
-                }, enableFileWatching = false)
+                manager.startAsyncResolution(
+                    next,
+                    callbacks = ResolutionCallbacks(
+                        onComplete = {
+                            published.set(next)
+                            newCallbackDone.countDown()
+                        },
+                    ),
+                    enableFileWatching = false,
+                )
             }
             startNext.start()
             assertTrue(oldAttemptSignalled.await(5, TimeUnit.SECONDS), "Supersede must signal the old attempt")
@@ -431,13 +485,15 @@ class DependencyCancellationTest {
         try {
             manager.startAsyncResolution(
                 root,
-                onComplete = { published.incrementAndGet() },
-                onError = { published.incrementAndGet() },
+                callbacks = ResolutionCallbacks(
+                    onComplete = { published.incrementAndGet() },
+                    onError = { published.incrementAndGet() },
+                    onCancelled = {
+                        cancellations.incrementAndGet()
+                        cancelled.countDown()
+                    },
+                ),
                 enableFileWatching = false,
-                onCancelled = {
-                    cancellations.incrementAndGet()
-                    cancelled.countDown()
-                },
             )
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             val job = scope.coroutineContext[Job]!!.children.single()

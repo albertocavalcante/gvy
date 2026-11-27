@@ -74,8 +74,10 @@ class GradleCallerCancellationTest {
         try {
             manager.startAsyncResolution(
                 root,
-                onComplete = { callbacks.incrementAndGet() },
-                onError = { callbacks.incrementAndGet() },
+                callbacks = ResolutionCallbacks(
+                    onComplete = { callbacks.incrementAndGet() },
+                    onError = { callbacks.incrementAndGet() },
+                ),
                 enableFileWatching = false,
             )
             assertTrue(fetching.await(5, TimeUnit.SECONDS))

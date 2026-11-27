@@ -11,10 +11,15 @@ import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.ProgressParams
 import org.eclipse.lsp4j.WorkDoneProgressBegin
@@ -28,6 +33,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -36,7 +42,10 @@ class ProjectStartupProgressTest {
     @TempDir
     lateinit var workspaceRoot: Path
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Records what escapes a coroutine, so a test's Error never reaches the global handlers
+    private val escaped = CopyOnWriteArrayList<Throwable>()
+    private val scope =
+        CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> escaped += e })
     private val progress = CopyOnWriteArrayList<ProgressParams>()
     private val ended = CountDownLatch(1)
     private val resolutionStarted = CountDownLatch(1)
@@ -82,12 +91,41 @@ class ProjectStartupProgressTest {
         val resolving = CountDownLatch(1)
         val startup = startup(buildTools = listOf(blockingTool(resolving)))
 
-        start(startup, client())
-        assertTrue(resolving.await(WAIT_SECONDS, TimeUnit.SECONDS), "resolution never started")
-        scope.cancel()
+        try {
+            start(startup, client())
+            assertTrue(resolving.await(WAIT_SECONDS, TimeUnit.SECONDS), "resolution never started")
+            scope.cancel()
 
-        assertTrue(ended.await(WAIT_SECONDS, TimeUnit.SECONDS), "the progress was left open: ${kinds()}")
+            assertTrue(ended.await(WAIT_SECONDS, TimeUnit.SECONDS), "the progress was left open: ${kinds()}")
+        } finally {
+            scope.cancel()
+        }
         assertBeganAndEnded()
+    }
+
+    @Test
+    fun `a build tool that throws an error ends the progress once`() {
+        val error = NoClassDefFoundError("a class the build tool needs")
+        val failing = mockk<BuildTool>(relaxed = true) {
+            every { name } returns "Broken"
+            every { canHandle(any()) } returns true
+            every { createWatcher(any(), any()) } returns null
+            every { resolve(any(), any(), any()) } throws error
+        }
+        val startup = startup(buildTools = listOf(failing))
+
+        try {
+            start(startup, client())
+            assertTrue(ended.await(WAIT_SECONDS, TimeUnit.SECONDS), "the progress was left open: ${kinds()}")
+            val resolution = checkNotNull(scope.coroutineContext[Job]).children.toList()
+            runBlocking { withTimeout(WAIT_MILLIS) { resolution.joinAll() } }
+        } finally {
+            scope.cancel()
+        }
+
+        assertBeganAndEnded()
+        assertEquals(1, progress.count { it.value.left is WorkDoneProgressEnd }, "ended more than once: ${kinds()}")
+        assertEquals(listOf<Throwable>(error), escaped.toList(), "the Error escapes resolution, as in production")
     }
 
     private fun start(startup: ProjectStartupManager, client: LanguageClient) {
@@ -151,6 +189,7 @@ class ProjectStartupProgressTest {
 
     private companion object {
         const val WAIT_SECONDS = 10L
+        const val WAIT_MILLIS = 10_000L
         const val RESOLUTION_STARTED = "Starting dependency resolution..."
     }
 }

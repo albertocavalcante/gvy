@@ -49,14 +49,16 @@ class DependencyManagerTest {
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = testWorkspaceRoot,
-            onComplete = { resolution ->
-                capturedResolution = resolution
-                latch.countDown()
-            },
-            onError = { error ->
-                // Should NOT be called for classified errors
-                throw AssertionError("onError should not be called for classified errors: ${error.message}")
-            },
+            callbacks = ResolutionCallbacks(
+                onComplete = { resolution ->
+                    capturedResolution = resolution
+                    latch.countDown()
+                },
+                onError = { error ->
+                    // Should NOT be called for classified errors
+                    throw AssertionError("onError should not be called for classified errors: ${error.message}")
+                },
+            ),
             enableFileWatching = false,
         )
 
@@ -96,18 +98,20 @@ class DependencyManagerTest {
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = testWorkspaceRoot,
-            onComplete = { resolution ->
-                assertTrue(resolution.status is ResolutionStatus.Failed)
-                assertEquals(
-                    ResolutionCodes.GRADLE_JDK_INCOMPATIBLE,
-                    (resolution.status as ResolutionStatus.Failed).code,
-                )
-                completeLatch.countDown()
-            },
-            onError = {
-                onErrorCalled = true
-                errorLatch.countDown()
-            },
+            callbacks = ResolutionCallbacks(
+                onComplete = { resolution ->
+                    assertTrue(resolution.status is ResolutionStatus.Failed)
+                    assertEquals(
+                        ResolutionCodes.GRADLE_JDK_INCOMPATIBLE,
+                        (resolution.status as ResolutionStatus.Failed).code,
+                    )
+                    completeLatch.countDown()
+                },
+                onError = {
+                    onErrorCalled = true
+                    errorLatch.countDown()
+                },
+            ),
             enableFileWatching = false,
         )
 
@@ -134,15 +138,17 @@ class DependencyManagerTest {
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = testWorkspaceRoot,
-            onComplete = {
-                // Should not be called for unexpected errors
-                throw AssertionError("onComplete should not be called for unexpected errors")
-            },
-            onError = { error ->
-                onErrorCalled = true
-                assertEquals(unexpectedError, error)
-                latch.countDown()
-            },
+            callbacks = ResolutionCallbacks(
+                onComplete = {
+                    // Should not be called for unexpected errors
+                    throw AssertionError("onComplete should not be called for unexpected errors")
+                },
+                onError = { error ->
+                    onErrorCalled = true
+                    assertEquals(unexpectedError, error)
+                    latch.countDown()
+                },
+            ),
             enableFileWatching = false,
         )
 
