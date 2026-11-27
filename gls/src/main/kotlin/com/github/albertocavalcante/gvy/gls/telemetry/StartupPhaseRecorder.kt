@@ -66,11 +66,7 @@ class StartupPhaseRecorder(
         records.update { current -> current + phases.filter { it !in current }.associateWith { skipped } }
     }
 
-    internal fun snapshot(): StartupSnapshot {
-        // Read the records before the clock, so no recorded offset can be later than the time of the snapshot
-        val recorded = records.value
-        return StartupSnapshot(serverStartJvmUptimeMs, elapsedNanos(), recorded)
-    }
+    internal fun snapshot() = StartupSnapshot(serverStartJvmUptimeMs, elapsedNanos(), records.value)
 
     internal fun end(phase: StartupPhase, started: PhaseRecord, status: PhaseStatus) {
         val ended = started.copy(status = status, endNanos = elapsedNanos())

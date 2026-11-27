@@ -187,18 +187,30 @@ class StartupPhaseRecorderTest {
     }
 
     @Test
-    fun `a snapshot is never observed before any offset it holds`() {
-        var ticks = 0L
-        val ticking = StartupPhaseRecorder(nanoTime = { ++ticks }, serverStartJvmUptimeMs = null)
+    fun `a phase that begins while the snapshot reads the clock is left out of that snapshot`() {
+        var now = 0L
+        var beginOnNextRead = false
+        lateinit var ticking: StartupPhaseRecorder
+        ticking = StartupPhaseRecorder(
+            nanoTime = {
+                val reading = ++now
+                if (beginOnNextRead) {
+                    beginOnNextRead = false
+                    ticking.begin(StartupPhase.WORKSPACE_INDEX)
+                }
+                reading
+            },
+            serverStartJvmUptimeMs = null,
+        )
         ticking.begin(StartupPhase.LSP_INITIALIZE)?.complete()
-        ticking.begin(StartupPhase.WORKSPACE_SETUP)
-        ticking.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
+        beginOnNextRead = true
 
         val snapshot = ticking.snapshot()
 
         val offsets = snapshot.phases.values.flatMap { listOfNotNull(it.startNanos, it.endNanos) }
-        assertTrue(offsets.isNotEmpty())
         assertTrue(offsets.all { it <= snapshot.observedNanos }, "$offsets after ${snapshot.observedNanos}")
+        assertNull(snapshot.phases[StartupPhase.WORKSPACE_INDEX], "a record made after the clock read is not in it")
+        assertNotNull(ticking.snapshot().phases[StartupPhase.WORKSPACE_INDEX], "the phase did begin during the read")
     }
 
     @Test
