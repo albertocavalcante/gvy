@@ -430,7 +430,7 @@ class ProjectStartupManager(
     private fun handleFailedResolution(context: CompletionCallbackContext, status: ResolutionStatus.Failed) {
         logger.error { "Dependency resolution failed: ${status.code} - ${status.message}" }
 
-        // Update Groovy version with empty dependencies
+        // Select the Groovy version for no dependencies, together with its worker
         selectGroovyRuntime(context.config, emptyList())
 
         // Complete progress with error
