@@ -39,12 +39,11 @@ internal object ResourcePaths {
     }
 
     /** Whether [name] can be the internal name of a class: no empty segment and none of `.`, `;` or `[`. */
-    fun isValidInternalName(name: String): Boolean =
-        name.isNotEmpty() &&
-            name.none { it == '.' || it == ';' || it == '[' } &&
-            !name.startsWith('/') &&
-            !name.endsWith('/') &&
-            !name.contains("//")
+    fun isValidInternalName(name: String): Boolean = name.isNotEmpty() &&
+        name.none { it == '.' || it == ';' || it == '[' } &&
+        !name.startsWith('/') &&
+        !name.endsWith('/') &&
+        !name.contains("//")
 }
 
 private fun classifyVersioned(afterVersions: String): ResourceClass {

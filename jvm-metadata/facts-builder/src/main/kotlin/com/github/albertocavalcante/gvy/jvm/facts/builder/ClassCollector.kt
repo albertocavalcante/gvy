@@ -108,8 +108,7 @@ internal class ClassCollector : ClassVisitor(Opcodes.ASM9) {
         return ParameterMethodVisitor(member)
     }
 
-    private fun isPublicOrProtected(access: Int): Boolean =
-        access.hasFlag(Opcodes.ACC_PUBLIC or Opcodes.ACC_PROTECTED)
+    private fun isPublicOrProtected(access: Int): Boolean = access.hasFlag(Opcodes.ACC_PUBLIC or Opcodes.ACC_PROTECTED)
 }
 
 private class DeprecationFieldVisitor(private val member: RawMember) : FieldVisitor(Opcodes.ASM9) {

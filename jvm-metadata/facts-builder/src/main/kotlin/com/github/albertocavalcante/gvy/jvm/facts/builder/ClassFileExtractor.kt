@@ -180,10 +180,9 @@ private fun simpleNameOf(internalName: String, self: InnerEntry?): String {
     }
 }
 
-private fun ownVisible(access: Int): Boolean =
-    access.hasFlag(Opcodes.ACC_PUBLIC) &&
-        !access.hasFlag(Opcodes.ACC_SYNTHETIC) &&
-        !access.hasFlag(Opcodes.ACC_MODULE)
+private fun ownVisible(access: Int): Boolean = access.hasFlag(Opcodes.ACC_PUBLIC) &&
+    !access.hasFlag(Opcodes.ACC_SYNTHETIC) &&
+    !access.hasFlag(Opcodes.ACC_MODULE)
 
 private fun innerVisible(access: Int): Boolean =
     access.hasFlag(Opcodes.ACC_PUBLIC or Opcodes.ACC_PROTECTED) && !access.hasFlag(Opcodes.ACC_SYNTHETIC)
@@ -202,11 +201,7 @@ private class MemberSelector(private val includeGenericSignatures: Boolean) {
 
     fun add(member: RawMember) {
         val parameterCount = parameterCountOrNull(member)
-        if (parameterCount == null ||
-            !member.name.isWellFormedUtf16() ||
-            !member.descriptor.isWellFormedUtf16() ||
-            !seen.add(member.name to member.descriptor)
-        ) {
+        if (parameterCount == null || !hasRepresentableText(member) || !seen.add(member.name to member.descriptor)) {
             droppedMembers++
             return
         }
@@ -250,6 +245,9 @@ private class MemberSelector(private val includeGenericSignatures: Boolean) {
         else -> member.parameterNames.map { name -> name ?: "" }
     }
 }
+
+private fun hasRepresentableText(member: RawMember): Boolean =
+    member.name.isWellFormedUtf16() && member.descriptor.isWellFormedUtf16()
 
 /** The parameter count of a method, 0 for a field, or null when the descriptor is not valid for the kind. */
 private fun parameterCountOrNull(member: RawMember): Int? = when (member.kind) {
