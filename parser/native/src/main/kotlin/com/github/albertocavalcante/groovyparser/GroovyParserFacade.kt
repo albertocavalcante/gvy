@@ -27,7 +27,6 @@ import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.control.ClassNodeResolver
 import org.codehaus.groovy.control.ClassNodeResolver.LookupResult
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
@@ -585,6 +584,8 @@ class GroovyParserFacade internal constructor(
                     classLoader.hasClass(name)
                 }.toMutableList()
 
+            AnalysisClassNodeResolver.unexpandedCollectorsOf(compilationUnit)
+                .mapTo(diagnostics, ::projectCollectorNotice)
             addMissingFailureDiagnostic(diagnostics, compilationUnit, failureMessage, compilationFailed)
 
             val tracker = NodeRelationshipTracker()
@@ -923,7 +924,7 @@ internal class LocatingClassNodeResolver(
     private val locator: (String) -> List<Path>,
     excludedSources: Set<Path>,
     private val buffers: Map<Path, Pair<URI, String>>,
-) : ClassNodeResolver() {
+) : AnalysisClassNodeResolver() {
     private val excluded = excludedSources.mapTo(HashSet(), ::sourceIdentity)
     private val added = LinkedHashSet<Path>()
     private val addedIdentities = HashSet<Path>()
@@ -969,9 +970,9 @@ internal class LocatingClassNodeResolver(
         /** Located files a compile may add before the rest of a chain is left unresolved. */
         const val MAX_LOCATED_SOURCES = 32
 
-        /** Installs the lookup on [unit] when [request] carries a class locator. */
+        /** Installs the analysis policy's resolver on [unit], with the lookup when [request] carries a locator. */
         fun install(unit: CompilationUnit, request: ParseRequest, locatorBuffers: Map<URI, String>) {
-            val locator = request.workspaceClassLocator ?: return
+            val locator = request.workspaceClassLocator ?: return AnalysisClassNodeResolver.install(unit)
             val buffers = (locatorBuffers + request.openSources).entries.mapNotNull { (uri, text) ->
                 runCatching { sourceIdentity(Path.of(uri)) to (uri to text) }.getOrNull()
             }.toMap()

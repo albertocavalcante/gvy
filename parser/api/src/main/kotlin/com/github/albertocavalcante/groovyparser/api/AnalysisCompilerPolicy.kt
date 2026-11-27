@@ -7,9 +7,7 @@ import groovy.transform.AnnotationCollectorMode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
-import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.ListExpression
@@ -124,13 +122,9 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
                     if (constant == null) {
                         annotation.members.remove("mode")
                     } else {
-                        annotation.setMember(
-                            "mode",
-                            PropertyExpression(
-                                ClassExpression(ClassHelper.make(AnnotationCollectorMode::class.java)),
-                                ConstantExpression(constant),
-                            ),
-                        )
+                        // The enum constant itself: the compiler evaluates any other expression, the property
+                        // access included, by generating a class and running it.
+                        annotation.setMember("mode", ConstantExpression(AnnotationCollectorMode.valueOf(constant)))
                     }
                 }
             }
