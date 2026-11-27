@@ -15,7 +15,10 @@ fun interface GradleConnectionFactory {
     fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection
 }
 
-/** A connection borrowed for one operation; [close] ends the borrow (it never closes the connection itself). */
+/**
+ * A connection borrowed for one operation; [close] ends the borrow. It closes the connection only when the lease owns
+ * it, as a lease that [GradleConnectionPool] hands out after its shutdown does.
+ */
 class ConnectionLease(val connection: ProjectConnection, private val onRelease: () -> Unit = {}) : AutoCloseable {
     private val released = OnceFlag()
 

@@ -14,6 +14,55 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
+private val logger = KotlinLogging.logger {}
+
+private const val SWEEP_INTERVAL_SECONDS = 60L
+
+/**
+ * The language server's pool of Gradle project connections, which connects through the Tooling API. Every member
+ * forwards to one [ProjectConnectionPool], which documents the contract; tests build pools of their own instead of
+ * sharing this one.
+ */
+object GradleConnectionPool : LeasingConnectionFactory {
+    private val pool = ProjectConnectionPool(connect = ::createConnection)
+
+    fun configure(newSettings: GradleDaemonSettings) = pool.configure(newSettings)
+
+    override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection =
+        pool.getConnection(projectDir, gradleUserHomeDir)
+
+    override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease =
+        pool.acquire(projectDir, gradleUserHomeDir)
+
+    fun closeConnection(projectDir: Path) = pool.closeConnection(projectDir)
+
+    fun shutdown() = pool.shutdown()
+
+    fun getActiveConnectionCount(): Int = pool.getActiveConnectionCount()
+
+    fun getStats(): String = pool.getStats()
+
+    /**
+     * Creates a new optimized Gradle connection for the project directory.
+     */
+    private fun createConnection(projectDir: Path, gradleUserHomeDir: Path?): ProjectConnection {
+        val projectFile = projectDir.toFile()
+
+        require(projectFile.exists() && projectFile.isDirectory) {
+            "Project directory does not exist: $projectDir"
+        }
+
+        val connector = GradleConnector.newConnector()
+            .forProjectDirectory(projectFile)
+
+        if (gradleUserHomeDir != null) {
+            connector.useGradleUserHomeDir(gradleUserHomeDir.toFile())
+        }
+
+        return connector.connect()
+    }
+}
+
 /**
  * Manages a pool of Gradle project connections for improved performance.
  * Reuses existing connections and provides warm-up capabilities to reduce
@@ -22,13 +71,12 @@ import java.util.concurrent.TimeUnit
  * Connections unused for [GradleDaemonSettings.connectionIdleTimeout] are closed by a background sweep (and all of
  * them on [shutdown]). Closing a connection drops the client-side Tooling API state only; the daemon's own lifetime
  * is bounded by the idle timeout the resolver passes with each operation.
+ *
+ * @param connect opens a connection for a project directory and an optional Gradle user home
  */
-@Suppress("TooManyFunctions") // one cohesive pool: lease API, lifecycle, stats and test hook
-object GradleConnectionPool : LeasingConnectionFactory {
-    private val logger = KotlinLogging.logger {}
-
-    private const val SWEEP_INTERVAL_SECONDS = 60L
-
+internal class ProjectConnectionPool(
+    private val connect: (projectDir: Path, gradleUserHomeDir: Path?) -> ProjectConnection,
+) : LeasingConnectionFactory {
     private data class ConnectionKey(val projectDir: Path, val gradleUserHomeDir: Path?)
 
     private val settings = SharedValue(GradleDaemonSettings())
@@ -40,20 +88,18 @@ object GradleConnectionPool : LeasingConnectionFactory {
                 "Creating new Gradle connection for: ${key.projectDir} " +
                     "(userHome=${key.gradleUserHomeDir?.fileName ?: "default"})"
             }
-            createConnection(key.projectDir, key.gradleUserHomeDir)
+            connect(key.projectDir, key.gradleUserHomeDir)
         },
-        close = ::closeQuietly,
+        closeValue = ::closeQuietly,
         clockNanos = System::nanoTime,
         idleTimeout = { settings.value.connectionIdleTimeout },
     )
 
     private var sweeper: ScheduledExecutorService? = null
 
-    /**
-     * Set by [shutdown]; a pool that is shut down keeps no connections and runs no sweeper. Not a one-way flag:
-     * [reopenForTesting] clears it.
-     */
-    private val closed = SharedValue(false)
+    /** Whether the idle sweep is scheduled. */
+    @get:Synchronized
+    val isSweeping: Boolean get() = sweeper != null
 
     /** Applies [newSettings]; only the connection idle timeout is used here, and it applies from the next sweep. */
     fun configure(newSettings: GradleDaemonSettings) {
@@ -66,28 +112,27 @@ object GradleConnectionPool : LeasingConnectionFactory {
      * Reuses existing connections for better performance.
      *
      * The connection may be closed by the idle sweep once unused; callers that run long operations should prefer
-     * [withConnection], which keeps it open for the duration.
+     * [acquire], which keeps it open for the duration.
      *
      * @param projectDir The project directory to connect to
      * @param gradleUserHomeDir Optional Gradle user home directory to isolate from user init scripts
      * @return A connected ProjectConnection
+     * @throws IllegalStateException after [shutdown]
      */
     override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
-        check(!closed.value) { "Gradle connection pool is shut down" }
         ensureSweeper()
-        return connections.get(keyOf(projectDir, gradleUserHomeDir))
+        val connection = connections.get(keyOf(projectDir, gradleUserHomeDir))
+        return checkNotNull(connection) { "Gradle connection pool is shut down" }
     }
 
     /**
      * Borrows a pooled connection until the lease is closed. After [shutdown] the pool no longer retains anything:
      * the lease wraps a private connection that is closed with the lease, and the sweeper is not restarted.
+     *
+     * The cache makes that choice under the lock that [shutdown] takes to close it. So an acquire that races a
+     * shutdown either pools its connection before shutdown closes it, or gets a private one; nothing stays pooled.
      */
     override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease {
-        if (closed.value) {
-            val key = keyOf(projectDir, gradleUserHomeDir)
-            val connection = createConnection(key.projectDir, key.gradleUserHomeDir)
-            return ConnectionLease(connection) { closeQuietly(key, connection) }
-        }
         ensureSweeper()
         val lease = connections.acquire(keyOf(projectDir, gradleUserHomeDir))
         return ConnectionLease(lease.value) { lease.close() }
@@ -98,9 +143,14 @@ object GradleConnectionPool : LeasingConnectionFactory {
         gradleUserHomeDir = gradleUserHomeDir?.toPath()?.toAbsolutePath()?.normalize(),
     )
 
+    /**
+     * Starts the sweeper unless it runs or the cache is closed. [shutdown] closes the cache and then takes this
+     * monitor to stop the sweeper again, so a call that starts one does so before that stop, and any later call finds
+     * the cache closed.
+     */
     @Synchronized
     private fun ensureSweeper() {
-        if (sweeper != null || closed.value) return
+        if (sweeper != null || connections.isClosed) return
         sweeper = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "gradle-connection-idle-sweep").apply { isDaemon = true }
         }.also { executor ->
@@ -154,15 +204,12 @@ object GradleConnectionPool : LeasingConnectionFactory {
     fun shutdown() {
         logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
-        closed.set(true)
+        // Stop the sweep first, so a close that blocks on a leased connection does not keep it running. Stop it again
+        // after the close: a call that found the cache open may have started one meanwhile, and now none can start.
         stopSweeper()
-        connections.clear()
+        connections.close()
+        stopSweeper()
         logger.info { "Gradle connection pool shutdown complete" }
-    }
-
-    /** Test hook: makes a pool that was shut down usable again. */
-    internal fun reopenForTesting() {
-        closed.set(false)
     }
 
     /**
@@ -176,25 +223,5 @@ object GradleConnectionPool : LeasingConnectionFactory {
     fun getStats(): String {
         val projects = connections.keys.map { it.projectDir.fileName }
         return "GradleConnectionPool[connections=${connections.size}, projects=$projects]"
-    }
-
-    /**
-     * Creates a new optimized Gradle connection for the project directory.
-     */
-    private fun createConnection(projectDir: Path, gradleUserHomeDir: Path?): ProjectConnection {
-        val projectFile = projectDir.toFile()
-
-        require(projectFile.exists() && projectFile.isDirectory) {
-            "Project directory does not exist: $projectDir"
-        }
-
-        val connector = GradleConnector.newConnector()
-            .forProjectDirectory(projectFile)
-
-        if (gradleUserHomeDir != null) {
-            connector.useGradleUserHomeDir(gradleUserHomeDir.toFile())
-        }
-
-        return connector.connect()
     }
 }
