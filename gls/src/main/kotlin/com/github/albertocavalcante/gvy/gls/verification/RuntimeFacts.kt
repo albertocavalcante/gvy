@@ -56,8 +56,6 @@ internal fun runtimeFacts(
     observed: RuntimeObservation,
     hoverEngine: HoverEngineObservation,
 ): RuntimeFacts {
-    val versionState = textState(build.displayVersion, safeBuildVersion, MAX_VERSION_LENGTH)
-    val commitState = textState(build.gitSha, safeCommit, MAX_VERSION_LENGTH)
     val processState = positiveIntegerState(observed.processId)
     val heapState = positiveIntegerState(observed.maxHeapBytes)
     val javaState = when {
@@ -77,15 +75,22 @@ internal fun runtimeFacts(
             heapState,
             observed.maxHeapBytes.takeIf { heapState == "known" },
         ),
-        build = EmbeddedBuildStamp(
-            versionState,
-            build.displayVersion.takeIf { versionState == "known" },
-            commitState,
-            if (commitState == "known") build.gitSha.lowercase() else null,
-            if (build.gitDirty == null) "unknown" else "known",
-            build.gitDirty,
-        ),
+        build = embeddedBuildStamp(build),
         hoverEngine = hoverEngine,
+    )
+}
+
+/** The bounded build stamp shared by every response that reports the build; unsafe text is dropped, not echoed. */
+internal fun embeddedBuildStamp(build: BuildInfo): EmbeddedBuildStamp {
+    val versionState = textState(build.displayVersion, safeBuildVersion, MAX_VERSION_LENGTH)
+    val commitState = textState(build.gitSha, safeCommit, MAX_VERSION_LENGTH)
+    return EmbeddedBuildStamp(
+        versionState,
+        build.displayVersion.takeIf { versionState == "known" },
+        commitState,
+        if (commitState == "known") build.gitSha.lowercase() else null,
+        if (build.gitDirty == null) "unknown" else "known",
+        build.gitDirty,
     )
 }
 

@@ -23,6 +23,7 @@ import com.github.albertocavalcante.gvy.gls.gradle.GradleTargetObserver
 import com.github.albertocavalcante.gvy.gls.gradle.ResolutionCallbacks
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionResolver
@@ -92,11 +93,14 @@ class ProjectStartupManager(
     private val classpathRestamper: ClasspathRestamper? = null,
     /** Shared with live configuration intake when this manager belongs to a language server. */
     private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
+    /** Records when each startup phase begins and ends, for `groovy/serverStats`. */
+    private val startupPhases: StartupPhaseRecorder = StartupPhaseRecorder(),
 ) {
     private val logger = KotlinLogging.logger {}
     private val groovyVersionResolver = GroovyVersionResolver()
     private val jdkValidator = JdkValidator
-    private val workspaceIndexer = WorkspaceIndexer(compilationService, coroutineScope, indexingDispatcher)
+    private val workspaceIndexer =
+        WorkspaceIndexer(compilationService, coroutineScope, indexingDispatcher, startupPhases)
 
     var buildToolManager: BuildToolManager? = null
         private set

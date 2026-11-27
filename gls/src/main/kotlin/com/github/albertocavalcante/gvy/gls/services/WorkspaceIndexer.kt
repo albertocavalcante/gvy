@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -32,6 +33,7 @@ internal class WorkspaceIndexer(
     private val compilationService: GroovyCompilationService,
     private val coroutineScope: CoroutineScope,
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val startupPhases: StartupPhaseRecorder = StartupPhaseRecorder(),
 ) {
     private val logger = KotlinLogging.logger {}
     private val tooLargeNotified = OnceFlag()

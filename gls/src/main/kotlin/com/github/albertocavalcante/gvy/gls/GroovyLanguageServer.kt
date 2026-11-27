@@ -48,6 +48,8 @@ import com.github.albertocavalcante.gvy.gls.services.IndexExportService
 import com.github.albertocavalcante.gvy.gls.services.ProjectStartupManager
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
+import com.github.albertocavalcante.gvy.gls.telemetry.serverStats
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.verification.observeRuntime
 import com.github.albertocavalcante.gvy.gls.verification.runtimeFacts
@@ -105,6 +107,7 @@ class GroovyLanguageServer(
     private val processLiveness: ProcessLiveness = SystemProcessLiveness,
     private val exitProcess: (Int) -> Unit = { kotlin.system.exitProcess(it) },
     private val shutdownExecutor: Executor = ForkJoinPool.commonPool(),
+    private val startupPhases: StartupPhaseRecorder = StartupPhaseRecorder(),
 ) : LanguageServer,
     LanguageClientAware {
 
@@ -209,6 +212,7 @@ class GroovyLanguageServer(
         strategyRegistry,
         classpathRestamper = classpathRestamper,
         reportEngineSetting = coreEngineDeprecation::report,
+        startupPhases = startupPhases,
     )
     private val fileExecutionRequestHandler = FileExecutionRequestHandler(
         documents = documentProvider,
@@ -458,6 +462,17 @@ class GroovyLanguageServer(
         }
         val facts = runtimeFacts(Version.info, observeRuntime(), compilationService.observeHoverEngine())
         return CompletableFuture.completedFuture(Gson().toJsonTree(facts))
+    }
+
+    /** Versioned startup timings. Only numbers and fixed vocabulary words: no paths, URIs or project names. */
+    @JsonRequest("groovy/serverStats")
+    fun serverStats(): CompletableFuture<JsonElement> {
+        val error = customRequestLifecycleError()
+        if (error != null) {
+            return CompletableFuture.failedFuture(ResponseErrorException(error))
+        }
+        val stats = serverStats(Version.info, startupPhases.snapshot())
+        return CompletableFuture.completedFuture(Gson().toJsonTree(stats))
     }
 
     @JsonRequest("groovy/awaitDiagnostics")
