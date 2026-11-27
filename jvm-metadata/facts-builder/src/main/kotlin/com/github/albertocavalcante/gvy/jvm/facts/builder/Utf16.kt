@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.jvm.facts.FactsFormat
 
 private const val ONE_BYTE_LIMIT = 0x80
 private const val TWO_BYTE_LIMIT = 0x800
+private const val THREE_BYTES = 3
 private const val SURROGATE_PAIR_BYTES = 4
 
 /**
@@ -40,5 +41,5 @@ internal fun String.isStorable(): Boolean {
 private fun utf8Width(char: Char): Int = when {
     char.code < ONE_BYTE_LIMIT -> 1
     char.code < TWO_BYTE_LIMIT -> 2
-    else -> 3
+    else -> THREE_BYTES
 }
