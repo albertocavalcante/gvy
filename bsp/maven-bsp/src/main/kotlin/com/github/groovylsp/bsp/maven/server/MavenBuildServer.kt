@@ -83,8 +83,10 @@ class MavenBuildServer private constructor(
      * changes nothing a request can see. A scan that fails passes on the modules of the scan before it.
      *
      * The wait has no bound here: a request made during a scan that never returns never answers, where it used to
-     * answer from the modules before the reload. The client's request timeout bounds it instead. The scan reads only
-     * local POM files, and a hung file system would already hang `build/initialize` and `workspace/reload`.
+     * answer from the modules before the reload. A later reload that fails too passes on that scan's modules, so
+     * requests keep waiting until a reload succeeds. Only a client with a request timeout of its own gives up; gvy's
+     * does, after 120 s, but other BSP clients may wait for good. The scan reads only local POM files, and a hung file
+     * system would already hang `build/initialize` and `workspace/reload`.
      */
     private val latestModules = AtomicReference<CompletableFuture<List<MavenModuleInfo>>>(
         CompletableFuture.completedFuture(emptyList()),
@@ -347,9 +349,11 @@ class MavenBuildServer private constructor(
     internal companion object {
         /**
          * A server that finds the modules with [scan] instead of a [MavenWorkspaceScanner], so tests can script the
-         * scans. The primary constructor is private and this factory internal, with a mangled JVM name, so Java users
-         * of the published artifact still see only the public constructor.
+         * scans. The primary constructor is private, so the public constructor is the only one Java users of the
+         * published artifact see. They do see this `Companion`, but this factory is synthetic on the JVM, so javac
+         * cannot call it.
          */
+        @JvmSynthetic
         internal fun create(
             workspaceRoot: Path,
             repositorySystem: RepositorySystem,

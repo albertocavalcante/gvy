@@ -119,7 +119,7 @@ class MavenBuildServerScanOrderTest {
     }
 
     @Test
-    fun `a failed reload made while an older one is held answers from the older one once it finishes`() {
+    fun `a request made after a failed reload waits for an older held reload and answers from its modules`() {
         // Given: an initialized server, a first reload whose scan is held, and a second reload whose scan fails
         val held = scanOf("held")
         val server = serverScanning(scanOf("before").released(), held, Scan { error("unreadable pom") }.released())
