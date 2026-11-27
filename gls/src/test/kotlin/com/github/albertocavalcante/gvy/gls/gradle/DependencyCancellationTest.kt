@@ -49,11 +49,7 @@ class DependencyCancellationTest {
     @Test
     fun `a new workspace signals the superseded attempt`() {
         exerciseCancellation { manager, _ ->
-            manager.startAsyncResolution(
-                root.resolve("next"),
-                callbacks = ResolutionCallbacks(onComplete = {}),
-                enableFileWatching = false,
-            )
+            manager.resolveUnwatched(root.resolve("next")) {}
         }
     }
 
@@ -273,11 +269,7 @@ class DependencyCancellationTest {
     @Test
     fun `supersede signals the transport before waiting for a progress callback`() {
         signalBeforeProgressReturns { manager ->
-            manager.startAsyncResolution(
-                root.resolve("next"),
-                callbacks = ResolutionCallbacks(onComplete = {}),
-                enableFileWatching = false,
-            )
+            manager.resolveUnwatched(root.resolve("next")) {}
         }
     }
 
@@ -355,11 +347,7 @@ class DependencyCancellationTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         manager = DependencyManager(tools, scope)
         try {
-            manager.startAsyncResolution(
-                root,
-                callbacks = ResolutionCallbacks(onComplete = {}),
-                enableFileWatching = false,
-            )
+            manager.resolveUnwatched(root) {}
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             manager.cancel()
             assertTrue(released.await(5, TimeUnit.SECONDS))
@@ -413,30 +401,18 @@ class DependencyCancellationTest {
         val manager = DependencyManager(tools, scope)
         val next = root.resolve("next")
         try {
-            manager.startAsyncResolution(
-                root,
-                callbacks = ResolutionCallbacks(
-                    onComplete = {
-                        oldCallbackEntered.countDown()
-                        check(releaseOldCallback.await(30, TimeUnit.SECONDS))
-                        published.set(root)
-                        oldCallbackDone.countDown()
-                    },
-                ),
-                enableFileWatching = false,
-            )
+            manager.resolveUnwatched(root) {
+                oldCallbackEntered.countDown()
+                check(releaseOldCallback.await(30, TimeUnit.SECONDS))
+                published.set(root)
+                oldCallbackDone.countDown()
+            }
             assertTrue(oldCallbackEntered.await(5, TimeUnit.SECONDS))
             val startNext = Thread {
-                manager.startAsyncResolution(
-                    next,
-                    callbacks = ResolutionCallbacks(
-                        onComplete = {
-                            published.set(next)
-                            newCallbackDone.countDown()
-                        },
-                    ),
-                    enableFileWatching = false,
-                )
+                manager.resolveUnwatched(next) {
+                    published.set(next)
+                    newCallbackDone.countDown()
+                }
             }
             startNext.start()
             assertTrue(oldAttemptSignalled.await(5, TimeUnit.SECONDS), "Supersede must signal the old attempt")
@@ -452,6 +428,10 @@ class DependencyCancellationTest {
             scope.cancel()
         }
     }
+
+    /** Starts resolving [workspace] without watching its build files, reporting only completions to [onComplete]. */
+    private fun DependencyManager.resolveUnwatched(workspace: Path, onComplete: (WorkspaceResolution) -> Unit) =
+        startAsyncResolution(workspace, ResolutionCallbacks(onComplete = onComplete), enableFileWatching = false)
 
     /**
      * Blocks an attempt in its build tool, applies [cancel], and checks that the transport is signalled, that the late
