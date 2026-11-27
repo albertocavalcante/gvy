@@ -8,9 +8,11 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from dataclasses import dataclass, replace
 from pathlib import Path
+from unittest import mock
 
 from tools.perf import startup_stats
 from tools.perf.startup_stats import JsonObject, JsonValue, RunConfig, RunResult
@@ -144,6 +146,15 @@ class ValidateServerStatsTest(unittest.TestCase):
         with self.assertRaises(startup_stats.ProtocolError):
             _ = startup_stats.validate_server_stats([1])
 
+    def test_rejects_deeply_nested_value_without_recursion_error(self) -> None:
+        nested: JsonValue = "x"
+        for _ in range(5000):
+            nested = [nested]
+        stats = stats_with(["completed"])
+        stats["build"] = {"deep": nested}
+        with self.assertRaises(startup_stats.ProtocolError):
+            _ = startup_stats.validate_server_stats(stats)
+
 
 class RuntimeIdentityTest(unittest.TestCase):
     def test_keeps_only_java_and_heap_identity(self) -> None:
@@ -252,6 +263,20 @@ class SummarizeTest(unittest.TestCase):
         )
 
 
+class RunIdentityTest(unittest.TestCase):
+    def test_runtime_comes_from_the_first_run_that_has_it(self) -> None:
+        without = run_with(0, 5, ("completed", 1))
+        with_runtime = replace(
+            run_with(1, 5, ("completed", 1)), runtime={"javaFeature": 17}
+        )
+        build, runtime = startup_stats.run_identity([without, with_runtime])
+        self.assertEqual(build, {})
+        self.assertEqual(runtime, {"javaFeature": 17})
+
+    def test_no_runtime_facts_gives_all_null(self) -> None:
+        self.assertEqual(startup_stats.run_identity([])[1], NULL_IDENTITY)
+
+
 class IdentityAgreementTest(unittest.TestCase):
     def test_missing_runtime_facts_do_not_count_as_disagreement(self) -> None:
         with_runtime = replace(
@@ -273,17 +298,29 @@ class IdentityAgreementTest(unittest.TestCase):
         self.assertFalse(startup_stats.runs_agree_on_identity([first, other_build]))
 
 
-class JvmFlagsTest(unittest.TestCase):
-    def test_flags_equal_the_editor_defaults(self) -> None:
+class LaunchCommandTest(unittest.TestCase):
+    def test_command_equals_the_editors_for_java_16_and_later(self) -> None:
         source = LAUNCH_ARGS_TS.read_text(encoding="utf-8")
-        match = re.search(
+        defaults = re.search(
             r"DEFAULT_SERVER_VM_ARGS: readonly string\[\] = \[(.*?)\];",
             source,
             re.DOTALL,
         )
-        assert match is not None
-        editor_flags = tuple(re.findall(r'"([^"]+)"', match.group(1)))
-        self.assertEqual(startup_stats.JVM_FLAGS, editor_flags)
+        build = re.search(r"export function buildJavaArgs\(.*?\n}\n", source, re.DOTALL)
+        assert defaults is not None and build is not None
+        body = build.group(0)
+        # Defaults first, then exactly these pushes in this order; the first only on Java 16 and later.
+        self.assertRegex(body, r"const args = resolveVmArgs\(")
+        self.assertEqual(
+            re.findall(r"args\.push\((.*?)\);", body),
+            ['"--enable-native-access=ALL-UNNAMED"', '"-jar", input.jarPath'],
+        )
+        self.assertIn("javaVersion >= 16", body)
+        editor = re.findall(r'"([^"]+)"', defaults.group(1))
+        editor += ["--enable-native-access=ALL-UNNAMED", "-jar", "x.jar"]
+        self.assertEqual(
+            list(startup_stats.java_command(Path("x.jar"))), ["java", *editor]
+        )
 
 
 class FramingTest(unittest.TestCase):
@@ -324,6 +361,18 @@ class FramingTest(unittest.TestCase):
         with self.assertRaises(startup_stats.FrameError):
             _ = startup_stats.FrameDecoder().feed(long_header)
 
+    def test_a_line_break_does_not_separate_name_and_value(self) -> None:
+        with self.assertRaises(startup_stats.FrameError):
+            _ = startup_stats.FrameDecoder().feed(b"Content-Length:\r\n 2\r\n\r\n{}")
+
+    def test_rejects_nan_and_infinity(self) -> None:
+        for text in (b'{"a": NaN}', b'{"a": Infinity}', b'{"a": -Infinity}'):
+            with (
+                self.subTest(text=text),
+                self.assertRaises(startup_stats.ProtocolError),
+            ):
+                _ = startup_stats.parse_json(text)
+
     def test_rejects_missing_length_and_non_object_body(self) -> None:
         with self.assertRaises(startup_stats.FrameError):
             _ = startup_stats.FrameDecoder().feed(b"X: 1\r\n\r\n")
@@ -331,21 +380,50 @@ class FramingTest(unittest.TestCase):
             _ = startup_stats.FrameDecoder().feed(b"Content-Length: 1\r\n\r\n1")
 
 
-def fake_config(scenario: str, workspace: Path, timeout_s: float = 30.0) -> RunConfig:
+def fake_config(
+    scenario: str,
+    workspace: Path,
+    timeout_s: float = 30.0,
+    poll_interval_s: float = 0.05,
+) -> RunConfig:
     return RunConfig(
         command=(sys.executable, "-I", str(FAKE_SERVER), scenario),
         env={"PATH": os.environ.get("PATH", "")},
         workspace=workspace,
         index=0,
         timeout_s=timeout_s,
-        poll_interval_s=0.05,
+        poll_interval_s=poll_interval_s,
     )
 
 
 class RunOnceTest(unittest.TestCase):
-    def run_scenario(self, scenario: str, timeout_s: float = 30.0) -> RunResult:
+    def run_scenario(
+        self, scenario: str, timeout_s: float = 30.0, poll_interval_s: float = 0.05
+    ) -> RunResult:
         workspace = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        return startup_stats.run_once(fake_config(scenario, workspace, timeout_s))
+        return startup_stats.run_once(
+            fake_config(scenario, workspace, timeout_s, poll_interval_s)
+        )
+
+    def test_quiescent_status_triggers_the_poll_not_the_interval(self) -> None:
+        result = self.run_scenario("settle", timeout_s=20.0, poll_interval_s=60.0)
+        self.assertEqual(result.outcome, "settled")
+
+    def test_deeply_nested_frame_is_a_protocol_error_not_a_timeout(self) -> None:
+        self.assertEqual(
+            self.run_scenario("deep-frame", timeout_s=20.0).outcome, "protocol-error"
+        )
+
+    def test_deeply_nested_stats_are_a_protocol_error(self) -> None:
+        result = self.run_scenario("deep-stats", timeout_s=20.0)
+        self.assertEqual(result.outcome, "protocol-error")
+        self.assertIsNone(result.server_stats)
+
+    def test_server_exit_is_noticed_while_a_grandchild_holds_stdout_open(self) -> None:
+        started = time.monotonic()
+        result = self.run_scenario("grandchild", timeout_s=30.0)
+        self.assertEqual(result.outcome, "server-exited")
+        self.assertLess(time.monotonic() - started, 3.0)
 
     def test_settles_after_quiescent_status(self) -> None:
         result = self.run_scenario("settle")
@@ -380,11 +458,13 @@ class RunOnceTest(unittest.TestCase):
         result = self.run_scenario("method-not-found")
         self.assertEqual(result.outcome, "stats-unavailable")
         self.assertIsNone(result.server_stats)
+        self.assertEqual(result.shutdown, "clean")
 
     def test_invalid_stats_are_dropped_as_protocol_error(self) -> None:
         result = self.run_scenario("invalid-stats")
         self.assertEqual(result.outcome, "protocol-error")
         self.assertIsNone(result.server_stats)
+        self.assertEqual(result.shutdown, "clean")
 
     def test_every_server_request_is_answered(self) -> None:
         self.assertEqual(self.run_scenario("requests").outcome, "settled")
@@ -483,6 +563,28 @@ class MainTest(unittest.TestCase):
         report = startup_stats.parse_json(fixture.output.read_bytes())
         outcomes = [at(run, "outcome") for run in as_list(at(report, "runs"))]
         self.assertEqual(outcomes, ["timeout", "timeout"])
+
+    def test_refuses_to_write_when_the_jar_changes_during_the_runs(self) -> None:
+        fixture = self.fixture()
+
+        def launch(jar: Path) -> tuple[str, ...]:
+            _ = jar.write_bytes(b"replaced while measuring")
+            return launch_fake("settle")(jar)
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(startup_stats.main(self.argv(fixture), launch), 1)
+        self.assertFalse(fixture.output.exists())
+
+    def test_report_building_failure_leaves_no_output_file(self) -> None:
+        fixture = self.fixture()
+        with (
+            mock.patch.object(
+                startup_stats, "_build_report", side_effect=RuntimeError("boom")
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            _ = self.run_main(self.argv(fixture), "settle")
+        self.assertFalse(fixture.output.exists())
 
     def test_refuses_to_write_when_runs_disagree_on_identity(self) -> None:
         fixture = self.fixture()

@@ -26,8 +26,10 @@ sequenceDiagram
     Note over T,S: if the process stays up: terminate, then kill (own child only)
 ```
 
-- **Command line:** `java <editor default flags> -jar <jar>`. The flags copy `DEFAULT_SERVER_VM_ARGS` in
-  [`launchArgs.ts`](../../editors/code/client/src/server/launchArgs.ts); a unit test fails when the copy drifts.
+- **Command line:** `java <editor default flags> --enable-native-access=ALL-UNNAMED -jar <jar>`, the editor's launch
+  command for Java 16 and later (the tool needs Java 17 or newer). It copies `DEFAULT_SERVER_VM_ARGS` and the argument
+  order of `buildJavaArgs` in [`launchArgs.ts`](../../editors/code/client/src/server/launchArgs.ts); a unit test fails
+  when either side changes.
 - **Environment:** `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS` and `CLASSPATH` are removed from the child.
   The report records, for each name, whether it was set (not its value).
 - **Server requests:** every request from the server gets an answer, an array of nulls for `workspace/configuration` and
@@ -61,11 +63,22 @@ python3 tools/perf/startup_stats.py \
 | `--runs`             | 5        | Fresh server processes to start, one after another, 1 to 100.                 |
 | `--label`            | required | A token for the workspace, matching `^[a-z0-9][a-z0-9._-]{0,63}$`.            |
 | `--output`           | required | The JSON file to create. It must not exist; the tool never overwrites a file. |
-| `--timeout-seconds`  | 600      | Per-run limit, up to 86400. Shutdown after a timeout can add up to 15 s.      |
+| `--timeout-seconds`  | 600      | Per-run limit, up to 86400. Shutdown after a timeout adds at most 20 s.       |
 | `--poll-interval-ms` | 1000     | Interval between `groovy/serverStats` polls.                                  |
 
-Exit status: 0 when every run settled; 1 when a run did not settle (the file is still written), when the runs disagree
-on build or runtime identity (no file is written), or when `java` cannot be started; 2 for a usage error.
+Exit status: 0 when every run settled; 2 for a usage error; 1 for everything else:
+
+- a run did not settle (the file is still written);
+- the runs disagree on the build stamp or on the runtime identity, or the jar changed while they ran (no file is
+  written);
+- `java` cannot be started;
+- the output cannot be written (a partly written file is removed).
+
+After a run's outcome is known, the tool asks the server to shut down. A server that does not exit within 5 s of `exit`
+gets SIGTERM, and after 5 s more SIGKILL; with the 5 s allowed for `groovy/runtimeFacts` and 5 s for the `shutdown`
+answer, wrapping up a run takes at most 20 s. Only the server process the tool started is managed: a process that the
+server starts, such as a build daemon, is neither stopped nor waited for. The tool notices the server's exit by polling
+the process, so such a process holding the output pipe open does not turn an exit into a timeout.
 
 There is no Gradle step. To get a jar without building, download the `groovy-lsp-jar-*` artifact of a CI run on the
 commit you want to measure:
@@ -128,13 +141,14 @@ One JSON object with `schema: "gvy-startup-stats"` and `schemaVersion: 1`. Value
 }
 ```
 
-The file also holds `recordedAt`, `toolSha256`, `timeoutMs` and `pollIntervalMs`. `shutdown` is `clean`, `terminated`,
-`killed` or `exited`. `serverStats` is embedded exactly as the server sent it; `identity.build` is its `build` object,
-and the Java and heap values come from `groovy/runtimeFacts`. A value the server does not report as known is `null`.
+`spawnToInitializeResponseMs` is the time from starting the process until the `initialize` response arrived. The file
+also holds `recordedAt`, `toolSha256`, `timeoutMs` and `pollIntervalMs`. `shutdown` is `clean`, `terminated`, `killed`
+or `exited`. `serverStats` is embedded exactly as the server sent it; `identity.build` is its `build` object, and the
+Java and heap values come from `groovy/runtimeFacts`. A value the server does not report as known is `null`.
 
 The summary holds, for each of the six phases in the schema, the number of repeat runs that `completed` it, the number
-with any other status (`otherRuns`), and the median, minimum and maximum of their `durationMs`. Medians of an even count
-are rounded down. `summary.spawnToSettledMs` covers the repeat runs that settled.
+of runs with any other status or with no snapshot at all (`otherRuns`), and the median, minimum and maximum of their
+`durationMs`. Medians of an even count are rounded down. `summary.spawnToSettledMs` covers the repeat runs that settled.
 
 ## Reading the numbers
 

@@ -50,7 +50,8 @@ PHASE_NAMES = (
     "workspace.compile",
 )
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "skipped"})
-# Copy of DEFAULT_SERVER_VM_ARGS in editors/code/client/src/server/launchArgs.ts; a unit test guards against drift.
+# The editor's launch command (editors/code/client/src/server/launchArgs.ts, buildJavaArgs) for Java 16 and later:
+# DEFAULT_SERVER_VM_ARGS, then the native-access flag, then -jar. A unit test fails when either side drifts.
 JVM_FLAGS = (
     "-XX:+ExitOnOutOfMemoryError",
     "-Xms64m",
@@ -61,6 +62,7 @@ JVM_FLAGS = (
     "-XX:MaxHeapFreeRatio=40",
     "-XX:+UseStringDeduplication",
 )
+NATIVE_ACCESS_FLAG = "--enable-native-access=ALL-UNNAMED"
 REMOVED_ENVIRONMENT = (
     "JAVA_TOOL_OPTIONS",
     "JDK_JAVA_OPTIONS",
@@ -71,7 +73,10 @@ STRING_PATTERN = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
 LABEL_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 MAX_HEADER_BYTES = 1024
+MAX_JSON_DEPTH = 64
 METHOD_NOT_FOUND = -32601
+EXIT_POLL_S = 0.1
+EXIT_DRAIN_S = 0.5
 EXIT_GRACE_S = 5.0
 TERMINATE_GRACE_S = 5.0
 RUNTIME_FACTS_WAIT_S = 5.0
@@ -81,7 +86,7 @@ DEFAULT_TIMEOUT_S = 600.0
 MAX_TIMEOUT_S = 86400.0
 DEFAULT_POLL_INTERVAL_MS = 1000
 _CONTENT_LENGTH = re.compile(
-    rb"^content-length:\s*([0-9]{1,12})\s*$", re.IGNORECASE | re.MULTILINE
+    rb"^content-length:[ \t]*([0-9]{1,12})[ \t]*\r?$", re.IGNORECASE | re.MULTILINE
 )
 
 
@@ -96,6 +101,10 @@ class FrameError(ProtocolError):
 # --- Pure core -------------------------------------------------------------------------------------------------------
 
 
+def _is_int(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _is_list(value: object) -> TypeGuard[list[object]]:
     return isinstance(value, list)
 
@@ -104,26 +113,32 @@ def _is_dict(value: object) -> TypeGuard[dict[object, object]]:
     return isinstance(value, dict)
 
 
-def _json_value(raw: object) -> JsonValue:
+def _json_value(raw: object, depth: int = 0) -> JsonValue:
+    if depth > MAX_JSON_DEPTH:
+        raise ProtocolError("JSON nests too deeply")
     if raw is None or isinstance(raw, (bool, int, float, str)):
         return raw
     if _is_list(raw):
-        return [_json_value(item) for item in raw]
+        return [_json_value(item, depth + 1) for item in raw]
     if _is_dict(raw):
         result: JsonObject = {}
         for key, item in raw.items():
             if not isinstance(key, str):
                 raise ProtocolError("JSON object key is not a string")
-            result[key] = _json_value(item)
+            result[key] = _json_value(item, depth + 1)
         return result
     raise ProtocolError("not a JSON value")
 
 
+def _reject_constant(name: str) -> object:
+    raise ValueError(f"{name} is not standard JSON")
+
+
 def parse_json(data: bytes) -> JsonValue:
-    """Decode JSON from bytes into ``JsonValue``; raise ``ProtocolError`` when it is not valid JSON."""
+    """Decode standard JSON (no NaN or Infinity, nesting capped) into ``JsonValue``; else raise ``ProtocolError``."""
     try:
         # The stdlib decoder is typed as Any; the structure is validated by _json_value.
-        raw = cast(object, json.loads(data))
+        raw = cast(object, json.loads(data, parse_constant=_reject_constant))
     except (ValueError, RecursionError) as error:
         raise ProtocolError("not valid JSON") from error
     return _json_value(raw)
@@ -151,12 +166,10 @@ class FrameDecoder:
 
     def _next(self) -> JsonObject | None:
         header_end = self._buffer.find(b"\r\n\r\n")
-        if header_end < 0:
+        if header_end < 0 or header_end > MAX_HEADER_BYTES:
             if len(self._buffer) > MAX_HEADER_BYTES:
                 raise FrameError("header too long")
             return None
-        if header_end > MAX_HEADER_BYTES:
-            raise FrameError("header too long")
         lengths = list(_CONTENT_LENGTH.finditer(bytes(self._buffer[:header_end])))
         if len(lengths) != 1:
             raise FrameError("expected exactly one Content-Length")
@@ -191,7 +204,9 @@ def is_settled(stats: Mapping[str, JsonValue]) -> bool:
     )
 
 
-def _check_strings(value: JsonValue) -> None:
+def _check_strings(value: JsonValue, depth: int = 0) -> None:
+    if depth > MAX_JSON_DEPTH:
+        raise ProtocolError("serverStats nests too deeply")
     if isinstance(value, str):
         if STRING_PATTERN.fullmatch(value) is None:
             raise ProtocolError(
@@ -199,11 +214,11 @@ def _check_strings(value: JsonValue) -> None:
             )
     elif isinstance(value, list):
         for item in value:
-            _check_strings(item)
+            _check_strings(item, depth + 1)
     elif isinstance(value, dict):
         for key, item in value.items():
-            _check_strings(key)
-            _check_strings(item)
+            _check_strings(key, depth + 1)
+            _check_strings(item, depth + 1)
 
 
 def validate_server_stats(value: JsonValue) -> JsonObject:
@@ -230,11 +245,7 @@ def _known_value(section: JsonValue, state_key: str, value_key: str) -> JsonValu
 
 
 def _positive_int(value: JsonValue) -> int | None:
-    return (
-        value
-        if isinstance(value, int) and not isinstance(value, bool) and value > 0
-        else None
-    )
+    return value if _is_int(value) and value > 0 else None
 
 
 def runtime_identity(facts: JsonValue) -> JsonObject:
@@ -324,7 +335,6 @@ def _phase_summary(name: str, repeats: Sequence[RunResult]) -> JsonObject:
             entry is not None
             and entry.get("status") == "completed"
             and _is_int(duration)
-            and isinstance(duration, int)
         ):
             durations.append(duration)
         else:
@@ -358,6 +368,15 @@ def summarize(runs: Sequence[RunResult]) -> JsonObject:
         "spawnToSettledMs": _distribution(settled),
         "phases": phases,
     }
+
+
+def run_identity(runs: Sequence[RunResult]) -> tuple[JsonValue, JsonObject]:
+    """The build stamp of the first run with stats and the runtime identity of the first run with runtime facts."""
+    build = next(
+        (r.server_stats.get("build") for r in runs if r.server_stats is not None), None
+    )
+    runtime = next((r.runtime for r in runs if r.runtime is not None), None)
+    return build, runtime if runtime is not None else runtime_identity(None)
 
 
 def runs_agree_on_identity(runs: Sequence[RunResult]) -> bool:
@@ -423,13 +442,13 @@ def _read_frames(stream: IO[bytes], inbound: queue.Queue[_Inbound]) -> None:
         while chunk := stream.read(65536):
             for message in decoder.feed(chunk):
                 inbound.put(_Received(message, time.monotonic()))
-    except FrameError:
+    except (ProtocolError, RecursionError):
         ending = _StreamFault()
     except (OSError, ValueError):
         pass
     finally:
         stream.close()
-    inbound.put(ending)
+        inbound.put(ending)
 
 
 def _discard(stream: IO[bytes]) -> None:
@@ -446,16 +465,20 @@ def _elapsed_ms(start: float, end: float) -> int:
     return int((end - start) * 1000)
 
 
-def _is_int(value: JsonValue) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 @final
 class _Session:
     """One server process: sends requests, answers the server's requests, and tracks status notifications."""
 
-    def __init__(self, stdin: IO[bytes], config: RunConfig, started: float) -> None:
+    def __init__(
+        self,
+        process: subprocess.Popen[bytes],
+        stdin: IO[bytes],
+        config: RunConfig,
+        started: float,
+    ) -> None:
+        self._process = process
         self._stdin = stdin
+        self._reader_ended = False
         self._config = config
         self._started = started
         self._inbound: queue.Queue[_Inbound] = queue.Queue()
@@ -476,6 +499,8 @@ class _Session:
         return self._quiescent_statuses > 0
 
     def send(self, message: JsonObject) -> None:
+        # Blocking is safe: one request is in flight, frames are far below the pipe buffer, and the server's
+        # output is always drained by the reader thread.
         try:
             _ = self._stdin.write(encode_frame({"jsonrpc": "2.0", **message}))
             self._stdin.flush()
@@ -496,16 +521,33 @@ class _Session:
             message["params"] = params
         self.send(message)
 
+    def _next_inbound(self, until: float) -> _Inbound | None:
+        """The next reader event, or ``None`` at ``until``. A dead child ends the stream even if a grandchild
+        keeps its stdout open."""
+        while True:
+            remaining = until - time.monotonic()
+            try:
+                return self._inbound.get(timeout=max(0.0, min(remaining, EXIT_POLL_S)))
+            except queue.Empty:
+                pass
+            if self._process.poll() is not None:
+                try:
+                    return self._inbound.get(timeout=EXIT_DRAIN_S)
+                except queue.Empty:
+                    return _StreamEnded()
+            if remaining <= 0:
+                return None
+
     def next_event(self, until: float) -> bool:
         """Handle one inbound event; False when ``until`` (a monotonic time) passed first."""
-        try:
-            event = self._inbound.get(timeout=max(0.0, until - time.monotonic()))
-        except queue.Empty:
+        event = self._next_inbound(until)
+        if event is None:
             return False
-        if isinstance(event, _StreamEnded):
-            raise _RunEnded("server-exited")
-        if isinstance(event, _StreamFault):
-            raise _RunEnded("protocol-error")
+        if isinstance(event, (_StreamEnded, _StreamFault)):
+            self._reader_ended = True
+            raise _RunEnded(
+                "server-exited" if isinstance(event, _StreamEnded) else "protocol-error"
+            )
         self._handle(event)
         return True
 
@@ -534,7 +576,7 @@ class _Session:
         elif isinstance(method, str):
             if method == "groovy/status":
                 self._record_status(message.get("params"))
-        elif isinstance(message_id, int) and not isinstance(message_id, bool):
+        elif _is_int(message_id):
             self._responses[message_id] = event
 
     @staticmethod
@@ -553,7 +595,7 @@ class _Session:
         if params.get("quiescent") is True:
             self._quiescent_statuses += 1
         files_total = params.get("filesTotal")
-        if isinstance(files_total, int) and not isinstance(files_total, bool):
+        if _is_int(files_total):
             self.status_files_total = files_total
 
     def initialize(self, deadline: float) -> int:
@@ -626,6 +668,8 @@ class _Session:
 
     def request_shutdown(self) -> bool:
         """Send shutdown and exit; True when the server answered shutdown."""
+        if self._reader_ended:
+            return False
         until = time.monotonic() + EXIT_GRACE_S
         try:
             _ = self.await_response(self.request("shutdown"), until)
@@ -652,6 +696,25 @@ def _stop(process: subprocess.Popen[bytes], asked_to_exit: bool) -> Shutdown:
         return "killed"
 
 
+@dataclass(frozen=True)
+class _Measurement:
+    outcome: Outcome
+    initialize_ms: int | None = None
+    settled_ms: int | None = None
+    stats: JsonObject | None = None
+
+
+def _measure(session: _Session, deadline: float) -> _Measurement:
+    initialize_ms: int | None = None
+    try:
+        initialize_ms = session.initialize(deadline)
+        stats, settled_ms = session.wait_settled(deadline)
+    except _RunEnded as ended:
+        stats = session.last_stats if ended.outcome == "timeout" else None
+        return _Measurement(ended.outcome, initialize_ms, None, stats)
+    return _Measurement("settled", initialize_ms, settled_ms, stats)
+
+
 def run_once(config: RunConfig) -> RunResult:
     """Start the server once, measure until settled, timeout or failure, and always reap the child."""
     started = time.monotonic()
@@ -669,36 +732,27 @@ def run_once(config: RunConfig) -> RunResult:
         and process.stdout is not None
         and process.stderr is not None
     )
-    session = _Session(process.stdin, config, started)
+    session = _Session(process, process.stdin, config, started)
     session.listen(process.stdout, process.stderr)
-    outcome: Outcome = "settled"
-    initialize_ms: int | None = None
-    settled_ms: int | None = None
-    stats: JsonObject | None = None
     runtime: JsonObject | None = None
     asked_to_exit = False
     try:
-        deadline = started + config.timeout_s
-        try:
-            initialize_ms = session.initialize(deadline)
-            stats, settled_ms = session.wait_settled(deadline)
-        except _RunEnded as ended:
-            outcome = ended.outcome
-            stats = session.last_stats if outcome == "timeout" else None
-        if outcome in ("settled", "timeout"):
+        measured = _measure(session, started + config.timeout_s)
+        if measured.outcome in ("settled", "timeout"):
             runtime = session.runtime_facts()
+        if measured.outcome != "server-exited":
             asked_to_exit = session.request_shutdown()
     finally:
         shutdown = _stop(process, asked_to_exit)
         process.stdin.close()
     return RunResult(
         index=config.index,
-        outcome=outcome,
-        spawn_to_initialize_response_ms=initialize_ms,
-        spawn_to_settled_ms=settled_ms,
+        outcome=measured.outcome,
+        spawn_to_initialize_response_ms=measured.initialize_ms,
+        spawn_to_settled_ms=measured.settled_ms,
         quiescent_observed=session.quiescent_observed,
         status_files_total=session.status_files_total,
-        server_stats=stats,
+        server_stats=measured.stats,
         runtime=runtime,
         shutdown=shutdown,
     )
@@ -708,7 +762,8 @@ def run_once(config: RunConfig) -> RunResult:
 
 
 def java_command(jar: Path) -> tuple[str, ...]:
-    return ("java", *JVM_FLAGS, "-jar", str(jar))
+    """The editor's launch command for Java 16 and later; the tool needs Java 17 or newer."""
+    return ("java", *JVM_FLAGS, NATIVE_ACCESS_FLAG, "-jar", str(jar))
 
 
 def _sha256(path: Path) -> str:
@@ -721,24 +776,12 @@ def _sha256(path: Path) -> str:
 
 def _host_os() -> str:
     name = platform.system().lower()
-    return (
-        "macos"
-        if name == "darwin"
-        else name
-        if STRING_PATTERN.fullmatch(name)
-        else "unknown"
-    )
+    return "macos" if name == "darwin" else name
 
 
 def _host_arch() -> str:
     machine = platform.machine().lower()
-    mapped = {
-        "x86_64": "x64",
-        "amd64": "x64",
-        "aarch64": "arm64",
-        "arm64": "arm64",
-    }.get(machine, machine)
-    return mapped if STRING_PATTERN.fullmatch(mapped) else "unknown"
+    return {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64"}.get(machine, machine)
 
 
 def _child_environment() -> tuple[dict[str, str], dict[str, JsonValue]]:
@@ -766,19 +809,12 @@ class Arguments(argparse.Namespace):
 
 
 def _build_report(
-    args: Arguments, runs: Sequence[RunResult], removed: JsonObject
+    args: Arguments,
+    runs: Sequence[RunResult],
+    removed: JsonObject,
+    jar_sha256: str,
 ) -> JsonObject:
-    first = next((run for run in runs if run.server_stats is not None), None)
-    build = (
-        first.server_stats.get("build")
-        if first is not None and first.server_stats is not None
-        else None
-    )
-    runtime = (
-        first.runtime
-        if first is not None and first.runtime is not None
-        else runtime_identity(None)
-    )
+    build, runtime = run_identity(runs)
     run_entries: list[JsonValue] = [run.as_json() for run in runs]
     jvm_args: list[JsonValue] = list(JVM_FLAGS)
     return {
@@ -788,7 +824,7 @@ def _build_report(
         "toolSha256": _sha256(Path(__file__)),
         "workspaceLabel": args.label,
         "identity": {
-            "artifactSha256": _sha256(args.jar),
+            "artifactSha256": jar_sha256,
             "build": build,
             **runtime,
             "os": _host_os(),
@@ -856,14 +892,27 @@ def _validated_arguments(
     return args
 
 
+def _write_new_file(path: Path, text: str) -> None:
+    """Create ``path`` (it must not exist) with ``text``; a failed write removes the file again."""
+    handle = path.open("x", encoding="utf-8")
+    try:
+        with handle:
+            _ = handle.write(text)
+    except OSError:
+        path.unlink(missing_ok=True)
+        raise
+
+
 def main(argv: Sequence[str], launch: LaunchCommand = java_command) -> int:
-    """Run the measurement. Exit 0 when every run settled, 1 when not or nothing was written, 2 for usage errors."""
+    """Run the measurement. Exit 0 when every run settled; 1 when a run did not settle, the server cannot be
+    started, the runs or the jar disagree, or the output cannot be written; 2 for usage errors."""
     parser = _parser()
     try:
         args = _validated_arguments(parser, argv)
     except SystemExit as usage_exit:
         return usage_exit.code if isinstance(usage_exit.code, int) else 2
     env, removed = _child_environment()
+    jar_sha256 = _sha256(args.jar)
     command = launch(args.jar)
     runs: list[RunResult] = []
     try:
@@ -880,16 +929,20 @@ def main(argv: Sequence[str], launch: LaunchCommand = java_command) -> int:
     except OSError as error:
         print(f"cannot start the server: {type(error).__name__}", file=sys.stderr)
         return 1
+    if _sha256(args.jar) != jar_sha256:
+        print("the jar changed during the runs; no output written", file=sys.stderr)
+        return 1
     if not runs_agree_on_identity(runs):
         print(
             "runs disagree on build or runtime identity; no output written",
             file=sys.stderr,
         )
         return 1
+    text = json.dumps(
+        _build_report(args, runs, removed, jar_sha256), indent=2, allow_nan=False
+    )
     try:
-        with args.output.open("x", encoding="utf-8") as handle:
-            json.dump(_build_report(args, runs, removed), handle, indent=2)
-            _ = handle.write("\n")
+        _write_new_file(args.output, text + "\n")
     except OSError as error:
         print(f"cannot write the output: {type(error).__name__}", file=sys.stderr)
         return 1

@@ -13,6 +13,9 @@ startup measurement uses: ``groovy/serverStats``, ``groovy/runtimeFacts`` and ``
 - ``invalid-stats``: answers with a build version that looks like a path.
 - ``requests``: sends three server requests after ``initialized`` and settles only if each gets the right answer;
   a wrong answer exits with status 3.
+- ``deep-frame``: sends a frame whose JSON nests 100,000 levels deep.
+- ``deep-stats``: answers ``groovy/serverStats`` with a build value nested 200 levels deep.
+- ``grandchild``: starts a process that inherits stdout and lingers for 4 s, then exits after ``initialized``.
 - ``drifting-identity``: like ``settle``, but the reported maximum heap differs for every process.
 """
 
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from typing import IO, TypeAlias, TypeGuard, cast, final
 
@@ -153,6 +157,16 @@ class Fake:
     def on_initialized(self) -> None:
         if self.scenario == "exit-early":
             sys.exit(0)
+        if self.scenario == "grandchild":
+            _ = subprocess.Popen(
+                [sys.executable, "-I", "-c", "import time; time.sleep(4)"]
+            )
+            sys.exit(0)
+        if self.scenario == "deep-frame":
+            body = b'{"a":' + b"[" * 100000 + b"]" * 100000 + b"}"
+            header = b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n"
+            _ = sys.stdout.buffer.write(header + body)
+            _ = sys.stdout.buffer.flush()
         if self.scenario in ("settle", "drifting-identity"):
             _ = sys.stderr.write(f"opened {self.folder}\n")
             _ = sys.stderr.flush()
@@ -185,6 +199,13 @@ class Fake:
                     "error": {"code": -32601, "message": "Method not found"},
                 }
             )
+        elif self.scenario == "deep-stats":
+            nested: JsonValue = "x"
+            for _ in range(200):
+                nested = [nested]
+            deep = stats(True)
+            deep["build"] = {"deep": nested}
+            send({"id": request_id, "result": deep})
         elif self.scenario == "invalid-stats":
             invalid = stats(True)
             invalid["build"] = {"version": "/private/secret-project"}
