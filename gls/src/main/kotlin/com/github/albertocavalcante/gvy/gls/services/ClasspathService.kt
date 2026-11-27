@@ -90,30 +90,32 @@ class ClasspathService(
     }
 
     /**
-     * The class-name index of [generation]. The first caller builds it on its own thread; later callers wait for that
-     * build without holding a monitor, so a classpath update or close never waits for it. Each generation keeps its
-     * own index, so a build for a replaced classpath is never seen by lookups on the new one.
+     * The class-name index of [generation]. The first caller claims the generation's slot and fills it on its own
+     * thread; later callers wait for that future without holding a monitor, so a classpath update or close never waits
+     * for a build. Each generation keeps its own index, so a build for a replaced classpath is never seen by lookups on
+     * the new one.
      */
     private fun classNamesOf(generation: ClasspathGeneration): ClassNameIndex {
+        generation.classNames.value?.let { return it.join() }
         val candidate = CompletableFuture<ClassNameIndex>()
         val build = checkNotNull(generation.classNames.update { it ?: candidate })
-        if (build === candidate) buildClassNames(generation, candidate)
+        if (build === candidate) fillClassNames(generation, candidate)
         return build.join()
     }
 
-    private fun buildClassNames(generation: ClasspathGeneration, build: CompletableFuture<ClassNameIndex>) {
-        logger.info { "Indexing all classes from classpath..." }
-        val startTime = System.currentTimeMillis()
+    /**
+     * Completes [build], which this caller claimed for [generation], even when the build fails. A generation that is no
+     * longer current when claimed is not scanned: an update retired it, so its lookups get the current index instead.
+     */
+    private fun fillClassNames(generation: ClasspathGeneration, build: CompletableFuture<ClassNameIndex>) {
         try {
-            val entries = classpathEntriesFor(
-                generation.loader,
-                generation.paths,
-                System.getProperty("java.class.path").orEmpty(),
-            )
-            val index = ClassNameIndex.of(classpathIndex.index(entries))
-            build.complete(index)
-            val elapsedMs = System.currentTimeMillis() - startTime
-            logger.info { "Indexed ${index.size} class names in ${elapsedMs}ms" }
+            val current = generations.current()
+            if (current === generation) {
+                build.complete(scanClassNames(generation))
+            } else {
+                generation.classNames.update { if (it === build) null else it }
+                build.complete(classNamesOf(current))
+            }
         } catch (e: Exception) {
             logger.error(e) { "Failed to index classes" }
         } finally {
@@ -123,6 +125,20 @@ class ClasspathService(
                 build.complete(ClassNameIndex.EMPTY)
             }
         }
+    }
+
+    private fun scanClassNames(generation: ClasspathGeneration): ClassNameIndex {
+        logger.info { "Indexing all classes from classpath..." }
+        val startTime = System.currentTimeMillis()
+        val entries = classpathEntriesFor(
+            generation.loader,
+            generation.paths,
+            System.getProperty("java.class.path").orEmpty(),
+        )
+        val index = ClassNameIndex.of(classpathIndex.index(entries))
+        val elapsedMs = System.currentTimeMillis() - startTime
+        logger.info { "Indexed ${index.size} class names in ${elapsedMs}ms" }
+        return index
     }
 
     /**
