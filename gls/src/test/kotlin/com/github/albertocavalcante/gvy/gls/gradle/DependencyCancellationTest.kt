@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,21 @@ class DependencyCancellationTest {
 
     @Test
     fun `a delivery that throws still ends the request once`() {
+        // Throws for the result, and again for the failure that the result's exception is turned into
+        assertThrowingDeliveryEndsOnce(IllegalStateException("delivery failed"), escapes = true)
+    }
+
+    @Test
+    fun `a delivery that throws a cancellation still ends the request once`() {
+        // As when onComplete joins a cancelled future: a stray cancellation that nothing signalled
+        assertThrowingDeliveryEndsOnce(CancellationException("joined a cancelled future"), escapes = false)
+    }
+
+    /**
+     * Resolves successfully with an onComplete that always throws [failure], and requires exactly one onCancelled.
+     * [escapes] says whether [failure] reaches the scope's exception handler, which a cancellation never does.
+     */
+    private fun assertThrowingDeliveryEndsOnce(failure: Throwable, escapes: Boolean) {
         val cancelled = CountDownLatch(1)
         val cancellations = AtomicInteger()
         val escaped = CopyOnWriteArrayList<Throwable>()
@@ -71,24 +87,21 @@ class DependencyCancellationTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + recorder)
         val manager = DependencyManager(tools, scope)
         try {
-            manager.startAsyncResolution(
-                root,
-                ResolutionCallbacks(
-                    // Throws for the result, and again for the failure that the result's exception is turned into
-                    onComplete = { throw IllegalStateException("delivery failed") },
-                    onCancelled = {
-                        cancellations.incrementAndGet()
-                        cancelled.countDown()
-                    },
-                ),
-                enableFileWatching = false,
+            val callbacks = ResolutionCallbacks(
+                onComplete = { throw failure },
+                onCancelled = {
+                    cancellations.incrementAndGet()
+                    cancelled.countDown()
+                },
             )
+            manager.startAsyncResolution(root, callbacks, enableFileWatching = false)
 
             assertTrue(cancelled.await(5, TimeUnit.SECONDS), "a throwing delivery left the request without an end")
             val attempts = scope.coroutineContext[Job]!!.children.toList()
             runBlocking { withTimeout(5_000) { attempts.joinAll() } }
             assertEquals(1, cancellations.get())
-            assertEquals(1, escaped.size, "the delivery's exception escapes resolution once: $escaped")
+            // Counted, not compared: coroutines may rethrow a copy with a recovered stack trace
+            assertEquals(if (escapes) 1 else 0, escaped.size, "what escaped resolution: $escaped")
         } finally {
             manager.cancel()
             scope.cancel()
