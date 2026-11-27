@@ -18,7 +18,7 @@
     "expires": "2026-12-25"
   },
   {
-    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)]",
+    "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
@@ -27,7 +27,7 @@
     "expires": "2026-12-25"
   },
   {
-    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asBucket(Configurations.kt:112)]",
+    "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asBucket(Configurations.kt:112)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
@@ -36,7 +36,7 @@
     "expires": "2026-12-25"
   },
   {
-    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asProducer(Configurations.kt:126)]",
+    "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asProducer(Configurations.kt:126)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
@@ -45,7 +45,7 @@
     "expires": "2026-12-25"
   },
   {
-    "diagnostic": "[project :] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asTransitiveDependencies(Configurations.kt:95)]",
+    "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asTransitiveDependencies(Configurations.kt:95)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
@@ -60,24 +60,6 @@
     "reason": "Detekt 1.23.8 calls the deprecated report-directory API during application on Gradle 9.8.2; it will fail on Gradle 10. The latest stable release checked remains 1.23.8; the 2.0 alpha migration is not yet validated in gvy.",
     "nextAction": "Build maintainers must evaluate the released Detekt 2.0 alpha migration or prepare a narrow upstream API patch for human review, preserving rule configuration and report paths.",
     "acceptance": "Detekt runs all existing lint checks and emits the same report formats without this API warning; remove the exact exception.",
-    "expires": "2026-12-25"
-  },
-  {
-    "diagnostic": "[project :build-tool] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)]",
-    "owner": "gvy build and CI maintainers",
-    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
-    "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
-    "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
-    "expires": "2026-12-25"
-  },
-  {
-    "diagnostic": "[project :build-tool] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asProducer(Configurations.kt:126)]",
-    "owner": "gvy build and CI maintainers",
-    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
-    "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
-    "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-25"
   },
   {

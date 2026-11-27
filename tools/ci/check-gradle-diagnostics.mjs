@@ -55,11 +55,14 @@ const koverLazyVisibilityOrigins = new Set([
   'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
 ]);
 
-// KGP runs the same code in every Kotlin project, and Gradle logs each distinct deprecation and stack once per build,
-// so a shared call site prints under whichever Kotlin project configures first. Adding, renaming or reordering a
-// project moves it. The exact message and KGP frame identify the debt (#1603); the last project header does not.
+// KGP and Kover run the same code in every project that applies them, and Gradle logs each distinct deprecation and
+// stack once per build, so a shared call site prints under whichever such project configures first. Adding, renaming
+// or reordering a project moves it. The exact message and plugin frame identify the debt (#1603); the last project
+// header does not. Kover's lazy actions above keep their own emitter.
 const kotlinGradlePluginFrame = /^org\.jetbrains\.kotlin\.gradle\./;
 const kotlinGradlePluginEmitter = 'emitter kotlin-gradle-plugin';
+const koverFrame = /^kotlinx\.kover\.gradle\./;
+const koverEmitter = 'emitter kover';
 
 // Frames shared by every decode of KGP's Native bundle attribute, from the Attribute.of validation down to the read
 // that dispatches to the real caller. The first frame below them is the caller.
@@ -108,6 +111,7 @@ function deprecationOrigin(message, origin) {
     return { origin, context: 'emitter kotlin-native bundle configuration' };
   }
   if (kotlinGradlePluginFrame.test(origin)) return { origin, context: kotlinGradlePluginEmitter };
+  if (koverFrame.test(origin)) return { origin, context: koverEmitter };
   return { origin };
 }
 

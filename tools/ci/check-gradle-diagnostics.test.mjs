@@ -351,11 +351,11 @@ test('the inspected pinned-plugin trace matches only its exact reviewed debt led
   const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
   const result = check(log, { exceptions });
   assert.equal(result.ok, true);
-  assert.equal(result.diagnostics.length, 30);
-  assert.equal(result.accepted.length, 30);
+  assert.equal(result.diagnostics.length, 28);
+  assert.equal(result.accepted.length, 28);
   // This trace predates :launcher and :common:concurrent, so :viz:ast-model was then the first multiplatform project
-  // and :build-tool the first JVM one. Their shared KGP call sites still match the identities main CI emits today.
-  assert.equal(result.diagnostics.some(line => /^\[project :(?:build-tool|viz:ast-model)\] .*\[origin org\.jetbrains\.kotlin\.gradle\./.test(line)), false);
+  // and :build-tool the first JVM one. Their shared KGP and Kover call sites still match the identities main CI emits.
+  assert.equal(result.diagnostics.some(line => /^\[project :(?:build-tool|viz:ast-model)\] .*\[origin (?:org\.jetbrains\.kotlin\.gradle|kotlinx\.kover\.gradle)\./.test(line)), false);
   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
   assert.equal(check(log, { exceptions, now: new Date('2026-12-25T23:59:59Z') }).ok, true, 'valid through its expiry day');
@@ -539,6 +539,11 @@ test('shared Kotlin plugin and Kover call sites keep their identity when another
     assert.deepEqual(result.unexpected, []);
     assert.equal(result.accepted.length, diagnostics.length);
   }
+  for (const [before, after] of [['PrepareKover.kt:51', 'PrepareKover.kt:52'], ['KotlinPluginWrapper.kt:94', 'KotlinPluginWrapper.kt:95']]) {
+    const moved = evaluate(collectDiagnostics(log.replaceAll(before, after)), exceptions, now).unexpected;
+    assert.equal(moved.length, 1, before);
+    assert.match(moved[0], /^\[emitter (?:kover|kotlin-gradle-plugin)\] /);
+  }
 });
 
 test('Native debt has fourteen exact identities and rejects changed types, messages, origins and call sites', () => {
@@ -697,8 +702,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 43);
-  assert.equal(exceptions.length, 48);
+  assert.equal(plugins.length, 41);
+  assert.equal(exceptions.length, 46);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {

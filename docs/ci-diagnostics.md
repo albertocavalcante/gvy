@@ -239,9 +239,12 @@ Gradle deprecations whose first plugin frame is in the Kotlin Gradle Plugin (`or
 logs each distinct deprecation and stack once per build, so a shared call site prints under whichever Kotlin project
 configures first. Main CI configures `:launcher` before `:common:concurrent`; adding, renaming or reordering a project
 would move those warnings to another project with no code change. The ledger has already drifted this way: the
-`:viz:ast-model` identities stopped occurring once `:launcher` and then `:common:concurrent` configured before it. The
-exact message and KGP frame remain part of each key, so a changed call site, message or Gradle version stays unexpected,
-and other plugins keep their project attribution.
+`:viz:ast-model` identities stopped occurring once `:launcher` and then `:common:concurrent` configured before it.
+
+Kover's other call sites (`kotlinx.kover.gradle.`) use `[emitter kover]` for the same reason: `:build-tool` is the first
+subproject that applies Kover, so a project configured before it would take over their warnings. The two lazy origins
+above keep their own emitter. For both plugins the exact message and plugin frame remain part of each key, so a changed
+call site, message or Gradle version stays unexpected. Other plugins keep their project attribution.
 
 Linux/macOS Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Windows
 adds one exact bundle-notation fingerprint; its remaining plugin traces reuse existing entries. Three Native enum
