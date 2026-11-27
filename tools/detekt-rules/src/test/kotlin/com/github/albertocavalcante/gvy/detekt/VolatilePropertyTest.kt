@@ -21,8 +21,8 @@ class VolatilePropertyTest {
     }
 
     @Test
-    fun `flags nothing in a file that imports another annotation named Volatile`() {
-        rule.assertReportsNothing("volatile-property/imports-other-volatile.kt.fixture")
+    fun `in a file that imports another Volatile, only Kotlin's qualified names are reported`() {
+        rule.assertReportsMarkedLines("volatile-property/imports-other-volatile.kt.fixture")
     }
 
     @Test
@@ -43,21 +43,6 @@ class VolatilePropertyTest {
         val source = "import com.example.Marker as `Volatile`\n\nclass A {\n    @Volatile var flag = false\n}"
 
         assertThat(rule.lint(source)).isEmpty()
-    }
-
-    @Test
-    fun `a file that imports another Volatile still reports Kotlin's by its qualified name`() {
-        val source = """
-            import com.example.annotations.Volatile
-
-            class A {
-                @Volatile var theirs = false
-                @com.example.annotations.Volatile var theirsQualified = false
-                @kotlin.jvm.Volatile var ours = false
-            }
-        """.trimIndent()
-
-        assertThat(rule.flaggedLines(source)).containsExactly(6)
     }
 
     @Test
