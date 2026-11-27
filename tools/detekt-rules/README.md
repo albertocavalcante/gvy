@@ -61,8 +61,8 @@ The rule cannot resolve names, so it errs in these documented ways:
 
 The rule is on for every module except those listed under `gvy > RegexInFunctionBody > excludes` in
 `tools/lint/detekt.yml`. Those modules still contain unhoisted regexes. In the pull request that hoists a module, remove
-its `excludes` line, and its entry in `regexMigration` in `tools/ci/detekt-gvy-excludes.test.mjs`, so the rule guards
-it. The [CI guard](#ci-guard) fails on any other exclude and on a baseline entry for the rule, so the list only shrinks
+its `excludes` line, and its entry in `regexMigration` in `tools/ci/detekt-gvy-guard.test.mjs`, so the rule guards it.
+The [CI guard](#ci-guard) fails on any other exclude and on a baseline entry for the rule, so the list only shrinks
 (#2420).
 
 ## `VolatileProperty`
@@ -205,8 +205,8 @@ The rule reads syntax only, so it does not see:
 
 ## CI guard
 
-`tools/ci/detekt-gvy-excludes.test.mjs` runs with the other `tools/ci` tests in every CI run. It reads the files git
-tracks in the checkout and fails when:
+`tools/ci/detekt-gvy-guard.test.mjs` runs with the other `tools/ci` tests in every CI run. It reads the files git tracks
+in the checkout and fails when:
 
 - the `gvy` rule set in `tools/lint/detekt.yml` is inactive or holds a key other than `active: true` and its rule
   blocks, or one of these rule blocks holds a line other than `active`, `excludes`, a single-quoted entry or a comment;

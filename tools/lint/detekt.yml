@@ -122,7 +122,7 @@ gvy:
     # It keeps benchmark code exempt if a module's detekt.source grows to cover it.
     - '**/src/jmh/**'
     # Modules whose regexes are not hoisted yet. The pull request that hoists a module removes its line here and from
-    # regexMigration in tools/ci/detekt-gvy-excludes.test.mjs; the rule then guards it. The list only shrinks: that
+    # regexMigration in tools/ci/detekt-gvy-guard.test.mjs; the rule then guards it. The list only shrinks: that
     # guard fails on any other exclude, and on a baseline entry for this rule (#2420).
     - '**/build-tool/src/**'
     - '**/diagnostics/codenarc/src/**'
@@ -137,7 +137,7 @@ gvy:
     active: true
     excludes:
     # Permanent: tests, the facade itself, and modules published on their own, which must not depend on the unpublished
-    # :common:concurrent. tools/ci/detekt-gvy-excludes.test.mjs requires exactly these, and requires the modules that
+    # :common:concurrent. tools/ci/detekt-gvy-guard.test.mjs requires exactly these, and requires the modules that
     # apply maven-publish to be exactly the published ones here. detekt matches them against absolute paths, so a
     # module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp package.
     - '**/src/test/**'
@@ -159,7 +159,7 @@ gvy:
     excludes:
     # Permanent: the stdlib atomics are experimental (KT-82228), and the facade is the only module that opts into them,
     # behind gvy's own OnceFlag, SharedValue and Counter. Tests are not excluded: none needs the package (#2474).
-    # tools/ci/detekt-gvy-excludes.test.mjs requires exactly this exclude.
+    # tools/ci/detekt-gvy-guard.test.mjs requires exactly this exclude.
     - '**/common/concurrent/src/**'
 naming:
   active: true

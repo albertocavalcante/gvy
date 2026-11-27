@@ -46,7 +46,7 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
   `:common:concurrent` types. It replaces a `ForbiddenImport` pattern that missed star imports and qualified uses.
   `common/concurrent` is its only exclude, and no exclude, baseline entry or unlisted suppression may be added (#2474).
 
-`tools/ci/detekt-gvy-excludes.test.mjs` enforces these rules' configuration, the module builds' detekt settings, and the
+`tools/ci/detekt-gvy-guard.test.mjs` enforces these rules' configuration, the module builds' detekt settings, and the
 test-source excludes of the built-in rules: a rule that excludes `**/test/**` also excludes `**/commonTest/**` and
 `**/jvmTest/**`. [tools/detekt-rules/README.md](../detekt-rules/README.md#ci-guard) lists exactly what it checks and
 what it cannot see.
