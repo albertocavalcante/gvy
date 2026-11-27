@@ -213,10 +213,15 @@ internal fun walkWorkspace(
  * - no [invalidate] happened since it started (the workspace service calls it on any watched-file event);
  * - every directory the walk listed still exists with the modification time it had. Creating, deleting or moving a
  *   file changes its parent directory's time, so this needs no file watcher. A directory modified within
- *   [RECENT_MILLIS] of the walk is never trusted, because coarse filesystem timestamps cannot order it.
+ *   [RECENT_MILLIS] before the walk started is never trusted, because coarse filesystem timestamps cannot order it.
  *
  * What stays unseen for up to [ttlMillis] is an in-place edit of a file the walk already knew, whose content the
  * scan reads from disk or from the open buffer anyway. Open buffers are never cached.
+ *
+ * One walk runs at a time (single flight). A miss while a walk is in flight blocks its caller's thread (an IO thread:
+ * rename checks run on Dispatchers.IO) until that walk ends, then is served its result when it is fresh; a walk
+ * that throws, such as one whose request was cancelled, stores nothing and the next waiter walks itself.
+ * [invalidate] never waits for a walk.
  */
 internal class WorkspaceWalkCache(
     private val ttlMillis: Long = DEFAULT_TTL_MILLIS,
@@ -228,6 +233,9 @@ internal class WorkspaceWalkCache(
     private val generation = Counter()
     private val walkCounter = Counter()
 
+    /** Held for the whole of a walk and its store, so walks never overlap. */
+    private val walking = Any()
+
     /** How many walks actually ran. */
     val walks: Int get() = walkCounter.value.toInt()
 
@@ -235,14 +243,24 @@ internal class WorkspaceWalkCache(
     val invalidations: Int get() = generation.value.toInt()
 
     fun get(key: Any, walk: () -> Walked): Walked {
-        entry.value?.takeIf { isFresh(it, key) }?.let { return it.walked }
-        // The generation is read before the walk and stored with it: an invalidation that lands at any later point,
-        // even between the walk and the store, makes this entry stale on its first read.
-        val before = generation.value
-        val walked = walk()
-        walkCounter.increment()
-        entry.set(Entry(key, clock(), before, walked))
-        return walked
+        val seen = entry.value
+        seen?.takeIf { isFresh(it, key) }?.let { return it.walked }
+        return synchronized(walking) {
+            // A walk that ended while this caller waited is served instead of repeated; the entry already judged
+            // stale outside is not checked again.
+            entry.value?.takeIf { it !== seen && isFresh(it, key) }?.let { return it.walked }
+            // The generation is read before the walk and stored with it: an invalidation that lands at any later
+            // point, even between the walk and the store, makes this entry stale on its first read. The time is read
+            // before the walk too, so a directory changed in the tick in which the walk listed it is never trusted.
+            val before = generation.value
+            val at = clock()
+            val walked = walk()
+            walkCounter.increment()
+            // Walks never overlap, so the entry this replaces is null or from an earlier walk, whose generation is
+            // never newer than [before]: a plain set cannot replace a fresher entry.
+            entry.set(Entry(key, at, before, walked))
+            walked
+        }
     }
 
     fun invalidate() {
