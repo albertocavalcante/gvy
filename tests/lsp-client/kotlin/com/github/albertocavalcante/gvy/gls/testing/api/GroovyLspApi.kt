@@ -36,6 +36,10 @@ interface GroovyLanguageServerProtocol : LanguageServer {
     @JsonRequest("groovy/runtimeFacts")
     fun runtimeFacts(): CompletableFuture<JsonElement>
 
+    /** Optional on older servers; absence is reported by JSON-RPC MethodNotFound. */
+    @JsonRequest("groovy/serverStats")
+    fun serverStats(): CompletableFuture<JsonElement>
+
     /** The raw result retains every terminal-analysis field for protocol assertions. */
     @JsonRequest("groovy/awaitDiagnostics")
     fun awaitDiagnostics(params: AwaitDiagnosticsParams?): CompletableFuture<JsonElement>
