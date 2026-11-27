@@ -41,6 +41,11 @@ const concurrencySuppression = /^(?:all|gvy|(?:gvy[.:])?(?:VolatileProperty|JdkA
 // accepted reasons are a field that an Atomic*FieldUpdater updates and a measured hot path
 // (tools/detekt-rules/README.md), and each entry says which. There is none.
 const sanctionedSuppressions = [];
+// The only detekt lines a module build may hold: a detekt artifact as a dependency, such as
+// `detektPlugins(libs.detekt.formatting)`, and the rule module's include in settings. A module may also hold a
+// `detekt {}` block whose every line points detekt at the whole of its src, as the multiplatform modules do.
+const moduleDetektLines = [/^"?\w+"?\(libs\.detekt\.[\w.]+\)$/, /^include\("tools:detekt-rules"\)$/];
+const moduleDetektSource = 'source.setFrom(fileTree("src") { include("**/*.kt") })';
 
 /** [config]'s lines without CRLF line ends or trailing whitespace, which YAML ignores. */
 const yamlLines = config => config.replaceAll('\r\n', '\n').split('\n').map(line => line.trimEnd());
@@ -266,6 +271,46 @@ function unmatched(items, others, key) {
   });
 }
 
+/** The text of Gradle Kotlin script [source] with its comments blanked out, as lines. */
+const scriptLines = source => {
+  const comments = kotlinTokens(source).filter(({ kind }) => kind === 'comment');
+  return blanked(source, comments).split('\n');
+};
+
+/**
+ * The lines of Gradle Kotlin script [source] that configure detekt beyond what a module build may, as `{ line, text }`.
+ * A line counts when its code names detekt in any case, so `detekt {}`, `tasks.withType<Detekt>()` and
+ * `tasks.named("detekt")` all show, unless it is one of [moduleDetektLines]. In a `detekt {` block, every line but the
+ * source override counts. Comments never count.
+ */
+function detektOverrides(source) {
+  const text = scriptLines(source);
+  const code = blanked(source, kotlinTokens(source)).split('\n');
+  const found = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const line = text[index].trim();
+    if (line === 'detekt {') {
+      let end = index;
+      for (let depth = 0; end < code.length; end += 1) {
+        depth += (code[end].match(/\{/g)?.length ?? 0) - (code[end].match(/\}/g)?.length ?? 0);
+        if (depth <= 0) break;
+      }
+      for (let inner = index + 1; inner < end; inner += 1) {
+        const body = text[inner].trim();
+        if (body && body !== moduleDetektSource) found.push({ line: inner + 1, text: body });
+      }
+      if (text[end]?.trim() !== '}') found.push({ line: end + 1, text: text[end]?.trim() ?? '' });
+      index = end;
+    } else if (/detekt/i.test(line) && !moduleDetektLines.some(form => form.test(line))) {
+      found.push({ line: index + 1, text: line });
+    }
+  }
+  return found;
+}
+
+/** Whether Gradle Kotlin script [source] applies a plugin that publishes the module, outside comments. */
+const publishes = source => scriptLines(source).some(line => /maven-publish|MavenPublish|maven\.publish/.test(line));
+
 test('the configuration reader takes only the gvy VolatileProperty block and rejects other YAML styles', () => {
   const config = [
     'gvy:',
@@ -337,6 +382,21 @@ test('JdkAtomics is active and excludes only its permanent patterns, each naming
     const module = permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
     if (module) assert.ok(existsSync(join(root, module, 'src')), `${permanent} names no module`);
   }
+});
+
+test('the modules JdkAtomics exempts as published on their own are the ones that apply maven-publish', () => {
+  const published = gitFiles()
+    .filter(path => path.endsWith('.gradle.kts') && publishes(readFileSync(join(root, path), 'utf8')))
+    .map(path => path.replace(/\/?[^/]+\.gradle\.kts$/, '') || '.')
+    .sort();
+  const exempt = jdkAtomicsPermanent
+    .map(permanent => permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1])
+    .filter(module => module && module !== 'common/concurrent')
+    .sort();
+  const message = 'JdkAtomics exempts these modules because each is published on its own and so cannot depend on ' +
+    'the unpublished :common:concurrent. When a module starts or stops applying maven-publish, change ' +
+    'jdkAtomicsPermanent here and the JdkAtomics excludes in tools/lint/detekt.yml with it (#2474)';
+  assert.deepEqual(published, exempt, message);
 });
 
 test('StdlibAtomics is active and excludes only :common:concurrent', () => {
@@ -484,4 +544,52 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
   assert.deepEqual(unsanctioned, [], message);
   const stale = unmatched(sanctionedSuppressions, sites, key).map(({ path, id }) => `${path} ${id}`);
   assert.deepEqual(stale, [], 'these sanctionedSuppressions entries match no suppression any more: remove them');
+});
+
+test('the Gradle reader takes detekt dependencies and the source override, and reports any other detekt line', () => {
+  const accepted = [
+    'dependencies {',
+    '    detektPlugins(libs.detekt.formatting) // The formatting rules.',
+    '    "detektPlugins"(libs.detekt.formatting)',
+    '    compileOnly(libs.detekt.api)',
+    '}',
+    '// detekt { ignoreFailures = true } in a comment, and /* tasks.named("detekt") */ in a block comment.',
+    'detekt {',
+    '    source.setFrom(fileTree("src") { include("**/*.kt") })',
+    '}',
+    'val note = "detekt"',
+  ].join('\n');
+  // The last line is reported: a literal is not a comment, and a name in it can configure a task.
+  assert.deepEqual(detektOverrides(accepted), [{ line: 10, text: 'val note = "detekt"' }]);
+  const overrides = [
+    ['detekt {\n    config.from(file("other.yml"))\n}', 'config.from(file("other.yml"))'],
+    ['detekt {\n    config.setFrom(files())\n}', 'config.setFrom(files())'],
+    ['detekt {\n    baseline = file("other.xml")\n}', 'baseline = file("other.xml")'],
+    ['detekt {\n    ignoreFailures = true\n}', 'ignoreFailures = true'],
+    ['detekt {\n    source.setFrom(files())\n}', 'source.setFrom(files())'],
+    ['detekt {\n    source.setFrom(fileTree("src") { include("**/*.kt") })\n    buildUponDefaultConfig = false\n}',
+      'buildUponDefaultConfig = false'],
+    ['detekt { source.setFrom(fileTree("src") { include("**/*.kt") }) }',
+      'detekt { source.setFrom(fileTree("src") { include("**/*.kt") }) }'],
+    ['tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {\n    exclude("**/gls/**")\n}',
+      'tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {'],
+    ['tasks.named("detekt") { enabled = false }', 'tasks.named("detekt") { enabled = false }'],
+    ['detektPlugins(project(":other-rules"))', 'detektPlugins(project(":other-rules"))'],
+  ];
+  for (const [script, text] of overrides) assert.deepEqual(detektOverrides(script).map(found => found.text), [text]);
+});
+
+test('no module build configures detekt beyond its dependencies and the multiplatform source override', () => {
+  const found = gitFiles()
+    .filter(path => path.endsWith('.gradle.kts') && path !== 'build.gradle.kts')
+    .flatMap(path => {
+      const overrides = detektOverrides(readFileSync(join(root, path), 'utf8'));
+      return overrides.map(({ line, text }) => `${path}:${line} ${text}`);
+    });
+  const message = "The root build.gradle.kts configures detekt for every module: tools/lint/detekt.yml, the module's " +
+    'own detekt-baseline.xml and failure on any finding. A module build may only add detekt artifacts as ' +
+    `dependencies and, in a \`detekt {}\` block of its own, \`${moduleDetektSource}\`. Set anything else (a config, ` +
+    'baseline, ignoreFailures, a source filter or a Detekt task setting) in the root build, where review sees it, or ' +
+    'extend this guard (#2474)';
+  assert.deepEqual(found, [], message);
 });
