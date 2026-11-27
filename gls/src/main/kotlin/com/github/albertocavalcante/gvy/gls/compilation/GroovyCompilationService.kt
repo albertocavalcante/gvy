@@ -484,6 +484,8 @@ class GroovyCompilationService internal constructor(
         if (changed) {
             // The published model's classpath: the same snapshot every compile now reads
             classpathService.updateClasspath(workspaceManager.current().classpath)
+            // A warm-up, not a re-index: the first model builds the GDK index here, off the request path. The index
+            // does not depend on the classpath, so on later models this returns at once.
             gdkProvider.initialize()
             shadows.refresh() // publish spellings before retiring work that used the previous roots
             clearCaches()

@@ -3,14 +3,12 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
@@ -18,6 +16,9 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Now uses GroovySourceResolver to extract real parameter names from Groovy source JARs
  * instead of relying on reflection which provides synthetic names like "arg0", "arg1".
+ *
+ * The index is built whole, once, before any lookup reads it: a lookup that arrives during the build waits for it
+ * instead of reading the part built so far.
  */
 class GroovyGdkProvider(
     private val classpathService: ClasspathService,
@@ -27,15 +28,25 @@ class GroovyGdkProvider(
 
     // Map of <TargetType, List<ExtensionMethod>>
     // e.g. "java.util.List" -> [each, collect, ...]
-    private val cache = ConcurrentHashMap<String, List<QualifiedGdkMethod>>()
-    private val isInitialized = OnceFlag()
+    private val builtIndex = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { buildIndex() }
 
     /**
-     * Initializes the GDK index. Call this on startup.
+     * Builds the GDK index if no call has built it yet, and returns once it is complete. Lookups build it on first
+     * use too, so this only moves the build off the request path. The GDK classes load from the server's own Groovy
+     * runtime whatever the workspace classpath is, so the index is never rebuilt and later calls return at once.
      */
     fun initialize() {
-        if (!isInitialized.trySet()) return
+        index()
+    }
 
+    /** The complete index. Built by the first caller; callers that arrive during the build wait for it. */
+    private fun index(): Map<String, List<QualifiedGdkMethod>> = builtIndex.value
+
+    /**
+     * Indexes every class in [GDK_CLASSES] into a map nothing else can see until it is complete. A source resolver,
+     * when given, is initialized first, inside the build, so lookups wait for that too; production passes none.
+     */
+    private fun buildIndex(): Map<String, List<QualifiedGdkMethod>> {
         // Initialize source resolver if available
         // Note: runBlocking is intentional here - GDK initialization is a one-time
         // startup cost that must complete before the provider is usable.
@@ -53,14 +64,16 @@ class GroovyGdkProvider(
 
         // Use the same GDK classes as GroovySourceResolver for consistency
         // This ensures parameter names from sources match the methods we index
+        val methodsByType = mutableMapOf<String, MutableList<QualifiedGdkMethod>>()
         GDK_CLASSES.forEach { className ->
-            indexGdkClass(className)
+            indexGdkClass(className, methodsByType)
         }
 
-        logger.info { "Initialized GDK Provider with ${cache.size} target types" }
+        logger.info { "Initialized GDK Provider with ${methodsByType.size} target types" }
+        return methodsByType
     }
 
-    private fun indexGdkClass(className: String) {
+    private fun indexGdkClass(className: String, into: MutableMap<String, MutableList<QualifiedGdkMethod>>) {
         val clazz = classpathService.loadClass(className) ?: return
 
         // GDK methods are always public static
@@ -92,11 +105,8 @@ class GroovyGdkProvider(
                 displayParameterTypes = method.displayParameterTypes().drop(1),
             )
 
-            cache.compute(selfType) { _, list ->
-                val newList = list?.toMutableList() ?: mutableListOf()
-                newList.add(QualifiedGdkMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName }))
-                newList
-            }
+            val qualified = QualifiedGdkMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName })
+            into.getOrPut(selfType) { mutableListOf() }.add(qualified)
 
             // Also index by simple name for looser matching if needed, or interfaces
             // e.g. List -> Collection -> Iterable
@@ -125,7 +135,6 @@ class GroovyGdkProvider(
      * by name and erased parameters. The Object extensions are appended once, not once per type.
      */
     internal fun getQualifiedMethodsForTypes(classNames: List<String>): List<QualifiedGdkMethod> {
-        ensureInitialized()
         val results = mutableListOf<QualifiedGdkMethod>()
         classNames.distinct().forEach { collectTypeMethods(results, it) }
         appendCachedMethods(results, JAVA_LANG_OBJECT)
@@ -133,8 +142,6 @@ class GroovyGdkProvider(
     }
 
     private fun collectMethodsForType(className: String): List<QualifiedGdkMethod> {
-        ensureInitialized()
-
         val results = mutableListOf<QualifiedGdkMethod>()
         collectTypeMethods(results, className)
 
@@ -155,12 +162,8 @@ class GroovyGdkProvider(
         }
     }
 
-    private fun ensureInitialized() {
-        if (!isInitialized.isSet) initialize()
-    }
-
     private fun appendCachedMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
-        cache[className]?.let(results::addAll)
+        index()[className]?.let(results::addAll)
     }
 
     private fun appendCachedMethodsFromHierarchy(results: MutableList<QualifiedGdkMethod>, clazz: Class<*>) {
