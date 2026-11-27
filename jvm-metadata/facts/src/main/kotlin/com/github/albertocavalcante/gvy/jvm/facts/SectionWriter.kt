@@ -3,15 +3,8 @@
 
 package com.github.albertocavalcante.gvy.jvm.facts
 
-/** The smallest encoded size of each repeated item, used to check a count against the remaining bytes. */
-internal const val MIN_PACKAGE_BYTES = 2
-internal const val MIN_CLASS_BYTES = 6
-internal const val MIN_TYPES_CLASS_BYTES = 5
-internal const val MIN_MEMBER_BYTES = 6
-internal const val MIN_EXTENSION_BYTES = 5
-
-/** Every string the sections refer to, for the pool. */
-internal fun collectStrings(facts: Facts): Set<String> {
+/** The strings of the names pool: everything the names and extensions sections refer to. */
+internal fun collectNameStrings(facts: Facts): Set<String> {
     val strings = HashSet<String>()
     for (fact in facts.names.packages) {
         strings += fact.name
@@ -22,8 +15,18 @@ internal fun collectStrings(facts: Facts): Set<String> {
         strings += fact.simpleName
         fact.outerClass?.let(strings::add)
     }
+    for (fact in facts.extensions.entries) {
+        strings += fact.holderClass
+        strings += fact.moduleName
+        strings += fact.moduleVersion
+    }
+    return strings
+}
+
+/** The strings of the type pool: everything the types section refers to, apart from the classes it describes. */
+internal fun collectTypeStrings(facts: Facts): Set<String> {
+    val strings = HashSet<String>()
     for (fact in facts.types.classes) {
-        strings += fact.internalName
         fact.superName?.let(strings::add)
         strings.addAll(fact.interfaces)
         for (member in fact.members) {
@@ -33,11 +36,6 @@ internal fun collectStrings(facts: Facts): Set<String> {
             member.genericSignature?.let(strings::add)
         }
     }
-    for (fact in facts.extensions.entries) {
-        strings += fact.holderClass
-        strings += fact.moduleName
-        strings += fact.moduleVersion
-    }
     return strings
 }
 
@@ -45,14 +43,19 @@ private fun requireDistinct(keys: List<Any>, what: String) {
     require(keys.toSet().size == keys.size) { "Duplicate $what" }
 }
 
-internal fun encodeNames(names: NamesSection, pool: StringPoolWriter): ByteArray {
-    val packages = names.packages.sortedBy { fact -> pool.indexOf(fact.name) }
-    requireDistinct(packages.map { fact -> fact.name }, "package name")
-    val packageIndices = packages.withIndex().associate { (index, fact) -> fact.name to index }
+/** The classes of the names section in the order it is written; their positions are the class indices of types. */
+internal fun sortedClasses(names: NamesSection, pool: StringPoolWriter): List<ClassFact> {
     val classes = names.classes.sortedWith(
         compareBy<ClassFact>({ fact -> pool.indexOf(fact.internalName) }, { fact -> fact.release }),
     )
     requireDistinct(classes.map { fact -> fact.internalName to fact.release }, "class and release")
+    return classes
+}
+
+internal fun encodeNames(names: NamesSection, classes: List<ClassFact>, pool: StringPoolWriter): ByteArray {
+    val packages = names.packages.sortedBy { fact -> pool.indexOf(fact.name) }
+    requireDistinct(packages.map { fact -> fact.name }, "package name")
+    val packageIndices = packages.withIndex().associate { (index, fact) -> fact.name to index }
 
     val sink = ByteSink()
     sink.writeVarint(packages.size)
@@ -75,17 +78,23 @@ internal fun encodeNames(names: NamesSection, pool: StringPoolWriter): ByteArray
     return sink.toByteArray()
 }
 
-internal fun encodeTypes(types: TypesSection, pool: StringPoolWriter): ByteArray {
-    val classes = types.classes.sortedWith(
-        compareBy<ClassTypes>({ fact -> pool.indexOf(fact.internalName) }, { fact -> fact.release }),
-    )
-    requireDistinct(classes.map { fact -> fact.internalName to fact.release }, "class and release")
+/** Encodes the types section; each class is written as its index in [classes], the sorted names classes. */
+internal fun encodeTypes(types: TypesSection, classes: List<ClassFact>, pool: StringPoolWriter): ByteArray {
+    val classIndices = classes.withIndex().associate { (index, fact) -> (fact.internalName to fact.release) to index }
+    val entries = types.classes
+        .map { fact ->
+            val index = requireNotNull(classIndices[fact.internalName to fact.release]) {
+                "A class in the types section is not in the names section"
+            }
+            index to fact
+        }
+        .sortedBy { (index, _) -> index }
+    requireDistinct(entries.map { (index, _) -> index }, "class and release")
 
     val sink = ByteSink()
-    sink.writeVarint(classes.size)
-    for (fact in classes) {
-        sink.writeVarint(pool.indexOf(fact.internalName))
-        sink.writeVarint(fact.release)
+    sink.writeVarint(entries.size)
+    for ((index, fact) in entries) {
+        sink.writeVarint(index)
         sink.writeOptionalIndex(fact.superName?.let(pool::indexOf))
         sink.writeVarint(fact.interfaces.size)
         for (name in fact.interfaces) sink.writeVarint(pool.indexOf(name))
@@ -127,6 +136,7 @@ internal fun encodeExtensions(extensions: ExtensionsSection, pool: StringPoolWri
             { fact -> pool.indexOf(fact.moduleVersion) },
         ),
     )
+    requireDistinct(entries, "extension")
     val sink = ByteSink()
     sink.writeVarint(entries.size)
     for (fact in entries) {

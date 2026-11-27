@@ -90,7 +90,8 @@ public data class MemberFact(
 }
 
 /**
- * The supertypes and members of one class, identified by [internalName] and [release].
+ * The supertypes and members of one class, identified by [internalName] and [release], which must name a
+ * [ClassFact] of the [NamesSection]: the file stores the class as its position in the names section.
  *
  * The writer keeps the order of [interfaces] and [MemberFact.parameterNames] because it is meaningful, and sorts
  * [members] by name and then descriptor, which must be unique within the class. [release] follows the rules of
@@ -110,7 +111,7 @@ public data class ClassTypes(
 
 /**
  * The supertypes and members of the classes of the input. The writer sorts [classes]; (internal name, release)
- * must be unique. It does not require a [ClassTypes] for every [ClassFact], or the other way round.
+ * must be unique and name a [ClassFact]. A [ClassFact] without a [ClassTypes] is allowed.
  */
 public data class TypesSection(val classes: List<ClassTypes>)
 

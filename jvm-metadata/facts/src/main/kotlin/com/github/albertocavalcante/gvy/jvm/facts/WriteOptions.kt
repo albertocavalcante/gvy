@@ -40,10 +40,11 @@ public class WriteOptions(
     public val types: SectionEncoding = DEFAULT_ENCODING,
 ) {
     internal fun encodingOf(sectionId: Int): SectionEncoding = when (sectionId) {
-        SECTION_STRINGS -> nameStrings
+        SECTION_NAME_STRINGS -> nameStrings
         SECTION_NAMES -> names
-        SECTION_TYPES -> types
         SECTION_EXTENSIONS -> extensions
+        SECTION_TYPE_STRINGS -> typeStrings
+        SECTION_TYPES -> types
         else -> error("Unknown section id $sectionId")
     }
 }

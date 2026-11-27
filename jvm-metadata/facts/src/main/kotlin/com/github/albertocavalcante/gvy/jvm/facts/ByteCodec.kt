@@ -118,6 +118,14 @@ internal class ByteCursor(
         return index
     }
 
+    /** Reads 0 as null, otherwise an index below [limit] plus one, as the `string?` of FORMAT.md. */
+    fun readOptionalIndex(limit: Int): Int? {
+        val encoded = readVarint()
+        if (encoded == 0) return null
+        requireThat(encoded - 1 < limit, RejectReason.INDEX_OUT_OF_RANGE)
+        return encoded - 1
+    }
+
     /** Reads a varint that must be at most [max]. */
     fun readAtMost(max: Int): Int {
         val value = readVarint()

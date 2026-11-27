@@ -34,7 +34,9 @@ internal fun decodeUtf8Strict(decoder: CharsetDecoder, bytes: ByteArray, start: 
     reject(RejectReason.CORRUPT)
 }
 
-/** The strings of a file, in the order of the file's pool. */
+private const val MIN_POOL_ENTRY_BYTES = 1
+
+/** The strings of one pool, in the order of the file's pool section. */
 internal class StringPool(private val strings: Array<String>) {
     val size: Int get() = strings.size
 
@@ -72,15 +74,15 @@ internal class StringPoolWriter private constructor(private val indices: Map<Str
 }
 
 /**
- * Decodes the pool section. Each length is checked against the limit and the remaining bytes before its string is
- * read, and the strings must be strictly increasing by UTF-8 bytes, which also makes them unique.
+ * Decodes a pool section. The count is checked against the bytes left and charged to [budget] before anything is
+ * allocated; each length is checked against the limit and the remaining bytes before its string is read, and the
+ * strings must be strictly increasing by UTF-8 bytes, which also makes them unique.
  */
-internal fun decodeStringPool(section: RawSection): StringPool {
+internal fun decodeStringPool(section: RawSection, budget: DecodeBudget): StringPool {
     val cursor = section.cursor()
-    val count = cursor.readVarint()
-    cursor.requireCount(count, 1)
+    val count = cursor.readCount(MIN_POOL_ENTRY_BYTES, budget)
     val decoder = newStrictUtf8Decoder()
-    val strings = ArrayList<String>(count)
+    val strings = ArrayList<String>(minOf(count, MAX_PRESIZE))
     var previousStart = 0
     var previousLength = -1
     repeat(count) {

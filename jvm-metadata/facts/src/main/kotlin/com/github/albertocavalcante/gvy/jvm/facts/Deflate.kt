@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.jvm.facts
 
 import java.io.ByteArrayOutputStream
-import java.util.zip.CRC32C
 import java.util.zip.DataFormatException
 import java.util.zip.Deflater
 import java.util.zip.Inflater
@@ -54,10 +53,4 @@ internal fun inflateExactly(stored: ByteArray, offset: Int, length: Int, rawLeng
     } finally {
         inflater.end()
     }
-}
-
-internal fun crc32c(bytes: ByteArray, offset: Int, length: Int): Int {
-    val crc = CRC32C()
-    crc.update(bytes, offset, length)
-    return crc.value.toInt()
 }

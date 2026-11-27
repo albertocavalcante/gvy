@@ -42,10 +42,11 @@ public object FactsFormat {
     internal val MAGIC: ByteArray = "GVYF".toByteArray(Charsets.US_ASCII)
 }
 
-internal const val SECTION_STRINGS = 1
+internal const val SECTION_NAME_STRINGS = 1
 internal const val SECTION_NAMES = 2
-internal const val SECTION_TYPES = 3
-internal const val SECTION_EXTENSIONS = 4
+internal const val SECTION_EXTENSIONS = 3
+internal const val SECTION_TYPE_STRINGS = 4
+internal const val SECTION_TYPES = 5
 
 internal const val CODEC_NONE = 0
 internal const val CODEC_DEFLATE = 1

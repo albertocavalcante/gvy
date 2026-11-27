@@ -13,17 +13,20 @@ internal class StoredSection(
 )
 
 /**
- * Encodes the raw bytes of every known section, in section-id order. The result depends only on the content of
- * [facts]: lists are sorted by pool index, the pool is sorted by UTF-8 bytes, and nothing depends on a clock,
- * a hash order or the compression chosen later.
+ * Encodes the raw bytes of every section, in ascending id order. The result depends only on the content of
+ * [facts]: lists are sorted by pool index, the pools are sorted by UTF-8 bytes, and nothing depends on a clock, a
+ * hash order or the compression chosen later.
  */
 internal fun encodeRawSections(facts: Facts): List<Pair<Int, ByteArray>> {
-    val pool = StringPoolWriter.of(collectStrings(facts))
+    val namePool = StringPoolWriter.of(collectNameStrings(facts))
+    val typePool = StringPoolWriter.of(collectTypeStrings(facts))
+    val classes = sortedClasses(facts.names, namePool)
     return listOf(
-        SECTION_STRINGS to pool.raw,
-        SECTION_NAMES to encodeNames(facts.names, pool),
-        SECTION_TYPES to encodeTypes(facts.types, pool),
-        SECTION_EXTENSIONS to encodeExtensions(facts.extensions, pool),
+        SECTION_NAME_STRINGS to namePool.raw,
+        SECTION_NAMES to encodeNames(facts.names, classes, namePool),
+        SECTION_EXTENSIONS to encodeExtensions(facts.extensions, namePool),
+        SECTION_TYPE_STRINGS to typePool.raw,
+        SECTION_TYPES to encodeTypes(facts.types, classes, typePool),
     )
 }
 
@@ -38,9 +41,10 @@ public object FactsWriter {
      * A section that would compress beyond [FactsFormat.MAX_INFLATE_RATIO] is stored without compression, so that
      * every file written here passes the reader's ratio check.
      *
-     * Throws [IllegalArgumentException] for a model the format cannot hold: a duplicate package, class or member,
-     * a class in a package the names section does not list, a string over [FactsFormat.MAX_STRING_BYTES] or a
-     * header string over [FactsFormat.MAX_HEADER_STRING_BYTES] UTF-8 bytes, or text with an unpaired surrogate.
+     * Throws [IllegalArgumentException] for a model the format cannot hold: a duplicate package, class, member or
+     * extension, a class in a package the names section does not list, a [ClassTypes] for a class the names
+     * section does not list, a string over [FactsFormat.MAX_STRING_BYTES] or a header string over
+     * [FactsFormat.MAX_HEADER_STRING_BYTES] UTF-8 bytes, or text with an unpaired surrogate.
      */
     public fun write(facts: Facts, options: WriteOptions = WriteOptions()): ByteArray {
         val sections = encodeRawSections(facts).map { (id, raw) -> store(id, raw, options.encodingOf(id)) }
