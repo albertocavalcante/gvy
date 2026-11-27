@@ -35,6 +35,8 @@ public object FactsWriter {
      * The same content gives the same raw section bytes, however the lists and strings were ordered when they were
      * built; with every section stored without compression the whole file is identical too. With DEFLATE, the
      * stored bytes are those of the JDK's zlib, so they can differ between JDK builds while the raw bytes do not.
+     * A section that would compress beyond [FactsFormat.MAX_INFLATE_RATIO] is stored without compression, so that
+     * every file written here passes the reader's ratio check.
      *
      * Throws [IllegalArgumentException] for a model the format cannot hold: a duplicate package, class or member,
      * a class in a package the names section does not list, a string over [FactsFormat.MAX_STRING_BYTES] or a
@@ -57,9 +59,19 @@ public object FactsWriter {
     }
 }
 
+/**
+ * Stores [raw] as [encoding] asks, except that a section a reader would refuse for its inflate ratio is stored as is:
+ * highly repetitive content can compress beyond [FactsFormat.MAX_INFLATE_RATIO].
+ */
 private fun store(id: Int, raw: ByteArray, encoding: SectionEncoding): StoredSection {
-    val stored = if (encoding.codec == CODEC_DEFLATE) deflate(raw, encoding.level) else raw
-    return StoredSection(id, encoding.codec, stored, raw.size, crc32c(raw, 0, raw.size))
+    val crc = crc32c(raw, 0, raw.size)
+    if (encoding.codec == CODEC_DEFLATE) {
+        val deflated = deflate(raw, encoding.level)
+        if (raw.size <= deflated.size.toLong() * FactsFormat.MAX_INFLATE_RATIO) {
+            return StoredSection(id, CODEC_DEFLATE, deflated, raw.size, crc)
+        }
+    }
+    return StoredSection(id, CODEC_NONE, raw, raw.size, crc)
 }
 
 private fun writeHeader(sink: ByteSink, header: FactsHeader) {

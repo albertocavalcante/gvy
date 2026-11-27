@@ -143,6 +143,20 @@ class FactsRoundTripTest {
     }
 
     @Test
+    fun `a section that would deflate beyond the inflate ratio is stored as is and still loads`() {
+        val repetitive = "a".repeat(FactsFormat.MAX_STRING_BYTES)
+        val facts = emptyFacts().copy(
+            types = TypesSection(listOf(ClassTypes(repetitive, 0, null, emptyList(), emptyList()))),
+        )
+
+        val file = writeWith(facts, SectionEncoding.deflate(9))
+
+        assertEquals(facts, openFile(file).loadAll().loaded())
+        assertEquals(STORED, sectionLocations(file).single { it.id == STRINGS }.codec)
+        assertEquals(ZLIB, sectionLocations(file).single { it.id == NAMES }.codec)
+    }
+
+    @Test
     fun `the largest access flags and release round trip`() {
         val member = MemberFact(MemberKind.FIELD, FactsFormat.MAX_ACCESS_FLAGS, "f", "I")
         val facts = emptyFacts().copy(
@@ -198,6 +212,7 @@ class FactsRoundTripTest {
         val unlistedPackage = base.names.classes + ClassFact("q/C", "q", "C", null, 1)
         val firstTypes = base.types.classes.first()
         val duplicateMember = firstTypes.copy(members = firstTypes.members + firstTypes.members.first())
+        val duplicateTypes = base.types.classes + firstTypes
 
         assertFailsWith<IllegalArgumentException> {
             FactsWriter.write(base.copy(names = base.names.copy(packages = duplicatePackage)))
@@ -210,6 +225,9 @@ class FactsRoundTripTest {
         }
         assertFailsWith<IllegalArgumentException> {
             FactsWriter.write(base.copy(types = TypesSection(listOf(duplicateMember) + base.types.classes.drop(1))))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FactsWriter.write(base.copy(types = TypesSection(duplicateTypes)))
         }
     }
 

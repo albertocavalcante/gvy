@@ -16,7 +16,10 @@ public class SectionEncoding private constructor(internal val codec: Int, intern
         /** Stores the raw bytes as they are. */
         public val NONE: SectionEncoding = SectionEncoding(CODEC_NONE, 0)
 
-        /** Compresses with [java.util.zip.Deflater] at [level], which must be in 1..9. */
+        /**
+         * Compresses with [java.util.zip.Deflater] at [level], which must be in 1..9. [FactsWriter.write] stores a
+         * section without compression instead when DEFLATE would shrink it beyond [FactsFormat.MAX_INFLATE_RATIO].
+         */
         public fun deflate(level: Int): SectionEncoding {
             require(level in Deflater.BEST_SPEED..Deflater.BEST_COMPRESSION) {
                 "A DEFLATE level must be in ${Deflater.BEST_SPEED}..${Deflater.BEST_COMPRESSION}, got $level"

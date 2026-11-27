@@ -86,7 +86,7 @@ internal class ByteCursor(
         return bytes[start].toInt() and BYTE_MASK
     }
 
-    /** Reads [byteCount] bytes, least significant first, as a non-negative value of at most 8 bytes. */
+    /** Reads [byteCount] bytes (at most 8), least significant first. An 8-byte value can be negative. */
     fun readLe(byteCount: Int): Long {
         val start = skip(byteCount)
         var value = 0L

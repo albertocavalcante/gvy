@@ -47,8 +47,12 @@ public sealed interface LoadResult<out T> {
  *
  * [maxFileBytes] bounds the whole file. [maxSectionBytes] bounds the declared raw length of each section, which
  * is what inflating one allocates. A DEFLATE section is also refused when its raw length exceeds
- * [FactsFormat.MAX_INFLATE_RATIO] times its stored length, so a file can make a reader allocate at most that
- * multiple of its own size, and never more than [maxSectionBytes] per section.
+ * [FactsFormat.MAX_INFLATE_RATIO] times its stored length, so inflating allocates at most that multiple of the
+ * file's size, and never more than [maxSectionBytes] per section.
+ *
+ * The objects decoded from a section take more room than its raw bytes: the smallest items, a class without members
+ * or a one-byte string, cost tens of times their encoded size. Pick [maxSectionBytes] for the heap that decoding
+ * untrusted input may use, not only for the largest honest section.
  */
 public class ReadLimits(
     public val maxFileBytes: Int = DEFAULT_MAX_FILE_BYTES,
@@ -152,10 +156,11 @@ public class FactsFile internal constructor(
          * Checks the header and the section table of [bytes] without reading any section. [bytes] is held, not
          * copied, so the caller must not change it while the file is in use.
          *
-         * Checked here: [ReadLimits.maxFileBytes]; the magic; the major version; that the table lies within the
-         * file and that the sections fill the rest of it exactly, with no id twice; and, when [expectedInputSha256]
-         * is given, that the header names that input. Section ids this reader does not know are ignored.
-         * Everything about a section is checked when that section is decoded.
+         * Checked here: [ReadLimits.maxFileBytes]; the magic; the major version; the header fields and their limits;
+         * that the table lies within the file, that no length in it is 2^31 or more, and that the sections fill the
+         * rest of the file exactly, with no id twice; and, when [expectedInputSha256] is given, that the header names
+         * that input. Section ids this reader does not know are otherwise ignored. Everything else about a section
+         * is checked when that section is decoded.
          *
          * Never throws for malformed input.
          */

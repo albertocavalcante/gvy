@@ -49,8 +49,8 @@ internal class StringPoolWriter private constructor(private val indices: Map<Str
     fun indexOf(text: String): Int = checkNotNull(indices[text]) { "A string of ${text.length} chars is not pooled" }
 
     companion object {
-        fun of(strings: Collection<String>): StringPoolWriter {
-            val encoded = strings.toSet().map { text -> text to encodeUtf8Strict(text) }
+        fun of(strings: Set<String>): StringPoolWriter {
+            val encoded = strings.map { text -> text to encodeUtf8Strict(text) }
             for ((text, bytes) in encoded) {
                 require(bytes.size <= FactsFormat.MAX_STRING_BYTES) {
                     "A string of ${text.length} chars needs ${bytes.size} bytes; the limit is " +

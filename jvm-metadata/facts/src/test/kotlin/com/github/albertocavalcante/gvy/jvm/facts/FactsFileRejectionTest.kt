@@ -178,6 +178,15 @@ class FactsFileRejectionTest {
     }
 
     @Test
+    fun `a stream that asks for a preset dictionary is corrupt`() {
+        // A zlib header with the FDICT flag, a dictionary id, and a final empty fixed-Huffman block.
+        val stream = byteArrayOf(0x78, 0xBB.toByte(), 0, 0, 0, 1, 0x03, 0x00)
+        val section = TestSection(NAMES, ZLIB, stream, rawLength = 1, crc = 0)
+
+        openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
+    }
+
+    @Test
     fun `a stored section whose stored and raw lengths differ is corrupt`() {
         val section = TestSection(NAMES, STORED, ByteArray(3), rawLength = 4, crc = 0)
 
@@ -236,6 +245,18 @@ class FactsFileRejectionTest {
     @Test
     fun `a table that claims more sections than the file holds is truncated without reading past the end`() {
         FactsFile.open(header { utf8("p").varint(0).varint(64) }).assertRejected(RejectReason.TRUNCATED)
+    }
+
+    @Test
+    fun `stored lengths that add up beyond the file are truncated even when their sum overflows an Int`() {
+        val largest = Int.MAX_VALUE.toLong()
+        val file = header {
+            utf8("p").varint(0).varint(2)
+            u8(STRINGS).u8(STORED).le(largest, 4).le(largest, 4).le(0, 4)
+            u8(NAMES).u8(STORED).le(largest, 4).le(largest, 4).le(0, 4)
+        }
+
+        FactsFile.open(file).assertRejected(RejectReason.TRUNCATED)
     }
 
     @Test
