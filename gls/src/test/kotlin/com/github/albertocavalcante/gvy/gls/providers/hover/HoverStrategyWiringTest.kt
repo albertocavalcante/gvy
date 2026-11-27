@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.ClassDeclarationHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.ClosureHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.ConstructorCallHoverStrategy
@@ -26,7 +25,6 @@ import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
@@ -41,11 +39,6 @@ class HoverStrategyWiringTest {
     private val contentGenerator = HoverContentGenerator(
         SemanticTypeResolver(compilationService.classpathService.getTypeSolver()),
     )
-
-    @BeforeEach
-    fun resetDocumentationProvider() {
-        DocumentationProvider.reset()
-    }
 
     @Test
     fun `the strategy list is not rebuilt per request`() {

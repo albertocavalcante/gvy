@@ -88,9 +88,8 @@ class HoverProvider(
 
     private val logger = KotlinLogging.logger {}
 
-    // Documentation provider for extracting groovydoc - use shared instance for cache consistency
-    private val documentationProvider = DocumentationProvider
-        .getInstance(documentProvider)
+    // Groovydoc from the current buffer, for a hover without a compiled snapshot; its cache checks the buffer's text
+    private val documentationProvider = DocumentationProvider(documentProvider)
 
     /**
      * The strategies for this request, most specific first.

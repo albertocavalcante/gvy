@@ -74,7 +74,6 @@
     <ID>ReturnCount:ClasspathResolutionStrategy.kt$ClasspathResolutionStrategy$@Suppress("TooGenericExceptionCaught") override suspend fun resolve(context: ResolutionContext): ResolutionResult</ID>
     <ID>ReturnCount:DefinitionProvider.kt$DefinitionProvider$private fun computeMethodCallSelectionRange(node: MethodCallExpression): Range?</ID>
     <ID>ReturnCount:DefinitionProvider.kt$DefinitionProvider$private fun computePropertySelectionRange(node: PropertyExpression): Range?</ID>
-    <ID>ReturnCount:DocumentationProvider.kt$DocumentationProvider$fun getDocumentation(node: ASTNode, documentUri: URI): Documentation</ID>
     <ID>ReturnCount:GroovySourceResolver.kt$GroovySourceResolver$private fun extractSourceFromJar(jar: JarFile, className: String): Path?</ID>
     <ID>ReturnCount:MemberAccessCompletionStrategy.kt$MemberAccessCompletionStrategy$private fun CompletionsBuilder.addMapLiteralKeyCompletions( qualifierName: String, ctx: CompletionStrategyContext, ): Boolean</ID>
     <ID>ReturnCount:MethodCallMetadataResolver.kt$MethodCallMetadataResolver$fun resolveMethodCall(call: MethodCallExpression, moduleNode: ModuleNode?): MethodMetadata?</ID>
@@ -93,7 +92,6 @@
     <ID>TooGenericExceptionCaught:CoroutineUtils.kt$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:DependencyManager.kt$DependencyManager$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DependencyRequestHandler.kt$DependencyRequestHandler$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:DocumentationProvider.kt$DocumentationProvider$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DocumentationService.kt$DocumentationService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:GroovyCompilationService.kt$GroovyCompilationService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:GroovyLanguageServer.kt$GroovyLanguageServer$e: Exception</ID>

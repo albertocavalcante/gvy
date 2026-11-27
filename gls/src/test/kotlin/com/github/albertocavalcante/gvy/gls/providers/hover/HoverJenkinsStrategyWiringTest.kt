@@ -5,7 +5,6 @@ package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
-import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.project.JenkinsProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.JenkinsParameterHoverStrategy
@@ -42,7 +41,6 @@ class HoverJenkinsStrategyWiringTest {
 
     @BeforeEach
     fun setUp() = runBlocking {
-        DocumentationProvider.reset()
         scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         compilationService = GroovyCompilationService()
         workspace = Files.createTempDirectory("hover-jenkins-wiring")
