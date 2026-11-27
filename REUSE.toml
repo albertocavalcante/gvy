@@ -194,6 +194,7 @@ path = [
   "kb/OPTIMIZATION_PLAN.md",
   "kb/PHASE_2_GROOVY_OPERATORS_PLAN.md",
   "kb/PHASE_3_PERFORMANCE_PLAN.md",
+  "kb/PREBUILT_FACTS_EXPERIMENT.md",
   "kb/README.md",
   "kb/FILE_EXECUTION.md",
   "docs/file-execution.md",
