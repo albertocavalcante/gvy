@@ -29,6 +29,8 @@ complexity:
     excludes:
     - '**/dsl/**'
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     - '**/visitor/**'
     thresholdInFiles: 20
     thresholdInClasses: 18
@@ -52,6 +54,8 @@ exceptions:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     exceptionNames:
     - ArrayIndexOutOfBoundsException
     - Error
@@ -112,9 +116,14 @@ gvy:
     active: true
     excludes:
     - '**/src/test/**'
+    - '**/src/commonTest/**'
+    - '**/src/jvmTest/**'
+    # This exempts nothing today: only parser/native has a src/jmh, and its detekt reads only src/main and src/test.
+    # It keeps benchmark code exempt if a module's detekt.source grows to cover it.
     - '**/src/jmh/**'
-    # Modules whose regexes are not hoisted yet. Remove a line in the same pull request that hoists that module;
-    # the rule then guards it. Never add a line here (or a baseline entry) for a module that is clean. See #2420.
+    # Modules whose regexes are not hoisted yet. The pull request that hoists a module removes its line here and from
+    # regexMigration in tools/ci/detekt-gvy-guard.test.mjs; the rule then guards it. The list only shrinks: that
+    # guard fails on any other exclude, and on a baseline entry for this rule (#2420).
     - '**/build-tool/src/**'
     - '**/diagnostics/codenarc/src/**'
     - '**/jenkins/src/**'
@@ -128,12 +137,16 @@ gvy:
     active: true
     excludes:
     # Permanent: tests, the facade itself, and modules published on their own, which must not depend on the unpublished
-    # :common:concurrent. tools/ci/detekt-gvy-excludes.test.mjs requires exactly these. detekt matches them against
-    # absolute paths, so a module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp
-    # package.
+    # :common:concurrent. tools/ci/detekt-gvy-guard.test.mjs requires exactly these, and requires the modules that
+    # apply maven-publish to be exactly the published ones here. detekt matches them against absolute paths, so a
+    # module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp package.
     - '**/src/test/**'
-    - '**/src/jvmTest/**'
     - '**/src/commonTest/**'
+    # These two exempt nothing today: src/jvmTest exists only in common/concurrent, which the facade's pattern below
+    # exempts anyway, and in viz/ast-model, which is not linted yet (#2480); src/jmh exists only in parser/native,
+    # whose detekt reads only src/main and src/test. They keep test and benchmark code exempt once such a source set
+    # is linted.
+    - '**/src/jvmTest/**'
     - '**/src/jmh/**'
     - '**/common/concurrent/src/**'
     - '**/bsp/bsp-core/src/**'
@@ -146,7 +159,7 @@ gvy:
     excludes:
     # Permanent: the stdlib atomics are experimental (KT-82228), and the facade is the only module that opts into them,
     # behind gvy's own OnceFlag, SharedValue and Counter. Tests are not excluded: none needs the package (#2474).
-    # tools/ci/detekt-gvy-excludes.test.mjs requires exactly this exclude.
+    # tools/ci/detekt-gvy-guard.test.mjs requires exactly this exclude.
     - '**/common/concurrent/src/**'
 naming:
   active: true
@@ -157,6 +170,8 @@ naming:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     functionPattern: "^([a-z][a-zA-Z0-9]*)|(`.*`)$"
   PackageNaming:
     active: true
@@ -170,10 +185,14 @@ performance:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
   SpreadOperator:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
 potential-bugs:
   active: true
   EqualsAlwaysReturnsTrueOrFalse:
@@ -219,6 +238,8 @@ style:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     ignoreNumbers:
     - '-1'
     - '0'

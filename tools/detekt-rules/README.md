@@ -61,8 +61,9 @@ The rule cannot resolve names, so it errs in these documented ways:
 
 The rule is on for every module except those listed under `gvy > RegexInFunctionBody > excludes` in
 `tools/lint/detekt.yml`. Those modules still contain unhoisted regexes. In the pull request that hoists a module, remove
-its `excludes` line so the rule guards it. Never add an `excludes` line or a detekt baseline entry for a module that is
-clean (#2420).
+its `excludes` line, and its entry in `regexMigration` in `tools/ci/detekt-gvy-guard.test.mjs`, so the rule guards it.
+The [CI guard](#ci-guard) fails on any other exclude and on a baseline entry for the rule, so the list only shrinks
+(#2420).
 
 ## `VolatileProperty`
 
@@ -90,8 +91,9 @@ look like any other annotation, so removing the typealias is the fix.
 
 A field that an `AtomicIntegerFieldUpdater`, `AtomicLongFieldUpdater` or `AtomicReferenceFieldUpdater` updates must be
 declared volatile: the updater rejects any other field. That, or a hot path where a measured benchmark shows the extra
-object matters, is the only accepted reason for `@Suppress("VolatileProperty")`, with a comment that says which applies.
-A `VarHandle` needs no volatile field; its access mode supplies the ordering.
+object matters, is the only accepted reason for `@Suppress("VolatileProperty")`, with a comment that says which applies,
+and an entry with that reason in the [CI guard](#ci-guard)'s `sanctionedSuppressions`. A `VarHandle` needs no volatile
+field; its access mode supplies the ordering.
 
 ### Known limits
 
@@ -114,9 +116,9 @@ The rule cannot resolve names, so it errs in these documented ways:
 ### Coverage
 
 The rule guards every module the lint task reads: the migration in #2474 removed the last `excludes` line, and no
-baseline entry exists. `tools/ci/detekt-gvy-excludes.test.mjs` keeps it so: the rule and the `gvy` rule set must stay
-active, neither may exclude anything, and no `detekt-baseline.xml` may hold its findings. A sanctioned `@Volatile` is
-suppressed at its site, with a reason.
+baseline entry exists. The [CI guard](#ci-guard) keeps it so: the rule and the `gvy` rule set must stay active, neither
+may exclude anything, no `detekt-baseline.xml` may hold its findings, and no suppression may silence it outside the
+sanctioned sites. A sanctioned `@Volatile` is suppressed at its site, with a reason.
 
 ## `JdkAtomics`
 
@@ -139,14 +141,15 @@ a qualified name do not hide it. Mentions in comments and strings, and a longer 
 
 Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
 their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. No other module is
-excluded (#2474). `tools/ci/detekt-gvy-excludes.test.mjs` requires exactly these excludes and no baseline entry.
+excluded (#2474). The [CI guard](#ci-guard) requires exactly these excludes and no baseline entry, and requires the
+modules that apply `maven-publish` to be exactly the published ones.
 
 `Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
 previous value, `increment() - 1`.
 
-A field updater that needs the JDK type is the accepted reason for `@Suppress("JdkAtomics")`, with a comment. Write the
-qualified name at the suppressed declaration: an imported name is reported at its import, which only a file-wide
-`@file:Suppress` can silence.
+A field updater that needs the JDK type is the accepted reason for `@Suppress("JdkAtomics")`, with a comment and an
+entry with that reason in the [CI guard](#ci-guard)'s `sanctionedSuppressions`. Write the qualified name at the
+suppressed declaration: an imported name is reported at its import, which only a file-wide `@file:Suppress` can silence.
 
 ### Known limits
 
@@ -188,8 +191,8 @@ module that adds the opt-in on purpose. It replaces a detekt `ForbiddenImport` p
 and so missed `import kotlin.concurrent.atomics.*` and fully qualified uses.
 
 Its only exclude in `tools/lint/detekt.yml` is `common/concurrent` itself. Test sources are not excluded, because no
-test outside the facade needs the package. `tools/ci/detekt-gvy-excludes.test.mjs` requires exactly this exclude and no
-baseline entry.
+test outside the facade needs the package. The [CI guard](#ci-guard) requires exactly this exclude, no baseline entry
+and no suppression.
 
 ### Known limits
 
@@ -199,6 +202,53 @@ The rule reads syntax only, so it does not see:
    a type inferred from another API (`val counter = holder.counter`).
 2. Java sources, and Kotlin outside the source roots the lint task reads, such as `tests/e2e` and the multiplatform
    sources of `viz/ast-model` (#2480).
+
+## CI guard
+
+`tools/ci/detekt-gvy-guard.test.mjs` runs with the other `tools/ci` tests in every CI run; its readers live in
+`tools/ci/detekt-gvy-guard.mjs`. It reads the files git tracks in the checkout, with the variables that point git
+elsewhere (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`,
+`GIT_ALTERNATE_OBJECT_DIRECTORIES`) removed, and fails when:
+
+- `build:` in `tools/lint/detekt.yml` holds anything but `maxIssues: 0` and `excludeCorrectable: false`, such as a
+  higher `maxIssues` or `weights`;
+- the `gvy` rule set is inactive or holds a key other than `active: true` and its rule blocks, or one of these rule
+  blocks holds a line other than `active`, `excludes`, a single-quoted entry or a comment;
+- `VolatileProperty` excludes anything, `JdkAtomics` excludes anything but tests, `common/concurrent` and the published
+  modules, `StdlibAtomics` excludes anything but `common/concurrent`, or one of them is inactive;
+- `RegexInFunctionBody` is inactive or excludes a pattern outside its test and benchmark patterns and the modules still
+  in its #2420 migration, or the guard still lists a module whose line has left `detekt.yml`. Dropping a pattern is
+  always allowed;
+- the modules that apply a publishing plugin (`maven-publish`, `ivy-publish`, `com.gradle.plugin-publish`,
+  `com.vanniktech.maven.publish` or its `.base`), directly or through a script applied with `apply(from = ...)`, are not
+  exactly the published modules that `JdkAtomics` exempts;
+- this module's own `config/config.yml`, which detekt adds to its defaults, holds anything but the `gvy` rule set with
+  `active: true` for it and each rule;
+- a tracked detekt baseline holds a finding of any of the four rules;
+- a `.kt` or `.kts` file under a `src/` folder, resources included, suppresses `VolatileProperty`, `JdkAtomics`,
+  `StdlibAtomics`, the whole `gvy` rule set or `all` at a site that its `sanctionedSuppressions` list does not name with
+  a reason. The list is empty. Suppressions inside comments and string literals, such as this module's test inputs, do
+  not count;
+- a `*.gradle.kts` other than the root `build.gradle.kts`, outside `resources`, names detekt in code, or in a string
+  that is a detekt task name or path (`"detekt"`, `":fmt:detekt"`) or a name in detekt's package
+  (`"io.gitlab.arturbosch.detekt"`), for anything but a `libs.detekt.*` dependency in a configuration other than
+  `detekt` (and `detektPlugins` takes nothing else) or the multiplatform override
+  `detekt { source.setFrom(fileTree("src") { include("**/*.kt") }) }`;
+- a rule's `excludes` uses a style the guard cannot read (it reads a block list of quoted entries, a one-line flow list,
+  and a quoted string that detekt splits at commas and semicolons);
+- a built-in rule excludes a pattern that reaches test code beyond `test` although detekt's default config does not
+  exempt that rule from every test source set. A pattern does when one of its folders, other than exactly `test`, holds
+  "test" at its start or after a non-letter in any case (`tests`, `testFixtures`, `test-utils`), or a capitalised `Test`
+  (`commonTest`, `*Test`); `attestation` and `latest` do not. The guard also fails when a main source path holds a
+  folder named like a test source set.
+
+It does not see the root `build.gradle.kts`, which configures detekt for every module; Kotlin build logic in `.kt`
+files, such as `buildSrc`, included builds or convention plugins (gvy has none); Gradle code that reaches detekt without
+naming it, or that unhooks `lint` from detekt; Groovy scripts, init scripts, `gradle.properties` and command-line flags
+such as `-x detekt`; `RegexInFunctionBody` suppressions, which need only a comment; and a suppression by a rule ID
+alias, since the guard writes the IDs out and none of these rules has an alias. Nor does it see a test-set exclude
+spelled with a glob class or a partial name, such as `**/*[Tt]est/**`, `**/jvmTe*/**`, `**/*Tes?/**` or
+`**/{common,jvm}T*/**`. It does not require test leniency either: a rule may drop a test-source exclude.
 
 ## Conventions
 
