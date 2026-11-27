@@ -60,11 +60,26 @@ class FactsDecodedBudgetTest {
     }
 
     @Test
+    fun `a call gives the same result whichever calls came before it`() {
+        val facts = sampleFacts()
+        val bytes = writeWith(facts, SectionEncoding.NONE)
+        val limits = ReadLimits(maxDecodedItems = namesItems(facts, bytes) + extensionItems(facts) - 1)
+
+        val namesFirst = openFile(bytes, limits)
+        namesFirst.names().loaded()
+        namesFirst.extensions().assertRejected(RejectReason.OVERSIZED)
+        val extensionsFirst = openFile(bytes, limits)
+        extensionsFirst.extensions().assertRejected(RejectReason.OVERSIZED)
+        extensionsFirst.names().loaded()
+        openFile(bytes, limits).names().loaded()
+    }
+
+    @Test
     fun `names and extensions never charge for the type pool or the types`() {
         val facts = sampleFacts()
         val bytes = writeWith(facts, SectionEncoding.NONE)
         val namesOnly = namesItems(facts, bytes)
-        val extensionsOnly = readPool(bytes, NAME_STRINGS).size + extensionItems(facts)
+        val extensionsOnly = namesOnly + extensionItems(facts)
 
         openFile(bytes, ReadLimits(maxDecodedItems = namesOnly)).names().loaded()
         openFile(bytes, ReadLimits(maxDecodedItems = namesOnly - 1)).names().assertRejected(RejectReason.OVERSIZED)

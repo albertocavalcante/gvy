@@ -103,7 +103,7 @@ class FactsFileRejectionTest {
     }
 
     @Test
-    fun `a damaged names pool stops everything and a damaged names section stops types too`() {
+    fun `a damaged names pool stops everything and a damaged names section stops extensions and types`() {
         val pool = sectionLocations(storedFile).single { it.id == NAME_STRINGS }
         val names = sectionLocations(storedFile).single { it.id == NAMES }
 
@@ -113,8 +113,8 @@ class FactsFileRejectionTest {
         poolDamaged.names().assertRejected(RejectReason.CORRUPT)
         poolDamaged.extensions().assertRejected(RejectReason.CORRUPT)
         namesDamaged.names().assertRejected(RejectReason.CORRUPT)
+        namesDamaged.extensions().assertRejected(RejectReason.CORRUPT)
         namesDamaged.types().assertRejected(RejectReason.CORRUPT)
-        assertEquals(sampleFacts().extensions, namesDamaged.extensions().loaded())
     }
 
     @Test
@@ -150,7 +150,8 @@ class FactsFileRejectionTest {
     }
 
     // Each stream test below has a checksum and content that are valid for the bytes the reader would keep if the
-    // check under test were missing, so only that check can reject the section.
+    // check under test were missing, so no later check rescues it. The exception is a stream with more output than
+    // declared: the stream cannot finish either, so two checks reject it.
     private val emptyNames = byteArrayOf(0, 0)
 
     @Test
@@ -187,12 +188,12 @@ class FactsFileRejectionTest {
 
     @Test
     fun `a stream that asks for a preset dictionary is corrupt`() {
-        // A zlib header with the FDICT flag, a dictionary id, a final empty fixed-Huffman block and the Adler-32 of
-        // empty output: valid except for the dictionary, which the reader cannot supply.
-        val stream = byteArrayOf(0x78, 0xBB.toByte(), 0, 0, 0, 1, 0x03, 0x00, 0, 0, 0, 1)
-        val section = TestSection(EXTENSIONS, ZLIB, stream, rawLength = 0, crc = crcOf(ByteArray(0)))
+        // A valid stream of an empty names section whose two header bytes are replaced by one with the FDICT flag and
+        // a dictionary id. The Adler-32 trailer covers the output only, so nothing but the dictionary is wrong.
+        val stream = byteArrayOf(0x78, 0xBB.toByte(), 0, 0, 0, 1) + zlib(emptyNames).drop(2).toByteArray()
+        val section = TestSection(NAMES, ZLIB, stream, emptyNames.size, crcOf(emptyNames))
 
-        openFile(buildFile(withSection(section))).extensions().assertRejected(RejectReason.CORRUPT)
+        openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
@@ -248,6 +249,7 @@ class FactsFileRejectionTest {
         withoutTypes.extensions().loaded()
         withoutTypes.types().assertRejected(RejectReason.CORRUPT)
         withoutTypes.loadAll().assertRejected(RejectReason.CORRUPT)
+        openFile(buildFile(sections().filter { it.id != EXTENSIONS })).types().assertRejected(RejectReason.CORRUPT)
         withoutTypePool.names().loaded()
         withoutTypePool.types().assertRejected(RejectReason.CORRUPT)
         withoutNamePool.names().assertRejected(RejectReason.CORRUPT)

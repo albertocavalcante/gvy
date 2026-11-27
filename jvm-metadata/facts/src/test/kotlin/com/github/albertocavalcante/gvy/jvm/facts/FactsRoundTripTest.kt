@@ -105,9 +105,9 @@ class FactsRoundTripTest {
 
         assertEquals(bytes.size, opened.bytesRead() + file.loadAll().bytesRead())
         assertEquals(stored.getValue(NAME_STRINGS) + stored.getValue(NAMES), file.names().bytesRead())
-        assertEquals(stored.getValue(NAME_STRINGS) + stored.getValue(EXTENSIONS), file.extensions().bytesRead())
-        val typesNeed = listOf(NAME_STRINGS, NAMES, TYPE_STRINGS, TYPES).sumOf { stored.getValue(it) }
-        assertEquals(typesNeed, file.types().bytesRead())
+        val extensionsNeed = listOf(NAME_STRINGS, NAMES, EXTENSIONS).sumOf { stored.getValue(it) }
+        assertEquals(extensionsNeed, file.extensions().bytesRead())
+        assertEquals(stored.values.sum(), file.types().bytesRead())
     }
 
     @Test
