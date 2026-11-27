@@ -390,7 +390,15 @@ test('the Gradle reader takes detekt dependencies and the source override, and r
     '    "detektPlugins"(libs.detekt.formatting)',
     '    add("detektPlugins", libs.detekt.formatting)',
     '    compileOnly(libs.detekt.api)',
+    '    testRuntimeOnly(libs.detekt.test)',
+    '    testFixturesImplementation(libs.detekt.test)',
+    '    compileOnlyApi(libs.detekt.api)',
+    '    "jvmTestImplementation"(libs.detekt.test)',
+    '    implementation(libs.detekt.rules.libraries)',
+    '    testImplementation(libs.detekt.test) { exclude(group = "org.jetbrains.kotlin") }',
     '}',
+    'dependencies { testImplementation(libs.detekt.test) }',
+    'val tool = libs.detekt.api',
     'include(":tools:detekt-rules")',
     'kover { reports { filters { excludes { packages("com.github.albertocavalcante.gvy.detekt") } } } }',
     '// detekt { ignoreFailures = true } in a comment, and /* tasks.named("detekt") */ in a block comment.',
@@ -421,8 +429,10 @@ test('the Gradle reader takes detekt dependencies and the source override, and r
       'tasks.withType(Class.forName("io.gitlab.arturbosch.detekt.Detekt") as Class<Task>) { enabled = false }'],
     ['plugins { id("io.gitlab.arturbosch.detekt") }', 'plugins { id("io.gitlab.arturbosch.detekt") }'],
     ['detektPlugins(project(":other-rules"))', 'detektPlugins(project(":other-rules"))'],
+    ['detektPlugins("com.example:rules:1.0")', 'detektPlugins("com.example:rules:1.0")'],
     ['detekt(libs.detekt.api)', 'detekt(libs.detekt.api)'],
-    ['val tool = libs.detekt.api', 'val tool = libs.detekt.api'],
+    ['"detekt"(libs.detekt.cli)', '"detekt"(libs.detekt.cli)'],
+    ['add("detekt", libs.detekt.cli)', 'add("detekt", libs.detekt.cli)'],
   ];
   for (const [script, text] of overrides) assert.deepEqual(detektOverrides(script).map(found => found.text), [text]);
 });
@@ -455,10 +465,10 @@ test('no module build configures detekt beyond its dependencies and the multipla
     .filter(path => path.endsWith('.gradle.kts') && path !== 'build.gradle.kts' && !inResources(path))
     .flatMap(path => detektOverrides(read(path)).map(({ line, text }) => `${path}:${line} ${text}`));
   const message = "The root build.gradle.kts configures detekt for every module: tools/lint/detekt.yml, the module's " +
-    'own detekt-baseline.xml and failure on any finding. A module build may only add detekt artifacts as ' +
-    `dependencies and, in a \`detekt {}\` block of its own, \`${moduleDetektSource}\`. Set anything else (a config, ` +
-    'baseline, ignoreFailures, a source filter or a Detekt task setting) in the root build, where review sees it, or ' +
-    'extend this guard (#2474)';
+    'own detekt-baseline.xml and failure on any finding. A module build may only add libs.detekt.* artifacts to a ' +
+    `configuration other than \`detekt\`, and hold a \`detekt {}\` block of \`${moduleDetektSource}\`. Set ` +
+    'anything else (a config, baseline, ignoreFailures, a source filter, a Detekt task setting or another ' +
+    'detektPlugins artifact) in the root build, where review sees it, or extend this guard (#2474)';
   assert.deepEqual(found, [], message);
 });
 

@@ -7,16 +7,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
-// The configurations a module build may add a detekt artifact to.
-const configurations = 'detektPlugins|compileOnly|implementation|api|runtimeOnly|testImplementation|testCompileOnly';
-// The only lines whose code may name detekt in a module build: a detekt artifact (`libs.detekt.<name>`) added as a
-// dependency, as `detektPlugins(libs.detekt.formatting)`, `"detektPlugins"(...)` or `add("detektPlugins", ...)`. A
-// module may also hold a `detekt {}` block whose every line points detekt at the whole of its src, as the
+// How a module build may name detekt in a dependency: a detekt artifact from the version catalog
+// (`libs.detekt.formatting`, `libs.detekt.rules.libraries`) in any configuration, and the `detektPlugins`
+// configuration given such an artifact, as `detektPlugins(...)`, `"detektPlugins"(...)` or `add("detektPlugins", ...)`.
+// What is left of a line once these are removed must not name detekt, so the `detekt` configuration (the detekt CLI's
+// own classpath) and `detektPlugins` of any other artifact or project still count.
+const detektArtifact = /\blibs\.detekt(?:\.\w+)+/g;
+const detektPluginsArtifact =
+  /(?:\badd\(\s*"detektPlugins"\s*,\s*|"detektPlugins"\s*\(\s*|\bdetektPlugins\s*\(\s*)libs\.detekt(?:\.\w+)+\s*\)/g;
+// A module may also hold a `detekt {}` block whose every line points detekt at the whole of its src, as the
 // multiplatform modules do.
-export const moduleDetektLines = [
-  new RegExp(`^"?(?:${configurations})"?\\(libs\\.detekt\\.\\w+\\)$`),
-  new RegExp(`^add\\("(?:${configurations})", libs\\.detekt\\.\\w+\\)$`),
-];
 export const moduleDetektSource = 'source.setFrom(fileTree("src") { include("**/*.kt") })';
 // Whether a string literal names detekt: a task or configuration name or path such as "detekt", "detektMain",
 // ":fmt:detekt" or "${project.path}:detekt", or a name from detekt's own package such as the plugin ID
@@ -310,13 +310,20 @@ function scriptView(source) {
   return { text, code, strings };
 }
 
+/** Whether the code of one comment-free line of Gradle Kotlin names detekt, or a string on it does by [namesDetekt]. */
+function lineNamesDetekt(line) {
+  const tokens = kotlinTokens(line);
+  const strings = tokens.filter(({ kind }) => kind === 'string').map(({ start, end }) => line.slice(start, end));
+  return /detekt/i.test(blanked(line, tokens)) || strings.map(text => text.replace(/^"+|"+$/g, '')).some(namesDetekt);
+}
+
 /**
  * The lines of Gradle Kotlin script [source] that configure detekt beyond what a module build may, as `{ line, text }`.
  * A line counts when its code names detekt in any case (`detekt {}`, `tasks.withType<Detekt>()`,
  * `io.gitlab.arturbosch.detekt`) or a string literal on it does by [namesDetekt] (`tasks.named("detekt")`,
- * `tasks.getByPath(":fmt:detekt")`, `Class.forName("io.gitlab.arturbosch.detekt.Detekt")`), unless it is one of
- * [moduleDetektLines]. Other strings, such as a description or a package filter that mentions detekt, and comments
- * never count. In a `detekt {` block, every line but the source override counts.
+ * `tasks.getByPath(":fmt:detekt")`, `Class.forName("io.gitlab.arturbosch.detekt.Detekt")`), and still does once its
+ * detekt dependencies (see [detektArtifact]) are taken out. Other strings, such as a description or a package filter
+ * that mentions detekt, and comments never count. In a `detekt {` block, every line but the source override counts.
  */
 export function detektOverrides(source) {
   const { text, code, strings } = scriptView(source);
@@ -338,7 +345,8 @@ export function detektOverrides(source) {
       continue;
     }
     const names = /detekt/i.test(code[index]) || strings[index].some(namesDetekt);
-    if (names && !moduleDetektLines.some(form => form.test(line))) found.push({ line: index + 1, text: line });
+    const rest = line.replace(detektPluginsArtifact, '').replace(detektArtifact, '');
+    if (names && lineNamesDetekt(rest)) found.push({ line: index + 1, text: line });
   }
   return found;
 }
