@@ -8,6 +8,7 @@ import com.github.groovylsp.bsp.maven.workspace.MavenModuleInfo
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -25,6 +26,9 @@ class MavenBuildServerScanOrderTest {
 
     @TempDir
     lateinit var tempDir: Path
+
+    /** Every scan a server was given; [releaseScans] frees them, so a failed test leaves no scan thread waiting. */
+    private val scripted = mutableListOf<Scan>()
 
     /** One scripted scan: [started] opens when the server runs it, and it returns once [release] opens. */
     private class Scan(private val result: () -> List<MavenModuleInfo>) {
@@ -51,8 +55,14 @@ class MavenBuildServerScanOrderTest {
 
     /** A server whose workspace scans are [scans], taken in the order the server runs them. */
     private fun serverScanning(vararg scans: Scan): MavenBuildServer {
+        scripted += scans
         val next = AtomicInteger()
-        return MavenBuildServer(tempDir, mockk(), { mockk() }) { scans[next.getAndIncrement()].run() }
+        return MavenBuildServer.create(tempDir, mockk(), { mockk() }) { scans[next.getAndIncrement()].run() }
+    }
+
+    @AfterEach
+    fun releaseScans() {
+        scripted.forEach { it.release.countDown() }
     }
 
     private fun targetIds(server: MavenBuildServer): List<String> =
@@ -106,5 +116,40 @@ class MavenBuildServerScanOrderTest {
 
         // Then: requests still answer from the modules the initialize scan found
         assertThat(targetIds(server)).containsExactly("maven:com.example:kept", "maven:com.example:kept:test")
+    }
+
+    @Test
+    fun `a failed reload made while an older one is held answers from the older one once it finishes`() {
+        // Given: an initialized server, a first reload whose scan is held, and a second reload whose scan fails
+        val held = scanOf("held")
+        val server = serverScanning(scanOf("before").released(), held, Scan { error("unreadable pom") }.released())
+        server.buildInitialize(createInitParams(tempDir)).get(WAIT_SECONDS, TimeUnit.SECONDS)
+        val heldReload = server.workspaceReload()
+        assertThat(held.started.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue()
+        assertThatThrownBy { server.workspaceReload().get(WAIT_SECONDS, TimeUnit.SECONDS) }
+            .hasCauseInstanceOf(IllegalStateException::class.java)
+
+        // When: a request arrives after the failed reload
+        val targets = server.workspaceBuildTargets()
+
+        // Then: it waits for the held scan, whose modules the failed one passes on
+        assertThat(targets).isNotDone()
+        held.release.countDown()
+        heldReload.get(WAIT_SECONDS, TimeUnit.SECONDS)
+        assertThat(targets.get(WAIT_SECONDS, TimeUnit.SECONDS).targets.map { it.id.uri })
+            .containsExactly("maven:com.example:held", "maven:com.example:held:test")
+    }
+
+    @Test
+    fun `a failed initial scan leaves no targets`() {
+        // Given: a server whose first scan fails
+        val server = serverScanning(Scan { error("unreadable pom") }.released())
+
+        // When: initialization fails
+        assertThatThrownBy { server.buildInitialize(createInitParams(tempDir)).get(WAIT_SECONDS, TimeUnit.SECONDS) }
+            .hasCauseInstanceOf(IllegalStateException::class.java)
+
+        // Then: requests answer from no modules at all
+        assertThat(targetIds(server)).isEmpty()
     }
 }

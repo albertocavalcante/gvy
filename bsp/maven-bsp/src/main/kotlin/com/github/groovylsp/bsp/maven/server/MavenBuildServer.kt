@@ -59,11 +59,9 @@ import java.util.concurrent.atomic.AtomicReference
  * Maven Build Server Protocol implementation.
  *
  * Provides Maven project metadata over BSP 2.1. Build execution is unavailable.
- *
- * @param scan finds the workspace's modules; tests replace the [MavenWorkspaceScanner] the public constructor uses
  */
 @Suppress("TooManyFunctions") // BSP protocol implementation - one method per BSP endpoint (21 requests)
-class MavenBuildServer internal constructor(
+class MavenBuildServer private constructor(
     private val workspaceRoot: Path,
     repositorySystem: RepositorySystem,
     sessionSupplier: () -> RepositorySystemSession,
@@ -83,6 +81,10 @@ class MavenBuildServer internal constructor(
      * The modules of the scan requested last, as a future that never fails. A scan swaps its future in before it
      * starts, so a request made after a reload waits for that reload's scan, and an older scan that finishes later
      * changes nothing a request can see. A scan that fails passes on the modules of the scan before it.
+     *
+     * The wait has no bound here: a request made during a scan that never returns never answers, where it used to
+     * answer from the modules before the reload. The client's request timeout bounds it instead. The scan reads only
+     * local POM files, and a hung file system would already hang `build/initialize` and `workspace/reload`.
      */
     private val latestModules = AtomicReference<CompletableFuture<List<MavenModuleInfo>>>(
         CompletableFuture.completedFuture(emptyList()),
@@ -169,12 +171,20 @@ class MavenBuildServer internal constructor(
     private fun scanWorkspace(): CompletableFuture<List<MavenModuleInfo>> {
         val published = CompletableFuture<List<MavenModuleInfo>>()
         val previous = latestModules.getAndSet(published)
-        val scanned = CompletableFuture.supplyAsync { scan(workspaceRoot) }
+        val keepPrevious = { previous.thenAccept { kept -> published.complete(kept) } }
+
+        @Suppress("TooGenericExceptionCaught") // Even an Error starting the scan must not leave requests waiting.
+        val scanned = try {
+            CompletableFuture.supplyAsync { scan(workspaceRoot) }
+        } catch (failure: Throwable) {
+            keepPrevious()
+            throw failure
+        }
         return scanned.whenComplete { found, failure ->
             if (failure == null) {
                 published.complete(found)
             } else {
-                previous.thenAccept { kept -> published.complete(kept) }
+                keepPrevious()
             }
         }
     }
@@ -332,5 +342,19 @@ class MavenBuildServer internal constructor(
             }
         }
         return null
+    }
+
+    internal companion object {
+        /**
+         * A server that finds the modules with [scan] instead of a [MavenWorkspaceScanner], so tests can script the
+         * scans. The primary constructor is private and this factory internal, with a mangled JVM name, so Java users
+         * of the published artifact still see only the public constructor.
+         */
+        internal fun create(
+            workspaceRoot: Path,
+            repositorySystem: RepositorySystem,
+            sessionSupplier: () -> RepositorySystemSession,
+            scan: (Path) -> List<MavenModuleInfo>,
+        ): MavenBuildServer = MavenBuildServer(workspaceRoot, repositorySystem, sessionSupplier, scan)
     }
 }
