@@ -35,4 +35,5 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
   linted module; it has no excludes, and neither an exclude nor a baseline entry may be added (#2474).
 - `JdkAtomics`: reports imports and qualified uses of `java.util.concurrent.atomic` outside tests, `common/concurrent`
   and the standalone published modules (`bsp/*`, `parser/core`). Use the `:common:concurrent` types, or a plain field
-  for state one thread owns. No other module is excluded, and none may be added (#2474).
+  for state one thread owns. No other module is excluded, and neither an exclude nor a baseline entry may be added
+  (#2474).

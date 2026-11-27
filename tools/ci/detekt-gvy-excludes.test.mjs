@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // gvy's migration rules have finished (#2474): VolatileProperty excludes nothing, and JdkAtomics only its permanent
-// set (tests, :common:concurrent and the modules published as their own artifacts). A use either rule reports is
-// suppressed at its site with a reason, never excluded by module. Kotlin outside src/main and src/test, such as
+// set (tests, :common:concurrent and the modules published as their own artifacts). The gvy rule set itself stays
+// active with no set-wide excludes or includes, and no tracked detekt baseline holds either rule's findings. A use
+// either rule reports is suppressed at its site with a reason. Kotlin outside src/main and src/test, such as
 // tests/e2e, is not linted unless its module sets detekt.source (#2480).
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -61,20 +63,11 @@ function gvyRuleSetKeys(config) {
   return keys;
 }
 
-/** The directory of every Gradle project in settings.gradle.kts, relative to the root (which is `.`). */
-function projectDirs() {
-  const settings = readFileSync(join(root, 'settings.gradle.kts'), 'utf8');
-  const dirs = new Map([[':', '.']]);
-  for (const [, args] of settings.matchAll(/^\s*include\(([^)]*)\)/gm)) {
-    for (const [, name] of args.matchAll(/"([^"]+)"/g)) {
-      const path = name.replace(/^:/, '');
-      dirs.set(`:${path}`, path.replaceAll(':', '/'));
-    }
-  }
-  for (const [, name, dir] of settings.matchAll(/^\s*project\("([^"]+)"\)\.projectDir\s*=\s*file\("([^"]+)"\)/gm)) {
-    dirs.set(name, dir);
-  }
-  return [...dirs.values()];
+/** Every tracked detekt baseline: any project's `detekt-baseline.xml`, and variants like `detekt-baseline-main.xml`. */
+function trackedBaselines() {
+  return execFileSync('git', ['ls-files', '-z', '--', '*detekt-baseline*.xml'], { cwd: root, encoding: 'utf8' })
+    .split('\0')
+    .filter(Boolean);
 }
 
 const detektConfig = () => readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8');
@@ -163,18 +156,15 @@ test('the gvy rule set reader takes only two-space keys, so set-wide excludes an
 test('the gvy rule set is active and takes no set-wide excludes or includes', () => {
   const keys = gvyRuleSetKeys(detektConfig());
   assert.ok(keys, 'tools/lint/detekt.yml must configure the gvy rule set');
-  assert.ok(keys.includes('active: true'), 'the gvy rule set must stay active');
+  assert.ok(keys.includes('active: true'), 'the gvy rule set must stay active, as exactly `  active: true`');
   const unexpected = keys.filter(key => key !== 'active: true' && !/^[A-Z]\w*:$/.test(key));
   assert.deepEqual(unexpected, [], 'a gvy rule-set key applies to every gvy rule; configure each rule instead (#2474)');
 });
 
-test('no detekt baseline holds a VolatileProperty or JdkAtomics finding', () => {
-  const dirs = projectDirs();
-  assert.ok(dirs.includes('gls') && dirs.includes('bsp/bsp-core'), 'settings.gradle.kts projects must be found');
-  for (const dir of dirs) {
-    const baseline = join(root, dir, 'detekt-baseline.xml');
-    if (!existsSync(baseline)) continue;
-    const ids = readFileSync(baseline, 'utf8').match(/<ID>(?:VolatileProperty|JdkAtomics):[^<]*<\/ID>/g) ?? [];
-    assert.deepEqual(ids, [], `${dir}/detekt-baseline.xml must not hold the gvy migration rules' findings (#2474)`);
+test('no tracked detekt baseline holds a VolatileProperty or JdkAtomics finding', () => {
+  for (const baseline of trackedBaselines()) {
+    const entries = readFileSync(join(root, baseline), 'utf8');
+    const ids = entries.match(/<ID>(?:VolatileProperty|JdkAtomics):[^<]*<\/ID>/g) ?? [];
+    assert.deepEqual(ids, [], `${baseline} must not hold the gvy migration rules' findings (#2474)`);
   }
 });
