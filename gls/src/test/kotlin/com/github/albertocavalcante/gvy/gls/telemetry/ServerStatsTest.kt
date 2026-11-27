@@ -100,9 +100,7 @@ class ServerStatsTest {
 
         val json = Gson().toJsonTree(serverStats(hostile, snapshot(everyStatus, uptimeMs = 10)))
 
-        val allowed = StartupPhase.entries.map { it.wireName } +
-            PhaseStatus.entries.map { it.wireName } +
-            listOf("known", "unknown", "malformed")
+        val allowed = vocabulary()
         val pathLike = Regex("""[/\\]|://|^[A-Za-z]:|^~|file:""")
         val keys = mutableListOf<String>()
         val strings = mutableListOf<String>()
@@ -113,6 +111,28 @@ class ServerStatsTest {
         assertTrue(strings.none(pathLike::containsMatchIn), "path-like value in $strings")
         assertEquals(emptyList<String>(), strings.filterNot { it in allowed }, "a value outside the vocabulary")
     }
+
+    @Test
+    fun `a real shaped build stamp adds only its pattern checked version and commit to the vocabulary`() {
+        val everyStatus = PhaseStatus.entries.zip(StartupPhase.entries).associate { (status, phase) ->
+            phase to PhaseRecord(status, NANOS_PER_MILLI, 2 * NANOS_PER_MILLI)
+        }
+
+        val json = Gson().toJsonTree(serverStats(build, snapshot(everyStatus, uptimeMs = 10)))
+
+        val strings = mutableListOf<String>()
+        collect(json, mutableListOf(), strings)
+        val version = Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-SNAPSHOT|-dev\\+(?:unknown|g[0-9a-fA-F]{7,64}(?:\\.dirty)?))?")
+        val commit = Regex("(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
+        val unexpected = strings.filterNot { it in vocabulary() || version.matches(it) || commit.matches(it) }
+
+        assertEquals(emptyList<String>(), unexpected)
+        assertTrue("0.5.4-dev+g1234567" in strings && "a".repeat(40) in strings, "the build stamp must be reported")
+    }
+
+    private fun vocabulary() = StartupPhase.entries.map { it.wireName } +
+        PhaseStatus.entries.map { it.wireName } +
+        listOf("known", "unknown", "malformed")
 
     private fun collect(element: JsonElement, keys: MutableList<String>, strings: MutableList<String>) {
         when {

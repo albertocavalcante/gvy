@@ -15,6 +15,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +24,7 @@ import kotlinx.coroutines.cancel
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
@@ -31,7 +33,11 @@ class WorkspaceIndexerPhasesTest {
 
     private class Harness(fileCount: Int, limit: Int = 5) {
         val phases = StartupPhaseRecorder()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        // Records what escapes the indexing coroutine, so a test's Error never reaches the global handlers
+        val escaped = CopyOnWriteArrayList<Throwable>()
+        val scope = CoroutineScope(
+            SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> escaped += e },
+        )
         val config = ServerConfiguration(maxWorkspaceFiles = limit)
         val compilationService = mockk<GroovyCompilationService>()
         private val workspaceCompiler = mockk<WorkspaceCompiler>()
@@ -103,4 +109,28 @@ class WorkspaceIndexerPhasesTest {
         assertEquals(PhaseStatus.CANCELLED, h.status(StartupPhase.WORKSPACE_INDEX))
         assertNull(h.status(StartupPhase.WORKSPACE_COMPILE))
     }
+
+    @Test
+    fun `an Error from indexing fails its phase and skips compile before it escapes`() {
+        val h = Harness(fileCount = 3)
+        val error = SimulatedError()
+        coEvery { h.compilationService.indexAllWorkspaceSources(any(), any()) } throws error
+        h.run()
+
+        assertEquals(PhaseStatus.FAILED, h.status(StartupPhase.WORKSPACE_INDEX))
+        assertEquals(PhaseStatus.SKIPPED, h.status(StartupPhase.WORKSPACE_COMPILE))
+        assertEquals(listOf<Throwable>(error), h.escaped.toList(), "the Error escapes indexing, as in production")
+    }
+
+    @Test
+    fun `a phase skipped earlier is recorded when its work runs later`() {
+        val h = Harness(fileCount = 3)
+        h.phases.skip(listOf(StartupPhase.WORKSPACE_INDEX, StartupPhase.WORKSPACE_COMPILE))
+        h.run()
+
+        assertEquals(PhaseStatus.COMPLETED, h.status(StartupPhase.WORKSPACE_INDEX))
+        assertEquals(PhaseStatus.COMPLETED, h.status(StartupPhase.WORKSPACE_COMPILE))
+    }
+
+    private class SimulatedError : Error("a stand-in for a JVM error")
 }

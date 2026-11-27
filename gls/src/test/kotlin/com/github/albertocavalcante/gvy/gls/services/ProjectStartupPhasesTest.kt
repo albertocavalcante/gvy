@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.BuildToolFileWatcher
 import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.gls.BuildInfo
@@ -30,6 +31,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -44,6 +46,9 @@ class ProjectStartupPhasesTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val phases = StartupPhaseRecorder()
     private val ready = CountDownLatch(1)
+
+    // One permit for every time startup reports it is quiescent, so a test can wait for a second report
+    private val quiescentReports = Semaphore(0)
 
     private val workspaceRoot: Path by lazy { Files.createDirectory(tempDirectory.resolve("secret-project")) }
 
@@ -102,10 +107,93 @@ class ProjectStartupPhasesTest {
             scope.cancel()
         }
 
-        assertEquals(PhaseStatus.FAILED, status(StartupPhase.DEPENDENCIES_RESOLVE))
-        assertEquals(PhaseStatus.SKIPPED, status(StartupPhase.WORKSPACE_MODEL_PUBLISH))
-        assertEquals(PhaseStatus.SKIPPED, status(StartupPhase.WORKSPACE_INDEX))
+        assertResolutionFailedAndLaterPhasesSkipped()
+    }
+
+    @Test
+    fun `a build tool that cannot be detected fails resolution through the error callback`() {
+        val undetectable = mockk<BuildTool>(relaxed = true) {
+            every { name } returns "Undetectable"
+            every { canHandle(any()) } throws IllegalStateException("cannot tell")
+        }
+        val startup = startup(buildTools = listOf(undetectable))
+
+        try {
+            start(startup)
+            assertTrue(ready.await(WAIT_SECONDS, TimeUnit.SECONDS), "startup never became ready")
+        } finally {
+            scope.cancel()
+        }
+
+        assertResolutionFailedAndLaterPhasesSkipped()
+    }
+
+    @Test
+    fun `a watcher failure ends resolution as failed while the later phases record their real run`() {
+        val watcher = mockk<BuildToolFileWatcher>(relaxed = true) {
+            every { startWatching(any()) } throws IllegalStateException("cannot watch")
+        }
+        val watching = mockk<BuildTool>(relaxed = true) {
+            every { name } returns "Watching"
+            every { canHandle(any()) } returns true
+            every { createWatcher(any(), any()) } returns watcher
+            every { resolve(any(), any(), any()) } returns WorkspaceResolution(emptyList(), emptyList())
+        }
+        val startup = startup(buildTools = listOf(watching))
+
+        try {
+            start(startup)
+            awaitStatus(StartupPhase.WORKSPACE_MODEL_PUBLISH, PhaseStatus.COMPLETED)
+        } finally {
+            scope.cancel()
+        }
+
+        assertEquals(PhaseStatus.FAILED, status(StartupPhase.DEPENDENCIES_RESOLVE), "the first outcome is final")
+        assertEquals(PhaseStatus.COMPLETED, status(StartupPhase.WORKSPACE_SETUP))
+    }
+
+    @Test
+    fun `a model publish that throws fails its phase and skips indexing and compiling`() {
+        val startup = startup(buildTools = emptyList(), onPublish = { throw IllegalStateException("cannot publish") })
+
+        try {
+            start(startup)
+            awaitStatus(StartupPhase.WORKSPACE_MODEL_PUBLISH, PhaseStatus.FAILED)
+            awaitStatus(StartupPhase.WORKSPACE_INDEX, PhaseStatus.SKIPPED)
+        } finally {
+            scope.cancel()
+        }
+
         assertEquals(PhaseStatus.SKIPPED, status(StartupPhase.WORKSPACE_COMPILE))
+    }
+
+    @Test
+    fun `a refresh that completes again leaves the recorded phases unchanged`() {
+        var changed: ((Path) -> Unit)? = null
+        val watcher = mockk<BuildToolFileWatcher>(relaxed = true)
+        val watching = mockk<BuildTool>(relaxed = true) {
+            every { name } returns "Watching"
+            every { canHandle(any()) } returns true
+            every { createWatcher(any(), any()) } answers {
+                changed = secondArg()
+                watcher
+            }
+            every { resolve(any(), any(), any()) } returns WorkspaceResolution(emptyList(), emptyList())
+        }
+        val startup = startup(buildTools = listOf(watching))
+
+        try {
+            start(startup)
+            assertTrue(quiescentReports.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS), "startup never became ready")
+            val recorded = phases.snapshot().phases
+
+            checkNotNull(changed).invoke(workspaceRoot)
+            assertTrue(quiescentReports.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS), "the refresh never completed")
+
+            assertEquals(recorded, phases.snapshot().phases)
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -141,6 +229,13 @@ class ProjectStartupPhasesTest {
         assertFalse("secret-project" in json, json)
     }
 
+    private fun assertResolutionFailedAndLaterPhasesSkipped() {
+        assertEquals(PhaseStatus.FAILED, status(StartupPhase.DEPENDENCIES_RESOLVE))
+        assertEquals(PhaseStatus.SKIPPED, status(StartupPhase.WORKSPACE_MODEL_PUBLISH))
+        assertEquals(PhaseStatus.SKIPPED, status(StartupPhase.WORKSPACE_INDEX))
+        assertEquals(PhaseStatus.SKIPPED, status(StartupPhase.WORKSPACE_COMPILE))
+    }
+
     private fun assertAllWorkspacePhasesSkipped() {
         StartupPhase.entries.filter { it != StartupPhase.LSP_INITIALIZE }.forEach { phase ->
             assertEquals(PhaseStatus.SKIPPED, status(phase), phase.wireName)
@@ -160,19 +255,23 @@ class ProjectStartupPhasesTest {
             workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "ws"))
         }
         startup.startAsyncDependencyResolution(client(), params, null, {}) { _, quiescent, _, _, _, _, _ ->
-            if (quiescent) ready.countDown()
+            if (quiescent) {
+                ready.countDown()
+                quiescentReports.release()
+            }
         }
     }
 
     private fun client(): LanguageClient = mockk(relaxed = true)
 
-    private fun startup(buildTools: List<BuildTool>): ProjectStartupManager {
+    private fun startup(buildTools: List<BuildTool>, onPublish: () -> Unit = {}): ProjectStartupManager {
         val workspace = mockk<WorkspaceManager>(relaxed = true) {
             every { getSourceRoots() } returns emptyList()
             every { getWorkspaceSourceUris() } returns emptyList()
         }
         val compilation = mockk<GroovyCompilationService>(relaxed = true) {
             every { workspaceManager } returns workspace
+            every { updateWorkspaceModel(any(), any(), any(), any()) } answers { onPublish() }
         }
         return ProjectStartupManager(
             compilation,

@@ -110,6 +110,18 @@ class StartupPhaseRecorderTest {
     }
 
     @Test
+    fun `measure records an Error as a failure and rethrows the same instance`() {
+        val error = SimulatedError()
+
+        val thrown = assertFailsWith<SimulatedError> {
+            recorder.measure(StartupPhase.WORKSPACE_INDEX) { throw error }
+        }
+
+        assertSame(error, thrown)
+        assertEquals(PhaseStatus.FAILED, recorder.snapshot().phases[StartupPhase.WORKSPACE_INDEX]?.status)
+    }
+
+    @Test
     fun `measure returns the block result and records completion`() {
         val result = recorder.measure(StartupPhase.WORKSPACE_SETUP) {
             advanceMillis(4)
@@ -145,7 +157,48 @@ class StartupPhaseRecorderTest {
             PhaseRecord(PhaseStatus.SKIPPED, startNanos = null, endNanos = null),
             phases[StartupPhase.WORKSPACE_INDEX],
         )
-        assertNull(recorder.begin(StartupPhase.WORKSPACE_INDEX), "a skipped phase does not begin later")
+    }
+
+    @Test
+    fun `a skipped phase that later runs reports that run`() {
+        recorder.skip(listOf(StartupPhase.WORKSPACE_INDEX))
+        advanceMillis(6)
+
+        val run = assertNotNull(recorder.begin(StartupPhase.WORKSPACE_INDEX))
+        advanceMillis(4)
+        run.complete()
+
+        assertEquals(
+            PhaseRecord(PhaseStatus.COMPLETED, startNanos = 6 * NANOS_PER_MILLI, endNanos = 10 * NANOS_PER_MILLI),
+            recorder.snapshot().phases[StartupPhase.WORKSPACE_INDEX],
+        )
+    }
+
+    @Test
+    fun `a phase that began is never replaced by a later skip or begin`() {
+        val run = assertNotNull(recorder.begin(StartupPhase.WORKSPACE_COMPILE))
+        run.complete()
+        val before = recorder.snapshot().phases[StartupPhase.WORKSPACE_COMPILE]
+
+        recorder.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
+        assertNull(recorder.begin(StartupPhase.WORKSPACE_COMPILE))
+
+        assertSame(before, recorder.snapshot().phases[StartupPhase.WORKSPACE_COMPILE])
+    }
+
+    @Test
+    fun `a snapshot is never observed before any offset it holds`() {
+        var ticks = 0L
+        val ticking = StartupPhaseRecorder(nanoTime = { ++ticks }, serverStartJvmUptimeMs = null)
+        ticking.begin(StartupPhase.LSP_INITIALIZE)?.complete()
+        ticking.begin(StartupPhase.WORKSPACE_SETUP)
+        ticking.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
+
+        val snapshot = ticking.snapshot()
+
+        val offsets = snapshot.phases.values.flatMap { listOfNotNull(it.startNanos, it.endNanos) }
+        assertTrue(offsets.isNotEmpty())
+        assertTrue(offsets.all { it <= snapshot.observedNanos }, "$offsets after ${snapshot.observedNanos}")
     }
 
     @Test
@@ -168,6 +221,8 @@ class StartupPhaseRecorderTest {
             executor.shutdownNow()
         }
     }
+
+    private class SimulatedError : Error("a stand-in for a JVM error")
 
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L

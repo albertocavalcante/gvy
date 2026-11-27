@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceCompilationResu
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceCompiler
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -37,7 +38,8 @@ class WorkspaceIndexerLimitTest {
         val done = CountDownLatch(1)
         val config = ServerConfiguration(maxWorkspaceFiles = limit)
         private val compilationService = mockk<GroovyCompilationService>()
-        private val indexer = WorkspaceIndexer(compilationService, scope, Dispatchers.Unconfined)
+        private val indexer =
+            WorkspaceIndexer(compilationService, scope, Dispatchers.Unconfined, StartupPhaseRecorder())
 
         init {
             val manager = mockk<WorkspaceManager>()
