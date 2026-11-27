@@ -11,7 +11,8 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -120,6 +121,17 @@ test('the configuration reader takes only the gvy VolatileProperty block and rej
   }
 });
 
+test('the configuration reader ignores trailing spaces and names the forms it accepts', () => {
+  const trailing = "gvy: \n  JdkAtomics: \n    active: true \n    excludes: \n    - '**/first/src/**' \n";
+  assert.deepEqual(gvyRuleConfig(trailing, 'JdkAtomics'), { active: true, excludes: ['**/first/src/**'] });
+  const severity = 'gvy:\n  JdkAtomics:\n    active: true\n    severity: error\n';
+  assert.throws(() => gvyRuleConfig(severity, 'JdkAtomics'), error => {
+    assert.match(error.message, /Unexpected line 4 in gvy > JdkAtomics: `    severity: error`/);
+    assert.match(error.message, /reads only `    active: true` or `false`, `    excludes:`, `    - '<pattern>'`/);
+    return true;
+  });
+});
+
 test('VolatileProperty is active and excludes nothing', () => {
   const { excludes } = configured('VolatileProperty');
   assert.deepEqual(excludes, [], 'suppress a sanctioned @Volatile at its site, with a reason (#2474)');
@@ -182,5 +194,27 @@ test('no tracked detekt baseline holds a VolatileProperty, JdkAtomics or StdlibA
     const entries = readFileSync(join(root, baseline), 'utf8');
     const ids = entries.match(/<ID>(?:VolatileProperty|JdkAtomics|StdlibAtomics):[^<]*<\/ID>/g) ?? [];
     assert.deepEqual(ids, [], `${baseline} must not hold the gvy concurrency rules' findings (#2474)`);
+  }
+});
+
+test('the baseline listing ignores git variables that point at another index or repository', () => {
+  const expected = trackedBaselines();
+  const scratch = mkdtempSync(join(tmpdir(), 'gvy-detekt-guard-'));
+  try {
+    execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', scratch]);
+    // Either one makes `git ls-files` list nothing, which would let the baseline check pass without reading a file.
+    const elsewhere = { GIT_INDEX_FILE: join(scratch, 'missing-index'), GIT_DIR: join(scratch, '.git') };
+    for (const [name, value] of Object.entries(elsewhere)) {
+      const saved = process.env[name];
+      process.env[name] = value;
+      try {
+        assert.deepEqual(trackedBaselines(), expected, `${name} must not change which baselines are checked`);
+      } finally {
+        if (saved === undefined) delete process.env[name];
+        else process.env[name] = saved;
+      }
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 });
