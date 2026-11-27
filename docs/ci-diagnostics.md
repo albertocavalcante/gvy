@@ -264,6 +264,22 @@ Spotless 8.11.0 guards its obsolete configuration-visibility call on Gradle 9. C
 ktlint 1.7.1 and existing output. The retired Spotless exception is removed; its original trace remains a negative
 regression fixture.
 
+Kotlin, Java and Groovy compiler warnings are diagnostics too. Since the Kotlin Build Tools API runner was enabled
+(#2456), Kotlin prints them as `[KOTLIN] w: file:///<checkout>/<path>:<line>:<column> <message>`, and errors as `e:`.
+The classifier drops the runner prefix, so plain `w:` output from another runner has the same identity, and strips the
+checkout root from both POSIX and Windows (`file:///D:/...`) file URIs and plain paths. The key is
+`[task <compile task>] w: <repo-relative path>:<line>:<column> <message>`. The plain console repeats a task's header
+whenever its output resumes, so the compile task is the one that printed the warning, independent of configuration
+order. A path outside the supplied checkout root stays absolute and unexpected. An `e:` line is recorded even if the
+command somehow succeeds.
+
+The key keeps line and column deliberately. First-party compiler warnings are never accepted: fix them in code, so no
+first-party key enters the ledger and an edit above a warning cannot turn an accepted identity into a new one. Only
+generated or third-party sources can have exceptions, and their lines move only when the generator or dependency
+changes, which requires fresh review anyway. Without the line, two identical messages in one file, such as two duplicate
+`when` branches, would share one key, so a third would be accepted silently. Cached compile tasks print no warnings; an
+exception stays valid while its task is cached, like any other absent exception.
+
 Five exact generated SCIP compiler warnings also remain tracked in
 [#1599](https://github.com/albertocavalcante/gvy/issues/1599). Gradle uses Wire 5.5.1, while Bazel's generator uses
 5.4.0; matching warnings do not establish version alignment. The Gradle exceptions bind to the compilation task,
