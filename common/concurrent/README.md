@@ -35,14 +35,15 @@ consumer today is a JVM module, and the launcher does not use it. The native tar
 
 The native targets only compile the module and run the single-threaded `commonTest`; the thread races run on the JVM.
 
-The atomics are a separate choice. Common code cannot use `java.util.concurrent.atomic`, so the native targets need
-`kotlin.concurrent.atomics`, but a JVM-only module could use the stdlib atomics too. gvy uses them to adopt the API
-early and report problems upstream before it is stable ([KT-82228](https://youtrack.jetbrains.com/issue/KT-82228)).
+The atomics are a separate choice. Common code cannot use `java.util.concurrent.atomic`, so the native targets need a
+multiplatform atomics API; gvy uses the stdlib's `kotlin.concurrent.atomics`, which a JVM-only module could adopt too.
+gvy chose it to adopt the API early and report problems upstream before it is stable
+([KT-82228](https://youtrack.jetbrains.com/issue/KT-82228)).
 
 Multiplatform has costs:
 
-- The native targets rule out the stable JDK atomics, so the module depends on the experimental stdlib API and must
-  follow its changes until it is stable.
+- The native targets rule out the stable JDK atomics and need a multiplatform atomics API. The stdlib's, which gvy uses,
+  is experimental, so the module must follow its changes until it is stable.
 - Two `Configuration.setVisible` deprecation exceptions in `tools/ci/gradle-diagnostics.json` name this project. The
   Kotlin Gradle Plugin's multiplatform compilation and target setup raises them wherever Gradle configures the project,
   not only in one job. The JVM-only `:build-tool` raises the same compilation-configuration warning, so only the
@@ -61,9 +62,16 @@ Bazel builds `commonMain` for the JVM only, as for `//viz/ast-model`, and `//com
 both `commonTest` and `jvmTest`.
 
 Callers would not change if the module went JVM-only over the JDK atomics: they see the `OnceFlag`, `SharedValue` and
-`Counter` API, never the atomics behind it. Besides this module, the switch would need edits to the native test step of
-`.github/workflows/ci-launcher.yml`, which runs `":common:concurrent:$NATIVE_TEST_TASK"`. The exceptions above in
-`tools/ci/gradle-diagnostics.json` that this module causes would go stale and need removing.
+`Counter` API, never the atomics behind it. Outside this module, the switch would need edits to:
+
+- the native test step of `.github/workflows/ci-launcher.yml`, which runs `":common:concurrent:$NATIVE_TEST_TASK"`;
+- the configuration-cache codec exceptions in `tools/ci/gradle-diagnostics.json` that only the unit-test job raises, for
+  `LocalFileDependencyBackedArtifactSetCodec.kt:137`, `Combinators.kt:235` and `BeanPropertyExtensions.kt:61`, which
+  would likely go stale. The launcher jobs also raise `DefaultTransformCodec.kt:66`, so that one stays;
+- `tools/ci/check-gradle-diagnostics.test.mjs` and its `gradle-native-codec-consumers` fixtures, which assert that the
+  real exceptions cover the four unit-job codec events;
+- this project's target-configuration `setVisible` exception. The compilation-configuration one may survive, because the
+  JVM-only `:build-tool` raises the same warning.
 
 ## Tests
 

@@ -18,6 +18,9 @@ private const val TOTAL = THREADS * ITERATIONS
 private const val ROUNDS = 10
 private const val TIMEOUT_SECONDS = 30L
 
+/** How long [ContentionTest] waits for the racing threads to start, and then for each to finish. */
+private const val RACER_TIMEOUT_SECONDS = 10L
+
 /** How many offending values a failure message lists. */
 private const val SAMPLE_SIZE = 10
 
@@ -90,29 +93,36 @@ class ContentionTest {
      * action returned, in no particular order. Rethrows the first failure.
      *
      * The release waits until every thread is ready, and the threads spin on a flag rather than park on a latch, which
-     * would wake them one after another.
+     * would wake them one after another. The flag is released even when starting the threads fails, so a thread already
+     * spinning runs its finite action and exits instead of spinning for the rest of the JVM.
      */
     private fun <R : Any> race(action: (racer: Int) -> R): List<R> {
         val ready = CountDownLatch(THREADS)
         val released = AtomicBoolean(false)
         val results = ConcurrentLinkedQueue<R>()
         val failures = ConcurrentLinkedQueue<Throwable>()
-        val threads = List(THREADS) { index ->
-            val racer = Thread(
-                {
-                    ready.countDown()
-                    while (!released.get()) Thread.onSpinWait()
-                    runCatching { action(index) }.onSuccess(results::add).onFailure(failures::add)
-                },
-                "racer-$index",
-            )
-            racer.start()
-            racer
+        val threads = mutableListOf<Thread>()
+        try {
+            repeat(THREADS) { index ->
+                val racer = Thread(
+                    {
+                        ready.countDown()
+                        while (!released.get()) Thread.onSpinWait()
+                        runCatching { action(index) }.onSuccess(results::add).onFailure(failures::add)
+                    },
+                    "racer-$index",
+                )
+                racer.isDaemon = true
+                racer.start()
+                threads += racer
+            }
+            check(ready.await(RACER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) { "The racing threads did not start" }
+        } finally {
+            released.set(true)
         }
 
-        ready.await()
-        released.set(true)
-        threads.forEach(Thread::join)
+        threads.forEach { it.join(TimeUnit.SECONDS.toMillis(RACER_TIMEOUT_SECONDS)) }
+        check(threads.none(Thread::isAlive)) { "A racing thread did not finish" }
 
         failures.firstOrNull()?.let { throw AssertionError("A racing thread failed", it) }
         return results.toList()
