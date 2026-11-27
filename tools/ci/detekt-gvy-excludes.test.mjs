@@ -34,6 +34,13 @@ const regexMigration = [
 ];
 // The rules whose findings no tracked detekt baseline may hold.
 const unbaselined = ['VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'RegexInFunctionBody'];
+// The suppression IDs that silence a gvy concurrency rule, as detekt accepts them: the rule ID, alone or after the rule
+// set's ID, the rule set's ID itself, or all rules.
+const concurrencySuppression = /^(?:all|gvy|(?:gvy[.:])?(?:VolatileProperty|JdkAtomics|StdlibAtomics))$/i;
+// Every sanctioned suppression of that kind in tracked Kotlin, one entry per site, as { path, id, reason }. The
+// accepted reasons are a field that an Atomic*FieldUpdater updates and a measured hot path
+// (tools/detekt-rules/README.md), and each entry says which. There is none.
+const sanctionedSuppressions = [];
 
 /** [config]'s lines without CRLF line ends or trailing whitespace, which YAML ignores. */
 const yamlLines = config => config.replaceAll('\r\n', '\n').split('\n').map(line => line.trimEnd());
@@ -126,6 +133,137 @@ function configured(rule, config = detektConfig()) {
   assert.ok(block, missingRule(config, rule));
   assert.equal(block.active, true, `${rule} must stay active, with \`    active: true\` in its block`);
   return block;
+}
+
+/** Where the line holding offset [at] of [source] ends. */
+function lineEnd(source, at) {
+  const end = source.indexOf('\n', at);
+  return end < 0 ? source.length : end;
+}
+
+/**
+ * The comment, string or character literal, or backticked name that starts at offset [at] of Kotlin [source], as
+ * `{ start, end, kind }`, or null. Block comments nest, a raw string ends at its last closing quote, a `${}` template
+ * may hold literals of its own, and an unterminated quote ends with its line.
+ */
+function tokenAt(source, at) {
+  const token = (kind, end) => ({ start: at, end, kind });
+  if (source.startsWith('//', at)) return token('comment', lineEnd(source, at));
+  if (source.startsWith('/*', at)) {
+    let depth = 0;
+    for (let index = at; index < source.length;) {
+      if (source.startsWith('/*', index)) depth += 1;
+      else if (source.startsWith('*/', index)) depth -= 1;
+      else {
+        index += 1;
+        continue;
+      }
+      index += 2;
+      if (depth === 0) return token('comment', index);
+    }
+    return token('comment', source.length);
+  }
+  if (source.startsWith('"""', at)) {
+    for (let index = at + 3; index < source.length;) {
+      if (source.startsWith('${', index)) index = templateEnd(source, index + 2);
+      else if (source.startsWith('"""', index)) {
+        let end = index + 3;
+        while (source[end] === '"') end += 1;
+        return token('string', end);
+      } else index += 1;
+    }
+    return token('string', source.length);
+  }
+  const quote = source[at];
+  if (quote === '`') {
+    const close = source.indexOf('`', at + 1);
+    return token('name', close < 0 ? lineEnd(source, at) : Math.min(close + 1, lineEnd(source, at)));
+  }
+  if (quote !== '"' && quote !== "'") return null;
+  const kind = quote === '"' ? 'string' : 'char';
+  for (let index = at + 1; index < source.length && source[index] !== '\n';) {
+    if (source[index] === '\\') index += 2;
+    else if (kind === 'string' && source.startsWith('${', index)) index = templateEnd(source, index + 2);
+    else if (source[index] === quote) return token(kind, index + 1);
+    else index += 1;
+  }
+  return token(kind, lineEnd(source, at));
+}
+
+/** Where the `${` template whose body starts at offset [at] of [source] ends: just past its closing brace. */
+function templateEnd(source, at) {
+  let depth = 1;
+  for (let index = at; index < source.length;) {
+    const token = tokenAt(source, index);
+    if (token) {
+      index = token.end;
+      continue;
+    }
+    if (source[index] === '{') depth += 1;
+    else if (source[index] === '}' && (depth -= 1) === 0) return index + 1;
+    index += 1;
+  }
+  return source.length;
+}
+
+/** The comments and literals of Kotlin [source], in order (backticked names are skipped, not returned). */
+function kotlinTokens(source) {
+  const tokens = [];
+  for (let at = 0; at < source.length;) {
+    const token = tokenAt(source, at);
+    if (!token) at += 1;
+    else {
+      if (token.kind !== 'name') tokens.push(token);
+      at = Math.max(token.end, at + 1);
+    }
+  }
+  return tokens;
+}
+
+/** [source] with each of [tokens] blanked to spaces, line breaks kept, so offsets and line numbers still hold. */
+function blanked(source, tokens) {
+  let text = '';
+  let at = 0;
+  for (const { start, end } of tokens) {
+    text += source.slice(at, start) + source.slice(start, end).replace(/[^\n]/g, ' ');
+    at = end;
+  }
+  return text + source.slice(at);
+}
+
+/**
+ * The IDs that each `Suppress(...)` or `SuppressWarnings(...)` in the code of Kotlin [source] names, as `{ line, id }`,
+ * read as detekt reads them: a `detekt.` or `detekt:` prefix and every quote are dropped. Comments and literals do not
+ * count, so a KDoc or a test fixture that mentions a suppression is not one.
+ */
+function suppressions(source) {
+  if (!source.includes('Suppress')) return [];
+  const tokens = kotlinTokens(source);
+  const code = blanked(source, tokens);
+  return [...code.matchAll(/\bSuppress(?:Warnings)?\s*\(/g)].flatMap(match => {
+    const open = match.index + match[0].length;
+    let close = open;
+    for (let depth = 1; close < code.length; close += 1) {
+      if (code[close] === '(') depth += 1;
+      else if (code[close] === ')' && (depth -= 1) === 0) break;
+    }
+    const line = code.slice(0, match.index).split('\n').length;
+    const id = ({ start, end }) => source.slice(start, end).replace(/detekt[.:]/gi, '').replaceAll('"', '');
+    return tokens
+      .filter(({ start, kind }) => kind === 'string' && start >= open && start < close)
+      .map(literal => ({ line, id: id(literal) }));
+  });
+}
+
+/** The items of [items] that [others] does not account for, one for one, compared by [key]. */
+function unmatched(items, others, key) {
+  const counts = new Map();
+  for (const other of others) counts.set(key(other), (counts.get(key(other)) ?? 0) + 1);
+  return items.filter(item => {
+    const count = counts.get(key(item)) ?? 0;
+    counts.set(key(item), count - 1);
+    return count <= 0;
+  });
 }
 
 test('the configuration reader takes only the gvy VolatileProperty block and rejects other YAML styles', () => {
@@ -289,4 +427,61 @@ test('the baseline listing ignores git variables that point at another index or 
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+test('the suppression reader takes the IDs of annotations in code, as detekt reads them', () => {
+  const source = [
+    '@file:Suppress("JdkAtomics")',
+    '// @Suppress("all") in a line comment',
+    '/* @Suppress("all") /* nested */ still a comment: @Suppress("all") */',
+    '/** KDoc: annotate the field `@Suppress("VolatileProperty")`. */',
+    'val text = "@Suppress(\\"all\\")"',
+    'val raw = """',
+    '    @Suppress("all")',
+    '"""',
+    'val template = "${listOf("@Suppress(\\"all\\")")}"',
+    "val quote = '\"'",
+    "fun `it's named`() = Unit",
+    '@Suppress(',
+    '    "UNCHECKED_CAST",',
+    '    "detekt:gvy:StdlibAtomics",',
+    ')',
+    'class A(@field:Suppress("""gvy""") val a: Int)',
+    '@SuppressWarnings("ALL") class B',
+  ].join('\n');
+  assert.deepEqual(suppressions(source), [
+    { line: 1, id: 'JdkAtomics' },
+    { line: 12, id: 'UNCHECKED_CAST' },
+    { line: 12, id: 'gvy:StdlibAtomics' },
+    { line: 16, id: 'gvy' },
+    { line: 17, id: 'ALL' },
+  ]);
+  for (const id of ['all', 'All', 'gvy', 'JdkAtomics', 'gvy:VolatileProperty', 'gvy.StdlibAtomics']) {
+    assert.match(id, concurrencySuppression);
+  }
+  for (const id of ['UNCHECKED_CAST', 'MagicNumber', 'RegexInFunctionBody', 'gvy:RegexInFunctionBody', 'allow']) {
+    assert.doesNotMatch(id, concurrencySuppression);
+  }
+});
+
+test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or all rules only where sanctioned', () => {
+  for (const { path, id, reason } of sanctionedSuppressions) {
+    assert.ok(reason?.trim(), `the sanctioned @Suppress("${id}") in ${path} must give its reason`);
+  }
+  // Every source set, tests included: VolatileProperty and StdlibAtomics lint tests too. The rule module's own tests
+  // are left out, since they feed such annotations to the rules.
+  const scanned = path => /(?:^|\/)src\/.*\.kt$/.test(path) && !path.startsWith('tools/detekt-rules/src/test/');
+  const sites = gitFiles()
+    .filter(scanned)
+    .flatMap(path => suppressions(readFileSync(join(root, path), 'utf8')).map(site => ({ path, ...site })))
+    .filter(({ id }) => concurrencySuppression.test(id));
+  const key = ({ path, id }) => `${path} ${id}`;
+  const where = ({ path, line, id }) => `${path}:${line} ${id}`;
+  const unsanctioned = unmatched(sites, sanctionedSuppressions, key).map(where);
+  const message = 'Do not suppress VolatileProperty, JdkAtomics, StdlibAtomics, the gvy rule set or all rules: use ' +
+    'the :common:concurrent types. A sanctioned site (a field updater, or a measured hot path) suppresses only its ' +
+    'rule, with a reason, and gets an entry with that reason in sanctionedSuppressions (#2474)';
+  assert.deepEqual(unsanctioned, [], message);
+  const stale = unmatched(sanctionedSuppressions, sites, key).map(({ path, id }) => `${path} ${id}`);
+  assert.deepEqual(stale, [], 'these sanctionedSuppressions entries match no suppression any more: remove them');
 });
