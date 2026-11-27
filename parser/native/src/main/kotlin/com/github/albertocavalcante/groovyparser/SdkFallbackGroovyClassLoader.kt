@@ -9,9 +9,12 @@ import java.net.URL
 import java.util.Collections
 import java.util.Enumeration
 
+private const val CLASS_FILE_SUFFIX = ".class"
+
 /** Project bytecode and source lookup completes before a narrowly enumerated process SDK fallback is considered. */
 internal open class SdkFallbackGroovyClassLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
     private var fallback: RuntimeGroovySdk? = null
+    private val classFileVersions = ClassFileVersions()
     val compilerSdk: NativeCompilerSdkIdentity? get() = fallback?.identity
 
     fun selectSdkFallback() {
@@ -34,7 +37,9 @@ internal open class SdkFallbackGroovyClassLoader(parent: ClassLoader) : GroovyCl
 
     override fun getResource(name: String): URL? {
         if (name == AST_TRANSFORMATION_SERVICE_FILE) return null
-        return super.getResource(name) ?: fallback?.resource(name)
+        val resource = super.getResource(name) ?: fallback?.resource(name) ?: return null
+        // The compiler remembers a class file by URL for the life of the process; see ClassFileVersions.
+        return if (name.endsWith(CLASS_FILE_SUFFIX)) classFileVersions.versioned(resource) else resource
     }
 
     override fun getResources(name: String): Enumeration<URL> {
