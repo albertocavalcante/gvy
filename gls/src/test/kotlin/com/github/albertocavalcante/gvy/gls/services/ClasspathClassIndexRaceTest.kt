@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
@@ -26,6 +27,9 @@ private const val MANY_CLASSES = 200
 private const val READERS = 4
 private const val LOOKUPS = 50
 private const val WAITERS = 3
+
+/** Bounds the concurrent-updates writer, whose every update logs at INFO. */
+private const val MAX_UPDATES = 1_000
 
 /**
  * Class-name lookups read the class index without a lock while a classpath update cleared it and the next build
@@ -144,8 +148,9 @@ class ClasspathClassIndexRaceTest {
             val writer = executor.submit {
                 check(start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
                 var updates = 0
-                // Keep updating until every reader is done, so updates overlap all of the lookups.
-                while (readersDone.count > 0) {
+                // Keep updating until every reader is done, so updates overlap the lookups. The await throws when
+                // shutdownNow interrupts it, so a hung reader cannot keep the writer spinning.
+                while (updates < MAX_UPDATES && !readersDone.await(0, TimeUnit.NANOSECONDS)) {
                     service.updateClasspath(listOf(if (updates++ % 2 == 0) second else first))
                 }
             }
@@ -220,10 +225,13 @@ private class LookupThread<T>(body: () -> T) {
         start()
     }
 
-    /** Returns once the thread waits. In these tests the only wait is for the build another lookup runs. */
+    /**
+     * Returns once the thread is parked. In these tests the only park is on the build another lookup runs; a park sets
+     * a blocker, while a wait for class initialization does not.
+     */
     fun awaitWaiting() {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS)
-        while (thread.state != Thread.State.WAITING) {
+        while (thread.state != Thread.State.WAITING || LockSupport.getBlocker(thread) == null) {
             check(System.nanoTime() < deadline) { "the lookup never waited for the build" }
             Thread.onSpinWait()
         }

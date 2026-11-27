@@ -164,25 +164,20 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `maxResults caps the simple names and then their variants`() {
-        val service = ClasspathService(
-            FakeClasspathIndex(
-                listOf(
-                    IndexedClass("WidgetC", "com.two.WidgetC"),
-                    IndexedClass("WidgetA", "com.two.WidgetA"),
-                    IndexedClass("WidgetB", "com.one.WidgetB"),
-                    IndexedClass("WidgetA", "com.one.WidgetA"),
-                    IndexedClass("WidgetC", "com.one.WidgetC"),
-                    IndexedClass("WidgetB", "com.two.WidgetB"),
-                ),
-            ),
-        )
+    fun `returns the first maxResults classes ordered by simple name then qualified name`() {
+        val service = ClasspathService(widgetVariants())
 
         assertThat(namesOf(service.findClassesByPrefix("Widget", maxResults = 3))).containsExactly(
             "com.one.WidgetA",
             "com.two.WidgetA",
             "com.one.WidgetB",
         )
+    }
+
+    @Test
+    fun `qualified lookups return the first maxResults classes by qualified name`() {
+        val service = ClasspathService(widgetVariants())
+
         assertThat(namesOf(service.findClassesByQualifiedPrefix("com.", maxResults = 3))).containsExactly(
             "com.one.WidgetA",
             "com.one.WidgetB",
@@ -433,6 +428,18 @@ class ClasspathServiceTest {
 }
 
 private fun namesOf(classes: List<ClassInfo>): List<String> = classes.map { it.fullName }
+
+/** Simple names `WidgetA`, `WidgetB` and `WidgetC`, two packages each, out of order. */
+private fun widgetVariants(): ClasspathIndex = FakeClasspathIndex(
+    listOf(
+        IndexedClass("WidgetC", "com.two.WidgetC"),
+        IndexedClass("WidgetA", "com.two.WidgetA"),
+        IndexedClass("WidgetB", "com.one.WidgetB"),
+        IndexedClass("WidgetA", "com.one.WidgetA"),
+        IndexedClass("WidgetC", "com.one.WidgetC"),
+        IndexedClass("WidgetB", "com.two.WidgetB"),
+    ),
+)
 
 private fun defaultIndex(): ClasspathIndex = FakeClasspathIndex(
     listOf(
