@@ -74,6 +74,13 @@ const defaultTestLenient = [
   'SpreadOperator', 'LateinitUsage', 'UnsafeCallOnNullableType', 'MagicNumber',
 ];
 
+// Whether an exclude pattern reaches a test source set other than `test`: one of its folders, the file name aside,
+// mentions "test" in any case (`**/commonTest/**`, `**/*Test/**`, `**/{common,jvm}Test/**`, `**/jvmTest/**/*.kt`) and
+// is not exactly `test`.
+const reachesTestSet = pattern =>
+  pattern.split('/').filter((folder, index, folders) => index < folders.length - 1 || !folder.includes('.'))
+    .some(folder => /test/i.test(folder) && folder !== 'test');
+
 let trackedCache;
 /** The tracked files of this checkout, listed once. */
 const tracked = () => (trackedCache ??= gitFiles(root));
@@ -472,7 +479,7 @@ test('no module build configures detekt beyond its dependencies and the multipla
   assert.deepEqual(found, [], message);
 });
 
-test('the loose excludes reader takes block and inline lists of every rule', () => {
+test('the loose excludes reader takes the styles detekt reads and rejects the rest', () => {
   const config = [
     'style:',
     '  MagicNumber:',
@@ -483,7 +490,9 @@ test('the loose excludes reader takes block and inline lists of every rule', () 
     '    ignoreNumbers:',
     "    - '-1'",
     '  ForbiddenComment:',
-    '    excludes: ["**/test/**", \'**/commonTest/**\']',
+    '    excludes: ["**/test/**", \'**/commonTest/**\'] # A comment.',
+    '  ForbiddenMethodCall:',
+    "    excludes: '**/jvmTest/**,**/test/**; **/jsTest/**'",
     'gvy:',
     '  JdkAtomics:',
     '    excludes:',
@@ -492,19 +501,35 @@ test('the loose excludes reader takes block and inline lists of every rule', () 
   assert.deepEqual(Object.fromEntries(ruleExcludes(config)), {
     'style > MagicNumber': ['**/test/**', '**/jvmTest/**'],
     'style > ForbiddenComment': ['**/test/**', '**/commonTest/**'],
+    'style > ForbiddenMethodCall': ['**/jvmTest/**', '**/test/**', '**/jsTest/**'],
     'gvy > JdkAtomics': ['**/src/test/**'],
   });
+  const otherStyles = [
+    "    excludes: [\n      '**/jvmTest/**',\n    ]",
+    '    excludes:\n    - **/jvmTest/**',
+    '    excludes: **/jvmTest/**',
+    "    excludes: &tests ['**/jvmTest/**']",
+    "    excludes:\n    - '**/test/**'\n      '**/jvmTest/**'",
+  ];
+  for (const block of otherStyles) {
+    assert.throws(() => ruleExcludes(`style:\n  ForbiddenMethodCall:\n${block}\n`), /Unexpected line/, block);
+  }
 });
 
 test('only rules that detekt makes lenient on tests by default exclude a multiplatform test set', () => {
+  const reaching = ['**/commonTest/**', '**/*Test/**', '**/jvmTest/**/*.kt', '**/CommonTest/**', '**/jvmTest/**,x'];
+  for (const pattern of reaching) {
+    assert.equal(reachesTestSet(pattern), true, pattern);
+  }
+  for (const pattern of ['**/test/**', '**/test/**/*Test.kt', '**/dsl/**', '**/src/main/**']) {
+    assert.equal(reachesTestSet(pattern), false, pattern);
+  }
   // detekt.yml replaces a rule's default excludes, so it names `**/commonTest/**` and `**/jvmTest/**` where detekt's
   // default has them. Elsewhere such an exclude would widen a rule's reach past its default; dropping one is always
   // fine. The gvy rules' excludes are pinned by the tests above.
-  const multiplatformTest = /(?:^|\/)[a-z][A-Za-z0-9]*Test\/\*\*$/;
   const widened = [...ruleExcludes(detektConfig())]
     .filter(([rule]) => !rule.startsWith('gvy > ') && !defaultTestLenient.includes(rule.split(' > ')[1]))
-    .flatMap(([rule, excludes]) => excludes.map(exclude => `${rule}: ${exclude}`))
-    .filter(found => multiplatformTest.test(found));
+    .flatMap(([rule, excludes]) => excludes.filter(reachesTestSet).map(exclude => `${rule}: ${exclude}`));
   const message = 'Only a rule whose detekt default excludes every test source set (defaultTestLenient in ' +
     'tools/ci/detekt-gvy-guard.test.mjs) may exclude a multiplatform test set (#2474)';
   assert.deepEqual(widened, [], message);

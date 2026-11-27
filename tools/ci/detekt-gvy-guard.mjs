@@ -263,28 +263,59 @@ export function unmatched(items, others, key) {
   });
 }
 
+// The patterns of a one-line YAML flow list of quoted patterns, such as ['a', "b"], or null when it is not one.
+function flowList(value) {
+  const items = value.match(/^\[(.*)\]$/)?.[1];
+  if (items === undefined) return null;
+  const quoted = [...items.matchAll(/'([^']*)'|"([^"]*)"/g)];
+  const rest = items.replace(/'[^']*'|"[^"]*"/g, '').replace(/[\s,]/g, '');
+  return rest ? null : quoted.map(([, single, double]) => single ?? double);
+}
+
 /**
- * Every rule's `excludes` in detekt [config], as a map from `<rule set> > <rule>` to its patterns. It reads block and
- * inline lists loosely, for the test-source consistency check; the gvy rules are pinned by the strict reader above.
+ * Every rule's `excludes` in detekt [config], as a map from `<rule set> > <rule>` to its patterns, read as detekt reads
+ * them: a block list of quoted entries, a one-line flow list, or a quoted string, which detekt splits at commas and
+ * semicolons. Any other style (a flow list over several lines, an unquoted entry or value, an anchor) is an error, as
+ * in the strict reader, so it cannot hide a pattern. It serves the test-source check; the gvy rules are pinned by the
+ * strict reader above.
  */
 export function ruleExcludes(config) {
   const excludes = new Map();
   let ruleSet;
   let rule;
   let list;
-  for (const line of yamlLines(config)) {
+  let listIndent;
+  const unexpected = (index, line) => new Error(
+    `Unexpected line ${index + 1} in the excludes of ${rule}: \`${line}\`. The loose reader takes \`excludes:\` with ` +
+      "`- '<pattern>'` entries, a one-line `['<pattern>', ...]` list, or a quoted comma-separated string. To use " +
+      'another style, teach ruleExcludes in tools/ci/detekt-gvy-guard.mjs to read it.',
+  );
+  for (const [index, line] of yamlLines(config).entries()) {
     if (/^\s*(?:#.*)?$/.test(line)) continue;
-    const key = line.match(/^( *)([\w-]+):(.*)$/);
-    const entry = line.match(/^\s*- ['"]([^'"]+)['"]/);
-    if (key) {
-      const [, indent, name, value] = key;
-      if (indent.length === 0) [ruleSet, rule] = [name, undefined];
-      else if (indent.length === 2) rule = `${ruleSet} > ${name}`;
-      list = indent.length > 2 && name === 'excludes' && rule ? [] : undefined;
-      if (!list) continue;
-      excludes.set(rule, list);
-      for (const [, single, double] of value.matchAll(/'([^']*)'|"([^"]*)"/g)) list.push(single ?? double);
-    } else if (entry && list) list.push(entry[1]);
+    const indent = line.match(/^ */)[0].length;
+    if (list) {
+      const entry = line.match(/^ *- (?:'([^']*)'|"([^"]*)")(?:\s+#.*)?$/);
+      if (entry && indent >= listIndent) {
+        list.push(entry[1] ?? entry[2]);
+        continue;
+      }
+      if (indent > listIndent || /^ *-/.test(line)) throw unexpected(index, line);
+      list = undefined;
+    }
+    const key = line.match(/^ *([\w-]+):(?: (.*))?$/);
+    if (!key) continue;
+    const [, name, raw = ''] = key;
+    if (indent === 0) [ruleSet, rule] = [name, undefined];
+    else if (indent === 2) rule = `${ruleSet} > ${name}`;
+    if (indent <= 2 || name !== 'excludes' || !rule) continue;
+    const value = raw.replace(/\s+#[^'"]*$/, '').trim();
+    const scalar = value.match(/^'([^']*)'$|^"([^"]*)"$/);
+    if (value === '' || value.startsWith('#')) [list, listIndent] = [[], indent];
+    else if (flowList(value)) list = flowList(value);
+    else if (scalar) list = (scalar[1] ?? scalar[2]).split(/[,;]/).map(item => item.trim()).filter(Boolean);
+    else throw unexpected(index, line);
+    excludes.set(rule, list);
+    if (value !== '' && !value.startsWith('#')) list = undefined;
   }
   return excludes;
 }
