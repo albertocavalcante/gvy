@@ -3,7 +3,9 @@
 
 package com.github.albertocavalcante.gvy.gls.telemetry
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import kotlinx.coroutines.CancellationException
+import java.lang.management.ManagementFactory
 
 /** The startup phases the server reports, in the order a normal startup runs them. */
 enum class StartupPhase(val wireName: String) {
@@ -43,18 +45,32 @@ internal data class StartupSnapshot(
 class StartupPhaseRecorder(
     private val nanoTime: () -> Long = System::nanoTime,
     /** How long the JVM had run when the recorder was created, or null when the JVM does not say. */
-    private val serverStartJvmUptimeMs: Long? = null,
+    private val serverStartJvmUptimeMs: Long? = observeJvmUptimeMs(),
 ) {
+    private val originNanos = nanoTime()
+    private val records = SharedValue<Map<StartupPhase, PhaseRecord>>(emptyMap())
+
     /** Starts [phase], or returns null when it already began or was skipped. */
-    fun begin(phase: StartupPhase): PhaseRun? = TODO("record the start of $phase")
+    fun begin(phase: StartupPhase): PhaseRun? {
+        val started = PhaseRecord(PhaseStatus.RUNNING, startNanos = elapsedNanos(), endNanos = null)
+        val updated = records.update { current -> if (phase in current) current else current + (phase to started) }
+        return if (updated[phase] === started) PhaseRun(this, phase, started) else null
+    }
 
     /** Marks each phase that has not begun as skipped. */
-    fun skip(phases: Iterable<StartupPhase>): Unit = TODO("record the skip of ${phases.toList()}")
+    fun skip(phases: Iterable<StartupPhase>) {
+        val skipped = PhaseRecord(PhaseStatus.SKIPPED, startNanos = null, endNanos = null)
+        records.update { current -> current + phases.filter { it !in current }.associateWith { skipped } }
+    }
 
-    internal fun snapshot(): StartupSnapshot = TODO("snapshot at ${nanoTime()} with $serverStartJvmUptimeMs")
+    internal fun snapshot() = StartupSnapshot(serverStartJvmUptimeMs, elapsedNanos(), records.value)
 
-    internal fun end(phase: StartupPhase, started: PhaseRecord, status: PhaseStatus): Unit =
-        TODO("record the end of $phase as $status after $started")
+    internal fun end(phase: StartupPhase, started: PhaseRecord, status: PhaseStatus) {
+        val ended = started.copy(status = status, endNanos = elapsedNanos())
+        records.update { current -> if (current[phase] === started) current + (phase to ended) else current }
+    }
+
+    private fun elapsedNanos() = nanoTime() - originNanos
 }
 
 /** One started phase. Only the first of [complete], [fail] and [cancel] has an effect. */
@@ -89,4 +105,10 @@ internal inline fun <T> StartupPhaseRecorder.measure(phase: StartupPhase, block:
     } finally {
         run?.end(outcome)
     }
+}
+
+private fun observeJvmUptimeMs(): Long? = try {
+    ManagementFactory.getRuntimeMXBean().uptime
+} catch (_: SecurityException) {
+    null
 }
