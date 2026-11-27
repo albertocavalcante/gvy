@@ -3,6 +3,8 @@
 
 package com.github.albertocavalcante.gvy.jvm.facts
 
+import java.util.Collections
+
 /** The smallest encoded size of each repeated item, used to check a count against the remaining bytes. */
 private const val MIN_PACKAGE_BYTES = 2
 private const val MIN_CLASS_BYTES = 6
@@ -77,7 +79,7 @@ internal fun ByteCursor.readCount(minBytes: Int, budget: DecodeBudget): Int {
 private inline fun <T> readItems(count: Int, read: () -> T): List<T> {
     val items = ArrayList<T>(minOf(count, MAX_PRESIZE))
     repeat(count) { items += read() }
-    return items
+    return Collections.unmodifiableList(items)
 }
 
 private fun ByteCursor.readPooled(pool: StringPool): String = pool[readIndex(pool.size)]

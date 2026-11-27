@@ -24,9 +24,9 @@ internal fun encodeRawSections(facts: Facts): List<Pair<Int, ByteArray>> {
     return listOf(
         SECTION_NAME_STRINGS to namePool.raw,
         SECTION_NAMES to encodeNames(facts.names, classes, namePool),
-        SECTION_EXTENSIONS to encodeExtensions(facts.extensions, namePool),
         SECTION_TYPE_STRINGS to typePool.raw,
         SECTION_TYPES to encodeTypes(facts.types, classes, typePool),
+        SECTION_EXTENSIONS to encodeExtensions(facts.extensions, namePool),
     )
 }
 

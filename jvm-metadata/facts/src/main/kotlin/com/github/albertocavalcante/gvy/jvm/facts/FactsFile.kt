@@ -52,8 +52,10 @@ public sealed interface LoadResult<out T> {
  * larger than the file cap says a file may be, and an honest JDK image is far smaller.
  *
  * [maxDecodedItems] bounds what the objects decoded from the sections can cost. The smallest items, a class without
- * members or a one-byte string, take about 108 heap bytes each, tens of times their encoded size (an estimate, plus
- * the contents of the strings), so the raw size alone does not bound the heap. One budget serves a [FactsFile]:
+ * members or a one-byte string, take about 108 heap bytes each, tens of times their encoded size (an estimate), so
+ * the raw size alone does not bound the heap. The contents of the strings are outside this budget. They are bounded
+ * by the pools' raw length: a string takes at most about twice its UTF-8 bytes as a Java string, so the two pools
+ * together take about 256 MiB at the default section cap. One budget serves a [FactsFile]:
  * every pooled string, package, class, interface, member, parameter name, extension entry and types entry costs one
  * item, charged before the objects are allocated, and a section is decoded and charged once however often it is
  * asked for. The default, 3 million items, is three times the roughly 1 million a full JDK image needs (about 40
@@ -94,11 +96,12 @@ private class Memo<T : Any>(private val decode: () -> T) {
 
 /**
  * A facts file whose header and section table were checked and whose sections are decoded on demand. Opening reads
- * no section. Sections are decoded in this order: names pool, names, extensions, type pool, types. A call decodes
- * a prefix of that order: [names] the first two, [extensions] the first three, [types] and [loadAll] all five. So a
- * file with a damaged [types] section or type pool still yields [names] and [extensions], and every call reports
- * the same rejection for the same file, because the budget left at each section does not depend on which calls came
- * before.
+ * no section. Sections are decoded in this order: names pool, names, type pool, types, extensions. A call decodes
+ * a prefix of that order: [names] the first two, [types] the first four, [extensions] and [loadAll] all five. The
+ * order follows the dependencies: the types index the names' class table, and an extension holder's methods are
+ * members in the types. So a damaged extensions section still leaves [names] and [types], a damaged types section
+ * leaves [names] only, and every call reports the same rejection for the same file, because the budget left at
+ * each section does not depend on which calls came before.
  *
  * Methods never throw for malformed input. Each section is decoded, and charged to [ReadLimits.maxDecodedItems],
  * once, and the result is kept. The file keeps the byte array given to [open] and does not copy it.
@@ -130,34 +133,34 @@ public class FactsFile internal constructor(
         val pool = namePool.get()
         decodeNames(rawSection(SECTION_NAMES), pool, budget)
     }
-    private val extensions = Memo {
-        names.get()
-        val pool = namePool.get()
-        decodeExtensions(rawSection(SECTION_EXTENSIONS), pool, budget)
-    }
     private val typePool = Memo { decodeStringPool(rawSection(SECTION_TYPE_STRINGS), budget) }
     private val types = Memo {
-        extensions.get()
         val classes = names.get().classes
         val pool = typePool.get()
         decodeTypes(rawSection(SECTION_TYPES), classes, pool, budget)
+    }
+    private val extensions = Memo {
+        types.get()
+        val pool = namePool.get()
+        decodeExtensions(rawSection(SECTION_EXTENSIONS), pool, budget)
     }
 
     /** Decodes the package and class names. */
     public fun names(): LoadResult<NamesSection> = load(listOf(SECTION_NAME_STRINGS, SECTION_NAMES)) { names.get() }
 
-    /** Decodes the supertypes and members, after every other section: the names' class table is what it indexes. */
-    public fun types(): LoadResult<TypesSection> = load(ALL_SECTIONS) { types.get() }
+    /** Decodes the supertypes and members, after the names, whose class table the types section indexes. */
+    public fun types(): LoadResult<TypesSection> = load(
+        listOf(SECTION_NAME_STRINGS, SECTION_NAMES, SECTION_TYPE_STRINGS, SECTION_TYPES),
+    ) { types.get() }
 
-    /** Decodes the extension holders, after the names. */
-    public fun extensions(): LoadResult<ExtensionsSection> =
-        load(listOf(SECTION_NAME_STRINGS, SECTION_NAMES, SECTION_EXTENSIONS)) { extensions.get() }
+    /** Decodes the extension holders, after the types, whose members are the extension methods. */
+    public fun extensions(): LoadResult<ExtensionsSection> = load(ALL_SECTIONS) { extensions.get() }
 
     /** Decodes every section; one rejected section rejects the result. */
     public fun loadAll(): LoadResult<Facts> = load(ALL_SECTIONS) {
         val decodedNames = names.get()
-        val decodedExtensions = extensions.get()
-        Facts(header, decodedNames, types.get(), decodedExtensions)
+        val decodedTypes = types.get()
+        Facts(header, decodedNames, decodedTypes, extensions.get())
     }
 
     private inline fun <T> load(ids: List<Int>, decode: () -> T): LoadResult<T> = synchronized(lock) {
@@ -194,9 +197,9 @@ public class FactsFile internal constructor(
         private val ALL_SECTIONS = listOf(
             SECTION_NAME_STRINGS,
             SECTION_NAMES,
-            SECTION_EXTENSIONS,
             SECTION_TYPE_STRINGS,
             SECTION_TYPES,
+            SECTION_EXTENSIONS,
         )
 
         /**

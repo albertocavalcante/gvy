@@ -35,16 +35,16 @@ internal val DEFAULT_ENCODING: SectionEncoding = SectionEncoding.deflate(DEFAULT
 public class WriteOptions(
     public val nameStrings: SectionEncoding = DEFAULT_ENCODING,
     public val names: SectionEncoding = DEFAULT_ENCODING,
-    public val extensions: SectionEncoding = DEFAULT_ENCODING,
     public val typeStrings: SectionEncoding = DEFAULT_ENCODING,
     public val types: SectionEncoding = DEFAULT_ENCODING,
+    public val extensions: SectionEncoding = DEFAULT_ENCODING,
 ) {
     internal fun encodingOf(sectionId: Int): SectionEncoding = when (sectionId) {
         SECTION_NAME_STRINGS -> nameStrings
         SECTION_NAMES -> names
-        SECTION_EXTENSIONS -> extensions
         SECTION_TYPE_STRINGS -> typeStrings
         SECTION_TYPES -> types
+        SECTION_EXTENSIONS -> extensions
         else -> error("Unknown section id $sectionId")
     }
 }

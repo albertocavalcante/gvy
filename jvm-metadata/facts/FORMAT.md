@@ -62,9 +62,9 @@ and fill the rest of the file exactly: a file with too few bytes is truncated, a
 | coordinate       | `varint` + UTF-8 | 0 for absent, otherwise the length plus one, then the text. Informational, never a key. The length is at most 4096. |
 | section count    | `varint`         | At most 64.                                                                                                         |
 
-The header has no checksum of its own, and neither has any other part of the file protect it: a damaged or forged file
-can carry any digest or length. A reader that needs the file to describe a given input compares the header's SHA-256
-with the digest of that input, which it must take from a source it trusts. The header's lengths and counts are checked
+The header has no checksum of its own, and no other part of the file covers it either: a damaged or forged file can
+carry any digest or length. A reader that needs the file to describe a given input compares the header's SHA-256 with
+the digest of that input, which it must take from a source it trusts. The header's lengths and counts are checked
 structurally.
 
 ### Section table
@@ -73,7 +73,7 @@ One 14-byte entry per section:
 
 | Field         | Type  | Notes                                                                                                    |
 | ------------- | ----- | -------------------------------------------------------------------------------------------------------- |
-| id            | `u8`  | 1 names pool, 2 names, 3 extensions, 4 type pool, 5 types. A reader skips ids it does not know.          |
+| id            | `u8`  | 1 names pool, 2 names, 3 type pool, 4 types, 5 extensions. A reader skips ids it does not know.          |
 | codec         | `u8`  | 0 = stored as is, 1 = DEFLATE (a zlib stream, RFC 1950).                                                 |
 | stored length | `u32` | Length in the file. Values of 2^31 and above are oversized.                                              |
 | raw length    | `u32` | Length after inflating; for codec 0 it equals the stored length. Values of 2^31 and above are oversized. |
@@ -97,16 +97,17 @@ and digest as given.
 
 ## Sections
 
-A section is decoded from its raw bytes. Five sections make two groups, so that a reader that wants the names never
-decodes a string only the types need:
+A section is decoded from its raw bytes. The five sections follow the dependencies, so that a reader that wants the
+names never decodes a string only the types need, and one that wants the types never decodes the extensions:
 
-| Group | Sections                            | Decoding them needs                               |
-| ----- | ----------------------------------- | ------------------------------------------------- |
-| Names | 1 names pool, 2 names, 3 extensions | The pool, then the names, then the section itself |
-| Types | 4 type pool, 5 types                | The whole names group, then its own               |
+| Group      | Sections              | Decoding them needs                                         |
+| ---------- | --------------------- | ----------------------------------------------------------- |
+| Names      | 1 names pool, 2 names | The pool, then the names section                            |
+| Types      | 3 type pool, 4 types  | The names group, then the type pool, then the types section |
+| Extensions | 5 extensions          | The names and types groups, then the section                |
 
 - A `string` in the names or extensions section indexes the **names pool** (section 1).
-- A `string` or `string?` in the types section indexes the **type pool** (section 4). The class a types entry describes
+- A `string` or `string?` in the types section indexes the **type pool** (section 3). The class a types entry describes
   is not a string: it is an index into the names section's class table.
 - The pools are separate, so a string both groups use, such as a superclass name that is also a class, appears in each.
 - A pool may hold a string nothing refers to; a reader neither requires nor checks that. A writer pools only strings
@@ -137,13 +138,15 @@ budget as oversized. A section is decoded, and so charged, once per file, howeve
 after the sections before it in the decoding order. The default budget of the reference reader is 3,000,000 items: a
 full JDK image needs about one million (about 40 thousand classes, counted in the names and in the types section, 60
 thousand interface references, 500 thousand members, 250 thousand pooled strings and 100 thousand parameter names), and
-3,000,000 items take about 324 MB of heap at the estimated 108 bytes per item, plus the contents of the strings.
+3,000,000 items take about 324 MB of heap at the estimated 108 bytes per item. The contents of the strings are outside
+the budget. They are bounded by the pools' raw bytes: a Java string takes at most about twice its UTF-8 bytes, so the
+two pools together take about 256 MiB at the default section cap of 64 MiB.
 
 **Order of keys.** Every table's keys must be strictly increasing, so a table is written one way and a key is unique.
 The key is stated with each table below; a key that is repeated or smaller than the one before it is corrupt. A reader
 checks it after it has read the fields of the item, including the items nested in it.
 
-### 1 and 4. Names pool and type pool
+### 1 and 3. Names pool and type pool
 
 ```text
 count: varint
@@ -175,7 +178,7 @@ class count * ( internal name: string, package: varint, simple name: string, out
 - `release` is 0 for the base copy and N for a copy under `META-INF/versions/N`. The largest value is 255.
 - Keys: a package by its name's pool index; a class by (internal name pool index, release).
 
-### 5. Types
+### 4. Types
 
 ```text
 entry count: varint
@@ -199,7 +202,7 @@ member = kind: u8, access flags: varint, name: string, descriptor: string,
 - Members are the public and protected ones. Every class is included, because a package-private superclass can supply
   inherited public members.
 
-### 3. Extensions
+### 5. Extensions
 
 ```text
 entry count: varint
@@ -230,16 +233,16 @@ A file that breaks several rules in one place is rejected for the first of these
 6. The stored lengths together are more than the bytes left: truncated; fewer: corrupt. Then an id twice: corrupt.
 7. The caller's expected input SHA-256 differs: input mismatch.
 
-**Decoding.** Whichever call asks, sections are decoded in this order: names pool, names, extensions, type pool, types.
+**Decoding.** Whichever call asks, sections are decoded in this order: names pool, names, type pool, types, extensions.
 A call decodes a prefix of that order, and the first rejection ends it, so the budget left at each section does not
 depend on which calls came before:
 
-| Call       | Decodes                       |
-| ---------- | ----------------------------- |
-| names      | names pool, names             |
-| extensions | names pool, names, extensions |
-| types      | all five                      |
-| all        | all five                      |
+| Call       | Decodes                             |
+| ---------- | ----------------------------------- |
+| names      | names pool, names                   |
+| types      | names pool, names, type pool, types |
+| extensions | all five                            |
+| all        | all five                            |
 
 For one section:
 
