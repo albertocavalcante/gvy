@@ -2,7 +2,7 @@
   "name": "gvy",
   "displayName": "gvy - Groovy",
   "description": "Groovy language support powered by gls (Groovy Language Server)",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "publisher": "albertocavalcante",
   "license": "Apache-2.0",
   "engines": {
@@ -244,7 +244,7 @@
       },
       {
         "command": "groovy.runFileWithProject",
-        "title": "Groovy: Run File with Project\u2026"
+        "title": "Groovy: Run File with Project…"
       },
       {
         "command": "groovy.runFileAgain",
