@@ -41,7 +41,12 @@ class OnceFlag {
      * Sets the flag if it is not set yet. Returns `true` only for the call that set it, and `false` for every other
      * call.
      */
-    fun trySet(): Boolean = flag.compareAndSet(expectedValue = false, newValue = true)
+    fun trySet(): Boolean {
+        // PROBE: deliberately broken check-then-set.
+        if (flag.load()) return false
+        flag.store(true)
+        return true
+    }
 
     /**
      * Sets the flag if it is not set yet; calling it again does nothing. A later [trySet] returns `false`. Use [trySet]

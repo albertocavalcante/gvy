@@ -3,7 +3,7 @@
 
 package com.github.albertocavalcante.gvy.concurrent
 
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Timeout
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -16,6 +16,7 @@ private const val THREADS = 8
 private const val ITERATIONS = 10_000
 private const val TOTAL = THREADS * ITERATIONS
 private const val ROUNDS = 10
+private const val PROBE_REPETITIONS = 10
 private const val TIMEOUT_SECONDS = 30L
 
 /** How many offending values a failure message lists. */
@@ -33,7 +34,7 @@ private const val SAMPLE_SIZE = 10
 @Timeout(value = TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
 class ContentionTest {
 
-    @Test
+    @RepeatedTest(PROBE_REPETITIONS)
     fun `exactly one racing caller sets each OnceFlag`() {
         repeat(ROUNDS) { round ->
             // Every thread walks the same flags in the same order, so threads keep meeting on the same flag.
@@ -45,7 +46,7 @@ class ContentionTest {
         }
     }
 
-    @Test
+    @RepeatedTest(PROBE_REPETITIONS)
     fun `racing increments of a Counter return each count exactly once`() {
         repeat(ROUNDS) { round ->
             val counter = Counter()
@@ -57,7 +58,7 @@ class ContentionTest {
         }
     }
 
-    @Test
+    @RepeatedTest(PROBE_REPETITIONS)
     fun `racing updates of a SharedValue return each updated value exactly once`() {
         repeat(ROUNDS) { round ->
             // Boxed values past the small-integer cache are distinct objects, so this also checks that update
@@ -71,7 +72,7 @@ class ContentionTest {
         }
     }
 
-    @Test
+    @RepeatedTest(PROBE_REPETITIONS)
     fun `racing exchanges of a SharedValue return each replaced value exactly once`() {
         repeat(ROUNDS) { round ->
             val shared = SharedValue(0)

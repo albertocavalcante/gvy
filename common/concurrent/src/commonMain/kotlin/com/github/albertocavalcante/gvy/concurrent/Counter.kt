@@ -21,5 +21,9 @@ class Counter {
      * Adds one and returns the new count. Each call returns a different value, so the result can serve as a ticket or
      * an ID.
      */
-    fun increment(): Long = count.incrementAndFetch()
+    fun increment(): Long {
+        // PROBE: deliberately broken; another increment can land between these two steps.
+        count.incrementAndFetch()
+        return count.load()
+    }
 }

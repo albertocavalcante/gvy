@@ -7,7 +7,6 @@ package com.github.albertocavalcante.gvy.concurrent
 
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.concurrent.atomics.updateAndFetch
 
 /**
  * A value that threads replace as a whole, such as a configuration or an immutable snapshot.
@@ -32,7 +31,12 @@ class SharedValue<T>(initial: T) {
     }
 
     /** Replaces the value and returns the one it replaced, for example to close it. */
-    fun exchange(newValue: T): T = reference.exchange(newValue)
+    fun exchange(newValue: T): T {
+        // PROBE: deliberately broken load then store.
+        val previous = reference.load()
+        reference.store(newValue)
+        return previous
+    }
 
     /**
      * Replaces the value with the result of [transform] applied to it, and returns the new value.
@@ -40,5 +44,10 @@ class SharedValue<T>(initial: T) {
      * When another thread changes the value first, [transform] runs again on the newer value, so it must not have side
      * effects.
      */
-    fun update(transform: (T) -> T): T = reference.updateAndFetch(transform)
+    fun update(transform: (T) -> T): T {
+        // PROBE: deliberately broken; no compare-and-set.
+        val next = transform(reference.load())
+        reference.store(next)
+        return next
+    }
 }
