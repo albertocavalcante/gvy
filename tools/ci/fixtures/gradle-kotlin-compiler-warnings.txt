@@ -1,0 +1,20 @@
+> Task :parser:native:jar
+
+> Task :indexer:scip:compileKotlin
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/indexer/scip/build/generated/source/wire/scip/Descriptor.kt:226:9 Duplicate branch condition in 'when'.
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/indexer/scip/build/generated/source/wire/scip/Occurrence.kt:349:20 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/indexer/scip/build/generated/source/wire/scip/Occurrence.kt:368:30 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/indexer/scip/build/generated/source/wire/scip/SyntaxKind.kt:194:7 Duplicate branch condition in 'when'.
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/indexer/scip/build/generated/source/wire/scip/SyntaxKind.kt:205:7 Duplicate branch condition in 'when'.
+
+> Task :diagnostics:codenarc:compileKotlin
+> Task :build-tool:koverFindJar
+> Task :bsp:maven-bsp:fatJar
+
+> Task :gls:compileTestKotlin
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/SnapshotAcquisitionTest.kt:148:55 Unnecessary safe call on a non-null receiver of type 'Exception'.
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/services/CodeLensDeliveryTest.kt:46:40 The corresponding parameter in the supertype 'TestFrameworkDetector' is named 'classNode'. This may cause problems when calling this function with named arguments.
+[KOTLIN] w: file:///Users/runner/work/gvy/gvy/gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/services/CodeLensDeliveryTest.kt:46:78 The corresponding parameter in the supertype 'TestFrameworkDetector' is named 'classLoader'. This may cause problems when calling this function with named arguments.
+
+> Task :build-tool:test
+> Task :gls:compileTestJava

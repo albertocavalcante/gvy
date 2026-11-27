@@ -115,6 +115,12 @@ function deprecationOrigin(message, origin) {
   return { origin };
 }
 
+// The Kotlin Build Tools API runner (#2456) prefixes each compiler message with "[KOTLIN] ". The prefix names the
+// runner, not the message, so it is dropped: the same warning has one identity whichever runner compiled it.
+const kotlinRunnerPrefix = /^\[KOTLIN\] /;
+
+const regExpLiteral = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Tool output is separate from test STANDARD_OUT/ERR. Runtime/server diagnostics
 // require a harness producer with test/scenario identity and explicit assertions.
 export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
@@ -127,7 +133,13 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     pending = undefined;
   };
   const root = rootDir.replaceAll('\\', '/').replace(/\/$/, '');
-  for (const raw of plain(log).split('\n')) {
+  // A file URI adds a slash before a drive-letter root (file:///D:/...) but not before a POSIX one (file:///Users/...).
+  // Windows drive letters are case-insensitive, and tools differ in which case they print.
+  const rootPattern = regExpLiteral(root).replace(/^([A-Za-z]):/, (_, drive) => `[${drive.toUpperCase()}${drive.toLowerCase()}]:`);
+  const rootUri = new RegExp(`file:///?${rootPattern}/`, 'g');
+  const rootPath = new RegExp(`${rootPattern}/`, 'g');
+  for (const logged of plain(log).split('\n')) {
+    const raw = logged.replace(kotlinRunnerPrefix, '');
     const header = raw.match(/^> (Configure project|Task) (:\S*)/);
     if (header) {
       flush();
@@ -164,7 +176,8 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
       }
     }
     if (!line) flush();
-    const compiler = /^(?:w: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
+    // Kotlin "e:" lines normally fail the command too; a non-fatal one must still be seen.
+    const compiler = /^(?:[we]: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
     // KGP logs this warning without a severity prefix. Its own lock can make a
     // fresh distribution nonempty; retain the warning without guessing contents
     // or attributing an asynchronous emitter to the most recent task header.
@@ -187,8 +200,8 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     const warning = /\b(?:has been|have been|is|are) deprecated\b|^Deprecated Gradle features were used|\b(?:warning:|WARNING:|WARN:)|^WARN(?:ING)?(?:\s|:)|^\[WARN(?:ING)?\]|^⚠/.test(line);
     if (!compiler && !warning) continue;
     const normalized = line.replaceAll('\\', '/')
-      .replaceAll(`file://${root}/`, '')
-      .replaceAll(`${root}/`, '')
+      .replace(rootUri, '')
+      .replace(rootPath, '')
       .replace(/\s+/g, ' ');
     flush();
     pending = { context, message: normalized };

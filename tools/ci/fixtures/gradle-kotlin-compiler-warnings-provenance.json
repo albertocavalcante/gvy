@@ -1,0 +1,36 @@
+{
+  "kind": "selective-kotlin-compiler-warning-traces",
+  "sourceHead": "7c8f2927e2857436f3864445f0e80faf1ae1a037",
+  "runId": "45874396275",
+  "runAttempt": 1,
+  "limits": [
+    "Selective real traces, not complete command evidence or a fresh validation of the landed tree.",
+    "The fixture keeps both compile task headers, every compiler warning they printed and the neighboring lines, byte for byte, including the Build Tools API runner prefix and the runner checkout path.",
+    "Cached compile tasks print no warnings, so these traces show only the tasks this cold run executed."
+  ],
+  "fixtures": [
+    {
+      "file": "gradle-kotlin-compiler-warnings.txt",
+      "sha256": "5c7629e7a65527198bb2d32ba3da6b3b809428145496435fd1fe98120b412481",
+      "producer": "unit",
+      "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/45874396275/job/140098292597",
+      "image": "macos-15",
+      "rawLogBytes": 4706613,
+      "rawLogSha256": "3ef1bca5c113e9393941543d023c72a8c01425aa74d3f159e4e82ffc8dd62dfb",
+      "excerpts": [
+        {
+          "rawLogStartLine": 2146,
+          "rawLogEndLine": 2155,
+          "task": ":indexer:scip:compileKotlin",
+          "warnings": 5
+        },
+        {
+          "rawLogStartLine": 2476,
+          "rawLogEndLine": 2485,
+          "task": ":gls:compileTestKotlin",
+          "warnings": 3
+        }
+      ]
+    }
+  ]
+}

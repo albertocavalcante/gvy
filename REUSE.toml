@@ -373,6 +373,8 @@ path = [
   "tools/ci/bazel-diagnostics.json",
   "tools/ci/check-gradle-diagnostics.schema.json",
   "tools/ci/dependency-maintenance.json",
+  "tools/ci/fixtures/gradle-kotlin-compiler-warnings-provenance.json",
+  "tools/ci/fixtures/gradle-kotlin-compiler-warnings.txt",
   "tools/ci/fixtures/gradle-native-codec-consumers-provenance.json",
   "tools/ci/fixtures/gradle-native-codec-consumers.txt",
   "tools/ci/fixtures/gradle-native-linux-x64.txt",

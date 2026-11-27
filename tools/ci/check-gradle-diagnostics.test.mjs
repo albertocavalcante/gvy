@@ -787,6 +787,64 @@ test('accepted Wire diagnostics cannot hide the captured command failure, captur
   assert.match(expired.errors.join('\n'), /Expired exception/);
 });
 
+// Since the Build Tools API runner (#2456), the compiler prints `[KOTLIN] w: file:///<checkout>/...`. These are the
+// real lines of a cold macOS unit run: the five generated Wire warnings and three first-party test warnings.
+const compilerRoot = '/Users/runner/work/gvy/gvy';
+const compilerLog = readFileSync(new URL('./fixtures/gradle-kotlin-compiler-warnings.txt', import.meta.url), 'utf8');
+const firstPartyCompilerDiagnostics = [
+  "[task :gls:compileTestKotlin] w: gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/compilation/SnapshotAcquisitionTest.kt:148:55 Unnecessary safe call on a non-null receiver of type 'Exception'.",
+  "[task :gls:compileTestKotlin] w: gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/services/CodeLensDeliveryTest.kt:46:40 The corresponding parameter in the supertype 'TestFrameworkDetector' is named 'classNode'. This may cause problems when calling this function with named arguments.",
+  "[task :gls:compileTestKotlin] w: gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/services/CodeLensDeliveryTest.kt:46:78 The corresponding parameter in the supertype 'TestFrameworkDetector' is named 'classLoader'. This may cause problems when calling this function with named arguments.",
+];
+
+test('compiler warnings from the Build Tools API runner bind to their source job and keep task, path, line and message', () => {
+  const provenance = JSON.parse(readFileSync(new URL('./fixtures/gradle-kotlin-compiler-warnings-provenance.json', import.meta.url)));
+  assert.equal(provenance.sourceHead, '7c8f2927e2857436f3864445f0e80faf1ae1a037');
+  assert.equal(provenance.runId, '45874396275');
+  assert.equal(provenance.runAttempt, 1);
+  const [fixture] = provenance.fixtures;
+  assert.equal(createHash('sha256').update(compilerLog).digest('hex'), fixture.sha256);
+  assert.equal(compilerLog.match(/^\[KOTLIN\] w: file:\/\/\//gm).length, fixture.excerpts.reduce((sum, excerpt) => sum + excerpt.warnings, 0));
+  assert.equal(compilerLog.includes('BUILD SUCCESSFUL'), false, 'selective traces do not invent command completion');
+  assert.deepEqual(collectDiagnostics(compilerLog, { rootDir: compilerRoot }), [...firstPartyCompilerDiagnostics, ...wireDiagnostics].sort());
+});
+
+test('generated Wire compiler warnings match their debt again, and first-party compiler warnings fail', () => {
+  const result = check(`${compilerLog}BUILD SUCCESSFUL in 1s\n`, { rootDir: compilerRoot, exceptions: gradleExceptions() });
+  assert.equal(result.complete, true);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.accepted.map(entry => entry.diagnostic), wireDiagnostics);
+  assert.deepEqual(result.unexpected, firstPartyCompilerDiagnostics);
+  const generatedOnly = compilerLog.split('\n').filter(line => !line.includes('/gls/src/test/')).join('\n');
+  assert.equal(check(`${generatedOnly}BUILD SUCCESSFUL in 1s\n`, { rootDir: compilerRoot, exceptions: gradleExceptions() }).ok, true);
+});
+
+test('compiler warning identities do not depend on the checkout path, host or compiler runner', () => {
+  const expected = collectDiagnostics(compilerLog, { rootDir: compilerRoot });
+  const variants = [
+    ['Linux checkout', compilerLog.replaceAll(compilerRoot, '/home/runner/work/gvy/gvy'), '/home/runner/work/gvy/gvy'],
+    ['Windows checkout', compilerLog.replaceAll(`file://${compilerRoot}`, 'file:///D:/a/gvy/gvy'), 'D:\\a\\gvy\\gvy'],
+    ['lower-case drive in the log', compilerLog.replaceAll(`file://${compilerRoot}`, 'file:///d:/a/gvy/gvy'), 'D:\\a\\gvy\\gvy'],
+    ['lower-case drive in the checkout', compilerLog.replaceAll(`file://${compilerRoot}`, 'file:///D:/a/gvy/gvy'), 'd:\\a\\gvy\\gvy'],
+    ['lower-case drive in a plain path', compilerLog.replaceAll(`file://${compilerRoot}/`, 'd:/a/gvy/gvy/'), 'D:\\a\\gvy\\gvy'],
+    ['daemon or plain runner', compilerLog.replaceAll('[KOTLIN] w: ', 'w: '), compilerRoot],
+    ['plain absolute path', compilerLog.replaceAll(`file://${compilerRoot}/`, `${compilerRoot}/`), compilerRoot],
+  ];
+  for (const [name, log, rootDir] of variants) assert.deepEqual(collectDiagnostics(log, { rootDir }), expected, name);
+  // Another checkout's path is not stripped, so the warning stays unexpected and names where it came from.
+  const foreign = collectDiagnostics(compilerLog, { rootDir: '/Users/runner/work/other/other' });
+  assert.equal(foreign.length, expected.length);
+  assert.ok(foreign.every(line => line.includes('file:///Users/runner/work/gvy/gvy/')));
+  assert.equal(evaluate(foreign, gradleExceptions(), now).accepted.length, 0);
+});
+
+test('a compiler error line is a diagnostic even when the command does not fail', () => {
+  const log = `> Task :gls:compileKotlin\n[KOTLIN] e: file://${compilerRoot}/gls/src/main/kotlin/Foo.kt:3:4 Unresolved reference 'bar'.\nBUILD SUCCESSFUL in 1s\n`;
+  const result = check(log, { rootDir: compilerRoot, exceptions: gradleExceptions() });
+  assert.deepEqual(result.unexpected, ["[task :gls:compileKotlin] e: gls/src/main/kotlin/Foo.kt:3:4 Unresolved reference 'bar'."]);
+  assert.equal(result.ok, false);
+});
+
 test('CLI always publishes structured evidence and a raw copy, including warnings on failure', t => {
   const dir = mkdtempSync(join(tmpdir(), 'gvy-gradle-diagnostics-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
