@@ -25,10 +25,10 @@
 // It does not see the root build.gradle.kts, which configures detekt for every module; Kotlin build logic in .kt files
 // (buildSrc, included builds, convention plugins; gvy has none); Gradle code that reaches detekt without naming it or
 // unhooks `lint` from it; Groovy and init scripts, gradle.properties and flags such as `-x detekt`; RegexInFunctionBody
-// suppressions, which need only a comment; or a suppression by a rule ID alias (concurrencySuppression writes the IDs
-// out). Kotlin outside src/main and src/test, such as tests/e2e, is not linted unless its module sets detekt.source
-// (#2480). Every git call runs without the variables that point git at another repository, index, work tree or object
-// store.
+// suppressions, which need only a comment; a suppression by a rule ID alias (concurrencySuppression writes the IDs
+// out); or a test-set exclude spelled with a glob class or partial name, such as `**/*[Tt]est/**`. Kotlin outside
+// src/main and src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480). Every git call
+// runs without the variables that point git at another repository, index, work tree or object store.
 
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -77,12 +77,13 @@ const defaultTestLenient = [
   'SpreadOperator', 'LateinitUsage', 'UnsafeCallOnNullableType', 'MagicNumber',
 ];
 
-// Whether an exclude pattern reaches a test source set other than `test`: one of its folders, the file name aside,
-// mentions "test" in any case (`**/commonTest/**`, `**/*Test/**`, `**/{common,jvm}Test/**`, `**/jvmTest/**/*.kt`) and
-// is not exactly `test`.
+// Whether an exclude pattern reaches test code beyond `test`: one of its folders, the file name aside, is not exactly
+// `test` and holds "test" at its start or after a non-letter, in any case (`tests`, `testFixtures`, `test-utils`,
+// `_test`), or a capitalised `Test` anywhere (`commonTest`, `*Test`, `{common,jvm}Test`). `attestation` and `latest`
+// do not. Glob classes and partial names, such as `*[Tt]est` or `jvmTe*`, are not seen (#2474).
 const reachesTestSet = pattern =>
   pattern.split('/').filter((folder, index, folders) => index < folders.length - 1 || !folder.includes('.'))
-    .some(folder => /test/i.test(folder) && folder !== 'test');
+    .some(folder => folder !== 'test' && (/(?:^|[^a-z])test/i.test(folder) || /Test/.test(folder)));
 
 // The environment for git calls on a scratch repository: no global or system config, so the user's settings (hooks,
 // signing, templates) cannot reach it. The real checkout keeps them, since CI may need safe.directory from there.
@@ -569,7 +570,9 @@ test('only rules that detekt makes lenient on tests by default exclude a multipl
   for (const pattern of reaching) {
     assert.equal(reachesTestSet(pattern), true, pattern);
   }
-  for (const pattern of ['**/test/**', '**/test/**/*Test.kt', '**/dsl/**', '**/src/main/**']) {
+  const extending = ['**/testFixtures/**', '**/test-utils/**', '**/tests/e2e/**', '**/ext/testing/**', '**/_test/**'];
+  for (const pattern of extending) assert.equal(reachesTestSet(pattern), true, pattern);
+  for (const pattern of ['**/test/**', '**/test/**/*Test.kt', '**/dsl/**', '**/attestation/**', '**/latest/**']) {
     assert.equal(reachesTestSet(pattern), false, pattern);
   }
   // detekt.yml replaces a rule's default excludes, so it names `**/commonTest/**` and `**/jvmTest/**` where detekt's

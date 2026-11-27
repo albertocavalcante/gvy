@@ -236,16 +236,19 @@ elsewhere (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_
   `detekt { source.setFrom(fileTree("src") { include("**/*.kt") }) }`;
 - a rule's `excludes` uses a style the guard cannot read (it reads a block list of quoted entries, a one-line flow list,
   and a quoted string that detekt splits at commas and semicolons);
-- a built-in rule excludes a pattern that reaches a test source set other than `test` (one of its folders mentions
-  "test" in any case, as in `**/commonTest/**` or `**/*Test/**`) although detekt's default config does not exempt that
-  rule from every test source set, or a main source path holds a folder named like a test source set.
+- a built-in rule excludes a pattern that reaches test code beyond `test` although detekt's default config does not
+  exempt that rule from every test source set. A pattern does when one of its folders, other than exactly `test`, holds
+  "test" at its start or after a non-letter in any case (`tests`, `testFixtures`, `test-utils`), or a capitalised `Test`
+  (`commonTest`, `*Test`); `attestation` and `latest` do not. The guard also fails when a main source path holds a
+  folder named like a test source set.
 
 It does not see the root `build.gradle.kts`, which configures detekt for every module; Kotlin build logic in `.kt`
 files, such as `buildSrc`, included builds or convention plugins (gvy has none); Gradle code that reaches detekt without
 naming it, or that unhooks `lint` from detekt; Groovy scripts, init scripts, `gradle.properties` and command-line flags
 such as `-x detekt`; `RegexInFunctionBody` suppressions, which need only a comment; and a suppression by a rule ID
-alias, since the guard writes the IDs out and none of these rules has an alias. It does not require test leniency
-either: a rule may drop a test-source exclude.
+alias, since the guard writes the IDs out and none of these rules has an alias. Nor does it see a test-set exclude
+spelled with a glob class or a partial name, such as `**/*[Tt]est/**`, `**/jvmTe*/**`, `**/*Tes?/**` or
+`**/{common,jvm}T*/**`. It does not require test leniency either: a rule may drop a test-source exclude.
 
 ## Conventions
 
