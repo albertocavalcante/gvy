@@ -523,6 +523,24 @@ test('shared Kotlin plugin call sites keep their identity when another Kotlin pr
   }
 });
 
+// :build-tool is the first subproject to apply both the Kotlin JVM plugin and Kover, so it owns their shared call sites.
+// A new project that sorts and configures before it, such as :analysis, would take them over.
+test('shared Kotlin plugin and Kover call sites keep their identity when another JVM project configures first', () => {
+  const exceptions = gradleExceptions();
+  const log = readFileSync(new URL('./fixtures/gradle-plugin-origins.txt', import.meta.url), 'utf8');
+  const header = '> Configure project :build-tool\n';
+  assert.ok(log.includes(header));
+  const expected = collectDiagnostics(log);
+  const flipped = collectDiagnostics(log.replace(header, '> Configure project :analysis\n').replace('> Configure project :gls\n', `${header}> Configure project :gls\n`));
+  assert.deepEqual(flipped, expected);
+  assert.equal(flipped.some(line => /^\[project :(?:analysis|build-tool)\] /.test(line)), false);
+  for (const diagnostics of [expected, flipped]) {
+    const result = evaluate(diagnostics, exceptions, now);
+    assert.deepEqual(result.unexpected, []);
+    assert.equal(result.accepted.length, diagnostics.length);
+  }
+});
+
 test('Native debt has fourteen exact identities and rejects changed types, messages, origins and call sites', () => {
   const exceptions = gradleExceptions();
   const diagnostics = [...new Set(nativeLogs.flatMap(log => collectDiagnostics(log)))].sort();
