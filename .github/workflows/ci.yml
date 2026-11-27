@@ -822,7 +822,7 @@ jobs:
     needs: build
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     strategy:
@@ -882,6 +882,7 @@ jobs:
 
       - name: Install pinned startup stats toolchain
         if: ${{ matrix.os == 'ubuntu-24.04' }}
+        shell: bash
         run: |
           python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
           uv sync --locked --project .reuse
@@ -905,7 +906,7 @@ jobs:
           GVY_REQUIRE_REAL_SERVER: '1'
         run: |
           set -euo pipefail
-          jar=$(find dist -name '*.jar' -type f | head -1)
+          jar=$(find dist -name '*.jar' -type f -print -quit)
           if [[ -z "$jar" ]]; then
             echo "::error::No JAR file found in dist/"
             exit 1

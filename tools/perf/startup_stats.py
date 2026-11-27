@@ -78,6 +78,7 @@ RUNTIME_FACTS_WAIT_S = 5.0
 DEFAULT_RUNS = 5
 MAX_RUNS = 100
 DEFAULT_TIMEOUT_S = 600.0
+MAX_TIMEOUT_S = 86400.0
 DEFAULT_POLL_INTERVAL_MS = 1000
 _CONTENT_LENGTH = re.compile(
     rb"^content-length:\s*([0-9]{1,12})\s*$", re.IGNORECASE | re.MULTILINE
@@ -154,10 +155,12 @@ class FrameDecoder:
             if len(self._buffer) > MAX_HEADER_BYTES:
                 raise FrameError("header too long")
             return None
-        match = _CONTENT_LENGTH.search(bytes(self._buffer[:header_end]))
-        if match is None:
-            raise FrameError("missing Content-Length")
-        length = int(match.group(1))
+        if header_end > MAX_HEADER_BYTES:
+            raise FrameError("header too long")
+        lengths = list(_CONTENT_LENGTH.finditer(bytes(self._buffer[:header_end])))
+        if len(lengths) != 1:
+            raise FrameError("expected exactly one Content-Length")
+        length = int(lengths[0].group(1))
         if length > MAX_FRAME_BYTES:
             raise FrameError("frame over the size cap")
         body_start = header_end + 4
@@ -320,6 +323,7 @@ def _phase_summary(name: str, repeats: Sequence[RunResult]) -> JsonObject:
         if (
             entry is not None
             and entry.get("status") == "completed"
+            and _is_int(duration)
             and isinstance(duration, int)
         ):
             durations.append(duration)
@@ -356,16 +360,22 @@ def summarize(runs: Sequence[RunResult]) -> JsonObject:
     }
 
 
-def _identity_key(run: RunResult) -> str:
-    build = run.server_stats.get("build") if run.server_stats is not None else None
-    return json.dumps([build, run.runtime], sort_keys=True)
-
-
 def runs_agree_on_identity(runs: Sequence[RunResult]) -> bool:
-    """True when every run that returned stats reports the same build stamp and runtime identity."""
-    return (
-        len({_identity_key(run) for run in runs if run.server_stats is not None}) <= 1
-    )
+    """True when the runs that reported a build stamp agree on it, and the runs that reported runtime facts agree.
+
+    A run without stats or without runtime facts (for example after a timeout) takes no part in that comparison.
+    """
+    builds = {
+        json.dumps(run.server_stats.get("build"), sort_keys=True)
+        for run in runs
+        if run.server_stats is not None
+    }
+    runtimes = {
+        json.dumps(run.runtime, sort_keys=True)
+        for run in runs
+        if run.runtime is not None
+    }
+    return len(builds) <= 1 and len(runtimes) <= 1
 
 
 # --- IO: child process and session -----------------------------------------------------------------------------------
@@ -628,7 +638,7 @@ class _Session:
 def _stop(process: subprocess.Popen[bytes], asked_to_exit: bool) -> Shutdown:
     """Wait for our own child to exit; if it does not, escalate TERM then KILL on that child alone."""
     try:
-        _ = process.wait(timeout=EXIT_GRACE_S if asked_to_exit else 0)
+        _ = process.wait(timeout=EXIT_GRACE_S if asked_to_exit else 1.0)
         return "clean" if asked_to_exit else "exited"
     except subprocess.TimeoutExpired:
         pass
@@ -835,8 +845,8 @@ def _validated_arguments(
         parser.error(f"--label must match {LABEL_PATTERN.pattern}")
     if not 1 <= args.runs <= MAX_RUNS:
         parser.error(f"--runs must be between 1 and {MAX_RUNS}")
-    if args.timeout_seconds <= 0 or args.poll_interval_ms <= 0:
-        parser.error("--timeout-seconds and --poll-interval-ms must be positive")
+    if not 0 < args.timeout_seconds <= MAX_TIMEOUT_S or args.poll_interval_ms <= 0:
+        parser.error("--timeout-seconds or --poll-interval-ms is out of range")
     if not args.jar.is_file():
         parser.error("--jar is not a file")
     if not args.workspace.is_dir():

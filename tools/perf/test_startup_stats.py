@@ -9,7 +9,7 @@ import re
 import sys
 import tempfile
 import unittest
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from tools.perf import startup_stats
@@ -252,6 +252,27 @@ class SummarizeTest(unittest.TestCase):
         )
 
 
+class IdentityAgreementTest(unittest.TestCase):
+    def test_missing_runtime_facts_do_not_count_as_disagreement(self) -> None:
+        with_runtime = replace(
+            run_with(1, 5, ("completed", 1)), runtime={"javaFeature": 17}
+        )
+        without_runtime = run_with(2, 6, ("completed", 1))
+        self.assertTrue(
+            startup_stats.runs_agree_on_identity([with_runtime, without_runtime])
+        )
+
+    def test_different_runtime_or_build_is_a_disagreement(self) -> None:
+        first = replace(run_with(1, 5, ("completed", 1)), runtime={"javaFeature": 17})
+        other_runtime = replace(first, runtime={"javaFeature": 21})
+        self.assertFalse(startup_stats.runs_agree_on_identity([first, other_runtime]))
+        other_build = replace(
+            first,
+            server_stats={"schemaVersion": 1, "build": {"versionState": "unknown"}},
+        )
+        self.assertFalse(startup_stats.runs_agree_on_identity([first, other_build]))
+
+
 class JvmFlagsTest(unittest.TestCase):
     def test_flags_equal_the_editor_defaults(self) -> None:
         source = LAUNCH_ARGS_TS.read_text(encoding="utf-8")
@@ -293,6 +314,15 @@ class FramingTest(unittest.TestCase):
         )
         with self.assertRaises(startup_stats.FrameError):
             _ = startup_stats.FrameDecoder().feed(header)
+
+    def test_rejects_duplicate_length_and_oversized_header(self) -> None:
+        with self.assertRaises(startup_stats.FrameError):
+            _ = startup_stats.FrameDecoder().feed(
+                b"Content-Length: 1\r\nContent-Length: 2\r\n\r\n{}"
+            )
+        long_header = b"X: " + b"a" * 2000 + b"\r\nContent-Length: 2\r\n\r\n{}"
+        with self.assertRaises(startup_stats.FrameError):
+            _ = startup_stats.FrameDecoder().feed(long_header)
 
     def test_rejects_missing_length_and_non_object_body(self) -> None:
         with self.assertRaises(startup_stats.FrameError):

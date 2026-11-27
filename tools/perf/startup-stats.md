@@ -61,7 +61,7 @@ python3 tools/perf/startup_stats.py \
 | `--runs`             | 5        | Fresh server processes to start, one after another, 1 to 100.                 |
 | `--label`            | required | A token for the workspace, matching `^[a-z0-9][a-z0-9._-]{0,63}$`.            |
 | `--output`           | required | The JSON file to create. It must not exist; the tool never overwrites a file. |
-| `--timeout-seconds`  | 600      | Per-run limit.                                                                |
+| `--timeout-seconds`  | 600      | Per-run limit, up to 86400. Shutdown after a timeout can add up to 15 s.      |
 | `--poll-interval-ms` | 1000     | Interval between `groovy/serverStats` polls.                                  |
 
 Exit status: 0 when every run settled; 1 when a run did not settle (the file is still written), when the runs disagree
