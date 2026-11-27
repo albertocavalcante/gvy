@@ -131,6 +131,30 @@ class GroovyGdkProviderIndexBuildTest {
     }
 
     @Test
+    fun `a lookup reads one index even when the classpath changes during it`() {
+        val complete = GroovyGdkProvider(ClasspathService()).getMethodsForType(STRING)
+        lateinit var provider: GroovyGdkProvider
+        var classpathHasHeld = true
+        val swapping = object : ClasspathReflection by delegate {
+            override fun loadClass(className: String): Class<*>? {
+                // A lookup loads its receiver after reading the receiver's entries and before its supertypes'
+                if (className == STRING && classpathHasHeld) {
+                    classpathHasHeld = false
+                    provider.onClasspathChanged()
+                }
+                return if (className == HELD && !classpathHasHeld) null else delegate.loadClass(className)
+            }
+        }
+        provider = GroovyGdkProvider(ClasspathService(reflectionProvider = swapping))
+        provider.initialize()
+
+        assertThat(provider.getMethodsForType(STRING)).containsExactlyInAnyOrderElementsOf(complete)
+        assertThat(provider.getMethodsForType(STRING).map { it.originClass })
+            .describedAs("the index the change installed, built without $HELD")
+            .doesNotContain("StringGroovyMethods")
+    }
+
+    @Test
     fun `a GDK class that fails to link drops only itself`() {
         val bytes = gdkClassBytes(UNLINKABLE, "broken", "(Ljava/lang/String;Lgvy/test/Missing;)V")
         val unlinkable = OneClassLoader(UNLINKABLE, bytes).loadClass(UNLINKABLE)
