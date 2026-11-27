@@ -369,7 +369,7 @@ class GroovyLanguageServer(
      * its future cannot cancel the run or disturb another caller (including the parent watchdog).
      */
     override fun shutdown(): CompletableFuture<Any?> {
-        shutdownStarted.trySet() // One-way; shutdownRun below already does the work only once.
+        shutdownStarted.set()
         return shutdownRun.copy()
     }
 
