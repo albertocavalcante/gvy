@@ -18,6 +18,7 @@ internal sealed interface ResourceClass {
 /** Maps archive resource paths to classes. Pure; the rules are in the design of the builder. */
 internal object ResourcePaths {
     /** Classifies [path]; this first version reads nothing, so that the tests can fail before the rules exist. */
+    @Suppress("UNUSED_PARAMETER")
     fun classify(path: String): ResourceClass = ResourceClass.NotAClass
 
     /** Whether [name] can be the internal name of a class. */
