@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.jvm.facts.builder
 
 import com.github.albertocavalcante.gvy.jvm.facts.FactsFormat
 import org.junit.jupiter.api.Test
+import org.objectweb.asm.ByteVector
 import org.objectweb.asm.Opcodes
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -134,5 +135,30 @@ class ClassFlagsAndNestingTest {
             )
         }
         assertFalse(extractRead(classFile("p/Top"), "p/Top").visibilityDisagreement)
+    }
+
+    @Test
+    fun `uses the first InnerClasses entry when a class lists itself twice`() {
+        // ClassWriter drops a repeated entry, so the attribute is written by hand.
+        val bytes = classFile(NESTED) {
+            rawAttribute("InnerClasses") { writer ->
+                ByteVector()
+                    .putShort(2)
+                    .putShort(writer.newClass(NESTED))
+                    .putShort(writer.newClass("p/Outer"))
+                    .putShort(writer.newUTF8("In"))
+                    .putShort(Opcodes.ACC_PROTECTED or Opcodes.ACC_STATIC)
+                    .putShort(writer.newClass(NESTED))
+                    .putShort(writer.newClass("p/Other"))
+                    .putShort(writer.newUTF8("Second"))
+                    .putShort(Opcodes.ACC_PRIVATE)
+            }
+        }
+
+        val fact = extractRead(bytes, NESTED).fact
+
+        assertEquals(0x000C, fact.accessFlags)
+        assertEquals("In", fact.simpleName)
+        assertEquals("p/Outer", fact.outerClass)
     }
 }

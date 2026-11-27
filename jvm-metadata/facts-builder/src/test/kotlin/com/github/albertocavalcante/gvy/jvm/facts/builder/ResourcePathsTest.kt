@@ -83,4 +83,25 @@ class ResourcePathsTest {
             assertEquals(ResourceClass.Skip(SkipReason.INVALID_NAME), ResourcePaths.classify(path), path)
         }
     }
+
+    @Test
+    fun `checks descriptor file names before the release`() {
+        for (path in listOf("META-INF/versions/0/module-info.class", "META-INF/versions/x/p/package-info.class")) {
+            assertEquals(ResourceClass.NotAClass, ResourcePaths.classify(path), path)
+        }
+    }
+
+    @Test
+    fun `rejects internal names that cannot be stored`() {
+        val tooLong = "a".repeat(FactsFormat.MAX_STRING_BYTES + 1)
+        assertFalse(ResourcePaths.isValidInternalName(tooLong))
+        assertTrue(ResourcePaths.isValidInternalName("a".repeat(FactsFormat.MAX_STRING_BYTES)))
+        assertFalse(ResourcePaths.isValidInternalName("p/\uD800A"))
+        assertEquals(ResourceClass.Skip(SkipReason.INVALID_NAME), ResourcePaths.classify("$tooLong.class"))
+        assertEquals(ResourceClass.Skip(SkipReason.INVALID_NAME), ResourcePaths.classify("p/\uDC00A.class"))
+        assertEquals(
+            ResourceClass.Skip(SkipReason.INVALID_NAME),
+            ResourcePaths.classify("META-INF/versions/9/p/\uD800A.class"),
+        )
+    }
 }

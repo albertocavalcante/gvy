@@ -3,6 +3,9 @@
 
 package com.github.albertocavalcante.gvy.jvm.facts.builder
 
+/** Whether this string can be stored in a facts file; the stub accepts everything until the rule exists. */
+internal fun String.isStorable(): Boolean = true
+
 /** Whether this string can be written to a facts file, which accepts only well-formed UTF-16. */
 internal fun String.isWellFormedUtf16(): Boolean {
     var index = 0

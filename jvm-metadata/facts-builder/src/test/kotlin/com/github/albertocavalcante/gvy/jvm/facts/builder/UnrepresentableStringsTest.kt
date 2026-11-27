@@ -3,20 +3,11 @@
 
 package com.github.albertocavalcante.gvy.jvm.facts.builder
 
-import com.github.albertocavalcante.gvy.jvm.facts.ExtensionsSection
-import com.github.albertocavalcante.gvy.jvm.facts.Facts
 import com.github.albertocavalcante.gvy.jvm.facts.FactsFile
-import com.github.albertocavalcante.gvy.jvm.facts.FactsHeader
 import com.github.albertocavalcante.gvy.jvm.facts.FactsWriter
-import com.github.albertocavalcante.gvy.jvm.facts.InputKind
 import com.github.albertocavalcante.gvy.jvm.facts.LoadResult
-import com.github.albertocavalcante.gvy.jvm.facts.NamesSection
-import com.github.albertocavalcante.gvy.jvm.facts.PackageFact
-import com.github.albertocavalcante.gvy.jvm.facts.Sha256
-import com.github.albertocavalcante.gvy.jvm.facts.TypesSection
 import org.junit.jupiter.api.Test
 import org.objectweb.asm.Opcodes
-import java.security.MessageDigest
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -104,7 +95,8 @@ class UnrepresentableStringsTest {
 
         assertNull(read.fact.outerClass)
         assertEquals("B", read.fact.simpleName)
-        assertTrue(read.typesOmitted)
+        assertTrue(read.outerClassCleared)
+        assertFalse(read.typesOmitted)
         assertEquals(listOf("run"), read.members().map { it.name })
     }
 
@@ -121,13 +113,7 @@ class UnrepresentableStringsTest {
         val bytes = classFile(className) { method(PUBLIC, "a\u0000b", "()V") }
 
         val read = extractRead(bytes, className)
-        val digest = Sha256.of(MessageDigest.getInstance("SHA-256").digest(bytes))
-        val facts = Facts(
-            header = FactsHeader("test", InputKind.JAR, null, digest, bytes.size.toLong()),
-            names = NamesSection(listOf(PackageFact("p", null)), listOf(read.fact)),
-            types = TypesSection(listOfNotNull(read.types)),
-            extensions = ExtensionsSection(emptyList()),
-        )
+        val facts = factsOf(read, bytes)
         val file = assertIs<LoadResult.Loaded<*>>(FactsFile.open(FactsWriter.write(facts))).value
         val loaded = assertIs<LoadResult.Loaded<*>>(assertIs<FactsFile>(file).loadAll()).value
 
@@ -135,4 +121,76 @@ class UnrepresentableStringsTest {
         assertEquals(className, read.fact.internalName)
         assertEquals("a\u0000b", read.member("a\u0000b").name)
     }
+
+    @Test
+    fun `drops a member name that ASM decodes past the end of its constant`() {
+        // A 65,535-byte constant ending in a lead byte: ASM reads the next bytes to finish the character, so the
+        // string it returns needs more than the 65,535 bytes the facts format allows.
+        for (lead in listOf(OVERRUN_LEAD_3, OVERRUN_LEAD_2)) {
+            val bytes = overrunning(lead) { name -> method(PUBLIC, name, "()V") }
+
+            val read = extractRead(bytes, "p/A")
+
+            assertEquals(0, read.members().size, "lead 0x${lead.toString(16)}")
+            assertEquals(1, read.droppedMembers)
+            FactsWriter.write(factsOf(read, bytes))
+        }
+    }
+
+    @Test
+    fun `drops a signature and parameter names that ASM decodes past the end of their constants`() {
+        val signature = overrunning(OVERRUN_LEAD_3) { name -> method(PUBLIC, "run", "()V", name) }
+        val parameter = overrunning(OVERRUN_LEAD_2) { name ->
+            method(PUBLIC, "run", "(I)V") { parameters = listOf(name) }
+        }
+
+        val withSignature = extractRead(signature, "p/A", includeGenericSignatures = true)
+        val withParameter = extractRead(parameter, "p/A")
+
+        assertNull(withSignature.member("run").genericSignature)
+        assertEquals(1, withSignature.droppedSignatures)
+        assertNull(withParameter.member("run").parameterNames)
+        assertEquals(1, withParameter.droppedParameterNames)
+        FactsWriter.write(factsOf(withSignature, signature))
+        FactsWriter.write(factsOf(withParameter, parameter))
+    }
+
+    @Test
+    fun `omits types and clears names that ASM decodes past the end of their constants`() {
+        val supertype = overrunning(OVERRUN_LEAD_3) { name -> superName = name }
+        val outer = overrunning(OVERRUN_LEAD_2, "p/A\$B") { name -> innerClass("p/A\$B", name, "B", 0) }
+        val inner = overrunning(OVERRUN_LEAD_3, "p/A\$B") { name -> innerClass("p/A\$B", "p/A", name, 0) }
+
+        val superRead = extractRead(supertype, "p/A")
+        val outerRead = extractRead(outer, "p/A\$B")
+        val innerRead = extractRead(inner, "p/A\$B")
+
+        assertNull(superRead.types)
+        assertTrue(superRead.typesOmitted)
+        assertNull(outerRead.fact.outerClass)
+        assertTrue(outerRead.outerClassCleared)
+        assertEquals("A\$B", innerRead.fact.simpleName)
+        for ((read, bytes) in listOf(superRead to supertype, outerRead to outer, innerRead to inner)) {
+            FactsWriter.write(factsOf(read, bytes))
+        }
+    }
 }
+
+private const val OVERRUN_LEAD_3 = 0xE4
+private const val OVERRUN_LEAD_2 = 0xC2
+private const val MAX_UTF8 = 65_535
+
+/**
+ * A class [name] built by [configure], which is given a name of [MAX_UTF8] ASCII letters; the last byte of that
+ * constant is then replaced by [lead], the first byte of a character that continues past the constant.
+ */
+private fun overrunning(lead: Int, name: String = "p/A", configure: ClassBuilder.(String) -> Unit): ByteArray {
+    val letters = "a".repeat(MAX_UTF8)
+    val bytes = classFile(name) { configure(letters) }
+    val run = letters.toByteArray(Charsets.US_ASCII)
+    val start = (0..bytes.size - run.size).first { index -> matchesAt(bytes, run, index) }
+    return bytes.copyOf().also { patched -> patched[start + run.size - 1] = lead.toByte() }
+}
+
+private fun matchesAt(bytes: ByteArray, run: ByteArray, index: Int): Boolean =
+    run.indices.all { offset -> bytes[index + offset] == run[offset] }

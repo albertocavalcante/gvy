@@ -18,7 +18,8 @@ internal sealed interface Extraction {
      * A class that was read. [types] is null when a supertype name cannot be represented. [droppedMembers] counts
      * public or protected members left out; [droppedParameterNames] counts methods whose names were dropped because
      * one cannot be represented; [droppedSignatures] counts generic signatures that cannot be represented.
-     * [typesOmitted] is true when [types] was left out or the outer class was cleared for that reason.
+     * [typesOmitted] is true when [types] was left out because a supertype name cannot be represented, and
+     * [outerClassCleared] when the outer class was set to null because its name cannot be represented.
      * [visibilityDisagreement] is true for a nested class whose own flags and `InnerClasses` flags disagree on
      * whether the class is visible outside its package.
      */
@@ -29,6 +30,7 @@ internal sealed interface Extraction {
         val droppedParameterNames: Int,
         val droppedSignatures: Int,
         val typesOmitted: Boolean,
+        val outerClassCleared: Boolean,
         val visibilityDisagreement: Boolean,
     ) : Extraction
 
@@ -87,7 +89,8 @@ private fun parseInto(collector: ClassCollector, bytes: ByteArray): SkipReason? 
  * The newest class-file major version the ASM on the class path reads, found by probing it, so that the code does not
  * depend on the ASM version: Gradle and Bazel can resolve different ones.
  */
-private object NewestReadableMajor {
+internal object NewestReadableMajor {
+    /** The newest major version ASM reads; at least [Opcodes.V17], which every supported ASM reads. */
     val value: Int by lazy { probe() }
 
     private fun probe(): Int {
@@ -141,7 +144,8 @@ private fun assemble(collector: ClassCollector, release: Int, includeGenericSign
         droppedMembers = members.droppedMembers,
         droppedParameterNames = members.droppedParameterNames,
         droppedSignatures = members.droppedSignatures,
-        typesOmitted = !typesRepresentable || !outerRepresentable,
+        typesOmitted = !typesRepresentable,
+        outerClassCleared = !outerRepresentable,
         visibilityDisagreement = self != null && ownVisible(collector.access) != innerVisible(self.access),
     )
 }

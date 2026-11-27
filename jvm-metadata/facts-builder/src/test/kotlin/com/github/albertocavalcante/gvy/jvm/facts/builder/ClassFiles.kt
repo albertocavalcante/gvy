@@ -3,11 +3,22 @@
 
 package com.github.albertocavalcante.gvy.jvm.facts.builder
 
+import com.github.albertocavalcante.gvy.jvm.facts.ExtensionsSection
+import com.github.albertocavalcante.gvy.jvm.facts.Facts
+import com.github.albertocavalcante.gvy.jvm.facts.FactsHeader
+import com.github.albertocavalcante.gvy.jvm.facts.InputKind
 import com.github.albertocavalcante.gvy.jvm.facts.MemberFact
+import com.github.albertocavalcante.gvy.jvm.facts.NamesSection
+import com.github.albertocavalcante.gvy.jvm.facts.PackageFact
+import com.github.albertocavalcante.gvy.jvm.facts.Sha256
+import com.github.albertocavalcante.gvy.jvm.facts.TypesSection
+import org.objectweb.asm.Attribute
+import org.objectweb.asm.ByteVector
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Label
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes
+import java.security.MessageDigest
 import kotlin.test.assertIs
 
 internal const val PUBLIC_SUPER = Opcodes.ACC_PUBLIC or Opcodes.ACC_SUPER
@@ -15,6 +26,20 @@ internal const val DEPRECATED_ANNOTATION = "Ljava/lang/Deprecated;"
 
 /** How a class, field or method is marked deprecated in a fixture. */
 internal enum class Deprecation { NONE, ATTRIBUTE, ANNOTATION }
+
+/**
+ * An attribute whose bytes the fixture writes itself, for shapes that `ClassWriter` cannot produce. [content] may add
+ * constant-pool entries through the writer it is given.
+ */
+internal class RawAttribute(type: String, private val content: (ClassWriter) -> ByteVector) : Attribute(type) {
+    override fun write(
+        classWriter: ClassWriter,
+        code: ByteArray?,
+        codeLength: Int,
+        maxStack: Int,
+        maxLocals: Int,
+    ): ByteVector = content(classWriter)
+}
 
 /** What a fixture method carries besides its flags, name and descriptor. */
 internal class MethodOptions {
@@ -24,6 +49,7 @@ internal class MethodOptions {
     /** Writes a `Code` attribute whose `LocalVariableTable` holds these names. */
     var localVariables: List<String>? = null
     var deprecation: Deprecation = Deprecation.NONE
+    val rawAttributes = ArrayList<RawAttribute>()
 }
 
 /** Builds the bytes of a class file with ASM's `ClassWriter`, for the fixtures of the tests. */
@@ -36,6 +62,10 @@ internal class ClassBuilder {
 
     fun annotation(descriptor: String) {
         steps.add { writer -> writer.visitAnnotation(descriptor, true).visitEnd() }
+    }
+
+    fun rawAttribute(type: String, content: (ClassWriter) -> ByteVector) {
+        steps.add { writer -> writer.visitAttribute(RawAttribute(type, content)) }
     }
 
     fun enclosingMethod(owner: String) {
@@ -79,6 +109,7 @@ internal class ClassBuilder {
             if (options.deprecation == Deprecation.ANNOTATION) {
                 method.visitAnnotation(DEPRECATED_ANNOTATION, true).visitEnd()
             }
+            options.rawAttributes.forEach { attribute -> method.visitAttribute(attribute) }
             options.localVariables?.let { names -> writeLocalVariables(method, names) }
             method.visitEnd()
         }
@@ -132,3 +163,28 @@ internal fun Extraction.Read.members(): List<MemberFact> =
     checkNotNull(types) { "Expected the types to be kept" }.members
 
 internal fun Extraction.Read.member(name: String): MemberFact = members().single { it.name == name }
+
+/** A minimal model around [read], so a test can hand what the extractor produced to the real writer. */
+internal fun factsOf(read: Extraction.Read, bytes: ByteArray): Facts {
+    val digest = Sha256.of(MessageDigest.getInstance("SHA-256").digest(bytes))
+    return Facts(
+        header = FactsHeader("test", InputKind.JAR, null, digest, bytes.size.toLong()),
+        names = NamesSection(listOf(PackageFact(read.fact.packageName, null)), listOf(read.fact)),
+        types = TypesSection(listOfNotNull(read.types)),
+        extensions = ExtensionsSection(emptyList()),
+    )
+}
+
+/**
+ * A `RuntimeVisibleAnnotations` attribute with one annotation whose value is an array nested [depth] levels deep.
+ * ASM skips such a value recursively, even when no visitor wants it.
+ */
+internal fun nestedAnnotationAttribute(depth: Int): (ClassWriter) -> ByteVector = { writer ->
+    val bytes = ByteVector()
+        .putShort(1)
+        .putShort(writer.newUTF8("Lp/Ann;"))
+        .putShort(1)
+        .putShort(writer.newUTF8("v"))
+    repeat(depth) { bytes.putByte('['.code).putShort(1) }
+    bytes.putByte('['.code).putShort(0)
+}
