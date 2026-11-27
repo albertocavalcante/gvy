@@ -34,7 +34,9 @@ class DocumentationProviderTest {
         val documents = DocumentProvider()
         val provider = DocumentationProvider(documents)
         documents.put(uri, source("Greets in English."))
-        provider.getDocumentation(node, uri)
+        val english = DocExtractor.extractDocumentation(source("Greets in English."), node)
+        assertNotEquals(Documentation.EMPTY, english)
+        assertEquals(english, provider.getDocumentation(node, uri), "the open buffer has documentation")
 
         documents.remove(uri)
 

@@ -26,7 +26,8 @@ class DocumentationProvider(private val documentProvider: DocumentProvider) {
      */
     fun getDocumentation(node: ASTNode, documentUri: URI): Documentation {
         // Only annotated nodes with a line can be matched to a comment in the text
-        if ((node as? AnnotatedNode)?.lineNumber?.let { it > 0 } != true) return Documentation.EMPTY
+        val lineNumber = (node as? AnnotatedNode)?.lineNumber
+        if (lineNumber == null || lineNumber <= 0) return Documentation.EMPTY
         val text = documentProvider.get(documentUri) ?: return Documentation.EMPTY
         return DocExtractor.extractDocumentation(text, node)
     }
