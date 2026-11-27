@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.build.maven.MavenFailureAnalyzer
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -22,6 +23,7 @@ import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
@@ -57,6 +59,7 @@ class DependencyManager(
         val onProgress: ((Int, String) -> Unit)?,
         val onComplete: (WorkspaceResolution) -> Unit,
         val onError: ((Exception) -> Unit)?,
+        val onCancelled: (() -> Unit)? = null,
     )
 
     private data class Attempt(
@@ -64,7 +67,10 @@ class DependencyManager(
         val request: Request,
         val enableFileWatching: Boolean,
         val cancellation: ResolutionCancellation = ResolutionCancellation(),
-    )
+    ) {
+        /** Set under the manager's lock once this attempt ended its request: completed, failed or cancelled. */
+        val settled = OnceFlag()
+    }
 
     /** A watcher and the token its refreshes carry, published as one value so a reader sees both or neither. */
     private class InstalledWatcher(val watcher: BuildToolFileWatcher, val token: Any)
@@ -88,6 +94,11 @@ class DependencyManager(
     /**
      * Starts a new attempt after failure, or for a changed workspace.
      * Duplicate active/successful requests are ignored.
+     *
+     * [onCancelled] runs, under the same lock as the other callbacks, when the current attempt of this request stops
+     * before it delivered a completion or failure and no later attempt carries the request on: [cancel], [reset],
+     * cancellation of the owning scope, or an attempt for another request taking over. A build-file refresh carries
+     * the request on, so its attempt's completion or failure ends the request instead.
      */
     fun startAsyncResolution(
         workspaceRoot: Path,
@@ -95,8 +106,9 @@ class DependencyManager(
         onComplete: (WorkspaceResolution) -> Unit,
         onError: ((Exception) -> Unit)? = null,
         enableFileWatching: Boolean = true,
+        onCancelled: (() -> Unit)? = null,
     ) {
-        val request = Request(workspaceRoot, onProgress, onComplete, onError)
+        val request = Request(workspaceRoot, onProgress, onComplete, onError, onCancelled)
         start(request, enableFileWatching, expectedWatcher = null)
     }
 
@@ -175,6 +187,8 @@ class DependencyManager(
         currentAttempt.set(attempt)
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { resolve(attempt) }
         resolutionJob = job
+        // An attempt for another request takes over, so no later attempt would end the replaced one
+        expected?.takeIf { it.request !== request }?.let(::cancelAttempt)
         StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher))
     }
 
@@ -186,9 +200,11 @@ class DependencyManager(
         effects.job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
             if (cause != null) effects.attempt.cancellation.cancel()
         }
-        effects.job.invokeOnCompletion {
+        effects.job.invokeOnCompletion { cause ->
             synchronized(lock) {
                 if (currentAttempt.value === effects.attempt) {
+                    // Cancelled with the owning scope, so no attempt can follow it
+                    if (cause != null && !scope.isActive) cancelAttempt(effects.attempt)
                     if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                     if (resolutionJob === effects.job) resolutionJob = null
                 }
@@ -229,7 +245,10 @@ class DependencyManager(
             }
             notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished") }
             withContext(Dispatchers.Default) {
-                notifyCurrent(attempt) { request.onComplete(resolution) }
+                notifyCurrent(attempt) {
+                    attempt.settled.set()
+                    request.onComplete(resolution)
+                }
             }
         } catch (e: CancellationException) {
             notifyCurrent(attempt) {
@@ -243,6 +262,7 @@ class DependencyManager(
             }
             withContext(Dispatchers.Default) {
                 notifyCurrent(attempt) {
+                    attempt.settled.set()
                     if (tool != null) {
                         request.onComplete(classifyFailure(tool, e))
                     } else {
@@ -278,6 +298,20 @@ class DependencyManager(
     private fun notifyCurrent(attempt: Attempt, action: () -> Unit) {
         synchronized(lock) {
             if (generation == attempt.generation && !attempt.cancellation.isCancelled) action()
+        }
+    }
+
+    /**
+     * Ends [attempt]'s request as cancelled unless the attempt already ended it. Called under [lock], like every
+     * other callback; a failing callback is logged, since it must not break the transition that ends the attempt.
+     */
+    @Suppress("TooGenericExceptionCaught") // Callbacks may throw anything; the lifecycle transition must finish.
+    private fun cancelAttempt(attempt: Attempt) {
+        if (!attempt.settled.trySet()) return
+        try {
+            attempt.request.onCancelled?.invoke()
+        } catch (failure: Exception) {
+            logger.warn(failure) { "Dependency cancellation callback failed" }
         }
     }
 
@@ -374,6 +408,8 @@ class DependencyManager(
                 resolutionJob = null
                 val watcher = detachWatcher()
                 if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
+                // Stopped: no later attempt carries its request on
+                expected?.let(::cancelAttempt)
                 if (reset) {
                     state.set(State.NOT_STARTED)
                     currentWorkspaceRoot.set(null)

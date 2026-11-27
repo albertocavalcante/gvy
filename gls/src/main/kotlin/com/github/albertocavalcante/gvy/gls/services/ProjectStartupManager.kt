@@ -260,6 +260,8 @@ class ProjectStartupManager(
                 ),
             ),
             onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
+            // Shutdown (cancel) or scope cancellation stops the attempt without completing it: end the progress
+            onCancelled = progressReporter::cancel,
         )
     }
 

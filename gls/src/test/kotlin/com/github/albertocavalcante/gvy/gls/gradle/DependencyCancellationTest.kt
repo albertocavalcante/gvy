@@ -54,6 +54,54 @@ class DependencyCancellationTest {
     }
 
     @Test
+    fun `a build file refresh carries the request on instead of cancelling it`() {
+        val resolving = CountDownLatch(1)
+        val completed = CountDownLatch(1)
+        val cancellations = AtomicInteger()
+        val calls = AtomicInteger()
+        lateinit var onChange: (Path) -> Unit
+        val tool = mockk<BuildTool>(relaxed = true)
+        every { tool.name } returns "Gradle"
+        every { tool.createWatcher(any(), any()) } answers {
+            onChange = secondArg()
+            mockk<BuildToolFileWatcher>(relaxed = true)
+        }
+        every { tool.resolve(any(), any(), any()) } answers {
+            val token = thirdArg<ResolutionCancellation>()
+            if (calls.incrementAndGet() == 1) {
+                // The first attempt runs until the refresh supersedes it
+                val superseded = CountDownLatch(1)
+                token.onCancel { superseded.countDown() }.use {
+                    resolving.countDown()
+                    check(superseded.await(30, TimeUnit.SECONDS))
+                }
+                token.throwIfCancelled()
+            }
+            WorkspaceResolution(emptyList(), listOf(root))
+        }
+        val tools = mockk<BuildToolManager>()
+        every { tools.detectBuildTool(root) } returns tool
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val manager = DependencyManager(tools, scope)
+        try {
+            manager.startAsyncResolution(
+                root,
+                onComplete = { completed.countDown() },
+                onCancelled = { cancellations.incrementAndGet() },
+            )
+            assertTrue(resolving.await(5, TimeUnit.SECONDS))
+
+            onChange(root.resolve("build.gradle"))
+
+            assertTrue(completed.await(5, TimeUnit.SECONDS), "the refresh completes the request")
+            assertEquals(0, cancellations.get(), "a refresh is not a cancellation of the request")
+        } finally {
+            manager.cancel()
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `failed watcher shutdown does not strand the next workspace`() {
         val firstDone = CountDownLatch(1)
         val nextDone = CountDownLatch(1)
@@ -351,12 +399,19 @@ class DependencyCancellationTest {
         }
     }
 
+    /**
+     * Blocks an attempt in its build tool, applies [cancel], and checks that the transport is signalled, that the late
+     * result is not published, and that the request is told once that it was cancelled: every caller stops the
+     * request's attempt with nothing carrying the request on.
+     */
     private fun exerciseCancellation(cancel: (DependencyManager, CoroutineScope) -> Unit) {
         val entered = CountDownLatch(1)
         val signalled = CountDownLatch(1)
         val release = CountDownLatch(1)
         val returned = CountDownLatch(1)
         val published = AtomicInteger()
+        val cancelled = CountDownLatch(1)
+        val cancellations = AtomicInteger()
         val tool = mockk<BuildTool>(relaxed = true)
         every { tool.name } returns "Gradle"
         every { tool.resolve(any(), any(), any()) } answers {
@@ -379,6 +434,10 @@ class DependencyCancellationTest {
                 onComplete = { published.incrementAndGet() },
                 onError = { published.incrementAndGet() },
                 enableFileWatching = false,
+                onCancelled = {
+                    cancellations.incrementAndGet()
+                    cancelled.countDown()
+                },
             )
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             val job = scope.coroutineContext[Job]!!.children.single()
@@ -388,6 +447,8 @@ class DependencyCancellationTest {
             assertTrue(returned.await(5, TimeUnit.SECONDS))
             runBlocking { withTimeout(5_000) { job.join() } }
             assertEquals(0, published.get())
+            assertTrue(cancelled.await(5, TimeUnit.SECONDS), "the request was never told it was cancelled")
+            assertEquals(1, cancellations.get())
         } finally {
             release.countDown()
             manager.cancel()
