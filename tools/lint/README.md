@@ -43,3 +43,4 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
 - `StdlibAtomics`: reports imports, star imports included, and qualified uses of the experimental
   `kotlin.concurrent.atomics` outside `common/concurrent`, the one module that opts into it. Use the
   `:common:concurrent` types. It replaces a `ForbiddenImport` pattern that missed star imports and qualified uses.
+  `common/concurrent` is its only exclude, and neither an exclude nor a baseline entry may be added (#2474).
