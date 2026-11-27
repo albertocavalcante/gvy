@@ -484,7 +484,8 @@ class GroovyCompilationService internal constructor(
         if (changed) {
             // The published model's classpath: the same snapshot every compile now reads
             classpathService.updateClasspath(workspaceManager.current().classpath)
-            gdkProvider.initialize()
+            // A GDK class the server's Groovy lacks loads from this classpath: rebuild here, off the request path
+            gdkProvider.onClasspathChanged()
             shadows.refresh() // publish spellings before retiring work that used the previous roots
             clearCaches()
         }
