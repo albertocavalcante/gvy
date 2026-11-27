@@ -581,6 +581,29 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
   }
 });
 
+test('only frames inside the Kotlin plugin and Kover Gradle packages take a shared plugin emitter', () => {
+  const [log] = nativeLogs;
+  const lookalike = collectDiagnostics(log.replaceAll('org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt',
+    'org.jetbrains.kotlin.gradlex.CInteropConfigurationsKt'));
+  assert.ok(lookalike.includes(
+    `[project :launcher] ${nativeVisibilityMessage} [origin org.jetbrains.kotlin.gradlex.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)]`,
+  ));
+  const frames = {
+    'org.jetbrains.kotlin.gradle.plugin.Shared.apply(Shared.kt:1)': 'emitter kotlin-gradle-plugin',
+    'kotlinx.kover.gradle.plugin.Shared.apply(Shared.kt:1)': 'emitter kover',
+    'org.jetbrains.kotlin.gradlex.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'org.jetbrains.kotlinx.gradle.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'kotlinx.kover.gradlex.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'kotlinx.kover.features.jvm.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'kotlinx.koverage.gradle.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+  };
+  const events = Object.keys(frames).map(origin => `${nativeVisibilityMessage}\n` +
+    `\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n\tat ${origin}\n`);
+  const diagnostics = collectDiagnostics(`> Configure project :build-tool\n${events.join('')}`);
+  assert.deepEqual(diagnostics, Object.entries(frames)
+    .map(([origin, context]) => `[${context}] ${nativeVisibilityMessage} [origin ${origin}]`).sort());
+});
+
 const codecConsumerLog = readFileSync(new URL('./fixtures/gradle-native-codec-consumers.txt', import.meta.url), 'utf8');
 const nativeBundleMessage = codecConsumerLog.split('\n').find(line => line.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes'));
 

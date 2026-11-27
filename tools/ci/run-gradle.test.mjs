@@ -443,11 +443,42 @@ console.log('BUILD SUCCESSFUL in 1s');
   assert.equal(reports.filter(report => report.ok).length, 2);
 });
 
-test('JetBrains-only debt stays exact, owned and current, and never repeats a shared Kotlin plugin identity', async () => {
+test('JetBrains-only debt stays exact, owned and current, and never repeats a shared identity', async () => {
   const { evaluate } = await import('./bazel-diagnostics.mjs');
   const entries = JSON.parse(readFileSync(new URL('./gradle-jetbrains-diagnostics.json', import.meta.url), 'utf8'));
   const shared = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8'));
   assert.ok(Array.isArray(entries));
+  // evaluate rejects a diagnostic listed in both ledgers, as the jetbrains producer loads both.
   assert.equal(evaluate([], [...shared, ...entries], new Date()).ok, true);
-  assert.equal(entries.some(entry => entry.diagnostic.startsWith('[emitter kotlin-gradle-plugin] ')), false);
+});
+
+test('JetBrains-only exceptions apply only to its producer', t => {
+  const f = fixture(t);
+  // The wrapper reads its ledgers beside itself, so run a copy whose JetBrains ledger holds one fixture entry.
+  const tools = join(f.dir, 'tools');
+  mkdirSync(tools);
+  const source = resolve('tools/ci');
+  for (const name of readdirSync(source).filter(name => /\.(?:mjs|json)$/.test(name) && !name.endsWith('.test.mjs'))) {
+    writeFileSync(join(tools, name), readFileSync(join(source, name)));
+  }
+  const warning = 'WARNING: JetBrains-only fixture warning';
+  writeFileSync(join(tools, 'gradle-jetbrains-diagnostics.json'), JSON.stringify([{
+    diagnostic: `[project :] ${warning}`, owner: 'fixture owner', issue: 'https://github.com/albertocavalcante/gvy/issues/1603',
+    reason: 'fixture debt', nextAction: 'remove fixture debt', acceptance: 'fixture warning absent',
+    expires: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  }]));
+  writeFileSync(f.executable, `#!${process.execPath}
+console.log('> Configure project :');
+console.log(${JSON.stringify(warning)});
+console.log('BUILD SUCCESSFUL in 1s');
+`);
+  chmodSync(f.executable, 0o755);
+  const run = producer => spawnSync(process.execPath,
+    [join(tools, 'run-gradle.mjs'), '--report-root', f.reportRoot, '--producer', producer, 'test'],
+    { encoding: 'utf8', cwd: f.dir, env: f.env, timeout: 10000 });
+  assert.equal(run('jetbrains').status, 0);
+  assert.equal(run('gradle-lint').status, 1);
+  const reports = f.artifactDirs().map(path => JSON.parse(readFileSync(join(path, 'diagnostics.json'), 'utf8')));
+  assert.deepEqual(reports.find(report => report.producer === 'jetbrains').accepted.map(entry => entry.diagnostic), [`[project :] ${warning}`]);
+  assert.deepEqual(reports.find(report => report.producer === 'gradle-lint').unexpected, [`[project :] ${warning}`]);
 });
