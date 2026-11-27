@@ -30,7 +30,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   detektOverrides, git, gitEnv, gitFiles, gvyRuleConfig, gvyRuleSetKeys, missingRule, moduleDetektSource, publishes,
-  ruleExcludes, sourceSet, suppressions, topLevelBlock, topLevelKeys, unmatched,
+  inResources, ruleExcludes, sourceSet, suppressions, topLevelBlock, topLevelKeys, unmatched,
 } from './detekt-gvy-guard.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -167,16 +167,17 @@ test('JdkAtomics is active and excludes only its permanent patterns, each naming
 
 test('the modules JdkAtomics exempts as published on their own are the ones that apply maven-publish', () => {
   const published = tracked()
-    .filter(path => path.endsWith('.gradle.kts') && publishes(read(path)))
+    .filter(path => path.endsWith('.gradle.kts') && !inResources(path) && publishes(read(path)))
     .map(path => path.replace(/\/?[^/]+\.gradle\.kts$/, '') || '.')
     .sort();
   const exempt = jdkAtomicsPermanent
     .map(permanent => permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1])
     .filter(module => module && module !== 'common/concurrent')
     .sort();
-  const message = 'JdkAtomics exempts these modules because each is published on its own and so cannot depend on ' +
-    'the unpublished :common:concurrent. When a module starts or stops applying maven-publish, change ' +
-    'jdkAtomicsPermanent here and the JdkAtomics excludes in tools/lint/detekt.yml with it (#2474)';
+  const message = 'JdkAtomics exempts a module because it is published on its own and so cannot depend on the ' +
+    'unpublished :common:concurrent. Exempt exactly the modules that apply a publishing plugin: add a module that ' +
+    'starts publishing to jdkAtomicsPermanent here and the JdkAtomics excludes in tools/lint/detekt.yml, or do not ' +
+    'publish it; drop the exemption of a module that stops, and move its atomics to :common:concurrent (#2474)';
   assert.deepEqual(published, exempt, message);
 });
 
@@ -358,7 +359,8 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
   }
   // Every source set, tests included: VolatileProperty and StdlibAtomics lint tests too. The rule module's own tests
   // are left out, since they feed such annotations to the rules.
-  const scanned = path => path.endsWith('.kt') && sourceSet(path) && !path.startsWith('tools/detekt-rules/src/test/');
+  const scanned = path =>
+    path.endsWith('.kt') && sourceSet(path) && !inResources(path) && !path.startsWith('tools/detekt-rules/src/test/');
   const sites = tracked()
     .filter(scanned)
     .flatMap(path => suppressions(read(path)).map(site => ({ path, ...site })))
@@ -376,19 +378,21 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
 
 test('the Gradle reader takes detekt dependencies and the source override, and reports any other detekt line', () => {
   const accepted = [
+    'description = "gvy\'s own detekt rules"',
     'dependencies {',
     '    detektPlugins(libs.detekt.formatting) // The formatting rules.',
     '    "detektPlugins"(libs.detekt.formatting)',
+    '    add("detektPlugins", libs.detekt.formatting)',
     '    compileOnly(libs.detekt.api)',
     '}',
+    'include(":tools:detekt-rules")',
+    'kover { reports { filters { excludes { packages("com.github.albertocavalcante.gvy.detekt") } } } }',
     '// detekt { ignoreFailures = true } in a comment, and /* tasks.named("detekt") */ in a block comment.',
     'detekt {',
     '    source.setFrom(fileTree("src") { include("**/*.kt") })',
     '}',
-    'val note = "detekt"',
   ].join('\n');
-  // The last line is reported: a literal is not a comment, and a name in it can configure a task.
-  assert.deepEqual(detektOverrides(accepted), [{ line: 10, text: 'val note = "detekt"' }]);
+  assert.deepEqual(detektOverrides(accepted), []);
   const overrides = [
     ['detekt {\n    config.from(file("other.yml"))\n}', 'config.from(file("other.yml"))'],
     ['detekt {\n    config.setFrom(files())\n}', 'config.setFrom(files())'],
@@ -402,14 +406,40 @@ test('the Gradle reader takes detekt dependencies and the source override, and r
     ['tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {\n    exclude("**/gls/**")\n}',
       'tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {'],
     ['tasks.named("detekt") { enabled = false }', 'tasks.named("detekt") { enabled = false }'],
+    ['tasks.getByName("detektMain").enabled = false', 'tasks.getByName("detektMain").enabled = false'],
     ['detektPlugins(project(":other-rules"))', 'detektPlugins(project(":other-rules"))'],
+    ['detekt(libs.detekt.api)', 'detekt(libs.detekt.api)'],
+    ['val tool = libs.detekt.api', 'val tool = libs.detekt.api'],
   ];
   for (const [script, text] of overrides) assert.deepEqual(detektOverrides(script).map(found => found.text), [text]);
 });
 
+test('the publishing reader takes a publishing plugin by ID, class or alias, not in comments or prose', () => {
+  const publishing = [
+    'plugins {\n    `maven-publish`\n}',
+    'plugins { `ivy-publish` }',
+    'plugins { id("maven-publish") }',
+    'plugins { id("com.gradle.plugin-publish") version "1.3.0" }',
+    'plugins { id("com.vanniktech.maven.publish") }',
+    'apply(plugin = "maven-publish")',
+    'apply<MavenPublishPlugin>()',
+    'plugins { alias(libs.plugins.mavenPublish) }',
+    'plugins { alias(libs.plugins.gradle.plugin.publish) }',
+  ];
+  for (const script of publishing) assert.equal(publishes(script), true, script);
+  const notPublishing = [
+    'plugins { `java-library` }',
+    '// plugins { `maven-publish` }',
+    'description = "Not published with maven-publish"',
+    'val publication = "maven-publish-notes"',
+    'tasks.register("listMavenPublications")',
+  ];
+  for (const script of notPublishing) assert.equal(publishes(script), false, script);
+});
+
 test('no module build configures detekt beyond its dependencies and the multiplatform source override', () => {
   const found = tracked()
-    .filter(path => path.endsWith('.gradle.kts') && path !== 'build.gradle.kts')
+    .filter(path => path.endsWith('.gradle.kts') && path !== 'build.gradle.kts' && !inResources(path))
     .flatMap(path => detektOverrides(read(path)).map(({ line, text }) => `${path}:${line} ${text}`));
   const message = "The root build.gradle.kts configures detekt for every module: tools/lint/detekt.yml, the module's " +
     'own detekt-baseline.xml and failure on any finding. A module build may only add detekt artifacts as ' +

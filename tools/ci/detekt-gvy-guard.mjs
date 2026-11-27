@@ -7,11 +7,26 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
-// The only detekt lines a module build may hold: a detekt artifact as a dependency, such as
-// `detektPlugins(libs.detekt.formatting)`, and the rule module's include in settings. A module may also hold a
-// `detekt {}` block whose every line points detekt at the whole of its src, as the multiplatform modules do.
-export const moduleDetektLines = [/^"?\w+"?\(libs\.detekt\.[\w.]+\)$/, /^include\("tools:detekt-rules"\)$/];
+// The configurations a module build may add a detekt artifact to.
+const configurations = 'detektPlugins|compileOnly|implementation|api|runtimeOnly|testImplementation|testCompileOnly';
+// The only lines whose code may name detekt in a module build: a detekt artifact (`libs.detekt.<name>`) added as a
+// dependency, as `detektPlugins(libs.detekt.formatting)`, `"detektPlugins"(...)` or `add("detektPlugins", ...)`. A
+// module may also hold a `detekt {}` block whose every line points detekt at the whole of its src, as the
+// multiplatform modules do.
+export const moduleDetektLines = [
+  new RegExp(`^"?(?:${configurations})"?\\(libs\\.detekt\\.\\w+\\)$`),
+  new RegExp(`^add\\("(?:${configurations})", libs\\.detekt\\.\\w+\\)$`),
+];
 export const moduleDetektSource = 'source.setFrom(fileTree("src") { include("**/*.kt") })';
+// A string literal that names a detekt task or configuration, such as "detekt", "detektMain" or "detektPlugins".
+const detektName = /^detekt\w*$/i;
+// Plugin IDs that publish a module, as a string literal holds them in `id(...)` or `apply(plugin = ...)`.
+const publishingPluginId =
+  /^(?:maven-publish|ivy-publish|com\.gradle\.plugin-publish|com\.vanniktech\.maven\.publish)$/i;
+// The same plugins as code names them: `` `maven-publish` `` in `plugins {}`, a plugin class, or a version-catalog
+// alias such as `libs.plugins.mavenPublish`.
+const publishingCode =
+  /`(?:maven|ivy)-publish`|\b(?:Maven|Ivy)Publish(?:Base)?Plugin\b|\blibs\.plugins\.[\w.]*publish/i;
 
 /** [config]'s lines without CRLF line ends or trailing whitespace, which YAML ignores. */
 export const yamlLines = config => config.replaceAll('\r\n', '\n').split('\n').map(line => line.trimEnd());
@@ -271,21 +286,37 @@ export function ruleExcludes(config) {
   return excludes;
 }
 
-/** The text of Gradle Kotlin script [source] with its comments blanked out, as lines. */
-function scriptLines(source) {
-  const comments = kotlinTokens(source).filter(({ kind }) => kind === 'comment');
-  return blanked(source, comments).split('\n');
+/** Whether [path] lies in a resources folder, such as `src/test/resources`, which holds fixtures and not build code. */
+export const inResources = path => /(?:^|\/)src\/[^/]+\/resources\//.test(path);
+
+/**
+ * Gradle Kotlin script [source] read three ways, line by line: `text` without comments, `code` without comments or
+ * literals, and `strings`, the contents of the string literals each line starts.
+ */
+function scriptView(source) {
+  const tokens = kotlinTokens(source);
+  const text = blanked(source, tokens.filter(({ kind }) => kind === 'comment')).split('\n');
+  const code = blanked(source, tokens).split('\n');
+  const strings = text.map(() => []);
+  let line = 0;
+  let at = 0;
+  for (const { start, end, kind } of tokens) {
+    for (; at < start; at += 1) if (source[at] === '\n') line += 1;
+    if (kind === 'string') strings[line].push(source.slice(start, end).replace(/^"+|"+$/g, ''));
+  }
+  return { text, code, strings };
 }
 
 /**
  * The lines of Gradle Kotlin script [source] that configure detekt beyond what a module build may, as `{ line, text }`.
- * A line counts when its code names detekt in any case, so `detekt {}`, `tasks.withType<Detekt>()` and
- * `tasks.named("detekt")` all show, unless it is one of [moduleDetektLines]. In a `detekt {` block, every line but the
- * source override counts. Comments never count.
+ * A line counts when its code names detekt in any case (`detekt {}`, `tasks.withType<Detekt>()`,
+ * `io.gitlab.arturbosch.detekt`) or a string literal on it is a detekt task or configuration name
+ * (`tasks.named("detekt")`), unless it is one of [moduleDetektLines]. Other strings, such as a description or a package
+ * filter that mentions detekt, and comments never count. In a `detekt {` block, every line but the source override
+ * counts.
  */
 export function detektOverrides(source) {
-  const text = scriptLines(source);
-  const code = blanked(source, kotlinTokens(source)).split('\n');
+  const { text, code, strings } = scriptView(source);
   const found = [];
   for (let index = 0; index < text.length; index += 1) {
     const line = text[index].trim();
@@ -301,13 +332,21 @@ export function detektOverrides(source) {
       }
       if (text[end]?.trim() !== '}') found.push({ line: end + 1, text: text[end]?.trim() ?? '' });
       index = end;
-    } else if (/detekt/i.test(line) && !moduleDetektLines.some(form => form.test(line))) {
-      found.push({ line: index + 1, text: line });
+      continue;
     }
+    const names = /detekt/i.test(code[index]) || strings[index].some(literal => detektName.test(literal));
+    if (names && !moduleDetektLines.some(form => form.test(line))) found.push({ line: index + 1, text: line });
   }
   return found;
 }
 
-/** Whether Gradle Kotlin script [source] applies a plugin that publishes the module, outside comments. */
-export const publishes = source =>
-  scriptLines(source).some(line => /maven-publish|MavenPublish|maven\.publish/.test(line));
+/**
+ * Whether Gradle Kotlin script [source] applies a plugin that publishes the module: maven-publish, ivy-publish,
+ * com.gradle.plugin-publish or com.vanniktech.maven.publish, by ID, plugin class or version-catalog alias. Comments do
+ * not count, and a string counts only when it is exactly such an ID.
+ */
+export function publishes(source) {
+  const { code, strings } = scriptView(source);
+  const named = strings.flat().some(literal => publishingPluginId.test(literal));
+  return named || code.some(line => publishingCode.test(line));
+}
