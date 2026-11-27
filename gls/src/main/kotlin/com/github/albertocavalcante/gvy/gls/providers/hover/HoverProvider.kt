@@ -88,7 +88,7 @@ class HoverProvider(
 
     private val logger = KotlinLogging.logger {}
 
-    // Groovydoc from the current buffer, for a hover without a compiled snapshot; its cache checks the buffer's text
+    // Groovydoc read from the current buffer, for a hover without a compiled snapshot
     private val documentationProvider = DocumentationProvider(documentProvider)
 
     /**
