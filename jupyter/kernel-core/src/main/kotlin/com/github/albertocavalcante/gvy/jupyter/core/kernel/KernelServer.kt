@@ -91,7 +91,7 @@ class KernelServer(
      */
     fun shutdown() {
         logger.info { "Shutdown requested" }
-        stopRequested.trySet() // Idempotent: a later call finds it already set.
+        stopRequested.set()
     }
 
     override fun close() {

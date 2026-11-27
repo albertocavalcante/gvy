@@ -22,4 +22,26 @@ class OnceFlagTest {
         assertFalse(flag.trySet(), "A later call finds it already set")
         assertTrue(flag.isSet)
     }
+
+    @Test
+    fun `set sets the flag so that no later trySet succeeds`() {
+        val flag = OnceFlag()
+
+        flag.set()
+
+        assertTrue(flag.isSet)
+        assertFalse(flag.trySet(), "set already set the flag")
+    }
+
+    @Test
+    fun `set is idempotent and leaves a flag that trySet set unchanged`() {
+        val flag = OnceFlag()
+
+        assertTrue(flag.trySet())
+        flag.set()
+        flag.set()
+
+        assertTrue(flag.isSet)
+        assertFalse(flag.trySet(), "set must not clear the flag")
+    }
 }

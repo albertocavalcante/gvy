@@ -54,7 +54,7 @@ internal class ParseCoordinator(
     fun invalidate(): Long {
         generation++
         debounce?.cancel()
-        token?.trySet() // cancels the pending request; a token is never cleared
+        token?.set() // cancels the pending request
         return generation
     }
 

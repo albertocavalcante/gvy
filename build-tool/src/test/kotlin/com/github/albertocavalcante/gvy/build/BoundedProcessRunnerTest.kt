@@ -352,7 +352,7 @@ class BoundedProcessRunnerTest {
             override fun read(b: ByteArray, off: Int, len: Int): Int = block()
 
             override fun close() {
-                streamClosed.trySet()
+                streamClosed.set()
             }
 
             private fun block(): Int {
@@ -385,7 +385,7 @@ class BoundedProcessRunnerTest {
         override fun exitValue(): Int = throw IllegalThreadStateException()
 
         override fun destroy() {
-            destroyed.trySet()
+            destroyed.set()
         }
 
         override fun descendants(): Stream<ProcessHandle> = Stream.empty()
