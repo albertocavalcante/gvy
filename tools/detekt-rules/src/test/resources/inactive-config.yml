@@ -9,3 +9,5 @@ gvy:
     active: false
   JdkAtomics:
     active: false
+  StdlibAtomics:
+    active: false

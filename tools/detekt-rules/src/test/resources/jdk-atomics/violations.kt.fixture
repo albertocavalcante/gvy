@@ -33,4 +33,10 @@ class Spellings {
     val escaped = java.util.concurrent.`atomic`.AtomicLong() // FLAG
     val commented = java.util.concurrent./* between */atomic.AtomicLong() // FLAG
     val escapedType: java.util.concurrent.`atomic`.AtomicLong? = null // FLAG
+    val commentedType: java.util.concurrent./* between */atomic.AtomicLong? = null // FLAG
+    val splitType: java.util.concurrent // FLAG
+        .atomic.AtomicLong? = null
+    val splitCall = java.util.concurrent // FLAG
+        .atomic
+        .AtomicLong()
 }

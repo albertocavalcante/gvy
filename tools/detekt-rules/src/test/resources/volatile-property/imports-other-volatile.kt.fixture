@@ -1,0 +1,26 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else. The file imports a different annotation
+// named Volatile, so the unqualified name refers to that one; only Kotlin's qualified names are reported.
+package fixtures
+
+import com.example.annotations.Volatile
+
+class ImportedNamesake {
+    @Volatile var notKotlins = false
+    @`Volatile` var escapedNotKotlins = false
+    @field:Volatile var withUseSiteTarget = false
+    @com.example.annotations.Volatile var theirsQualified = false
+    @kotlin.jvm.Volatile var ours = false // FLAG
+    @kotlin.concurrent.Volatile var oursFromCommon = false // FLAG
+}
+
+typealias TheirVolatile = Volatile
+typealias OurVolatile = kotlin.jvm.Volatile // FLAG
+
+class Suppressed {
+    // Qualified, so only the suppression keeps it silent in a file that imports another Volatile.
+    @Suppress("VolatileProperty") // A documented exception: a field updater needs a real volatile field.
+    @kotlin.jvm.Volatile
+    var updatedThroughFieldUpdater = 0
+}

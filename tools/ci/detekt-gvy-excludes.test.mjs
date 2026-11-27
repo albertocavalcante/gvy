@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// gvy's migration rules have finished (#2474): VolatileProperty excludes nothing, and JdkAtomics only its permanent
-// set (tests, :common:concurrent and the modules published as their own artifacts). The gvy rule set itself stays
-// active with no set-wide excludes or includes, and no tracked detekt baseline holds either rule's findings. A use
-// either rule reports is suppressed at its site with a reason. Kotlin outside src/main and src/test, such as
-// tests/e2e, is not linted unless its module sets detekt.source (#2480).
+// gvy's concurrency confinement rules (#2474): VolatileProperty excludes nothing now that its migration has finished,
+// JdkAtomics excludes only its permanent set (tests, :common:concurrent and the modules published as their own
+// artifacts), and StdlibAtomics only :common:concurrent, the one module that opts into the experimental stdlib atomics.
+// StdlibAtomics never had a migration: it replaced a detekt ForbiddenImport pattern. The gvy rule set itself stays
+// active with no set-wide excludes or includes, and no tracked detekt baseline holds these rules' findings. A use one
+// of them reports is suppressed at its site with a reason. Kotlin outside src/main and src/test, such as tests/e2e, is
+// not linted unless its module sets detekt.source (#2480).
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -20,6 +22,8 @@ const jdkAtomicsPermanent = [
   '**/src/test/**', '**/src/jvmTest/**', '**/src/commonTest/**', '**/src/jmh/**',
   '**/common/concurrent/src/**', '**/bsp/bsp-core/src/**', '**/bsp/maven-bsp/src/**', '**/parser/core/src/**',
 ];
+// Only the facade opts into the experimental stdlib atomics; tests elsewhere do not need them either.
+const stdlibAtomicsPermanent = ['**/common/concurrent/src/**'];
 
 /**
  * The `gvy > <rule>` block as `{ active, excludes }`, or null when it is missing. Any line in the block other than
@@ -133,6 +137,17 @@ test('JdkAtomics is active and excludes only its permanent patterns, each naming
   }
 });
 
+test('StdlibAtomics is active and excludes only :common:concurrent', () => {
+  const { excludes } = configured('StdlibAtomics');
+  const message = 'StdlibAtomics excludes exactly :common:concurrent, the one module that opts into the stdlib ' +
+    'atomics. Suppress a sanctioned use at its site, with a reason; do not exclude tests or other modules (#2474)';
+  assert.deepEqual(excludes, stdlibAtomicsPermanent, message);
+  for (const permanent of stdlibAtomicsPermanent) {
+    const module = permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
+    assert.ok(module && existsSync(join(root, module, 'src')), `${permanent} names no module`);
+  }
+});
+
 test('the gvy rule set reader takes only two-space keys, so set-wide excludes and includes show', () => {
   const config = [
     'style:',
@@ -162,10 +177,10 @@ test('the gvy rule set is active and takes no set-wide excludes or includes', ()
   assert.deepEqual(unexpected, [], 'a gvy rule-set key applies to every gvy rule; configure each rule instead (#2474)');
 });
 
-test('no tracked detekt baseline holds a VolatileProperty or JdkAtomics finding', () => {
+test('no tracked detekt baseline holds a VolatileProperty, JdkAtomics or StdlibAtomics finding', () => {
   for (const baseline of trackedBaselines()) {
     const entries = readFileSync(join(root, baseline), 'utf8');
-    const ids = entries.match(/<ID>(?:VolatileProperty|JdkAtomics):[^<]*<\/ID>/g) ?? [];
-    assert.deepEqual(ids, [], `${baseline} must not hold the gvy migration rules' findings (#2474)`);
+    const ids = entries.match(/<ID>(?:VolatileProperty|JdkAtomics|StdlibAtomics):[^<]*<\/ID>/g) ?? [];
+    assert.deepEqual(ids, [], `${baseline} must not hold the gvy concurrency rules' findings (#2474)`);
   }
 });

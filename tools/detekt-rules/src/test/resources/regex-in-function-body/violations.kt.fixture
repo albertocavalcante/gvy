@@ -107,3 +107,14 @@ val viaMap = listOf(1).map { Regex("L+") } // FLAG
 val storedLambda: () -> Regex = { Regex("M+") } // FLAG
 val nestedStoredLambda = run { { Regex("N+") } } // FLAG
 fun runInsideFunction() = run { Regex("O+") } // FLAG
+
+// Qualifiers are read by PSI segment, so backticks, comments and line breaks inside them do not hide a construction.
+fun escapedJavaPattern() = java.util.`regex`.Pattern.compile("P+") // FLAG
+fun commentedKotlinRegex() = kotlin./* between */text.Regex("Q+") // FLAG
+fun escapedFromLiteral() = kotlin.text.`Regex`.fromLiteral("R.S") // FLAG
+fun escapedConstructor() = `Regex`("T+") // FLAG
+fun splitJavaPattern() = java.util.regex
+    .Pattern.compile("U+") // FLAG
+fun splitKotlinRegex() = kotlin
+    .text
+    .Regex("V+") // FLAG

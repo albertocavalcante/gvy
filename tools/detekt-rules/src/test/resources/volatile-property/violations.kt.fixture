@@ -5,6 +5,7 @@ package fixtures
 
 import kotlin.concurrent.Volatile as CommonVolatile
 import kotlin.jvm.Volatile as JvmVolatile
+import kotlin.jvm.Volatile as `EscapedAlias`
 
 class Fields {
     @Volatile var plain = false // FLAG
@@ -37,4 +38,29 @@ class WithCompanion {
 
 fun anonymousObject(): Any = object {
     @Volatile var inside = 0 // FLAG
+}
+
+// Names are read by PSI segment, so backticks, comments and line breaks inside a name do not hide it.
+class Spellings {
+    @`Volatile` var escaped = false // FLAG
+    @kotlin.jvm.`Volatile` var escapedQualified = false // FLAG
+    @`kotlin`.`jvm`.Volatile var escapedPackage = false // FLAG
+    @field:`Volatile` var escapedWithUseSiteTarget = false // FLAG
+    @kotlin.jvm./* between */Volatile var commented = false // FLAG
+    @kotlin.jvm // FLAG
+        .Volatile
+    var splitAcrossLines = false
+    @EscapedAlias var viaEscapedAlias = false // FLAG
+    @`EscapedAlias` var viaEscapedAliasEscaped = false // FLAG
+}
+
+// A typealias of Kotlin's annotation is reported where it is declared. Its uses look like any other annotation.
+typealias JvmVolatileAlias = kotlin.jvm.Volatile // FLAG
+typealias CommonVolatileAlias = kotlin.concurrent.Volatile // FLAG
+typealias PlainVolatileAlias = Volatile // FLAG
+typealias AliasOfImportAlias = JvmVolatile // FLAG
+typealias EscapedVolatileAlias = kotlin.jvm.`Volatile` // FLAG
+
+class WithAliasedField {
+    @JvmVolatileAlias var reportedAtTheTypealias = false
 }
