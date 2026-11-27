@@ -109,8 +109,9 @@ analysis or CLI definitions out of the JVM.
 The pinned Kotlin 2.3.0 plugin emits Gradle 9.8.2 deprecations for the Native bundle attribute enum and dependency
 notation, alongside the previously tracked archives warning. Build/CI maintainers own their resolution in
 [#1603](https://github.com/albertocavalcante/gvy/issues/1603): reproduce with the native tasks, update compatible plugin
-APIs or versions, and retain native CLI/LSP parity. This limited compatibility exception expires on 2026-12-11 or before
-a Gradle 10 upgrade, whichever comes first. Warnings remain visible; native compiler and lint diagnostics must be fixed.
+APIs or versions, and retain native CLI/LSP parity. These limited compatibility exceptions expire on the date recorded
+in `tools/ci/gradle-diagnostics.json` or before a Gradle 10 upgrade, whichever comes first. Warnings remain visible;
+native compiler and lint diagnostics must be fixed.
 
 The observed Native fingerprints are the `KotlinNativeBundleArtifactsTypes` attribute-enum diagnostic at
 `KotlinNativeBundleArtifactFormat.kt:26` and multi-string notation for

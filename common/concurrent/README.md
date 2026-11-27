@@ -53,7 +53,7 @@ Multiplatform has costs:
   `KotlinNativeBundleArtifactsTypes` attribute, a plain enum that Gradle 10 will reject, in the unit-test job too.
   `tools/ci/fixtures/gradle-native-codec-consumers-provenance.json` records four of the six configuration-cache codec
   exceptions for that enum in that job once this module is in its task graph.
-- All of these Gradle exceptions expire on 2026-12-11 under #1603.
+- All of these Gradle exceptions are owned under #1603; the ledger records their expiry.
 - Bazel's jdeps reports the `kotlin-test-junit5` dependency of the `commonTest` sources as unused, because they reach it
   only through `kotlin.test` typealiases; `tools/ci/bazel-diagnostics.json` holds that exception.
 - detekt scans only `src/main` and `src/test` by default, so `build.gradle.kts` points it at all of `src`.

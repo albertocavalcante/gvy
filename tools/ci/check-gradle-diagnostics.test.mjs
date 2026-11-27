@@ -358,7 +358,8 @@ test('the inspected pinned-plugin trace matches only its exact reviewed debt led
   assert.equal(result.diagnostics.some(line => /^\[project :(?:build-tool|viz:ast-model)\] .*\[origin org\.jetbrains\.kotlin\.gradle\./.test(line)), false);
   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
-  assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
+  assert.equal(check(log, { exceptions, now: new Date('2026-12-25T23:59:59Z') }).ok, true, 'valid through its expiry day');
+  assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-26T00:00:00Z') }).ok, false);
 });
 
 const koverLazyLog = readFileSync(new URL('./fixtures/gradle-kover-lazy-visibility.txt', import.meta.url), 'utf8');
@@ -402,7 +403,7 @@ test('only the two exact Kover messages and origins use the migrated debt keys',
   const untracked = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`);
   assert.equal(untracked.ok, false);
   assert.deepEqual(untracked.unexpected, koverLazyDiagnostics);
-  const expired = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`, { exceptions, now: new Date('2026-12-12T00:00:00Z') });
+  const expired = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`, { exceptions, now: new Date('2026-12-26T00:00:00Z') });
   assert.equal(expired.ok, false);
 });
 
@@ -530,7 +531,7 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
   assert.equal(evaluate(diagnostics, exceptions, now).ok, true);
   assert.equal(evaluate(diagnostics, exceptions.filter(entry => !nativeExceptions.includes(entry)), now).unexpected.length, 14);
   assert.ok(nativeExceptions.every(entry => entry.owner === 'gvy build and CI maintainers' &&
-    entry.issue.endsWith('/1603') && entry.expires === '2026-12-11'));
+    entry.issue.endsWith('/1603') && entry.expires === '2026-12-25'));
   for (const [before, after, count] of [
     // Unknown enum types retain the ordinary collector behavior; they cannot
     // borrow this Native attribution or its exact policy entries.
@@ -658,7 +659,7 @@ test('Native attribution cannot accept unrelated Gradle deprecations or bypass m
   for (const log of nativeLogs) {
     const diagnostics = collectDiagnostics(log);
     assert.equal(evaluate(diagnostics, [], now).unexpected.length, 13);
-    assert.throws(() => evaluate(diagnostics, exceptions, new Date('2026-12-12T00:00:00Z')), /Expired exception/);
+    assert.throws(() => evaluate(diagnostics, exceptions, new Date('2026-12-26T00:00:00Z')), /Expired exception/);
     const incomplete = check(log, { exceptions });
     assert.equal(incomplete.complete, false, 'historical selective traces remain incomplete command evidence');
     assert.equal(incomplete.ok, false);

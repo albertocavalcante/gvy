@@ -329,9 +329,10 @@ at the compatibility boundary. These items remain debt until their acceptance cr
 
 Timeout advice is emitted per target with `--test_verbose_timeout_warnings`; the unqualified summary also fails if
 encountered. Only elapsed seconds within that advice are normalized. Fast module tests have explicit short timeouts
-while retaining their medium memory sizing. The portable build-tool budget and its exact shorter-timeout advisory are
-tracked in [#1607](https://github.com/albertocavalcante/gvy/issues/1607); a new target or a recommendation to lengthen a
-timeout still fails.
+while retaining their medium memory sizing. The portable build-tool budget is tracked in
+[#1607](https://github.com/albertocavalcante/gvy/issues/1607). Its shorter-timeout advisory has no exception: no main or
+daily Bazel run since 2026-11-19 emitted it, at 28 to 44 seconds on Linux. Timeout advice for any target, including a
+recommendation to shorten or lengthen a timeout, fails.
 
 ## Actions annotations and coverage limits
 
