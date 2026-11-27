@@ -75,7 +75,9 @@ class DependencyManager(
 
     private val currentAttempt = SharedValue<Attempt?>(null)
     private var resolutionJob: Job? = null
-    private var buildFileWatcher: BuildToolFileWatcher? = null
+
+    // Written under [lock] together with [watcherToken]; onWatchedFilesChanged reads it without the lock.
+    private val buildFileWatcher = SharedValue<BuildToolFileWatcher?>(null)
 
     private val watcherToken = SharedValue<Any?>(null)
 
@@ -294,10 +296,11 @@ class DependencyManager(
         try {
             watcher = tool.createWatcher(scope) { refreshFromWatcher(token) } ?: return
             val installed = synchronized(lock) {
-                if (generation != attempt.generation || attempt.cancellation.isCancelled || buildFileWatcher != null) {
+                val superseded = generation != attempt.generation || attempt.cancellation.isCancelled
+                if (superseded || buildFileWatcher.value != null) {
                     false
                 } else {
-                    buildFileWatcher = watcher
+                    buildFileWatcher.set(watcher)
                     watcherToken.set(token)
                     true
                 }
@@ -348,16 +351,23 @@ class DependencyManager(
     /** Called under the state lock; the returned watcher is stopped after releasing it. */
     private fun detachWatcher(): BuildToolFileWatcher? {
         watcherToken.set(null)
-        return buildFileWatcher.also { buildFileWatcher = null }
+        return buildFileWatcher.exchange(null)
     }
 
     fun getCurrentDependencies(): List<Path> = dependencies.value
 
-    /** Routes client notifications through the native watcher's debounce and filtering. */
+    /**
+     * Routes client notifications through the native watcher's debounce and filtering.
+     *
+     * The LSP message thread calls this, so it reads the watcher without [lock]: a completion callback holds the lock
+     * while it rebuilds the workspace. The read can return a watcher that a transition has just detached but not yet
+     * stopped. That watcher drops the event, or debounces it into a refresh whose revoked token [start] rejects.
+     */
     fun onWatchedFilesChanged(paths: List<Path>) {
-        val watcher = synchronized(lock) { buildFileWatcher }
-        paths.forEach { watcher?.onFileChanged(it) }
+        val watcher = buildFileWatcher.value ?: return
+        paths.forEach { watcher.onFileChanged(it) }
     }
+
     fun getCurrentSourceDirectories(): List<Path> = sourceDirs.value
     fun getState(): State = state.value
     fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot.value
