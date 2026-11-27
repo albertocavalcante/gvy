@@ -457,6 +457,22 @@ test('the gvy rule set is active and takes no set-wide excludes or includes', ()
   assert.deepEqual(unexpected, [], message);
 });
 
+test('the gvy plugin default config only activates the rule set and its rules', () => {
+  // detekt appends every plugin's config/config.yml to its default config, which tools/lint/detekt.yml builds upon. A
+  // key there that detekt.yml leaves unset, such as VolatileProperty's excludes or any rule's includes, would apply.
+  const path = 'tools/detekt-rules/src/main/resources/config/config.yml';
+  const config = readFileSync(join(root, path), 'utf8');
+  const keys = gvyRuleSetKeys(config);
+  assert.ok(keys, `${path} must configure the gvy rule set`);
+  const message = `${path} may hold only \`active: true\` for the gvy rule set and each rule. Configure a rule in ` +
+    'tools/lint/detekt.yml, where this guard reads it (#2474)';
+  assert.deepEqual(keys.filter(key => key !== 'active: true' && !/^[A-Z]\w*:$/.test(key)), [], message);
+  assert.ok(keys.includes('active: true'), message);
+  for (const rule of keys.filter(key => key !== 'active: true').map(key => key.slice(0, -1))) {
+    assert.deepEqual(gvyRuleConfig(config, rule), { active: true, excludes: [] }, `${message}: gvy > ${rule}`);
+  }
+});
+
 test('no tracked detekt baseline holds a finding of a gvy rule', () => {
   const finding = new RegExp(`<ID>(?:${unbaselined.join('|')}):[^<]*</ID>`, 'g');
   for (const baseline of trackedBaselines()) {
