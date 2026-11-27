@@ -5,7 +5,6 @@ package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
-import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
@@ -32,12 +31,6 @@ class HoverProviderTest {
     private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
-
-    init {
-        // Reset DocumentationProvider singleton to ensure it uses our documentProvider instance
-        // TODO: Refactor DocumentationProvider to avoid singleton reset in tests (e.g. dependency injection)
-        DocumentationProvider.reset()
-    }
 
     private val semanticResolver =
         SemanticTypeResolver(

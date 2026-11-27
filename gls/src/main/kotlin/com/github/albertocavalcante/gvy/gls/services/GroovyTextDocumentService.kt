@@ -16,7 +16,6 @@ import com.github.albertocavalcante.gvy.gls.compilation.SnapshotQuery
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
-import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.execution.discoverEntryPoints
 import com.github.albertocavalcante.gvy.gls.providers.SignatureHelpProvider
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
@@ -154,7 +153,7 @@ class GroovyTextDocumentService(
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
     private val codeNarcRulesetResolverFactory = options.codeNarcRulesetResolverFactory
 
-    /** The resolver behind the current CodeNarc provider, so [reloadCodeNarcRulesets] can clear its caches. */
+    /** The resolver behind the open documents' CodeNarc provider, so [reloadCodeNarcRulesets] can clear its caches. */
     private val codeNarcRulesetResolver = SharedValue<HierarchicalRulesetResolver?>(null)
 
     private val definitionLinkSupport = SharedValue(options.definitionLinkSupport)
@@ -213,7 +212,7 @@ class GroovyTextDocumentService(
         DiagnosticsOrchestrator(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            diagnosticsService = createDiagnosticsService(configuration),
+            diagnosticsService = createEditorDiagnosticsService(configuration),
             documentProvider = documentProvider,
             serverConfiguration = configuration,
             client = client,
@@ -227,27 +226,39 @@ class GroovyTextDocumentService(
         serverConfiguration.set(configuration)
         compilationService.updateServerConfiguration(configuration)
         if (diagnosticsOrchestratorDelegate.isInitialized()) {
-            diagnosticsOrchestrator.updateConfiguration(configuration, createDiagnosticsService(configuration))
+            diagnosticsOrchestrator.updateConfiguration(configuration, createEditorDiagnosticsService(configuration))
         }
     }
 
     /**
-     * Factory method for creating DiagnosticsService with configured providers.
-     *
-     * NOTE: This factory pattern allows for easy testing and future extension.
+     * The diagnostics service for open documents. Its CodeNarc resolver becomes the one [reloadCodeNarcRulesets]
+     * clears. Only the orchestrator's initializer and [updateConfiguration] call this, both under this object's
+     * monitor, so the recorded resolver is always the one behind the orchestrator's latest service.
      */
-    private fun createDiagnosticsService(serverConfiguration: ServerConfiguration): DiagnosticsService {
+    private fun createEditorDiagnosticsService(configuration: ServerConfiguration): DiagnosticsService {
+        val rulesetResolver = createCodeNarcRulesetResolver(configuration)
+        return createDiagnosticsService(configuration, rulesetResolver).also {
+            codeNarcRulesetResolver.set(rulesetResolver)
+        }
+    }
+
+    // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
+    private fun createCodeNarcRulesetResolver(configuration: ServerConfiguration): HierarchicalRulesetResolver =
+        codeNarcRulesetResolverFactory(JenkinsFileDetector(configuration.jenkinsConfig.filePatterns)::isJenkinsFile)
+
+    /**
+     * Builds a DiagnosticsService with the configured providers and CodeNarc behind [rulesetResolver]. It has no
+     * side effects: whoever owns the service decides whether reloads reach its resolver.
+     */
+    private fun createDiagnosticsService(
+        serverConfiguration: ServerConfiguration,
+        rulesetResolver: HierarchicalRulesetResolver,
+    ): DiagnosticsService {
         val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
-            val jenkinsFiles = JenkinsFileDetector(serverConfiguration.jenkinsConfig.filePatterns)
-            val codeNarcProvider = CodeNarcDiagnosticProvider(
-                workspaceContext,
-                // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
-                rulesetResolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
-                    .also { codeNarcRulesetResolver.set(it) },
-            )
+            val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext, rulesetResolver = rulesetResolver)
             val codeNarcAdapter = DiagnosticProviderAdapter(
                 delegate = codeNarcProvider,
                 id = "codenarc",
@@ -424,10 +435,6 @@ class GroovyTextDocumentService(
         val snapshot = documentProvider.update(uri, params.contentChanges.lastOrNull()?.text, version) ?: return
         diagnosticsOrchestrator.documentChanged(uri)
 
-        if (params.contentChanges.isNotEmpty()) {
-            // Invalidate documentation cache for this document
-            DocumentationProvider.invalidateDocument(uri)
-        }
         // Even a version-only update retires the previous snapshot's diagnostic publication.
         diagnosticsOrchestrator.trigger(uri, snapshot.content, debounce = true)
     }
@@ -472,7 +479,8 @@ class GroovyTextDocumentService(
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
         // One immutable configuration applies throughout this request.
         val configuration = serverConfiguration.value
-        val diagnosticsService = createDiagnosticsService(configuration)
+        // Its own resolver, not recorded: a reload clears the editor's resolver, and this one ends with the call.
+        val diagnosticsService = createDiagnosticsService(configuration, createCodeNarcRulesetResolver(configuration))
         val result = compilationService.compile(uri, content)
         val parserEnabled = configuration.diagnosticConfig.isProviderEnabled(
             "parser",

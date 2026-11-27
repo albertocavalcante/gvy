@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover.strategies
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -28,11 +27,6 @@ class ClosureHoverStrategyTest {
     private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
-
-    init {
-        // Reset DocumentationProvider singleton for test isolation
-        DocumentationProvider.reset()
-    }
 
     private val semanticResolver = SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),

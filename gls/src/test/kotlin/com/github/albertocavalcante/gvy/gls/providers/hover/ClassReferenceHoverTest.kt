@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import kotlinx.coroutines.test.runTest
@@ -47,7 +46,6 @@ class ClassReferenceHoverTest {
 
     @Test
     fun `inherited property does not borrow a comment from the caller buffer`(): Unit = runTest {
-        DocumentationProvider.reset()
         val documents = DocumentProvider()
         val compilation = GroovyCompilationService(documentProvider = documents)
         try {
@@ -87,12 +85,10 @@ class ClassReferenceHoverTest {
             assertFalse(content.contains("Caller documentation"), content)
         } finally {
             compilation.shutdown()
-            DocumentationProvider.reset()
         }
     }
 
     private suspend fun classHover(use: String, importPosition: Boolean = false, checkContent: (String) -> Unit) {
-        DocumentationProvider.reset()
         val documents = DocumentProvider()
         val compilation = GroovyCompilationService(documentProvider = documents)
         try {
@@ -129,7 +125,6 @@ class ClassReferenceHoverTest {
             checkContent(hover.contents.right.value)
         } finally {
             compilation.shutdown()
-            DocumentationProvider.reset()
         }
     }
 }

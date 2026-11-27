@@ -19,9 +19,7 @@ class GroovyDocSource(private val documentProvider: DocumentProvider) : Pluggabl
     override val name: String = "Groovy Documentation"
     override val priority: Int = 0 // Default priority, Jenkins provider is higher
 
-    private val docProvider by lazy {
-        DocumentationProvider.getInstance(documentProvider)
-    }
+    private val docProvider = DocumentationProvider(documentProvider)
 
     override fun generateDoc(node: ASTNode, model: GroovyAstModel, documentUri: URI): GroovyDocumentation? {
         val doc = docProvider.getDocumentation(node, documentUri)

@@ -30,6 +30,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /** The CodeNarc reload command (sent when `.codenarc` files change) clears the resolver's cached detection (#1236). */
 class CodeNarcRulesetReloadTest {
@@ -70,6 +71,43 @@ class CodeNarcRulesetReloadTest {
 
         assertEquals(1, beforeReload)
         assertEquals(2, detections.get())
+    }
+
+    @Test
+    fun `a CLI diagnose run does not replace the resolver that reloading clears`(): Unit = runTest {
+        val detections = AtomicInteger()
+        val created = CopyOnWriteArrayList<HierarchicalRulesetResolver>()
+        val documents = DocumentProvider()
+        val compilation = mockk<GroovyCompilationService>(relaxed = true)
+        every { compilation.workspaceManager.getWorkspaceRoot() } returns root
+        coEvery { compilation.compile(any(), any(), any()) } returns CompilationResult.failure(emptyList())
+        val service = GroovyTextDocumentService(
+            coroutineScope = backgroundScope,
+            compilationService = compilation,
+            options = GroovyTextDocumentServiceOptions(
+                documentProvider = documents,
+                codeNarcRulesetResolverFactory = { isJenkinsPipelineFile ->
+                    HierarchicalRulesetResolver(
+                        countingDetector(detections),
+                        isJenkinsPipelineFile = isJenkinsPipelineFile,
+                    )
+                        .also { created += it }
+                },
+            ),
+        )
+        val app = root.resolve("App.groovy").toUri()
+        documents.put(app, "class App {}\n")
+        service.rerunDiagnosticsOnOpenFiles() // builds the editor's diagnostics providers
+        val editorResolver = created.single()
+        editorResolver.resolve(context(), app)
+
+        service.diagnose(app, "class App {}\n") // the CLI path builds providers of its own
+        val beforeReload = detections.get()
+        service.reloadCodeNarcRulesets()
+        editorResolver.resolve(context(), app)
+
+        assertEquals(2, created.size, "diagnose built its own resolver")
+        assertTrue(detections.get() > beforeReload, "reloading cleared the editor's resolver, not diagnose's")
     }
 
     @Test

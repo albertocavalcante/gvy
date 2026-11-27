@@ -3,25 +3,20 @@
 
 package com.github.albertocavalcante.gvy.gls.documentation
 
-import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
-import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Service for retrieving documentation for AST nodes.
- * Extracts groovydoc/javadoc from workspace sources.
- * Thread-safe for concurrent access from coroutines.
+ * Extracts groovydoc/javadoc from the open buffers of [documentProvider].
+ *
+ * Nothing is cached: every lookup reads the buffer as it is now, so an edit can never leave old documentation
+ * behind. Its owners build one per hover provider, and production builds a hover provider for each request, so a
+ * cache would not outlive the one lookup a request makes. Each owner passes its own [DocumentProvider].
  */
 class DocumentationProvider(private val documentProvider: DocumentProvider) {
-    private val logger = KotlinLogging.logger {}
-
-    // Thread-safe cache to avoid recomputing documentation
-    private val cache = ConcurrentHashMap<String, Documentation>()
-
     /**
      * Get documentation for an AST node from the given document.
      *
@@ -30,81 +25,10 @@ class DocumentationProvider(private val documentProvider: DocumentProvider) {
      * @return Documentation if found, or Documentation.EMPTY
      */
     fun getDocumentation(node: ASTNode, documentUri: URI): Documentation {
-        // Only annotated nodes have line information we can use
-        if (node !is AnnotatedNode) {
-            return Documentation.EMPTY
-        }
-
-        val lineNumber = node.lineNumber
-        if (lineNumber <= 0) {
-            return Documentation.EMPTY
-        }
-
-        // Create a cache key
-        val cacheKey = "$documentUri:$lineNumber"
-
-        // Check cache first
-        cache[cacheKey]?.let { return it }
-
-        // Get the source text
-        val sourceText = try {
-            documentProvider.get(documentUri) ?: return Documentation.EMPTY
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to get document content for $documentUri" }
-            return Documentation.EMPTY
-        }
-
-        // Extract documentation
-        val doc = DocExtractor.extractDocumentation(sourceText, node)
-
-        // Cache the result
-        cache[cacheKey] = doc
-
-        return doc
-    }
-
-    /**
-     * Clear the documentation cache.
-     */
-    fun clearCache() {
-        cache.clear()
-    }
-
-    /**
-     * Clear cached documentation for a specific document.
-     * Thread-safe: uses ConcurrentHashMap's atomic operations.
-     */
-    fun clearCache(documentUri: URI) {
-        val prefix = "$documentUri:"
-        cache.keys.removeIf { it.startsWith(prefix) }
-    }
-
-    companion object {
-        // Shared instance for use across the application
-        private val instance = SharedValue<DocumentationProvider?>(null)
-
-        /**
-         * Get or create a shared DocumentationProvider instance.
-         * This ensures cache invalidation works across all hover requests.
-         */
-        fun getInstance(documentProvider: DocumentProvider): DocumentationProvider =
-            instance.value ?: synchronized(this) {
-                instance.value ?: DocumentationProvider(documentProvider).also { instance.set(it) }
-            }
-
-        /**
-         * Clear cache for a document across the shared instance.
-         * Call this when a document changes.
-         */
-        fun invalidateDocument(documentUri: URI) {
-            instance.value?.clearCache(documentUri)
-        }
-
-        /**
-         * Reset the singleton instance. Useful for testing.
-         */
-        fun reset() {
-            instance.set(null)
-        }
+        // Only annotated nodes with a line can be matched to a comment in the text
+        val lineNumber = (node as? AnnotatedNode)?.lineNumber
+        if (lineNumber == null || lineNumber <= 0) return Documentation.EMPTY
+        val text = documentProvider.get(documentUri) ?: return Documentation.EMPTY
+        return DocExtractor.extractDocumentation(text, node)
     }
 }
