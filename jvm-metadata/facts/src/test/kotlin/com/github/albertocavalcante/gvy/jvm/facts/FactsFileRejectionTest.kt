@@ -77,33 +77,49 @@ class FactsFileRejectionTest {
     }
 
     @Test
-    fun `a damaged types section or type pool does not stop names or extensions from loading`() {
+    fun `a damaged types section or type pool stops types and extensions but not names`() {
         for (damagedId in listOf(TYPES, TYPE_STRINGS)) {
             val section = sectionLocations(storedFile).single { it.id == damagedId }
             val file = openFile(storedFile.withFlippedByte(section.offset))
 
             assertEquals(sampleFacts().names, file.names().loaded(), "section $damagedId")
-            assertEquals(sampleFacts().extensions, file.extensions().loaded(), "section $damagedId")
             file.types().assertRejected(RejectReason.CORRUPT)
+            file.extensions().assertRejected(RejectReason.CORRUPT)
             file.loadAll().assertRejected(RejectReason.CORRUPT)
         }
     }
 
     @Test
-    fun `names and extensions load while compressed types and type pool are garbage`() {
+    fun `names load while compressed types and type pool are garbage`() {
         for (damagedId in listOf(TYPES, TYPE_STRINGS)) {
             val section = sectionLocations(deflatedFile).single { it.id == damagedId }
             val damaged = deflatedFile.copyOf().also { it.fill(0x5A, section.offset, section.offset + section.stored) }
             val file = openFile(damaged)
 
             assertEquals(sampleFacts().names, file.names().loaded(), "section $damagedId")
-            assertEquals(sampleFacts().extensions, file.extensions().loaded(), "section $damagedId")
             file.types().assertRejected(RejectReason.CORRUPT)
+            file.extensions().assertRejected(RejectReason.CORRUPT)
         }
     }
 
     @Test
-    fun `a damaged names pool stops everything and a damaged names section stops extensions and types`() {
+    fun `a damaged extensions section does not stop names or types`() {
+        // The kind byte of the only entry is 2, which no extension kind has.
+        val broken = extensionsSection(ExtensionRow(kind = 2))
+        val file = openFile(buildFile(sections(extensions = broken)))
+
+        file.names().loaded()
+        file.types().loaded()
+        file.extensions().assertRejected(RejectReason.CORRUPT)
+        file.loadAll().assertRejected(RejectReason.CORRUPT)
+        val section = sectionLocations(storedFile).single { it.id == EXTENSIONS }
+        val sample = openFile(storedFile.withFlippedByte(section.offset))
+        assertEquals(sampleFacts().types, sample.types().loaded())
+        sample.extensions().assertRejected(RejectReason.CORRUPT)
+    }
+
+    @Test
+    fun `a damaged names pool stops everything and a damaged names section stops types and extensions`() {
         val pool = sectionLocations(storedFile).single { it.id == NAME_STRINGS }
         val names = sectionLocations(storedFile).single { it.id == NAMES }
 
@@ -111,10 +127,10 @@ class FactsFileRejectionTest {
         val namesDamaged = openFile(storedFile.withFlippedByte(names.offset))
 
         poolDamaged.names().assertRejected(RejectReason.CORRUPT)
-        poolDamaged.extensions().assertRejected(RejectReason.CORRUPT)
+        poolDamaged.types().assertRejected(RejectReason.CORRUPT)
         namesDamaged.names().assertRejected(RejectReason.CORRUPT)
-        namesDamaged.extensions().assertRejected(RejectReason.CORRUPT)
         namesDamaged.types().assertRejected(RejectReason.CORRUPT)
+        namesDamaged.extensions().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
@@ -244,16 +260,19 @@ class FactsFileRejectionTest {
         val withoutTypes = openFile(buildFile(sections().filter { it.id != TYPES }))
         val withoutTypePool = openFile(buildFile(sections().filter { it.id != TYPE_STRINGS }))
         val withoutNamePool = openFile(buildFile(sections().filter { it.id != NAME_STRINGS }))
+        val withoutExtensions = openFile(buildFile(sections().filter { it.id != EXTENSIONS }))
 
         withoutTypes.names().loaded()
-        withoutTypes.extensions().loaded()
         withoutTypes.types().assertRejected(RejectReason.CORRUPT)
+        withoutTypes.extensions().assertRejected(RejectReason.CORRUPT)
         withoutTypes.loadAll().assertRejected(RejectReason.CORRUPT)
-        openFile(buildFile(sections().filter { it.id != EXTENSIONS })).types().assertRejected(RejectReason.CORRUPT)
         withoutTypePool.names().loaded()
         withoutTypePool.types().assertRejected(RejectReason.CORRUPT)
+        withoutExtensions.names().loaded()
+        withoutExtensions.types().loaded()
+        withoutExtensions.extensions().assertRejected(RejectReason.CORRUPT)
         withoutNamePool.names().assertRejected(RejectReason.CORRUPT)
-        withoutNamePool.extensions().assertRejected(RejectReason.CORRUPT)
+        withoutNamePool.types().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test

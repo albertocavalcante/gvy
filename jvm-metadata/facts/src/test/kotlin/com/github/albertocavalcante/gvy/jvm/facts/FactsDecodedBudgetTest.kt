@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.jvm.facts
 
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -40,21 +41,21 @@ class FactsDecodedBudgetTest {
     fun `the budget is shared across sections and across separate calls on one file`() {
         val facts = sampleFacts()
         val bytes = writeWith(facts, SectionEncoding.NONE)
-        val namesAndExtensions = namesItems(facts, bytes) + extensionItems(facts)
-        val total = namesAndExtensions + typesItems(facts, bytes)
+        val total = namesItems(facts, bytes) + typesItems(facts, bytes) + extensionItems(facts)
 
         val file = openFile(bytes, ReadLimits(maxDecodedItems = total - 1))
 
         file.names().loaded()
-        file.extensions().loaded()
-        file.types().assertRejected(RejectReason.OVERSIZED)
+        file.types().loaded()
+        file.extensions().assertRejected(RejectReason.OVERSIZED)
         file.names().loaded()
-        file.types().assertRejected(RejectReason.OVERSIZED)
+        file.types().loaded()
+        file.extensions().assertRejected(RejectReason.OVERSIZED)
         file.loadAll().assertRejected(RejectReason.OVERSIZED)
         val exact = openFile(bytes, ReadLimits(maxDecodedItems = total))
         exact.names().loaded()
-        exact.extensions().loaded()
         exact.types().loaded()
+        exact.extensions().loaded()
         exact.names().loaded()
         exact.loadAll().loaded()
     }
@@ -63,29 +64,42 @@ class FactsDecodedBudgetTest {
     fun `a call gives the same result whichever calls came before it`() {
         val facts = sampleFacts()
         val bytes = writeWith(facts, SectionEncoding.NONE)
-        val limits = ReadLimits(maxDecodedItems = namesItems(facts, bytes) + extensionItems(facts) - 1)
+        val total = namesItems(facts, bytes) + typesItems(facts, bytes) + extensionItems(facts)
+        val limits = ReadLimits(maxDecodedItems = total - 1)
 
-        val namesFirst = openFile(bytes, limits)
-        namesFirst.names().loaded()
-        namesFirst.extensions().assertRejected(RejectReason.OVERSIZED)
+        val typesFirst = openFile(bytes, limits)
+        typesFirst.types().loaded()
+        typesFirst.extensions().assertRejected(RejectReason.OVERSIZED)
         val extensionsFirst = openFile(bytes, limits)
         extensionsFirst.extensions().assertRejected(RejectReason.OVERSIZED)
+        extensionsFirst.types().loaded()
         extensionsFirst.names().loaded()
         openFile(bytes, limits).names().loaded()
     }
 
     @Test
-    fun `names and extensions never charge for the type pool or the types`() {
+    fun `an extensions section that overspends the budget does not stop types`() {
+        val facts = sampleFacts()
+        val bytes = writeWith(facts, SectionEncoding.NONE)
+        val withoutExtensions = namesItems(facts, bytes) + typesItems(facts, bytes)
+
+        val file = openFile(bytes, ReadLimits(maxDecodedItems = withoutExtensions))
+
+        assertEquals(facts.types, file.types().loaded())
+        file.extensions().assertRejected(RejectReason.OVERSIZED)
+    }
+
+    @Test
+    fun `names charge neither the type pool, the types nor the extensions and types not the extensions`() {
         val facts = sampleFacts()
         val bytes = writeWith(facts, SectionEncoding.NONE)
         val namesOnly = namesItems(facts, bytes)
-        val extensionsOnly = namesOnly + extensionItems(facts)
+        val typesToo = namesOnly + typesItems(facts, bytes)
 
         openFile(bytes, ReadLimits(maxDecodedItems = namesOnly)).names().loaded()
         openFile(bytes, ReadLimits(maxDecodedItems = namesOnly - 1)).names().assertRejected(RejectReason.OVERSIZED)
-        openFile(bytes, ReadLimits(maxDecodedItems = extensionsOnly)).extensions().loaded()
-        openFile(bytes, ReadLimits(maxDecodedItems = extensionsOnly - 1)).extensions()
-            .assertRejected(RejectReason.OVERSIZED)
+        openFile(bytes, ReadLimits(maxDecodedItems = typesToo)).types().loaded()
+        openFile(bytes, ReadLimits(maxDecodedItems = typesToo - 1)).types().assertRejected(RejectReason.OVERSIZED)
     }
 
     @Test
@@ -111,7 +125,8 @@ class FactsDecodedBudgetTest {
     fun `extension entries are charged one item each`() {
         val entries = extensionsSection(ExtensionRow(holder = 0), ExtensionRow(holder = 1), ExtensionRow(holder = 2))
 
-        assertBudget(total = 6, sections(nameStrings = abcPool, names = noPackages, extensions = entries)) {
+        // Extensions are decoded last: the pool (3), the names (0), the type pool (1) and the types (0) come first.
+        assertBudget(total = 7, sections(nameStrings = abcPool, names = noPackages, extensions = entries)) {
             extensions()
         }
     }

@@ -16,9 +16,9 @@ import kotlin.test.fail
 /** Section ids and codecs as FORMAT.md states them, repeated here so the tests do not share code with the module. */
 internal const val NAME_STRINGS = 1
 internal const val NAMES = 2
-internal const val EXTENSIONS = 3
-internal const val TYPE_STRINGS = 4
-internal const val TYPES = 5
+internal const val TYPE_STRINGS = 3
+internal const val TYPES = 4
+internal const val EXTENSIONS = 5
 internal const val STORED = 0
 internal const val ZLIB = 1
 
@@ -216,9 +216,9 @@ internal fun sections(
 ): List<TestSection> = listOf(
     plain(NAME_STRINGS, nameStrings),
     plain(NAMES, names),
-    plain(EXTENSIONS, extensions),
     plain(TYPE_STRINGS, typeStrings),
     plain(TYPES, types),
+    plain(EXTENSIONS, extensions),
 )
 
 /** The fields of one class row of a names section: pool indices, or values to break. */

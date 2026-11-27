@@ -71,12 +71,9 @@ class FactsRoundTripTest {
     fun `the writer emits all five sections in ascending id order at the current version`() {
         val bytes = writeWith(sampleFacts(), SectionEncoding.NONE)
 
-        assertEquals(
-            listOf(NAME_STRINGS, NAMES, EXTENSIONS, TYPE_STRINGS, TYPES),
-            sectionLocations(bytes).map {
-                it.id
-            },
-        )
+        val ids = sectionLocations(bytes).map { location -> location.id }
+
+        assertEquals(listOf(NAME_STRINGS, NAMES, TYPE_STRINGS, TYPES, EXTENSIONS), ids)
         assertEquals(FactsFormat.MAJOR, bytes[4].toInt() + (bytes[5].toInt() shl 8))
         assertEquals(FactsFormat.MINOR, bytes[6].toInt() + (bytes[7].toInt() shl 8))
     }
@@ -105,9 +102,9 @@ class FactsRoundTripTest {
 
         assertEquals(bytes.size, opened.bytesRead() + file.loadAll().bytesRead())
         assertEquals(stored.getValue(NAME_STRINGS) + stored.getValue(NAMES), file.names().bytesRead())
-        val extensionsNeed = listOf(NAME_STRINGS, NAMES, EXTENSIONS).sumOf { stored.getValue(it) }
-        assertEquals(extensionsNeed, file.extensions().bytesRead())
-        assertEquals(stored.values.sum(), file.types().bytesRead())
+        val typesNeed = listOf(NAME_STRINGS, NAMES, TYPE_STRINGS, TYPES).sumOf { stored.getValue(it) }
+        assertEquals(typesNeed, file.types().bytesRead())
+        assertEquals(stored.values.sum(), file.extensions().bytesRead())
     }
 
     @Test
