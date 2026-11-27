@@ -33,6 +33,23 @@ class GroovyGdkProvider(
     // The index for the current classpath; a classpath change installs a fresh one
     private val currentIndex = SharedValue(newIndex())
 
+    // The source resolver reads the server's own Groovy, not the classpath, so the first build initializes it, once
+    private val readySourceResolver: GroovySourceResolver? by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        groovySourceResolver?.also { resolver ->
+            // Note: runBlocking is intentional here - the index must be complete
+            // before the provider is usable.
+            // Moving to async would require significant refactoring of callers.
+            runBlocking {
+                val success = resolver.initialize()
+                if (success) {
+                    logger.info { "Successfully initialized Groovy source resolver for parameter names" }
+                } else {
+                    logger.warn { "Failed to initialize Groovy source resolver, will use reflection-based names" }
+                }
+            }
+        }
+    }
+
     /**
      * Builds the GDK index for the current classpath if no call has built it yet, and returns once it is complete.
      * Lookups build it on first use too, so this only moves the build off the request path.
@@ -63,38 +80,29 @@ class GroovyGdkProvider(
 
     /**
      * Indexes every class in [GDK_CLASSES] into a map nothing else can see until it is complete. A class that fails
-     * to link is left out instead of failing the build. A source resolver, when given, is initialized inside every
-     * build. Production passes none; if one is ever wired, lookups wait for its source download (#2398).
+     * to link is left out instead of failing the build. A source resolver, when given, is initialized by the first
+     * build only. Production passes none; if one is ever wired, that build, and the lookups waiting on it, wait for
+     * its source download (#2398).
      */
     private fun buildIndex(): GdkIndex {
-        // Initialize source resolver if available
-        // Note: runBlocking is intentional here - the index must be complete
-        // before the provider is usable.
-        // Moving to async would require significant refactoring of callers.
-        groovySourceResolver?.let { resolver ->
-            runBlocking {
-                val success = resolver.initialize()
-                if (success) {
-                    logger.info { "Successfully initialized Groovy source resolver for parameter names" }
-                } else {
-                    logger.warn { "Failed to initialize Groovy source resolver, will use reflection-based names" }
-                }
-            }
-        }
-
+        val resolver = readySourceResolver
         val methodsByType = mutableMapOf<String, MutableList<QualifiedGdkMethod>>()
         // Use the same GDK classes as GroovySourceResolver for consistency
         // This ensures parameter names from sources match the methods we index
         GDK_CLASSES.forEach { className ->
-            indexGdkClass(className, methodsByType)
+            indexGdkClass(className, resolver, methodsByType)
         }
 
         logger.info { "Initialized GDK Provider with ${methodsByType.size} target types" }
         return methodsByType
     }
 
-    /** Adds the GDK methods of [className] to [into]. A class that fails to link adds nothing. */
-    private fun indexGdkClass(className: String, into: MutableMap<String, MutableList<QualifiedGdkMethod>>) {
+    /** Adds the GDK methods of [className] to [into], with [resolver]'s parameter names. A failed link adds nothing. */
+    private fun indexGdkClass(
+        className: String,
+        resolver: GroovySourceResolver?,
+        into: MutableMap<String, MutableList<QualifiedGdkMethod>>,
+    ) {
         reflectSafely({ "GDK class $className" }, Unit) {
             val clazz = classpathService.loadClass(className) ?: return@reflectSafely
 
@@ -111,7 +119,7 @@ class GroovyGdkProvider(
                 val parameterTypes = method.parameterTypes.drop(1).map { it.simpleName }
 
                 // Try to get real parameter names from source resolver first
-                val parameterNames = groovySourceResolver?.getParameterNames(
+                val parameterNames = resolver?.getParameterNames(
                     clazz.simpleName,
                     method.name,
                     parameterTypes,
