@@ -62,7 +62,8 @@ Metaspace; input hashing time, reported separately.
 - **Noise rule:** each timing carries the 99.9% confidence interval the harness reports. Speedup is (lower bound of
   today) ÷ (upper bound of facts); time saved is (lower bound of today) − (upper bound of facts). Each metric is
   evaluated per platform: arm64 macOS and GitHub-hosted `ubuntu-24.04` x64. Outcomes are ordered Stop < Continue < Also.
-  The lower platform outcome stands per metric; the lowest metric decides.
+  The lower platform outcome stands per metric; the lowest metric decides. Size and retained memory have no interval:
+  size is a deterministic ratio, and memory uses the median of its 5 runs.
 - **Extending `tools/perf/evidence.mjs`:** it is a closed envelope for language-server sessions with no byte or heap
   fields; extending it needs its own review, so this work does not.
 
@@ -71,7 +72,8 @@ Metaspace; input hashing time, reported separately.
 Measured on JDK + Groovy 4.0.33 + libraries. Sizes are evaluated at Deflater level 6, as an aggregate: sum of compressed
 facts bytes ÷ sum of input bytes (for the JDK, the input is the size of `lib/modules`). Levels 1 and 9 are reported but
 decide nothing. Bundled-tier size caps use level 6 too. The bundled column applies only if every Continue condition also
-holds.
+holds. The Groovy 2.4.21 jars are outside the aggregate; their sizes are reported only. "Today" in a ratio is the
+baseline mechanism defined above.
 
 | Metric                                       | Continue: local cache                                                       | Also: bundled tier                                                                                                         | Stop: correctness-only                                         |
 | -------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -82,6 +84,10 @@ holds.
 | Correctness                                  | Names identical; extension set contains today's, every difference explained | same                                                                                                                       | Any unexplained difference blocks every column                 |
 
 Groovy 2.4.21 has no baseline, so it is outside the correctness gate; its difference is reported for information.
+
+Three cells need a rule to fit the ordering. Retained memory between 1.25x and 2x counts as Stop for that run; a
+re-measure after a redesign is a new run. An unexplained correctness difference is Stop. Miss cost never changes the
+outcome: above 2x it only requires building off the request path.
 
 **Correctness-only** means: keep slices 1-3 and use version-accurate extension facts built in memory. Build no cache,
 bundle or feed.
