@@ -145,7 +145,7 @@ class SnapshotAcquisitionTest {
             failing.onDocumentOpened(uri)
             documents.put(uri, source, DocumentVersion.of(1))
             val result = assertIs<SnapshotAcquisition.Failure>(failing.acquireSnapshot(uri))
-            assertEquals("worker failed", result.cause?.message)
+            assertEquals("worker failed", result.cause.message)
         } finally {
             failing.shutdown()
         }

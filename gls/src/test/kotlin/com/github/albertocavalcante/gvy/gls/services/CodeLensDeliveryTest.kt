@@ -43,7 +43,13 @@ class CodeLensDeliveryTest {
             val changed = AtomicBoolean()
             val detector = object : TestFrameworkDetector {
                 override val framework = TestFramework.SPOCK
-                override fun appliesTo(node: ClassNode, module: ModuleNode?, loader: ClassLoader?): Boolean = true
+
+                override fun appliesTo(
+                    classNode: ClassNode,
+                    module: ModuleNode?,
+                    classLoader: ClassLoader?,
+                ): Boolean = true
+
                 override fun extractTests(classNode: ClassNode): List<TestItem> {
                     armed.set(true)
                     return emptyList()
