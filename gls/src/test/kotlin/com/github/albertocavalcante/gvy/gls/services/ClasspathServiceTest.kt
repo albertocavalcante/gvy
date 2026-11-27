@@ -427,7 +427,7 @@ private class FailingOnceClasspathIndex(private val entries: List<IndexedClass>)
     override fun index(classpathEntries: List<String>): List<IndexedClass> {
         if (!failed) {
             failed = true
-            throw IllegalStateException("unreadable classpath entry")
+            error("unreadable classpath entry")
         }
         return entries
     }
