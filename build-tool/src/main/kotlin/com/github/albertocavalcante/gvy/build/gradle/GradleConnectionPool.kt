@@ -90,15 +90,12 @@ internal class ProjectConnectionPool(
             }
             connect(key.projectDir, key.gradleUserHomeDir)
         },
-        close = ::closeQuietly,
+        closeValue = ::closeQuietly,
         clockNanos = System::nanoTime,
         idleTimeout = { settings.value.connectionIdleTimeout },
     )
 
     private var sweeper: ScheduledExecutorService? = null
-
-    /** Set by [shutdown]; a pool that is shut down keeps no connections and runs no sweeper. */
-    private val closed = SharedValue(false)
 
     /** Whether the idle sweep is scheduled. */
     @get:Synchronized
@@ -120,9 +117,9 @@ internal class ProjectConnectionPool(
      * @param projectDir The project directory to connect to
      * @param gradleUserHomeDir Optional Gradle user home directory to isolate from user init scripts
      * @return A connected ProjectConnection
+     * @throws IllegalStateException after [shutdown]
      */
     override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
-        check(!closed.value) { "Gradle connection pool is shut down" }
         ensureSweeper()
         return connections.get(keyOf(projectDir, gradleUserHomeDir))
     }
@@ -130,13 +127,11 @@ internal class ProjectConnectionPool(
     /**
      * Borrows a pooled connection until the lease is closed. After [shutdown] the pool no longer retains anything:
      * the lease wraps a private connection that is closed with the lease, and the sweeper is not restarted.
+     *
+     * The cache makes that choice under the lock that [shutdown] takes to close it. So an acquire that races a
+     * shutdown either pools its connection before shutdown closes it, or gets a private one; nothing stays pooled.
      */
     override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease {
-        if (closed.value) {
-            val key = keyOf(projectDir, gradleUserHomeDir)
-            val connection = connect(key.projectDir, key.gradleUserHomeDir)
-            return ConnectionLease(connection) { closeQuietly(key, connection) }
-        }
         ensureSweeper()
         val lease = connections.acquire(keyOf(projectDir, gradleUserHomeDir))
         return ConnectionLease(lease.value) { lease.close() }
@@ -147,9 +142,14 @@ internal class ProjectConnectionPool(
         gradleUserHomeDir = gradleUserHomeDir?.toPath()?.toAbsolutePath()?.normalize(),
     )
 
+    /**
+     * Starts the sweeper unless it runs or the cache is closed. [shutdown] closes the cache and only then takes this
+     * monitor to stop the sweeper, so a call that starts one does so before that stop, and any later call finds the
+     * cache closed.
+     */
     @Synchronized
     private fun ensureSweeper() {
-        if (sweeper != null || closed.value) return
+        if (sweeper != null || connections.isClosed) return
         sweeper = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "gradle-connection-idle-sweep").apply { isDaemon = true }
         }.also { executor ->
@@ -203,9 +203,9 @@ internal class ProjectConnectionPool(
     fun shutdown() {
         logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
-        closed.set(true)
+        // The cache first: once it is closed, nothing can start the sweeper again, so stopping it is final.
+        connections.close()
         stopSweeper()
-        connections.clear()
         logger.info { "Gradle connection pool shutdown complete" }
     }
 

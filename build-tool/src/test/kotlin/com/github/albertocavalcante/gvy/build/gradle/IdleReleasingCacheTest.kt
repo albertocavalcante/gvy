@@ -5,6 +5,8 @@ package com.github.albertocavalcante.gvy.build.gradle
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -22,7 +24,7 @@ class IdleReleasingCacheTest {
             created += key
             StringBuilder(key)
         },
-        close = { key, _ ->
+        closeValue = { key, _ ->
             closed += key
             check(key !in failingKeys) { "close failed: $key" }
         },
@@ -113,14 +115,51 @@ class IdleReleasingCacheTest {
     }
 
     @Test
-    fun `clear closes everything including leased entries`() {
-        cache.get("a")
+    fun `close closes everything including leased entries`() {
+        val lease = cache.acquire("a")
         cache.get("b")
 
-        cache.clear()
+        cache.close()
+        lease.close() // ending a borrow after close must not close the value again
 
-        assertEquals(setOf("a", "b"), closed.toSet())
+        assertEquals(listOf("a", "b"), closed.sorted())
         assertEquals(0, cache.size)
+    }
+
+    @Test
+    fun `after close acquire caches nothing and the lease closes its own value`() {
+        cache.close()
+
+        val lease = cache.acquire("a")
+        assertEquals(0, cache.size)
+        assertEquals(emptyList<String>(), closed)
+
+        lease.close()
+        lease.close() // closing twice must close the value once
+
+        assertEquals(listOf("a"), created)
+        assertEquals(listOf("a"), closed)
+        assertEquals(0, cache.size)
+    }
+
+    @Test
+    fun `after close get is rejected and creates nothing`() {
+        cache.close()
+
+        assertThrows(IllegalStateException::class.java) { cache.get("a") }
+        assertEquals(emptyList<String>(), created)
+    }
+
+    @Test
+    fun `close is final and closing again closes nothing twice`() {
+        cache.get("a")
+
+        cache.close()
+        cache.close()
+
+        assertTrue(cache.isClosed)
+        assertEquals(listOf("a"), closed)
+        assertEquals(0, cache.releaseIdle())
     }
 
     @Test
@@ -162,12 +201,12 @@ class IdleReleasingCacheTest {
     }
 
     @Test
-    fun `clear closes every entry even when one close throws`() {
+    fun `close closes every entry even when one close throws`() {
         failingKeys += "a"
         cache.get("a")
         cache.get("b")
 
-        cache.clear()
+        cache.close()
 
         assertEquals(setOf("a", "b"), closed.toSet())
     }
