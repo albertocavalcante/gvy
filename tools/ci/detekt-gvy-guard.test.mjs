@@ -58,6 +58,15 @@ const concurrencySuppression = /^(?:all|gvy|(?:gvy[.:])?(?:VolatileProperty|JdkA
 // (tools/detekt-rules/README.md), and each entry says which. There is none.
 const sanctionedSuppressions = [];
 
+// The rules that detekt 1.23.8's default config excludes from every test source set, `**/test/**`, `**/commonTest/**`,
+// `**/jvmTest/**` and the Android, JS and iOS ones alike. Only these may exclude a multiplatform test set here.
+const defaultTestLenient = [
+  'KDocReferencesNonPublicProperty', 'UndocumentedPublicClass', 'UndocumentedPublicFunction',
+  'UndocumentedPublicProperty', 'StringLiteralDuplication', 'TooManyFunctions', 'InstanceOfCheckForException',
+  'ThrowingExceptionsWithoutMessageOrCause', 'TooGenericExceptionCaught', 'FunctionNaming', 'ForEachOnRange',
+  'SpreadOperator', 'LateinitUsage', 'UnsafeCallOnNullableType', 'MagicNumber',
+];
+
 let trackedCache;
 /** The tracked files of this checkout, listed once. */
 const tracked = () => (trackedCache ??= gitFiles(root));
@@ -434,22 +443,26 @@ test('the loose excludes reader takes block and inline lists of every rule', () 
   });
 });
 
-test('a rule lenient on test sources is lenient on every test source set', () => {
-  // detekt's own defaults list the multiplatform test sets next to `**/test/**`; an override that names only `test`
-  // holds commonTest and jvmTest code to the main-code rules.
-  const sets = testSourceSets();
-  assert.ok(sets.includes('test') && sets.includes('commonTest'), `test source sets read as ${sets.join(', ')}`);
-  const missing = [...ruleExcludes(detektConfig())].flatMap(([rule, excludes]) =>
-    [['**/test/**', set => `**/${set}/**`], ['**/src/test/**', set => `**/src/${set}/**`]]
-      .filter(([lenient]) => excludes.includes(lenient))
-      .flatMap(([, pattern]) => sets.map(pattern).filter(wanted => !excludes.includes(wanted)))
-      .map(wanted => `${rule}: ${wanted}`));
-  assert.deepEqual(missing, [], 'A rule that excludes test sources must exclude every test source set gvy has');
+test('only rules that detekt makes lenient on tests by default exclude a multiplatform test set', () => {
+  // detekt.yml replaces a rule's default excludes, so it names `**/commonTest/**` and `**/jvmTest/**` where detekt's
+  // default has them. Elsewhere such an exclude would widen a rule's reach past its default; dropping one is always
+  // fine. The gvy rules' excludes are pinned by the tests above.
+  const multiplatformTest = /(?:^|\/)[a-z][A-Za-z0-9]*Test\/\*\*$/;
+  const widened = [...ruleExcludes(detektConfig())]
+    .filter(([rule]) => !rule.startsWith('gvy > ') && !defaultTestLenient.includes(rule.split(' > ')[1]))
+    .flatMap(([rule, excludes]) => excludes.map(exclude => `${rule}: ${exclude}`))
+    .filter(found => multiplatformTest.test(found));
+  const message = 'Only a rule whose detekt default excludes every test source set (defaultTestLenient in ' +
+    'tools/ci/detekt-gvy-guard.test.mjs) may exclude a multiplatform test set (#2474)';
+  assert.deepEqual(widened, [], message);
 });
 
 test('no main source path holds a folder that a test-source exclude matches', () => {
   // detekt matches excludes against absolute paths, so `**/test/**` would also skip main code in a `test` package.
   const sets = testSourceSets();
+  const layout = 'No tracked Kotlin lies under a src/test folder, so sourceSet() in tools/ci/detekt-gvy-guard.mjs ' +
+    'no longer reads the source layout and this check would pass on nothing: fix sourceSet()';
+  assert.ok(sets.includes('test'), layout);
   const hidden = tracked().filter(path => {
     const set = path.endsWith('.kt') && sourceSet(path);
     return set && !sets.includes(set) && path.split('/').some(folder => sets.includes(folder));

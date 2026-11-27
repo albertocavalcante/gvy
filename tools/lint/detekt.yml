@@ -222,8 +222,6 @@ style:
       - 'kotlin.io.print'
     excludes:
       - '**/test/**'  # Allow in tests for now (will clean up separately)
-      - '**/commonTest/**'
-      - '**/jvmTest/**'
   ForbiddenComment:
     active: true
     comments:
