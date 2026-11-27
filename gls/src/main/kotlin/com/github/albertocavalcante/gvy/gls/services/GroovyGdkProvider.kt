@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
@@ -10,7 +11,6 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
@@ -28,13 +28,13 @@ class GroovyGdkProvider(
     // Map of <TargetType, List<ExtensionMethod>>
     // e.g. "java.util.List" -> [each, collect, ...]
     private val cache = ConcurrentHashMap<String, List<QualifiedGdkMethod>>()
-    private val isInitialized = AtomicBoolean(false)
+    private val isInitialized = OnceFlag()
 
     /**
      * Initializes the GDK index. Call this on startup.
      */
     fun initialize() {
-        if (!isInitialized.compareAndSet(false, true)) return
+        if (!isInitialized.trySet()) return
 
         // Initialize source resolver if available
         // Note: runBlocking is intentional here - GDK initialization is a one-time
@@ -156,7 +156,7 @@ class GroovyGdkProvider(
     }
 
     private fun ensureInitialized() {
-        if (!isInitialized.get()) initialize()
+        if (!isInitialized.isSet) initialize()
     }
 
     private fun appendCachedMethods(results: MutableList<QualifiedGdkMethod>, className: String) {

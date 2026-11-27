@@ -4,10 +4,10 @@
 package com.github.albertocavalcante.gvy.gls.worker
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicReference
 
 interface WorkerSession {
     fun parse(request: ParseRequest): ParseResult
@@ -22,7 +22,7 @@ class WorkerSessionManager(
     private val sessionFactory: (WorkerDescriptor) -> WorkerSession,
 ) {
     private val sessions = ConcurrentHashMap<String, WorkerSession>()
-    private val activeSession = AtomicReference(defaultSession)
+    private val activeSession = SharedValue(defaultSession)
 
     fun select(worker: WorkerDescriptor?) {
         if (worker == null) {
@@ -33,7 +33,7 @@ class WorkerSessionManager(
         activeSession.set(session)
     }
 
-    internal fun current(): WorkerSession = activeSession.get()
+    internal fun current(): WorkerSession = activeSession.value
 
     fun parse(request: ParseRequest): ParseResult = current().parse(request)
 }

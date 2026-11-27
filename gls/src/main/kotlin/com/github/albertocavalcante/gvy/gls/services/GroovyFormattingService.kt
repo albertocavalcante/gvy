@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.fmt.OpenRewriteFormatter
 import com.github.albertocavalcante.gvy.source.Utf16LineIndex
@@ -17,7 +18,6 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.services.LanguageClient
 import java.net.URI
-import java.util.concurrent.atomic.AtomicBoolean
 
 fun interface Formatter {
     fun format(text: String): String
@@ -66,7 +66,7 @@ class GroovyFormattingService(
     private val client: () -> LanguageClient?,
 ) {
     private val logger = KotlinLogging.logger {}
-    private val optionsWarningLogged = AtomicBoolean(false)
+    private val optionsWarningLogged = OnceFlag()
 
     suspend fun format(params: DocumentFormattingParams): List<TextEdit> {
         val uriString = params.textDocument.uri
@@ -132,7 +132,7 @@ class GroovyFormattingService(
     }
 
     private fun maybeLogIgnoredOptions(ignoredOptions: Boolean) {
-        if (ignoredOptions && optionsWarningLogged.compareAndSet(false, true)) {
+        if (ignoredOptions && optionsWarningLogged.trySet()) {
             logger.info { "DocumentFormattingOptions are not yet supported; using OpenRewrite defaults." }
         }
     }

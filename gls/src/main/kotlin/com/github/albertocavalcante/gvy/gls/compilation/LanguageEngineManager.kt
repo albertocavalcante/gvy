@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.engine.EngineFactory
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
@@ -15,7 +16,6 @@ import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URLClassLoader
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Manages the lifecycle and configuration of the Groovy language engine.
@@ -40,8 +40,8 @@ class LanguageEngineManager(
     private val sourceNavigator: SourceNavigator? = options.sourceNavigator
     private var engineConfig: EngineConfiguration = options.engineConfig
 
-    private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
-    private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
+    private val groovyVersionInfo = SharedValue<GroovyVersionInfo?>(null)
+    private val selectedWorker = SharedValue<WorkerDescriptor?>(null)
 
     private var activeEngineInstance: LanguageEngine? = null
     private val activeEngineLock = Any()
@@ -95,13 +95,13 @@ class LanguageEngineManager(
         groovyVersionInfo.set(info)
     }
 
-    fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.get()
+    fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.value
 
     fun updateSelectedWorker(worker: WorkerDescriptor?) {
         selectedWorker.set(worker)
     }
 
-    fun getSelectedWorker(): WorkerDescriptor? = selectedWorker.get()
+    fun getSelectedWorker(): WorkerDescriptor? = selectedWorker.value
 
     fun getOrCreateClassLoader(): ClassLoader {
         synchronized(classLoaderLock) {

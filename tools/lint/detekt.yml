@@ -139,9 +139,8 @@ gvy:
     - '**/bsp/bsp-core/src/**'
     - '**/bsp/maven-bsp/src/**'
     - '**/parser/core/src/**'
-    # Modules still to migrate (#2474). Remove a line in the pull request that migrates that module; the guard test
-    # fails on a line whose module no longer uses java.util.concurrent.atomic in its main sources.
-    - '**/gls/src/**'
+    # No other module is excluded (#2474): every other module the lint task reads is guarded. Kotlin outside src/main
+    # and src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
 naming:
   active: true
   ClassNaming:

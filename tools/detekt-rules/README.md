@@ -122,9 +122,9 @@ reports every import of `java.util.concurrent.atomic` and every qualified use of
 | Any of these, used by one thread only                           | A plain `var`; an atomic there claims the state is shared                     |
 
 Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
-their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. The other excludes
-are modules still to migrate (#2474); `tools/ci/detekt-ratchet-excludes.test.mjs` fails on one whose main code no longer
-uses the package.
+their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. No other module is
+excluded (#2474), and `tools/ci/detekt-ratchet-excludes.test.mjs` rejects an exclude for a module whose main code does
+not use the package.
 
 `Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
 previous value (`increment() - 1`), or a counter that starts one lower.

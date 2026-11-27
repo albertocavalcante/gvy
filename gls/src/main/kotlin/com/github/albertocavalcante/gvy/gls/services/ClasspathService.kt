@@ -6,6 +6,8 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
 import java.net.URLClassLoader
@@ -14,8 +16,6 @@ import java.nio.file.Paths
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListSet
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Service to manage the classpath and load classes/methods from the user's project and the JDK.
@@ -50,7 +50,7 @@ class ClasspathService(
     // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
     private val classIndex = ClassIndex()
     private val qualifiedNameIndex = QualifiedNameIndex()
-    private val isIndexed = AtomicBoolean(false)
+    private val isIndexed = SharedValue(false)
 
     /**
      * Updates the active classloader with the provided paths (JARs or directories).
@@ -93,10 +93,10 @@ class ClasspathService(
      * This is called lazily on first type parameter completion request.
      */
     fun indexAllClasses() {
-        if (isIndexed.get()) return
+        if (isIndexed.value) return
 
         synchronized(this) {
-            if (isIndexed.get()) return
+            if (isIndexed.value) return
 
             logger.info { "Indexing all classes from classpath..." }
             val startTime = System.currentTimeMillis()
@@ -128,7 +128,7 @@ class ClasspathService(
     fun findClassesByPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
 
-        if (!isIndexed.get()) {
+        if (!isIndexed.value) {
             indexAllClasses()
         }
 
@@ -159,7 +159,7 @@ class ClasspathService(
     fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
 
-        if (!isIndexed.get()) {
+        if (!isIndexed.value) {
             indexAllClasses()
         }
 
@@ -250,26 +250,26 @@ class ClasspathLease internal constructor(
     private val release: () -> Unit,
     private val current: () -> Boolean,
 ) : AutoCloseable {
-    private val closed = AtomicBoolean(false)
+    private val closed = OnceFlag()
 
     /** False after close or replacement; file contents are not checked. Do not close concurrently with use. */
-    fun isCurrent(): Boolean = !closed.get() && current()
+    fun isCurrent(): Boolean = !closed.isSet && current()
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) release()
+        if (closed.trySet()) release()
     }
 }
 
 /** Publishes one generation atomically and retires its loader only after grace and the last lease. */
 private class ClasspathGenerations {
     private val logger = KotlinLogging.logger {}
-    private val current = AtomicReference(generation(ClassLoader.getSystemClassLoader(), emptyList()))
+    private val current = SharedValue(generation(ClassLoader.getSystemClassLoader(), emptyList()))
     private var grace: ClasspathGeneration? = null
 
-    fun current(): ClasspathGeneration = current.get()
+    fun current(): ClasspathGeneration = current.value
 
     fun installInitial(loader: ClassLoader) = synchronized(this) {
-        check(grace == null && current.get().readers == 0)
+        check(grace == null && current.value.readers == 0)
         current.set(generation(loader, emptyList()))
     }
 
@@ -278,14 +278,14 @@ private class ClasspathGenerations {
             closeLoader(loader)
             throw failure
         }
-        val previous = current.getAndSet(next)
+        val previous = current.exchange(next)
         grace?.let { retire(it, gracePeriod = false) }
         retire(previous, gracePeriod = true)
         grace = previous
     }
 
     fun acquire(): ClasspathLease = synchronized(this) {
-        val generation = current.get()
+        val generation = current.value
         generation.readers++
         ClasspathLease(
             solver = generation.solver,
@@ -293,14 +293,14 @@ private class ClasspathGenerations {
             classpath = generation.paths,
             classLoader = generation.loader,
             release = { release(generation) },
-            current = { synchronized(this) { current.get() === generation } },
+            current = { synchronized(this) { current.value === generation } },
         )
     }
 
     fun shutdown() = synchronized(this) {
         grace?.let { retire(it, gracePeriod = false) }
         grace = null
-        val previous = current.getAndSet(generation(ClassLoader.getSystemClassLoader(), emptyList()))
+        val previous = current.exchange(generation(ClassLoader.getSystemClassLoader(), emptyList()))
         retire(previous, gracePeriod = false)
     }
 

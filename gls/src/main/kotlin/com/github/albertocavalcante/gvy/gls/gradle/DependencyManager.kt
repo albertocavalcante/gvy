@@ -25,7 +25,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicReference
 
 private const val PROGRESS_CONNECTING = 25
 private const val PROGRESS_RESOLVING = 75
@@ -69,9 +68,9 @@ class DependencyManager(
 
     private val logger = KotlinLogging.logger {}
     private val lock = Any()
-    private val state = AtomicReference(State.NOT_STARTED)
-    private val dependencies = AtomicReference<List<Path>>(emptyList())
-    private val sourceDirs = AtomicReference<List<Path>>(emptyList())
+    private val state = SharedValue(State.NOT_STARTED)
+    private val dependencies = SharedValue<List<Path>>(emptyList())
+    private val sourceDirs = SharedValue<List<Path>>(emptyList())
     private var generation = AnalysisGeneration.INITIAL
 
     private val currentAttempt = SharedValue<Attempt?>(null)
@@ -135,13 +134,13 @@ class DependencyManager(
         } ?: return StartDecision.Stop
         val possibleDuplicate = expectedWatcher == null &&
             expected?.request?.workspaceRoot == activeRequest.workspaceRoot &&
-            state.get() in setOf(State.IN_PROGRESS, State.COMPLETED) &&
+            state.value in setOf(State.IN_PROGRESS, State.COMPLETED) &&
             !expected.cancellation.isCancelled
         if (possibleDuplicate) {
             val duplicate = synchronized(lock) {
                 currentAttempt.value === expected &&
                     currentWorkspaceRoot.value == activeRequest.workspaceRoot &&
-                    state.get() in setOf(State.IN_PROGRESS, State.COMPLETED) &&
+                    state.value in setOf(State.IN_PROGRESS, State.COMPLETED) &&
                     !expected.cancellation.isCancelled
             }
             return if (duplicate) StartDecision.Stop else StartDecision.Retry
@@ -190,7 +189,7 @@ class DependencyManager(
         effects.job.invokeOnCompletion {
             synchronized(lock) {
                 if (currentAttempt.value === effects.attempt) {
-                    if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
+                    if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                     if (resolutionJob === effects.job) resolutionJob = null
                 }
             }
@@ -240,7 +239,7 @@ class DependencyManager(
             }
         } catch (e: CancellationException) {
             notifyCurrent(attempt) {
-                if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
+                if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
             }
             throw e
         } catch (e: Exception) {
@@ -352,18 +351,18 @@ class DependencyManager(
         return buildFileWatcher.also { buildFileWatcher = null }
     }
 
-    fun getCurrentDependencies(): List<Path> = dependencies.get()
+    fun getCurrentDependencies(): List<Path> = dependencies.value
 
     /** Routes client notifications through the native watcher's debounce and filtering. */
     fun onWatchedFilesChanged(paths: List<Path>) {
         val watcher = synchronized(lock) { buildFileWatcher }
         paths.forEach { watcher?.onFileChanged(it) }
     }
-    fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
-    fun getState(): State = state.get()
+    fun getCurrentSourceDirectories(): List<Path> = sourceDirs.value
+    fun getState(): State = state.value
     fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot.value
     fun getCurrentBuildToolName(): String? = currentBuildToolName.value
-    fun isDependenciesReady(): Boolean = state.get() == State.COMPLETED
+    fun isDependenciesReady(): Boolean = state.value == State.COMPLETED
 
     fun cancel() = stop(reset = false)
 
@@ -380,7 +379,7 @@ class DependencyManager(
                 val oldJob = resolutionJob
                 resolutionJob = null
                 val watcher = detachWatcher()
-                if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
+                if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                 if (reset) {
                     dependencies.set(emptyList())
                     sourceDirs.set(emptyList())
@@ -398,7 +397,7 @@ class DependencyManager(
     }
 
     fun getStatusSummary(): String =
-        "DependencyManager[state=${state.get()}, tool=${currentBuildToolName.value ?: "none"}, " +
-            "dependencies=${dependencies.get().size}, sources=${sourceDirs.get().size}, " +
+        "DependencyManager[state=${state.value}, tool=${currentBuildToolName.value ?: "none"}, " +
+            "dependencies=${dependencies.value.size}, sources=${sourceDirs.value.size}, " +
             "workspace=${currentWorkspaceRoot.value?.fileName ?: "none"}]"
 }

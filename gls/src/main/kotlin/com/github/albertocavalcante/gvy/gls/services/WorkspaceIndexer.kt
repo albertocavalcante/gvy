@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
@@ -17,7 +18,6 @@ import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.services.LanguageClient
-import java.util.concurrent.atomic.AtomicBoolean
 
 private const val PERCENTAGE_MULTIPLIER = 100
 private const val STATUS_UPDATE_INTERVAL_MS = 100L
@@ -34,7 +34,7 @@ internal class WorkspaceIndexer(
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val logger = KotlinLogging.logger {}
-    private val tooLargeNotified = AtomicBoolean(false)
+    private val tooLargeNotified = OnceFlag()
 
     /**
      * Starts workspace indexing in the background.
@@ -135,7 +135,7 @@ internal class WorkspaceIndexer(
                 "(groovy.compilation.maxWorkspaceFiles); skipping eager workspace compilation. " +
                 "Files are still compiled when opened."
         }
-        if (client != null && tooLargeNotified.compareAndSet(false, true)) {
+        if (client != null && tooLargeNotified.trySet()) {
             client.showMessage(
                 MessageParams().apply {
                     type = MessageType.Info
