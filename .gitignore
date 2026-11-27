@@ -51,6 +51,9 @@ replay_pid*
 # jqwik
 .jqwik-database
 
+# direnv
+.direnv/
+
 # OS files
 .DS_Store
 Thumbs.db
