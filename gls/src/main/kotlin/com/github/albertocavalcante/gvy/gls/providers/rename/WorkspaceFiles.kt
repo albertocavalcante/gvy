@@ -212,16 +212,18 @@ internal fun walkWorkspace(
  * - it is younger than [ttlMillis] (a backstop);
  * - no [invalidate] happened since it started (the workspace service calls it on any watched-file event);
  * - every directory the walk listed still exists with the modification time it had. Creating, deleting or moving a
- *   file changes its parent directory's time, so this needs no file watcher. A directory modified within
- *   [RECENT_MILLIS] before the walk started is never trusted, because coarse filesystem timestamps cannot order it.
+ *   file changes its parent directory's time, so this needs no file watcher. A directory modified less than
+ *   [RECENT_MILLIS] before the walk started, or later, is never trusted, because coarse filesystem timestamps cannot
+ *   order it against the walk's listing.
  *
  * What stays unseen for up to [ttlMillis] is an in-place edit of a file the walk already knew, whose content the
  * scan reads from disk or from the open buffer anyway. Open buffers are never cached.
  *
  * One walk runs at a time (single flight). A miss while a walk is in flight blocks its caller's thread (an IO thread:
- * rename checks run on Dispatchers.IO) until that walk ends, then is served its result when it is fresh; a walk
- * that throws, such as one whose request was cancelled, stores nothing and the next waiter walks itself.
- * [invalidate] never waits for a walk.
+ * rename checks run on Dispatchers.IO), even after the caller's request is cancelled, until that walk ends. It is then
+ * served that walk's result when the result is fresh for it, and otherwise walks itself; a walk that throws, such as
+ * one whose request was cancelled, stores nothing and the next waiter walks itself. [invalidate] never waits for a
+ * walk.
  */
 internal class WorkspaceWalkCache(
     private val ttlMillis: Long = DEFAULT_TTL_MILLIS,
