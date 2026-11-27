@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 import org.objectweb.asm.ClassReader
 import kotlin.test.fail
 
-class AsmVersionDiagnostic {
+class AsmVersionDiagnosticTest {
     @Test
     fun `reports the ASM jar in use`() {
         val where = ClassReader::class.java.protectionDomain.codeSource.location

@@ -10,8 +10,8 @@ kotlin {
 }
 
 dependencies {
-    // Facts, Sha256, WriteOptions and ReadLimits appear in the public API of the builder.
-    api(project(":jvm-metadata:facts"))
+    // Facts types are used inside the builder only; none is in its public API yet.
+    implementation(project(":jvm-metadata:facts"))
     implementation(libs.asm)
 
     testImplementation(libs.kotlin.test)

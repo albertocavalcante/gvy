@@ -47,9 +47,9 @@ private fun fieldTypeEnd(text: String, start: Int): Int {
     }
 }
 
-/** The index after the `name;` that starts at [nameStart], or -1 when the name is empty or has a dot or bracket. */
+/** The index after the `name;` that starts at [nameStart], or -1 when the name is not a valid internal name. */
 private fun classTypeEnd(text: String, nameStart: Int): Int {
     val semicolon = text.indexOf(';', nameStart)
-    val validName = semicolon > nameStart && text.substring(nameStart, semicolon).none { it == '.' || it == '[' }
+    val validName = semicolon > nameStart && ResourcePaths.isValidInternalName(text.substring(nameStart, semicolon))
     return if (validName) semicolon + 1 else -1
 }

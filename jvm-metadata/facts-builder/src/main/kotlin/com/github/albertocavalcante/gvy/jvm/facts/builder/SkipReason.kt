@@ -14,17 +14,11 @@ public enum class SkipReason {
     /** The class names itself differently from the path it was found at. */
     NAME_MISMATCH,
 
-    /** The path does not name a valid class: an empty segment, or a dot, semicolon or bracket in the name. */
+    /**
+     * The path does not name a valid class: it has an empty segment, a dot, semicolon or bracket, or a name the
+     * facts format cannot store.
+     */
     INVALID_NAME,
-
-    /** The class file is larger than the configured per-class limit. */
-    OVERSIZED,
-
-    /** An archive entry could not be read: it is encrypted, uses an unsupported method, or failed to read. */
-    UNREADABLE_ENTRY,
-
-    /** An archive holds a second entry with the same name; the first one is kept. */
-    DUPLICATE_ENTRY,
 
     /** The path sits under a `META-INF/versions/` directory that is not a release from 1 to 255. */
     UNSUPPORTED_RELEASE,

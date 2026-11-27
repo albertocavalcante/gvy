@@ -198,7 +198,9 @@ member = kind: u8, access flags: varint, name: string, descriptor: string,
 - Member `kind` is 0 for a field and 1 for a method; constructors and initializers are methods.
 - Parameter names are absent when the class file has no usable `MethodParameters` attribute (missing, or with a count
   that differs from the descriptor's); present and empty is a method with no parameters. An empty name is a valid pool
-  string and means the attribute names no parameter at that position.
+  string and means the attribute names no parameter at that position. The builder writes an empty list for every method
+  with no parameters, with or without the attribute, because the class-file reader it uses does not report an empty
+  attribute.
 - `access flags` and `release` follow the names section: at most `0x1FFFF` and 255.
 - Interfaces and parameter names keep their declared order and have no key.
 - Keys: an entry by its `class` index; a member by (name pool index, descriptor pool index) within its class.

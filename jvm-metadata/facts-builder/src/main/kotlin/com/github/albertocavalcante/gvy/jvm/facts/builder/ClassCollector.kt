@@ -15,7 +15,10 @@ private const val DEPRECATED_DESCRIPTOR = "Ljava/lang/Deprecated;"
 /** Whether any bit of [flag] is set. */
 internal fun Int.hasFlag(flag: Int): Boolean = (this and flag) != 0
 
-/** The class's own `InnerClasses` entry for itself. [simpleName] is null for an anonymous class. */
+/**
+ * The class's own `InnerClasses` entry for itself; when a class lists itself more than once, the first entry is used.
+ * [simpleName] is null for an anonymous class.
+ */
 internal class InnerEntry(val outerName: String?, val simpleName: String?, val access: Int)
 
 /**

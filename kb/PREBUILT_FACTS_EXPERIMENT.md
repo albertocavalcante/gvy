@@ -181,4 +181,6 @@ The module placement table above says Buck2 builds `facts` only and that the bui
 pinned for Buck2. That is no longer the case. `//third_party/jvm` now pins ASM 9.9.1, the version of the Gradle catalog,
 and `jvm-metadata/facts-builder/BUCK` builds the builder library against it. Buck2 still does not run the builder's
 tests; those run under Gradle and Bazel. Bazel takes ASM from the existing `@maven` repository and does not pin a
-version of its own, so the builder reads class files with any ASM 9.x and does not depend on one version.
+version of its own, so the builder requires an ASM that checks an attribute length against the class file, and a test in
+each build enforces that. The newest class-file version the builder reads depends on the ASM in use; the builder finds
+it by probing ASM.

@@ -76,12 +76,16 @@ private fun majorVersion(bytes: ByteArray): Int = ByteBuffer.wrap(bytes).getShor
 /**
  * Parses [bytes] into [collector] and returns why that failed, or null. `SKIP_DEBUG` is not passed: ASM reads the
  * `MethodParameters` attribute only without it. `SKIP_CODE` already skips code and its local variable tables.
+ * An out-of-memory error is not caught: the builder needs an ASM that bounds an attribute length by the buffer.
  */
 @Suppress("TooGenericExceptionCaught") // ASM reports damaged input as assorted runtime exceptions
 private fun parseInto(collector: ClassCollector, bytes: ByteArray): SkipReason? = try {
     ClassReader(bytes).accept(collector, ClassReader.SKIP_CODE or ClassReader.SKIP_FRAMES)
     null
 } catch (_: RuntimeException) {
+    SkipReason.MALFORMED
+} catch (_: StackOverflowError) {
+    // ASM skips a nested annotation value recursively, so a hostile file can exhaust the stack.
     SkipReason.MALFORMED
 }
 
@@ -120,7 +124,7 @@ private fun assemble(collector: ClassCollector, release: Int, includeGenericSign
     val name = collector.name
     val self = collector.selfEntry
     val outer = outerClassOf(collector)
-    val outerRepresentable = outer == null || outer.isWellFormedUtf16()
+    val outerRepresentable = outer == null || outer.isStorable()
     val members = MemberSelector(includeGenericSignatures)
     collector.members.forEach { member -> members.add(member) }
     val fact = ClassFact(
@@ -132,7 +136,7 @@ private fun assemble(collector: ClassCollector, release: Int, includeGenericSign
         release = release,
     )
     val supertypes = listOfNotNull(collector.superName) + collector.interfaces
-    val typesRepresentable = supertypes.all { it.isWellFormedUtf16() }
+    val typesRepresentable = supertypes.all { it.isStorable() }
     val types = if (typesRepresentable) {
         ClassTypes(name, release, collector.superName, collector.interfaces, members.sortedMembers())
     } else {
@@ -179,7 +183,7 @@ private fun simpleNameOf(internalName: String, self: InnerEntry?): String {
     return when {
         self == null -> fallback
         innerName == null -> ""
-        innerName.isWellFormedUtf16() -> innerName
+        innerName.isStorable() -> innerName
         else -> fallback
     }
 }
@@ -227,7 +231,7 @@ private class MemberSelector(private val includeGenericSignatures: Boolean) {
         val signature = member.signature
         return when {
             !includeGenericSignatures || signature == null -> null
-            signature.isWellFormedUtf16() -> signature
+            signature.isStorable() -> signature
             else -> {
                 droppedSignatures++
                 null
@@ -242,7 +246,7 @@ private class MemberSelector(private val includeGenericSignatures: Boolean) {
     private fun parameterNamesOf(member: RawMember, parameterCount: Int): List<String>? = when {
         member.kind == MemberKind.FIELD -> null
         member.parameterNames.size != parameterCount -> null
-        member.parameterNames.any { name -> name != null && !name.isWellFormedUtf16() } -> {
+        member.parameterNames.any { name -> name != null && !name.isStorable() } -> {
             droppedParameterNames++
             null
         }
@@ -251,7 +255,7 @@ private class MemberSelector(private val includeGenericSignatures: Boolean) {
 }
 
 private fun hasRepresentableText(member: RawMember): Boolean =
-    member.name.isWellFormedUtf16() && member.descriptor.isWellFormedUtf16()
+    member.name.isStorable() && member.descriptor.isStorable()
 
 /** The parameter count of a method, 0 for a field, or null when the descriptor is not valid for the kind. */
 private fun parameterCountOrNull(member: RawMember): Int? = when (member.kind) {
