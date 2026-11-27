@@ -59,16 +59,18 @@ import java.util.concurrent.atomic.AtomicReference
  * Maven Build Server Protocol implementation.
  *
  * Provides Maven project metadata over BSP 2.1. Build execution is unavailable.
+ *
+ * @param scan finds the workspace's modules; tests replace the [MavenWorkspaceScanner] the public constructor uses
  */
 @Suppress("TooManyFunctions") // BSP protocol implementation - one method per BSP endpoint (21 requests)
-class MavenBuildServer(
+class MavenBuildServer internal constructor(
     private val workspaceRoot: Path,
-    private val repositorySystem: RepositorySystem,
-    private val sessionSupplier: () -> RepositorySystemSession,
+    repositorySystem: RepositorySystem,
+    sessionSupplier: () -> RepositorySystemSession,
+    private val scan: (Path) -> List<MavenModuleInfo>,
 ) : BuildServer {
     private val logger = KotlinLogging.logger {}
 
-    private val scanner = MavenWorkspaceScanner()
     private val targetProvider = MavenBuildTargetProvider()
     private val sourceProvider = MavenSourceProvider()
     private val dependencyProvider = MavenDependencyProvider(repositorySystem, sessionSupplier)
@@ -83,6 +85,13 @@ class MavenBuildServer(
     /** True once `build/shutdown` was received; the standalone launcher maps it to the process exit code. */
     val shutdownRequested: Boolean
         get() = shutdown.get()
+
+    /** Creates a server that finds the modules under [workspaceRoot] with a [MavenWorkspaceScanner]. */
+    constructor(
+        workspaceRoot: Path,
+        repositorySystem: RepositorySystem,
+        sessionSupplier: () -> RepositorySystemSession,
+    ) : this(workspaceRoot, repositorySystem, sessionSupplier, MavenWorkspaceScanner()::scan)
 
     fun connect(client: BuildClient) {
         this.client = client
@@ -102,7 +111,7 @@ class MavenBuildServer(
         logger.info { "Initializing Maven BSP server for workspace: ${params.rootUri}" }
 
         return CompletableFuture.supplyAsync {
-            modules = scanner.scan(workspaceRoot)
+            modules = scan(workspaceRoot)
             logger.info { "Found ${modules.size} Maven modules" }
 
             InitializeBuildResult(
@@ -140,7 +149,7 @@ class MavenBuildServer(
 
     override fun workspaceReload(): CompletableFuture<Any> = CompletableFuture.supplyAsync {
         logger.info { "Reloading workspace" }
-        modules = scanner.scan(workspaceRoot)
+        modules = scan(workspaceRoot)
         logger.info { "Reload complete: ${modules.size} modules" }
         null
     }
