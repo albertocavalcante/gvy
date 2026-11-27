@@ -24,7 +24,7 @@ class AddBracesToForLoopTest : RewriteTest {
     }
 
     @Test
-    fun `adds braces to single-line for loop`() = rewriteRun(
+    fun `adds braces to single-line for loop`(): Unit = rewriteRun(
         groovy(
             """
             for (int i = 0; i < 10; i++) println(i)
@@ -38,7 +38,7 @@ class AddBracesToForLoopTest : RewriteTest {
     )
 
     @Test
-    fun `adds braces to for-each loop`() = rewriteRun(
+    fun `adds braces to for-each loop`(): Unit = rewriteRun(
         groovy(
             """
             for (item in list) println(item)
@@ -53,7 +53,7 @@ class AddBracesToForLoopTest : RewriteTest {
 
     // Negative test
     @Test
-    fun `no change when braces already exist`() = rewriteRun(
+    fun `no change when braces already exist`(): Unit = rewriteRun(
         groovy(
             """
             for (int i = 0; i < 10; i++) {

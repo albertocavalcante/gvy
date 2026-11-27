@@ -28,7 +28,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `adds space before brace in method declaration`() = rewriteRun(
+    fun `adds space before brace in method declaration`(): Unit = rewriteRun(
         groovy(
             // Before: no space between ) and {
             """
@@ -42,7 +42,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in method with parameters`() = rewriteRun(
+    fun `adds space before brace in method with parameters`(): Unit = rewriteRun(
         groovy(
             """
             def bar(String name, int count){}
@@ -58,7 +58,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `adds space before brace in class declaration`() = rewriteRun(
+    fun `adds space before brace in class declaration`(): Unit = rewriteRun(
         groovy(
             """
             class Foo{}
@@ -70,7 +70,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in interface declaration`() = rewriteRun(
+    fun `adds space before brace in interface declaration`(): Unit = rewriteRun(
         groovy(
             """
             interface Foo{}
@@ -82,7 +82,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in class with extends`() = rewriteRun(
+    fun `adds space before brace in class with extends`(): Unit = rewriteRun(
         groovy(
             """
             class Bar extends Foo{}
@@ -98,7 +98,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `adds space before brace in if statement`() = rewriteRun(
+    fun `adds space before brace in if statement`(): Unit = rewriteRun(
         groovy(
             """
             if (x){}
@@ -110,7 +110,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in else block`() = rewriteRun(
+    fun `adds space before brace in else block`(): Unit = rewriteRun(
         groovy(
             // Both if and else blocks need space
             """
@@ -123,7 +123,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in else-if chain`() = rewriteRun(
+    fun `adds space before brace in else-if chain`(): Unit = rewriteRun(
         groovy(
             """
             if (a){} else if (b){} else{}
@@ -139,7 +139,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `adds space before brace in for loop`() = rewriteRun(
+    fun `adds space before brace in for loop`(): Unit = rewriteRun(
         groovy(
             """
             for (i in 1..10){}
@@ -151,7 +151,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in while loop`() = rewriteRun(
+    fun `adds space before brace in while loop`(): Unit = rewriteRun(
         groovy(
             """
             while (true){}
@@ -172,7 +172,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `adds space before brace in try block`() = rewriteRun(
+    fun `adds space before brace in try block`(): Unit = rewriteRun(
         groovy(
             """
             try{} catch (Exception e) {}
@@ -184,7 +184,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in catch block`() = rewriteRun(
+    fun `adds space before brace in catch block`(): Unit = rewriteRun(
         groovy(
             """
             try {} catch (Exception e){}
@@ -196,7 +196,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in finally block`() = rewriteRun(
+    fun `adds space before brace in finally block`(): Unit = rewriteRun(
         groovy(
             """
             try {} finally{}
@@ -208,7 +208,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space in complete try-catch-finally`() = rewriteRun(
+    fun `adds space in complete try-catch-finally`(): Unit = rewriteRun(
         groovy(
             // All three blocks missing space
             """
@@ -225,7 +225,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `adds space before brace in trailing closure`() = rewriteRun(
+    fun `adds space before brace in trailing closure`(): Unit = rewriteRun(
         groovy(
             // Trailing closure: closure comes after method name without parens
             // e.g., list.each{} instead of list.each({})
@@ -239,7 +239,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space in chained trailing closures`() = rewriteRun(
+    fun `adds space in chained trailing closures`(): Unit = rewriteRun(
         groovy(
             """
             list.findAll{}.collect{}
@@ -256,7 +256,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `no change for closure assigned to variable - spacing from equals`() = rewriteRun(
+    fun `no change for closure assigned to variable - spacing from equals`(): Unit = rewriteRun(
         groovy(
             // The = operator provides spacing before {
             // This is correct: "= {" has space from assignment
@@ -267,7 +267,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `no change for closure as method argument - spacing from paren`() = rewriteRun(
+    fun `no change for closure as method argument - spacing from paren`(): Unit = rewriteRun(
         groovy(
             // The ( provides the context, closure is inside parens
             // OpenRewrite limitation: can't add space inside parens before closure
@@ -282,7 +282,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `fixes multiple missing spaces in same file`() = rewriteRun(
+    fun `fixes multiple missing spaces in same file`(): Unit = rewriteRun(
         groovy(
             """
             class Foo{
@@ -304,7 +304,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     // ========================================================================
 
     @Test
-    fun `no change when space already exists`() = rewriteRun(
+    fun `no change when space already exists`(): Unit = rewriteRun(
         groovy(
             """
             def foo() {}
@@ -315,7 +315,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `no change when newline before brace`() = rewriteRun(
+    fun `no change when newline before brace`(): Unit = rewriteRun(
         groovy(
             // Allman/BSD style braces on new line - already has whitespace (newline)
             """
@@ -327,7 +327,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `no change when multiple spaces exist`() = rewriteRun(
+    fun `no change when multiple spaces exist`(): Unit = rewriteRun(
         groovy(
             // Already has whitespace (multiple spaces) - preserve as-is
             """
@@ -337,7 +337,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `no change for empty map literal`() = rewriteRun(
+    fun `no change for empty map literal`(): Unit = rewriteRun(
         groovy(
             // [:] is a map literal, not a block - should not be modified
             """
@@ -347,7 +347,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `no change for braces in string`() = rewriteRun(
+    fun `no change for braces in string`(): Unit = rewriteRun(
         groovy(
             // Braces inside strings should not be modified
             """

@@ -34,7 +34,7 @@ class CrossFileGuardInternalsTest {
     }
 
     @Test
-    fun `a cancelled scan stops before reading any file`() = runBlocking {
+    fun `a cancelled scan stops before reading any file`(): Unit = runBlocking {
         val sources = files(5)
         val cache = WorkspaceTextCache()
         val index = checkNotNull(GroovyCompilationService().getWorkspaceSymbolIndex())
@@ -275,7 +275,7 @@ class CrossFileGuardInternalsTest {
     }
 
     @Test
-    fun `with no workspace root open file buffers are candidates and other documents are not`() = runBlocking {
+    fun `with no workspace root open file buffers are candidates and other documents are not`(): Unit = runBlocking {
         val index = checkNotNull(GroovyCompilationService().getWorkspaceSymbolIndex())
         val caller = tempDir.resolve("B.groovy").toUri()
         val buffers = mapOf(

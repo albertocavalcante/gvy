@@ -31,7 +31,7 @@ class IgnoredWorkspaceRulesetNoticeTest {
     )
 
     @Test
-    fun `ignored ruleset notice links affected sources to the configuration`() = runBlocking {
+    fun `ignored ruleset notice links affected sources to the configuration`(): Unit = runBlocking {
         val ruleset = tempDir.resolve("codenarc.groovy")
         Files.writeString(ruleset, "ruleset { evaluate 'println 1' }")
         val other = tempDir.resolve("Other.groovy")
@@ -57,7 +57,7 @@ class IgnoredWorkspaceRulesetNoticeTest {
     }
 
     @Test
-    fun `oversized configuration reports a filewide rejection without a literal claim`() = runBlocking {
+    fun `oversized configuration reports a filewide rejection without a literal claim`(): Unit = runBlocking {
         val ruleset = tempDir.resolve(".codenarc")
         Files.write(ruleset, ByteArray((WorkspaceRulesetInterpreter.MAX_FILE_BYTES + 1).toInt()) { 'a'.code.toByte() })
         val diagnostics = provider(tempDir).analyze("class Other {}\n", tempDir.resolve("Other.groovy").toUri())
@@ -72,7 +72,7 @@ class IgnoredWorkspaceRulesetNoticeTest {
     }
 
     @Test
-    fun `the user is told once per ignored ruleset file`() = runBlocking {
+    fun `the user is told once per ignored ruleset file`(): Unit = runBlocking {
         Files.writeString(tempDir.resolve("codenarc.groovy"), "ruleset { evaluate 'println 1' }")
         val other = tempDir.resolve("Other.groovy")
         Files.writeString(other, "class Other {}\n")
@@ -101,7 +101,7 @@ class IgnoredWorkspaceRulesetNoticeTest {
     }
 
     @Test
-    fun `rejected higher priority ruleset falls back to accepted lower priority file`() = runBlocking {
+    fun `rejected higher priority ruleset falls back to accepted lower priority file`(): Unit = runBlocking {
         val rejected = tempDir.resolve(".codenarc")
         Files.writeString(rejected, "ruleset { ruleset('rulesets/empty.xml') }")
         Files.writeString(
@@ -127,7 +127,7 @@ class IgnoredWorkspaceRulesetNoticeTest {
     }
 
     @Test
-    fun `missing bundled ruleset falls back and its diagnostic clears after correction`() = runBlocking {
+    fun `missing bundled ruleset falls back and its diagnostic clears after correction`(): Unit = runBlocking {
         val ruleset = tempDir.resolve("codenarc.groovy")
         val invalid = "ruleset { ruleset('rulesets/imports.xml'); ruleset('rulesets/empty.xml') }"
         Files.writeString(ruleset, invalid)
@@ -152,7 +152,7 @@ class IgnoredWorkspaceRulesetNoticeTest {
     }
 
     @Test
-    fun `missing bundled ruleset reports its reason and uses the default profile`() = runBlocking {
+    fun `missing bundled ruleset reports its reason and uses the default profile`(): Unit = runBlocking {
         val ruleset = tempDir.resolve(".codenarc")
         Files.writeString(ruleset, "ruleset { ruleset('rulesets/imports.xml'); ruleset('rulesets/empty.xml') }")
         val context = object : WorkspaceContext {

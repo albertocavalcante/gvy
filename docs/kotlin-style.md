@@ -102,6 +102,35 @@ Idiomatic Kotlin also includes ordinary `if`, `for`, local variables, and explic
 - Choose eager versus lazy initialization for lifecycle, cost, and concurrency semantics. `lazy`, `apply`, and `also`
   are not universal improvements over an explicit declaration or initialization block.
 
+## Test functions
+
+JUnit does not run a test function that returns a value, and a Kotlin expression body returns whatever its last
+expression returns. Declare the return type of a test or lifecycle function one way: exactly `: Unit` on an expression
+body, and nothing on a block body.
+
+```kotlin
+// A test that runs wholly in a coroutine builder uses the builder as its expression body.
+@Test
+fun `finds the symbol`(): Unit = runBlocking {
+    assertNotNull(index.find("Foo"))
+}
+
+// Any other test may use a block body, which declares no type.
+@Test
+fun `rejects a blank name`() {
+    val request = renameTo(" ")
+    assertFailsWith<IllegalArgumentException> { runBlocking { rename(request) } }
+}
+```
+
+Do not leave the type of an expression body to inference (`fun x() = runBlocking { }`), put it on the builder
+(`runBlocking<Unit> { }`), spell it another way (`: TestResult`, `: kotlin.Unit`), or wrap a whole coroutine test in a
+block (`fun x() { runBlocking { } }`). The type rule holds for `runTest` and for every other expression body, such as
+`= rewriteRun(...)`; when the expression has a value of its own and `: Unit` does not compile, use a block body. Choose
+`runTest` when the test needs virtual time and `runBlocking` otherwise; the form is the same. `lint` enforces this with
+the [`TestFunctionReturnType` and `CoroutineTestBody`](../tools/detekt-rules/README.md#testfunctionreturntype) rules
+(#2507).
+
 ## Shared mutable state
 
 State that several threads read and write needs a primitive that says what it is for. Use the types in

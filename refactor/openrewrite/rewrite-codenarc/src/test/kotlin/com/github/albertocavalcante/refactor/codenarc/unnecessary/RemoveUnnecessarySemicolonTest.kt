@@ -24,7 +24,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     }
 
     @Test
-    fun `removes trailing semicolon from variable declaration`() = rewriteRun(
+    fun `removes trailing semicolon from variable declaration`(): Unit = rewriteRun(
         groovy(
             """
             String str = 'lelamanul';
@@ -36,7 +36,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `removes trailing semicolon from package declaration`() = rewriteRun(
+    fun `removes trailing semicolon from package declaration`(): Unit = rewriteRun(
         groovy(
             """
             package my.company.server;
@@ -52,7 +52,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `removes trailing semicolon from import statement`() = rewriteRun(
+    fun `removes trailing semicolon from import statement`(): Unit = rewriteRun(
         groovy(
             """
             import java.util.List;
@@ -68,7 +68,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `removes trailing semicolon from field declaration`() = rewriteRun(
+    fun `removes trailing semicolon from field declaration`(): Unit = rewriteRun(
         groovy(
             """
             class MyClass {
@@ -84,7 +84,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `removes trailing semicolon from method call`() = rewriteRun(
+    fun `removes trailing semicolon from method call`(): Unit = rewriteRun(
         groovy(
             """
             println("hello");
@@ -96,7 +96,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `removes multiple trailing semicolons across file`() = rewriteRun(
+    fun `removes multiple trailing semicolons across file`(): Unit = rewriteRun(
         groovy(
             """
             package my.company.server;
@@ -114,7 +114,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     // Negative tests - should NOT remove semicolons:
 
     @Test
-    fun `preserves semicolons in for loop header`() = rewriteRun(
+    fun `preserves semicolons in for loop header`(): Unit = rewriteRun(
         groovy(
             """
             for (int i = 0; i < 10; i++) {
@@ -125,7 +125,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `preserves semicolons separating statements on same line`() = rewriteRun(
+    fun `preserves semicolons separating statements on same line`(): Unit = rewriteRun(
         groovy(
             """
             def a = 1; def b = 2
@@ -134,7 +134,7 @@ class RemoveUnnecessarySemicolonTest : RewriteTest {
     )
 
     @Test
-    fun `no change when no trailing semicolons present`() = rewriteRun(
+    fun `no change when no trailing semicolons present`(): Unit = rewriteRun(
         groovy(
             """
             String str = 'lelamanul'

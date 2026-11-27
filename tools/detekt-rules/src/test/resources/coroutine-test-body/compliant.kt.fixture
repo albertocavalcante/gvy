@@ -1,0 +1,99 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing in this file may be reported.
+package fixtures
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+
+class Compliant {
+    @Test
+    fun `the one form`(): Unit = runBlocking {
+        compute()
+    }
+
+    @Test
+    fun `the one form with virtual time`(): Unit = runTest {
+    }
+
+    @Test
+    fun `a context argument`(): Unit = runBlocking(context) {
+    }
+
+    @Test
+    fun `a builder on a receiver`(): Unit = scope.runTest {
+    }
+
+    // A missing return type is TestFunctionReturnType's finding, not this rule's.
+    @Test
+    fun `an undeclared return type`() = runBlocking {
+    }
+
+    @Test
+    fun `statements around the builder`() {
+        val server = start()
+        runBlocking { server.await() }
+    }
+
+    @Test
+    fun `two builders`() {
+        runBlocking { first() }
+        runBlocking { second() }
+    }
+
+    @Test
+    fun `a builder inside another call`() {
+        assertFailsWith<IllegalStateException> { runBlocking { fail() } }
+    }
+
+    @Test
+    fun `a builder as an argument`(): Unit = withServer(runBlocking<Server> { start() }) { }
+
+    // A safe call has a nullable value, so it cannot be the Unit body of a function.
+    @Test
+    fun `a builder behind a safe call`() {
+        scope?.runTest { }
+    }
+
+    @Test
+    fun `a local function is not a test`() {
+        @Test
+        fun local() {
+            runBlocking { }
+        }
+        local()
+    }
+
+    @Test
+    fun `a builder without a lambda`() {
+        runBlocking(block = body)
+    }
+
+    @Test
+    fun `another function with a type argument`(): Unit = withFixture<Unit> { }
+
+    @Test
+    fun `a value from the builder is used`() {
+        val result = runBlocking { compute() }
+    }
+
+    @BeforeEach
+    fun setUp(): Unit = runBlocking { }
+
+    // JUnit does not call these, so they keep their shape.
+    private fun helper() = runBlocking<Unit> { }
+
+    private fun blockHelper() {
+        runBlocking { }
+    }
+
+    fun <T> typed(): T = runBlocking<T> { compute() }
+
+    @Suppress("CoroutineTestBody") // Fixture: a suppression at the function silences it.
+    @Test
+    fun `suppressed`() {
+        runBlocking { }
+    }
+}

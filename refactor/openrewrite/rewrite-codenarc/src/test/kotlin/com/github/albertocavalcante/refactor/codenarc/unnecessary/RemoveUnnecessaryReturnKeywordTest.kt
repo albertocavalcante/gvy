@@ -25,7 +25,7 @@ class RemoveUnnecessaryReturnKeywordTest : RewriteTest {
     }
 
     @Test
-    fun `removes return from method`() = rewriteRun(
+    fun `removes return from method`(): Unit = rewriteRun(
         groovy(
             """
             String hello() {
@@ -41,7 +41,7 @@ class RemoveUnnecessaryReturnKeywordTest : RewriteTest {
     )
 
     @Test
-    fun `removes return from closure`() = rewriteRun(
+    fun `removes return from closure`(): Unit = rewriteRun(
         groovy(
             """
             def c = {
@@ -57,7 +57,7 @@ class RemoveUnnecessaryReturnKeywordTest : RewriteTest {
     )
 
     @Test
-    fun `preserves early return`() = rewriteRun(
+    fun `preserves early return`(): Unit = rewriteRun(
         groovy(
             """
             String foo(boolean b) {
@@ -79,7 +79,7 @@ class RemoveUnnecessaryReturnKeywordTest : RewriteTest {
     )
 
     @Test
-    fun `preserves void return`() = rewriteRun(
+    fun `preserves void return`(): Unit = rewriteRun(
         groovy(
             """
             void doSomething() {
@@ -91,7 +91,7 @@ class RemoveUnnecessaryReturnKeywordTest : RewriteTest {
     )
 
     @Test
-    fun `removes return with complex expression`() = rewriteRun(
+    fun `removes return with complex expression`(): Unit = rewriteRun(
         groovy(
             """
             def foo(a, b) {

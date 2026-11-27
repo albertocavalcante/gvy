@@ -11,3 +11,7 @@ gvy:
     active: false
   StdlibAtomics:
     active: false
+  TestFunctionReturnType:
+    active: false
+  CoroutineTestBody:
+    active: false

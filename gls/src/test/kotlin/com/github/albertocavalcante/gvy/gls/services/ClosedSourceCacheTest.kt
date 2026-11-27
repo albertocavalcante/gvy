@@ -69,7 +69,7 @@ class ClosedSourceCacheTest {
     )
 
     @AfterEach
-    fun tearDown() = scope.cancel()
+    fun tearDown(): Unit = scope.cancel()
 
     @Test
     fun `content-less reads after closing an unsaved buffer follow the disk`(): Unit = runBlocking {
@@ -206,11 +206,11 @@ class ClosedSourceCacheTest {
     }
 
     @Test
-    fun `a changed closed file is retired before its queued work runs`() =
+    fun `a changed closed file is retired before its queued work runs`(): Unit =
         assertRetiredBeforeQueueRuns("Changed", FileChangeType.Changed)
 
     @Test
-    fun `an atomic save reported as deleted and created is retired before its queued work runs`() =
+    fun `an atomic save reported as deleted and created is retired before its queued work runs`(): Unit =
         assertRetiredBeforeQueueRuns("Atomic", FileChangeType.Deleted, FileChangeType.Created) { file ->
             // Never left retired without a refresh: still listed, and rebuilt from the new disk text.
             assertTrue(compilation.workspaceManager.getWorkspaceSources().contains(file), "still listed")

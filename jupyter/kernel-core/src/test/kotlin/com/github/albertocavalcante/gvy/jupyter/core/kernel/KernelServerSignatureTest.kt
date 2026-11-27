@@ -29,7 +29,7 @@ class KernelServerSignatureTest {
     private val connections = mutableListOf<JupyterConnection>()
 
     @AfterEach
-    fun tearDown() = connections.forEach { it.close() }
+    fun tearDown(): Unit = connections.forEach { it.close() }
 
     private fun server(key: String, handler: MessageHandler): KernelServer {
         val config = ConnectionFile(

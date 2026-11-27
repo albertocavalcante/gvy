@@ -24,7 +24,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     }
 
     @Test
-    fun `converts getName to name`() = rewriteRun(
+    fun `converts getName to name`(): Unit = rewriteRun(
         groovy(
             """
             def x = obj.getName()
@@ -36,7 +36,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     )
 
     @Test
-    fun `converts getSize to size`() = rewriteRun(
+    fun `converts getSize to size`(): Unit = rewriteRun(
         groovy(
             """
             def s = list.getSize()
@@ -48,7 +48,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     )
 
     @Test
-    fun `converts isEnabled to enabled`() = rewriteRun(
+    fun `converts isEnabled to enabled`(): Unit = rewriteRun(
         groovy(
             """
             if (feature.isEnabled()) {}
@@ -60,7 +60,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     )
 
     @Test
-    fun `handles chained getter calls`() = rewriteRun(
+    fun `handles chained getter calls`(): Unit = rewriteRun(
         groovy(
             """
             def x = obj.getConfig().getName()
@@ -73,7 +73,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
 
     // Negative tests - MUST preserve
     @Test
-    fun `preserves getClass call`() = rewriteRun(
+    fun `preserves getClass call`(): Unit = rewriteRun(
         groovy(
             """
             def c = obj.getClass()
@@ -82,7 +82,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     )
 
     @Test
-    fun `preserves getter with arguments`() = rewriteRun(
+    fun `preserves getter with arguments`(): Unit = rewriteRun(
         groovy(
             """
             def v = map.getProperty("key")
@@ -91,7 +91,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     )
 
     @Test
-    fun `preserves getURL pattern`() = rewriteRun(
+    fun `preserves getURL pattern`(): Unit = rewriteRun(
         groovy(
             """
             def url = conn.getURL()
@@ -100,7 +100,7 @@ class RemoveUnnecessaryGetterTest : RewriteTest {
     )
 
     @Test
-    fun `preserves getter in Spock Mock`() = rewriteRun(
+    fun `preserves getter in Spock Mock`(): Unit = rewriteRun(
         groovy(
             """
             def mock = Mock(Service) {

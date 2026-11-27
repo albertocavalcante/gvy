@@ -482,7 +482,7 @@ When writing tests for CodeNarc integration, use MockK for dependency mocking:
 ```kotlin
 // Example: Testing CodeNarc service with mocked configuration
 @Test
-fun `should handle CodeNarc analysis with custom configuration`() = runBlocking {
+fun `should handle CodeNarc analysis with custom configuration`(): Unit = runBlocking {
     val mockConfig = mockk<ConfigurationProvider> {
         every { getServerConfiguration() } returns ServerConfiguration().apply {
             // Configure test-specific settings
@@ -499,7 +499,7 @@ fun `should handle CodeNarc analysis with custom configuration`() = runBlocking 
 
 // Example: Behavior verification for CodeNarc calls
 @Test
-fun `should call configuration provider methods correctly`() = runBlocking {
+fun `should call configuration provider methods correctly`(): Unit = runBlocking {
     val mockConfig = mockk<ConfigurationProvider>(relaxed = true)
 
     val service = CodeNarcService(mockConfig)

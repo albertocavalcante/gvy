@@ -53,7 +53,7 @@ class ClasspathRestamperTest {
     private val document by lazy { main.resolve("A.groovy").toUri() }
 
     @AfterEach
-    fun tearDown() = idle.cancel()
+    fun tearDown(): Unit = idle.cancel()
 
     private fun restamper(stat: (Path) -> EntryStat = ClasspathRestamp::statEntry) =
         ClasspathRestamper(compilation, idle, interval = 1.hours, debounce = 1.hours, stat = stat)

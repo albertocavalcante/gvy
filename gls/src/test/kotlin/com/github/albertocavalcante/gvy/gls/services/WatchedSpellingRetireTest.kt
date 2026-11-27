@@ -47,7 +47,7 @@ class WatchedSpellingRetireTest {
     private lateinit var workspace: GroovyWorkspaceService
 
     @AfterEach
-    fun tearDown() = scope.cancel()
+    fun tearDown(): Unit = scope.cancel()
 
     private fun start(caseInsensitive: Boolean = false, normalisesNames: Boolean = false) {
         val manager = WorkspaceManager(ConfigurationFingerprint::compute, { caseInsensitive }, normalisesNames)

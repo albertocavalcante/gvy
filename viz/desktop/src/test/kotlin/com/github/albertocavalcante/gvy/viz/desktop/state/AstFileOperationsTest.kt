@@ -37,7 +37,7 @@ private class ControlledIoDispatcher : CoroutineDispatcher() {
 @OptIn(ExperimentalCoroutinesApi::class)
 class AstFileOperationsTest {
     @Test
-    fun `late file load cannot replace a newer edit`() = runTest {
+    fun `late file load cannot replace a newer edit`(): Unit = runTest {
         val gate = CompletableDeferred<String>()
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = gate.await()
@@ -60,7 +60,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `late file failure does not replace newer parse or report stale error`() = runTest {
+    fun `late file failure does not replace newer parse or report stale error`(): Unit = runTest {
         val gate = CompletableDeferred<String>()
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = gate.await()
@@ -83,7 +83,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `failed current load clears prior tree and exposes its error`() = runTest {
+    fun `failed current load clears prior tree and exposes its error`(): Unit = runTest {
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = error("read failed")
             override suspend fun write(file: File, contents: String) = Unit
@@ -105,7 +105,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `accepted export writes the captured tree even after editing and closing`() = runTest {
+    fun `accepted export writes the captured tree even after editing and closing`(): Unit = runTest {
         val gate = CompletableDeferred<Unit>()
         val captured = mutableListOf<String>()
         val files = object : DesktopFileOperations {
@@ -134,7 +134,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `write failure is visible while the view remains open`() = runTest {
+    fun `write failure is visible while the view remains open`(): Unit = runTest {
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = error("unexpected read")
             override suspend fun write(file: File, contents: String) = error("disk full")
@@ -154,7 +154,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `window close waits for accepted save and becomes available after completion`() = runTest {
+    fun `window close waits for accepted save and becomes available after completion`(): Unit = runTest {
         val gate = CompletableDeferred<Unit>()
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = error("unexpected read")
@@ -180,7 +180,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `unexpected current read cancellation clears busy state and reports failure`() = runTest {
+    fun `unexpected current read cancellation clears busy state and reports failure`(): Unit = runTest {
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = throw CancellationException("read cancelled")
             override suspend fun write(file: File, contents: String) = Unit
@@ -198,7 +198,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `successful load stores its directory in injected preferences`() = runTest {
+    fun `successful load stores its directory in injected preferences`(): Unit = runTest {
         val prefs = InMemoryPreferences()
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = "contents"
@@ -221,7 +221,7 @@ class AstFileOperationsTest {
     }
 
     @Test
-    fun `remembered directories persist in load order even when IO dispatch is reordered`() = runTest {
+    fun `remembered directories persist in load order even when IO dispatch is reordered`(): Unit = runTest {
         val prefs = InMemoryPreferences()
         val files = object : DesktopFileOperations {
             override suspend fun read(file: File): String = file.name

@@ -161,6 +161,16 @@ gvy:
     # behind gvy's own OnceFlag, SharedValue and Counter. Tests are not excluded: none needs the package (#2474).
     # tools/ci/detekt-gvy-guard.test.mjs requires exactly this exclude.
     - '**/common/concurrent/src/**'
+  TestFunctionReturnType:
+    active: true
+    # A JUnit test or lifecycle function declares `: Unit` on an expression body and nothing on a block body (#2507).
+    # Every linted module is guarded: no module, source set or baseline entry is excluded, and
+    # tools/ci/detekt-gvy-guard.test.mjs keeps it so. Kotlin outside src/main and src/test, such as tests/e2e, is
+    # not linted unless its module sets detekt.source (#2480).
+  CoroutineTestBody:
+    active: true
+    # A test that runs wholly in a coroutine builder is `fun name(): Unit = runBlocking { ... }` (#2507). Every linted
+    # module is guarded, as for TestFunctionReturnType.
 naming:
   active: true
   ClassNaming:

@@ -226,7 +226,7 @@ class CodeNarcProfilePerFileTest {
     }
 
     @Test
-    fun `end to end, an ordinary source keeps the normal rules next to a Jenkinsfile`() = runBlocking {
+    fun `end to end, an ordinary source keeps the normal rules next to a Jenkinsfile`(): Unit = runBlocking {
         gradleAppWithJenkinsfile()
         val code = "import java.util.List\n\nclass App {\n    def run() { return 1 }\n}\n"
         val provider = CodeNarcDiagnosticProvider(context)

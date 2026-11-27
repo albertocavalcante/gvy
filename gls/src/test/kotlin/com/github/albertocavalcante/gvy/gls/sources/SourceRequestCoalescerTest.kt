@@ -12,7 +12,7 @@ import kotlin.test.assertEquals
 
 class SourceRequestCoalescerTest {
     @Test
-    fun `one cancelled borrower preserves another borrower`() = runBlocking {
+    fun `one cancelled borrower preserves another borrower`(): Unit = runBlocking {
         SourceRequestCoalescer<String, Int>().use { coalescer ->
             val started = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()

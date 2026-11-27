@@ -65,7 +65,7 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
-    fun `method call on class from another file has the declared return type`() = runBlocking<Unit> {
+    fun `method call on class from another file has the declared return type`(): Unit = runBlocking {
         compile(
             "demo/money/Money.groovy",
             """
@@ -100,7 +100,7 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
-    fun `overloads that disagree on the return type give no type`() = runBlocking<Unit> {
+    fun `overloads that disagree on the return type give no type`(): Unit = runBlocking {
         compile(
             "demo/lib/Lib.groovy",
             """
@@ -140,7 +140,7 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
-    fun `overloads in the same file that disagree on the return type give no type`() = runBlocking<Unit> {
+    fun `overloads in the same file that disagree on the return type give no type`(): Unit = runBlocking {
         val app = compile(
             "demo/app/Loc.groovy",
             """
@@ -170,7 +170,7 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
-    fun `a method on a type variable is not typed from its bound`() = runBlocking<Unit> {
+    fun `a method on a type variable is not typed from its bound`(): Unit = runBlocking {
         compile("demo/lib/NBox.groovy", "package demo.lib\nclass NBox<T extends Number> { T get() { null } }")
         val app = compile(
             "demo/app/App.groovy",
@@ -182,7 +182,7 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
-    fun `editing the dependency updates a local typed from it`() = runBlocking<Unit> {
+    fun `editing the dependency updates a local typed from it`(): Unit = runBlocking {
         val lib = "package demo.lib\nclass Lib { %s currency() { null } }"
         compile("demo/lib/Lib.groovy", lib.format("String"))
         val app = compile(
@@ -211,7 +211,7 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
-    fun `an inlay hint on a def initialised from another file shows the declared type`() = runBlocking<Unit> {
+    fun `an inlay hint on a def initialised from another file shows the declared type`(): Unit = runBlocking {
         compile(
             "demo/lib/Lib.groovy",
             """

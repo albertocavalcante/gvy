@@ -38,6 +38,16 @@ class GvyRuleSetProviderTest {
             Severity.Maintainability,
             Debt.TEN_MINS,
         ),
+        "TestFunctionReturnType" to Expected(
+            "$JUNIT_TEST fun x() = runBlocking { }",
+            Severity.Defect,
+            Debt.FIVE_MINS,
+        ),
+        "CoroutineTestBody" to Expected(
+            "$JUNIT_TEST fun x() { runBlocking { } }",
+            Severity.Style,
+            Debt.FIVE_MINS,
+        ),
     )
 
     /** More findings, by rule id, whose messages are worded or assembled differently from the snippets above. */
@@ -48,6 +58,11 @@ class GvyRuleSetProviderTest {
         "JdkAtomics" to "val counter = java.util.concurrent.atomic.AtomicLong()",
         "StdlibAtomics" to "import kotlin.concurrent.atomics.*",
         "StdlibAtomics" to "@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)\nclass A",
+        "TestFunctionReturnType" to "$JUNIT_TEST fun x() = rewriteRun(spec)",
+        "TestFunctionReturnType" to "$JUNIT_TEST fun x() = Unit",
+        "TestFunctionReturnType" to "$JUNIT_TEST fun x(): TestResult = runTest { }",
+        "TestFunctionReturnType" to "$JUNIT_TEST fun x(): Unit { }",
+        "CoroutineTestBody" to "$JUNIT_TEST fun x(): Unit = runBlocking<Unit> { }",
     )
 
     /** Every rule, as the provider builds it from the `gvy` section of the YAML config at [resource]. */
@@ -104,6 +119,9 @@ class GvyRuleSetProviderTest {
     }
 
     private companion object {
+        /** JUnit's annotation by its qualified name, so that a one-line snippet needs no import. */
+        const val JUNIT_TEST = "@org.junit.jupiter.api.Test"
+
         /** "`code` what is wrong. The fix (#issue)." */
         const val MESSAGE_SHAPE = "`[^`]+` .+\\. .+ \\(#\\d+\\)\\."
     }

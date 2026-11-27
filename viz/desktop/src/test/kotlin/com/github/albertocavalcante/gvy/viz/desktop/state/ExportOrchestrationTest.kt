@@ -27,7 +27,7 @@ class ExportOrchestrationTest {
     }
 
     @Test
-    fun `DOT encoding excludes parser work until completion and keeps the captured source`() = runTest {
+    fun `DOT encoding excludes parser work until completion and keeps the captured source`(): Unit = runTest {
         val gate = CompletableDeferred<Unit>()
         val events = mutableListOf<String>()
         val files = Files()
@@ -62,7 +62,7 @@ class ExportOrchestrationTest {
     }
 
     @Test
-    fun `encoding failure is visible releases the export slot and never writes`() = runTest {
+    fun `encoding failure is visible releases the export slot and never writes`(): Unit = runTest {
         val files = Files()
         val dispatcher = StandardTestDispatcher(testScheduler)
         var attempts = 0

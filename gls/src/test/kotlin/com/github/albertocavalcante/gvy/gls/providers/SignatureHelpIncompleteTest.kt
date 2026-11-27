@@ -26,7 +26,7 @@ class SignatureHelpIncompleteTest {
     )
 
     @AfterEach
-    fun clearCompilationCaches() = compilation.clearCaches()
+    fun clearCompilationCaches(): Unit = compilation.clearCaches()
 
     @Test
     fun `signature help uses incomplete current buffer after a different source was compiled for the uri`(): Unit =

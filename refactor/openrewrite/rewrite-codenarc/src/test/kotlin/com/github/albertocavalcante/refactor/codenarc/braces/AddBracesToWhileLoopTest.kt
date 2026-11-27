@@ -24,7 +24,7 @@ class AddBracesToWhileLoopTest : RewriteTest {
     }
 
     @Test
-    fun `adds braces to single-line while loop`() = rewriteRun(
+    fun `adds braces to single-line while loop`(): Unit = rewriteRun(
         groovy(
             """
             while (true) println("waiting")
@@ -39,7 +39,7 @@ class AddBracesToWhileLoopTest : RewriteTest {
 
     // Negative test
     @Test
-    fun `no change when braces already exist`() = rewriteRun(
+    fun `no change when braces already exist`(): Unit = rewriteRun(
         groovy(
             """
             while (true) {

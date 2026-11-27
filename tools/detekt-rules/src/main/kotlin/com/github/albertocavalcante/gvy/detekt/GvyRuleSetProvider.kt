@@ -15,9 +15,10 @@ import io.gitlab.arturbosch.detekt.api.RuleSetProvider
  *
  * The rules share conventions. A finding's message names the reported code in backticks and says what is wrong with
  * it, then gives the fix and the issue that set the policy. The issue's description says what the rule reports,
- * starting with "Reports". The severity is detekt's category for the harm: `Defect` for a likely race,
- * `Maintainability` for an API kept to one module, `Performance` for repeated work. The debt is the usual time to fix
- * one finding. Dotted names are read by PSI segment through `PsiNames.kt`, never compared as source text.
+ * starting with "Reports". The severity is detekt's category for the harm: `Defect` for a likely race or a test that
+ * JUnit may not run, `Maintainability` for an API kept to one module, `Performance` for repeated work, `Style` for
+ * one spelling chosen among several that behave the same. The debt is the usual time to fix one finding. Dotted names
+ * are read by PSI segment through `PsiNames.kt`, never compared as source text.
  *
  * `GvyRuleSetProviderTest` checks each rule's severity, debt and description prefix, and the message shape of a few
  * representative findings per rule. Review and each rule's spelling fixtures keep the `PsiNames.kt` convention.
@@ -27,6 +28,13 @@ class GvyRuleSetProvider : RuleSetProvider {
 
     override fun instance(config: Config): RuleSet = RuleSet(
         ruleSetId,
-        listOf(RegexInFunctionBody(config), VolatileProperty(config), JdkAtomics(config), StdlibAtomics(config)),
+        listOf(
+            RegexInFunctionBody(config),
+            VolatileProperty(config),
+            JdkAtomics(config),
+            StdlibAtomics(config),
+            TestFunctionReturnType(config),
+            CoroutineTestBody(config),
+        ),
     )
 }

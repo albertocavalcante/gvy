@@ -25,7 +25,7 @@ class SimplifyExplicitHashSetInstantiationTest : RewriteTest {
     }
 
     @Test
-    fun `converts new HashSet to set cast`() = rewriteRun(
+    fun `converts new HashSet to set cast`(): Unit = rewriteRun(
         groovy(
             """
             def set = new HashSet()
@@ -37,7 +37,7 @@ class SimplifyExplicitHashSetInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `converts fully qualified HashSet`() = rewriteRun(
+    fun `converts fully qualified HashSet`(): Unit = rewriteRun(
         groovy(
             """
             def set = new java.util.HashSet()
@@ -49,7 +49,7 @@ class SimplifyExplicitHashSetInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `converts generic HashSet`() = rewriteRun(
+    fun `converts generic HashSet`(): Unit = rewriteRun(
         groovy(
             """
             def set = new HashSet<String>()
@@ -61,7 +61,7 @@ class SimplifyExplicitHashSetInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves HashSet with initial capacity`() = rewriteRun(
+    fun `preserves HashSet with initial capacity`(): Unit = rewriteRun(
         groovy(
             """
             def set = new HashSet(10)
@@ -70,7 +70,7 @@ class SimplifyExplicitHashSetInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves HashSet with collection argument`() = rewriteRun(
+    fun `preserves HashSet with collection argument`(): Unit = rewriteRun(
         groovy(
             """
             def list = [1, 2]

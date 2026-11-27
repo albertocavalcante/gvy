@@ -42,7 +42,7 @@ class VerifiedSourceArtifactResolverTest {
     private val coordinates = ResolvedArtifactCoordinates("sample", "library", "1.0")
 
     @Test
-    fun `checksum is required before jar transfer and validated sources can be reused offline`() = runBlocking {
+    fun `checksum is required before jar transfer and validated sources can be reused offline`(): Unit = runBlocking {
         val bytes = sourceArchive()
         repository(bytes, sha256(bytes)).use { repository ->
             val resolver = MavenSourceArtifactResolver(directory, repository)
@@ -66,7 +66,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `absent expected SHA never downloads the archive`() = runBlocking {
+    fun `absent expected SHA never downloads the archive`(): Unit = runBlocking {
         repository(sourceArchive(), null).use { repository ->
             val result = MavenSourceArtifactResolver(directory, repository).resolveVerifiedSourceArtifact(request())
             assertEquals(VerifiedSourceArtifactResult.IntegrityUnavailable, result)
@@ -75,7 +75,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `incorrect repository SHA is an explicit integrity transport failure`() = runBlocking {
+    fun `incorrect repository SHA is an explicit integrity transport failure`(): Unit = runBlocking {
         repository(sourceArchive(), "0".repeat(64)).use { repository ->
             assertEquals(
                 VerifiedSourceArtifactResult.Failed,
@@ -85,7 +85,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `same release can recover when a mismatching cached source archive is corrected`() = runBlocking {
+    fun `same release can recover when a mismatching cached source archive is corrected`(): Unit = runBlocking {
         val incorrectArchive = sourceArchive("incorrect")
         val staleChecksumArchive = sourceArchive("stale-checksum")
         val correctedArchive = sourceArchive("corrected")
@@ -125,7 +125,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `authentication and server failures never become published-source absence`() = runBlocking {
+    fun `authentication and server failures never become published-source absence`(): Unit = runBlocking {
         for (status in listOf(401, 503)) {
             repository(sourceArchive(), null, RepositoryOptions(errorStatus = status)).use { repository ->
                 assertEquals(
@@ -138,7 +138,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `offline lookup performs no transfers and coordinate path traversal is rejected`() = runBlocking {
+    fun `offline lookup performs no transfers and coordinate path traversal is rejected`(): Unit = runBlocking {
         repository(sourceArchive(), null).use { repository ->
             val resolver = MavenSourceArtifactResolver(directory, repository)
             resolver.resolveVerifiedSourceArtifact(request(download = false))
@@ -159,7 +159,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `repository contexts do not share cached source bytes by coordinates alone`() = runBlocking {
+    fun `repository contexts do not share cached source bytes by coordinates alone`(): Unit = runBlocking {
         val one = sourceArchive("one")
         val two = sourceArchive("two")
         repository(one, sha256(one)).use { first ->
@@ -179,7 +179,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `same coordinates with a privately patched binary cannot fetch public source bytes`() = runBlocking {
+    fun `same coordinates with a privately patched binary cannot fetch public source bytes`(): Unit = runBlocking {
         repository(
             sourceArchive(),
             "0".repeat(64),
@@ -196,7 +196,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `binary proof and source checksum are never combined across repositories`() = runBlocking {
+    fun `binary proof and source checksum are never combined across repositories`(): Unit = runBlocking {
         val bytes = sourceArchive()
         repository(bytes, null).use { matchingBinary ->
             repository(bytes, sha256(bytes), RepositoryOptions(binaryChecksum = "b".repeat(64))).use { otherBinary ->
@@ -213,7 +213,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `full verified store refuses another download without deleting existing cache files`() = runBlocking {
+    fun `full verified store refuses another download without deleting existing cache files`(): Unit = runBlocking {
         val bytes = sourceArchive()
         repository(bytes, sha256(bytes)).use { repository ->
             val root = defaultVerifiedSourceCacheRoot(directory)
@@ -228,36 +228,37 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `snapshot metadata and source transfer share reserved capacity and failed download can retry`() = runBlocking {
-        val largeArchive = directory.resolve("near-limit-sources.jar")
-        writeNearLimitSourceArchive(largeArchive)
-        assertTrue(Files.size(largeArchive) in 63L * 1_048_576L..VERIFIED_SOURCE_MAX_ARTIFACT_BYTES)
-        val largeMetadata = snapshotMetadata(2 * 1_048_576)
-        assertTrue(largeMetadata.size > 1_048_576)
-        assertTrue(Files.size(largeArchive) < VERIFIED_SOURCE_MAX_ARTIFACT_BYTES)
-        assertTrue(Files.size(largeArchive) + largeMetadata.size > VERIFIED_SOURCE_MAX_OPERATION_BYTES)
-        val smallArchive = sourceArchive("snapshot-retry")
-        val root = defaultVerifiedSourceCacheRoot(directory)
-        Files.createDirectories(root)
-        val retained = Files.writeString(root.resolve("retained-download"), "preserve")
-        val filler = Files.write(root.resolve("prefilled-reservation"), ByteArray(8 * 1024))
-        val initialBytes = managedFileBytes(root)
-        val maximumBytes = initialBytes + VERIFIED_SOURCE_CACHE_RESERVATION_BYTES
-        val cache = SnapshotCache(root, maximumBytes, retained, filler)
-        val retryCache = cache.copy(maximumBytes = initialBytes + 2 * VERIFIED_SOURCE_CACHE_RESERVATION_BYTES)
-        val repository = TestRepository(
-            archive = TestBody.fromFile(largeArchive, paced = true),
-            checksum = sha256(largeArchive),
-            options = RepositoryOptions(metadata = largeMetadata),
-        )
-        repository.use {
-            assertSnapshotBudgetRejection(cache, repository)
-            assertSnapshotRetry(retryCache, repository, smallArchive)
+    fun `snapshot metadata and source transfer share reserved capacity and failed download can retry`(): Unit =
+        runBlocking {
+            val largeArchive = directory.resolve("near-limit-sources.jar")
+            writeNearLimitSourceArchive(largeArchive)
+            assertTrue(Files.size(largeArchive) in 63L * 1_048_576L..VERIFIED_SOURCE_MAX_ARTIFACT_BYTES)
+            val largeMetadata = snapshotMetadata(2 * 1_048_576)
+            assertTrue(largeMetadata.size > 1_048_576)
+            assertTrue(Files.size(largeArchive) < VERIFIED_SOURCE_MAX_ARTIFACT_BYTES)
+            assertTrue(Files.size(largeArchive) + largeMetadata.size > VERIFIED_SOURCE_MAX_OPERATION_BYTES)
+            val smallArchive = sourceArchive("snapshot-retry")
+            val root = defaultVerifiedSourceCacheRoot(directory)
+            Files.createDirectories(root)
+            val retained = Files.writeString(root.resolve("retained-download"), "preserve")
+            val filler = Files.write(root.resolve("prefilled-reservation"), ByteArray(8 * 1024))
+            val initialBytes = managedFileBytes(root)
+            val maximumBytes = initialBytes + VERIFIED_SOURCE_CACHE_RESERVATION_BYTES
+            val cache = SnapshotCache(root, maximumBytes, retained, filler)
+            val retryCache = cache.copy(maximumBytes = initialBytes + 2 * VERIFIED_SOURCE_CACHE_RESERVATION_BYTES)
+            val repository = TestRepository(
+                archive = TestBody.fromFile(largeArchive, paced = true),
+                checksum = sha256(largeArchive),
+                options = RepositoryOptions(metadata = largeMetadata),
+            )
+            repository.use {
+                assertSnapshotBudgetRejection(cache, repository)
+                assertSnapshotRetry(retryCache, repository, smallArchive)
+            }
         }
-    }
 
     @Test
-    fun `snapshot sidecars use timestamped paths with ordinary artifact metadata`() = runBlocking {
+    fun `snapshot sidecars use timestamped paths with ordinary artifact metadata`(): Unit = runBlocking {
         val archive = sourceArchive("timestamped")
         repository(
             archive,
@@ -292,7 +293,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `snapshot without timestamped metadata keeps the base version sidecar path`() = runBlocking {
+    fun `snapshot without timestamped metadata keeps the base version sidecar path`(): Unit = runBlocking {
         val archive = sourceArchive("non-timestamped")
         repository(archive, sha256(archive)).use { repository ->
             val result = assertIs<VerifiedSourceArtifactResult.Available>(
@@ -309,7 +310,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `snapshot binary digest mismatch stops before requesting source metadata or bytes`() = runBlocking {
+    fun `snapshot binary digest mismatch stops before requesting source metadata or bytes`(): Unit = runBlocking {
         val archive = sourceArchive("timestamped-mismatch")
         repository(
             archive,
@@ -333,7 +334,7 @@ class VerifiedSourceArtifactResolverTest {
     }
 
     @Test
-    fun `snapshot source from another timestamped build is rejected`() = runBlocking {
+    fun `snapshot source from another timestamped build is rejected`(): Unit = runBlocking {
         val archive = sourceArchive("timestamped-mismatch")
         repository(
             archive,
@@ -411,7 +412,7 @@ class VerifiedSourceArtifactResolverTest {
     private data class SnapshotCache(val root: Path, val maximumBytes: Long, val retained: Path, val filler: Path)
 
     @Test
-    fun `implicit checksum sidecar is never fetched outside the transfer listener`() = runBlocking {
+    fun `implicit checksum sidecar is never fetched outside the transfer listener`(): Unit = runBlocking {
         val archive = sourceArchive()
         repository(
             archive,

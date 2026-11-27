@@ -28,7 +28,7 @@ class RewriteRangeIntegrationTest {
     private val uri = "file:///example.groovy"
 
     @Test
-    fun `adapter and hover expose exact zero based ranges`() = runTest {
+    fun `adapter and hover expose exact zero based ranges`(): Unit = runTest {
         val source = "// comment\nclass Example {\n    String name\n}"
         val unit = RewriteParserProvider().parse(source)
         val adapter = RewriteParserAdapter(unit, uri)
@@ -41,7 +41,7 @@ class RewriteRangeIntegrationTest {
     }
 
     @Test
-    fun `unavailable parser ranges do not create navigable symbols or hover`() = runTest {
+    fun `unavailable parser ranges do not create navigable symbols or hover`(): Unit = runTest {
         val unit = mockk<ParseUnit>()
         every { unit.isSuccessful } returns true
         every { unit.diagnostics() } returns emptyList()

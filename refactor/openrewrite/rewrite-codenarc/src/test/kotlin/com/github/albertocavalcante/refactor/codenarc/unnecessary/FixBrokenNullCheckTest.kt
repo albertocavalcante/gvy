@@ -21,7 +21,7 @@ class FixBrokenNullCheckTest : RewriteTest {
     }
 
     @Test
-    fun `fixes broken null check with property access`() = rewriteRun(
+    fun `fixes broken null check with property access`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -45,7 +45,7 @@ class FixBrokenNullCheckTest : RewriteTest {
     )
 
     @Test
-    fun `fixes broken null check with method call`() = rewriteRun(
+    fun `fixes broken null check with method call`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -69,7 +69,7 @@ class FixBrokenNullCheckTest : RewriteTest {
     )
 
     @Test
-    fun `fixes broken null check with reverse order`() = rewriteRun(
+    fun `fixes broken null check with reverse order`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -93,7 +93,7 @@ class FixBrokenNullCheckTest : RewriteTest {
     )
 
     @Test
-    fun `preserves correct null check`() = rewriteRun(
+    fun `preserves correct null check`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -108,7 +108,7 @@ class FixBrokenNullCheckTest : RewriteTest {
     )
 
     @Test
-    fun `preserves valid OR check`() = rewriteRun(
+    fun `preserves valid OR check`(): Unit = rewriteRun(
         groovy(
             """
             class Example {

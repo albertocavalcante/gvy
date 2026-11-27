@@ -53,7 +53,7 @@ class DeclarativeBlockLevelCompletionTest {
     private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setUp() = runBlocking {
+    fun setUp(): Unit = runBlocking {
         coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         documentProvider = DocumentProvider()
         compilationService = GroovyCompilationService(documentProvider = documentProvider)

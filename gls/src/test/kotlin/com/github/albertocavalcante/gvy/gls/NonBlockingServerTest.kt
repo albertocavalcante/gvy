@@ -31,63 +31,61 @@ class NonBlockingServerTest {
     }
 
     @Test
-    fun `test server lifecycle with non-blocking harness`() {
-        runBlocking {
-            val runner = TestLanguageServerRunner()
-            serverHandle = runner.startInMemoryServer()
+    fun `test server lifecycle with non-blocking harness`(): Unit = runBlocking {
+        val runner = TestLanguageServerRunner()
+        serverHandle = runner.startInMemoryServer()
 
-            val server = serverHandle!!.server
-            val client = serverHandle!!.client
+        val server = serverHandle!!.server
+        val client = serverHandle!!.client
 
-            // Test initialization
-            val initParams = InitializeParams().apply {
-                workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
-            }
+        // Test initialization
+        val initParams = InitializeParams().apply {
+            workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
+        }
 
-            val initResult = server.initialize(initParams).get()
-            assertNotNull(initResult)
-            assertNotNull(initResult.capabilities)
+        val initResult = server.initialize(initParams).get()
+        assertNotNull(initResult)
+        assertNotNull(initResult.capabilities)
 
-            // Test document operations
-            val textDoc = TextDocumentItem().apply {
-                uri = "file:///TestClass.groovy"
-                languageId = "groovy"
-                version = 1
-                text = """
+        // Test document operations
+        val textDoc = TextDocumentItem().apply {
+            uri = "file:///TestClass.groovy"
+            languageId = "groovy"
+            version = 1
+            text = """
                 class TestClass {
                     void method() {
                         println "Hello from test"
                     }
                 }
-                """.trimIndent()
-            }
-
-            val didOpenParams = DidOpenTextDocumentParams().apply {
-                textDocument = textDoc
-            }
-
-            server.textDocumentService.didOpen(didOpenParams)
-
-            // Wait for compilation to complete
-            client.awaitSuccessfulCompilation("file:///TestClass.groovy")
-
-            // Test completion
-            val completionParams = CompletionParams().apply {
-                textDocument = TextDocumentIdentifier("file:///TestClass.groovy")
-                position = Position(2, 12) // Inside the method body on the println line
-            }
-
-            val completions = server.textDocumentService.completion(completionParams).get()
-            assertNotNull(completions)
-            assertTrue(completions.isLeft) // Should return list, not CompletionList
-
-            val items = completions.left
-            assertTrue(items.isNotEmpty())
-            assertTrue(items.any { it.label == "println" })
-
-            // Test shutdown
-            val shutdownResult = server.shutdown().get(30, TimeUnit.SECONDS)
-            assertNull(shutdownResult)
+            """.trimIndent()
         }
+
+        val didOpenParams = DidOpenTextDocumentParams().apply {
+            textDocument = textDoc
+        }
+
+        server.textDocumentService.didOpen(didOpenParams)
+
+        // Wait for compilation to complete
+        client.awaitSuccessfulCompilation("file:///TestClass.groovy")
+
+        // Test completion
+        val completionParams = CompletionParams().apply {
+            textDocument = TextDocumentIdentifier("file:///TestClass.groovy")
+            position = Position(2, 12) // Inside the method body on the println line
+        }
+
+        val completions = server.textDocumentService.completion(completionParams).get()
+        assertNotNull(completions)
+        assertTrue(completions.isLeft) // Should return list, not CompletionList
+
+        val items = completions.left
+        assertTrue(items.isNotEmpty())
+        assertTrue(items.any { it.label == "println" })
+
+        // Test shutdown
+        val shutdownResult = server.shutdown().get(30, TimeUnit.SECONDS)
+        assertNull(shutdownResult)
     }
 }

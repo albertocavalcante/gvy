@@ -45,7 +45,7 @@ class LocalSymbolResolutionStrategyTest {
     }
 
     @Test
-    fun `should NOT resolve cross-file constructor call in LocalStrategy - full DefinitionResolver integration`() =
+    fun `does NOT resolve cross-file constructor call in LocalStrategy - full DefinitionResolver integration`(): Unit =
         runBlocking {
             // This test reproduces the ACTUAL E2E bug where DefinitionResolver returns Main.groovy
             // instead of Calculator.groovy for `new Calculator(10)`

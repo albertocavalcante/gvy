@@ -58,36 +58,34 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test server initialization`() {
-        runBlocking {
-            val params = InitializeParams().apply {
-                // No parent pid: a real watchdog on a made-up pid could kill the test JVM
-                processId = null
-                workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
-                capabilities = ClientCapabilities()
-                clientInfo = ClientInfo("Test Client", "1.0.0")
-            }
-
-            val result = server.initialize(params).get()
-
-            assertNotNull(result)
-            assertNotNull(result.capabilities)
-            assertEquals("Groovy Language Server", result.serverInfo?.name)
-            assertEquals(Version.display, result.serverInfo?.version)
-            if (Version.info.isStamped && !Version.info.release) {
-                // A development jar must be traceable to its commit from the client's side of the protocol.
-                // Release builds report the bare base version by design.
-                assertTrue(result.serverInfo?.version?.contains(Version.info.gitShaShort) == true)
-            }
-
-            // Check capabilities
-            val capabilities = result.capabilities
-            assertNotNull(capabilities.completionProvider)
-            assertTrue(capabilities.completionProvider.triggerCharacters?.contains(".") == true)
-            assertNotNull(capabilities.hoverProvider)
-            assertNotNull(capabilities.definitionProvider)
-            assertTrue(capabilities.documentFormattingProvider?.left == true)
+    fun `test server initialization`(): Unit = runBlocking {
+        val params = InitializeParams().apply {
+            // No parent pid: a real watchdog on a made-up pid could kill the test JVM
+            processId = null
+            workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
+            capabilities = ClientCapabilities()
+            clientInfo = ClientInfo("Test Client", "1.0.0")
         }
+
+        val result = server.initialize(params).get()
+
+        assertNotNull(result)
+        assertNotNull(result.capabilities)
+        assertEquals("Groovy Language Server", result.serverInfo?.name)
+        assertEquals(Version.display, result.serverInfo?.version)
+        if (Version.info.isStamped && !Version.info.release) {
+            // A development jar must be traceable to its commit from the client's side of the protocol.
+            // Release builds report the bare base version by design.
+            assertTrue(result.serverInfo?.version?.contains(Version.info.gitShaShort) == true)
+        }
+
+        // Check capabilities
+        val capabilities = result.capabilities
+        assertNotNull(capabilities.completionProvider)
+        assertTrue(capabilities.completionProvider.triggerCharacters?.contains(".") == true)
+        assertNotNull(capabilities.hoverProvider)
+        assertNotNull(capabilities.definitionProvider)
+        assertTrue(capabilities.documentFormattingProvider?.left == true)
     }
 
     @Test
@@ -232,11 +230,9 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test shutdown and exit`() {
-        runBlocking {
-            val result = server.shutdown().get()
-            assertNull(result)
-            // Note: We don't actually call exit() in tests as it would terminate the test JVM
-        }
+    fun `test shutdown and exit`(): Unit = runBlocking {
+        val result = server.shutdown().get()
+        assertNull(result)
+        // Note: We don't actually call exit() in tests as it would terminate the test JVM
     }
 }

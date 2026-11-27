@@ -32,7 +32,7 @@ class AstViewModelTest {
     ).also { models.add(it) }
 
     @AfterTest
-    fun closeModels() = models.forEach { it.close() }
+    fun closeModels(): Unit = models.forEach { it.close() }
 
     private fun node(id: String, range: RangeDto?, vararg children: AstNodeDto) =
         CoreAstNodeDto(id, id, range, children.toList(), emptyMap())

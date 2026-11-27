@@ -64,7 +64,7 @@ class SharedClassNodeConsumersTest {
     }
 
     @Test
-    fun `the semantic document of another script has no reference to the stamped Script node`() = runBlocking {
+    fun `the semantic document of another script has no reference to the stamped Script node`(): Unit = runBlocking {
         stampScriptType()
         compilation.compile(script, scriptText)
 
@@ -75,7 +75,7 @@ class SharedClassNodeConsumersTest {
     }
 
     @Test
-    fun `import java util List still resolves at its own name`() = runBlocking {
+    fun `import java util List still resolves at its own name`(): Unit = runBlocking {
         val uri = URI.create("file:///Imports.groovy")
         compilation.compile(uri, "package p\n\nimport java.util.List\nclass Imports {}\n")
 

@@ -19,7 +19,7 @@ class IncompleteTypeReceiverCompletionTest {
     private val resolver = SemanticTypeResolver(compilation.classpathService.getTypeSolver())
 
     @AfterEach
-    fun close() = compilation.clearCaches()
+    fun close(): Unit = compilation.clearCaches()
 
     private fun complete(source: String, line: Int, character: Int): List<CompletionItem> = runBlocking {
         CompletionProvider.getContextualCompletions(

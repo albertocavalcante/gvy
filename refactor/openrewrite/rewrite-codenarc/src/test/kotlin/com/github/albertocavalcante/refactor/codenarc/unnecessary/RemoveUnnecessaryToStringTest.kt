@@ -22,7 +22,7 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     }
 
     @Test
-    fun `removes toString on String literal`() = rewriteRun(
+    fun `removes toString on String literal`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -42,7 +42,7 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     )
 
     @Test
-    fun `removes toString when concatenating with String`() = rewriteRun(
+    fun `removes toString when concatenating with String`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -62,7 +62,7 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     )
 
     @Test
-    fun `preserves toString on non-String receiver when not in String context`() = rewriteRun(
+    fun `preserves toString on non-String receiver when not in String context`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -75,7 +75,7 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     )
 
     @Test
-    fun `preserves length call on String literal`() = rewriteRun(
+    fun `preserves length call on String literal`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -88,7 +88,7 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     )
 
     @Test
-    fun `preserves getBytes call on String literal`() = rewriteRun(
+    fun `preserves getBytes call on String literal`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -101,7 +101,7 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     )
 
     @Test
-    fun `preserves toString with arguments`() = rewriteRun(
+    fun `preserves toString with arguments`(): Unit = rewriteRun(
         groovy(
             """
             class Example {

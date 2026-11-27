@@ -24,7 +24,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     }
 
     @Test
-    fun `adds space after comma in method arguments`() = rewriteRun(
+    fun `adds space after comma in method arguments`(): Unit = rewriteRun(
         groovy(
             """
             println("hello","world")
@@ -36,7 +36,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     )
 
     @Test
-    fun `adds space after comma in list literal`() = rewriteRun(
+    fun `adds space after comma in list literal`(): Unit = rewriteRun(
         groovy(
             """
             def list = [1,2,3]
@@ -48,7 +48,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     )
 
     @Test
-    fun `adds space after comma in map literal`() = rewriteRun(
+    fun `adds space after comma in map literal`(): Unit = rewriteRun(
         groovy(
             """
             def map = [a:1,b:2]
@@ -60,7 +60,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     )
 
     @Test
-    fun `adds space after comma in method parameters`() = rewriteRun(
+    fun `adds space after comma in method parameters`(): Unit = rewriteRun(
         groovy(
             """
             def foo(String a,String b) {}
@@ -74,7 +74,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     // Negative tests - should NOT add space:
 
     @Test
-    fun `no change when space already exists after comma`() = rewriteRun(
+    fun `no change when space already exists after comma`(): Unit = rewriteRun(
         groovy(
             """
             println("hello", "world")
@@ -84,7 +84,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     )
 
     @Test
-    fun `no change when newline after comma`() = rewriteRun(
+    fun `no change when newline after comma`(): Unit = rewriteRun(
         groovy(
             """
             def list = [
@@ -97,7 +97,7 @@ class AddSpaceAfterCommaTest : RewriteTest {
     )
 
     @Test
-    fun `preserves comma in strings`() = rewriteRun(
+    fun `preserves comma in strings`(): Unit = rewriteRun(
         groovy(
             """
             def str = "hello,world"

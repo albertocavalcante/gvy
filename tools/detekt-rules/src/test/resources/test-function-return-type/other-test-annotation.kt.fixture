@@ -1,0 +1,20 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// This file imports another annotation named Test, so the plain name is not JUnit's. Only the qualified JUnit names
+// and the names its other imports bring are reported.
+package fixtures
+
+import com.example.annotations.Test
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.*
+
+class OtherTest {
+    @Test
+    fun `the plain name is the other annotation`() = runBlocking { }
+
+    @org.junit.jupiter.api.Test
+    fun `the qualified name is still JUnit's`() = runBlocking { } // FLAG
+
+    @BeforeEach
+    fun `the star import still brings the other names`() = runBlocking { } // FLAG
+}

@@ -379,7 +379,7 @@ class SpockBlockCompletionTest {
     }
 
     @Test
-    fun `a class extending an ordinary base from another file gets no labels despite a spock import`() = runTest {
+    fun `a class extending an ordinary base from another file gets no labels despite a spock import`(): Unit = runTest {
         val labels = labelsInWorkspace(
             mapOf("Base.groovy" to "class Base {}\n"),
             "Helper.groovy",
@@ -398,7 +398,7 @@ class SpockBlockCompletionTest {
     }
 
     @Test
-    fun `a spec extending a base spec from another file gets labels without spock text markers`() = runTest {
+    fun `a spec extending a base spec from another file gets labels without spock text markers`(): Unit = runTest {
         val labels = labelsInWorkspace(
             mapOf("BaseSpec.groovy" to "import spock.lang.Specification\nclass BaseSpec extends Specification {}\n"),
             "FooTest.groovy",

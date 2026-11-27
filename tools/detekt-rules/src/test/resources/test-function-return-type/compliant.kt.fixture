@@ -1,0 +1,91 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing in this file may be reported.
+package fixtures
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
+import org.junit.jupiter.params.ParameterizedTest
+
+class Compliant {
+    @Test
+    fun `an expression body declares Unit`(): Unit = runBlocking {
+        checkNotNull(compute())
+    }
+
+    @Test
+    fun `a virtual-time test`(): Unit = runTest {
+    }
+
+    @Test
+    fun `a call without a lambda`(): Unit = rewriteRun(
+        spec,
+    )
+
+    @Test
+    fun `a block body declares nothing`() {
+        runBlocking { first() }
+        runBlocking { second() }
+    }
+
+    @Test
+    fun `Unit in backticks is the same type`(): `Unit` = runBlocking { }
+
+    @ParameterizedTest
+    fun `a parameterized test`(value: Int): Unit = runBlocking { }
+
+    // CoroutineTestBody asks for this to become an expression body, which keeps the type.
+    @Test
+    fun `Unit on a block body that only wraps a builder`(): Unit {
+        runBlocking { }
+    }
+
+    @Test
+    fun `a local function is not a test`() {
+        @Test
+        fun local() = runBlocking { }
+        local()
+    }
+
+    @BeforeEach
+    fun setUp(): Unit = runBlocking { }
+
+    @BeforeEach
+    fun setUpInABlock() {
+    }
+
+    // A test factory must return its tests.
+    @TestFactory
+    fun `a test factory`(): List<DynamicTest> = emptyList()
+
+    @TestFactory
+    fun `a test factory with an inferred type`() = listOf<DynamicTest>()
+
+    // JUnit does not call these, so they return what they like.
+    private fun helper() = runBlocking { compute() }
+
+    fun `not annotated`() = runBlocking { }
+
+    @Deprecated("old")
+    fun deprecated() = runBlocking { }
+
+    @Suppress("TestFunctionReturnType") // Fixture: a suppression at the function silences it.
+    @Test
+    fun `suppressed`() = runBlocking { }
+
+    // The words @Test fun x() = runBlocking { } in a comment are not a function.
+    val text = "@Test fun x() = runBlocking { }"
+}
+
+interface Contract {
+    @Test
+    fun `a function without a body`()
+}
+
+@Test
+fun `a top-level test with a block body`() {
+}

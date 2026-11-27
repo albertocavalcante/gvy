@@ -20,7 +20,7 @@ class MavenSourceArtifactResolverTest {
     @TempDir lateinit var directory: Path
 
     @Test
-    fun `verified release cache remains usable when download reservation no longer fits`() = runBlocking {
+    fun `verified release cache remains usable when download reservation no longer fits`(): Unit = runBlocking {
         val archive = "source bytes".toByteArray()
         val digest = MessageDigest.getInstance("SHA-256").digest(archive).joinToString("") { "%02x".format(it) }
         val requests = AtomicInteger()
@@ -66,7 +66,7 @@ class MavenSourceArtifactResolverTest {
     }
 
     @Test
-    fun `service unavailable is not retried by HTTP transport`() = runBlocking {
+    fun `service unavailable is not retried by HTTP transport`(): Unit = runBlocking {
         val requests = AtomicInteger()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->

@@ -65,7 +65,7 @@ class WatchedFilesRetireCostTest {
     private lateinit var sample: List<URI>
 
     @AfterEach
-    fun tearDown() = scope.cancel()
+    fun tearDown(): Unit = scope.cancel()
 
     @Test
     fun `a large notification of closed source changes retires each file before it returns`(): Unit = runBlocking {

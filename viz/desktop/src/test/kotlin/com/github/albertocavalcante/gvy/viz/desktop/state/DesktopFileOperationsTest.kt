@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 
 class DesktopFileOperationsTest {
     @Test
-    fun `existing destination is unchanged including its mode`() = runBlocking {
+    fun `existing destination is unchanged including its mode`(): Unit = runBlocking {
         val directory = Files.createTempDirectory("gvy-export-test-")
         try {
             assumeTrue(Files.getFileStore(directory).supportsFileAttributeView("posix"))
@@ -33,7 +33,7 @@ class DesktopFileOperationsTest {
     }
 
     @Test
-    fun `symlink destinations are rejected without changing link or target`() = runBlocking {
+    fun `symlink destinations are rejected without changing link or target`(): Unit = runBlocking {
         val directory = Files.createTempDirectory("gvy-export-test-")
         try {
             val target = directory.resolve("target.json")
@@ -53,7 +53,7 @@ class DesktopFileOperationsTest {
     }
 
     @Test
-    fun `read only destinations are not overwritten`() = runBlocking {
+    fun `read only destinations are not overwritten`(): Unit = runBlocking {
         val directory = Files.createTempDirectory("gvy-export-test-")
         try {
             assumeTrue(Files.getFileStore(directory).supportsFileAttributeView("posix"))
@@ -69,7 +69,7 @@ class DesktopFileOperationsTest {
     }
 
     @Test
-    fun `new destination is created with complete contents`() = runBlocking {
+    fun `new destination is created with complete contents`(): Unit = runBlocking {
         val directory = Files.createTempDirectory("gvy-export-test-")
         try {
             val target = directory.resolve("new.json")

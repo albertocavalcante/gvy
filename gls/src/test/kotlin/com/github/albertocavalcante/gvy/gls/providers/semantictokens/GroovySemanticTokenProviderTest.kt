@@ -29,7 +29,7 @@ class GroovySemanticTokenProviderTest {
     private lateinit var tempWorkspace: java.nio.file.Path
 
     @BeforeEach
-    fun setup() = runBlocking {
+    fun setup(): Unit = runBlocking {
         compilationService = GroovyCompilationService()
         tempWorkspace = Files.createTempDirectory("groovy-lsp-semantic-test")
         compilationService.workspaceManager.initializeWorkspace(tempWorkspace)

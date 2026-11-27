@@ -342,7 +342,7 @@ class DiagnosticsServiceTest {
     @Nested
     inner class CollectionOutcomes {
         @Test
-        fun `empty provider cohort completes successfully`() = runBlocking {
+        fun `empty provider cohort completes successfully`(): Unit = runBlocking {
             val result = DiagnosticsService(emptyList()).collectDiagnostics(testUri, "test content")
 
             assertTrue(result.diagnostics.isEmpty())
@@ -352,7 +352,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `enabled cohort order is independent of diagnostic arrival order`() = runBoundedTest {
+        fun `enabled cohort order is independent of diagnostic arrival order`(): Unit = runBoundedTest {
             val secondEmitted = CompletableDeferred<Unit>()
             val first = streamingProvider("first") {
                 secondEmitted.await()
@@ -373,7 +373,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `partial failures retain their diagnostics and healthy peers`() = runBlocking {
+        fun `partial failures retain their diagnostics and healthy peers`(): Unit = runBlocking {
             val partial = TestStreamingDiagnosticProvider(
                 id = "partial",
                 diagnosticsToEmit = listOf(createTestDiagnostic("Before failure")),
@@ -399,7 +399,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `failure before flow creation records type and nullable message`() = runBlocking {
+        fun `failure before flow creation records type and nullable message`(): Unit = runBlocking {
             val provider = object : StreamingDiagnosticProvider {
                 override val id = "before-flow"
 
@@ -418,7 +418,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `checked provider exceptions retain healthy diagnostics`() = runBlocking {
+        fun `checked provider exceptions retain healthy diagnostics`(): Unit = runBlocking {
             val failing = streamingProvider("io") { throw IOException("Provider read failed") }
             val healthy = streamingProvider("healthy") { emit(createTestDiagnostic("Healthy")) }
 
@@ -433,7 +433,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `failures follow registration order after reverse completion`() = runBoundedTest {
+        fun `failures follow registration order after reverse completion`(): Unit = runBoundedTest {
             val secondFinished = CompletableDeferred<Unit>()
             val first = streamingProvider("first") {
                 secondFinished.await()
@@ -452,7 +452,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `provider cancellation releases an active peer`() = runBoundedTest {
+        fun `provider cancellation releases an active peer`(): Unit = runBoundedTest {
             val started = CompletableDeferred<Unit>()
             val released = CompletableDeferred<Unit>()
             val waiting = streamingProvider("waiting") {
@@ -477,7 +477,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `fatal provider errors propagate`() = runBlocking {
+        fun `fatal provider errors propagate`(): Unit = runBlocking {
             val fatal = streamingProvider("fatal") { throw LinkageError("Broken provider") }
 
             val failure = assertFailsWith<LinkageError> {
@@ -488,7 +488,7 @@ class DiagnosticsServiceTest {
         }
 
         @Test
-        fun `a provider cancelling its own coroutine cannot report success`() = runBlocking {
+        fun `a provider cancelling its own coroutine cannot report success`(): Unit = runBlocking {
             val cancelled = streamingProvider("self-cancelled") {
                 currentCoroutineContext().cancel(CancellationException("Provider stopped"))
             }

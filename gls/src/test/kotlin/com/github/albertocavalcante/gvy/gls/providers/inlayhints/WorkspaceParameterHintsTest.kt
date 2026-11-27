@@ -26,7 +26,7 @@ class WorkspaceParameterHintsTest {
     private val compilation = GroovyCompilationService()
 
     @AfterEach
-    fun close() = compilation.clearCaches()
+    fun close(): Unit = compilation.clearCaches()
 
     @Test
     fun `workspace overloads, constructors and default-package classes give the same hints`(): Unit = runBlocking {

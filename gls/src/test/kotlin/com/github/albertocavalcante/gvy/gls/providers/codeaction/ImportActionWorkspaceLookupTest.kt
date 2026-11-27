@@ -28,7 +28,7 @@ class ImportActionWorkspaceLookupTest {
     private val target = "file:///Target.groovy"
 
     @AfterEach
-    fun close() = compilation.clearCaches()
+    fun close(): Unit = compilation.clearCaches()
 
     @Test
     fun `a class in a closed workspace file is offered`(): Unit = runBlocking {

@@ -25,7 +25,7 @@ class AddSpaceAroundOperatorTest : RewriteTest {
     }
 
     @Test
-    fun `adds space around assignment`() = rewriteRun(
+    fun `adds space around assignment`(): Unit = rewriteRun(
         groovy(
             """
             def x=1
@@ -37,7 +37,7 @@ class AddSpaceAroundOperatorTest : RewriteTest {
     )
 
     @Test
-    fun `adds space around binary operator`() = rewriteRun(
+    fun `adds space around binary operator`(): Unit = rewriteRun(
         groovy(
             """
             int a=1+2
@@ -49,7 +49,7 @@ class AddSpaceAroundOperatorTest : RewriteTest {
     )
 
     @Test
-    fun `adds space around assignment operation`() = rewriteRun(
+    fun `adds space around assignment operation`(): Unit = rewriteRun(
         groovy(
             """
             int a = 1
@@ -63,7 +63,7 @@ class AddSpaceAroundOperatorTest : RewriteTest {
     )
 
     @Test
-    fun `preserves existing spaces`() = rewriteRun(
+    fun `preserves existing spaces`(): Unit = rewriteRun(
         groovy(
             """
             int a = 1 + 2
@@ -72,7 +72,7 @@ class AddSpaceAroundOperatorTest : RewriteTest {
     )
 
     @Test
-    fun `handles ternary operator`() = rewriteRun(
+    fun `handles ternary operator`(): Unit = rewriteRun(
         groovy(
             """
             def a = true?1:0

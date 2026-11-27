@@ -25,7 +25,7 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     }
 
     @Test
-    fun `preserves identifier reads without binding and truthiness proof`() = rewriteRun(
+    fun `preserves identifier reads without binding and truthiness proof`(): Unit = rewriteRun(
         groovy(
             """
             def x = true
@@ -36,12 +36,12 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `simplifies a repeated literal`() = rewriteRun(
+    fun `simplifies a repeated literal`(): Unit = rewriteRun(
         groovy("def result = true ? true : false", "def result = true ?: false"),
     )
 
     @Test
-    fun `preserves repeated method invocations without proof of purity`() = rewriteRun(
+    fun `preserves repeated method invocations without proof of purity`(): Unit = rewriteRun(
         groovy(
             """
             def getFoo() { "value" }
@@ -51,7 +51,7 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `preserves comments attached to the repeated expression`() = rewriteRun(
+    fun `preserves comments attached to the repeated expression`(): Unit = rewriteRun(
         groovy(
             """
             def x = 1
@@ -61,7 +61,7 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `preserves repeated calls that mutate state`() = rewriteRun(
+    fun `preserves repeated calls that mutate state`(): Unit = rewriteRun(
         groovy(
             """
             def calls = 0
@@ -74,7 +74,7 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `preserves implicit property getter reads that mutate state`() = rewriteRun(
+    fun `preserves implicit property getter reads that mutate state`(): Unit = rewriteRun(
         groovy(
             """
             class A {
@@ -92,12 +92,12 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `preserves unbound dynamic property reads`() = rewriteRun(
+    fun `preserves unbound dynamic property reads`(): Unit = rewriteRun(
         groovy("def result = value ? value : 0"),
     )
 
     @Test
-    fun `preserves a local binding changed by Groovy truthiness`() = rewriteRun(
+    fun `preserves a local binding changed by Groovy truthiness`(): Unit = rewriteRun(
         groovy(
             """
             class Box {
@@ -113,7 +113,7 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `does not simplify distinct expressions`() = rewriteRun(
+    fun `does not simplify distinct expressions`(): Unit = rewriteRun(
         groovy(
             """
             // Should not simplify if condition and true part are different
@@ -123,7 +123,7 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `does not simplify side effects`() = rewriteRun(
+    fun `does not simplify side effects`(): Unit = rewriteRun(
         groovy(
             """
             // Should not simplify expressions with obvious side effects (like post-increment)

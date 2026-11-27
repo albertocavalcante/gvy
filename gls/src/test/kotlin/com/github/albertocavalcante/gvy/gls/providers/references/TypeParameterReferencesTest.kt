@@ -41,7 +41,7 @@ class TypeParameterReferencesTest {
     }
 
     @Test
-    fun `references requested on a type parameter constructor never resolve to its bound class`() = runBlocking {
+    fun `references requested on a type parameter constructor never resolve to its bound class`(): Unit = runBlocking {
         val content = "package pkg\nclass T {}\n" +
             "class Box<T extends pkg.T> { def m() { new T() } }\n" +
             "class Real { def m() { new T() } }\n"

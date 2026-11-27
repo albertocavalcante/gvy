@@ -130,7 +130,7 @@ class AstVisualizerAppInteractionTest {
     // Compose Desktop 1.10 routes OnClick semantics through the AWT UI thread. This is not a physical mouse test.
 
     @Test
-    fun `browse cancel is neutral then accepted file loads and failed read is visible`() = runComposeUiTest {
+    fun `browse cancel is neutral then accepted file loads and failed read is visible`(): Unit = runComposeUiTest {
         val files = Files()
         val prefs = InMemoryPreferences()
         val dialogs = Dialogs(runOnUiThread { Thread.currentThread() })
@@ -168,7 +168,7 @@ class AstVisualizerAppInteractionTest {
     }
 
     @Test
-    fun `JSON chooser cancellation is neutral and accepted export keeps captured snapshot`() = runComposeUiTest {
+    fun `JSON chooser cancellation is neutral and accepted export keeps captured snapshot`(): Unit = runComposeUiTest {
         val files = Files()
         val dialogs = Dialogs(runOnUiThread { Thread.currentThread() })
         val prefs = InMemoryPreferences()
@@ -220,7 +220,7 @@ class AstVisualizerAppInteractionTest {
     }
 
     @Test
-    fun `DOT export succeeds and write failures are shown`() = runComposeUiTest {
+    fun `DOT export succeeds and write failures are shown`(): Unit = runComposeUiTest {
         val files = Files()
         val dialogs = Dialogs(runOnUiThread { Thread.currentThread() })
         val prefs = InMemoryPreferences()
@@ -264,7 +264,7 @@ class AstVisualizerAppInteractionTest {
     }
 
     @Test
-    fun `removing root cancels pending load`() = runComposeUiTest {
+    fun `removing root cancels pending load`(): Unit = runComposeUiTest {
         val gate = CompletableDeferred<String>()
         val started = AtomicBoolean()
         val cancelled = AtomicBoolean()

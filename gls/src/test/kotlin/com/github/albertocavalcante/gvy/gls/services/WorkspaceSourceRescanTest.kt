@@ -60,7 +60,7 @@ class WorkspaceSourceRescanTest {
     private val jsonHandler = MessageJsonHandler(emptyMap())
 
     @AfterEach
-    fun tearDown() = scope.cancel()
+    fun tearDown(): Unit = scope.cancel()
 
     private fun jarOf(type: Class<*>): Path = Path.of(type.protectionDomain.codeSource.location.toURI())
 

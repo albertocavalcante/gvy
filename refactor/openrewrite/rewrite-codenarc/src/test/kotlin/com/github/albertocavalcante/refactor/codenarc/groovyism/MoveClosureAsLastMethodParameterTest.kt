@@ -25,7 +25,7 @@ class MoveClosureAsLastMethodParameterTest : RewriteTest {
     }
 
     @Test
-    fun `moves closure outside for each`() = rewriteRun(
+    fun `moves closure outside for each`(): Unit = rewriteRun(
         groovy(
             """
             [1, 2].each({ println it })
@@ -37,7 +37,7 @@ class MoveClosureAsLastMethodParameterTest : RewriteTest {
     )
 
     @Test
-    fun `moves closure for mixed args`() = rewriteRun(
+    fun `moves closure for mixed args`(): Unit = rewriteRun(
         groovy(
             """
             def foo(int x, Closure c) {}
@@ -51,7 +51,7 @@ class MoveClosureAsLastMethodParameterTest : RewriteTest {
     )
 
     @Test
-    fun `handles multiline closure`() = rewriteRun(
+    fun `handles multiline closure`(): Unit = rewriteRun(
         groovy(
             """
             [1].each({ 
@@ -69,7 +69,7 @@ class MoveClosureAsLastMethodParameterTest : RewriteTest {
     )
 
     @Test
-    fun `no change when already outside`() = rewriteRun(
+    fun `no change when already outside`(): Unit = rewriteRun(
         groovy(
             """
             [1].each { println it }
@@ -78,7 +78,7 @@ class MoveClosureAsLastMethodParameterTest : RewriteTest {
     )
 
     @Test
-    fun `preserves when closure is not last`() = rewriteRun(
+    fun `preserves when closure is not last`(): Unit = rewriteRun(
         groovy(
             """
             def foo(Closure c, int x) {}

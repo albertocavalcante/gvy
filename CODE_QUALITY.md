@@ -62,6 +62,22 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 ```
 
+### Test Functions
+
+A JUnit test or lifecycle function declares `: Unit` on an expression body and nothing on a block body, and a test that
+runs wholly in a coroutine builder uses the builder as its expression body. gvy's `TestFunctionReturnType` and
+`CoroutineTestBody` detekt rules enforce it (see [Test functions](docs/kotlin-style.md#test-functions)):
+
+```kotlin
+// Bad: JUnit does not run a test that returns a value, and this one returns its last expression
+@Test
+fun `finds the symbol`() = runBlocking { assertNotNull(index.find("Foo")) }
+
+// Good
+@Test
+fun `finds the symbol`(): Unit = runBlocking { assertNotNull(index.find("Foo")) }
+```
+
 ### Code Coverage
 
 - Minimum 70% line coverage required

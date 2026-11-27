@@ -38,7 +38,7 @@ class JenkinsCompletionExactSetTest {
     private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setUp() = runBlocking {
+    fun setUp(): Unit = runBlocking {
         coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         compilationService = GroovyCompilationService()
         compilationService.workspaceManager.initializeWorkspace(tempDir)

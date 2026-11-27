@@ -1,0 +1,101 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+
+class TypeArgument {
+    @Test
+    fun `the return type is on the builder`() = runBlocking<Unit> { // FLAG
+    }
+
+    @Test
+    fun `the return type is in both places`(): Unit = runBlocking<Unit> { // FLAG
+    }
+
+    @Test
+    fun `a context argument`(): Unit = runBlocking<Unit>(context) { // FLAG
+    }
+
+    @Test
+    fun `a qualified builder`(): Unit = kotlinx.coroutines.runBlocking<Unit> { // FLAG
+    }
+
+    @Test
+    fun `another type argument`(): Unit = runBlocking<Any> { // FLAG
+    }
+
+    @BeforeEach
+    fun setUp() = runBlocking<Unit> { } // FLAG
+}
+
+class BlockWrapper {
+    @Test
+    fun `the builder is the whole block body`() {
+        runBlocking { // FLAG
+            compute()
+        }
+    }
+
+    @Test
+    fun `a virtual-time builder`() {
+        runTest { // FLAG
+        }
+    }
+
+    @Test
+    fun `a declared Unit on the wrapper`(): Unit {
+        runBlocking { } // FLAG
+    }
+
+    @Test
+    fun `a builder with a named argument`() {
+        runTest(timeout = limit) { } // FLAG
+    }
+
+    @Test
+    fun `a returned builder`() {
+        return runBlocking { } // FLAG
+    }
+
+    @Test
+    fun `a builder with a context argument`() {
+        runBlocking(context) { } // FLAG
+    }
+
+    @Test
+    fun `a builder with a type argument`() {
+        runBlocking<Unit> { } // FLAG
+    }
+
+    @Test
+    fun `a qualified builder`() {
+        kotlinx.coroutines.runBlocking { } // FLAG
+    }
+
+    @Test
+    fun `a builder on a receiver`() {
+        scope.runTest { } // FLAG
+    }
+
+    @Test
+    fun `a comment beside the builder is not a statement`() {
+        // Given a running server.
+        runBlocking { } // FLAG
+    }
+
+    @ParameterizedTest
+    fun `a parameterized test`(value: Int) {
+        runBlocking { } // FLAG
+    }
+
+    @BeforeEach
+    fun setUp() {
+        runBlocking { } // FLAG
+    }
+}

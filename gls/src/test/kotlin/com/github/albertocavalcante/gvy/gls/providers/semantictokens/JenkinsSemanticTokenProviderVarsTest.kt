@@ -34,7 +34,7 @@ class JenkinsSemanticTokenProviderVarsTest {
     private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setup() = runBlocking {
+    fun setup(): Unit = runBlocking {
         coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         compilationService = GroovyCompilationService()
         tempWorkspace = Files.createTempDirectory("groovy-lsp-vars-test")

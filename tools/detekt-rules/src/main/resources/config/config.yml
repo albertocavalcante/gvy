@@ -13,3 +13,7 @@ gvy:
     active: true
   StdlibAtomics:
     active: true
+  TestFunctionReturnType:
+    active: true
+  CoroutineTestBody:
+    active: true

@@ -32,7 +32,7 @@ class ClassHierarchyTest {
     }
 
     @Test
-    fun `queries on a superclass cycle terminate`() = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+    fun `queries on a superclass cycle terminate`(): Unit = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
         val (a, b) = cycle()
         b.addField(FieldNode("f", 1, ClassHelper.STRING_TYPE, b, null))
         a.addMethod(

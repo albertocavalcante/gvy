@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 
 class ClassHierarchySafetyTest {
     @Test
-    fun `lookups on a superclass cycle terminate`() = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+    fun `lookups on a superclass cycle terminate`(): Unit = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
         val a = ClassNode("A", 1, ClassHelper.OBJECT_TYPE)
         val b = ClassNode("B", 1, a)
         a.superClass = b

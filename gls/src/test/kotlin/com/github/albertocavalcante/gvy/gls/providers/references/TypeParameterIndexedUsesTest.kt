@@ -101,27 +101,28 @@ class TypeParameterIndexedUsesTest {
     }
 
     @Test
-    fun `references on an indexed type parameter constructor never fall back to the enclosing method`() = runBlocking {
-        val text = "package pkg\nclass T {}\n" +
-            "class Box<T extends pkg.T> { def m() { new T() } }\n" +
-            "class Real { def m() { new T() } }\n"
-        val file = indexed(mapOf("Box.groovy" to text)).getValue("Box.groovy")
-        val callColumn = text.lines()[2].indexOf("new T")
-        for (column in listOf(callColumn, callColumn + "new ".length)) {
-            assertEquals(
-                emptyList<Location>(),
-                ReferenceProvider(service, service.getWorkspaceSymbolIndex())
-                    .provideReferences(
-                        file.toUri().toString(),
-                        Position(2, column),
-                        includeDeclaration = true,
-                    ).toList(),
-            )
+    fun `references on an indexed type parameter constructor never fall back to the enclosing method`(): Unit =
+        runBlocking {
+            val text = "package pkg\nclass T {}\n" +
+                "class Box<T extends pkg.T> { def m() { new T() } }\n" +
+                "class Real { def m() { new T() } }\n"
+            val file = indexed(mapOf("Box.groovy" to text)).getValue("Box.groovy")
+            val callColumn = text.lines()[2].indexOf("new T")
+            for (column in listOf(callColumn, callColumn + "new ".length)) {
+                assertEquals(
+                    emptyList<Location>(),
+                    ReferenceProvider(service, service.getWorkspaceSymbolIndex())
+                        .provideReferences(
+                            file.toUri().toString(),
+                            Position(2, column),
+                            includeDeclaration = true,
+                        ).toList(),
+                )
+            }
         }
-    }
 
     @Test
-    fun `an indexed type parameter constructor does not hide references inside its arguments`() = runBlocking {
+    fun `an indexed type parameter constructor does not hide references inside its arguments`(): Unit = runBlocking {
         val text = "package pkg\nclass T {}\n" +
             "class Box<T extends pkg.T> { def m() { new T(new Real()) } }\nclass Real {}\n"
         val file = indexed(mapOf("Box.groovy" to text)).getValue("Box.groovy")
@@ -135,7 +136,7 @@ class TypeParameterIndexedUsesTest {
     }
 
     @Test
-    fun `an indexed method name equal to its return type still finds its callers`() = runBlocking {
+    fun `an indexed method name equal to its return type still finds its callers`(): Unit = runBlocking {
         val text = "class Kind {}\nclass Factory { Kind Kind() { null } }\n" +
             "class Caller { def m() { new Factory().Kind() } }\n"
         val file = indexed(mapOf("Factory.groovy" to text)).getValue("Factory.groovy")

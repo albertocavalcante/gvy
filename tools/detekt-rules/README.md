@@ -203,6 +203,135 @@ The rule reads syntax only, so it does not see:
 2. Java sources, and Kotlin outside the source roots the lint task reads, such as `tests/e2e` and the multiplatform
    sources of `viz/ast-model` (#2480).
 
+## `TestFunctionReturnType`
+
+JUnit does not run a test function that returns a value. A Kotlin function with an expression body and no declared type
+returns whatever its last expression returns, so this test is not run:
+
+```kotlin
+@Test
+fun `finds the symbol`() = runBlocking {
+    val symbol = index.find("Foo")
+    assertNotNull(symbol) // returns the symbol, so the function returns it too
+}
+```
+
+The build fails on JUnit's discovery warning (#1080), but only when the tests run, and only once the last expression has
+a value. The rule reports the declaration in `lint`, whatever the last expression is today. gvy declares the return type
+of a test or lifecycle function one way (#2507):
+
+| Body       | Declare          | Example                                  |
+| ---------- | ---------------- | ---------------------------------------- |
+| Expression | exactly `: Unit` | `fun name(): Unit = runBlocking { ... }` |
+| Block      | nothing          | `fun name() { ... }`                     |
+
+Three forms are reported:
+
+| Reported                                                                                | Fix                                                                         |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| An expression body with no declared type: `fun x() = f()`                               | Insert `: Unit` between `)` and `=`, or use a block body (see below)        |
+| Another declared type, on any body: `: TestResult`, `: kotlin.Unit`, `: Unit?`, `: Job` | Declare exactly `: Unit` on an expression body, and no type on a block body |
+| `: Unit` on a block body or a function without a body                                   | Remove the type                                                             |
+
+`: Unit` fits an expression whose value can be `Unit`: a coroutine builder or another call that takes the test as a
+lambda (`runBlocking { }`, `runTest { }`, `assertTimeoutPreemptively(limit) { }`), and a call that returns nothing
+(`rewriteRun(...)`, an assertion helper). An expression with a value of its own, such as `assertThrows<E> { }`,
+`assertThat(a).isEqualTo(b)` or a safe call, does not compile with `: Unit`; that is the test JUnit would not have run,
+and its fix is a block body.
+
+`TestResult` is `Unit` on the JVM and `kotlin.Unit` is `Unit`, so those tests run. They are reported because the rule
+cannot resolve an alias, and because one spelling is easier to check by eye than several.
+
+`: Unit` on a block body that only wraps a coroutine builder is not reported here: `CoroutineTestBody` asks for that
+body to become an expression body, which keeps the type.
+
+The rule applies to the functions JUnit calls: `@Test`, `@ParameterizedTest`, `@RepeatedTest`, `@TestTemplate`,
+`@BeforeEach`, `@AfterEach`, `@BeforeAll` and `@AfterAll` from JUnit Jupiter, `@Test`, `@BeforeTest` and `@AfterTest`
+from `kotlin.test`, and `@Test`, `@Before`, `@After`, `@BeforeClass` and `@AfterClass` from JUnit 4. An annotation
+counts when the file spells its qualified name, imports it (under its own name or an alias) or star-imports its package.
+Names are read by PSI segment, so backticks, comments and line breaks inside them do not hide an annotation.
+`@TestFactory` must return its tests and is not reported, and neither is a function JUnit does not call: a private
+helper, or a function declared inside another function's body.
+
+A message quotes the first line of the reported code as the source spells it and states the edit. It does not rewrite
+the body, so a receiver or an argument is never lost from the suggested fix.
+
+A base-class contract that must return a value is the only accepted reason for `@Suppress("TestFunctionReturnType")`,
+with a comment that says so. gvy has none, and the [CI guard](#ci-guard) fails on any `@Suppress` in a `src/` folder
+that silences the rule: its id, the `gvy` rule set, or `all`. A sanctioned one is added to the guard's
+`sanctionedSuppressions` list, with its reason, in the same pull request.
+
+### Known limits
+
+The rule cannot resolve names, so it errs in these documented ways:
+
+1. An annotation that is itself annotated `@Test` (a composed annotation), and a typealias of a JUnit annotation
+   (`typealias Spec = org.junit.jupiter.api.Test`), are not seen, so their functions are not checked. gvy declares
+   neither.
+2. A plain `@Test` in a file that imports no JUnit package is not checked, although a test class in the package
+   `org.junit.jupiter.api` or `kotlin.test` itself would mean JUnit's. gvy has no such class.
+3. A declaration in the same file or package outranks a star import. With `import org.junit.jupiter.api.*`, a plain
+   `@BeforeEach` is taken for JUnit's even when the package declares its own `annotation class BeforeEach`, so that
+   function is reported (a false positive). Import JUnit's annotations by name, as gvy does.
+4. A function in a local class or in an anonymous object is reported although JUnit never calls it (a false positive).
+   Remove the annotation there.
+5. Functions of other test engines (jqwik's `@Property`, Spock) are not checked: they have their own return rules.
+6. The lint task reads only the `kotlin` and `java` folders of `src/main` and `src/test` unless a module sets
+   `detekt.source`. Other Kotlin, such as `tests/e2e`, is not seen by any detekt rule yet (#2480).
+
+## `CoroutineTestBody`
+
+Several forms run a whole test inside a coroutine builder. gvy writes one, so that a reader and `lint` check one shape
+(#2507):
+
+```kotlin
+@Test
+fun `finds the symbol`(): Unit = runBlocking {
+    // ...
+}
+```
+
+`: Unit` on the function works for every builder. A type argument on the builder does not: `runTest` takes none. Two
+other forms are reported, on the functions `TestFunctionReturnType` checks:
+
+| Reported                                                                                                      | Fix                                                                                   |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| A type argument on the builder: `= runBlocking<Unit> { ... }`                                                 | Remove it and declare `: Unit` on the function                                        |
+| A block body whose only statement is the builder: `{ runBlocking { ... } }`, `{ return runBlocking { ... } }` | Make that call the expression body, with its receiver and arguments, after `: Unit =` |
+
+A builder is a call named `runBlocking` or `runTest` with a trailing lambda, with or without a receiver or arguments
+(`kotlinx.coroutines.runBlocking { }`, `runBlocking(Dispatchers.IO) { }`, `runTest(timeout = limit) { }`,
+`scope.runTest { }`). The fix keeps the receiver and the arguments: `scope.runTest { }` runs in that scope, and plain
+`runTest { }` would not.
+
+Not reported:
+
+- A block body with other statements around the builder, or with two builders: that is a different test shape.
+- A block body whose only statement is any other call, such as `assertThat(x).isEmpty()`: the rule is about coroutine
+  builders only.
+- A builder nested in another call, such as `assertFailsWith<E> { runBlocking { ... } }`.
+- A builder behind a safe call (`scope?.runTest { }`): its value is nullable, so it cannot be a `Unit` body.
+- A function JUnit does not call, such as a private helper that returns the builder's value.
+- A missing `: Unit`: that is `TestFunctionReturnType`'s finding. `fun x() = runBlocking<Unit> { }` gets both.
+
+The rule does not choose between `runBlocking` and `runTest`: `runTest` skips delays and has its own timeout, so the
+choice belongs to the test.
+
+There is no accepted reason for `@Suppress("CoroutineTestBody")`: every reported form has an equivalent in the one form.
+The [CI guard](#ci-guard) fails on any `@Suppress` in a `src/` folder that silences it.
+
+### Known limits
+
+1. A builder is recognised by name. A function of another library named `runBlocking` or `runTest` is taken for a
+   coroutine builder, and an import alias of either is missed.
+2. A builder call inside parentheses or behind a label (`(runBlocking { })`, `l@ runBlocking { }`) is not seen.
+3. The annotation limits of `TestFunctionReturnType` apply here too.
+
+### Coverage
+
+Both rules are active for every module the lint task reads, with no `excludes` line, no baseline entry and no
+suppression (#2507). The [CI guard](#ci-guard) keeps it so.
+
 ## CI guard
 
 `tools/ci/detekt-gvy-guard.test.mjs` runs with the other `tools/ci` tests in every CI run; its readers live in
@@ -216,6 +345,7 @@ elsewhere (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_
   blocks holds a line other than `active`, `excludes`, a single-quoted entry or a comment;
 - `VolatileProperty` excludes anything, `JdkAtomics` excludes anything but tests, `common/concurrent` and the published
   modules, `StdlibAtomics` excludes anything but `common/concurrent`, or one of them is inactive;
+- `TestFunctionReturnType` or `CoroutineTestBody` excludes anything or is inactive;
 - `RegexInFunctionBody` is inactive or excludes a pattern outside its test and benchmark patterns and the modules still
   in its #2420 migration, or the guard still lists a module whose line has left `detekt.yml`. Dropping a pattern is
   always allowed;
@@ -224,11 +354,11 @@ elsewhere (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_
   exactly the published modules that `JdkAtomics` exempts;
 - this module's own `config/config.yml`, which detekt adds to its defaults, holds anything but the `gvy` rule set with
   `active: true` for it and each rule;
-- a tracked detekt baseline holds a finding of any of the four rules;
+- a tracked detekt baseline holds a finding of any of the six rules;
 - a `.kt` or `.kts` file under a `src/` folder, resources included, suppresses `VolatileProperty`, `JdkAtomics`,
-  `StdlibAtomics`, the whole `gvy` rule set or `all` at a site that its `sanctionedSuppressions` list does not name with
-  a reason. The list is empty. Suppressions inside comments and string literals, such as this module's test inputs, do
-  not count;
+  `StdlibAtomics`, `TestFunctionReturnType`, `CoroutineTestBody`, the whole `gvy` rule set or `all` at a site that its
+  `sanctionedSuppressions` list does not name with a reason. The list is empty. Suppressions inside comments and string
+  literals, such as this module's test inputs, do not count;
 - a `*.gradle.kts` other than the root `build.gradle.kts`, outside `resources`, names detekt in code, or in a string
   that is a detekt task name or path (`"detekt"`, `":fmt:detekt"`) or a name in detekt's package
   (`"io.gitlab.arturbosch.detekt"`), for anything but a `libs.detekt.*` dependency in a configuration other than
@@ -258,11 +388,15 @@ rule's spelling fixtures keep the last convention.
 
 - A finding's message names the reported code in backticks and says what is wrong with it, then gives the fix and the
   issue that set the policy.
+- A message quotes code that the source spells, and states the edit. It does not rebuild the reader's code in a
+  suggested replacement, which could drop a receiver or an argument.
 - The issue description says what the rule reports, starting with "Reports". It does not repeat the message.
-- The severity is detekt's category for the harm: `Defect` for a likely race (`VolatileProperty`), `Maintainability` for
-  an API kept to one module (`JdkAtomics`, `StdlibAtomics`), `Performance` for repeated work (`RegexInFunctionBody`).
+- The severity is detekt's category for the harm: `Defect` for a likely race (`VolatileProperty`) or a test that JUnit
+  may not run (`TestFunctionReturnType`), `Maintainability` for an API kept to one module (`JdkAtomics`,
+  `StdlibAtomics`), `Performance` for repeated work (`RegexInFunctionBody`), `Style` for one spelling chosen among
+  several that behave the same (`CoroutineTestBody`).
 - The debt is the usual time to fix one finding: 20 minutes for a volatile field, whose every access needs checking, 10
-  for an atomic and 5 for a regex.
+  for an atomic, and 5 for a regex or a test function's declaration.
 - Dotted names are read by PSI segment through `PsiNames.kt`, never compared as source text.
 
 ## Running the tests
@@ -272,9 +406,9 @@ rule's spelling fixtures keep the last convention.
 ```
 
 Each rule has fixtures in `src/test/resources/<rule-name>/` (`regex-in-function-body/`, `volatile-property/`,
-`jdk-atomics/`, `stdlib-atomics/`). Each `// FLAG` line in `violations.kt.fixture` must be reported and
-`compliant.kt.fixture` must stay silent; add a case to the fixture before changing the rule. `RuleFixtures.kt` holds the
-shared helpers that read and check them.
+`jdk-atomics/`, `stdlib-atomics/`, `test-function-return-type/`, `coroutine-test-body/`). Each `// FLAG` line in
+`violations.kt.fixture` must be reported and `compliant.kt.fixture` must stay silent; add a case to the fixture before
+changing the rule. `RuleFixtures.kt` holds the shared helpers that read and check them.
 
 `GvyRuleSetProviderTest` covers every rule at once. The provider registers it, the plugin's default config activates it,
 and `inactive-config.yml` switches it off. Its severity and debt match the conventions above, its description starts

@@ -36,7 +36,7 @@ class AstTreeViewInteractionTest {
         CoreAstNodeDto(id, "ClassNode", null, children.toList(), mapOf("name" to id))
 
     @Test
-    fun `cursor selection reveals a descendant under a collapsed root`() = runComposeUiTest {
+    fun `cursor selection reveals a descendant under a collapsed root`(): Unit = runComposeUiTest {
         val target = node("needle")
         val root = node("root", node("branch", node("method", target)))
         val selected = mutableStateOf<AstNodeDto?>(null)
@@ -53,7 +53,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `filter reveals matching paths and clearing it restores manual collapse`() = runComposeUiTest {
+    fun `filter reveals matching paths and clearing it restores manual collapse`(): Unit = runComposeUiTest {
         val root = node("root", node("branch", node("method", node("needle"))))
         setContent {
             MaterialTheme {
@@ -73,7 +73,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `filtered row clicks preserve the original node instance`() = runComposeUiTest {
+    fun `filtered row clicks preserve the original node instance`(): Unit = runComposeUiTest {
         val target = node("needle")
         val root = node("root", target, node("other"))
         var clicked: AstNodeDto? = null
@@ -90,7 +90,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `large expanded trees compose a viewport of rows and reveal offscreen selections`() = runComposeUiTest {
+    fun `large expanded trees compose a viewport of rows and reveal offscreen selections`(): Unit = runComposeUiTest {
         val children = (0 until 1_000).map { node("name-$it") }
         val root = node("root", *children.toTypedArray())
         val selected = mutableStateOf<AstNodeDto?>(null)
@@ -109,7 +109,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `source selection outside the filter reveals its own path`() = runComposeUiTest {
+    fun `source selection outside the filter reveals its own path`(): Unit = runComposeUiTest {
         val target = node("needle")
         val root = node("root", node("branch", target), node("other"))
         val selected = mutableStateOf<AstNodeDto?>(null)
@@ -126,7 +126,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `equal reparsed DTOs reset expansion and keep the new node identity`() = runComposeUiTest {
+    fun `equal reparsed DTOs reset expansion and keep the new node identity`(): Unit = runComposeUiTest {
         val firstTarget = node("needle")
         val tree = mutableStateOf<AstNodeDto?>(node("root", firstTarget))
         val selected = mutableStateOf<AstNodeDto?>(null)
@@ -150,7 +150,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `clicking a filtered result preserves unfiltered manual folds`() = runComposeUiTest {
+    fun `clicking a filtered result preserves unfiltered manual folds`(): Unit = runComposeUiTest {
         val target = node("needle")
         val root = node("root", node("branch", target))
         val selected = mutableStateOf<AstNodeDto?>(null)
@@ -171,7 +171,7 @@ class AstTreeViewInteractionTest {
     }
 
     @Test
-    fun `visible selection and later manual scrolling or folding do not jump the viewport`() = runComposeUiTest {
+    fun `visible selection and later manual scrolling or folding do not jump the viewport`(): Unit = runComposeUiTest {
         val branches = (0 until 200).map { node("branch-$it", node("child-$it")) }
         val root = node("root", *branches.toTypedArray())
         val selected = mutableStateOf<AstNodeDto?>(null)
