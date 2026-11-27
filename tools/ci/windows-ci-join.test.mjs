@@ -50,7 +50,7 @@ test('Windows conditional debt remains denied by default with exact owned expiri
   assert.equal(entry.requiresProof, 'native-provisioning-v1');
   assert.equal(entry.issue, 'https://github.com/albertocavalcante/gvy/issues/1603');
   assert.equal(entry.owner, 'gvy build and CI and Native maintainers');
-  assert.equal(entry.expires, '2026-12-11');
+  assert.equal(entry.expires, '2026-12-18');
   const warning = 'Kotlin/Native bundle directory C:\\owned\\.konan\\kotlin-native-prebuilt-windows-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.';
   const log = warning + '\nBUILD SUCCESSFUL in 1s\n';
   const result = check(log, [...entries(), ...policy]);
@@ -60,7 +60,8 @@ test('Windows conditional debt remains denied by default with exact owned expiri
   assert.equal(result.accepted.length, 0);
   for (const changed of [policy.slice(0, 2), [...policy, entry], policy.map(value => ({ ...value, requiresProof: undefined })),
     policy.map(value => ({ ...value, unexpectedMetadata: true }))]) assert.throws(() => validateNativeDiagnosticPolicy(changed, now));
-  assert.throws(() => validateNativeDiagnosticPolicy(policy, new Date('2026-12-12T00:00:00Z')), /Expired/);
+  assert.deepEqual(validateNativeDiagnosticPolicy(policy, new Date('2026-12-18T23:59:59Z')), policy);
+  assert.throws(() => validateNativeDiagnosticPolicy(policy, new Date('2026-12-19T00:00:00Z')), /Expired/);
   for (const status of [{ commandExitCode: 7 }, { captureExitCode: 1 }]) assert.equal(check(log, [...entries(), ...policy], status).ok, false);
   assert.equal(check('BUILD SUCCESSFUL in 1s\n', policy.map(value => ({ ...value, requiresProof: 'unknown' }))).ok, false);
 });

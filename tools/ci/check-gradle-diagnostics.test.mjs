@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { collectDiagnostics, checkGradleDiagnostics, loadNativeDiagnosticPolicy, validateNativeDiagnosticPolicy } from './check-gradle-diagnostics.mjs';
+import { collectDiagnostics, checkGradleDiagnostics, loadNativeDiagnosticPolicy, renderSummary, validateNativeDiagnosticPolicy } from './check-gradle-diagnostics.mjs';
 import { evaluate } from './bazel-diagnostics.mjs';
 
 const now = new Date('2026-11-11T00:00:00Z');
@@ -351,11 +351,15 @@ test('the inspected pinned-plugin trace matches only its exact reviewed debt led
   const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
   const result = check(log, { exceptions });
   assert.equal(result.ok, true);
-  assert.equal(result.diagnostics.length, 32);
-  assert.equal(result.accepted.length, 32);
+  assert.equal(result.diagnostics.length, 28);
+  assert.equal(result.accepted.length, 28);
+  // This trace predates :launcher and :common:concurrent, so :viz:ast-model was then the first multiplatform project
+  // and :build-tool the first JVM one. Their shared KGP and Kover call sites still match the identities main CI emits.
+  assert.equal(result.diagnostics.some(line => /^\[project :(?:build-tool|viz:ast-model)\] .*\[origin (?:org\.jetbrains\.kotlin\.gradle|kotlinx\.kover\.gradle)\./.test(line)), false);
   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
-  assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
+  assert.equal(check(log, { exceptions, now: new Date('2026-12-18T23:59:59Z') }).ok, true, 'valid through its expiry day');
+  assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-19T00:00:00Z') }).ok, false);
 });
 
 const koverLazyLog = readFileSync(new URL('./fixtures/gradle-kover-lazy-visibility.txt', import.meta.url), 'utf8');
@@ -399,7 +403,7 @@ test('only the two exact Kover messages and origins use the migrated debt keys',
   const untracked = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`);
   assert.equal(untracked.ok, false);
   assert.deepEqual(untracked.unexpected, koverLazyDiagnostics);
-  const expired = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`, { exceptions, now: new Date('2026-12-12T00:00:00Z') });
+  const expired = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`, { exceptions, now: new Date('2026-12-19T00:00:00Z') });
   assert.equal(expired.ok, false);
 });
 
@@ -483,8 +487,62 @@ test('out-of-band Native download and codec events use emitter identity instead 
     const codecs = diagnostics.filter(line => nativeCodecOrigins.some(origin => line.endsWith(`[origin ${origin}]`)));
     assert.equal(codecs.length, 3);
     assert.ok(codecs.every(line => line.startsWith('[emitter gradle configuration-cache] ')));
-    assert.equal(diagnostics.filter(line => line.startsWith('[project :launcher] ')).length, 9);
-    assert.equal(diagnostics.some(line => line.startsWith('[project :viz:desktop] ')), false);
+    assert.equal(diagnostics.filter(line => line.startsWith('[emitter kotlin-gradle-plugin] ')).length, 9);
+    assert.equal(diagnostics.some(line => line.startsWith('[project :')), false);
+  }
+});
+
+// Main CI configures :launcher before :common:concurrent. Both run the same Kotlin plugin code, and Gradle logs each
+// distinct deprecation and stack once per build, so the shared call sites print under whichever project comes first.
+const concurrentVisibilityOrigins = [
+  'org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)',
+  'org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:64)',
+];
+const nativeVisibilityMessage = nativeLogs[0].split('\n').find(line => line.startsWith('The Configuration.setVisible'));
+const concurrentVisibilityEvents = concurrentVisibilityOrigins.map(origin => `${nativeVisibilityMessage}\n` +
+  '\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n' +
+  `\tat ${origin}\n`).join('');
+
+test('shared Kotlin plugin call sites keep their identity when another Kotlin project configures first', () => {
+  const exceptions = gradleExceptions();
+  for (const log of nativeLogs) {
+    const launcherFirst = `${log}> Configure project :common:concurrent\n${concurrentVisibilityEvents}`;
+    const concurrentFirst = log
+      .replace('> Configure project :launcher\n', `> Configure project :common:concurrent\n${concurrentVisibilityEvents}`)
+      .replace('> Configure project :viz:desktop\n', '> Configure project :launcher\n> Configure project :viz:desktop\n');
+    assert.ok(concurrentFirst.startsWith('> Configure project :common:concurrent\n'));
+    const expected = collectDiagnostics(launcherFirst);
+    const flipped = collectDiagnostics(concurrentFirst);
+    assert.deepEqual(flipped, expected);
+    assert.equal(flipped.some(line => /^\[project :(?:launcher|common:concurrent)\] /.test(line)), false);
+    for (const diagnostics of [expected, flipped]) {
+      const result = evaluate(diagnostics, exceptions, now);
+      assert.deepEqual(result.unexpected, []);
+      assert.equal(result.accepted.length, diagnostics.length);
+    }
+  }
+});
+
+// :build-tool is the first subproject to apply both the Kotlin JVM plugin and Kover, so it owns their shared call sites.
+// A new project that sorts and configures before it, such as :analysis, would take them over.
+test('shared Kotlin plugin and Kover call sites keep their identity when another JVM project configures first', () => {
+  const exceptions = gradleExceptions();
+  const log = readFileSync(new URL('./fixtures/gradle-plugin-origins.txt', import.meta.url), 'utf8');
+  const header = '> Configure project :build-tool\n';
+  assert.ok(log.includes(header));
+  const expected = collectDiagnostics(log);
+  const flipped = collectDiagnostics(log.replace(header, '> Configure project :analysis\n').replace('> Configure project :gls\n', `${header}> Configure project :gls\n`));
+  assert.deepEqual(flipped, expected);
+  assert.equal(flipped.some(line => /^\[project :(?:analysis|build-tool)\] /.test(line)), false);
+  for (const diagnostics of [expected, flipped]) {
+    const result = evaluate(diagnostics, exceptions, now);
+    assert.deepEqual(result.unexpected, []);
+    assert.equal(result.accepted.length, diagnostics.length);
+  }
+  for (const [before, after] of [['PrepareKover.kt:51', 'PrepareKover.kt:52'], ['KotlinPluginWrapper.kt:94', 'KotlinPluginWrapper.kt:95']]) {
+    const moved = evaluate(collectDiagnostics(log.replaceAll(before, after)), exceptions, now).unexpected;
+    assert.equal(moved.length, 1, before);
+    assert.match(moved[0], /^\[emitter (?:kover|kotlin-gradle-plugin)\] /);
   }
 });
 
@@ -496,7 +554,7 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
   assert.equal(evaluate(diagnostics, exceptions, now).ok, true);
   assert.equal(evaluate(diagnostics, exceptions.filter(entry => !nativeExceptions.includes(entry)), now).unexpected.length, 14);
   assert.ok(nativeExceptions.every(entry => entry.owner === 'gvy build and CI maintainers' &&
-    entry.issue.endsWith('/1603') && entry.expires === '2026-12-11'));
+    entry.issue.endsWith('/1603') && entry.expires === '2026-12-18'));
   for (const [before, after, count] of [
     // Unknown enum types retain the ordinary collector behavior; they cannot
     // borrow this Native attribution or its exact policy entries.
@@ -510,7 +568,8 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
     ['KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute', 'OtherPlugin.execute', 1],
     ['kotlin-native-prebuilt:2.3.0:', 'kotlin-native-prebuilt:2.3.1:', 1],
     ['KotlinNativeBundleArtifactFormat.kt:26', 'KotlinNativeBundleArtifactFormat.kt:27', 1],
-    ['> Configure project :launcher', '> Configure project :other', 9],
+    ['CInteropConfigurations.kt:54', 'CInteropConfigurations.kt:55', 1],
+    ['org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt', 'org.jetbrains.kotlin.gradlex.CInteropConfigurationsKt', 1],
   ]) {
     for (const log of nativeLogs) {
       assert.ok(log.includes(before), before);
@@ -520,6 +579,29 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
       assert.equal(result.unexpected.length, count, before);
     }
   }
+});
+
+test('only frames inside the Kotlin plugin and Kover Gradle packages take a shared plugin emitter', () => {
+  const [log] = nativeLogs;
+  const lookalike = collectDiagnostics(log.replaceAll('org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt',
+    'org.jetbrains.kotlin.gradlex.CInteropConfigurationsKt'));
+  assert.ok(lookalike.includes(
+    `[project :launcher] ${nativeVisibilityMessage} [origin org.jetbrains.kotlin.gradlex.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)]`,
+  ));
+  const frames = {
+    'org.jetbrains.kotlin.gradle.plugin.Shared.apply(Shared.kt:1)': 'emitter kotlin-gradle-plugin',
+    'kotlinx.kover.gradle.plugin.Shared.apply(Shared.kt:1)': 'emitter kover',
+    'org.jetbrains.kotlin.gradlex.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'org.jetbrains.kotlinx.gradle.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'kotlinx.kover.gradlex.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'kotlinx.kover.features.jvm.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+    'kotlinx.koverage.gradle.Lookalike.apply(Lookalike.kt:1)': 'project :build-tool',
+  };
+  const events = Object.keys(frames).map(origin => `${nativeVisibilityMessage}\n` +
+    `\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n\tat ${origin}\n`);
+  const diagnostics = collectDiagnostics(`> Configure project :build-tool\n${events.join('')}`);
+  assert.deepEqual(diagnostics, Object.entries(frames)
+    .map(([origin, context]) => `[${context}] ${nativeVisibilityMessage} [origin ${origin}]`).sort());
 });
 
 const codecConsumerLog = readFileSync(new URL('./fixtures/gradle-native-codec-consumers.txt', import.meta.url), 'utf8');
@@ -602,6 +684,17 @@ test('the general configuration-cache readers identify the caller, not the bean 
   assert.deepEqual(collectDiagnostics(deeper.join('\n')), collectDiagnostics(codecConsumerLog));
 });
 
+test('every Native bundle enum identity shares one tracked-debt text, rendered once', () => {
+  const exceptions = gradleExceptions();
+  const enumDebt = exceptions.filter(entry => entry.diagnostic.includes(' Using the enum type KotlinNativeBundleArtifactsTypes '));
+  assert.ok(enumDebt.length > 1);
+  const texts = new Set(enumDebt.map(entry => JSON.stringify([entry.owner, entry.issue, entry.reason, entry.nextAction, entry.acceptance, entry.expires])));
+  assert.equal(texts.size, 1, 'a new enum identity reuses the shared text instead of restating or counting it');
+  const summary = renderSummary({ ...check('BUILD SUCCESSFUL in 1s\n', { exceptions }), producer: 'fixture' });
+  assert.equal(summary.split(enumDebt[0].reason).length - 1, 1);
+  assert.ok(summary.includes(`- ${enumDebt.length} exact exceptions: `));
+});
+
 test('Native attribution cannot accept unrelated Gradle deprecations or bypass missing and expired policy', () => {
   const exceptions = gradleExceptions();
   const log = `${warning}\n\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n` +
@@ -612,7 +705,7 @@ test('Native attribution cannot accept unrelated Gradle deprecations or bypass m
   for (const log of nativeLogs) {
     const diagnostics = collectDiagnostics(log);
     assert.equal(evaluate(diagnostics, [], now).unexpected.length, 13);
-    assert.throws(() => evaluate(diagnostics, exceptions, new Date('2026-12-12T00:00:00Z')), /Expired exception/);
+    assert.throws(() => evaluate(diagnostics, exceptions, new Date('2026-12-19T00:00:00Z')), /Expired exception/);
     const incomplete = check(log, { exceptions });
     assert.equal(incomplete.complete, false, 'historical selective traces remain incomplete command evidence');
     assert.equal(incomplete.ok, false);
@@ -632,8 +725,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 52);
-  assert.equal(exceptions.length, 57);
+  assert.equal(plugins.length, 41);
+  assert.equal(exceptions.length, 46);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {

@@ -411,32 +411,74 @@ test('Nightly watches observer runtime, test, schema and JVM-profile inputs', ()
   }
 });
 
-test('JetBrains visibility exceptions apply only to its producer', t => {
+test('a Kotlin plugin call site in the JetBrains root build has the same identity in every producer', t => {
   const f = fixture(t);
+  const visibility = 'The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property';
+  const write = line => {
+    writeFileSync(f.executable, `#!${process.execPath}
+console.log('> Configure project :');
+console.log(${JSON.stringify(visibility)});
+console.log('    at org.jetbrains.kotlin.gradle.plugin.DefaultKotlinBasePlugin.apply(KotlinPluginWrapper.kt:${line})');
+console.log('BUILD SUCCESSFUL in 1s');
+`);
+    chmodSync(f.executable, 0o755);
+  };
+  const run = producer => spawnSync(process.execPath,
+    [runner, '--report-root', f.reportRoot, '--producer', producer, 'test'],
+    { encoding: 'utf8', cwd: f.dir, env: f.env, timeout: 10000 });
+  write(94);
+  assert.equal(run('jetbrains').status, 0);
+  assert.equal(run('gradle-lint').status, 0);
+  write(95);
+  assert.equal(run('jetbrains').status, 1);
+  assert.equal(run('gradle-lint').status, 1);
+  const reports = f.artifactDirs().map(path => JSON.parse(readFileSync(join(path, 'diagnostics.json'), 'utf8')));
+  assert.equal(reports.length, 4);
+  const identity = line => `[emitter kotlin-gradle-plugin] ${visibility} [origin org.jetbrains.kotlin.gradle.plugin.DefaultKotlinBasePlugin.apply(KotlinPluginWrapper.kt:${line})]`;
+  for (const report of reports) {
+    assert.ok(['jetbrains', 'gradle-lint'].includes(report.producer));
+    if (report.ok) assert.deepEqual(report.accepted.map(entry => entry.diagnostic), [identity(94)]);
+    else assert.deepEqual(report.unexpected, [identity(95)]);
+  }
+  assert.equal(reports.filter(report => report.ok).length, 2);
+});
+
+test('JetBrains-only debt stays exact, owned and current, and never repeats a shared identity', async () => {
+  const { evaluate } = await import('./bazel-diagnostics.mjs');
+  const entries = JSON.parse(readFileSync(new URL('./gradle-jetbrains-diagnostics.json', import.meta.url), 'utf8'));
+  const shared = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8'));
+  assert.ok(Array.isArray(entries));
+  // evaluate rejects a diagnostic listed in both ledgers, as the jetbrains producer loads both.
+  assert.equal(evaluate([], [...shared, ...entries], new Date()).ok, true);
+});
+
+test('JetBrains-only exceptions apply only to its producer', t => {
+  const f = fixture(t);
+  // The wrapper reads its ledgers beside itself, so run a copy whose JetBrains ledger holds one fixture entry.
+  const tools = join(f.dir, 'tools');
+  mkdirSync(tools);
+  const source = resolve('tools/ci');
+  for (const name of readdirSync(source).filter(name => /\.(?:mjs|json)$/.test(name) && !name.endsWith('.test.mjs'))) {
+    writeFileSync(join(tools, name), readFileSync(join(source, name)));
+  }
+  const warning = 'WARNING: JetBrains-only fixture warning';
+  writeFileSync(join(tools, 'gradle-jetbrains-diagnostics.json'), JSON.stringify([{
+    diagnostic: `[project :] ${warning}`, owner: 'fixture owner', issue: 'https://github.com/albertocavalcante/gvy/issues/1603',
+    reason: 'fixture debt', nextAction: 'remove fixture debt', acceptance: 'fixture warning absent',
+    expires: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  }]));
   writeFileSync(f.executable, `#!${process.execPath}
 console.log('> Configure project :');
-console.log('The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property');
-console.log('    at org.jetbrains.kotlin.gradle.plugin.DefaultKotlinBasePlugin.apply(KotlinPluginWrapper.kt:94)');
+console.log(${JSON.stringify(warning)});
 console.log('BUILD SUCCESSFUL in 1s');
 `);
   chmodSync(f.executable, 0o755);
   const run = producer => spawnSync(process.execPath,
-    [runner, '--report-root', f.reportRoot, '--producer', producer, 'test'],
+    [join(tools, 'run-gradle.mjs'), '--report-root', f.reportRoot, '--producer', producer, 'test'],
     { encoding: 'utf8', cwd: f.dir, env: f.env, timeout: 10000 });
   assert.equal(run('jetbrains').status, 0);
   assert.equal(run('gradle-lint').status, 1);
   const reports = f.artifactDirs().map(path => JSON.parse(readFileSync(join(path, 'diagnostics.json'), 'utf8')));
-  const accepted = reports.find(report => report.producer === 'jetbrains');
-  const rejected = reports.find(report => report.producer === 'gradle-lint');
-  assert.equal(accepted.accepted.length, 1);
-  assert.equal(rejected.unexpected.length, 1);
-  assert.equal(accepted.diagnostics[0], rejected.unexpected[0]);
-});
-
-test('JetBrains diagnostic debt remains exact, owned and current', async () => {
-  const { evaluate } = await import('./bazel-diagnostics.mjs');
-  const entries = JSON.parse(readFileSync(new URL('./gradle-jetbrains-diagnostics.json', import.meta.url), 'utf8'));
-  assert.equal(entries.length, 12);
-  assert.ok(entries.every(entry => entry.diagnostic.startsWith('[project :] The Configuration.setVisible(boolean)')));
-  assert.equal(evaluate([], entries, new Date()).ok, true);
+  assert.deepEqual(reports.find(report => report.producer === 'jetbrains').accepted.map(entry => entry.diagnostic), [`[project :] ${warning}`]);
+  assert.deepEqual(reports.find(report => report.producer === 'gradle-lint').unexpected, [`[project :] ${warning}`]);
 });

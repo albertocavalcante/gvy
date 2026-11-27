@@ -175,10 +175,12 @@ node tools/ci/bazel-diagnostics.mjs --baseline tools/ci/bazel-diagnostics.json \
 
 ## Gradle tool diagnostics
 
-The standalone JetBrains producer applies its own exact, expiring Kotlin 2.3.0 visibility exceptions from
-`tools/ci/gradle-jetbrains-diagnostics.json`. Its root project shares the label `:` with the main build; the wrapper
-loads these exceptions only for the `jetbrains` producer, so the same warning remains unexpected in other producers. The
-producer still requires successful commands, both IDE fixture reports, the plugin ZIP and verifier reports.
+The standalone JetBrains producer also loads `tools/ci/gradle-jetbrains-diagnostics.json`, for exact, expiring debt that
+only the JetBrains build emits. Its root project shares the label `:` with the main build, so the wrapper loads these
+exceptions only for the `jetbrains` producer. Its own Kotlin plugin pin emits visibility warnings with the shared Kotlin
+plugin identities described below, so they match the main ledger; JetBrains-only identities, such as those left if the
+two builds' Kotlin versions diverge, belong in its own file. The producer still requires successful commands, both IDE
+fixture reports, the plugin ZIP and verifier reports.
 
 Required lint, unit, E2E and packaging invocations use `tools/ci/run-gradle.mjs`. It captures both streams, forces plain
 console output and all warnings, and retains deprecation origin traces. A successful process with a new diagnostic fails
@@ -215,9 +217,10 @@ workspace/temp/report directories are trusted CI inputs, and the guard does not 
 privileged actors. Synthetic controls and a local fresh-SDK experiment supplement the required integrated CI run.
 
 First-party deprecated Kotlin DSL delegates and the old test-listener closure are migrated. Plugin deprecations have
-exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspected upstream versions, adoption
-candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These
-exceptions are debt, not proof that newer plugin releases have the same limitation.
+exact exceptions in `tools/ci/gradle-diagnostics.json`, keyed by message and originating plugin frame; inspected
+upstream versions, adoption candidates and removal criteria remain tracked in
+[#1603](https://github.com/albertocavalcante/gvy/issues/1603). These exceptions are debt, not proof that newer plugin
+releases have the same limitation.
 
 Two Kover 0.9.11 visibility origins use `[emitter kover lazy configuration]` instead of a project name.
 [Kover registers these configuration actions lazily](https://github.com/Kotlin/kotlinx-kover/blob/39fcc803490dbeecdcbc8d5535a165b1d472aaf9/kover-gradle-plugin/src/main/kotlin/kotlinx/kover/gradle/plugin/appliers/artifacts/AbstractVariantArtifacts.kt#L48-L68);
@@ -232,6 +235,22 @@ and strict report schema do not gain a separate project field. Only the two form
 migrated; owners, expiry dates and the unresolved Kover retirement work in
 [#1603](https://github.com/albertocavalcante/gvy/issues/1603) remain unchanged. A failed original command remains failed
 after diagnostic attribution is corrected.
+
+Gradle deprecations whose first plugin frame is in the Kotlin Gradle Plugin (`org.jetbrains.kotlin.gradle.`) use
+`[emitter kotlin-gradle-plugin]` instead of a project name, except the Native compiler notation call site, which keeps
+`[emitter kotlin-native bundle configuration]`, and the Native enum's configuration-cache readers, which are Gradle
+frames under `[emitter gradle configuration-cache]`. KGP runs the same code in every Kotlin project, and Gradle logs
+each distinct deprecation and stack once per build, so a shared call site prints under whichever Kotlin project
+configures first. Main CI configures `:launcher` before `:common:concurrent`; adding, renaming or reordering a project
+would move those warnings to another project with no code change. The ledger has already drifted this way: the
+`:viz:ast-model` identities stopped occurring once `:launcher` and then `:common:concurrent` configured before it.
+
+Kover's other call sites (`kotlinx.kover.gradle.`) use `[emitter kover]` for the same reason: `:build-tool` is the first
+subproject that applies Kover, so a project configured before it would take over their warnings. The two lazy origins
+above keep their own emitter. For both plugins the exact message and plugin frame remain part of each key, so a changed
+call site, message or Gradle version stays unexpected. Other plugins keep their project attribution. Compose Hot Reload
+is one of them: only `:viz:desktop` applies the Compose plugin that brings it, so its call sites cannot move to another
+project until a second project applies it.
 
 Linux/macOS Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Windows
 adds one exact bundle-notation fingerprint; its remaining plugin traces reuse existing entries. Three Native enum
@@ -273,8 +292,7 @@ The in-process Kotlin compiler is the main consumer of that metaspace (#1603). W
 loader for every compile task, so a cold build (about 70 compiles) loaded over 800k classes and reached the 2 GiB limit,
 which makes Gradle print "running out of JVM Metaspace". `kotlin.compiler.runViaBuildToolsApi=true` in gradle.properties
 makes the in-process strategy use the Build Tools API runner, which caches the compiler class loader. Do not raise the
-limit or accept the message instead.
-The E2E job records the same memory observation as the unit job.
+limit or accept the message instead. The E2E job records the same memory observation as the unit job.
 
 Hosted Linux main-build producers also require bounded numeric daemon memory observations in each invocation's
 memory.json. The sampler records heap/metaspace usage, GC and loaded/unloaded class counters without changing the
@@ -322,7 +340,8 @@ Timeout advice is emitted per target with `--test_verbose_timeout_warnings`; the
 encountered. Only elapsed seconds within that advice are normalized. Fast module tests have explicit short timeouts
 while retaining their medium memory sizing. The portable build-tool budget and its exact shorter-timeout advisory are
 tracked in [#1607](https://github.com/albertocavalcante/gvy/issues/1607); a new target or a recommendation to lengthen a
-timeout still fails.
+timeout still fails. The advisory depends on timing: Bazel emits it only when the target runs fast enough for a shorter
+timeout, so a run may omit it. Its exception stays listed when unmatched, like any exception a run does not emit.
 
 ## Actions annotations and coverage limits
 

@@ -126,3 +126,15 @@ test('a failed build still reports its warnings when the subsequent test log is 
   assert.equal(summary.split(exception.reason).length - 1, 1);
   assert.match(readFileSync(join(dir, 'github-step-summary.md'), 'utf8'), /WARNING: newly introduced warning/);
 });
+
+test('the real Bazel ledger is valid through its expiry day and tolerates timing-dependent advice that a run omits', () => {
+  const ledger = JSON.parse(readFileSync(new URL('./bazel-diagnostics.json', import.meta.url), 'utf8'));
+  const timeout = ledger.find(entry => entry.issue.endsWith('/1607'));
+  assert.match(timeout.diagnostic, /^WARNING: \/\/build-tool:build-tool_test: Test execution time \(<elapsed>s excluding/);
+  // A fast run emits the advice; a slower one does not. An exception a run does not match is not a failure.
+  const others = ledger.filter(entry => entry !== timeout).map(entry => entry.diagnostic);
+  for (const diagnostics of [others, [...others, timeout.diagnostic]]) {
+    assert.equal(evaluate(diagnostics, ledger, new Date('2026-12-18T23:59:59Z')).ok, true);
+  }
+  assert.throws(() => evaluate(others, ledger, new Date('2026-12-19T00:00:00Z')), /Expired exception/);
+});

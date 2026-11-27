@@ -143,7 +143,8 @@ async function main(args) {
   try {
     conditional = loadNativeDiagnosticPolicy();
     exceptions = [...JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8')), ...conditional];
-    // This separate build has its own root project; its fingerprints must not be accepted for main Gradle producers.
+    // The standalone JetBrains build's root project is also labelled `:`, so its project-keyed debt must not be
+    // accepted for main Gradle producers. Its Kotlin plugin call sites use emitter keys and match the main ledger.
     if (options.producer === 'jetbrains') {
       exceptions.push(...JSON.parse(readFileSync(new URL('./gradle-jetbrains-diagnostics.json', import.meta.url), 'utf8')));
     }
