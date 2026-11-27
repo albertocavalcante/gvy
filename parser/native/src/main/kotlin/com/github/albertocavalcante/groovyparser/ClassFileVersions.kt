@@ -32,8 +32,9 @@ internal class ClassFileVersions {
     /** [resource] under a version-carrying URL, or [resource] itself when it is not an observable file or jar. */
     fun versioned(resource: URL): URL {
         val container = container(resource) ?: return resource
-        // Observed outside the map: a slow file system must not hold up lookups of other containers.
-        val version = versions[container] ?: versionOf(container).also { versions.putIfAbsent(container, it) }
+        // Observed outside the map: a slow file system must not hold up lookups of other containers. The first
+        // observation stored wins, so every lookup in the compile sees one version of the container.
+        val version = versions[container] ?: versionOf(container).let { versions.putIfAbsent(container, it) ?: it }
         if (version.isEmpty()) return resource
         @Suppress("DEPRECATION") // URL.of(URI, URLStreamHandler) needs Java 20; this is the Java 17 way.
         return URL(null, "$SCHEME:$version:${resource.toExternalForm()}", Reading(resource))
