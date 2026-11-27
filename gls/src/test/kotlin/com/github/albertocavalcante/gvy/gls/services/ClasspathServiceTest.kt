@@ -164,6 +164,33 @@ class ClasspathServiceTest {
     }
 
     @Test
+    fun `maxResults caps the simple names and then their variants`() {
+        val service = ClasspathService(
+            FakeClasspathIndex(
+                listOf(
+                    IndexedClass("WidgetC", "com.two.WidgetC"),
+                    IndexedClass("WidgetA", "com.two.WidgetA"),
+                    IndexedClass("WidgetB", "com.one.WidgetB"),
+                    IndexedClass("WidgetA", "com.one.WidgetA"),
+                    IndexedClass("WidgetC", "com.one.WidgetC"),
+                    IndexedClass("WidgetB", "com.two.WidgetB"),
+                ),
+            ),
+        )
+
+        assertThat(namesOf(service.findClassesByPrefix("Widget", maxResults = 3))).containsExactly(
+            "com.one.WidgetA",
+            "com.two.WidgetA",
+            "com.one.WidgetB",
+        )
+        assertThat(namesOf(service.findClassesByQualifiedPrefix("com.", maxResults = 3))).containsExactly(
+            "com.one.WidgetA",
+            "com.one.WidgetB",
+            "com.one.WidgetC",
+        )
+    }
+
+    @Test
     fun `should return sorted results by simple name`() {
         classpathService.indexAllClasses()
 
