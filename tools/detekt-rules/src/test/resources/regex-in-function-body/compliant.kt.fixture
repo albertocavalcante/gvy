@@ -158,3 +158,8 @@ class OneShotCompanion {
         val viaApply = StringBuilder().apply { Regex("b2+") }
     }
 }
+
+// A receiver that is not a plain dotted name is neither the `kotlin.text` package nor `Regex` or `Pattern`.
+fun memberOfCallResult() = factory().Regex("a+")
+fun memberOfProperty() = holder.Regex("a+")
+fun compileOnCallResult() = patterns().Pattern.compile("a+")

@@ -8,6 +8,7 @@ import com.example.annotations.Volatile
 
 class ImportedNamesake {
     @Volatile var notKotlins = false
+    @`Volatile` var escapedNotKotlins = false
     @field:Volatile var withUseSiteTarget = false
 }
 

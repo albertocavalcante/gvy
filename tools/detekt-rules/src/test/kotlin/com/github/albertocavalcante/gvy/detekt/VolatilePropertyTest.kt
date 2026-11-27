@@ -39,6 +39,13 @@ class VolatilePropertyTest {
     }
 
     @Test
+    fun `another symbol imported as an escaped Volatile also takes the plain name`() {
+        val source = "import com.example.Marker as `Volatile`\n\nclass A {\n    @Volatile var flag = false\n}"
+
+        assertThat(rule.lint(source)).isEmpty()
+    }
+
+    @Test
     fun `a file that imports another Volatile still reports Kotlin's by its qualified name`() {
         val source = """
             import com.example.annotations.Volatile
