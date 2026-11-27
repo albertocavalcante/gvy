@@ -77,7 +77,8 @@ class DependencyManager(
     private val currentAttempt = SharedValue<Attempt?>(null)
     private var resolutionJob: Job? = null
 
-    // Written only under [lock]; onWatchedFilesChanged reads it without the lock.
+    // Written only under [lock]. Read without it by onWatchedFilesChanged, and by prepareStart's pre-check, which
+    // installAttempt repeats under the lock.
     private val installedWatcher = SharedValue<InstalledWatcher?>(null)
 
     private val currentWorkspaceRoot = SharedValue<Path?>(null)
