@@ -65,9 +65,10 @@ function gvyRuleSetKeys(config) {
 
 /** Every tracked detekt baseline: any project's `detekt-baseline.xml`, and variants like `detekt-baseline-main.xml`. */
 function trackedBaselines() {
-  return execFileSync('git', ['ls-files', '-z', '--', '*detekt-baseline*.xml'], { cwd: root, encoding: 'utf8' })
+  // Filtered here, not by pathspec: GIT_GLOB_PATHSPECS or GIT_LITERAL_PATHSPECS would make the pathspec match nothing.
+  return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
     .split('\0')
-    .filter(Boolean);
+    .filter(path => /(?:^|\/)detekt-baseline(?:-[^/]+)?\.xml$/.test(path));
 }
 
 const detektConfig = () => readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8');
