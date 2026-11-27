@@ -14,9 +14,7 @@ import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
-import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtImportDirective
-import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtUserType
 
 /**
@@ -75,23 +73,6 @@ internal class JdkAtomics(config: Config = Config.empty) : Rule(config) {
     }
 
     private fun inPackage(name: String): Boolean = name == PACKAGE || name.startsWith("$PACKAGE.")
-
-    // Names come from PSI segments, so whitespace, comments and backticks between them do not matter.
-    private fun KtExpression.qualifiedName(): String? = when (this) {
-        is KtNameReferenceExpression -> getReferencedName()
-        is KtDotQualifiedExpression -> {
-            val receiver = receiverExpression.qualifiedName()
-            val selector = selectorExpression?.qualifiedName()
-            if (receiver != null && selector != null) "$receiver.$selector" else null
-        }
-        else -> null
-    }
-
-    private fun KtUserType.qualifiedName(): String? {
-        val name = referencedName ?: return null
-        val outer = qualifier ?: return name
-        return outer.qualifiedName()?.let { "$it.$name" }
-    }
 
     private companion object {
         const val PACKAGE = "java.util.concurrent.atomic"

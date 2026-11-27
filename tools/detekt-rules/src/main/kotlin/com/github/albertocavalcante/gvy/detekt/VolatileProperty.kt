@@ -12,6 +12,8 @@ import io.gitlab.arturbosch.detekt.api.Rule
 import io.gitlab.arturbosch.detekt.api.Severity
 import org.jetbrains.kotlin.psi.KtAnnotationEntry
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtPsiUtil
+import org.jetbrains.kotlin.psi.KtUserType
 
 /**
  * Reports `@Volatile` annotations.
@@ -22,8 +24,9 @@ import org.jetbrains.kotlin.psi.KtFile
  *
  * The rule is purely syntactic (PSI only) because the pull-request `lint` gate runs detekt without type resolution
  * (#2409). It recognises the unqualified name, `kotlin.jvm.Volatile`, `kotlin.concurrent.Volatile` and import aliases
- * of either, with any use-site target. When a file imports another annotation named `Volatile`, the unqualified name
- * refers to that one and is not reported. The known limits are in `tools/detekt-rules/README.md`.
+ * of either, with any use-site target. Names are read by PSI segment ([qualifiedName]), so backticks, comments and line
+ * breaks inside them do not hide the annotation. When a file imports another annotation named `Volatile`, the
+ * unqualified name refers to that one and is not reported. The known limits are in `tools/detekt-rules/README.md`.
  */
 internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
     override val issue = Issue(
@@ -43,7 +46,7 @@ internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
 
     override fun visitAnnotationEntry(annotationEntry: KtAnnotationEntry) {
         super.visitAnnotationEntry(annotationEntry)
-        val name = annotationEntry.typeReference?.text?.filterNot(Char::isWhitespace) ?: return
+        val name = (annotationEntry.typeReference?.typeElement as? KtUserType)?.qualifiedName() ?: return
         if (name in volatileNames) {
             report(
                 CodeSmell(
@@ -61,7 +64,8 @@ internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
         val names = KOTLIN_VOLATILE.toMutableSet()
         var importsOtherVolatile = false
         for (directive in file.importDirectives) {
-            val importedName = directive.importedName?.asString() ?: continue
+            // An alias keeps its backticks in PSI (`as `V``). qualifiedName() drops them, so drop them here too.
+            val importedName = directive.importedName?.asString()?.let(KtPsiUtil::unquoteIdentifier) ?: continue
             val importsKotlinVolatile = directive.importedFqName?.asString() in KOTLIN_VOLATILE
             when {
                 importsKotlinVolatile -> names += importedName

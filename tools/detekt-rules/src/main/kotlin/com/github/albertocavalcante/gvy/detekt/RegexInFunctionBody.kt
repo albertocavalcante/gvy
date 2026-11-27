@@ -55,7 +55,8 @@ import org.jetbrains.kotlin.psi.psiUtil.parents
  * (#2409).
  *
  * Flagged constructions: `Regex(p)`, `Regex.fromLiteral(p)`, `p.toRegex(...)`, `p.toPattern(...)` and
- * `Pattern.compile(p, ...)` (also `java.util.regex.Pattern` and `kotlin.text.Regex`), where `p` is a constant, and
+ * `Pattern.compile(p, ...)` (also `java.util.regex.Pattern` and `kotlin.text.Regex`, read by PSI segment so that
+ * backticks, comments and line breaks inside the qualifier do not hide them), where `p` is a constant, and
  * only when they sit lexically inside code that runs repeatedly: a function (named, local or anonymous), a property
  * accessor, a lambda that is not the direct argument of `lazy`, `run`, `let`, `also`, `apply`, `with`, `buildList`,
  * `buildMap`, `buildSet` or `buildString`, a secondary constructor or the `init` block of a class. A stored function
@@ -114,9 +115,10 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
         val qualified = (call.parent as? KtQualifiedExpression)?.takeIf { it.selectorExpression == call }
         val receiver = qualified?.receiverExpression
         val first = call.firstArgument()
-        val qualifier = receiver?.text
+        // Null both without a receiver and for one that is not a dotted name, such as `factory().Regex(p)`.
+        val qualifier = receiver?.qualifiedName()
         return when (name) {
-            "Regex" -> constructionIf("Regex(...)", first, qualifier == null || qualifier == "kotlin.text")
+            "Regex" -> constructionIf("Regex(...)", first, receiver == null || qualifier == "kotlin.text")
             "fromLiteral" -> constructionIf("Regex.fromLiteral(...)", first, qualifier in REGEX_RECEIVERS)
             "compile" -> constructionIf("Pattern.compile(...)", first, qualifier in PATTERN_RECEIVERS)
             "toRegex", "toPattern" -> receiver?.let { Construction("$name()", it) }
