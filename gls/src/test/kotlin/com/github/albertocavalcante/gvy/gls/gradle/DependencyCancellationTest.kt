@@ -11,15 +11,18 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -50,6 +53,45 @@ class DependencyCancellationTest {
     fun `a new workspace signals the superseded attempt`() {
         exerciseCancellation { manager, _ ->
             manager.resolveUnwatched(root.resolve("next")) {}
+        }
+    }
+
+    @Test
+    fun `a delivery that throws still ends the request once`() {
+        val cancelled = CountDownLatch(1)
+        val cancellations = AtomicInteger()
+        val escaped = CopyOnWriteArrayList<Throwable>()
+        val tool = mockk<BuildTool>(relaxed = true)
+        every { tool.name } returns "Gradle"
+        every { tool.resolve(any(), any(), any()) } returns WorkspaceResolution(emptyList(), listOf(root))
+        val tools = mockk<BuildToolManager>()
+        every { tools.detectBuildTool(root) } returns tool
+        // What escapes resolution goes here, never to the global handlers
+        val recorder = CoroutineExceptionHandler { _, e -> escaped += e }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + recorder)
+        val manager = DependencyManager(tools, scope)
+        try {
+            manager.startAsyncResolution(
+                root,
+                ResolutionCallbacks(
+                    // Throws for the result, and again for the failure that the result's exception is turned into
+                    onComplete = { throw IllegalStateException("delivery failed") },
+                    onCancelled = {
+                        cancellations.incrementAndGet()
+                        cancelled.countDown()
+                    },
+                ),
+                enableFileWatching = false,
+            )
+
+            assertTrue(cancelled.await(5, TimeUnit.SECONDS), "a throwing delivery left the request without an end")
+            val attempts = scope.coroutineContext[Job]!!.children.toList()
+            runBlocking { withTimeout(5_000) { attempts.joinAll() } }
+            assertEquals(1, cancellations.get())
+            assertEquals(1, escaped.size, "the delivery's exception escapes resolution once: $escaped")
+        } finally {
+            manager.cancel()
+            scope.cancel()
         }
     }
 
