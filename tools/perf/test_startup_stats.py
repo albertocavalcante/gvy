@@ -5,13 +5,17 @@ import contextlib
 import io
 import json
 import os
+import platform
 import re
+import signal
 import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Self
 from unittest import mock
 
 from tools.perf import startup_stats
@@ -298,6 +302,54 @@ class IdentityAgreementTest(unittest.TestCase):
         self.assertFalse(startup_stats.runs_agree_on_identity([first, other_build]))
 
 
+class HostIdentityTest(unittest.TestCase):
+    def test_unexpected_names_become_a_fixed_token(self) -> None:
+        with mock.patch.object(platform, "system", return_value="Odd OS/1"):
+            self.assertEqual(startup_stats.host_os(), "unknown")
+        with mock.patch.object(platform, "machine", return_value="/odd arch"):
+            self.assertEqual(startup_stats.host_arch(), "unknown")
+
+    def test_known_names_are_normalised(self) -> None:
+        with mock.patch.object(platform, "system", return_value="Darwin"):
+            self.assertEqual(startup_stats.host_os(), "macos")
+        with mock.patch.object(platform, "machine", return_value="AMD64"):
+            self.assertEqual(startup_stats.host_arch(), "x64")
+
+
+class WriteNewFileTest(unittest.TestCase):
+    def test_a_failed_write_removes_the_file_it_created(self) -> None:
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "out.json"
+
+        class FailingHandle:
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *exc_info: object) -> None:
+                return None
+
+            def write(self, _text: str) -> int:
+                raise OSError("disk full")
+
+        def create_then_fail(target: Path, _mode: str, encoding: str) -> FailingHandle:
+            self.assertEqual(encoding, "utf-8")
+            os.close(os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return FailingHandle()
+
+        with (
+            mock.patch.object(Path, "open", new=create_then_fail),
+            self.assertRaises(OSError),
+        ):
+            startup_stats.write_new_file(path, "text")
+        self.assertFalse(path.exists())
+
+    def test_never_overwrites_an_existing_file(self) -> None:
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "out.json"
+        _ = path.write_text("keep", encoding="utf-8")
+        with self.assertRaises(FileExistsError):
+            startup_stats.write_new_file(path, "new")
+        self.assertEqual(path.read_text(encoding="utf-8"), "keep")
+
+
 class LaunchCommandTest(unittest.TestCase):
     def test_command_equals_the_editors_for_java_16_and_later(self) -> None:
         source = LAUNCH_ARGS_TS.read_text(encoding="utf-8")
@@ -311,11 +363,16 @@ class LaunchCommandTest(unittest.TestCase):
         body = build.group(0)
         # Defaults first, then exactly these pushes in this order; the first only on Java 16 and later.
         self.assertRegex(body, r"const args = resolveVmArgs\(")
+        pushes = [
+            m.group(1) for m in re.finditer(r"args\.push\((.*?)\);", body, re.DOTALL)
+        ]
+        # Tolerate formatter line breaks and trailing commas inside a push(...).
+        normalized = [" ".join(push.split()).rstrip(",").strip() for push in pushes]
         self.assertEqual(
-            re.findall(r"args\.push\((.*?)\);", body),
+            normalized,
             ['"--enable-native-access=ALL-UNNAMED"', '"-jar", input.jarPath'],
         )
-        self.assertIn("javaVersion >= 16", body)
+        self.assertRegex(body, r"javaVersion\s*>=\s*16")
         editor = re.findall(r'"([^"]+)"', defaults.group(1))
         editor += ["--enable-native-access=ALL-UNNAMED", "-jar", "x.jar"]
         self.assertEqual(
@@ -365,6 +422,14 @@ class FramingTest(unittest.TestCase):
         with self.assertRaises(startup_stats.FrameError):
             _ = startup_stats.FrameDecoder().feed(b"Content-Length:\r\n 2\r\n\r\n{}")
 
+    def test_rejects_numbers_that_overflow_to_infinity(self) -> None:
+        for text in (b'{"a": 1e999}', b'{"a": -1e999}'):
+            with (
+                self.subTest(text=text),
+                self.assertRaises(startup_stats.ProtocolError),
+            ):
+                _ = startup_stats.parse_json(text)
+
     def test_rejects_nan_and_infinity(self) -> None:
         for text in (b'{"a": NaN}', b'{"a": Infinity}', b'{"a": -Infinity}'):
             with (
@@ -385,10 +450,11 @@ def fake_config(
     workspace: Path,
     timeout_s: float = 30.0,
     poll_interval_s: float = 0.05,
+    extra_env: Mapping[str, str] | None = None,
 ) -> RunConfig:
     return RunConfig(
         command=(sys.executable, "-I", str(FAKE_SERVER), scenario),
-        env={"PATH": os.environ.get("PATH", "")},
+        env={"PATH": os.environ.get("PATH", ""), **(extra_env or {})},
         workspace=workspace,
         index=0,
         timeout_s=timeout_s,
@@ -420,10 +486,26 @@ class RunOnceTest(unittest.TestCase):
         self.assertIsNone(result.server_stats)
 
     def test_server_exit_is_noticed_while_a_grandchild_holds_stdout_open(self) -> None:
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        pid_file = directory / "grandchild.pid"
+
+        def reap_grandchild() -> None:
+            if pid_file.exists():
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGKILL)
+
+        self.addCleanup(reap_grandchild)
+        config = fake_config(
+            "grandchild",
+            directory,
+            60.0,
+            extra_env={"FAKE_GRANDCHILD_PIDFILE": str(pid_file)},
+        )
         started = time.monotonic()
-        result = self.run_scenario("grandchild", timeout_s=30.0)
+        result = startup_stats.run_once(config)
         self.assertEqual(result.outcome, "server-exited")
-        self.assertLess(time.monotonic() - started, 3.0)
+        # The grandchild lives for 30 s; waiting for stdout to close would take that long.
+        self.assertLess(time.monotonic() - started, 10.0)
 
     def test_settles_after_quiescent_status(self) -> None:
         result = self.run_scenario("settle")
@@ -517,6 +599,72 @@ class MainTest(unittest.TestCase):
     def run_main(argv: list[str], scenario: str) -> int:
         with contextlib.redirect_stderr(io.StringIO()):
             return startup_stats.main(argv, launch_fake(scenario))
+
+    @staticmethod
+    def run_main_captured(
+        argv: list[str], launch: startup_stats.LaunchCommand
+    ) -> tuple[int, str]:
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured), contextlib.redirect_stdout(captured):
+            return startup_stats.main(argv, launch), captured.getvalue()
+
+    def assert_no_paths(self, fixture: MainFixture, text: str) -> None:
+        for forbidden in (
+            str(fixture.root),
+            fixture.root.name,
+            "secret-project",
+            "server-all",
+            "Traceback",
+        ):
+            self.assertNotIn(forbidden, text)
+
+    def test_unreadable_jar_exits_one_without_traceback_or_path(self) -> None:
+        fixture = self.fixture()
+        denied = PermissionError(13, "Permission denied", str(fixture.jar))
+        with mock.patch.object(startup_stats, "_sha256", side_effect=denied):
+            code, output = self.run_main_captured(
+                self.argv(fixture), launch_fake("settle")
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("PermissionError", output)
+        self.assert_no_paths(fixture, output)
+        self.assertFalse(fixture.output.exists())
+
+    def test_jar_deleted_during_the_runs_exits_one_without_output_or_path(self) -> None:
+        fixture = self.fixture()
+        real_run_once = startup_stats.run_once
+
+        def run_then_delete(config: RunConfig) -> RunResult:
+            result = real_run_once(config)
+            fixture.jar.unlink(missing_ok=True)
+            return result
+
+        with mock.patch.object(startup_stats, "run_once", side_effect=run_then_delete):
+            code, output = self.run_main_captured(
+                self.argv(fixture), launch_fake("settle")
+            )
+        self.assertEqual(code, 1)
+        self.assert_no_paths(fixture, output)
+        self.assertFalse(fixture.output.exists())
+
+    def test_usage_errors_do_not_echo_paths(self) -> None:
+        fixture = self.fixture()
+        missing = fixture.root / "missing-dir"
+        cases = {
+            "jar": ["--jar", str(missing / "x.jar")],
+            "output": ["--output", str(missing / "out.json")],
+            "workspace": [str(missing)],
+        }
+        for name, override in cases.items():
+            with self.subTest(name=name):
+                argv = self.argv(fixture)
+                if name == "workspace":
+                    argv[-1:] = override
+                else:
+                    argv[argv.index(override[0]) + 1] = override[1]
+                code, output = self.run_main_captured(argv, launch_fake("settle"))
+                self.assertEqual(code, 2)
+                self.assert_no_paths(fixture, output)
 
     def test_output_has_no_workspace_path_or_name_and_matches_schema(self) -> None:
         fixture = self.fixture()

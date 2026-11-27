@@ -63,7 +63,7 @@ python3 tools/perf/startup_stats.py \
 | `--runs`             | 5        | Fresh server processes to start, one after another, 1 to 100.                 |
 | `--label`            | required | A token for the workspace, matching `^[a-z0-9][a-z0-9._-]{0,63}$`.            |
 | `--output`           | required | The JSON file to create. It must not exist; the tool never overwrites a file. |
-| `--timeout-seconds`  | 600      | Per-run limit, up to 86400. Shutdown after a timeout adds at most 20 s.       |
+| `--timeout-seconds`  | 600      | Per-run limit, up to 86400. Wrapping up a run adds at most 20 s (see below).  |
 | `--poll-interval-ms` | 1000     | Interval between `groovy/serverStats` polls.                                  |
 
 Exit status: 0 when every run settled; 2 for a usage error; 1 for everything else:
@@ -74,11 +74,19 @@ Exit status: 0 when every run settled; 2 for a usage error; 1 for everything els
 - `java` cannot be started;
 - the output cannot be written (a partly written file is removed).
 
-After a run's outcome is known, the tool asks the server to shut down. A server that does not exit within 5 s of `exit`
-gets SIGTERM, and after 5 s more SIGKILL; with the 5 s allowed for `groovy/runtimeFacts` and 5 s for the `shutdown`
-answer, wrapping up a run takes at most 20 s. Only the server process the tool started is managed: a process that the
-server starts, such as a build daemon, is neither stopped nor waited for. The tool notices the server's exit by polling
-the process, so such a process holding the output pipe open does not turn an exit into a timeout.
+What the tool does after a run's outcome is known depends on that outcome. Waits are upper bounds; SIGKILL follows
+SIGTERM only if the server is still up after 5 s more.
+
+| Outcome                                                                                  | Sent to the server                                                      | Longest wrap-up |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------- |
+| `settled`, `timeout`                                                                     | `groovy/runtimeFacts` (5 s), `shutdown` (5 s), `exit`, then 5 s to exit | 20 s            |
+| `stats-unavailable`, `protocol-error` from a response or request that failed validation  | `shutdown` (5 s), `exit`, then 5 s to exit                              | 15 s            |
+| `server-exited`, `protocol-error` from a malformed, oversized or too deeply nested frame | nothing; 1 s for the process to exit                                    | 6 s             |
+
+In every row, a server still up after its wait gets SIGTERM, and 5 s later SIGKILL. Only the server process the tool
+started is managed: a process that the server starts, such as a build daemon, is neither stopped nor waited for. The
+tool notices the server's exit by polling the process, so such a process holding the output pipe open does not turn an
+exit into a timeout.
 
 There is no Gradle step. To get a jar without building, download the `groovy-lsp-jar-*` artifact of a CI run on the
 commit you want to measure:

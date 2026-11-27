@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import queue
@@ -116,6 +117,8 @@ def _is_dict(value: object) -> TypeGuard[dict[object, object]]:
 def _json_value(raw: object, depth: int = 0) -> JsonValue:
     if depth > MAX_JSON_DEPTH:
         raise ProtocolError("JSON nests too deeply")
+    if isinstance(raw, float) and not math.isfinite(raw):
+        raise ProtocolError("JSON number is not finite")
     if raw is None or isinstance(raw, (bool, int, float, str)):
         return raw
     if _is_list(raw):
@@ -774,14 +777,20 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _host_os() -> str:
+def _safe_token(value: str) -> str:
+    return value if STRING_PATTERN.fullmatch(value) else "unknown"
+
+
+def host_os() -> str:
     name = platform.system().lower()
-    return "macos" if name == "darwin" else name
+    return _safe_token("macos" if name == "darwin" else name)
 
 
-def _host_arch() -> str:
+def host_arch() -> str:
     machine = platform.machine().lower()
-    return {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64"}.get(machine, machine)
+    return _safe_token(
+        {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64"}.get(machine, machine)
+    )
 
 
 def _child_environment() -> tuple[dict[str, str], dict[str, JsonValue]]:
@@ -827,8 +836,8 @@ def _build_report(
             "artifactSha256": jar_sha256,
             "build": build,
             **runtime,
-            "os": _host_os(),
-            "arch": _host_arch(),
+            "os": host_os(),
+            "arch": host_arch(),
             "cpuCount": os.cpu_count(),
             "jvmArgs": jvm_args,
             "removedEnvironment": removed,
@@ -892,7 +901,7 @@ def _validated_arguments(
     return args
 
 
-def _write_new_file(path: Path, text: str) -> None:
+def write_new_file(path: Path, text: str) -> None:
     """Create ``path`` (it must not exist) with ``text``; a failed write removes the file again."""
     handle = path.open("x", encoding="utf-8")
     try:
@@ -912,7 +921,11 @@ def main(argv: Sequence[str], launch: LaunchCommand = java_command) -> int:
     except SystemExit as usage_exit:
         return usage_exit.code if isinstance(usage_exit.code, int) else 2
     env, removed = _child_environment()
-    jar_sha256 = _sha256(args.jar)
+    try:
+        jar_sha256 = _sha256(args.jar)
+    except OSError as error:
+        print(f"cannot read the jar: {type(error).__name__}", file=sys.stderr)
+        return 1
     command = launch(args.jar)
     runs: list[RunResult] = []
     try:
@@ -929,7 +942,12 @@ def main(argv: Sequence[str], launch: LaunchCommand = java_command) -> int:
     except OSError as error:
         print(f"cannot start the server: {type(error).__name__}", file=sys.stderr)
         return 1
-    if _sha256(args.jar) != jar_sha256:
+    try:
+        jar_unchanged = _sha256(args.jar) == jar_sha256
+    except OSError as error:
+        print(f"cannot read the jar: {type(error).__name__}", file=sys.stderr)
+        return 1
+    if not jar_unchanged:
         print("the jar changed during the runs; no output written", file=sys.stderr)
         return 1
     if not runs_agree_on_identity(runs):
@@ -942,7 +960,7 @@ def main(argv: Sequence[str], launch: LaunchCommand = java_command) -> int:
         _build_report(args, runs, removed, jar_sha256), indent=2, allow_nan=False
     )
     try:
-        _write_new_file(args.output, text + "\n")
+        write_new_file(args.output, text + "\n")
     except OSError as error:
         print(f"cannot write the output: {type(error).__name__}", file=sys.stderr)
         return 1

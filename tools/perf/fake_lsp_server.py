@@ -15,7 +15,7 @@ startup measurement uses: ``groovy/serverStats``, ``groovy/runtimeFacts`` and ``
   a wrong answer exits with status 3.
 - ``deep-frame``: sends a frame whose JSON nests 100,000 levels deep.
 - ``deep-stats``: answers ``groovy/serverStats`` with a build value nested 200 levels deep.
-- ``grandchild``: starts a process that inherits stdout and lingers for 4 s, then exits after ``initialized``.
+- ``grandchild``: starts a process that inherits stdout and lingers for 30 s unless the test reaps it (pid in $FAKE_GRANDCHILD_PIDFILE), then exits after ``initialized``.
 - ``drifting-identity``: like ``settle``, but the reported maximum heap differs for every process.
 """
 
@@ -158,9 +158,13 @@ class Fake:
         if self.scenario == "exit-early":
             sys.exit(0)
         if self.scenario == "grandchild":
-            _ = subprocess.Popen(
-                [sys.executable, "-I", "-c", "import time; time.sleep(4)"]
+            child = subprocess.Popen(
+                [sys.executable, "-I", "-c", "import time; time.sleep(30)"]
             )
+            with open(
+                os.environ["FAKE_GRANDCHILD_PIDFILE"], "w", encoding="utf-8"
+            ) as pid_file:
+                _ = pid_file.write(str(child.pid))
             sys.exit(0)
         if self.scenario == "deep-frame":
             body = b'{"a":' + b"[" * 100000 + b"]" * 100000 + b"}"
