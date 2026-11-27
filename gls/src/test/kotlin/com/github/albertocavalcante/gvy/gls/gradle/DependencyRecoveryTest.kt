@@ -180,7 +180,8 @@ class DependencyRecoveryTest {
             if (attempts.incrementAndGet() == 1) {
                 entered.countDown()
                 check(release.await(5, TimeUnit.SECONDS))
-                WorkspaceResolution(listOf(root.resolve("obsolete.jar")), emptyList())
+                // Unusable, so a publication past the fence would leave the state FAILED, not COMPLETED.
+                WorkspaceResolution.failed("OBSOLETE", "obsolete attempt")
             } else {
                 recovered
             }

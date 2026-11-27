@@ -66,6 +66,9 @@ class DependencyManager(
         val cancellation: ResolutionCancellation = ResolutionCancellation(),
     )
 
+    /** A watcher and the token its refreshes carry, published as one value so a reader sees both or neither. */
+    private class InstalledWatcher(val watcher: BuildToolFileWatcher, val token: Any)
+
     private val logger = KotlinLogging.logger {}
     private val lock = Any()
     private val state = SharedValue(State.NOT_STARTED)
@@ -74,10 +77,8 @@ class DependencyManager(
     private val currentAttempt = SharedValue<Attempt?>(null)
     private var resolutionJob: Job? = null
 
-    // Written under [lock] together with [watcherToken]; onWatchedFilesChanged reads it without the lock.
-    private val buildFileWatcher = SharedValue<BuildToolFileWatcher?>(null)
-
-    private val watcherToken = SharedValue<Any?>(null)
+    // Written only under [lock]; onWatchedFilesChanged reads it without the lock.
+    private val installedWatcher = SharedValue<InstalledWatcher?>(null)
 
     private val currentWorkspaceRoot = SharedValue<Path?>(null)
 
@@ -129,7 +130,7 @@ class DependencyManager(
         val expected = currentAttempt.value
         val activeRequest = when {
             expectedWatcher == null -> requireNotNull(request)
-            watcherToken.value !== expectedWatcher -> null
+            installedWatcher.value?.token !== expectedWatcher -> null
             else -> expected?.request
         } ?: return StartDecision.Stop
         val possibleDuplicate = expectedWatcher == null &&
@@ -157,13 +158,15 @@ class DependencyManager(
         expectedWatcher: Any?,
     ): StartDecision = synchronized(lock) {
         if (currentAttempt.value !== expected) return@synchronized StartDecision.Retry
-        if (expectedWatcher != null && watcherToken.value !== expectedWatcher) return@synchronized StartDecision.Stop
+        val staleWatcher = expectedWatcher != null && installedWatcher.value?.token !== expectedWatcher
+        if (staleWatcher) return@synchronized StartDecision.Stop
         // Bumped before any mutation: next() throws on overflow, which must not leave the attempt half-installed.
         generation = generation.next()
+        val rootChanged = currentWorkspaceRoot.value != request.workspaceRoot
         // Invalidate the old watcher before publishing the new attempt, so a stale event cannot pair
         // its token with an attempt from another workspace.
-        val watcher = if (currentWorkspaceRoot.value != request.workspaceRoot) detachWatcher() else null
-        if (currentWorkspaceRoot.value != request.workspaceRoot) currentBuildToolName.set(null)
+        val watcher = if (rootChanged) detachWatcher() else null
+        if (rootChanged) currentBuildToolName.set(null)
         val previousJob = resolutionJob
         currentWorkspaceRoot.set(request.workspaceRoot)
         state.set(State.IN_PROGRESS)
@@ -285,11 +288,10 @@ class DependencyManager(
             watcher = tool.createWatcher(scope) { refreshFromWatcher(token) } ?: return
             val installed = synchronized(lock) {
                 val superseded = generation != attempt.generation || attempt.cancellation.isCancelled
-                if (superseded || buildFileWatcher.value != null) {
+                if (superseded || installedWatcher.value != null) {
                     false
                 } else {
-                    buildFileWatcher.set(watcher)
-                    watcherToken.set(token)
+                    installedWatcher.set(InstalledWatcher(watcher, token))
                     true
                 }
             }
@@ -298,7 +300,7 @@ class DependencyManager(
                 return
             }
             watcher.startWatching(attempt.request.workspaceRoot)
-            if (synchronized(lock) { watcherToken.value !== token }) watcher.stopWatching()
+            if (synchronized(lock) { installedWatcher.value?.token !== token }) watcher.stopWatching()
         } catch (e: CancellationException) {
             discardWatcher(token, watcher)
             throw e
@@ -310,7 +312,7 @@ class DependencyManager(
     }
 
     private fun discardWatcher(token: Any, watcher: BuildToolFileWatcher?) {
-        synchronized(lock) { if (watcherToken.value === token) detachWatcher() }
+        synchronized(lock) { if (installedWatcher.value?.token === token) detachWatcher() }
         watcher?.stopWatching()
     }
 
@@ -337,10 +339,7 @@ class DependencyManager(
     }
 
     /** Called under the state lock; the returned watcher is stopped after releasing it. */
-    private fun detachWatcher(): BuildToolFileWatcher? {
-        watcherToken.set(null)
-        return buildFileWatcher.exchange(null)
-    }
+    private fun detachWatcher(): BuildToolFileWatcher? = installedWatcher.exchange(null)?.watcher
 
     /**
      * Routes client notifications through the native watcher's debounce and filtering.
@@ -350,12 +349,11 @@ class DependencyManager(
      * stopped. That watcher drops the event, or debounces it into a refresh whose revoked token [start] rejects.
      */
     fun onWatchedFilesChanged(paths: List<Path>) {
-        val watcher = buildFileWatcher.value ?: return
+        val watcher = installedWatcher.value?.watcher ?: return
         paths.forEach { watcher.onFileChanged(it) }
     }
 
     fun getState(): State = state.value
-    fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot.value
     fun getCurrentBuildToolName(): String? = currentBuildToolName.value
     fun isDependenciesReady(): Boolean = state.value == State.COMPLETED
 
