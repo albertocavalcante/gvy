@@ -26,19 +26,22 @@ const jdkAtomicsPermanent = [
 // Only the facade opts into the experimental stdlib atomics; tests elsewhere do not need them either.
 const stdlibAtomicsPermanent = ['**/common/concurrent/src/**'];
 
+/** [config]'s lines without CRLF line ends or trailing whitespace, which YAML ignores. */
+const yamlLines = config => config.replaceAll('\r\n', '\n').split('\n').map(line => line.trimEnd());
+
 /**
  * The `gvy > <rule>` block as `{ active, excludes }`, or null when it is missing. Any line in the block other than
  * `active: true|false`, `excludes:`, a comment or a single-quoted list entry is an error, so a change of YAML style
- * cannot silently empty the list.
+ * cannot silently empty the list. Trailing whitespace is ignored, as YAML does.
  */
 function gvyRuleConfig(config, rule) {
-  const lines = config.replaceAll('\r\n', '\n').split('\n');
+  const lines = yamlLines(config);
   const start = lines.indexOf(`  ${rule}:`);
   if (start < 0) return null;
   if (lines.slice(0, start).reverse().find(line => /^[^\s#]/.test(line)) !== 'gvy:') return null;
   let active;
   const excludes = [];
-  for (const line of lines.slice(start + 1)) {
+  for (const [offset, line] of lines.slice(start + 1).entries()) {
     // A comment at any indentation is still inside the block for YAML, so it must not end it.
     if (/^\s*(?:#.*)?$/.test(line)) continue;
     if (!line.startsWith('    ')) break;
@@ -46,9 +49,29 @@ function gvyRuleConfig(config, rule) {
     const entry = line.match(/^ {4}- '([^']+)'$/);
     if (setting) active = setting[1] === 'true';
     else if (entry) excludes.push(entry[1]);
-    else if (line !== '    excludes:') throw new Error(`Unexpected ${rule} configuration line: ${line}`);
+    else if (line !== '    excludes:') {
+      throw new Error(
+        `Unexpected line ${start + offset + 2} in gvy > ${rule}: \`${line}\`. The guard reads only ` +
+          "`    active: true` or `false`, `    excludes:`, `    - '<pattern>'` entries and comments in a gvy rule " +
+          'block, so that a YAML style it does not know cannot hide an exclude. To set another key, teach ' +
+          'gvyRuleConfig in tools/ci/detekt-gvy-excludes.test.mjs to read it.',
+      );
+    }
   }
   return { active, excludes };
+}
+
+/** Why [config] has no `gvy > <rule>` block the reader takes: the lines that look like its key, and the form read. */
+function missingRule(config, rule) {
+  let ruleSet = 'no rule set';
+  const lookalikes = yamlLines(config).flatMap((line, index) => {
+    if (/^[^\s#]/.test(line)) ruleSet = `\`${line}\``;
+    const lookalike = new RegExp(`^\\s*["']?${rule}["']?\\s*:`).test(line);
+    return lookalike ? [`line ${index + 1}, under ${ruleSet}: \`${line}\``] : [];
+  });
+  const found = lookalikes.length > 0 ? `Found ${lookalikes.join('; ')}.` : `No line names ${rule} as a key.`;
+  return `tools/lint/detekt.yml must configure gvy > ${rule}, read only from a line that is exactly \`  ${rule}:\` ` +
+    `(two spaces, the rule ID and a colon) in the \`gvy:\` rule set. ${found}`;
 }
 
 /**
@@ -56,7 +79,7 @@ function gvyRuleConfig(config, rule) {
  * applies a set-level `active`, `excludes` or `includes` to every rule in the set.
  */
 function gvyRuleSetKeys(config) {
-  const lines = config.replaceAll('\r\n', '\n').split('\n');
+  const lines = yamlLines(config);
   const start = lines.indexOf('gvy:');
   if (start < 0) return null;
   const keys = [];
@@ -68,22 +91,32 @@ function gvyRuleSetKeys(config) {
   return keys;
 }
 
-/** Every tracked detekt baseline: any project's `detekt-baseline.xml`, and variants like `detekt-baseline-main.xml`. */
-function trackedBaselines() {
-  // Filtered here, not by pathspec: GIT_GLOB_PATHSPECS or GIT_LITERAL_PATHSPECS would make the pathspec match nothing.
-  return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
-    .split('\0')
-    .filter(path => /(?:^|\/)detekt-baseline(?:-[^/]+)?\.xml$/.test(path));
+/**
+ * Every tracked file of this checkout. git runs without the variables that point it at another repository, index or
+ * work tree, and the listing must hold this guard's own input, so a listing of nothing cannot pass a check vacuously.
+ * Callers filter it in code, not by pathspec: GIT_GLOB_PATHSPECS or GIT_LITERAL_PATHSPECS would make a pathspec match
+ * nothing.
+ */
+function gitFiles() {
+  const env = { ...process.env };
+  for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete env[name];
+  const listing = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', env, maxBuffer: 1 << 26 });
+  const files = listing.split('\0').filter(Boolean);
+  assert.ok(files.includes('tools/lint/detekt.yml'), `git ls-files in ${root} lists another index: no detekt.yml`);
+  return files;
 }
+
+/** Every tracked detekt baseline: any project's `detekt-baseline.xml`, and variants like `detekt-baseline-main.xml`. */
+const trackedBaselines = () => gitFiles().filter(path => /(?:^|\/)detekt-baseline(?:-[^/]+)?\.xml$/.test(path));
 
 const detektConfig = () => readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8');
 
-/** The active `gvy > <rule>` block of tools/lint/detekt.yml. */
-function configured(rule) {
-  const config = gvyRuleConfig(detektConfig(), rule);
-  assert.ok(config, `tools/lint/detekt.yml must configure gvy > ${rule}`);
-  assert.equal(config.active, true, `${rule} must stay active`);
-  return config;
+/** The active `gvy > <rule>` block of [config], tools/lint/detekt.yml by default. */
+function configured(rule, config = detektConfig()) {
+  const block = gvyRuleConfig(config, rule);
+  assert.ok(block, missingRule(config, rule));
+  assert.equal(block.active, true, `${rule} must stay active, with \`    active: true\` in its block`);
+  return block;
 }
 
 test('the configuration reader takes only the gvy VolatileProperty block and rejects other YAML styles', () => {
@@ -130,6 +163,16 @@ test('the configuration reader ignores trailing spaces and names the forms it ac
     assert.match(error.message, /reads only `    active: true` or `false`, `    excludes:`, `    - '<pattern>'`/);
     return true;
   });
+});
+
+test('a missing rule block says what was found and the form the guard reads', () => {
+  const spaced = 'style:\n  JdkAtomics:\n    active: true\ngvy:\n  JdkAtomics :\n    active: true\n';
+  assert.throws(() => configured('JdkAtomics', spaced), error => {
+    assert.match(error.message, /read only from a line that is exactly `  JdkAtomics:`/);
+    assert.match(error.message, /line 2, under `style:`: `  JdkAtomics:`; line 5, under `gvy:`: `  JdkAtomics :`/);
+    return true;
+  });
+  assert.throws(() => configured('JdkAtomics', 'gvy:\n  active: true\n'), /No line names JdkAtomics as a key/);
 });
 
 test('VolatileProperty is active and excludes nothing', () => {
@@ -186,7 +229,9 @@ test('the gvy rule set is active and takes no set-wide excludes or includes', ()
   assert.ok(keys, 'tools/lint/detekt.yml must configure the gvy rule set');
   assert.ok(keys.includes('active: true'), 'the gvy rule set must stay active, as exactly `  active: true`');
   const unexpected = keys.filter(key => key !== 'active: true' && !/^[A-Z]\w*:$/.test(key));
-  assert.deepEqual(unexpected, [], 'a gvy rule-set key applies to every gvy rule; configure each rule instead (#2474)');
+  const message = 'The gvy rule set holds only `  active: true` and its rule blocks (`  <RuleId>:`). A rule-set key ' +
+    'such as `excludes` or `includes` applies to every gvy rule; configure each rule instead (#2474)';
+  assert.deepEqual(unexpected, [], message);
 });
 
 test('no tracked detekt baseline holds a VolatileProperty, JdkAtomics or StdlibAtomics finding', () => {
