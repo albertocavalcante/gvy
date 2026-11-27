@@ -100,7 +100,11 @@ The rule cannot resolve names, so it errs in these documented ways:
 1. A declaration named `Volatile` in the same file or package (`annotation class Volatile`) is not told apart from
    Kotlin's: its unqualified use is reported. Suppress that site with a reason, or rename the declaration.
 2. An import of any other symbol named `Volatile`, even a function, makes the unqualified name count as that symbol, so
-   a Kotlin `@Volatile` in that file is missed. Qualified uses are still reported.
+   a Kotlin `@Volatile` in that file is missed. Qualified uses are still reported. A star import errs the other way.
+   `import com.example.annotations.*` outranks Kotlin's default `kotlin.jvm.*` import, so when that package declares a
+   `Volatile`, the plain name means that one. The rule cannot see what a star-imported package declares, so it still
+   reports `@Volatile` and `typealias X = Volatile` in that file (false positives). Import the other annotation by name,
+   which the rule follows, or suppress the site with a reason.
 3. A typealias of the annotation is reported where it is declared, never at its `@V` uses. A typealias declared where
    the lint task does not look (limit 4) or in a library is missed. gvy has none.
 4. The lint task reads only the `kotlin` and `java` folders of `src/main` and `src/test` unless a module sets
@@ -138,7 +142,7 @@ their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:c
 excluded (#2474). `tools/ci/detekt-gvy-excludes.test.mjs` requires exactly these excludes and no baseline entry.
 
 `Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
-previous value (`increment() - 1`), or a counter that starts one lower.
+previous value, `increment() - 1`.
 
 A field updater that needs the JDK type is the accepted reason for `@Suppress("JdkAtomics")`, with a comment. Write the
 qualified name at the suppressed declaration: an imported name is reported at its import, which only a file-wide
@@ -158,19 +162,45 @@ The stdlib's `kotlin.concurrent.atomics` is experimental (`@ExperimentalAtomicAp
 [KT-82228](https://youtrack.jetbrains.com/issue/KT-82228)). `:common:concurrent` is the only module that opts in, behind
 `OnceFlag`, `SharedValue` and `Counter`, so an upstream change breaks that module alone (#2474). The rule reports every
 import of the package, star imports included, and every qualified use, such as `kotlin.concurrent.atomics.AtomicInt(0)`
-or `@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)`. It shares its detection with `JdkAtomics`, so it
-finds the same spellings, ignores the same mentions and has the same known limits. Replace a use as the `JdkAtomics`
-table says.
+or `@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)`. It shares its detection with `JdkAtomics`:
+backticks, comments and line breaks inside a name do not hide it, and mentions in comments, strings and KDoc are not
+uses.
+
+| The stdlib API was used as                                      | Use                                                                           |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `AtomicBoolean` claimed with `compareAndSet(false, true)`       | `OnceFlag.trySet()`                                                           |
+| `AtomicBoolean` set with `store(true)`, never cleared           | `OnceFlag.set()`                                                              |
+| `AtomicBoolean` stored and cleared                              | `SharedValue<Boolean>`                                                        |
+| `AtomicReference<T>`: `load()`, `store(v)`, `exchange(v)`       | `SharedValue<T>`: `value`, `set(v)`, `exchange(v)`                            |
+| `AtomicReference.updateAndFetch {}`                             | `SharedValue.update {}`, which returns the new value; keep the transform pure |
+| `AtomicReference.compareAndSet(null, value)` (first value wins) | `update { it ?: value }`                                                      |
+| `AtomicInt`, `AtomicLong` counters: `incrementAndFetch()`       | `Counter.increment()` (convert with `toInt()` where an `Int` is needed)       |
+| `fetchAndIncrement()`                                           | `Counter.increment() - 1`                                                     |
+| `@OptIn(ExperimentalAtomicApi::class)`                          | Nothing: remove it with the last use it allowed                               |
+| Any of these, used by one thread only                           | A plain `var`; an atomic there claims the state is shared                     |
 
 The compiler's opt-in requirement already stops accidental use. The rule is the second fence, and it also reports a
 module that adds the opt-in on purpose. It replaces a detekt `ForbiddenImport` pattern, which matched import paths only
 and so missed `import kotlin.concurrent.atomics.*` and fully qualified uses.
 
-Its only exclude in `tools/lint/detekt.yml` is `common/concurrent` itself; test sources are not excluded.
+Its only exclude in `tools/lint/detekt.yml` is `common/concurrent` itself. Test sources are not excluded, because no
+test outside the facade needs the package. `tools/ci/detekt-gvy-excludes.test.mjs` requires exactly this exclude and no
+baseline entry.
+
+### Known limits
+
+The rule reads syntax only, so it does not see:
+
+1. A stdlib atomic behind a typealias declared where the rule does not look (`common/concurrent` or unlinted Kotlin), or
+   a type inferred from another API (`val counter = holder.counter`).
+2. Java sources, and Kotlin outside the source roots the lint task reads, such as `tests/e2e` and the multiplatform
+   sources of `viz/ast-model` (#2480).
 
 ## Conventions
 
-The rules share these conventions, documented on `GvyRuleSetProvider` and checked by `GvyRuleSetProviderTest`:
+The rules share these conventions, documented on `GvyRuleSetProvider`. `GvyRuleSetProviderTest` checks each rule's
+severity, debt and description prefix, and the message shape of a few representative findings per rule. Review and each
+rule's spelling fixtures keep the last convention.
 
 - A finding's message names the reported code in backticks and says what is wrong with it, then gives the fix and the
   issue that set the policy.
@@ -192,9 +222,10 @@ Each rule has fixtures in `src/test/resources/<rule-name>/` (`regex-in-function-
 `compliant.kt.fixture` must stay silent; add a case to the fixture before changing the rule. `RuleFixtures.kt` holds the
 shared helpers that read and check them.
 
-`GvyRuleSetProviderTest` covers every rule at once: the provider registers it, the plugin's default config activates it,
-`inactive-config.yml` switches it off, and its message and description follow the conventions above. A new rule adds a
-snippet there and a line in `src/test/resources/inactive-config.yml`.
+`GvyRuleSetProviderTest` covers every rule at once. The provider registers it, the plugin's default config activates it,
+and `inactive-config.yml` switches it off. Its severity and debt match the conventions above, its description starts
+with "Reports", and the messages of its representative findings have the shared shape. A new rule adds a row to that
+test's table and a line in `src/test/resources/inactive-config.yml`.
 
 ## No Bazel target
 
