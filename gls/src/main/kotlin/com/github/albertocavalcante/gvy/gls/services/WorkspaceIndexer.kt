@@ -35,7 +35,7 @@ internal class WorkspaceIndexer(
     private val compilationService: GroovyCompilationService,
     private val coroutineScope: CoroutineScope,
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val startupPhases: StartupPhaseRecorder = StartupPhaseRecorder(),
+    private val startupPhases: StartupPhaseRecorder,
 ) {
     private val logger = KotlinLogging.logger {}
     private val tooLargeNotified = OnceFlag()
@@ -169,9 +169,10 @@ internal class WorkspaceIndexer(
             progressReporter.cancel()
             throw throwable
         }
+        // Compile cannot follow a failed index, whether the failure is handled below or an Error escapes
+        startupPhases.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
         rethrowIfCancellationOrError(throwable)
         logger.error(throwable) { "Workspace indexing failed" }
-        startupPhases.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
         progressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
         onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null, null, null)
     }

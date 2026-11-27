@@ -50,6 +50,7 @@ import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhase
 import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
+import com.github.albertocavalcante.gvy.gls.telemetry.measure
 import com.github.albertocavalcante.gvy.gls.telemetry.serverStats
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.verification.observeRuntime
@@ -291,8 +292,10 @@ class GroovyLanguageServer(
         }
     }
 
-    override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
-        val initializePhase = startupPhases.begin(StartupPhase.LSP_INITIALIZE)
+    override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> =
+        startupPhases.measure(StartupPhase.LSP_INITIALIZE) { initializeServer(params) }
+
+    private fun initializeServer(params: InitializeParams): CompletableFuture<InitializeResult> {
         logger.info { "Initializing Groovy Language Server..." }
         logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
@@ -326,7 +329,6 @@ class GroovyLanguageServer(
 
         implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
-        initializePhase?.complete()
         return CompletableFuture.completedFuture(initializeResult)
     }
 
@@ -467,7 +469,10 @@ class GroovyLanguageServer(
         return CompletableFuture.completedFuture(Gson().toJsonTree(facts))
     }
 
-    /** Versioned startup timings. Only numbers and fixed vocabulary words: no paths, URIs or project names. */
+    /**
+     * Versioned startup timings: numbers, booleans, fixed phase and status words, and the pattern-checked build
+     * version and commit that `groovy/runtimeFacts` also reports. No paths, URIs, project names or exception text.
+     */
     @JsonRequest("groovy/serverStats")
     fun serverStats(): CompletableFuture<JsonElement> {
         val error = customRequestLifecycleError()

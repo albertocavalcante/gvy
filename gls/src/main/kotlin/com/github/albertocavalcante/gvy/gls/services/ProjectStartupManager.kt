@@ -263,13 +263,7 @@ class ProjectStartupManager(
     private fun createResolutionCallbacks(context: CompletionCallbackContext) = ResolutionCallbacks(
         onProgress = createProgressCallback(context.progressReporter, context.client, context.onStatusUpdate),
         onComplete = createCompletionCallback(context),
-        onError = createErrorCallback(
-            context.progressReporter,
-            context.client,
-            context.config,
-            context.onStatusUpdate,
-            context.dependencyPhase,
-        ),
+        onError = createErrorCallback(context),
         // Stopped with no completion or failure (shutdown, scope cancellation, an Error): end the progress and the
         // phase. Both do nothing once ended, as onCancelled must allow.
         onCancelled = {
@@ -448,21 +442,16 @@ class ProjectStartupManager(
             }
         }
 
-    private fun createErrorCallback(
-        progressReporter: ProgressReporter,
-        client: LanguageClient?,
-        config: ServerConfiguration,
-        onStatusUpdate: StatusUpdateCallback,
-        dependencyPhase: PhaseRun?,
-    ): (Exception) -> Unit = { error ->
+    private fun createErrorCallback(context: CompletionCallbackContext): (Exception) -> Unit = { error ->
         logger.error(error) { "Failed to resolve dependencies" }
-        // FIXME(#2514): a watcher failure also reaches here while resolution goes on, so the phase ends early.
+        // FIXME(#2514): a watcher failure also reaches here while resolution goes on. The phase then ends as failed
+        //   early, and the later phases record their real run once it happens.
         //   See: https://github.com/albertocavalcante/gvy/issues/2514
-        dependencyPhase?.fail()
+        context.dependencyPhase?.fail()
         skipPhasesFrom(StartupPhase.WORKSPACE_MODEL_PUBLISH)
-        selectGroovyRuntime(config, emptyList())
-        progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
-        client?.showMessage(
+        selectGroovyRuntime(context.config, emptyList())
+        context.progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
+        context.client?.showMessage(
             MessageParams().apply {
                 type = MessageType.Warning
                 message = "Could not load build dependencies - LSP will work with project files only"
@@ -471,7 +460,8 @@ class ProjectStartupManager(
         // Signal warning state but still quiescent (ready for requests, but degraded)
         coroutineScope.launch(indexingDispatcher) {
             strategyInitJobs.forEach { it.join() }
-            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null, null, null)
+            val message = "Dependencies failed: ${error.message}"
+            context.onStatusUpdate(Health.Warning, true, message, null, null, null, null)
         }
     }
 

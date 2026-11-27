@@ -39,8 +39,9 @@ internal data class StartupSnapshot(
 /**
  * Records when each [StartupPhase] began and how it ended, using a monotonic clock.
  *
- * A phase records its first run only: a later [begin] returns null and a skipped phase never begins. The server start
- * is the moment the recorder is created. Calls do not block and never call out, so they are safe under any lock.
+ * A phase records its first real run only: once a phase has begun, a later [begin] returns null and [skip] changes
+ * nothing. A phase that was only skipped is replaced by its first real run. The server start is the moment the
+ * recorder is created. Calls do not block and never call out, so they are safe under any lock.
  */
 class StartupPhaseRecorder(
     private val nanoTime: () -> Long = System::nanoTime,
@@ -50,10 +51,12 @@ class StartupPhaseRecorder(
     private val originNanos = nanoTime()
     private val records = SharedValue<Map<StartupPhase, PhaseRecord>>(emptyMap())
 
-    /** Starts [phase], or returns null when it already began or was skipped. */
+    /** Starts [phase], or returns null when it already began. A skipped phase starts and replaces its skip. */
     fun begin(phase: StartupPhase): PhaseRun? {
         val started = PhaseRecord(PhaseStatus.RUNNING, startNanos = elapsedNanos(), endNanos = null)
-        val updated = records.update { current -> if (phase in current) current else current + (phase to started) }
+        val updated = records.update { current ->
+            if (current[phase].canBegin()) current + (phase to started) else current
+        }
         return if (updated[phase] === started) PhaseRun(this, phase, started) else null
     }
 
@@ -63,7 +66,11 @@ class StartupPhaseRecorder(
         records.update { current -> current + phases.filter { it !in current }.associateWith { skipped } }
     }
 
-    internal fun snapshot() = StartupSnapshot(serverStartJvmUptimeMs, elapsedNanos(), records.value)
+    internal fun snapshot(): StartupSnapshot {
+        // Read the records before the clock, so no recorded offset can be later than the time of the snapshot
+        val recorded = records.value
+        return StartupSnapshot(serverStartJvmUptimeMs, elapsedNanos(), recorded)
+    }
 
     internal fun end(phase: StartupPhase, started: PhaseRecord, status: PhaseStatus) {
         val ended = started.copy(status = status, endNanos = elapsedNanos())
@@ -106,6 +113,8 @@ internal inline fun <T> StartupPhaseRecorder.measure(phase: StartupPhase, block:
         run?.end(outcome)
     }
 }
+
+private fun PhaseRecord?.canBegin() = this == null || status == PhaseStatus.SKIPPED
 
 private fun observeJvmUptimeMs(): Long? = try {
     ManagementFactory.getRuntimeMXBean().uptime

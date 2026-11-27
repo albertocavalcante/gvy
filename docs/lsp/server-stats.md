@@ -56,26 +56,27 @@ scale.
 
 Each phase has a `status`:
 
-| Status      | Meaning                                                                     | Numbers present               |
-| ----------- | --------------------------------------------------------------------------- | ----------------------------- |
-| `pending`   | The phase has not begun.                                                    | none                          |
-| `running`   | The phase began and has not ended.                                          | `startOffsetMs`               |
-| `completed` | The step returned. It does not say the step found no errors.                | `startOffsetMs`, `durationMs` |
-| `failed`    | The step threw, or the server acted on a failed outcome (see below).        | `startOffsetMs`, `durationMs` |
-| `cancelled` | The step was stopped, for example by shutdown.                              | `startOffsetMs`, `durationMs` |
-| `skipped`   | The phase will not run: there was nothing to do or an earlier phase failed. | none                          |
+| Status      | Meaning                                                                                                                                             | Numbers present               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `pending`   | The phase has not begun.                                                                                                                            | none                          |
+| `running`   | The phase began and has not ended.                                                                                                                  | `startOffsetMs`               |
+| `completed` | The step returned. It does not say the step found no errors.                                                                                        | `startOffsetMs`, `durationMs` |
+| `failed`    | The step threw, or the server acted on a failed outcome (see below).                                                                                | `startOffsetMs`, `durationMs` |
+| `cancelled` | The step was stopped before it ended. The server records this, but it refuses this request once shutdown begins, so a client does not see it today. | `startOffsetMs`, `durationMs` |
+| `skipped`   | The phase did not run: there was nothing to do or an earlier phase failed. If its work runs later, that run replaces this status.                   | none                          |
 
 A workspace with no root skips all five workspace phases. An unsupported JDK, found before resolution starts, skips
 every phase from `dependencies.resolve` on. A failed dependency resolution skips the three phases after it, because the
-server then neither publishes a model nor indexes the workspace. A workspace with no source files skips
-`workspace.index` and `workspace.compile`; one over the file-count limit skips only `workspace.compile`. A failed index
-skips `workspace.compile`.
+server then neither publishes a model nor indexes the workspace. A model publish that throws an exception ends as
+`failed` and skips indexing and compiling. A workspace with no source files skips `workspace.index` and
+`workspace.compile`; one over the file-count limit skips only `workspace.compile`. A failed index skips
+`workspace.compile`.
 
 ### How to read the numbers
 
-- **A skipped phase stays skipped.** The first outcome is final. If a later retry, such as a build-file refresh after a
-  failed resolution, does run the work, it is not recorded. A publish that throws, or an `Error` during indexing, can
-  also leave later phases `pending` instead of `skipped`.
+- **A skipped phase is replaced by its first real run.** If the work of a skipped phase runs later, for example after a
+  watcher failure ended resolution early, the stats show that run. A phase that began is never replaced. Only a JVM
+  `Error`, such as running out of memory, can leave later phases `pending` after a failure.
 - **First run only.** Each phase records its first run after the server starts. A later build-file change repeats
   resolution, publishing, indexing and compiling, but those runs are not recorded here.
 - **Phases overlap and leave gaps.** Resolution ends on a background thread, and indexing runs after publishing. The
@@ -83,17 +84,20 @@ skips `workspace.compile`.
   check that runs before resolution.
 - **`failed` means the first outcome the server acted on** for `dependencies.resolve`. The server publishes its failure
   status at that same moment. A build-file watcher that fails to start is reported through the same failure path while
-  resolution carries on, so `failed` can appear before resolution has finished. This is tracked in
-  [#2514](https://github.com/albertocavalcante/gvy/issues/2514).
+  resolution carries on, so `failed` can appear before resolution has finished, and the later phases then show their
+  real outcome when they run. This is tracked in [#2514](https://github.com/albertocavalcante/gvy/issues/2514).
 
 ## Compatibility
 
 Adding an optional field or a new phase keeps `schemaVersion: 1`, so consumers should ignore names and fields they do
 not know. Renaming or removing a field or phase, or changing what a value means, raises `schemaVersion`.
 
-The result holds only numbers, `true` or `false`, and fixed words: phase names, statuses, and the build stamp states
-`known`, `unknown` and `malformed`. It never contains file paths, URIs, project names, exception text or environment
-values.
+The result holds numbers, `true` or `false`, fixed words (phase names, statuses, and the build stamp states `known`,
+`unknown` and `malformed`), and the build `version` and `commit`. Those two are the pattern-checked strings that
+[runtime facts](runtime-facts.md) also reports: a `version` such as `0.5.4`, `0.5.4-SNAPSHOT` or `0.5.4-dev+g1234567`
+(at most 64 characters, matching `[0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT|-dev\+(unknown|g<7 to 64 hex digits>(\.dirty)?))?`),
+and a `commit` of 40 or 64 hex digits. Any other text is dropped and its state is `malformed`. The result never contains
+file paths, URIs, project names, exception text or environment values.
 
 Before `initialize` succeeds, the request fails with `ServerNotInitialized`; after shutdown is requested it fails with
 `InvalidRequest`. It adds no fields to standard LSP initialization responses.

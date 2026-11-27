@@ -8,8 +8,9 @@ import com.github.albertocavalcante.gvy.gls.verification.EmbeddedBuildStamp
 import com.github.albertocavalcante.gvy.gls.verification.embeddedBuildStamp
 
 /**
- * The `groovy/serverStats` result. Every field is a number or a fixed vocabulary word, so it never carries a path,
- * a URI or a project name. Optional values are left out of the JSON when they are not known.
+ * The `groovy/serverStats` result. Its values are numbers, booleans, fixed phase and status words, and the build
+ * version and commit, which [embeddedBuildStamp] checks against fixed patterns. It never carries a path, a URI, a
+ * project name or exception text. Optional values are left out of the JSON when they are not known.
  */
 data class ServerStats(val schemaVersion: Int, val build: EmbeddedBuildStamp, val startup: StartupStats)
 
