@@ -33,6 +33,7 @@ class WorkspaceIndexerPhasesTest {
 
     private class Harness(fileCount: Int, limit: Int = 5) {
         val phases = StartupPhaseRecorder()
+
         // Records what escapes the indexing coroutine, so a test's Error never reaches the global handlers
         val escaped = CopyOnWriteArrayList<Throwable>()
         val scope = CoroutineScope(
