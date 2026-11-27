@@ -36,7 +36,8 @@ header | section table | section 1 stored bytes | section 2 stored bytes | ...
 ```
 
 The header and the section table are never compressed. The stored bytes of the sections follow the table in table order
-and fill the rest of the file exactly: a file with bytes left over, or too few, is malformed.
+and fill the rest of the file exactly: a file with too few bytes is truncated, and one with bytes left over is
+malformed.
 
 ### Header
 
@@ -177,8 +178,8 @@ Which of several damaged sections is reported depends on the order in which a re
 
 1. The file is above the caller's cap: oversized.
 2. The magic: a byte that differs is a bad magic; a file that is a proper prefix of the magic is truncated.
-3. The major version is read, then compared: an unsupported version. A file shorter than the version fields is
-   truncated.
+3. Both version fields are read, then the major version is compared: an unsupported version. A file shorter than the
+   version fields is truncated.
 4. The header fields, in order. A read past the end of the file is truncated; an unknown input kind, a length with the
    high bit set, or invalid UTF-8 is corrupt; a string above 4096 bytes is oversized, checked before it is read; a
    section count above 64 is oversized, and a table that does not fit in the file is truncated.
@@ -188,8 +189,9 @@ Which of several damaged sections is reported depends on the order in which a re
 
 Decoding a section: a missing section is corrupt; a raw length above the cap is oversized; then a codec other than 0 and
 1 is corrupt; for codec 0 a stored length that differs from the raw length is corrupt; for codec 1 a ratio above 50 is
-oversized, then any inflate failure is corrupt; then a CRC mismatch is corrupt; then the content, where a count that
-does not fit the bytes left is corrupt and an index outside its table is out of range.
+oversized, then any inflate failure is corrupt; then a CRC mismatch is corrupt; then the content in reading order, where
+a pool string above 65535 bytes is oversized, a varint, UTF-8 sequence, pool order, out-of-range value, count that does
+not fit the bytes left or trailing byte is corrupt, and an index outside its table is out of range.
 
 ## Limits a reader applies
 
