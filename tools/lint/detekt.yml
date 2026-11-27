@@ -137,9 +137,9 @@ gvy:
     active: true
     excludes:
     # Permanent: tests, the facade itself, and modules published on their own, which must not depend on the unpublished
-    # :common:concurrent. tools/ci/detekt-gvy-excludes.test.mjs requires exactly these. detekt matches them against
-    # absolute paths, so a module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp
-    # package.
+    # :common:concurrent. tools/ci/detekt-gvy-excludes.test.mjs requires exactly these, and requires the modules that
+    # apply maven-publish to be exactly the published ones here. detekt matches them against absolute paths, so a
+    # module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp package.
     - '**/src/test/**'
     - '**/src/commonTest/**'
     # These two exempt nothing today: src/jvmTest exists only in common/concurrent, which the facade's pattern below

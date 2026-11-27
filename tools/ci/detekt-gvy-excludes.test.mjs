@@ -1,13 +1,26 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// gvy's concurrency confinement rules (#2474): VolatileProperty excludes nothing now that its migration has finished,
-// JdkAtomics excludes only its permanent set (tests, :common:concurrent and the modules published as their own
-// artifacts), and StdlibAtomics only :common:concurrent, the one module that opts into the experimental stdlib atomics.
-// StdlibAtomics never had a migration: it replaced a detekt ForbiddenImport pattern. The gvy rule set itself stays
-// active with no set-wide excludes or includes, and no tracked detekt baseline holds these rules' findings. A use one
-// of them reports is suppressed at its site with a reason. Kotlin outside src/main and src/test, such as tests/e2e, is
-// not linted unless its module sets detekt.source (#2480).
+// Keeps gvy's own detekt rules on wherever they apply (#2420, #2474). Reading the tracked files, it fails when:
+//
+// - the gvy rule set in tools/lint/detekt.yml is inactive or has a set-wide key, or a gvy rule block holds a line
+//   other than `active`, `excludes`, a single-quoted entry or a comment;
+// - VolatileProperty excludes anything; JdkAtomics excludes anything but tests, :common:concurrent and the modules
+//   published on their own, which must be exactly the modules that apply maven-publish; StdlibAtomics excludes
+//   anything but :common:concurrent; RegexInFunctionBody excludes anything but tests, benchmarks and its #2420
+//   migration modules, a list that only shrinks; or one of the four is inactive;
+// - tools/detekt-rules' own config/config.yml, which detekt adds to its defaults, sets anything but `active: true`;
+// - a tracked detekt baseline holds a finding of one of the four rules;
+// - Kotlin under a src/ folder, the rule module's tests aside, suppresses VolatileProperty, JdkAtomics, StdlibAtomics,
+//   the gvy rule set or all rules outside sanctionedSuppressions, which lists each sanctioned site with its reason;
+// - a *.gradle.kts other than the root build names detekt for anything but a detekt dependency or the multiplatform
+//   `detekt.source` override;
+// - a rule that excludes test sources misses a test source set, or main code sits in a folder named like one.
+//
+// It does not see the root build.gradle.kts, which configures detekt for every module; Gradle code that reaches detekt
+// without naming it or unhooks `lint` from it; Groovy and init scripts, gradle.properties and flags such as
+// `-x detekt`; or RegexInFunctionBody suppressions, which need only a comment. Kotlin outside src/main and src/test,
+// such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -34,8 +47,8 @@ const regexMigration = [
 ];
 // The rules whose findings no tracked detekt baseline may hold.
 const unbaselined = ['VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'RegexInFunctionBody'];
-// The suppression IDs that silence a gvy concurrency rule, as detekt accepts them: the rule ID, alone or after the rule
-// set's ID, the rule set's ID itself, or all rules.
+// The suppression IDs that silence a gvy concurrency rule as detekt reads them: the rule ID, alone or after the rule
+// set's ID, the rule set's ID itself, or all rules. Case is ignored, which covers detekt's `ALL` and `All`.
 const concurrencySuppression = /^(?:all|gvy|(?:gvy[.:])?(?:VolatileProperty|JdkAtomics|StdlibAtomics))$/i;
 // Every sanctioned suppression of that kind in tracked Kotlin, one entry per site, as { path, id, reason }. The
 // accepted reasons are a field that an Atomic*FieldUpdater updates and a measured hot path
@@ -186,13 +199,14 @@ function tokenAt(source, at) {
   }
   if (quote !== '"' && quote !== "'") return null;
   const kind = quote === '"' ? 'string' : 'char';
-  for (let index = at + 1; index < source.length && source[index] !== '\n';) {
+  let index = at + 1;
+  while (index < source.length && source[index] !== '\n') {
     if (source[index] === '\\') index += 2;
     else if (kind === 'string' && source.startsWith('${', index)) index = templateEnd(source, index + 2);
     else if (source[index] === quote) return token(kind, index + 1);
     else index += 1;
   }
-  return token(kind, lineEnd(source, at));
+  return token(kind, Math.min(index, source.length));
 }
 
 /** Where the `${` template whose body starts at offset [at] of [source] ends: just past its closing brace. */
@@ -304,10 +318,10 @@ function testSourceSets() {
 }
 
 /** The text of Gradle Kotlin script [source] with its comments blanked out, as lines. */
-const scriptLines = source => {
+function scriptLines(source) {
   const comments = kotlinTokens(source).filter(({ kind }) => kind === 'comment');
   return blanked(source, comments).split('\n');
-};
+}
 
 /**
  * The lines of Gradle Kotlin script [source] that configure detekt beyond what a module build may, as `{ line, text }`.
@@ -564,6 +578,8 @@ test('the suppression reader takes the IDs of annotations in code, as detekt rea
     { line: 16, id: 'gvy' },
     { line: 17, id: 'ALL' },
   ]);
+  // An unterminated literal ends with its line, so it cannot hide the next one.
+  assert.deepEqual(suppressions('val broken = "open\n@Suppress("all") class C'), [{ line: 2, id: 'all' }]);
   for (const id of ['all', 'All', 'gvy', 'JdkAtomics', 'gvy:VolatileProperty', 'gvy.StdlibAtomics']) {
     assert.match(id, concurrencySuppression);
   }
