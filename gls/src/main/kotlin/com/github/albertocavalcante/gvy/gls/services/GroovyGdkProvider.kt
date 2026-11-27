@@ -3,12 +3,16 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
+
+/** Target type to its GDK methods, for example `java.util.List` to `each`, `collect` and the rest. */
+private typealias GdkIndex = Map<String, List<QualifiedGdkMethod>>
 
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
@@ -17,8 +21,8 @@ import java.lang.reflect.Modifier
  * Now uses GroovySourceResolver to extract real parameter names from Groovy source JARs
  * instead of relying on reflection which provides synthetic names like "arg0", "arg1".
  *
- * The index is built whole, once, before any lookup reads it: a lookup that arrives during the build waits for it
- * instead of reading the part built so far.
+ * Each index is built whole before any lookup reads it, and is rebuilt when the classpath changes: a lookup sees
+ * a complete index, the previous one or the new one, and waits if the one it reads is still being built.
  */
 class GroovyGdkProvider(
     private val classpathService: ClasspathService,
@@ -26,30 +30,43 @@ class GroovyGdkProvider(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Map of <TargetType, List<ExtensionMethod>>
-    // e.g. "java.util.List" -> [each, collect, ...]
-    private val builtIndex = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { buildIndex() }
+    // The index for the current classpath; a classpath change installs a fresh one
+    private val current = SharedValue(newIndex())
 
     /**
-     * Builds the GDK index if no call has built it yet, and returns once it is complete. Lookups build it on first
-     * use too, so this only moves the build off the request path. The GDK classes load from the server's own Groovy
-     * runtime whatever the workspace classpath is, so the index is never rebuilt and later calls return at once.
+     * Builds the GDK index for the current classpath if no call has built it yet, and returns once it is complete.
+     * Lookups build it on first use too, so this only moves the build off the request path.
      */
     fun initialize() {
         index()
     }
 
-    /** The complete index. Built by the first caller; callers that arrive during the build wait for it. */
-    private fun index(): Map<String, List<QualifiedGdkMethod>> = builtIndex.value
+    /**
+     * Replaces the GDK index with one built from the current classpath, and returns once it is complete. Call it after
+     * every [ClasspathService.updateClasspath]. Loading is parent-first, so most GDK classes come from the server's
+     * own Groovy, but one the server's Groovy lacks comes from the workspace: `DateGroovyMethods` is in Groovy 3 and
+     * not in Groovy 4. A lookup that starts before the swap finishes on the previous index; one that starts after it
+     * waits for the new one.
+     */
+    fun onClasspathChanged() {
+        current.set(newIndex())
+        index()
+    }
+
+    /** The current complete index. Built by its first caller; callers that arrive during the build wait for it. */
+    private fun index(): GdkIndex = current.value.value
+
+    private fun newIndex(): Lazy<GdkIndex> = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { buildIndex() }
 
     /**
-     * Indexes every class in [GDK_CLASSES] into a map nothing else can see until it is complete. A source resolver,
-     * when given, is initialized first, inside the build, so lookups wait for that too; production passes none.
+     * Indexes every class in [GDK_CLASSES] into a map nothing else can see until it is complete. A class that fails
+     * to link is left out instead of failing the build. A source resolver, when given, is initialized inside every
+     * build. Production passes none; if one is ever wired, lookups wait for its source download (#2398).
      */
-    private fun buildIndex(): Map<String, List<QualifiedGdkMethod>> {
+    private fun buildIndex(): GdkIndex {
         // Initialize source resolver if available
-        // Note: runBlocking is intentional here - GDK initialization is a one-time
-        // startup cost that must complete before the provider is usable.
+        // Note: runBlocking is intentional here - the index must be complete
+        // before the provider is usable.
         // Moving to async would require significant refactoring of callers.
         groovySourceResolver?.let { resolver ->
             runBlocking {
@@ -62,9 +79,9 @@ class GroovyGdkProvider(
             }
         }
 
+        val methodsByType = mutableMapOf<String, MutableList<QualifiedGdkMethod>>()
         // Use the same GDK classes as GroovySourceResolver for consistency
         // This ensures parameter names from sources match the methods we index
-        val methodsByType = mutableMapOf<String, MutableList<QualifiedGdkMethod>>()
         GDK_CLASSES.forEach { className ->
             indexGdkClass(className, methodsByType)
         }

@@ -9,17 +9,23 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.io.TempDir
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import java.lang.management.ManagementFactory
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 /** Only a failing run waits this long; a passing one never reaches it. */
 private const val SAFETY_NET_SECONDS = 30L
+
+/** Bounds each wait inside a test, below [SAFETY_NET_SECONDS] so that a stuck wait says what it waited for. */
+private const val WAIT_SECONDS = 10L
 
 /** Indexed after `DefaultGroovyMethods`; it holds the String extensions such as `takeAfter`. */
 private const val HELD = "org.codehaus.groovy.runtime.StringGroovyMethods"
@@ -31,10 +37,12 @@ private const val ENCODING_GDK = "org.codehaus.groovy.runtime.EncodingGroovyMeth
 /** A GDK-shaped class whose one method takes a type that exists nowhere, so reflecting on it fails to link. */
 private const val UNLINKABLE = "gvy.test.UnlinkableGdkMethods"
 private const val STRING = "java.lang.String"
+private const val DATE = "java.util.Date"
+private const val WORKSPACE_ONLY = "workspaceOnly"
 
 /**
- * The GDK index is built whole, once, before any lookup reads it. The build is held open with a latch where it
- * loads [HELD], so a lookup that read the part built so far would miss the String extensions.
+ * Each GDK index is built whole before any lookup reads it, once per classpath. Where a build is held open, a latch
+ * holds it where it loads [HELD], so a lookup that read the part built so far would miss the String extensions.
  */
 @Timeout(SAFETY_NET_SECONDS)
 class GroovyGdkProviderIndexBuildTest {
@@ -47,7 +55,7 @@ class GroovyGdkProviderIndexBuildTest {
             if (className in GDK_CLASSES) gdkLoads.merge(className, 1, Int::plus)
             if (className == HELD) {
                 holding.countDown()
-                check(release.await(SAFETY_NET_SECONDS, TimeUnit.SECONDS)) { "the index build was never released" }
+                check(release.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "the index build was never released" }
             }
             return delegate.loadClass(className)
         }
@@ -64,30 +72,59 @@ class GroovyGdkProviderIndexBuildTest {
         assertThat(complete.map { it.name }).describedAs("String extensions from $HELD").contains("takeAfter")
         val provider = GroovyGdkProvider(ClasspathService(reflectionProvider = reflection))
 
-        val builder = thread(name = "gdk-index-builder") { provider.initialize() }
-        assertThat(holding.await(SAFETY_NET_SECONDS, TimeUnit.SECONDS)).describedAs("the build reached $HELD").isTrue()
-        val seen = AtomicReference<List<GdkExtensionMethod>>()
-        val reader = thread(name = "gdk-index-reader") { seen.set(provider.getMethodsForType(STRING)) }
+        val build = FutureTask<Unit> { provider.initialize() }
+        val builder = thread(name = "gdk-index-builder", block = build::run)
+        assertThat(holding.await(WAIT_SECONDS, TimeUnit.SECONDS)).describedAs("the build reached $HELD").isTrue()
+        val read = FutureTask<List<GdkExtensionMethod>> { provider.getMethodsForType(STRING) }
+        val reader = thread(name = "gdk-index-reader", block = read::run)
         awaitReturnedOrBlockedBy(reader, builder)
         release.countDown()
-        reader.join()
-        builder.join()
 
-        assertThat(seen.get()).containsExactlyInAnyOrderElementsOf(complete)
+        // get() rethrows, as an ExecutionException, whatever either thread threw
+        assertThat(read.get(WAIT_SECONDS, TimeUnit.SECONDS)).containsExactlyInAnyOrderElementsOf(complete)
+        build.get(WAIT_SECONDS, TimeUnit.SECONDS)
     }
 
     @Test
-    fun `the index is built once however many warm-ups and lookups run`() {
+    fun `the index is built once per classpath however many warm-ups and lookups run`() {
         release.countDown()
-        val provider = GroovyGdkProvider(ClasspathService(reflectionProvider = reflection))
-
-        repeat(2) {
-            provider.initialize()
-            provider.getMethodsForType(STRING)
-            provider.getQualifiedMethodsForTypes(listOf(STRING, "java.util.List"))
+        val classpath = ClasspathService(reflectionProvider = reflection)
+        val provider = GroovyGdkProvider(classpath)
+        fun warmUpAndLookUpTwice() {
+            repeat(2) {
+                provider.initialize()
+                provider.getMethodsForType(STRING)
+                provider.getQualifiedMethodsForTypes(listOf(STRING, "java.util.List"))
+            }
         }
 
-        assertThat(gdkLoads).isEqualTo(GDK_CLASSES.associateWith { 1 })
+        warmUpAndLookUpTwice()
+        assertThat(gdkLoads).describedAs("one build for the first classpath").isEqualTo(GDK_CLASSES.associateWith { 1 })
+
+        classpath.updateClasspath(emptyList())
+        provider.onClasspathChanged()
+        warmUpAndLookUpTwice()
+        assertThat(gdkLoads).describedAs("one rebuild for the change").isEqualTo(GDK_CLASSES.associateWith { 2 })
+    }
+
+    @Test
+    fun `a classpath change rebuilds the index from the new classpath`(@TempDir workspace: Path) {
+        val classpath = ClasspathService()
+        val provider = GroovyGdkProvider(classpath)
+        // A lookup before dependency resolution builds the index from the server's own Groovy, which lacks it
+        assertThat(provider.getMethodsForType(DATE).map { it.originClass }).doesNotContain("DateGroovyMethods")
+
+        val classFile = workspace.resolve(DATE_GDK.replace('.', '/') + ".class")
+        Files.createDirectories(classFile.parent)
+        Files.write(classFile, gdkClassBytes(DATE_GDK, WORKSPACE_ONLY, "(Ljava/util/Date;)V"))
+        classpath.updateClasspath(listOf(workspace))
+        provider.onClasspathChanged()
+
+        val fromWorkspace = provider.getMethodsForType(DATE).filter { it.originClass == "DateGroovyMethods" }
+        assertThat(fromWorkspace.map { it.name })
+            .describedAs("$DATE_GDK from the workspace")
+            .containsExactly(WORKSPACE_ONLY)
+        classpath.close()
     }
 
     @Test
@@ -118,13 +155,19 @@ class GroovyGdkProviderIndexBuildTest {
 
     /**
      * Waits until [reader] has returned or is blocked on a monitor [builder] holds: while the build is held, those are
-     * the only places it can stop. It waits on thread state, so no sleep or timeout decides the outcome. It reads
-     * `Thread.id` because `Thread.threadId()` is JDK 19+ and these tests also run on 17.
+     * the only places it can stop. It waits on thread state, so no sleep decides the outcome; the deadline and the
+     * interrupt check only end a wait that would otherwise never finish, as a reader parked on a latch would. It
+     * reads `Thread.id` because `Thread.threadId()` is JDK 19+ and these tests also run on 17.
      */
     @Suppress("DEPRECATION")
     private fun awaitReturnedOrBlockedBy(reader: Thread, builder: Thread) {
         val threads = ManagementFactory.getThreadMXBean()
-        while (reader.isAlive && threads.getThreadInfo(reader.id)?.lockOwnerId != builder.id) Thread.onSpinWait()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS)
+        while (reader.isAlive && threads.getThreadInfo(reader.id)?.lockOwnerId != builder.id) {
+            if (Thread.interrupted()) throw InterruptedException("interrupted while waiting for ${reader.name}")
+            check(System.nanoTime() < deadline) { "${reader.name} neither returned nor blocked on ${builder.name}" }
+            Thread.onSpinWait()
+        }
     }
 
     /** Defines [name] from [bytes] and loads every other class through the test's own loader. */
