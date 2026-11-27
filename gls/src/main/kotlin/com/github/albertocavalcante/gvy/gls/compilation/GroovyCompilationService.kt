@@ -265,18 +265,23 @@ class GroovyCompilationService internal constructor(
 
     fun getGroovyVersionInfo(): GroovyVersionInfo? = engineManager.getGroovyVersionInfo()
 
+    /**
+     * Selects [worker] for parsing and clears the compiled caches when that changed the selection. It runs on the
+     * listener thread (didChangeConfiguration) and on Default (the dependency callback). The worker and its session
+     * are one value in [workerSessionManager], so racing calls cannot leave [getSelectedWorker] and the parsing
+     * session apart, and every call that changed the selection clears after its own change, so the caches are
+     * cleared after the last one.
+     */
     fun updateSelectedWorker(worker: WorkerDescriptor?): Boolean {
-        val changed = engineManager.getSelectedWorker() != worker
+        val changed = workerSessionManager.select(worker)
         if (changed) {
-            engineManager.updateSelectedWorker(worker)
-            workerSessionManager.select(worker)
             clearCaches()
             logger.info { "Worker changed to ${worker?.id}; cleared compilation caches" }
         }
         return changed
     }
 
-    fun getSelectedWorker(): WorkerDescriptor? = engineManager.getSelectedWorker()
+    fun getSelectedWorker(): WorkerDescriptor? = workerSessionManager.selectedWorker
 
     fun invalidateClassLoader() = engineManager.invalidateClassLoader()
 

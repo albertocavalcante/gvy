@@ -13,7 +13,6 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.verification.HoverEngineObservation
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
-import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URLClassLoader
 
@@ -41,7 +40,6 @@ class LanguageEngineManager(
     private var engineConfig: EngineConfiguration = options.engineConfig
 
     private val groovyVersionInfo = SharedValue<GroovyVersionInfo?>(null)
-    private val selectedWorker = SharedValue<WorkerDescriptor?>(null)
 
     private var activeEngineInstance: LanguageEngine? = null
     private val activeEngineLock = Any()
@@ -96,12 +94,6 @@ class LanguageEngineManager(
     }
 
     fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.value
-
-    fun updateSelectedWorker(worker: WorkerDescriptor?) {
-        selectedWorker.set(worker)
-    }
-
-    fun getSelectedWorker(): WorkerDescriptor? = selectedWorker.value
 
     fun getOrCreateClassLoader(): ClassLoader {
         synchronized(classLoaderLock) {

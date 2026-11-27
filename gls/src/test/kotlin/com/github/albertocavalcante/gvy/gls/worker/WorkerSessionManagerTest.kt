@@ -10,7 +10,11 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class WorkerSessionManagerTest {
 
@@ -51,6 +55,18 @@ class WorkerSessionManagerTest {
 
         assertSame(defaultResult, result)
         assertSame(request, defaultSession.lastRequest)
+    }
+
+    @Test
+    fun `select reports a change only when the selected worker differs`() {
+        val manager = WorkerSessionManager(StubSession(mockk()), sessionFactory = { StubSession(mockk()) })
+
+        assertTrue(manager.select(descriptor("worker")))
+        assertFalse(manager.select(descriptor("worker")))
+        assertEquals(descriptor("worker"), manager.selectedWorker)
+        assertTrue(manager.select(null))
+        assertNull(manager.selectedWorker)
+        assertFalse(manager.select(null))
     }
 
     private class StubSession(private val result: ParseResult) : WorkerSession {
