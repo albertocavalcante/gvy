@@ -73,46 +73,49 @@ class GroovyGdkProvider(
         return methodsByType
     }
 
+    /** Adds the GDK methods of [className] to [into]. A class that fails to link adds nothing. */
     private fun indexGdkClass(className: String, into: MutableMap<String, MutableList<QualifiedGdkMethod>>) {
-        val clazz = classpathService.loadClass(className) ?: return
+        reflectSafely({ "GDK class $className" }, Unit) {
+            val clazz = classpathService.loadClass(className) ?: return@reflectSafely
 
-        // GDK methods are always public static
-        val methods = clazz.methods.filter {
-            Modifier.isPublic(it.modifiers) && Modifier.isStatic(it.modifiers) && it.parameterCount > 0
-        }
+            // GDK methods are always public static
+            val methods = clazz.methods.filter {
+                Modifier.isPublic(it.modifiers) && Modifier.isStatic(it.modifiers) && it.parameterCount > 0
+            }
 
-        methods.forEach { method ->
-            // The first parameter is the "self" type (the type being extended)
-            val selfType = method.parameterTypes[0].name // Full qualified name
+            val found = methods.map { method ->
+                // The first parameter is the "self" type (the type being extended)
+                val selfType = method.parameterTypes[0].name // Full qualified name
 
-            // Parameters excluding the first one (self)
-            val parameterTypes = method.parameterTypes.drop(1).map { it.simpleName }
+                // Parameters excluding the first one (self)
+                val parameterTypes = method.parameterTypes.drop(1).map { it.simpleName }
 
-            // Try to get real parameter names from source resolver first
-            val parameterNames = groovySourceResolver?.getParameterNames(
-                clazz.simpleName,
-                method.name,
-                parameterTypes,
-            ) ?: method.parameters.drop(1).map { it.name } // Fallback to reflection
+                // Try to get real parameter names from source resolver first
+                val parameterNames = groovySourceResolver?.getParameterNames(
+                    clazz.simpleName,
+                    method.name,
+                    parameterTypes,
+                ) ?: method.parameters.drop(1).map { it.name } // Fallback to reflection
 
-            val methodInfo = GdkExtensionMethod(
-                name = method.name,
-                returnType = method.returnType.simpleName,
-                parameterTypes = parameterTypes,
-                parameterNames = parameterNames,
-                originClass = clazz.simpleName,
-                doc = "Groovy GDK method from ${clazz.simpleName}",
-                displayParameterTypes = method.displayParameterTypes().drop(1),
-            )
+                val methodInfo = GdkExtensionMethod(
+                    name = method.name,
+                    returnType = method.returnType.simpleName,
+                    parameterTypes = parameterTypes,
+                    parameterNames = parameterNames,
+                    originClass = clazz.simpleName,
+                    doc = "Groovy GDK method from ${clazz.simpleName}",
+                    displayParameterTypes = method.displayParameterTypes().drop(1),
+                )
 
-            val qualified = QualifiedGdkMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName })
-            into.getOrPut(selfType) { mutableListOf() }.add(qualified)
-
-            // Also index by simple name for looser matching if needed, or interfaces
-            // e.g. List -> Collection -> Iterable
-            // For now, we just index the exact type.
-            // Enhancing this to walk the hierarchy (e.g. if I have an ArrayList, show Collection extensions)
-            // will be done in the lookup phase.
+                // Also index by simple name for looser matching if needed, or interfaces
+                // e.g. List -> Collection -> Iterable
+                // For now, we just index the exact type.
+                // Enhancing this to walk the hierarchy (e.g. if I have an ArrayList, show Collection extensions)
+                // will be done in the lookup phase.
+                selfType to QualifiedGdkMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName })
+            }
+            // Added only once the whole class has been read, so a class that fails partway adds nothing
+            found.forEach { (selfType, method) -> into.getOrPut(selfType) { mutableListOf() }.add(method) }
         }
     }
 
