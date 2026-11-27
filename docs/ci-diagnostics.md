@@ -278,7 +278,9 @@ first-party key enters the ledger and an edit above a warning cannot turn an acc
 generated or third-party sources can have exceptions, and their lines move only when the generator or dependency
 changes, which requires fresh review anyway. Without the line, two identical messages in one file, such as two duplicate
 `when` branches, would share one key, so a third would be accepted silently. Cached compile tasks print no warnings; an
-exception stays valid while its task is cached, like any other absent exception.
+exception stays valid while its task is cached, like any other absent exception. When a recompile in an unrelated change
+first surfaces a warning that predates this gate, it is existing debt, not that change's regression: fix it in code, or
+add an exact exception if it is in generated or third-party sources.
 
 Five exact generated SCIP compiler warnings also remain tracked in
 [#1599](https://github.com/albertocavalcante/gvy/issues/1599). Gradle uses Wire 5.5.1, while Bazel's generator uses

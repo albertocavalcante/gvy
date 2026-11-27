@@ -824,6 +824,9 @@ test('compiler warning identities do not depend on the checkout path, host or co
   const variants = [
     ['Linux checkout', compilerLog.replaceAll(compilerRoot, '/home/runner/work/gvy/gvy'), '/home/runner/work/gvy/gvy'],
     ['Windows checkout', compilerLog.replaceAll(`file://${compilerRoot}`, 'file:///D:/a/gvy/gvy'), 'D:\\a\\gvy\\gvy'],
+    ['lower-case drive in the log', compilerLog.replaceAll(`file://${compilerRoot}`, 'file:///d:/a/gvy/gvy'), 'D:\\a\\gvy\\gvy'],
+    ['lower-case drive in the checkout', compilerLog.replaceAll(`file://${compilerRoot}`, 'file:///D:/a/gvy/gvy'), 'd:\\a\\gvy\\gvy'],
+    ['lower-case drive in a plain path', compilerLog.replaceAll(`file://${compilerRoot}/`, 'd:/a/gvy/gvy/'), 'D:\\a\\gvy\\gvy'],
     ['daemon or plain runner', compilerLog.replaceAll('[KOTLIN] w: ', 'w: '), compilerRoot],
     ['plain absolute path', compilerLog.replaceAll(`file://${compilerRoot}/`, `${compilerRoot}/`), compilerRoot],
   ];

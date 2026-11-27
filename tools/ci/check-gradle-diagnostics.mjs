@@ -134,7 +134,10 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
   };
   const root = rootDir.replaceAll('\\', '/').replace(/\/$/, '');
   // A file URI adds a slash before a drive-letter root (file:///D:/...) but not before a POSIX one (file:///Users/...).
-  const rootUri = new RegExp(`file:///?${regExpLiteral(root)}/`, 'g');
+  // Windows drive letters are case-insensitive, and tools differ in which case they print.
+  const rootPattern = regExpLiteral(root).replace(/^([A-Za-z]):/, (_, drive) => `[${drive.toUpperCase()}${drive.toLowerCase()}]:`);
+  const rootUri = new RegExp(`file:///?${rootPattern}/`, 'g');
+  const rootPath = new RegExp(`${rootPattern}/`, 'g');
   for (const logged of plain(log).split('\n')) {
     const raw = logged.replace(kotlinRunnerPrefix, '');
     const header = raw.match(/^> (Configure project|Task) (:\S*)/);
@@ -198,7 +201,7 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     if (!compiler && !warning) continue;
     const normalized = line.replaceAll('\\', '/')
       .replace(rootUri, '')
-      .replaceAll(`${root}/`, '')
+      .replace(rootPath, '')
       .replace(/\s+/g, ' ');
     flush();
     pending = { context, message: normalized };
