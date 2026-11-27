@@ -24,6 +24,6 @@ class RegexInFunctionBodyTest {
     fun `message names the construction and the fix`() {
         val findings = rule.lint("fun f() = Regex(\"a+\")")
         assertThat(findings).hasSize(1)
-        assertThat(findings.single().message).contains("Regex").contains("hoist")
+        assertThat(findings.single().message).startsWith("`Regex(...)` compiles ").contains("Hoist it")
     }
 }

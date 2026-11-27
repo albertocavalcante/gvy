@@ -52,6 +52,6 @@ class JdkAtomicsTest {
         val findings = rule.lint(source)
         assertThat(findings.map { it.entity.location.source.line }).containsExactly(1)
         val message = findings.single().message
-        assertThat(message).startsWith("`java.util.concurrent.atomic.AtomicReference`: use ")
+        assertThat(message).startsWith("`java.util.concurrent.atomic.AtomicReference` bypasses ")
     }
 }

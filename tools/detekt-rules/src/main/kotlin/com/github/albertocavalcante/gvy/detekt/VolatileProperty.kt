@@ -35,9 +35,8 @@ import org.jetbrains.kotlin.psi.KtUserType
 internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
     override val issue = Issue(
         id = "VolatileProperty",
-        severity = Severity.Warning,
-        description = "A @Volatile field allows racy compound updates. Use OnceFlag, SharedValue or Counter from " +
-            ":common:concurrent, `lazy`, or a lock (#2474).",
+        severity = Severity.Defect,
+        description = "Reports @Volatile fields and typealiases: compound updates of a volatile field race (#2474).",
         debt = Debt.TWENTY_MINS,
     )
 
@@ -56,8 +55,9 @@ internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
                 CodeSmell(
                     issue,
                     Entity.from(annotationEntry),
-                    "`@$name` allows racy compound updates such as `x++` and check-then-act. Use OnceFlag, " +
-                        "SharedValue or Counter from :common:concurrent, `lazy`, or a lock (#2474).",
+                    "`@$name` makes single reads and writes visible to other threads, but `x++` and check-then-act " +
+                        "still race. Use OnceFlag, SharedValue or Counter from :common:concurrent, `lazy`, or a lock " +
+                        "(#2474).",
                 ),
             )
         }

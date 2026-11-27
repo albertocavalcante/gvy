@@ -81,8 +81,7 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
     override val issue = Issue(
         id = "RegexInFunctionBody",
         severity = Severity.Performance,
-        description = "A constant regex is compiled on every call. Hoist it into a file-scope, object or " +
-            "companion property (or behind `by lazy`), or use a plain string search.",
+        description = "Reports a regex with a constant pattern compiled in code that runs repeatedly (#2420).",
         debt = Debt.FIVE_MINS,
     )
 
@@ -101,8 +100,9 @@ internal class RegexInFunctionBody(config: Config = Config.empty) : Rule(config)
                 CodeSmell(
                     issue,
                     Entity.from(expression),
-                    "`${construction.description}` compiles a constant regex on every call: hoist it into a " +
-                        "file-scope, object or companion property (or `by lazy`), or use a plain string search.",
+                    "`${construction.description}` compiles a constant pattern on every call. Hoist it into a " +
+                        "file-scope, object or companion property (or `by lazy`), or use a plain string search " +
+                        "(#2420).",
                 ),
             )
         }

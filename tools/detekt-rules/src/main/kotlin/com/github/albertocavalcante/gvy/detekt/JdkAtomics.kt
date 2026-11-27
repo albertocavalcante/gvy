@@ -34,8 +34,7 @@ internal class JdkAtomics(config: Config = Config.empty) : Rule(config) {
     override val issue = Issue(
         id = "JdkAtomics",
         severity = Severity.Maintainability,
-        description = "Shared state uses java.util.concurrent.atomic directly. Use OnceFlag, SharedValue or Counter " +
-            "from :common:concurrent (#2474).",
+        description = "Reports java.util.concurrent.atomic: gvy keeps it behind :common:concurrent (#2474).",
         debt = Debt.TEN_MINS,
     )
 
@@ -66,8 +65,8 @@ internal class JdkAtomics(config: Config = Config.empty) : Rule(config) {
             CodeSmell(
                 issue,
                 Entity.from(element),
-                "`$name`: use OnceFlag, SharedValue or Counter from :common:concurrent instead of the JDK atomics, " +
-                    "or a plain field for state one thread owns (#2474).",
+                "`$name` bypasses gvy's shared-state types. Use OnceFlag, SharedValue or Counter from " +
+                    ":common:concurrent, or a plain field for state one thread owns (#2474).",
             ),
         )
     }

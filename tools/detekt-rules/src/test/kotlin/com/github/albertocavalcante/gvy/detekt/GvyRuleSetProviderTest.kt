@@ -40,6 +40,15 @@ class GvyRuleSetProviderTest {
     }
 
     @Test
+    fun `every rule follows the shared message and description conventions`() {
+        for (rule in rulesFrom("config/config.yml")) {
+            val message = rule.lint(snippets.getValue(rule.ruleId)).single().message
+            assertThat(message).describedAs(rule.ruleId).matches("`[^`]+` .+\\. .+ \\(#\\d+\\)\\.")
+            assertThat(rule.issue.description).describedAs(rule.ruleId).startsWith("Reports ").endsWith(").")
+        }
+    }
+
+    @Test
     fun `a yaml config can switch every rule off`() {
         val rules = rulesFrom("inactive-config.yml")
         assertThat(rules.map { it.ruleId }).containsExactlyElementsOf(snippets.keys)
