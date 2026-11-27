@@ -9,16 +9,17 @@ The following groups describe the components in the current checkout.
 
 ## Language server and analysis
 
-| Path                                                | Responsibility                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------------- |
-| [gls/](../gls/)                                     | Kotlin/JVM language server and command-line entry point              |
-| [parser/](../parser/)                               | Parser interfaces and native, core, and OpenRewrite implementations  |
-| [semantics/](../semantics/)                         | Semantic analysis and type inference ([design](semantics/design.md)) |
-| [diagnostics/](../diagnostics/)                     | Compiler and CodeNarc diagnostics, with SARIF output support         |
-| [fmt/](../fmt/)                                     | Groovy formatting using OpenRewrite                                  |
-| [indexer/](../indexer/)                             | Symbol indexing and SCIP/LSIF integrations                           |
-| [source/](../source/)                               | Language-neutral UTF-16 line indexing                                |
-| [common/](../common/) and [markdown/](../markdown/) | Shared utilities, thread-safe state and Markdown rendering           |
+| Path                                                | Responsibility                                                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [gls/](../gls/)                                     | Kotlin/JVM language server and command-line entry point                                                           |
+| [parser/](../parser/)                               | Parser interfaces and native, core, and OpenRewrite implementations                                               |
+| [semantics/](../semantics/)                         | Semantic analysis and type inference ([design](semantics/design.md))                                              |
+| [diagnostics/](../diagnostics/)                     | Compiler and CodeNarc diagnostics, with SARIF output support                                                      |
+| [fmt/](../fmt/)                                     | Groovy formatting using OpenRewrite                                                                               |
+| [indexer/](../indexer/)                             | Symbol indexing and SCIP/LSIF integrations                                                                        |
+| [source/](../source/)                               | Language-neutral UTF-16 line indexing                                                                             |
+| [jvm-metadata/](../jvm-metadata/)                   | Facts file format for JVM artifacts (experimental, [#2516](https://github.com/albertocavalcante/gvy/issues/2516)) |
+| [common/](../common/) and [markdown/](../markdown/) | Shared utilities, thread-safe state and Markdown rendering                                                        |
 
 ## Frameworks and build integration
 

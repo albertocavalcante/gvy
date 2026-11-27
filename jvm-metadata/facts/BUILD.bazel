@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "facts",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+)
+
+kt_test(
+    name = "facts_test",
+    timeout = "short",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":facts"],
+    test_packages = ["com.github.albertocavalcante.gvy.jvm.facts"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_test"],
+)
