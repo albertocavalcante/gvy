@@ -51,7 +51,9 @@ const regexMigration = [
 // The rules whose findings no tracked detekt baseline may hold.
 const unbaselined = ['VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'RegexInFunctionBody'];
 // The suppression IDs that silence a gvy concurrency rule as detekt reads them: the rule ID, alone or after the rule
-// set's ID, the rule set's ID itself, or all rules. Case is ignored, which covers detekt's `ALL` and `All`.
+// set's ID, the rule set's ID itself, or all rules. Case is ignored, which covers detekt's `ALL` and `All`. The rule
+// IDs are written out: none of these rules has an alias today, and a rule that gains one (an `aliases` override in its
+// class) or a new concurrency rule must be added here, or its suppression goes unseen.
 const concurrencySuppression = /^(?:all|gvy|(?:gvy[.:])?(?:VolatileProperty|JdkAtomics|StdlibAtomics))$/i;
 // Every sanctioned suppression of that kind in tracked Kotlin, one entry per site, as { path, id, reason }. The
 // accepted reasons are a field that an Atomic*FieldUpdater updates and a measured hot path
@@ -358,9 +360,8 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
     assert.ok(reason?.trim(), `the sanctioned @Suppress("${id}") in ${path} must give its reason`);
   }
   // Every source set, tests included: VolatileProperty and StdlibAtomics lint tests too. The rule module's own tests
-  // are left out, since they feed such annotations to the rules.
-  const scanned = path =>
-    path.endsWith('.kt') && sourceSet(path) && !inResources(path) && !path.startsWith('tools/detekt-rules/src/test/');
+  // are read as well: the suppressions they feed the rules sit inside string literals, which do not count.
+  const scanned = path => /\.kts?$/.test(path) && sourceSet(path) && !inResources(path);
   const sites = tracked()
     .filter(scanned)
     .flatMap(path => suppressions(read(path)).map(site => ({ path, ...site })))
