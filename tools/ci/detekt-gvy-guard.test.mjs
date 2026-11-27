@@ -23,15 +23,14 @@
 // such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  detektOverrides, gitFiles, gvyRuleConfig, gvyRuleSetKeys, missingRule, moduleDetektSource, publishes, ruleExcludes,
-  sourceSet, suppressions, unmatched,
+  detektOverrides, git, gitEnv, gitFiles, gvyRuleConfig, gvyRuleSetKeys, missingRule, moduleDetektSource, publishes,
+  ruleExcludes, sourceSet, suppressions, unmatched,
 } from './detekt-gvy-guard.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -260,19 +259,36 @@ test('the baseline listing ignores git variables that point at another index or 
   const expected = trackedBaselines();
   const scratch = mkdtempSync(join(tmpdir(), 'gvy-detekt-guard-'));
   try {
-    execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', scratch]);
+    git(['-c', 'init.defaultBranch=main', 'init', '-q', scratch]);
     // Either one makes `git ls-files` list nothing, which would let the baseline check pass without reading a file.
     const elsewhere = { GIT_INDEX_FILE: join(scratch, 'missing-index'), GIT_DIR: join(scratch, '.git') };
     for (const [name, value] of Object.entries(elsewhere)) {
-      const saved = process.env[name];
-      process.env[name] = value;
-      try {
-        assert.deepEqual(trackedBaselines(gitFiles(root)), expected, `${name} must not change the baselines read`);
-      } finally {
-        if (saved === undefined) delete process.env[name];
-        else process.env[name] = saved;
-      }
+      const files = gitFiles(root, { ...process.env, [name]: value });
+      assert.deepEqual(trackedBaselines(files), expected, `${name} must not change the baselines read`);
     }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test('git runs without the variables that point it elsewhere, so an exported GIT_DIR cannot be rewritten', () => {
+  const kept = { HOME: '/home/a', GIT_CONFIG_GLOBAL: '/a/.gitconfig' };
+  const elsewhere = { GIT_DIR: 'a', GIT_WORK_TREE: 'b', GIT_INDEX_FILE: 'c', GIT_COMMON_DIR: 'd' };
+  assert.deepEqual(gitEnv({ ...kept, ...elsewhere }), kept);
+  // A hook run in a linked worktree exports GIT_DIR=<repository>/.git/worktrees/<name>. A scratch `git init` that
+  // inherited it reinitialised that repository and set its shared core.bare to true.
+  const scratch = mkdtempSync(join(tmpdir(), 'gvy-detekt-guard-'));
+  const repository = join(scratch, 'repository');
+  const isolated = ['-c', 'init.defaultBranch=main', '-c', `core.hooksPath=${join(scratch, 'no-hooks')}`];
+  const identity = ['-c', 'user.name=guard', '-c', 'user.email=guard@example.invalid', '-c', 'commit.gpgsign=false'];
+  try {
+    git([...isolated, 'init', '-q', repository]);
+    git([...isolated, ...identity, 'commit', '-q', '--allow-empty', '-m', 'empty'], { cwd: repository });
+    git([...isolated, 'worktree', 'add', '-q', join(scratch, 'linked')], { cwd: repository });
+    const exported = { ...process.env, GIT_DIR: join(repository, '.git', 'worktrees', 'linked') };
+    git([...isolated, 'init', '-q', join(scratch, 'fresh')], { env: exported });
+    assert.equal(git(['config', 'core.bare'], { cwd: repository }).trim(), 'false');
+    git(['status', '--porcelain'], { cwd: repository });
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

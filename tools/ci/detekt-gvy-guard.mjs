@@ -81,17 +81,26 @@ export function gvyRuleSetKeys(config) {
 /** The source set of [path], such as `main`, `test` or `commonTest`, when it lies under a `src/<set>/` folder. */
 export const sourceSet = path => path.match(/(?:^|\/)src\/([^/]+)\//)?.[1];
 
+// The variables that point git at another repository, index or work tree. A hook or `git rebase -x` exports GIT_DIR,
+// which in a linked worktree is `<repository>/.git/worktrees/<name>`, and a `git init` that inherits it rewrites the
+// shared config of that repository.
+const repositoryVariables = new Set(['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']);
+
+/** [env] without the variables that point git at another repository, index or work tree. */
+export const gitEnv = (env = process.env) =>
+  Object.fromEntries(Object.entries(env).filter(([name]) => !repositoryVariables.has(name.toUpperCase())));
+
+/** The output of git [args], run in [cwd] with [env] scrubbed by [gitEnv]. Every git call of the guard goes here. */
+export const git = (args, { cwd, env = process.env } = {}) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', env: gitEnv(env), maxBuffer: 1 << 26 });
+
 /**
- * Every tracked file of the checkout at [root]. git runs without the variables that point it at another repository,
- * index or work tree, and the listing must hold the guard's own input, so a listing of nothing cannot pass a check
- * vacuously. Callers filter it in code, not by pathspec: GIT_GLOB_PATHSPECS or GIT_LITERAL_PATHSPECS would make a
- * pathspec match nothing.
+ * Every tracked file of the checkout at [root], listed with [env] scrubbed. The listing must hold the guard's own
+ * input, so a listing of another index, or of nothing, cannot pass a check vacuously. Callers filter it in code, not
+ * by pathspec: GIT_GLOB_PATHSPECS or GIT_LITERAL_PATHSPECS would make a pathspec match nothing.
  */
-export function gitFiles(root) {
-  const env = { ...process.env };
-  for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete env[name];
-  const listing = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', env, maxBuffer: 1 << 26 });
-  const files = listing.split('\0').filter(Boolean);
+export function gitFiles(root, env = process.env) {
+  const files = git(['ls-files', '-z'], { cwd: root, env }).split('\0').filter(Boolean);
   assert.ok(files.includes('tools/lint/detekt.yml'), `git ls-files in ${root} lists another index: no detekt.yml`);
   return files;
 }
