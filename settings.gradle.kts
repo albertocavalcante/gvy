@@ -50,6 +50,8 @@ include("common:concurrent")
 include("source")
 // Facts file format for JVM artifacts: model, writer and reader. Depends on the Kotlin stdlib and the JDK only.
 include("jvm-metadata:facts")
+// Reads class files into the facts model with ASM; the server does not depend on it yet.
+include("jvm-metadata:facts-builder")
 include("gls")
 include("launcher")
 include("indexer:core")

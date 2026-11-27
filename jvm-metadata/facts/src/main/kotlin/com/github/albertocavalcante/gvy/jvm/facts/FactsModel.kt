@@ -78,7 +78,8 @@ public enum class MemberKind(internal val code: Int) {
  *
  * [descriptor] is the JVM descriptor. [parameterNames] is null when the class file has no usable `MethodParameters`
  * attribute (missing, or with a count that differs from the descriptor's), which differs from an empty list. An empty
- * name means the attribute names no parameter at that position. [genericSignature] is null when absent or not
+ * name means the attribute names no parameter at that position. The builder stores an empty list for every method
+ * with no parameters, with or without the attribute. [genericSignature] is null when absent or not
  * recorded.
  * [accessFlags] follows the rules of [ClassFact.accessFlags]; [FactsFormat.DEPRECATED_FLAG] marks deprecation.
  */

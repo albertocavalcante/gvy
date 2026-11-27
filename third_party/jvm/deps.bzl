@@ -30,6 +30,9 @@ DEPENDENCIES = [
     # LSP4J - Language Server Protocol
     "org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0",
     "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
+
+    # ASM - class file reading for the facts builder
+    "org.ow2.asm:asm:9.9.1",
 ]
 
 # Global exclusions (artifacts to never include)

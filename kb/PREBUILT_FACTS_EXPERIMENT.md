@@ -172,3 +172,15 @@ facts mechanism for work the names lookup does not use. A string both groups use
 a class, now appears in each pool, which costs some size; Q1 measures that cost. The reader also bounds the objects it
 decodes, not only the bytes it inflates (one decoded-item budget per file). `jvm-metadata/facts/FORMAT.md` is the
 specification.
+
+## 2026-11-27 amendment: Buck2 builds the builder library
+
+Made while implementing slice 2, before any measurement run; no threshold, input or earlier text changes.
+
+The module placement table above says Buck2 builds `facts` only and that the builder is excluded because ASM is not
+pinned for Buck2. That is no longer the case. `//third_party/jvm` now pins ASM 9.9.1, the version of the Gradle catalog,
+and `jvm-metadata/facts-builder/BUCK` builds the builder library against it. Buck2 still does not run the builder's
+tests; those run under Gradle and Bazel. Bazel takes ASM from the existing `@maven` repository and does not pin a
+version of its own, so the builder requires an ASM that checks an attribute length against the class file, and a test in
+each build enforces that. The newest class-file version the builder reads depends on the ASM in use; the builder finds
+it by probing ASM.

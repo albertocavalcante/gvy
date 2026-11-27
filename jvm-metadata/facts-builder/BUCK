@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Buck2 builds the library only; its tests run under Gradle and Bazel.
+kotlin_library(
+    name = "facts-builder",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    deps = [
+        "//jvm-metadata/facts:facts",
+        "//third_party/jvm:asm",
+    ],
+    visibility = ["PUBLIC"],
+)
