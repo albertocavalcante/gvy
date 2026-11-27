@@ -176,16 +176,20 @@ class ClasspathServiceTest {
 
     @Test
     fun `should return deterministic class variants`() {
-        val index = ClasspathService.ClassIndex()
-        index.add("List", "java.util.List")
-        index.add("List", "java.awt.List")
-        index.add("List", "java.util.List")
-        index.add("Map", "java.util.Map")
+        val index = ClassNameIndex.of(
+            listOf(
+                IndexedClass("List", "java.util.List"),
+                IndexedClass("List", "java.awt.List"),
+                IndexedClass("List", "java.util.List"),
+                IndexedClass("Map", "java.util.Map"),
+            ),
+        )
 
-        val snapshot = index.snapshot()
-
-        assertThat(snapshot["List"]).containsExactly("java.awt.List", "java.util.List")
-        assertThat(snapshot["Map"]).containsExactly("java.util.Map")
+        assertThat(namesOf(index.findBySimpleNamePrefix("List", 50))).containsExactly(
+            "java.awt.List",
+            "java.util.List",
+        )
+        assertThat(namesOf(index.findBySimpleNamePrefix("Map", 50))).containsExactly("java.util.Map")
     }
 
     @Test
@@ -224,6 +228,14 @@ class ClasspathServiceTest {
         service.indexAllClasses()
 
         assertThat(fakeIndex.entries).containsExactly(first.toString(), second.toString())
+    }
+
+    @Test
+    fun `a failed class index build is retried by the next lookup`() {
+        val service = ClasspathService(FailingOnceClasspathIndex(listOf(IndexedClass("Fake", "com.example.Fake"))))
+
+        assertThat(service.findClassesByPrefix("Fake")).isEmpty()
+        assertThat(namesOf(service.findClassesByPrefix("Fake"))).containsExactly("com.example.Fake")
     }
 
     @Test
@@ -357,28 +369,21 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `ClassIndex snapshot returns sorted class variants for deterministic iteration`() {
-        val index = ClasspathService.ClassIndex()
-
-        // Add classes in random order
-        index.add("List", "java.util.List")
-        index.add("List", "org.example.List")
-        index.add("List", "java.awt.List")
-        index.add("List", "com.acme.List")
-        index.add("Map", "java.util.Map")
-        index.add("Map", "com.example.Map")
-
-        // Take multiple snapshots
-        val snapshot1 = index.snapshot()
-        val snapshot2 = index.snapshot()
-        val snapshot3 = index.snapshot()
-
-        // Verify all snapshots are identical
-        assertThat(snapshot1).isEqualTo(snapshot2)
-        assertThat(snapshot2).isEqualTo(snapshot3)
+    fun `ClassNameIndex sorts class variants for deterministic iteration`() {
+        // Classes in random order
+        val index = ClassNameIndex.of(
+            listOf(
+                IndexedClass("List", "java.util.List"),
+                IndexedClass("List", "org.example.List"),
+                IndexedClass("List", "java.awt.List"),
+                IndexedClass("List", "com.acme.List"),
+                IndexedClass("Map", "java.util.Map"),
+                IndexedClass("Map", "com.example.Map"),
+            ),
+        )
 
         // Verify List variants are sorted alphabetically
-        assertThat(snapshot1["List"]).containsExactly(
+        assertThat(namesOf(index.findBySimpleNamePrefix("List", 50))).containsExactly(
             "com.acme.List",
             "java.awt.List",
             "java.util.List",
@@ -386,12 +391,21 @@ class ClasspathServiceTest {
         )
 
         // Verify Map variants are sorted alphabetically
-        assertThat(snapshot1["Map"]).containsExactly(
+        assertThat(namesOf(index.findBySimpleNamePrefix("Map", 50))).containsExactly(
             "com.example.Map",
+            "java.util.Map",
+        )
+
+        // Verify qualified names are sorted alphabetically
+        assertThat(namesOf(index.findByQualifiedPrefix("java.", 50))).containsExactly(
+            "java.awt.List",
+            "java.util.List",
             "java.util.Map",
         )
     }
 }
+
+private fun namesOf(classes: List<ClassInfo>): List<String> = classes.map { it.fullName }
 
 private fun defaultIndex(): ClasspathIndex = FakeClasspathIndex(
     listOf(
@@ -405,6 +419,18 @@ private fun defaultIndex(): ClasspathIndex = FakeClasspathIndex(
 
 private class FakeClasspathIndex(private val entries: List<IndexedClass>) : ClasspathIndex {
     override fun index(classpathEntries: List<String>): List<IndexedClass> = entries
+}
+
+private class FailingOnceClasspathIndex(private val entries: List<IndexedClass>) : ClasspathIndex {
+    private var failed = false
+
+    override fun index(classpathEntries: List<String>): List<IndexedClass> {
+        if (!failed) {
+            failed = true
+            throw IllegalStateException("unreadable classpath entry")
+        }
+        return entries
+    }
 }
 
 private class RecordingClasspathIndex : ClasspathIndex {
