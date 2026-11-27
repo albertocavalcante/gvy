@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -127,7 +128,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `should index classes from classpath`() {
+    fun `should index classes from classpath`() = runBlocking<Unit> {
         classpathService.indexAllClasses()
 
         val results = classpathService.findClassesByPrefix("String")
@@ -135,7 +136,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `should find classes by prefix case-insensitive`() {
+    fun `should find classes by prefix case-insensitive`() = runBlocking<Unit> {
         classpathService.indexAllClasses()
 
         val results = classpathService.findClassesByPrefix("str")
@@ -145,7 +146,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `should return multiple class variants for same simple name`() {
+    fun `should return multiple class variants for same simple name`() = runBlocking<Unit> {
         classpathService.indexAllClasses()
 
         // Some class names appear in multiple packages (e.g., various "List", "String", etc. implementations)
@@ -156,7 +157,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `should limit results by maxResults parameter`() {
+    fun `should limit results by maxResults parameter`() = runBlocking<Unit> {
         classpathService.indexAllClasses()
         val results = classpathService.findClassesByPrefix("", maxResults = 10)
 
@@ -164,7 +165,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `returns the first maxResults classes ordered by simple name then qualified name`() {
+    fun `returns the first maxResults classes ordered by simple name then qualified name`() = runBlocking<Unit> {
         val service = ClasspathService(widgetVariants())
 
         assertThat(namesOf(service.findClassesByPrefix("Widget", maxResults = 3))).containsExactly(
@@ -175,7 +176,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `qualified lookups return the first maxResults classes by qualified name`() {
+    fun `qualified lookups return the first maxResults classes by qualified name`() = runBlocking<Unit> {
         val service = ClasspathService(widgetVariants())
 
         assertThat(namesOf(service.findClassesByQualifiedPrefix("com.", maxResults = 3))).containsExactly(
@@ -186,7 +187,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `should return sorted results by simple name`() {
+    fun `should return sorted results by simple name`() = runBlocking<Unit> {
         classpathService.indexAllClasses()
 
         val results = classpathService.findClassesByPrefix("String")
@@ -215,7 +216,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `uses provided classpath index`() {
+    fun `uses provided classpath index`() = runBlocking<Unit> {
         val fakeIndex = FakeClasspathIndex(
             listOf(
                 IndexedClass("Fake", "com.example.Fake"),
@@ -234,7 +235,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `passes classpath entries to indexer`() {
+    fun `passes classpath entries to indexer`() = runBlocking<Unit> {
         val root = tempDir.resolve("entries")
         val first = root.resolve("first")
         val second = root.resolve("second")
@@ -253,7 +254,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `a failed class index build is retried by the next lookup`() {
+    fun `a failed class index build is retried by the next lookup`() = runBlocking<Unit> {
         val service = ClasspathService(FailingOnceClasspathIndex(listOf(IndexedClass("Fake", "com.example.Fake"))))
 
         assertThat(service.findClassesByPrefix("Fake")).isEmpty()
@@ -261,7 +262,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `uses classloader urls when classpath entries are empty`() {
+    fun `uses classloader urls when classpath entries are empty`() = runBlocking<Unit> {
         val root = tempDir.resolve("loader")
         val first = root.resolve("first")
         val second = root.resolve("second")
@@ -328,7 +329,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `findClassesByPrefix returns classes in deterministic order across multiple calls`() {
+    fun `findClassesByPrefix returns classes in deterministic order across multiple calls`() = runBlocking<Unit> {
         val fakeIndex = FakeClasspathIndex(
             listOf(
                 IndexedClass("List", "java.util.List"),
@@ -359,7 +360,7 @@ class ClasspathServiceTest {
     }
 
     @Test
-    fun `findClassesByPrefix returns classes alphabetically sorted by fully qualified name`() {
+    fun `findClassesByPrefix returns classes alphabetically sorted by fully qualified name`() = runBlocking<Unit> {
         val fakeIndex = FakeClasspathIndex(
             listOf(
                 IndexedClass("Map", "java.util.Map"),

@@ -9,6 +9,9 @@ import com.github.albertocavalcante.groovyparser.resolution.typesolvers.Reflecti
 import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.future.asDeferred
 import java.io.File
 import java.net.URLClassLoader
 import java.nio.file.Path
@@ -82,49 +85,63 @@ class ClasspathService(
     fun close() = synchronized(this) { generations.shutdown() }
 
     /**
-     * Indexes all classes from the current classpath unless that is done, waiting for a build already running.
-     * The class-name lookups call this lazily on first use.
+     * Indexes all classes from the current classpath unless that is done, suspending until a build already running
+     * completes. The class-name lookups call this lazily on first use.
      */
-    fun indexAllClasses() {
+    suspend fun indexAllClasses() {
         classNamesOf(generations.current())
     }
 
     /**
-     * The class-name index of [generation]. The first caller claims the generation's slot and fills it on its own
-     * thread; later callers wait for that future without holding a monitor, so a classpath update or close never waits
-     * for a build. Each generation keeps its own index, so a build for a replaced classpath is never seen by lookups on
-     * the new one.
+     * The class-name index of [generation]. A ready index returns without suspending. Otherwise the lookup suspends
+     * until the build completes, holding no thread, and a cancelled lookup returns at once while the build goes on for
+     * the others. It waits through [asDeferred] because `CompletionStage.await()` would cancel the future when the
+     * lookup is cancelled, and every lookup on this generation shares that future.
      */
-    private fun classNamesOf(generation: ClasspathGeneration): ClassNameIndex {
-        generation.classNames.value?.let { return it.join() }
-        val candidate = CompletableFuture<ClassNameIndex>()
-        val build = checkNotNull(generation.classNames.update { it ?: candidate })
-        if (build === candidate) fillClassNames(generation, candidate)
-        return build.join()
+    private suspend fun classNamesOf(generation: ClasspathGeneration): ClassNameIndex {
+        val build = classNamesBuild(generation)
+        return if (build.isDone && !build.isCompletedExceptionally) build.join() else build.asDeferred().await()
     }
 
     /**
-     * Completes [build], which this caller claimed for [generation], even when the build fails. A generation that is no
-     * longer current when claimed is not scanned: an update retired it, so its lookups get the current index instead.
+     * The build of [generation]'s index. The first caller claims the generation's slot and starts the build on the IO
+     * dispatcher, off the lookup threads; later callers get that future. A claim also replaces a future that completed
+     * exceptionally, so a failed or cancelled build cannot poison the slot. Nothing holds a monitor, so a classpath
+     * update or close never waits for a build. Each generation keeps its own index, so a build for a replaced classpath
+     * is never seen by lookups on the new one.
+     */
+    private fun classNamesBuild(generation: ClasspathGeneration): CompletableFuture<ClassNameIndex> {
+        generation.classNames.value?.takeUnless { it.isCompletedExceptionally }?.let { return it }
+        val candidate = CompletableFuture<ClassNameIndex>()
+        val build = checkNotNull(
+            generation.classNames.update { if (it == null || it.isCompletedExceptionally) candidate else it },
+        )
+        if (build === candidate) Dispatchers.IO.asExecutor().execute { fillClassNames(generation, candidate) }
+        return build
+    }
+
+    /**
+     * Completes [build], which a lookup claimed for [generation], even when the build fails. A generation that is no
+     * longer current when the build starts is not scanned: an update retired it, so its lookups get the current index.
      */
     private fun fillClassNames(generation: ClasspathGeneration, build: CompletableFuture<ClassNameIndex>) {
-        try {
-            val current = generations.current()
-            if (current === generation) {
-                build.complete(scanClassNames(generation))
-            } else {
-                generation.classNames.update { if (it === build) null else it }
-                build.complete(classNamesOf(current))
+        val current = generations.current()
+        if (current !== generation) {
+            generation.classNames.update { if (it === build) null else it }
+            classNamesBuild(current).whenComplete { index, failure ->
+                if (failure == null) build.complete(index) else build.completeExceptionally(failure)
             }
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to index classes" }
-        } finally {
-            if (!build.isDone) {
-                // The next lookup retries; this build's waiters get no classes rather than waiting forever.
-                generation.classNames.update { if (it === build) null else it }
-                build.complete(ClassNameIndex.EMPTY)
-            }
+            return
         }
+        runCatching { scanClassNames(generation) }
+            .onSuccess { build.complete(it) }
+            .onFailure { failure ->
+                // The next lookup retries. This build's lookups get no classes rather than waiting forever, and an
+                // Error reaches each of them, as it reached the lookup that used to run the build on its own thread.
+                generation.classNames.update { if (it === build) null else it }
+                if (failure is Error) build.completeExceptionally(failure) else build.complete(ClassNameIndex.EMPTY)
+                logger.error(failure) { "Failed to index classes" }
+            }
     }
 
     private fun scanClassNames(generation: ClasspathGeneration): ClassNameIndex {
@@ -145,7 +162,7 @@ class ClasspathService(
      * Finds classes by prefix for type parameter completion.
      * Returns list of ClassInfo with simple name and fully qualified name.
      */
-    fun findClassesByPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
+    suspend fun findClassesByPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
         return classNamesOf(generations.current()).findBySimpleNamePrefix(prefix, maxResults)
     }
@@ -153,7 +170,7 @@ class ClasspathService(
     /**
      * Finds classes by fully qualified prefix (e.g., "java.util.L").
      */
-    fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
+    suspend fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
         return classNamesOf(generations.current()).findByQualifiedPrefix(prefix, maxResults)
     }

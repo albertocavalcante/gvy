@@ -35,6 +35,8 @@ private const val WAITERS = 3
 /** Bounds the concurrent-updates writer, whose every update logs at INFO. */
 private const val MAX_UPDATES = 1_000
 
+private val PARKED = setOf(Thread.State.WAITING, Thread.State.TIMED_WAITING)
+
 /**
  * Class-name lookups read the class index without a lock while a classpath update cleared it and the next build
  * refilled it, so a lookup could get an empty or half-built index or fail while copying it. The build held the
@@ -56,7 +58,7 @@ class ClasspathClassIndexRaceTest {
         service.updateClasspath(listOf(old))
         val executor = Executors.newFixedThreadPool(2)
         try {
-            val lookup = executor.submit<List<String>> { fullNames(service.findClassesByPrefix("Widget")) }
+            val lookup = executor.submit<List<String>> { widgetsOf(service) }
             assertTrue(index.started.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "the lookup never started a build")
 
             // The update used to wait on the service monitor, which the build held until it finished.
@@ -83,13 +85,13 @@ class ClasspathClassIndexRaceTest {
         service.updateClasspath(listOf(old))
         val executor = Executors.newFixedThreadPool(2)
         try {
-            val stale = executor.submit<List<String>> { fullNames(service.findClassesByPrefix("Widget")) }
+            val stale = executor.submit<List<String>> { widgetsOf(service) }
             assertTrue(index.started.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "the lookup never started a build")
             executor.submit { service.updateClasspath(listOf(new)) }.get(UPDATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             index.release.countDown()
             stale.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-            assertEquals(sortedNames(widgets("com.new", 1)), fullNames(service.findClassesByPrefix("Widget")))
+            assertEquals(sortedNames(widgets("com.new", 1)), widgetsOf(service))
             assertEquals(listOf(listOf(old.toString()), listOf(new.toString())), index.builds.toList())
         } finally {
             index.release.countDown()
@@ -122,15 +124,15 @@ class ClasspathClassIndexRaceTest {
 
     @Test
     fun `an Error in a build releases its waiters and the next lookup builds again`() {
-        failHeldBuild(NoClassDefFoundError("com/example/Broken")) { builder ->
-            assertIs<NoClassDefFoundError>(assertFailsWith<ExecutionException> { builder.get() }.cause)
+        failHeldBuild(NoClassDefFoundError("com/example/Broken")) { lookup ->
+            assertIs<NoClassDefFoundError>(assertFailsWith<ExecutionException> { lookup.get() }.cause)
         }
     }
 
     @Test
     fun `waiters of a failed build get no classes and the next lookup builds again`() {
-        failHeldBuild(IllegalStateException("unreadable classpath entry")) { builder ->
-            assertEquals(emptyList(), builder.get())
+        failHeldBuild(IllegalStateException("unreadable classpath entry")) { lookup ->
+            assertEquals(emptyList(), lookup.get())
         }
     }
 
@@ -162,9 +164,11 @@ class ClasspathClassIndexRaceTest {
                 executor.submit {
                     try {
                         check(start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
-                        repeat(LOOKUPS) {
-                            val found = fullNames(service.findClassesByPrefix("Widget", MANY_CLASSES))
-                            check(found in wholeIndexes) { "a lookup got ${found.size} of $MANY_CLASSES classes" }
+                        runBlocking {
+                            repeat(LOOKUPS) {
+                                val found = fullNames(service.findClassesByPrefix("Widget", MANY_CLASSES))
+                                check(found in wholeIndexes) { "a lookup got ${found.size} of $MANY_CLASSES classes" }
+                            }
                         }
                     } finally {
                         readersDone.countDown()
@@ -228,7 +232,7 @@ class ClasspathClassIndexRaceTest {
                 assertEquals(expected, waiter.await(), "a lookup sharing the build with the cancelled one")
             }
             // Cancelling a lookup must not cancel the build it shared, or every later lookup would fail.
-            assertEquals(expected, runBlocking { fullNames(service.findClassesByPrefix("Widget")) }, "the next lookup")
+            assertEquals(expected, widgetsOf(service), "the next lookup")
             assertEquals(1, index.builds.size, "builds run for one classpath")
         } finally {
             index.release.countDown()
@@ -237,10 +241,10 @@ class ClasspathClassIndexRaceTest {
     }
 
     /**
-     * Holds a build that then throws [failure] while a second lookup waits for it. The waiter gets no classes and the
-     * next lookup builds again; [checkBuilder] checks what the lookup that ran the build saw.
+     * Holds a build that then throws [failure] while the lookup that started it and a second lookup wait for it.
+     * [checkLookup] checks what each of them saw, and the next lookup builds again.
      */
-    private fun failHeldBuild(failure: Throwable, checkBuilder: (LookupThread<List<String>>) -> Unit) {
+    private fun failHeldBuild(failure: Throwable, checkLookup: (LookupThread<List<String>>) -> Unit) {
         val dir = tempDir.resolve("failing")
         val index = HeldIndex(
             mapOf(dir.toString() to widgets("com.failing", OLD_CLASSES)),
@@ -256,9 +260,9 @@ class ClasspathClassIndexRaceTest {
             waiter.awaitWaiting()
             index.release.countDown()
 
-            checkBuilder(builder)
-            assertEquals(emptyList(), waiter.get(), "a waiter of the failed build")
-            val next = fullNames(service.findClassesByPrefix("Widget"))
+            checkLookup(builder)
+            checkLookup(waiter)
+            val next = widgetsOf(service)
             assertEquals(sortedNames(widgets("com.failing", OLD_CLASSES)), next, "the lookup after the failure")
             assertEquals(2, index.builds.size, "the failed build and the retry")
         } finally {
@@ -276,21 +280,26 @@ private fun sortedNames(classes: List<IndexedClass>): List<String> = classes.map
 
 private fun fullNames(classes: List<ClassInfo>): List<String> = classes.map { it.fullName }
 
-/** Runs [body] on its own daemon thread, so a test can see when that thread starts waiting. */
-private class LookupThread<T>(body: () -> T) {
-    private val task = FutureTask<T> { body() }
+/** The `Widget` lookup, made from a thread that runs no coroutine. */
+private fun widgetsOf(service: ClasspathService): List<String> =
+    runBlocking { fullNames(service.findClassesByPrefix("Widget")) }
+
+/** Runs [body] in [runBlocking] on its own daemon thread, so a test can see when that thread starts waiting. */
+private class LookupThread<T>(body: suspend () -> T) {
+    private val task = FutureTask<T> { runBlocking { body() } }
     private val thread = Thread(task, "class-index-lookup").apply {
         isDaemon = true
         start()
     }
 
     /**
-     * Returns once the thread is parked. In these tests the only park is on the build another lookup runs; a park sets
-     * a blocker, while a wait for class initialization does not.
+     * Returns once the thread is parked. In these tests the only park is runBlocking's, once the lookup suspended on
+     * the build another lookup started; a park sets a blocker, while a wait for class initialization does not.
+     * runBlocking parks with a timeout, so the thread may be waiting with or without one.
      */
     fun awaitWaiting() {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS)
-        while (thread.state != Thread.State.WAITING || LockSupport.getBlocker(thread) == null) {
+        while (thread.state !in PARKED || LockSupport.getBlocker(thread) == null) {
             check(System.nanoTime() < deadline) { "the lookup never waited for the build" }
             Thread.onSpinWait()
         }
