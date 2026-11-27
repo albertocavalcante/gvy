@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { collectDiagnostics, checkGradleDiagnostics, loadNativeDiagnosticPolicy, validateNativeDiagnosticPolicy } from './check-gradle-diagnostics.mjs';
+import { collectDiagnostics, checkGradleDiagnostics, loadNativeDiagnosticPolicy, renderSummary, validateNativeDiagnosticPolicy } from './check-gradle-diagnostics.mjs';
 import { evaluate } from './bazel-diagnostics.mjs';
 
 const now = new Date('2026-11-11T00:00:00Z');
@@ -635,6 +635,17 @@ test('the general configuration-cache readers identify the caller, not the bean 
   assert.ok(start > 0 && end > start);
   const deeper = [...lines.slice(0, start + 1), '\tat org.gradle.internal.serialize.graph.codecs.OtherBeanCodec.decode(OtherBeanCodec.kt:7)', ...lines.slice(end)];
   assert.deepEqual(collectDiagnostics(deeper.join('\n')), collectDiagnostics(codecConsumerLog));
+});
+
+test('every Native bundle enum identity shares one tracked-debt text, rendered once', () => {
+  const exceptions = gradleExceptions();
+  const enumDebt = exceptions.filter(entry => entry.diagnostic.includes(' Using the enum type KotlinNativeBundleArtifactsTypes '));
+  assert.ok(enumDebt.length > 1);
+  const texts = new Set(enumDebt.map(entry => JSON.stringify([entry.owner, entry.issue, entry.reason, entry.nextAction, entry.acceptance, entry.expires])));
+  assert.equal(texts.size, 1, 'a new enum identity reuses the shared text instead of restating or counting it');
+  const summary = renderSummary({ ...check('BUILD SUCCESSFUL in 1s\n', { exceptions }), producer: 'fixture' });
+  assert.equal(summary.split(enumDebt[0].reason).length - 1, 1);
+  assert.ok(summary.includes(`- ${enumDebt.length} exact exceptions: `));
 });
 
 test('Native attribution cannot accept unrelated Gradle deprecations or bypass missing and expired policy', () => {
