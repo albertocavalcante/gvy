@@ -8,7 +8,6 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
-import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
@@ -74,8 +73,8 @@ class SymbolIndexingService(
 
     // Every change to [entries] goes through [classNames] so the two stay consistent; [clear] swaps it under the same
     // lock that every write holds, so a write never lands in the map a clear just replaced (#1342).
-    private val publishedEntries = SharedValue(ConcurrentHashMap<URI, Prepared>())
-    private val entries: ConcurrentHashMap<URI, Prepared> get() = publishedEntries.value
+    private val publishedEntries = SwappableConcurrentMap { ConcurrentHashMap<URI, Prepared>() }
+    private val entries: ConcurrentHashMap<URI, Prepared> get() = publishedEntries.map
     private val classNames = WorkspaceClassNames()
 
     /** Recorded class-name keys, for tests that prove removals leave nothing behind. */
@@ -238,7 +237,7 @@ class SymbolIndexingService(
      */
     fun clear() {
         unparseable.clear()
-        classNames.clear { publishedEntries.set(ConcurrentHashMap()) }
+        classNames.clear { publishedEntries.swapEmpty() }
     }
 
     // Private helper methods

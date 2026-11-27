@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
-import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListMap
@@ -32,8 +31,8 @@ sealed interface ClassNameQuery {
 internal class WorkspaceClassNames {
     // Replaced by [clear] under [lock]; [replace] re-reads it under the same lock, so no write lands in a dead map
     // after a clear. Lock-free readers see the old or the new map (#1342).
-    private val publishedFiles = SharedValue(ConcurrentSkipListMap<String, MutableSet<URI>>())
-    private val files: ConcurrentSkipListMap<String, MutableSet<URI>> get() = publishedFiles.value
+    private val publishedFiles = SwappableConcurrentMap { ConcurrentSkipListMap<String, MutableSet<URI>>() }
+    private val files: ConcurrentSkipListMap<String, MutableSet<URI>> get() = publishedFiles.map
     private val lock = Any()
 
     /**
@@ -54,9 +53,11 @@ internal class WorkspaceClassNames {
     }
 
     /** Runs [write] (the owner's own swap) and swaps in an empty name map, both under the lock: O(1) (#1342). */
-    fun clear(write: () -> Unit) = synchronized(lock) {
-        write()
-        publishedFiles.set(ConcurrentSkipListMap())
+    fun clear(write: () -> Unit) {
+        synchronized(lock) {
+            write()
+            publishedFiles.swapEmpty()
+        }
     }
 
     fun files(query: ClassNameQuery): Set<URI> = when (query) {

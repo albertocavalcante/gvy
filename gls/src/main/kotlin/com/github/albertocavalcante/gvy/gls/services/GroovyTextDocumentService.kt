@@ -156,15 +156,21 @@ class GroovyTextDocumentService(
     /** The resolver behind the open documents' CodeNarc provider, so [reloadCodeNarcRulesets] can clear its caches. */
     private val codeNarcRulesetResolver = SharedValue<HierarchicalRulesetResolver?>(null)
 
-    private val definitionLinkSupport = SharedValue(options.definitionLinkSupport)
+    /*
+     * The client's capabilities below are plain fields. The constructor sets [definitionLinkSupport]'s initial value,
+     * and initialize sets each one on the LSP4J listener thread before that thread dispatches any request. They are
+     * read by request handlers on that thread (documentSymbol reads its flag before launching) or in coroutines those
+     * handlers launch, and a launch publishes them to its coroutine.
+     */
+    private var definitionLinkSupport = options.definitionLinkSupport
 
     // Read once from the client's initialize capabilities; see updateLabelDetailsSupport.
-    private val labelDetailsSupport = SharedValue(false)
+    private var labelDetailsSupport = false
 
-    private val snippetSupport = SharedValue(false)
+    private var snippetSupport = false
 
     // LSP: a client that does not say it renders `DocumentSymbol` trees gets flat `SymbolInformation`.
-    private val hierarchicalDocumentSymbolSupport = SharedValue(false)
+    private var hierarchicalDocumentSymbolSupport = false
 
     private val logger = KotlinLogging.logger {}
 
@@ -172,14 +178,16 @@ class GroovyTextDocumentService(
     private val renameDiskText = WorkspaceTextCache()
     internal val renameWalks = WorkspaceWalkCache()
 
-    private val workspaceFolders = SharedValue<List<Path>>(emptyList())
+    // A plain field, like the client capabilities above: set by initialize on the listener thread before any request,
+    // and read by the rename requests that thread launches afterwards.
+    private var workspaceFolders: List<Path> = emptyList()
 
     /**
      * Folders the client opened. The server does not declare workspace-folder change support, so these are fixed
      * at initialize; rename checks every one of them for other uses of a symbol, not just the first.
      */
     fun updateWorkspaceFolders(folders: List<Path>) {
-        workspaceFolders.set(folders)
+        workspaceFolders = folders
         renameWalks.invalidate()
     }
 
@@ -188,20 +196,20 @@ class GroovyTextDocumentService(
 
     /** Whether the client renders `CompletionItem.labelDetails` (LSP 3.17), from its initialize capabilities. */
     fun updateLabelDetailsSupport(supported: Boolean) {
-        labelDetailsSupport.set(supported)
+        labelDetailsSupport = supported
     }
 
     /** Whether the client renders nested `DocumentSymbol`s, from its initialize capabilities. */
     fun updateHierarchicalDocumentSymbolSupport(supported: Boolean) {
-        hierarchicalDocumentSymbolSupport.set(supported)
+        hierarchicalDocumentSymbolSupport = supported
     }
 
     fun updateSnippetSupport(supported: Boolean) {
-        snippetSupport.set(supported)
+        snippetSupport = supported
     }
 
     fun updateDefinitionLinkSupport(supported: Boolean) {
-        definitionLinkSupport.set(supported)
+        definitionLinkSupport = supported
         logger.info { "Definition link support set to $supported" }
     }
 
@@ -352,7 +360,7 @@ class GroovyTextDocumentService(
             compilationService = compilationService,
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
-            definitionLinkSupport = { definitionLinkSupport.value },
+            definitionLinkSupport = { definitionLinkSupport },
             clientTelemetry = { event -> client()?.telemetryEvent(event) },
         )
     }
@@ -517,7 +525,7 @@ class GroovyTextDocumentService(
             )
 
             logger.debug { "Returning ${completions.size} completions" }
-            Either.forLeft(completions.forClient(labelDetailsSupport.value, snippetSupport.value))
+            Either.forLeft(completions.forClient(labelDetailsSupport, snippetSupport))
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
@@ -605,7 +613,7 @@ class GroovyTextDocumentService(
             val source = compilationService.captureSnapshotSource(uri)
             Triple(uriText, source, documentProvider.getSnapshot(uri))
         }
-        val hierarchical = hierarchicalDocumentSymbolSupport.value
+        val hierarchical = hierarchicalDocumentSymbolSupport
         return coroutineScope.future {
             val (uriText, source, original) = request.getOrThrow()
             val uri = source.uri
@@ -653,7 +661,7 @@ class GroovyTextDocumentService(
             compilationService,
             documentProvider,
             renameDiskText,
-            extraRoots = { workspaceFolders.value },
+            extraRoots = { workspaceFolders },
             walks = renameWalks,
         )
             .providePrepareRename(params.textDocument.uri, params.position)
@@ -672,7 +680,7 @@ class GroovyTextDocumentService(
                 compilationService,
                 documentProvider,
                 renameDiskText,
-                extraRoots = { workspaceFolders.value },
+                extraRoots = { workspaceFolders },
                 walks = renameWalks,
             )
             renameProvider.provideRename(

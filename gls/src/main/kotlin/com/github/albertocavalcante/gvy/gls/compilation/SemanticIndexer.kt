@@ -88,8 +88,8 @@ class SemanticIndexer(
      * finishes on the old map and old graph first, and a later one sees only the new pair. Reads stay lock-free;
      * they see the old or the new map, and a pre-clear publication can never match an entry of the new one.
      */
-    private val publishedEntries = SharedValue(ConcurrentHashMap<URI, State>())
-    private val entries: ConcurrentHashMap<URI, State> get() = publishedEntries.value
+    private val publishedEntries = SwappableConcurrentMap { ConcurrentHashMap<URI, State>() }
+    private val entries: ConcurrentHashMap<URI, State> get() = publishedEntries.map
     private val swap = ReentrantReadWriteLock()
     private val tickets = Counter()
 
@@ -263,7 +263,7 @@ class SemanticIndexer(
      */
     fun clear() {
         swap.write {
-            publishedEntries.set(ConcurrentHashMap())
+            publishedEntries.swapEmpty()
             index.clear()
         }
     }
