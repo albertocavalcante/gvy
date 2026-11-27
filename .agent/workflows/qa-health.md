@@ -145,7 +145,7 @@ grep -rn "DEPRECATION" --include="*.kt" | head -10
 time ./gradlew clean build -x test
 
 # Incremental build timing
-touch groovy-lsp/src/main/kotlin/org/groovylsp/server/GroovyLanguageServer.kt
+touch gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt
 time ./gradlew build -x test
 ```
 

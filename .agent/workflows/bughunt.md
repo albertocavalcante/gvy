@@ -69,10 +69,10 @@ Check areas documented in `/qa` as historically fragile.
 
 ```bash
 # Check parser error handling
-grep -rn "catch\|try\|throw" --include="*.kt" groovy-lsp/src/main/kotlin/*/parser/ | wc -l
+grep -rn "catch\|try\|throw" --include="*.kt" parser/*/src/main/kotlin/ | wc -l
 
 # Look for null-unsafe patterns in parser
-grep -rn "!!\|as [A-Z]" --include="*.kt" groovy-lsp/src/main/kotlin/*/parser/ | head -20
+grep -rn "!!\|as [A-Z]" --include="*.kt" parser/*/src/main/kotlin/ | head -20
 ```
 
 ### 2.2 Cache Coherency

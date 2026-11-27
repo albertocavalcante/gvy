@@ -10,9 +10,9 @@ ALWAYS use `gh` CLI for GitHub content. NEVER use curl/wget/fetch for GitHub URL
 
 ## Repository Info
 
-| Variable     | Value                          |
-| ------------ | ------------------------------ |
-| `OWNER/REPO` | `albertocavalcante/groovy-lsp` |
+| Variable     | Value                   |
+| ------------ | ----------------------- |
+| `OWNER/REPO` | `albertocavalcante/gvy` |
 
 ---
 

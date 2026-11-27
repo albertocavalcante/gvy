@@ -31,14 +31,14 @@ Always start QA from a clean state to catch missing dependencies or build issues
 ./gradlew clean build -x test
 
 # Verify shadow JAR is created
-ls -la groovy-lsp/build/libs/gls-*-all.jar
+ls -la gls/build/libs/gls-*-all.jar
 ```
 
 ### 0.2 Version Verification
 
 ```bash
 # Check version is correctly embedded
-java -jar groovy-lsp/build/libs/gls-*-all.jar version
+java -jar gls/build/libs/gls-*-all.jar version
 ```
 
 ---
@@ -65,7 +65,7 @@ Execute tests in order of speed and isolation. **Stop immediately on failure.**
 
 ```bash
 # Run integration tests (included in standard test task)
-./gradlew :groovy-lsp:test --tests "*IntegrationTest*" --console=plain
+./gradlew :gls:test --tests "*IntegrationTest*" --console=plain
 ```
 
 ### 1.3 Property-Based Tests
@@ -158,7 +158,7 @@ Test each feature in a sample Groovy project:
 
 ```bash
 # Measure cold start
-time java -jar groovy-lsp/build/libs/gls-*-all.jar version
+time java -jar gls/build/libs/gls-*-all.jar version
 
 # Target: < 3 seconds for version command
 ```
@@ -167,7 +167,7 @@ time java -jar groovy-lsp/build/libs/gls-*-all.jar version
 
 ```bash
 # Start server and observe memory
-java -Xmx512m -jar groovy-lsp/build/libs/gls-*-all.jar stdio &
+java -Xmx512m -jar gls/build/libs/gls-*-all.jar stdio &
 PID=$!
 sleep 10
 ps -o rss= -p $PID | awk '{print $1/1024 " MB"}'
@@ -396,9 +396,9 @@ cd editors/code && pnpm test && pnpm run test:integration
 
 ```bash
 # HTML reports
-open groovy-lsp/build/reports/tests/test/index.html
+open gls/build/reports/tests/test/index.html
 open tests/build/reports/tests/e2eTest/index.html
 
 # JUnit XML (for CI integration)
-ls groovy-lsp/build/test-results/test/*.xml
+ls gls/build/test-results/test/*.xml
 ```

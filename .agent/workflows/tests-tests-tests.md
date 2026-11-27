@@ -12,14 +12,14 @@ assertion strictness, and explicit failure management.
 Before proceeding, read the following files to understand the test runner structure and scenario format:
 
 1. `tests/e2e/resources/scenarios/README.md`: Lists available scenarios and execution commands.
-2. `tests/e2e/resources/README.md`: Documents the full scenario YAML schema.
+2. `tests/e2e/README.md`: Describes the harness, its tasks and the scenario loader.
 
 ## Phase 1: Setup
 
 1. **Worktree Isolation** Execute the following command to create a clean environment for your test development:
    ```bash
-   git worktree add -b feat/e2e-[feature_name] ../groovy-lsp-e2e-[feature_name] origin/main
-   cd ../groovy-lsp-e2e-[feature_name]
+   git worktree add -b feat/e2e-[feature_name] ../gvy-e2e-[feature_name] origin/main
+   cd ../gvy-e2e-[feature_name]
    ```
 
 2. **Scenario Creation** Create a new YAML file in `tests/e2e/resources/scenarios/`. Use a kebab-case naming convention
@@ -49,7 +49,7 @@ If the current test framework (Kotlin) lacks the necessary step types or asserti
 express a strict test:
 
 1. **Do Not Compromise**: Do not write a weaker test.
-2. **Extend**: Modify `tests/e2e/kotlin/com/github/albertocavalcante/groovylsp/e2e` to add the missing capability.
+2. **Extend**: Modify `tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e` to add the missing capability.
 3. **Refactor**: Ensure the new capability is generic and reusable.
 
 ## Phase 3: Execution
@@ -93,7 +93,7 @@ Use this path if the server throws `UnsupportedOperationException`, `Internal Er
 3. **Linkage**: Add a header to the YAML file referencing the issue:
    ```yaml
    # TODO(DEFERRED): #<issue-id> - Test disabled. Feature not implemented.
-   # See: https://github.com/albertocavalcante/groovy-devtools/issues/<issue-id>
+   # See: https://github.com/albertocavalcante/gvy/issues/<issue-id>
    ```
 
 4. **Result**: The file is committed as a specification for future implementation.

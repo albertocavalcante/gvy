@@ -124,7 +124,7 @@ code --version
 cat ~/.vscode/extensions/*/package.json 2>/dev/null | grep -A1 '"name": "groovy-language-server"' | head -5
 
 # Groovy LSP version
-java -jar groovy-lsp/build/libs/gls-*-all.jar version 2>/dev/null || echo "Not built locally"
+java -jar gls/build/libs/gls-*-all.jar version 2>/dev/null || echo "Not built locally"
 ```
 
 ### 3.2 Environment Template
