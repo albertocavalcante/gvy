@@ -1,4 +1,6 @@
 # Buck2 version for this project.
 # Pin to a specific version for reproducible builds.
 # See: https://github.com/facebook/buck2/releases
+# Keep in step with BUCK2_VERSION and its checksums in .github/workflows/ci-buck2.yml;
+# tools/ci/buck2-version-pin.test.mjs fails when the two differ.
 2026-01-19

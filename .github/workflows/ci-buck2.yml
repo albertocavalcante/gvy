@@ -48,6 +48,7 @@ concurrency:
 env:
   # Buck2 version - pinned for reproducible builds
   # Update by checking: https://github.com/facebook/buck2/releases
+  # Must equal the version in .buckversion (checked by tools/ci/buck2-version-pin.test.mjs).
   BUCK2_VERSION: "2026-01-19"
   # Compressed release-asset SHA-256 digests from GitHub's release API; update with the version.
   BUCK2_SHA256_LINUX_AMD64: "13e2ae9484470ed4e7913bacacedd0dcb3568441bc3312240407f834a5fbc851"
