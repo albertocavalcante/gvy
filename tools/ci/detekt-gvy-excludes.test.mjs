@@ -25,6 +25,15 @@ const jdkAtomicsPermanent = [
 ];
 // Only the facade opts into the experimental stdlib atomics; tests elsewhere do not need them either.
 const stdlibAtomicsPermanent = ['**/common/concurrent/src/**'];
+// RegexInFunctionBody exempts test and benchmark sources for good. The modules after them are #2420's migration list,
+// which only shrinks: the pull request that hoists a module's regexes drops its line here and in tools/lint/detekt.yml.
+const regexPermanent = ['**/src/test/**', '**/src/jmh/**'];
+const regexMigration = [
+  '**/build-tool/src/**', '**/diagnostics/codenarc/src/**', '**/jenkins/src/**', '**/parser/core/src/**',
+  '**/semantics/core/src/**',
+];
+// The rules whose findings no tracked detekt baseline may hold.
+const unbaselined = ['VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'RegexInFunctionBody'];
 
 /** [config]'s lines without CRLF line ends or trailing whitespace, which YAML ignores. */
 const yamlLines = config => config.replaceAll('\r\n', '\n').split('\n').map(line => line.trimEnd());
@@ -203,6 +212,22 @@ test('StdlibAtomics is active and excludes only :common:concurrent', () => {
   }
 });
 
+test('RegexInFunctionBody is active, and its migration excludes only shrink', () => {
+  const { excludes } = configured('RegexInFunctionBody');
+  const added = excludes.filter(exclude => !regexPermanent.includes(exclude) && !regexMigration.includes(exclude));
+  const never = 'Never add a RegexInFunctionBody exclude: hoist the regex into a file-scope, object or companion ' +
+    'object property, or suppress a site that cannot be hoisted with a reason (#2420)';
+  assert.deepEqual(added, [], never);
+  const hoisted = regexMigration.filter(exclude => !excludes.includes(exclude));
+  const drop = 'A module left the RegexInFunctionBody excludes: drop it from regexMigration in ' +
+    'tools/ci/detekt-gvy-excludes.test.mjs in the same pull request, so its line cannot come back (#2420)';
+  assert.deepEqual(hoisted, [], drop);
+  for (const exclude of regexMigration) {
+    const module = exclude.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
+    assert.ok(module && existsSync(join(root, module, 'src')), `${exclude} names no module`);
+  }
+});
+
 test('the gvy rule set reader takes only two-space keys, so set-wide excludes and includes show', () => {
   const config = [
     'style:',
@@ -234,11 +259,13 @@ test('the gvy rule set is active and takes no set-wide excludes or includes', ()
   assert.deepEqual(unexpected, [], message);
 });
 
-test('no tracked detekt baseline holds a VolatileProperty, JdkAtomics or StdlibAtomics finding', () => {
+test('no tracked detekt baseline holds a finding of a gvy rule', () => {
+  const finding = new RegExp(`<ID>(?:${unbaselined.join('|')}):[^<]*</ID>`, 'g');
   for (const baseline of trackedBaselines()) {
-    const entries = readFileSync(join(root, baseline), 'utf8');
-    const ids = entries.match(/<ID>(?:VolatileProperty|JdkAtomics|StdlibAtomics):[^<]*<\/ID>/g) ?? [];
-    assert.deepEqual(ids, [], `${baseline} must not hold the gvy concurrency rules' findings (#2474)`);
+    const ids = readFileSync(join(root, baseline), 'utf8').match(finding) ?? [];
+    const message = `${baseline} must not hold a finding of ${unbaselined.join(', ')}. Fix the code, or suppress a ` +
+      'sanctioned site with a reason (#2420, #2474)';
+    assert.deepEqual(ids, [], message);
   }
 });
 

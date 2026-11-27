@@ -113,8 +113,9 @@ gvy:
     excludes:
     - '**/src/test/**'
     - '**/src/jmh/**'
-    # Modules whose regexes are not hoisted yet. Remove a line in the same pull request that hoists that module;
-    # the rule then guards it. Never add a line here (or a baseline entry) for a module that is clean. See #2420.
+    # Modules whose regexes are not hoisted yet. The pull request that hoists a module removes its line here and from
+    # regexMigration in tools/ci/detekt-gvy-excludes.test.mjs; the rule then guards it. The list only shrinks: that
+    # guard fails on any other exclude, and on a baseline entry for this rule (#2420).
     - '**/build-tool/src/**'
     - '**/diagnostics/codenarc/src/**'
     - '**/jenkins/src/**'
