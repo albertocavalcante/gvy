@@ -92,6 +92,8 @@ internal class WorkspaceIndexer(
         progressReporter: ProgressReporter,
         onStatusUpdate: StatusUpdateCallback,
     ) {
+        // A plain local: indexAllWorkspaceSources calls back from this coroutine, one call after another, with counts
+        // that only grow, so every report below is in order and the last one is the final count.
         var lastStatusUpdate = System.currentTimeMillis()
         compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
             val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0

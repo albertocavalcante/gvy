@@ -242,6 +242,10 @@ class ProjectStartupManager(
 
         val dependencyManager = setupDependencyManager(config)
 
+        // Begin before resolution starts. Its callbacks run on other threads and can finish at once (no build tool);
+        // the reporter drops an end that comes before its begin, so a later begin would stay open in the client.
+        // Starting the attempt publishes the active reporter to those callbacks, which the manager serializes.
+        progressReporter.startDependencyResolution()
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
             onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
@@ -257,8 +261,6 @@ class ProjectStartupManager(
             ),
             onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
         )
-
-        progressReporter.startDependencyResolution()
     }
 
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
