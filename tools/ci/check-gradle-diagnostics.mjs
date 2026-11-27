@@ -95,9 +95,9 @@ function deprecationOrigin(message, origin) {
   if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.')) {
     if (nativeBundleWrapperFrame.test(origin)) return undefined;
     // Decide at the first frame below the wrappers, whatever its package: a deeper recognised reader must not
-    // stand in for an unknown caller. The plugin's own initializer runs once, in the first Kotlin project that
-    // loads it, so it takes the KGP emitter. Any other caller keeps the last header and names its frame, so it
-    // stays unexpected and identifiable.
+    // stand in for an unknown caller. A KGP frame, such as the plugin's own initializer (which runs once, in the
+    // first Kotlin project that loads it), takes the KGP emitter. Any other caller keeps the last header and names
+    // its frame, so it stays unexpected and identifiable.
     if (nativeBundleCodecCaller.test(origin)) return { origin, context: 'emitter gradle configuration-cache' };
     if (kotlinGradlePluginFrame.test(origin)) return { origin, context: kotlinGradlePluginEmitter };
     return { origin };
