@@ -10,7 +10,6 @@ import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.concurrent.OnceFlag
-import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
@@ -238,8 +237,9 @@ class GroovyLanguageServer(
         coroutineScope,
     )
 
-    // State
-    private val implementationRequestsReady = SharedValue(false)
+    // State. initialize writes this and the custom requests read it, all on the LSP4J listener thread, which delivers
+    // one message at a time, so it is a plain field.
+    private var implementationRequestsReady = false
     private var savedInitParams: InitializeParams? = null
     private var clientCapabilities: ClientCapabilities? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
@@ -284,7 +284,6 @@ class GroovyLanguageServer(
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
-        implementationRequestsReady.set(false)
         logger.info { "Initializing Groovy Language Server..." }
         logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
@@ -316,7 +315,7 @@ class GroovyLanguageServer(
 
         initializeResult.capabilities.experimental = mapOf("groovyDocumentAnalysis" to true)
 
-        implementationRequestsReady.set(true)
+        implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
@@ -469,7 +468,7 @@ class GroovyLanguageServer(
 
     private fun customRequestLifecycleError(): ResponseError? = when {
         shutdownRequested -> ResponseError(ResponseErrorCode.InvalidRequest, "Server is shutting down", null)
-        !implementationRequestsReady.value ->
+        !implementationRequestsReady ->
             ResponseError(ResponseErrorCode.ServerNotInitialized, "Server is not initialized", null)
         else -> null
     }
