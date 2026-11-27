@@ -7,25 +7,28 @@
 // - the gvy rule set is inactive or has a set-wide key, or a gvy rule block holds a line other than `active`,
 //   `excludes`, a single-quoted entry or a comment;
 // - VolatileProperty excludes anything; JdkAtomics excludes anything but tests, :common:concurrent and the modules
-//   published on their own, which must be exactly the modules that apply a publishing plugin; StdlibAtomics excludes
-//   anything but :common:concurrent; RegexInFunctionBody excludes anything but tests, benchmarks and its #2420
-//   migration modules, a list that only shrinks; or one of the four is inactive;
+//   published on their own, which must be exactly the modules that apply a publishing plugin, directly or through
+//   `apply(from = ...)`; StdlibAtomics excludes anything but :common:concurrent; RegexInFunctionBody excludes anything
+//   but tests, benchmarks and its #2420 migration modules, a list that only shrinks; or one of the four is inactive;
 // - tools/detekt-rules' own config/config.yml, which detekt adds to its defaults, holds anything but the gvy rule set
 //   with `active: true` for it and each rule;
 // - a tracked detekt baseline holds a finding of one of the four rules;
-// - a .kt or .kts file under src/, outside resources, suppresses VolatileProperty, JdkAtomics, StdlibAtomics, the gvy
+// - a .kt or .kts file under src/, resources included, suppresses VolatileProperty, JdkAtomics, StdlibAtomics, the gvy
 //   rule set or all rules outside sanctionedSuppressions, which lists each sanctioned site with its reason;
-// - a *.gradle.kts other than the root build, outside resources, names detekt in code (or a detekt task in a string)
-//   for anything but a detekt dependency or the multiplatform `detekt.source` override;
-// - a built-in rule excludes a multiplatform test set that detekt's default does not, or main code sits in a folder
-//   named like a test source set.
+// - a *.gradle.kts other than the root build, outside resources, names detekt in code, or in a string that is a
+//   detekt task name or path or a name in detekt's package, for anything but a libs.detekt.* dependency outside the
+//   `detekt` configuration or the multiplatform `detekt.source` override;
+// - a rule's excludes use a style the loose reader cannot read, or a built-in rule excludes a pattern reaching a test
+//   source set other than `test` that detekt's default does not exempt it from; or main code sits in a folder named
+//   like a test source set.
 //
-// It does not see the root build.gradle.kts, which configures detekt for every module; Gradle code that reaches detekt
-// without naming it or unhooks `lint` from it; Groovy and init scripts, gradle.properties and flags such as
-// `-x detekt`; RegexInFunctionBody suppressions, which need only a comment; or a suppression by a rule ID alias
-// (concurrencySuppression writes the IDs out). Kotlin outside src/main and src/test, such as tests/e2e, is not linted
-// unless its module sets detekt.source (#2480). Every git call runs without GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE
-// and GIT_COMMON_DIR.
+// It does not see the root build.gradle.kts, which configures detekt for every module; Kotlin build logic in .kt files
+// (buildSrc, included builds, convention plugins; gvy has none); Gradle code that reaches detekt without naming it or
+// unhooks `lint` from it; Groovy and init scripts, gradle.properties and flags such as `-x detekt`; RegexInFunctionBody
+// suppressions, which need only a comment; or a suppression by a rule ID alias (concurrencySuppression writes the IDs
+// out). Kotlin outside src/main and src/test, such as tests/e2e, is not linted unless its module sets detekt.source
+// (#2480). Every git call runs without the variables that point git at another repository, index, work tree or object
+// store.
 
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';

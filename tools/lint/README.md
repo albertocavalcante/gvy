@@ -47,6 +47,8 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
   `common/concurrent` is its only exclude, and no exclude, baseline entry or unlisted suppression may be added (#2474).
 
 `tools/ci/detekt-gvy-guard.test.mjs` enforces these rules' configuration, detekt's `build:` block, the module builds'
-detekt settings, and the multiplatform test excludes of the built-in rules: `**/commonTest/**` and `**/jvmTest/**`
-appear only next to `**/test/**` on rules whose detekt default exempts every test source set.
-[tools/detekt-rules/README.md](../detekt-rules/README.md#ci-guard) lists exactly what it checks and what it cannot see.
+detekt settings, and a bound on the built-in rules' test excludes: a rule may exclude a pattern that reaches a test
+source set other than `test`, meaning one of the pattern's folders mentions "test" in any case (`**/commonTest/**`,
+`**/*Test/**`), only if detekt's default config exempts that rule from every test source set. Dropping such an exclude
+always passes. [tools/detekt-rules/README.md](../detekt-rules/README.md#ci-guard) lists exactly what it checks and what
+it cannot see.

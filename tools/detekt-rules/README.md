@@ -206,8 +206,9 @@ The rule reads syntax only, so it does not see:
 ## CI guard
 
 `tools/ci/detekt-gvy-guard.test.mjs` runs with the other `tools/ci` tests in every CI run; its readers live in
-`tools/ci/detekt-gvy-guard.mjs`. It reads the files git tracks in the checkout, with git's repository variables
-(`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`) removed, and fails when:
+`tools/ci/detekt-gvy-guard.mjs`. It reads the files git tracks in the checkout, with the variables that point git
+elsewhere (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`,
+`GIT_ALTERNATE_OBJECT_DIRECTORIES`) removed, and fails when:
 
 - `build:` in `tools/lint/detekt.yml` holds anything but `maxIssues: 0` and `excludeCorrectable: false`, such as a
   higher `maxIssues` or `weights`;
@@ -219,25 +220,32 @@ The rule reads syntax only, so it does not see:
   in its #2420 migration, or the guard still lists a module whose line has left `detekt.yml`. Dropping a pattern is
   always allowed;
 - the modules that apply a publishing plugin (`maven-publish`, `ivy-publish`, `com.gradle.plugin-publish`,
-  `com.vanniktech.maven.publish`) are not exactly the published modules that `JdkAtomics` exempts;
+  `com.vanniktech.maven.publish` or its `.base`), directly or through a script applied with `apply(from = ...)`, are not
+  exactly the published modules that `JdkAtomics` exempts;
 - this module's own `config/config.yml`, which detekt adds to its defaults, holds anything but the `gvy` rule set with
   `active: true` for it and each rule;
 - a tracked detekt baseline holds a finding of any of the four rules;
-- a `.kt` or `.kts` file under a `src/` folder, outside `resources`, suppresses `VolatileProperty`, `JdkAtomics`,
+- a `.kt` or `.kts` file under a `src/` folder, resources included, suppresses `VolatileProperty`, `JdkAtomics`,
   `StdlibAtomics`, the whole `gvy` rule set or `all` at a site that its `sanctionedSuppressions` list does not name with
   a reason. The list is empty. Suppressions inside comments and string literals, such as this module's test inputs, do
   not count;
-- the code of a `*.gradle.kts` other than the root `build.gradle.kts`, outside `resources`, names detekt, or a string in
-  it names a detekt task such as `"detekt"`, for anything but adding a `libs.detekt.*` dependency or the multiplatform
-  override `detekt { source.setFrom(fileTree("src") { include("**/*.kt") }) }`;
-- a built-in rule excludes a multiplatform test set (`**/commonTest/**`, `**/jvmTest/**`) although detekt's default
-  config does not exempt it from test sources, or a main source path holds a folder named like a test source set.
+- a `*.gradle.kts` other than the root `build.gradle.kts`, outside `resources`, names detekt in code, or in a string
+  that is a detekt task name or path (`"detekt"`, `":fmt:detekt"`) or a name in detekt's package
+  (`"io.gitlab.arturbosch.detekt"`), for anything but a `libs.detekt.*` dependency in a configuration other than
+  `detekt` (and `detektPlugins` takes nothing else) or the multiplatform override
+  `detekt { source.setFrom(fileTree("src") { include("**/*.kt") }) }`;
+- a rule's `excludes` uses a style the guard cannot read (it reads a block list of quoted entries, a one-line flow list,
+  and a quoted string that detekt splits at commas and semicolons);
+- a built-in rule excludes a pattern that reaches a test source set other than `test` (one of its folders mentions
+  "test" in any case, as in `**/commonTest/**` or `**/*Test/**`) although detekt's default config does not exempt that
+  rule from every test source set, or a main source path holds a folder named like a test source set.
 
-It does not see the root `build.gradle.kts`, which configures detekt for every module; Gradle code that reaches detekt
-without naming it, or that unhooks `lint` from detekt; Groovy scripts, init scripts, `gradle.properties` and
-command-line flags such as `-x detekt`; `RegexInFunctionBody` suppressions, which need only a comment; and a suppression
-by a rule ID alias, since the guard writes the IDs out and none of these rules has an alias. It does not require test
-leniency either: a rule may drop a test-source exclude.
+It does not see the root `build.gradle.kts`, which configures detekt for every module; Kotlin build logic in `.kt`
+files, such as `buildSrc`, included builds or convention plugins (gvy has none); Gradle code that reaches detekt without
+naming it, or that unhooks `lint` from detekt; Groovy scripts, init scripts, `gradle.properties` and command-line flags
+such as `-x detekt`; `RegexInFunctionBody` suppressions, which need only a comment; and a suppression by a rule ID
+alias, since the guard writes the IDs out and none of these rules has an alias. It does not require test leniency
+either: a rule may drop a test-source exclude.
 
 ## Conventions
 
