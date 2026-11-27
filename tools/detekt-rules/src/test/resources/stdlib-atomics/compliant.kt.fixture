@@ -1,0 +1,28 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing here may be reported.
+package fixtures
+
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.*
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomicsextra.Unrelated
+import kotlin.concurrent.thread
+
+/** Mentions of kotlin.concurrent.atomics.AtomicInt in KDoc are not uses, nor is a link: [kotlin.concurrent.atomics]. */
+class Mentions {
+    // kotlin.concurrent.atomics.AtomicInt in a line comment
+    val text = "kotlin.concurrent.atomics.AtomicInt(0)"
+    val unrelated: kotlin.concurrent.atomicsextra.Unrelated? = null
+    val unrelatedCall = kotlin.concurrent.atomicsextra.Unrelated()
+    val parentPackage = kotlin.concurrent.thread {}
+
+    // The JDK atomics are JdkAtomics' concern, not this rule's.
+    val jdk = java.util.concurrent.atomic.AtomicLong()
+}
+
+class Suppressed {
+    // A documented exception, suppressed at its declaration.
+    @Suppress("StdlibAtomics")
+    val counter = kotlin.concurrent.atomics.AtomicInt(0)
+}

@@ -16,6 +16,7 @@ class GvyRuleSetProviderTest {
         "RegexInFunctionBody" to "fun f() = Regex(\"a+\")",
         "VolatileProperty" to "class A { @Volatile var flag = false }",
         "JdkAtomics" to "import java.util.concurrent.atomic.AtomicBoolean",
+        "StdlibAtomics" to "import kotlin.concurrent.atomics.AtomicInt",
     )
 
     /** Every rule, as the provider builds it from the `gvy` section of the YAML config at [resource]. */

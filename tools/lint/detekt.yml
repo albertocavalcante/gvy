@@ -141,6 +141,12 @@ gvy:
     - '**/parser/core/src/**'
     # No other module is excluded (#2474): every other module the lint task reads is guarded. Kotlin outside src/main
     # and src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480).
+  StdlibAtomics:
+    active: true
+    excludes:
+    # Permanent: the stdlib atomics are experimental (KT-82228), and the facade is the only module that opts into them,
+    # behind gvy's own OnceFlag, SharedValue and Counter. Tests are not excluded: none needs the package (#2474).
+    - '**/common/concurrent/src/**'
 naming:
   active: true
   ClassNaming:
@@ -201,13 +207,6 @@ style:
     comments:
     - "STOPSHIP:"
     - "XXX:"
-  ForbiddenImport:
-    active: true
-    # The stdlib atomics are experimental (KT-82228). Only :common:concurrent opts into them, behind gvy's own
-    # OnceFlag, SharedValue and Counter; elsewhere, use those types (#2474). Syntax-only, so the PR lint gate runs it.
-    forbiddenPatterns: 'kotlin\.concurrent\.atomics\..*'
-    excludes:
-    - '**/common/concurrent/src/**'
   LoopWithTooManyJumpStatements:
     active: true
   MaxLineLength:

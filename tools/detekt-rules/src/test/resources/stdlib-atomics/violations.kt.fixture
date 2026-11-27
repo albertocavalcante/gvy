@@ -1,0 +1,44 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import kotlin.concurrent.atomics.AtomicInt // FLAG
+import kotlin.concurrent.atomics.AtomicReference as Ref // FLAG
+import kotlin.concurrent.atomics.* // FLAG
+
+@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class) // FLAG
+class Qualified {
+    val counter = kotlin.concurrent.atomics.AtomicInt(0) // FLAG
+    val holder: kotlin.concurrent.atomics.AtomicReference<String>? = null // FLAG
+    fun next(): Long = kotlin.concurrent.atomics.AtomicLong(1).incrementAndFetch() // FLAG
+}
+
+@kotlin.concurrent.atomics.ExperimentalAtomicApi // FLAG
+fun propagatesTheOptIn() = Unit
+
+fun typed(flags: List<kotlin.concurrent.atomics.AtomicBoolean>) = flags.size // FLAG
+
+typealias Flag = kotlin.concurrent.atomics.AtomicBoolean // FLAG
+
+class Forms {
+    val type = kotlin.concurrent.atomics.AtomicLong::class // FLAG
+    val increment = kotlin.concurrent.atomics.AtomicLong::incrementAndFetch // FLAG
+    fun check(value: Any) = value is kotlin.concurrent.atomics.AtomicLong // FLAG
+    fun cast(value: Any) = value as kotlin.concurrent.atomics.AtomicLong // FLAG
+    val none = emptyList<kotlin.concurrent.atomics.AtomicLong>() // FLAG
+    val text = "${kotlin.concurrent.atomics.AtomicLong(0)}" // FLAG
+}
+
+// Names are read by PSI segment, so backticks, comments and line breaks inside a name do not hide it.
+class Spellings {
+    val escaped = kotlin.concurrent.`atomics`.AtomicInt(0) // FLAG
+    val commented = kotlin.concurrent./* between */atomics.AtomicInt(0) // FLAG
+    val escapedType: kotlin.concurrent.`atomics`.AtomicInt? = null // FLAG
+    val commentedType: kotlin.concurrent./* between */atomics.AtomicInt? = null // FLAG
+    val splitType: kotlin.concurrent // FLAG
+        .atomics.AtomicInt? = null
+    val splitCall = kotlin.concurrent // FLAG
+        .atomics
+        .AtomicInt(0)
+}

@@ -11,3 +11,5 @@ gvy:
     active: true
   JdkAtomics:
     active: true
+  StdlibAtomics:
+    active: true
