@@ -434,6 +434,9 @@ test('the Gradle reader takes detekt dependencies and the source override, and r
     '}',
     'dependencies { testImplementation(libs.detekt.test) }',
     'val tool = libs.detekt.api',
+    'val note = """',
+    '    multi-line',
+    '"""; dependencies { detektPlugins(libs.detekt.formatting); add("detektPlugins", libs.detekt.formatting) }',
     'include(":tools:detekt-rules")',
     'kover { reports { filters { excludes { packages("com.github.albertocavalcante.gvy.detekt") } } } }',
     '// detekt { ignoreFailures = true } in a comment, and /* tasks.named("detekt") */ in a block comment.',
@@ -468,6 +471,9 @@ test('the Gradle reader takes detekt dependencies and the source override, and r
     ['detekt(libs.detekt.api)', 'detekt(libs.detekt.api)'],
     ['"detekt"(libs.detekt.cli)', '"detekt"(libs.detekt.cli)'],
     ['add("detekt", libs.detekt.cli)', 'add("detekt", libs.detekt.cli)'],
+    // A line that closes a multi-line string reads as it does in the file: code after the closing quotes is code.
+    ['val note = """\n    multi-line\n"""; tasks.named("detekt") { enabled = false }',
+      '"""; tasks.named("detekt") { enabled = false }'],
   ];
   for (const [script, text] of overrides) assert.deepEqual(detektOverrides(script).map(found => found.text), [text]);
 });

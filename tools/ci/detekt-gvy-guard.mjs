@@ -13,8 +13,12 @@ import { execFileSync } from 'node:child_process';
 // What is left of a line once these are removed must not name detekt, so the `detekt` configuration (the detekt CLI's
 // own classpath) and `detektPlugins` of any other artifact or project still count.
 const detektArtifact = /\blibs\.detekt(?:\.\w+)+/g;
-const detektPluginsArtifact =
-  /(?:\badd\(\s*"detektPlugins"\s*,\s*|"detektPlugins"\s*\(\s*|\bdetektPlugins\s*\(\s*)libs\.detekt(?:\.\w+)+\s*\)/g;
+// `detektPlugins(...)` of a catalog artifact, as a line's code (strings blanked) holds it.
+const detektPluginsCall = /\bdetektPlugins\s*\(\s*libs\.detekt(?:\.\w+)+\s*\)/g;
+// The same configuration named by a string, `"detektPlugins"(...)` or `add("detektPlugins", ...)`, as a line's text
+// holds it.
+const detektPluginsByName =
+  /(?:\badd\(\s*"detektPlugins"\s*,\s*|"detektPlugins"\s*\(\s*)libs\.detekt(?:\.\w+)+\s*\)/g;
 // A module may also hold a `detekt {}` block whose every line points detekt at the whole of its src, as the
 // multiplatform modules do.
 export const moduleDetektSource = 'source.setFrom(fileTree("src") { include("**/*.kt") })';
@@ -344,13 +348,6 @@ function scriptView(source) {
   return { text, code, strings };
 }
 
-/** Whether the code of one comment-free line of Gradle Kotlin names detekt, or a string on it does by [namesDetekt]. */
-function lineNamesDetekt(line) {
-  const tokens = kotlinTokens(line);
-  const strings = tokens.filter(({ kind }) => kind === 'string').map(({ start, end }) => line.slice(start, end));
-  return /detekt/i.test(blanked(line, tokens)) || strings.map(text => text.replace(/^"+|"+$/g, '')).some(namesDetekt);
-}
-
 /**
  * The lines of Gradle Kotlin script [source] that configure detekt beyond what a module build may, as `{ line, text }`.
  * A line counts when its code names detekt in any case (`detekt {}`, `tasks.withType<Detekt>()`,
@@ -378,9 +375,12 @@ export function detektOverrides(source) {
       index = end;
       continue;
     }
-    const names = /detekt/i.test(code[index]) || strings[index].some(namesDetekt);
-    const rest = line.replace(detektPluginsArtifact, '').replace(detektArtifact, '');
-    if (names && lineNamesDetekt(rest)) found.push({ line: index + 1, text: line });
+    // The dependencies come out of the whole-file views, so a line that closes a multi-line string reads as it does
+    // in the file: code after the closing quotes is code.
+    const restCode = code[index].replace(detektPluginsCall, '').replace(detektArtifact, '');
+    let byName = line.match(detektPluginsByName)?.length ?? 0;
+    const restStrings = strings[index].filter(literal => !(literal === 'detektPlugins' && byName-- > 0));
+    if (/detekt/i.test(restCode) || restStrings.some(namesDetekt)) found.push({ line: index + 1, text: line });
   }
   return found;
 }
