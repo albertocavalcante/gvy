@@ -19,6 +19,9 @@ fun completion(init: CompletionBuilder.() -> Unit): CompletionItem = CompletionB
 
 /**
  * Top-level function to create a list of completion items. Inline, so [init] may suspend when the caller can.
+ *
+ * Leave [init] with `return@completions`. A bare `return` compiles as a return from the enclosing function, which
+ * skips [CompletionsBuilder.build] and drops every item added so far.
  */
 inline fun completions(init: CompletionsBuilder.() -> Unit): List<CompletionItem> =
     CompletionsBuilder().apply(init).build()

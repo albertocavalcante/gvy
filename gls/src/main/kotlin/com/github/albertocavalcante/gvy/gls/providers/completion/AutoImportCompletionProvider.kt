@@ -96,10 +96,10 @@ object AutoImportCompletionProvider {
     /**
      * Collects classpath type candidates matching the prefix.
      *
-     * NOTE: ClasspathService.findClassesByPrefix may throw various runtime exceptions
-     * (ClassNotFoundException, NoClassDefFoundError, etc.) due to classloader issues.
-     * We catch all exceptions to prevent completion failure - this is intentional.
-     * Cancellation of the request is rethrown: the lookup suspends while the class index builds.
+     * An exception from the classpath search is logged and leaves only the workspace candidates, so completion still
+     * answers. Cancellation is rethrown, since the lookup suspends while the class index builds. Errors are not caught:
+     * when the class index build fails with one, every lookup waiting on that build rethrows it, and this completion
+     * request fails.
      */
     @Suppress("TooGenericExceptionCaught")
     private suspend fun collectClasspathCandidates(
