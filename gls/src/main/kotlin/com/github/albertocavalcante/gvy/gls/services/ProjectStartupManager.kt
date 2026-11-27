@@ -23,6 +23,10 @@ import com.github.albertocavalcante.gvy.gls.gradle.GradleTargetObserver
 import com.github.albertocavalcante.gvy.gls.gradle.ResolutionCallbacks
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.gls.telemetry.PhaseRun
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhase
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
+import com.github.albertocavalcante.gvy.gls.telemetry.measure
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionResolver
@@ -92,11 +96,14 @@ class ProjectStartupManager(
     private val classpathRestamper: ClasspathRestamper? = null,
     /** Shared with live configuration intake when this manager belongs to a language server. */
     private val reportEngineSetting: (String?) -> Unit = CoreEngineDeprecation()::report,
+    /** Records when each startup phase begins and ends, for `groovy/serverStats`. */
+    private val startupPhases: StartupPhaseRecorder = StartupPhaseRecorder(),
 ) {
     private val logger = KotlinLogging.logger {}
     private val groovyVersionResolver = GroovyVersionResolver()
     private val jdkValidator = JdkValidator
-    private val workspaceIndexer = WorkspaceIndexer(compilationService, coroutineScope, indexingDispatcher)
+    private val workspaceIndexer =
+        WorkspaceIndexer(compilationService, coroutineScope, indexingDispatcher, startupPhases)
 
     var buildToolManager: BuildToolManager? = null
         private set
@@ -199,6 +206,7 @@ class ProjectStartupManager(
 
         if (initParams == null) {
             logger.warn { "No saved initialization parameters - skipping dependency resolution" }
+            skipPhasesFrom(StartupPhase.WORKSPACE_SETUP)
             selectGroovyRuntime(config, emptyList())
             onStatusUpdate(Health.Ok, true, "Ready (no workspace)", null, null, null, null)
             return
@@ -206,6 +214,7 @@ class ProjectStartupManager(
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
             logger.info { "No workspace root found - running in light mode without dependencies" }
+            skipPhasesFrom(StartupPhase.WORKSPACE_SETUP)
             selectGroovyRuntime(config, emptyList())
             onStatusUpdate(Health.Ok, true, "Ready (light mode)", null, null, null, null)
             return
@@ -219,16 +228,27 @@ class ProjectStartupManager(
         announceResolution(client, onStatusUpdate)
 
         val progressReporter = ProgressReporter(client)
-        initializeWorkspaces(workspaceRoot, config)
+        startupPhases.measure(StartupPhase.WORKSPACE_SETUP) { initializeWorkspaces(workspaceRoot, config) }
 
         // Pre-flight: Check JDK requirements BEFORE dependency resolution
         val jdkValidation = jdkValidator.performPreflightCheck(workspaceRoot, client, onStatusUpdate)
         if (jdkValidation == PreflightResult.Abort) {
             logger.info { "Aborting dependency resolution due to JDK incompatibility" }
+            skipPhasesFrom(StartupPhase.DEPENDENCIES_RESOLVE)
             return
         }
 
         val dependencyManager = setupDependencyManager(config)
+
+        val context = CompletionCallbackContext(
+            workspaceRoot = workspaceRoot,
+            config = config,
+            textDocumentServiceRefresh = textDocumentServiceRefresh,
+            progressReporter = progressReporter,
+            client = client,
+            onStatusUpdate = onStatusUpdate,
+            dependencyPhase = startupPhases.begin(StartupPhase.DEPENDENCIES_RESOLVE),
+        )
 
         // Begin before resolution starts. Its callbacks run on other threads and can finish at once (no build tool);
         // the reporter drops an end that comes before its begin, so a later begin would stay open in the client.
@@ -236,24 +256,25 @@ class ProjectStartupManager(
         progressReporter.startDependencyResolution()
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
-            callbacks = ResolutionCallbacks(
-                onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
-                onComplete = createCompletionCallback(
-                    CompletionCallbackContext(
-                        workspaceRoot = workspaceRoot,
-                        config = config,
-                        textDocumentServiceRefresh = textDocumentServiceRefresh,
-                        progressReporter = progressReporter,
-                        client = client,
-                        onStatusUpdate = onStatusUpdate,
-                    ),
-                ),
-                onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
-                // Stopped with no completion or failure (shutdown, scope cancellation, an Error): end the progress.
-                // cancel() does nothing once the progress has ended, as onCancelled must allow.
-                onCancelled = progressReporter::cancel,
-            ),
+            callbacks = createResolutionCallbacks(context),
         )
+    }
+
+    private fun createResolutionCallbacks(context: CompletionCallbackContext) = ResolutionCallbacks(
+        onProgress = createProgressCallback(context.progressReporter, context.client, context.onStatusUpdate),
+        onComplete = createCompletionCallback(context),
+        onError = createErrorCallback(context),
+        // Stopped with no completion or failure (shutdown, scope cancellation, an Error): end the progress and the
+        // phase. Both do nothing once ended, as onCancelled must allow.
+        onCancelled = {
+            context.dependencyPhase?.cancel()
+            context.progressReporter.cancel()
+        },
+    )
+
+    /** Marks [first] and every phase after it as skipped; the phases run in [StartupPhase] order. */
+    private fun skipPhasesFrom(first: StartupPhase) {
+        startupPhases.skip(StartupPhase.entries.drop(first.ordinal))
     }
 
     /** Tells the client that dependency resolution is starting: a status update and, when connected, a message. */
@@ -366,6 +387,7 @@ class ProjectStartupManager(
         val progressReporter: ProgressReporter,
         val client: LanguageClient?,
         val onStatusUpdate: StatusUpdateCallback,
+        val dependencyPhase: PhaseRun?,
     )
 
     private fun createCompletionCallback(context: CompletionCallbackContext): (WorkspaceResolution) -> Unit =
@@ -377,6 +399,7 @@ class ProjectStartupManager(
                 }
                 else -> {
                     // Success or Warning - proceed with normal flow
+                    context.dependencyPhase?.complete()
                     logger.info {
                         "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
                             "${resolution.sourceDirectories.size} source directories"
@@ -384,12 +407,14 @@ class ProjectStartupManager(
 
                     selectGroovyRuntime(context.config, resolution.dependencies)
 
-                    compilationService.updateWorkspaceModel(
-                        workspaceRoot = context.workspaceRoot,
-                        dependencies = resolution.dependencies,
-                        sourceDirectories = resolution.sourceDirectories,
-                        targets = resolution.targetDependencies,
-                    )
+                    startupPhases.measure(StartupPhase.WORKSPACE_MODEL_PUBLISH) {
+                        compilationService.updateWorkspaceModel(
+                            workspaceRoot = context.workspaceRoot,
+                            dependencies = resolution.dependencies,
+                            sourceDirectories = resolution.sourceDirectories,
+                            targets = resolution.targetDependencies,
+                        )
+                    }
                     sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), context.workspaceRoot)
                     classpathRestamper?.let { restamper ->
                         classpathDirectoryWatchers.sync(restamper.watchedDirectories(context.workspaceRoot))
@@ -417,16 +442,16 @@ class ProjectStartupManager(
             }
         }
 
-    private fun createErrorCallback(
-        progressReporter: ProgressReporter,
-        client: LanguageClient?,
-        config: ServerConfiguration,
-        onStatusUpdate: StatusUpdateCallback,
-    ): (Exception) -> Unit = { error ->
+    private fun createErrorCallback(context: CompletionCallbackContext): (Exception) -> Unit = { error ->
         logger.error(error) { "Failed to resolve dependencies" }
-        selectGroovyRuntime(config, emptyList())
-        progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
-        client?.showMessage(
+        // FIXME(#2514): a watcher failure also reaches here while resolution goes on. The phase then ends as failed
+        //   early, and the later phases record their real run once it happens.
+        //   See: https://github.com/albertocavalcante/gvy/issues/2514
+        context.dependencyPhase?.fail()
+        skipPhasesFrom(StartupPhase.WORKSPACE_MODEL_PUBLISH)
+        selectGroovyRuntime(context.config, emptyList())
+        context.progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
+        context.client?.showMessage(
             MessageParams().apply {
                 type = MessageType.Warning
                 message = "Could not load build dependencies - LSP will work with project files only"
@@ -435,12 +460,15 @@ class ProjectStartupManager(
         // Signal warning state but still quiescent (ready for requests, but degraded)
         coroutineScope.launch(indexingDispatcher) {
             strategyInitJobs.forEach { it.join() }
-            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null, null, null)
+            val message = "Dependencies failed: ${error.message}"
+            context.onStatusUpdate(Health.Warning, true, message, null, null, null, null)
         }
     }
 
     private fun handleFailedResolution(context: CompletionCallbackContext, status: ResolutionStatus.Failed) {
         logger.error { "Dependency resolution failed: ${status.code} - ${status.message}" }
+        context.dependencyPhase?.fail()
+        skipPhasesFrom(StartupPhase.WORKSPACE_MODEL_PUBLISH)
 
         // Select the Groovy version for no dependencies, together with its worker
         selectGroovyRuntime(context.config, emptyList())

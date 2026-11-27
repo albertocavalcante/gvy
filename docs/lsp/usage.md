@@ -65,6 +65,7 @@ default.
 
 - Check [LSP feature support](feature-support.md) for protocol methods and known limits.
 - Query [runtime facts](runtime-facts.md) when a client needs the running JVM and current hover-engine state.
+- Query [server stats](server-stats.md) when a client needs the time each startup phase took.
 - If Java cannot open the JAR, check `java -version` and the absolute JAR path configured in your editor.
 - For socket connections, check that the client's address and port match the server's, including the IP address family.
 - For extension settings and logs, use the [editor guide](../../editors/code/README.md#troubleshooting).

@@ -6,6 +6,7 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -56,7 +57,7 @@ class WorkspaceIndexerCancellationTest {
                 awaitCancellation()
             }
         }
-        val indexer = WorkspaceIndexer(compilation, scope, Dispatchers.Default)
+        val indexer = WorkspaceIndexer(compilation, scope, Dispatchers.Default, StartupPhaseRecorder())
 
         indexer.startIndexing(client, { _, _, _, _, _, _, _ -> }, emptyList(), ServerConfiguration())
         val job = runBlocking { withTimeout(WAIT_MILLIS) { indexing.await() } }

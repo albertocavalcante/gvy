@@ -7,6 +7,9 @@ import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhase
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
+import com.github.albertocavalcante.gvy.gls.telemetry.measure
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -32,6 +35,7 @@ internal class WorkspaceIndexer(
     private val compilationService: GroovyCompilationService,
     private val coroutineScope: CoroutineScope,
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val startupPhases: StartupPhaseRecorder,
 ) {
     private val logger = KotlinLogging.logger {}
     private val tooLargeNotified = OnceFlag()
@@ -52,6 +56,7 @@ internal class WorkspaceIndexer(
     ) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
+            startupPhases.skip(listOf(StartupPhase.WORKSPACE_INDEX, StartupPhase.WORKSPACE_COMPILE))
             handleEmptyWorkspace(strategyInitJobs, onStatusUpdate)
             return
         }
@@ -68,7 +73,9 @@ internal class WorkspaceIndexer(
 
         coroutineScope.launch(indexingDispatcher) {
             runCatching {
-                performIndexing(sourceUris, total, indexingProgressReporter, onStatusUpdate)
+                startupPhases.measure(StartupPhase.WORKSPACE_INDEX) {
+                    performIndexing(sourceUris, total, indexingProgressReporter, onStatusUpdate)
+                }
                 performCompilation(total, config, client, onStatusUpdate)
                 strategyInitJobs.forEach { it.join() }
                 onStatusUpdate(Health.Ok, true, "Ready", total, total, null, null)
@@ -115,13 +122,15 @@ internal class WorkspaceIndexer(
         onStatusUpdate: StatusUpdateCallback,
     ) {
         if (config.isWorkspaceTooLarge(total)) {
+            startupPhases.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
             skipCompilationForLargeWorkspace(total, config.maxWorkspaceFiles, client)
             return
         }
         logger.info { "Starting workspace compilation for cross-file resolution" }
         onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null, null, null)
-        val workspaceCompiler = compilationService.getWorkspaceCompiler()
-        val compilationResult = workspaceCompiler.compileWorkspace()
+        val compilationResult = startupPhases.measure(StartupPhase.WORKSPACE_COMPILE) {
+            compilationService.getWorkspaceCompiler().compileWorkspace()
+        }
         logger.info {
             "Workspace compilation complete: ${compilationResult.modules.size} modules, " +
                 "${compilationResult.errors.size} errors"
@@ -160,6 +169,8 @@ internal class WorkspaceIndexer(
             progressReporter.cancel()
             throw throwable
         }
+        // Compile cannot follow a failed index, whether the failure is handled below or an Error escapes
+        startupPhases.skip(listOf(StartupPhase.WORKSPACE_COMPILE))
         rethrowIfCancellationOrError(throwable)
         logger.error(throwable) { "Workspace indexing failed" }
         progressReporter.completeWithError("Failed to index workspace: ${throwable.message}")

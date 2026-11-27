@@ -110,6 +110,7 @@ path = [
   "docs/kotlin-style.md",
   "docs/lsp/feature-support.md",
   "docs/lsp/runtime-facts.md",
+  "docs/lsp/server-stats.md",
   "docs/lsp/usage.md",
   "docs/overview.md",
   "docs/quality-bar.md",
