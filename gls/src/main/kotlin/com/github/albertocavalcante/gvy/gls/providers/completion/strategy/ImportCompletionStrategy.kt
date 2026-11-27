@@ -33,7 +33,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
     /**
      * Adds import-specific completions (static keyword and matching class names).
      */
-    fun addImportCompletions(ctx: ImportContext, builder: CompletionsBuilder) {
+    suspend fun addImportCompletions(ctx: ImportContext, builder: CompletionsBuilder) {
         if (ctx.canSuggestStatic) {
             builder.keyword(
                 keyword = "static",

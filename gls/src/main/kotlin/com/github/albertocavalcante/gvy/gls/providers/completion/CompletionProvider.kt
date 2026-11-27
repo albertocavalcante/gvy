@@ -211,7 +211,7 @@ object CompletionProvider {
      * This is intended for broken files (syntax errors, incomplete edits) so users
      * still get import, keyword, and snippet suggestions.
      */
-    private fun buildFallbackCompletions(
+    private suspend fun buildFallbackCompletions(
         content: String,
         line: Int,
         character: Int,
@@ -369,7 +369,7 @@ object CompletionProvider {
     //   See: https://github.com/albertocavalcante/gvy/issues/864
 
     @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _metadata for Jenkins-specific completions
-    private fun CompletionsBuilder.handleContextualCompletions(
+    private suspend fun CompletionsBuilder.handleContextualCompletions(
         completionContext: ContextType?,
         ctx: CompletionContext,
         _metadata: MergedJenkinsMetadata?,
@@ -459,7 +459,7 @@ object CompletionProvider {
     /**
      * Adds import-specific completions (static keyword and matching class names).
      */
-    private fun CompletionsBuilder.addImportCompletions(
+    private suspend fun CompletionsBuilder.addImportCompletions(
         ctx: ImportCompletionContext,
         compilationService: GroovyCompilationService,
     ) {
@@ -482,7 +482,7 @@ object CompletionProvider {
     /**
      * Add class completions for type parameters (e.g., List<I...> → Integer).
      */
-    private fun CompletionsBuilder.addTypeParameterClasses(
+    private suspend fun CompletionsBuilder.addTypeParameterClasses(
         prefix: String,
         compilationService: GroovyCompilationService,
     ) {
@@ -503,7 +503,7 @@ object CompletionProvider {
      * Add auto-import completions for types not yet imported.
      * Searches both workspace and classpath for matching types.
      */
-    private fun CompletionsBuilder.addAutoImportCompletions(
+    private suspend fun CompletionsBuilder.addAutoImportCompletions(
         prefix: String,
         uri: URI,
         content: String,

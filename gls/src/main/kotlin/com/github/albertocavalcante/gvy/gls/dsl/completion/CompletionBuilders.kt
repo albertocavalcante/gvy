@@ -18,9 +18,13 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either
 fun completion(init: CompletionBuilder.() -> Unit): CompletionItem = CompletionBuilder().apply(init).build()
 
 /**
- * Top-level function to create a list of completion items.
+ * Top-level function to create a list of completion items. Inline, so [init] may suspend when the caller can.
+ *
+ * Leave [init] with `return@completions`. A bare `return` compiles as a return from the enclosing function, which
+ * skips [CompletionsBuilder.build] and drops every item added so far.
  */
-fun completions(init: CompletionsBuilder.() -> Unit): List<CompletionItem> = CompletionsBuilder().apply(init).build()
+inline fun completions(init: CompletionsBuilder.() -> Unit): List<CompletionItem> =
+    CompletionsBuilder().apply(init).build()
 
 /**
  * Builder for a single completion item with sensible defaults.

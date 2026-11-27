@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.utils.ImportUtils
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CompletionItem
@@ -38,7 +39,7 @@ object AutoImportCompletionProvider {
      * @param classpathService The classpath service for classpath type search
      * @return List of completion items with additionalTextEdits for imports
      */
-    fun getTypeCompletions(
+    suspend fun getTypeCompletions(
         prefix: String,
         uri: URI,
         content: String,
@@ -95,12 +96,13 @@ object AutoImportCompletionProvider {
     /**
      * Collects classpath type candidates matching the prefix.
      *
-     * NOTE: ClasspathService.findClassesByPrefix may throw various runtime exceptions
-     * (ClassNotFoundException, NoClassDefFoundError, etc.) due to classloader issues.
-     * We catch all exceptions to prevent completion failure - this is intentional.
+     * An exception from the classpath search is logged and leaves only the workspace candidates, so completion still
+     * answers. Cancellation is rethrown, since the lookup suspends while the class index builds. Errors are not caught:
+     * when the class index build fails with one, every lookup waiting on that build rethrows it, and this completion
+     * request fails.
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun collectClasspathCandidates(
+    private suspend fun collectClasspathCandidates(
         classpathService: ClasspathService,
         prefix: String,
         existingImports: Set<String>,
@@ -119,6 +121,7 @@ object AutoImportCompletionProvider {
                     )
                 }
         } catch (e: Exception) {
+            rethrowIfCancellationOrError(e)
             logger.warn(e) { "Failed to search classpath for types" }
         }
     }

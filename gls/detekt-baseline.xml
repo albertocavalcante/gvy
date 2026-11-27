@@ -88,7 +88,6 @@
     <ID>SwallowedException:GroovyTextDocumentService.kt$GroovyTextDocumentService$e: IllegalArgumentException</ID>
     <ID>SwallowedException:GroovyWorkspaceService.kt$GroovyWorkspaceService$e: Exception</ID>
     <ID>SwallowedException:SourceNavigationService.kt$SourceNavigationService$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:ClasspathService.kt$ClasspathService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:CompilationOrchestrator.kt$CompilationOrchestrator$e: Exception</ID>
     <ID>TooGenericExceptionCaught:CoroutineUtils.kt$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:DependencyManager.kt$DependencyManager$e: Exception</ID>
