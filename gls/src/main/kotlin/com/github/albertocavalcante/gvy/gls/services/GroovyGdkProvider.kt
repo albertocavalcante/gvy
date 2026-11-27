@@ -31,7 +31,7 @@ class GroovyGdkProvider(
     private val logger = KotlinLogging.logger {}
 
     // The index for the current classpath; a classpath change installs a fresh one
-    private val current = SharedValue(newIndex())
+    private val currentIndex = SharedValue(newIndex())
 
     /**
      * Builds the GDK index for the current classpath if no call has built it yet, and returns once it is complete.
@@ -49,12 +49,15 @@ class GroovyGdkProvider(
      * waits for the new one.
      */
     fun onClasspathChanged() {
-        current.set(newIndex())
+        currentIndex.set(newIndex())
         index()
     }
 
-    /** The current complete index. Built by its first caller; callers that arrive during the build wait for it. */
-    private fun index(): GdkIndex = current.value.value
+    /**
+     * The current complete index. Built by its first caller; callers that arrive during the build wait for it. A lookup
+     * reads it once and passes it down, so every type it reads comes from the same index.
+     */
+    private fun index(): GdkIndex = currentIndex.value.value
 
     private fun newIndex(): Lazy<GdkIndex> = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { buildIndex() }
 
@@ -155,23 +158,25 @@ class GroovyGdkProvider(
      * by name and erased parameters. The Object extensions are appended once, not once per type.
      */
     internal fun getQualifiedMethodsForTypes(classNames: List<String>): List<QualifiedGdkMethod> {
+        val snapshot = index()
         val results = mutableListOf<QualifiedGdkMethod>()
-        classNames.distinct().forEach { collectTypeMethods(results, it) }
-        appendCachedMethods(results, JAVA_LANG_OBJECT)
+        classNames.distinct().forEach { snapshot.collectTypeMethods(results, it) }
+        snapshot.appendCachedMethods(results, JAVA_LANG_OBJECT)
         return results.distinctBy { it.display.name to it.qualifiedParameters }
     }
 
     private fun collectMethodsForType(className: String): List<QualifiedGdkMethod> {
+        val snapshot = index()
         val results = mutableListOf<QualifiedGdkMethod>()
-        collectTypeMethods(results, className)
+        snapshot.collectTypeMethods(results, className)
 
         // Always include Object methods (every Groovy object is an Object).
-        appendCachedMethods(results, JAVA_LANG_OBJECT)
+        snapshot.appendCachedMethods(results, JAVA_LANG_OBJECT)
 
         return results
     }
 
-    private fun collectTypeMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
+    private fun GdkIndex.collectTypeMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
         appendCachedMethods(results, className)
 
         val clazz = classpathService.loadClass(className)
@@ -182,11 +187,11 @@ class GroovyGdkProvider(
         }
     }
 
-    private fun appendCachedMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
-        index()[className]?.let(results::addAll)
+    private fun GdkIndex.appendCachedMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
+        this[className]?.let(results::addAll)
     }
 
-    private fun appendCachedMethodsFromHierarchy(results: MutableList<QualifiedGdkMethod>, clazz: Class<*>) {
+    private fun GdkIndex.appendCachedMethodsFromHierarchy(results: MutableList<QualifiedGdkMethod>, clazz: Class<*>) {
         collectHierarchyTypes(clazz).forEach { parent ->
             appendCachedMethods(results, parent.name)
         }
@@ -212,7 +217,7 @@ class GroovyGdkProvider(
         }
     }
 
-    private fun appendFallbackMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
+    private fun GdkIndex.appendFallbackMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
         when (className) {
             in FALLBACK_LIST_TYPES -> {
                 appendCachedMethods(results, JAVA_UTIL_LIST)
