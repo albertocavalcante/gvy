@@ -48,6 +48,7 @@ import com.github.albertocavalcante.gvy.gls.services.IndexExportService
 import com.github.albertocavalcante.gvy.gls.services.ProjectStartupManager
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
+import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhase
 import com.github.albertocavalcante.gvy.gls.telemetry.StartupPhaseRecorder
 import com.github.albertocavalcante.gvy.gls.telemetry.serverStats
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
@@ -291,6 +292,7 @@ class GroovyLanguageServer(
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
+        val initializePhase = startupPhases.begin(StartupPhase.LSP_INITIALIZE)
         logger.info { "Initializing Groovy Language Server..." }
         logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
@@ -324,6 +326,7 @@ class GroovyLanguageServer(
 
         implementationRequestsReady = true
         logger.info { "LSP initialized - ready for requests" }
+        initializePhase?.complete()
         return CompletableFuture.completedFuture(initializeResult)
     }
 

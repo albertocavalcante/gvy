@@ -49,7 +49,7 @@ class StartupPhaseRecorder(
     fun begin(phase: StartupPhase): PhaseRun? = TODO("record the start of $phase")
 
     /** Marks each phase that has not begun as skipped. */
-    fun skip(vararg phases: StartupPhase): Unit = TODO("record the skip of ${phases.toList()}")
+    fun skip(phases: Iterable<StartupPhase>): Unit = TODO("record the skip of ${phases.toList()}")
 
     internal fun snapshot(): StartupSnapshot = TODO("snapshot at ${nanoTime()} with $serverStartJvmUptimeMs")
 

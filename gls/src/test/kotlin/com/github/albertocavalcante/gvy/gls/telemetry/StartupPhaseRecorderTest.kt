@@ -137,7 +137,7 @@ class StartupPhaseRecorderTest {
     fun `skip marks a phase that never ran and leaves a phase that began alone`() {
         recorder.begin(StartupPhase.WORKSPACE_SETUP)
 
-        recorder.skip(StartupPhase.WORKSPACE_SETUP, StartupPhase.WORKSPACE_INDEX)
+        recorder.skip(listOf(StartupPhase.WORKSPACE_SETUP, StartupPhase.WORKSPACE_INDEX))
 
         val phases = recorder.snapshot().phases
         assertEquals(PhaseStatus.RUNNING, phases[StartupPhase.WORKSPACE_SETUP]?.status)
