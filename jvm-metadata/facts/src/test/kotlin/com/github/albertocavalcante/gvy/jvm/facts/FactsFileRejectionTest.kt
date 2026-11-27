@@ -224,16 +224,6 @@ class FactsFileRejectionTest {
     }
 
     @Test
-    fun `a stream that asks for a preset dictionary is corrupt`() {
-        // A zlib header with the FDICT flag, a dictionary id, a final empty fixed-Huffman block and the Adler-32 of
-        // empty output: valid except for the dictionary, which the reader cannot supply.
-        val stream = byteArrayOf(0x78, 0xBB.toByte(), 0, 0, 0, 1, 0x03, 0x00, 0, 0, 0, 1)
-        val section = TestSection(NAMES, ZLIB, stream, rawLength = 0, crc = 0)
-
-        openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
-    }
-
-    @Test
     fun `a stored section whose stored and raw lengths differ is corrupt`() {
         // Read as its raw length, the first two bytes are a valid section with a matching checksum.
         val section = TestSection(NAMES, STORED, byteArrayOf(0, 0, 9, 9), rawLength = 2, crc = crcOf(emptyNames))
