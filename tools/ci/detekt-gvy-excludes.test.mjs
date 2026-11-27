@@ -27,7 +27,7 @@ const jdkAtomicsPermanent = [
 const stdlibAtomicsPermanent = ['**/common/concurrent/src/**'];
 // RegexInFunctionBody exempts test and benchmark sources for good. The modules after them are #2420's migration list,
 // which only shrinks: the pull request that hoists a module's regexes drops its line here and in tools/lint/detekt.yml.
-const regexPermanent = ['**/src/test/**', '**/src/jmh/**'];
+const regexPermanent = ['**/src/test/**', '**/src/commonTest/**', '**/src/jvmTest/**', '**/src/jmh/**'];
 const regexMigration = [
   '**/build-tool/src/**', '**/diagnostics/codenarc/src/**', '**/jenkins/src/**', '**/parser/core/src/**',
   '**/semantics/core/src/**',
@@ -269,6 +269,38 @@ function unmatched(items, others, key) {
     counts.set(key(item), count - 1);
     return count <= 0;
   });
+}
+
+/**
+ * Every rule's `excludes` in detekt [config], as a map from `<rule set> > <rule>` to its patterns. It reads block and
+ * inline lists loosely, for the test-source consistency check; the gvy rules are pinned by the strict reader above.
+ */
+function ruleExcludes(config) {
+  const excludes = new Map();
+  let ruleSet;
+  let rule;
+  let list;
+  for (const line of yamlLines(config)) {
+    if (/^\s*(?:#.*)?$/.test(line)) continue;
+    const key = line.match(/^( *)([\w-]+):(.*)$/);
+    const entry = line.match(/^\s*- ['"]([^'"]+)['"]/);
+    if (key) {
+      const [, indent, name, value] = key;
+      if (indent.length === 0) [ruleSet, rule] = [name, undefined];
+      else if (indent.length === 2) rule = `${ruleSet} > ${name}`;
+      list = indent.length > 2 && name === 'excludes' && rule ? [] : undefined;
+      if (!list) continue;
+      excludes.set(rule, list);
+      for (const [, single, double] of value.matchAll(/'([^']*)'|"([^"]*)"/g)) list.push(single ?? double);
+    } else if (entry && list) list.push(entry[1]);
+  }
+  return excludes;
+}
+
+/** The test source sets of tracked Kotlin, such as `test`, `commonTest` and `jvmTest`. */
+function testSourceSets() {
+  const sets = gitFiles().map(path => path.match(/(?:^|\/)src\/([^/]+)\/.*\.kt$/)?.[1]);
+  return [...new Set(sets.filter(set => /^(?:t|.+T)est$/.test(set)))].sort();
 }
 
 /** The text of Gradle Kotlin script [source] with its comments blanked out, as lines. */
@@ -608,4 +640,51 @@ test('no module build configures detekt beyond its dependencies and the multipla
     'baseline, ignoreFailures, a source filter or a Detekt task setting) in the root build, where review sees it, or ' +
     'extend this guard (#2474)';
   assert.deepEqual(found, [], message);
+});
+
+test('the loose excludes reader takes block and inline lists of every rule', () => {
+  const config = [
+    'style:',
+    '  MagicNumber:',
+    '    active: true',
+    '    excludes:',
+    "    - '**/test/**'",
+    "      - '**/jvmTest/**'  # A comment.",
+    '    ignoreNumbers:',
+    "    - '-1'",
+    '  ForbiddenComment:',
+    '    excludes: ["**/test/**", \'**/commonTest/**\']',
+    'gvy:',
+    '  JdkAtomics:',
+    '    excludes:',
+    "    - '**/src/test/**'",
+  ].join('\n');
+  assert.deepEqual(Object.fromEntries(ruleExcludes(config)), {
+    'style > MagicNumber': ['**/test/**', '**/jvmTest/**'],
+    'style > ForbiddenComment': ['**/test/**', '**/commonTest/**'],
+    'gvy > JdkAtomics': ['**/src/test/**'],
+  });
+});
+
+test('a rule lenient on test sources is lenient on every test source set', () => {
+  // detekt's own defaults list the multiplatform test sets next to `**/test/**`; an override that names only `test`
+  // holds commonTest and jvmTest code to the main-code rules.
+  const sets = testSourceSets();
+  assert.ok(sets.includes('test') && sets.includes('commonTest'), `test source sets read as ${sets.join(', ')}`);
+  const missing = [...ruleExcludes(detektConfig())].flatMap(([rule, excludes]) =>
+    [['**/test/**', set => `**/${set}/**`], ['**/src/test/**', set => `**/src/${set}/**`]]
+      .filter(([lenient]) => excludes.includes(lenient))
+      .flatMap(([, pattern]) => sets.map(pattern).filter(wanted => !excludes.includes(wanted)))
+      .map(wanted => `${rule}: ${wanted}`));
+  assert.deepEqual(missing, [], 'A rule that excludes test sources must exclude every test source set gvy has');
+});
+
+test('no main source path holds a folder that a test-source exclude matches', () => {
+  // detekt matches excludes against absolute paths, so `**/test/**` would also skip main code in a `test` package.
+  const sets = testSourceSets();
+  const hidden = gitFiles().filter(path => {
+    const set = path.match(/(?:^|\/)src\/([^/]+)\/.*\.kt$/)?.[1];
+    return set && !sets.includes(set) && path.split('/').some(folder => sets.includes(folder));
+  });
+  assert.deepEqual(hidden, [], `main code in a folder named ${sets.join(', ')} would escape every test-lenient rule`);
 });

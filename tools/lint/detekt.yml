@@ -29,6 +29,8 @@ complexity:
     excludes:
     - '**/dsl/**'
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     - '**/visitor/**'
     thresholdInFiles: 20
     thresholdInClasses: 18
@@ -52,6 +54,8 @@ exceptions:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     exceptionNames:
     - ArrayIndexOutOfBoundsException
     - Error
@@ -112,6 +116,10 @@ gvy:
     active: true
     excludes:
     - '**/src/test/**'
+    - '**/src/commonTest/**'
+    - '**/src/jvmTest/**'
+    # This exempts nothing today: only parser/native has a src/jmh, and its detekt reads only src/main and src/test.
+    # It keeps benchmark code exempt if a module's detekt.source grows to cover it.
     - '**/src/jmh/**'
     # Modules whose regexes are not hoisted yet. The pull request that hoists a module removes its line here and from
     # regexMigration in tools/ci/detekt-gvy-excludes.test.mjs; the rule then guards it. The list only shrinks: that
@@ -133,8 +141,12 @@ gvy:
     # absolute paths, so a module pattern names the module's src: '**/bsp/**' would also exempt build-tool's bsp
     # package.
     - '**/src/test/**'
-    - '**/src/jvmTest/**'
     - '**/src/commonTest/**'
+    # These two exempt nothing today: src/jvmTest exists only in common/concurrent, which the facade's pattern below
+    # exempts anyway, and in viz/ast-model, which is not linted yet (#2480); src/jmh exists only in parser/native,
+    # whose detekt reads only src/main and src/test. They keep test and benchmark code exempt once such a source set
+    # is linted.
+    - '**/src/jvmTest/**'
     - '**/src/jmh/**'
     - '**/common/concurrent/src/**'
     - '**/bsp/bsp-core/src/**'
@@ -158,6 +170,8 @@ naming:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     functionPattern: "^([a-z][a-zA-Z0-9]*)|(`.*`)$"
   PackageNaming:
     active: true
@@ -171,10 +185,14 @@ performance:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
   SpreadOperator:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
 potential-bugs:
   active: true
   EqualsAlwaysReturnsTrueOrFalse:
@@ -204,6 +222,8 @@ style:
       - 'kotlin.io.print'
     excludes:
       - '**/test/**'  # Allow in tests for now (will clean up separately)
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
   ForbiddenComment:
     active: true
     comments:
@@ -220,6 +240,8 @@ style:
     active: true
     excludes:
     - '**/test/**'
+    - '**/commonTest/**'
+    - '**/jvmTest/**'
     ignoreNumbers:
     - '-1'
     - '0'
