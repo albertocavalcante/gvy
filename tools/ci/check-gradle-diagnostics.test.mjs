@@ -351,8 +351,11 @@ test('the inspected pinned-plugin trace matches only its exact reviewed debt led
   const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
   const result = check(log, { exceptions });
   assert.equal(result.ok, true);
-  assert.equal(result.diagnostics.length, 32);
-  assert.equal(result.accepted.length, 32);
+  assert.equal(result.diagnostics.length, 30);
+  assert.equal(result.accepted.length, 30);
+  // This trace predates :launcher and :common:concurrent, so :viz:ast-model was then the first multiplatform project
+  // and :build-tool the first JVM one. Their shared KGP call sites still match the identities main CI emits today.
+  assert.equal(result.diagnostics.some(line => /^\[project :(?:build-tool|viz:ast-model)\] .*\[origin org\.jetbrains\.kotlin\.gradle\./.test(line)), false);
   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
   assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
@@ -483,8 +486,8 @@ test('out-of-band Native download and codec events use emitter identity instead 
     const codecs = diagnostics.filter(line => nativeCodecOrigins.some(origin => line.endsWith(`[origin ${origin}]`)));
     assert.equal(codecs.length, 3);
     assert.ok(codecs.every(line => line.startsWith('[emitter gradle configuration-cache] ')));
-    assert.equal(diagnostics.filter(line => line.startsWith('[project :launcher] ')).length, 9);
-    assert.equal(diagnostics.some(line => line.startsWith('[project :viz:desktop] ')), false);
+    assert.equal(diagnostics.filter(line => line.startsWith('[emitter kotlin-gradle-plugin] ')).length, 9);
+    assert.equal(diagnostics.some(line => line.startsWith('[project :')), false);
   }
 });
 
@@ -541,7 +544,8 @@ test('Native debt has fourteen exact identities and rejects changed types, messa
     ['KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute', 'OtherPlugin.execute', 1],
     ['kotlin-native-prebuilt:2.3.0:', 'kotlin-native-prebuilt:2.3.1:', 1],
     ['KotlinNativeBundleArtifactFormat.kt:26', 'KotlinNativeBundleArtifactFormat.kt:27', 1],
-    ['> Configure project :launcher', '> Configure project :other', 9],
+    ['CInteropConfigurations.kt:54', 'CInteropConfigurations.kt:55', 1],
+    ['org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt', 'org.jetbrains.kotlin.gradlex.CInteropConfigurationsKt', 1],
   ]) {
     for (const log of nativeLogs) {
       assert.ok(log.includes(before), before);
@@ -663,8 +667,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 52);
-  assert.equal(exceptions.length, 57);
+  assert.equal(plugins.length, 43);
+  assert.equal(exceptions.length, 48);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {

@@ -45,10 +45,10 @@ Multiplatform has costs:
 
 - The native targets rule out the stable JDK atomics and need a multiplatform atomics API. The stdlib's, which gvy uses,
   is experimental, so the module must follow its changes until it is stable.
-- Two `Configuration.setVisible` deprecation exceptions in `tools/ci/gradle-diagnostics.json` name this project. The
-  Kotlin Gradle Plugin's multiplatform compilation and target setup raises them wherever Gradle configures the project,
-  not only in one job. The JVM-only `:build-tool` raises the same compilation-configuration warning, so only the
-  target-configuration one comes from multiplatform alone.
+- The Kotlin Gradle Plugin's multiplatform compilation and target setup raises two `Configuration.setVisible`
+  deprecations wherever Gradle configures the project, not only in one job. Their exceptions in
+  `tools/ci/gradle-diagnostics.json` are keyed by the plugin frame, not by this project: Gradle prints a shared plugin
+  call site under whichever Kotlin project configures first, and in main CI that is this project for these two.
 - With native targets in the unit-test task graph, Gradle's configuration cache decodes the plugin's
   `KotlinNativeBundleArtifactsTypes` attribute, a plain enum that Gradle 10 will reject, in the unit-test job too.
   `tools/ci/fixtures/gradle-native-codec-consumers-provenance.json` records four of the six configuration-cache codec
@@ -70,9 +70,10 @@ Callers would not change if the module went JVM-only over the JDK atomics: they 
   `LocalFileDependencyBackedArtifactSetCodec.kt:137`, `Combinators.kt:235` and `BeanPropertyExtensions.kt:61`, which
   would likely go stale. The launcher jobs also raise `DefaultTransformCodec.kt:66`, so that one stays;
 - `tools/ci/check-gradle-diagnostics.test.mjs` and its `gradle-native-codec-consumers` fixtures, which assert that the
-  real exceptions cover the four unit-job codec events;
-- this project's target-configuration `setVisible` exception. The compilation-configuration one may survive, because the
-  JVM-only `:build-tool` raises the same warning.
+  real exceptions cover the four unit-job codec events.
+
+The two `setVisible` exceptions would likely stay: the JVM-only `:build-tool` reaches the same compilation-configuration
+call site, and the multiplatform `:viz:ast-model` raised the target-configuration one before this module existed.
 
 ## Tests
 

@@ -175,10 +175,11 @@ node tools/ci/bazel-diagnostics.mjs --baseline tools/ci/bazel-diagnostics.json \
 
 ## Gradle tool diagnostics
 
-The standalone JetBrains producer applies its own exact, expiring Kotlin 2.3.0 visibility exceptions from
-`tools/ci/gradle-jetbrains-diagnostics.json`. Its root project shares the label `:` with the main build; the wrapper
-loads these exceptions only for the `jetbrains` producer, so the same warning remains unexpected in other producers. The
-producer still requires successful commands, both IDE fixture reports, the plugin ZIP and verifier reports.
+The standalone JetBrains producer also loads `tools/ci/gradle-jetbrains-diagnostics.json`, for exact, expiring debt that
+only the JetBrains build emits. Its root project shares the label `:` with the main build, so the wrapper loads these
+exceptions only for the `jetbrains` producer. Its Kotlin 2.3.0 visibility warnings use the shared Kotlin plugin
+identities described below and match the main ledger, so that file is currently empty. The producer still requires
+successful commands, both IDE fixture reports, the plugin ZIP and verifier reports.
 
 Required lint, unit, E2E and packaging invocations use `tools/ci/run-gradle.mjs`. It captures both streams, forces plain
 console output and all warnings, and retains deprecation origin traces. A successful process with a new diagnostic fails
@@ -233,6 +234,15 @@ migrated; owners, expiry dates and the unresolved Kover retirement work in
 [#1603](https://github.com/albertocavalcante/gvy/issues/1603) remain unchanged. A failed original command remains failed
 after diagnostic attribution is corrected.
 
+Gradle deprecations whose first plugin frame is in the Kotlin Gradle Plugin (`org.jetbrains.kotlin.gradle.`) use
+`[emitter kotlin-gradle-plugin]` instead of a project name. KGP runs the same code in every Kotlin project, and Gradle
+logs each distinct deprecation and stack once per build, so a shared call site prints under whichever Kotlin project
+configures first. Main CI configures `:launcher` before `:common:concurrent`; adding, renaming or reordering a project
+would move those warnings to another project with no code change. The ledger has already drifted this way: the
+`:viz:ast-model` identities stopped occurring once `:launcher` and then `:common:concurrent` configured before it. The
+exact message and KGP frame remain part of each key, so a changed call site, message or Gradle version stays unexpected,
+and other plugins keep their project attribution.
+
 Linux/macOS Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Windows
 adds one exact bundle-notation fingerprint; its remaining plugin traces reuse existing entries. Three Native enum
 consumer stacks retain distinct configuration-cache codec origins; Native download advice retains its verified bundle
@@ -273,8 +283,7 @@ The in-process Kotlin compiler is the main consumer of that metaspace (#1603). W
 loader for every compile task, so a cold build (about 70 compiles) loaded over 800k classes and reached the 2 GiB limit,
 which makes Gradle print "running out of JVM Metaspace". `kotlin.compiler.runViaBuildToolsApi=true` in gradle.properties
 makes the in-process strategy use the Build Tools API runner, which caches the compiler class loader. Do not raise the
-limit or accept the message instead.
-The E2E job records the same memory observation as the unit job.
+limit or accept the message instead. The E2E job records the same memory observation as the unit job.
 
 Hosted Linux main-build producers also require bounded numeric daemon memory observations in each invocation's
 memory.json. The sampler records heap/metaspace usage, GC and loaded/unloaded class counters without changing the

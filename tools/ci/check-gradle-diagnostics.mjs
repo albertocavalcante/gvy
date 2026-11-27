@@ -55,6 +55,12 @@ const koverLazyVisibilityOrigins = new Set([
   'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
 ]);
 
+// KGP runs the same code in every Kotlin project, and Gradle logs each distinct deprecation and stack once per build,
+// so a shared call site prints under whichever Kotlin project configures first. Adding, renaming or reordering a
+// project moves it. The exact message and KGP frame identify the debt (#1603); the last project header does not.
+const kotlinGradlePluginFrame = /^org\.jetbrains\.kotlin\.gradle\./;
+const kotlinGradlePluginEmitter = 'emitter kotlin-gradle-plugin';
+
 // Frames shared by every decode of KGP's Native bundle attribute, from the Attribute.of validation down to the read
 // that dispatches to the real caller. The first frame below them is the caller.
 const nativeBundleWrapperFrame = new RegExp('^org\\.gradle\\.(?:' + [
@@ -89,9 +95,11 @@ function deprecationOrigin(message, origin) {
   if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.')) {
     if (nativeBundleWrapperFrame.test(origin)) return undefined;
     // Decide at the first frame below the wrappers, whatever its package: a deeper recognised reader must not
-    // stand in for an unknown caller. An unknown caller, like the plugin's own initializer, keeps the last header
-    // and names its frame, so it stays unexpected and identifiable.
+    // stand in for an unknown caller. The plugin's own initializer runs once, in the first Kotlin project that
+    // loads it, so it takes the KGP emitter. Any other caller keeps the last header and names its frame, so it
+    // stays unexpected and identifiable.
     if (nativeBundleCodecCaller.test(origin)) return { origin, context: 'emitter gradle configuration-cache' };
+    if (kotlinGradlePluginFrame.test(origin)) return { origin, context: kotlinGradlePluginEmitter };
     return { origin };
   }
   if (/^(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.)/.test(origin)) return undefined;
@@ -99,6 +107,7 @@ function deprecationOrigin(message, origin) {
       /^org\.jetbrains\.kotlin\.gradle\.targets\.native\.toolchain\.KotlinNativeBundleArtifactFormat\$addKotlinNativeBundleConfiguration\$1\$1\.execute\(KotlinNativeBundleArtifactFormat\.kt:\d+\)$/.test(origin)) {
     return { origin, context: 'emitter kotlin-native bundle configuration' };
   }
+  if (kotlinGradlePluginFrame.test(origin)) return { origin, context: kotlinGradlePluginEmitter };
   return { origin };
 }
 
