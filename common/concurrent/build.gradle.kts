@@ -6,14 +6,8 @@ plugins {
 }
 
 kotlin {
+    // The root build sets jvmTarget 17 on every KotlinCompile task, which includes this target's JVM compilations.
     jvm {
-        compilations.all {
-            compileTaskProvider.configure {
-                compilerOptions {
-                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-                }
-            }
-        }
         testRuns["test"].executionTask.configure {
             useJUnitPlatform()
         }
@@ -28,7 +22,7 @@ kotlin {
 
     sourceSets {
         commonTest.dependencies {
-            implementation(kotlin("test"))
+            implementation(libs.kotlin.test)
         }
         jvmTest.dependencies {
             implementation(libs.junit.jupiter)
