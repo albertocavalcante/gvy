@@ -3,9 +3,12 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -22,6 +25,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 private const val TIMEOUT_SECONDS = 30L
 
@@ -261,7 +265,7 @@ class ClasspathClassIndexRaceTest {
                 builds.runNext()
                 builds.runNext()
 
-                assertEquals(sortedNames(widgets("com.new", 1)), stale.await())
+                assertEquals(sortedNames(widgets("com.new", 1)), awaitBounded(stale, "the stale lookup"))
             }
             assertEquals(listOf(listOf(new.toString())), index.builds.toList(), "only the new classpath is scanned")
             assertTrue(builds.isEmpty(), "a build is left in the queue")
@@ -293,7 +297,7 @@ class ClasspathClassIndexRaceTest {
                 builds.runNext()
                 builds.runNext()
 
-                stale.forEach { assertIs<NoClassDefFoundError>(it.await()) }
+                stale.forEach { assertIs<NoClassDefFoundError>(awaitBounded(it, "a stale lookup")) }
             }
             assertEquals(listOf(listOf(new.toString())), index.builds.toList(), "only the new classpath is scanned")
             assertTrue(builds.isEmpty(), "a build is left in the queue")
@@ -341,6 +345,16 @@ private fun widgets(prefix: String, count: Int): List<IndexedClass> =
 private fun sortedNames(classes: List<IndexedClass>): List<String> = classes.map { it.fullName }.sorted()
 
 private fun fullNames(classes: List<ClassInfo>): List<String> = classes.map { it.fullName }
+
+/**
+ * Awaits [deferred], which the test expects to be complete or about to be. A future that a regression never completes
+ * fails the test here, naming [what], instead of parking runBlocking until JUnit's own timeout.
+ */
+private suspend fun <T> awaitBounded(deferred: Deferred<T>, what: String): T = try {
+    withTimeout(TIMEOUT_SECONDS.seconds) { deferred.await() }
+} catch (e: TimeoutCancellationException) {
+    throw AssertionError("$what never completed", e)
+}
 
 /** The `Widget` lookup, made from a thread that runs no coroutine. */
 private fun widgetsOf(service: ClasspathService): List<String> =
