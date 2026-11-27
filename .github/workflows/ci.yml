@@ -831,6 +831,20 @@ jobs:
         # Key platforms for quick validation (full matrix in release.yml)
         os: [ubuntu-24.04, macos-15, windows-2022]
     steps:
+      # Checkout runs first: it cleans the workspace, which would delete the downloaded JAR.
+      - name: Check out startup stats tooling
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.reuse/
+            /tools/perf/
+            /docs/lsp/server-stats.md
+            /editors/code/client/src/server/launchArgs.ts
+            /tests/e2e/resources/workspaces/hover-basic/
+
       - name: Download JAR artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -858,6 +872,59 @@ jobs:
           echo "Testing JAR: $JAR_FILE"
           java -Xmx256m -jar "$JAR_FILE" --help
           echo "✅ Smoke test passed on ${{ matrix.os }}!"
+
+      # Startup stats smoke run: a measurement of the packaged JAR, not a performance gate.
+      - name: Set up Python for startup stats tooling
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned startup stats toolchain
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        shell: bash
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
+          uv sync --locked --project .reuse
+
+      - name: Check startup stats tooling
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(tools/perf/startup_stats.py tools/perf/fake_lsp_server.py tools/perf/test_startup_stats.py)
+          uv run --offline --locked --project .reuse ruff format --check "${files[@]}"
+          uv run --offline --locked --project .reuse ruff check "${files[@]}"
+          uv run --offline --locked --project .reuse basedpyright "${files[@]}"
+          uv run --offline --locked --project .reuse ty check "${files[@]}"
+
+      - name: Measure startup phases of the packaged JAR
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GVY_REQUIRE_REAL_SERVER: '1'
+        run: |
+          set -euo pipefail
+          jar=$(find dist -name '*.jar' -type f -print -quit)
+          if [[ -z "$jar" ]]; then
+            echo "::error::No JAR file found in dist/"
+            exit 1
+          fi
+          GVY_STARTUP_STATS_JAR=$(realpath "$jar")
+          GVY_STARTUP_STATS_OUTPUT="${RUNNER_TEMP}/startup-stats/startup-stats.json"
+          mkdir -p "${RUNNER_TEMP}/startup-stats"
+          export GVY_STARTUP_STATS_JAR GVY_STARTUP_STATS_OUTPUT
+          uv run --offline --locked --project .reuse python -m unittest -v tools.perf.test_startup_stats
+
+      - name: Upload startup stats
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-24.04' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: startup-stats
+          path: ${{ runner.temp }}/startup-stats/startup-stats.json
+          if-no-files-found: warn
+          retention-days: 7
 
   launcher:
     name: Native launcher

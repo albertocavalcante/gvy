@@ -408,6 +408,7 @@ path = [
   "tools/lint/README.md",
   "tools/lint/shellcheckrc",
   "tools/logging/README.md",
+  "tools/perf/startup-stats.md",
   "tools/release-please/README.md",
   "tools/release-please/config.json",
   "tools/release-please/manifest.json",

@@ -4,6 +4,9 @@ After initialization, a client can send the no-parameter JSON-RPC request `groov
 `MethodNotFound`; treat that as unavailable. The request reads numbers the server already recorded. It does not start
 work, resolve dependencies, parse a document or read the workspace.
 
+`tools/perf/startup_stats.py` sends it during repeated fresh server runs and records the results; see
+[startup phase measurement](../../tools/perf/startup-stats.md).
+
 The result is an object with `schemaVersion: 1` and two objects:
 
 - `build`: the same bounded build stamp as in [runtime facts](runtime-facts.md): `versionState` and optional `version`,
