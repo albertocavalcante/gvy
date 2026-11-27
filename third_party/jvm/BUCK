@@ -115,3 +115,17 @@ prebuilt_jar(
     visibility = ["PUBLIC"],
 )
 
+# org.ow2.asm:asm:9.9.1
+remote_file(
+    name = "asm_jar",
+    out = "asm-9.9.1.jar",
+    sha256 = "6f3828a215c920059a5efa2fb55c233d6c54ec5cadca99ce1b1bdd10077c7ddd",
+    url = "https://repo1.maven.org/maven2/org/ow2/asm/asm/9.9.1/asm-9.9.1.jar",
+)
+
+prebuilt_jar(
+    name = "asm",
+    binary_jar = ":asm_jar",
+    visibility = ["PUBLIC"],
+)
+

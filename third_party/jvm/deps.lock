@@ -64,6 +64,14 @@
       "version": "0.24.0",
       "sha1": "27512deb3601e0cbf71d61d1a5611fb99687ab8e",
       "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.ow2.asm:asm:9.9.1",
+      "group_id": "org.ow2.asm",
+      "artifact_id": "asm",
+      "version": "9.9.1",
+      "sha256": "6f3828a215c920059a5efa2fb55c233d6c54ec5cadca99ce1b1bdd10077c7ddd",
+      "repository": "https://repo1.maven.org/maven2/"
     }
   ]
 }
