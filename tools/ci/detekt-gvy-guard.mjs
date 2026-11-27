@@ -25,7 +25,7 @@ export const moduleDetektSource = 'source.setFrom(fileTree("src") { include("**/
 const namesDetekt = literal => /(?:^|:)detekt\w*$/i.test(literal) || /arturbosch\.detekt/i.test(literal);
 // Plugin IDs that publish a module, as a string literal holds them in `id(...)` or `apply(plugin = ...)`.
 const publishingPluginId =
-  /^(?:maven-publish|ivy-publish|com\.gradle\.plugin-publish|com\.vanniktech\.maven\.publish)$/i;
+  /^(?:maven-publish|ivy-publish|com\.gradle\.plugin-publish|com\.vanniktech\.maven\.publish(?:\.base)?)$/i;
 // The same plugins as code names them: `` `maven-publish` `` in `plugins {}`, a plugin class, or a version-catalog
 // alias such as `libs.plugins.mavenPublish`.
 const publishingCode =
@@ -387,11 +387,25 @@ export function detektOverrides(source) {
 
 /**
  * Whether Gradle Kotlin script [source] applies a plugin that publishes the module: maven-publish, ivy-publish,
- * com.gradle.plugin-publish or com.vanniktech.maven.publish, by ID, plugin class or version-catalog alias. Comments do
- * not count, and a string counts only when it is exactly such an ID.
+ * com.gradle.plugin-publish or com.vanniktech.maven.publish(.base), by ID, plugin class or version-catalog alias.
+ * Comments do not count, and a string counts only when it is exactly such an ID.
  */
 export function publishes(source) {
   const { code, strings } = scriptView(source);
   const named = strings.flat().some(literal => publishingPluginId.test(literal));
   return named || code.some(line => publishingCode.test(line));
+}
+
+/**
+ * The scripts that Gradle Kotlin script [source] applies with `apply(from = ...)`, as `{ path, fromRoot }`. `fromRoot`
+ * is set when the path is given from the root project, as `rootProject.file("...")` or `"$rootDir/..."`; otherwise the
+ * path is relative to the applying script's folder. Comments do not count.
+ */
+export function appliedScripts(source) {
+  const call = /\bapply\s*\(\s*from\s*=\s*(rootProject\.file\(\s*|(?:project\.)?file\(\s*)?"([^"]*)"/g;
+  return scriptView(source).text.flatMap(line => [...line.matchAll(call)].map(([, wrapper = '', path]) => {
+    const rooted = path.match(/^\$\{?(?:rootDir|rootProject\.(?:rootDir|projectDir))\}?\/(.*)$/)?.[1];
+    const local = path.match(/^\$\{?projectDir\}?\/(.*)$/)?.[1];
+    return { path: rooted ?? local ?? path, fromRoot: rooted !== undefined || wrapper.startsWith('rootProject') };
+  }));
 }

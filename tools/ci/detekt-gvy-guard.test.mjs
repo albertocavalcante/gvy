@@ -30,12 +30,12 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  detektOverrides, git, gitEnv, gitFiles, gvyRuleConfig, gvyRuleSetKeys, missingRule, moduleDetektSource, publishes,
-  inResources, ruleExcludes, sourceSet, suppressions, topLevelBlock, topLevelKeys, unmatched,
+  appliedScripts, detektOverrides, git, gitEnv, gitFiles, gvyRuleConfig, gvyRuleSetKeys, inResources, missingRule,
+  moduleDetektSource, publishes, ruleExcludes, sourceSet, suppressions, topLevelBlock, topLevelKeys, unmatched,
 } from './detekt-gvy-guard.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -184,9 +184,25 @@ test('JdkAtomics is active and excludes only its permanent patterns, each naming
 });
 
 test('the modules JdkAtomics exempts as published on their own are the ones that apply maven-publish', () => {
-  const published = tracked()
-    .filter(path => path.endsWith('.gradle.kts') && !inResources(path) && publishes(read(path)))
-    .map(path => path.replace(/\/?[^/]+\.gradle\.kts$/, '') || '.')
+  const scripts = tracked().filter(path => path.endsWith('.gradle.kts') && !inResources(path));
+  const folder = path => path.replace(/\/?[^/]+$/, '') || '.';
+  const applies = new Map(scripts.map(script => [script, appliedScripts(read(script)).map(({ path, fromRoot }) =>
+    posix.normalize(fromRoot ? path : posix.join(folder(script), path)))]));
+  // A script plugin that publishes, such as a shared gradle/publishing.gradle.kts, publishes the module applying it.
+  const publishing = new Set(scripts.filter(script => publishes(read(script))));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [script, applied] of applies) {
+      if (publishing.has(script) || !applied.some(path => publishing.has(path))) continue;
+      publishing.add(script);
+      grew = true;
+    }
+  }
+  const isBuild = path => /(?:^|\/)(?:build|settings)\.gradle\.kts$/.test(path);
+  const applied = new Set([...applies.values()].flat());
+  const published = [...publishing]
+    .filter(script => isBuild(script) || !applied.has(script))
+    .map(script => (isBuild(script) ? folder(script) : `${script}, which no build script applies`))
     .sort();
   const exempt = jdkAtomicsPermanent
     .map(permanent => permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1])
@@ -378,9 +394,10 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
   for (const { path, id, reason } of sanctionedSuppressions) {
     assert.ok(reason?.trim(), `the sanctioned @Suppress("${id}") in ${path} must give its reason`);
   }
-  // Every source set, tests included: VolatileProperty and StdlibAtomics lint tests too. The rule module's own tests
-  // are read as well: the suppressions they feed the rules sit inside string literals, which do not count.
-  const scanned = path => /\.kts?$/.test(path) && sourceSet(path) && !inResources(path);
+  // Every source set, tests and resources included: VolatileProperty and StdlibAtomics lint tests too, and the modules
+  // that set detekt.source to all of src lint their resources. The rule module's own tests are read as well: the
+  // suppressions they feed the rules sit inside string literals, which do not count.
+  const scanned = path => /\.kts?$/.test(path) && sourceSet(path);
   const sites = tracked()
     .filter(scanned)
     .flatMap(path => suppressions(read(path)).map(site => ({ path, ...site })))
@@ -390,7 +407,8 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
   const unsanctioned = unmatched(sites, sanctionedSuppressions, key).map(where);
   const message = 'Do not suppress VolatileProperty, JdkAtomics, StdlibAtomics, the gvy rule set or all rules: use ' +
     'the :common:concurrent types. A sanctioned site (a field updater, or a measured hot path) suppresses only its ' +
-    'rule, with a reason, and gets an entry with that reason in sanctionedSuppressions (#2474)';
+    'rule, with a reason, and gets an entry with that reason in sanctionedSuppressions. A fixture that needs such an ' +
+    'annotation holds it in a string literal, or gets an entry too (#2474)';
   assert.deepEqual(unsanctioned, [], message);
   const stale = unmatched(sanctionedSuppressions, sites, key).map(({ path, id }) => `${path} ${id}`);
   assert.deepEqual(stale, [], 'these sanctionedSuppressions entries match no suppression any more: remove them');
@@ -462,6 +480,7 @@ test('the publishing reader takes a publishing plugin by ID, class or alias, not
     'apply<MavenPublishPlugin>()',
     'plugins { alias(libs.plugins.mavenPublish) }',
     'plugins { alias(libs.plugins.gradle.plugin.publish) }',
+    'plugins { id("com.vanniktech.maven.publish.base") }',
   ];
   for (const script of publishing) assert.equal(publishes(script), true, script);
   const notPublishing = [
@@ -472,6 +491,19 @@ test('the publishing reader takes a publishing plugin by ID, class or alias, not
     'tasks.register("listMavenPublications")',
   ];
   for (const script of notPublishing) assert.equal(publishes(script), false, script);
+  const applying = [
+    'apply(from = "gradle/publishing.gradle.kts")',
+    'apply(from = rootProject.file("gradle/publishing.gradle.kts"))',
+    'apply(from = "$rootDir/gradle/publishing.gradle.kts")',
+    'apply(from = "${projectDir}/publishing.gradle.kts")',
+    '// apply(from = "gradle/commented.gradle.kts")',
+  ].join('\n');
+  assert.deepEqual(appliedScripts(applying), [
+    { path: 'gradle/publishing.gradle.kts', fromRoot: false },
+    { path: 'gradle/publishing.gradle.kts', fromRoot: true },
+    { path: 'gradle/publishing.gradle.kts', fromRoot: true },
+    { path: 'publishing.gradle.kts', fromRoot: false },
+  ]);
 });
 
 test('no module build configures detekt beyond its dependencies and the multiplatform source override', () => {
