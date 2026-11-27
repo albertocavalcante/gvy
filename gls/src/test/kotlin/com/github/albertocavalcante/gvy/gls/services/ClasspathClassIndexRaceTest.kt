@@ -3,6 +3,10 @@
 
 package com.github.albertocavalcante.gvy.gls.services
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -173,6 +177,61 @@ class ClasspathClassIndexRaceTest {
         } finally {
             start.countDown()
             executor.shutdownNow()
+            service.close()
+        }
+    }
+
+    @Test
+    fun `a lookup waiting for a build leaves its thread to other coroutines`() {
+        val dir = tempDir.resolve("held")
+        val index = HeldIndex(mapOf(dir.toString() to widgets("com.held", OLD_CLASSES)), hold = true)
+        val service = ClasspathService(index)
+        service.updateClasspath(listOf(dir))
+        try {
+            // runBlocking runs both coroutines on this one thread, so the test gets past yield() while the build is
+            // held only if the lookup suspended. A lookup that ran the build or parked in join() would keep the thread.
+            runBlocking {
+                val lookup = async { fullNames(service.findClassesByPrefix("Widget")) }
+                yield()
+                assertTrue(index.started.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "the build never started")
+                assertTrue(lookup.isActive, "the lookup returned before its build was released")
+                index.release.countDown()
+
+                assertEquals(sortedNames(widgets("com.held", OLD_CLASSES)), lookup.await())
+            }
+        } finally {
+            index.release.countDown()
+            service.close()
+        }
+    }
+
+    @Test
+    fun `a cancelled lookup returns at once and leaves the build to the other lookups`() {
+        val dir = tempDir.resolve("cancelled")
+        val index = HeldIndex(mapOf(dir.toString() to widgets("com.cancelled", OLD_CLASSES)), hold = true)
+        val service = ClasspathService(index)
+        service.updateClasspath(listOf(dir))
+        val expected = sortedNames(widgets("com.cancelled", OLD_CLASSES))
+        try {
+            runBlocking {
+                val cancelled = async { fullNames(service.findClassesByPrefix("Widget")) }
+                val waiter = async { fullNames(service.findClassesByPrefix("Widget")) }
+                yield()
+                assertTrue(index.started.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "the build never started")
+
+                // The build is still held, so the cancelled lookup can finish only by leaving it to the others.
+                cancelled.cancelAndJoin()
+                assertTrue(cancelled.isCancelled, "the cancelled lookup")
+                assertTrue(waiter.isActive, "the other lookup returned before the build was released")
+                index.release.countDown()
+
+                assertEquals(expected, waiter.await(), "a lookup sharing the build with the cancelled one")
+            }
+            // Cancelling a lookup must not cancel the build it shared, or every later lookup would fail.
+            assertEquals(expected, runBlocking { fullNames(service.findClassesByPrefix("Widget")) }, "the next lookup")
+            assertEquals(1, index.builds.size, "builds run for one classpath")
+        } finally {
+            index.release.countDown()
             service.close()
         }
     }
