@@ -39,8 +39,9 @@ private const val PROGRESS_COMPLETE = 100
  * [onCancelled] runs when the current attempt of the request stops before a completion or failure was delivered in
  * full and no later attempt carries the request on: [DependencyManager.cancel], [DependencyManager.reset],
  * cancellation of the owning scope, an attempt for another request taking over, a build-file refresh that found the
- * watcher gone after signalling the attempt, or an exception thrown out of the attempt (an [Error], or a delivery that
- * threw). A build-file refresh carries the request on, so its attempt's completion or failure ends the request instead.
+ * watcher gone after signalling the attempt, or an exception thrown out of the attempt (an [Error], a delivery that
+ * threw, or a cancellation that nothing signalled). A build-file refresh carries the request on, so its attempt's
+ * completion or failure ends the request instead.
  *
  * An attempt is marked as having ended its request at most once: by the first completion or failure delivered in full,
  * or by [onCancelled]. That bounds the ends of the progress, not the callbacks. A watcher failure delivers [onError]
@@ -112,7 +113,8 @@ class DependencyManager(
     /**
      * Starts a new attempt after failure, or for a changed workspace, reporting to [callbacks].
      * A duplicate of the active or successful request for the same workspace is ignored, and none of its [callbacks]
-     * ever runs.
+     * ever runs. When this request replaces another one, the replaced request's onCancelled can arrive after this
+     * request's progress has already ended, so callers must not share one onCancelled target between requests.
      */
     internal fun startAsyncResolution(
         workspaceRoot: Path,
@@ -201,19 +203,19 @@ class DependencyManager(
         state.set(State.IN_PROGRESS)
         val attempt = Attempt(generation, request, enableFileWatching)
         currentAttempt.set(attempt)
-        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { resolve(attempt) }
+        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { runAttempt(attempt) }
         resolutionJob = job
         val replaced = expected?.takeIf { it.request !== request }
         StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher, replaced))
     }
 
     private fun launchAttempt(effects: StartEffects) {
-        cancelJob(effects.previousJob)
-        stopWatcher(effects.previousWatcher)
         try {
+            cancelJob(effects.previousJob)
+            stopWatcher(effects.previousWatcher)
             startAttempt(effects)
         } finally {
-            // Ended last, even if starting threw: an attempt of another request was replaced and nothing follows it
+            // Ended last, even if anything above threw: another request's attempt was replaced and nothing follows it
             effects.replaced?.let { replaced -> synchronized(lock) { cancelAttempt(replaced) } }
         }
     }
@@ -245,6 +247,23 @@ class DependencyManager(
             effects.attempt.request.callbacks.onProgress?.invoke(0, "Starting dependency resolution...")
         }
         effects.job.start()
+    }
+
+    /**
+     * Runs [attempt], and ends its request when a cancellation escapes that nothing signalled. Every real stop
+     * (stop(), a refresh, a superseding attempt, the owning scope) signals the attempt's token or supersedes the
+     * attempt first, while a stray cancellation (a delivery joining a cancelled future, a build tool's own) leaves both
+     * untouched. The completion handler cannot tell the two apart, because a cancelling job signals the token whatever
+     * the cause. A cancelled scope seen just before its handler signals the token ends the request here, as the
+     * completion handler would.
+     */
+    private suspend fun runAttempt(attempt: Attempt) {
+        try {
+            resolve(attempt)
+        } catch (e: CancellationException) {
+            notifyCurrent(attempt) { cancelAttempt(attempt) }
+            throw e
+        }
     }
 
     @Suppress("TooGenericExceptionCaught") // Build tool implementations expose failures as arbitrary exceptions.
@@ -332,8 +351,8 @@ class DependencyManager(
     /**
      * Delivers [attempt]'s completion or failure while it is current, and only once [deliver] returns records that the
      * attempt ended its request. A delivery that throws leaves the attempt unsettled, so the request still gets an end:
-     * the failure delivered in its place, or, when the exception escapes resolve, onCancelled from the completion
-     * handler.
+     * the failure delivered in its place; or, when the exception escapes resolve, onCancelled from the completion
+     * handler for an exception, and from [runAttempt] for a cancellation that nothing signalled.
      */
     private fun settleCurrent(attempt: Attempt, deliver: () -> Unit) = notifyCurrent(attempt) {
         deliver()
