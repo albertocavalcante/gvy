@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
@@ -298,6 +299,21 @@ class GroovyGdkProviderTest {
         assertThat(eachMethod).isNotNull
         // Should have parameter names from reflection
         assertThat(eachMethod?.parameterNames).hasSize(1)
+    }
+
+    @Test
+    fun `a classpath change rebuilds the index without initializing the resolver again`() {
+        val resolver = mockk<GroovySourceResolver>()
+        coEvery { resolver.initialize() } returns true
+        every { resolver.getParameterNames(any(), any(), any()) } returns null
+        val provider = GroovyGdkProvider(ClasspathService(), resolver)
+
+        provider.initialize()
+        provider.onClasspathChanged()
+
+        // The resolver reads the server's own Groovy, not the classpath: one initialization serves every index
+        coVerify(exactly = 1) { resolver.initialize() }
+        assertThat(provider.getMethodsForType("java.util.List").map { it.name }).contains("each")
     }
 
     @Test
