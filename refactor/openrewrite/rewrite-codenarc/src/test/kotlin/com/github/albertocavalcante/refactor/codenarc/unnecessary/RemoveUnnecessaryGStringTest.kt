@@ -31,7 +31,7 @@ class RemoveUnnecessaryGStringTest : RewriteTest {
     // Negative tests - should NOT convert:
 
     @Test
-    fun `preserves GString with expressions`() = rewriteRun(
+    fun `preserves GString with expressions`(): Unit = rewriteRun(
         groovy(
             """
             def name = "World"
@@ -41,7 +41,7 @@ class RemoveUnnecessaryGStringTest : RewriteTest {
     )
 
     @Test
-    fun `preserves GString with simple variable`() = rewriteRun(
+    fun `preserves GString with simple variable`(): Unit = rewriteRun(
         groovy(
             """
             def name = "World"
@@ -51,7 +51,7 @@ class RemoveUnnecessaryGStringTest : RewriteTest {
     )
 
     @Test
-    fun `no change for single-quoted strings`() = rewriteRun(
+    fun `no change for single-quoted strings`(): Unit = rewriteRun(
         groovy(
             """
             def str = 'hello'
@@ -60,7 +60,7 @@ class RemoveUnnecessaryGStringTest : RewriteTest {
     )
 
     @Test
-    fun `preserves GStrings with internal single quotes`() = rewriteRun(
+    fun `preserves GStrings with internal single quotes`(): Unit = rewriteRun(
         groovy(
             """
             def str = "it's a test"

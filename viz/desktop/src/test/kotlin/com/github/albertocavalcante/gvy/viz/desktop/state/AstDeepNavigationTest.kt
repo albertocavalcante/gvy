@@ -34,14 +34,15 @@ class AstDeepNavigationTest {
     }
 
     @Test
-    fun `selecting an owned deeply nested DTO does not overflow the stack`() = withDeepTree { model, leaf ->
+    fun `selecting an owned deeply nested DTO does not overflow the stack`(): Unit = withDeepTree { model, leaf ->
         model.selectNode(leaf)
         assertSame(leaf, model.selectedNode)
     }
 
     @Test
-    fun `caret lookup prefers the deepest equal span without overflowing the stack`() = withDeepTree { model, leaf ->
-        model.selectNodeAt(1, 1)
-        assertSame(leaf, model.selectedNode)
-    }
+    fun `caret lookup prefers the deepest equal span without overflowing the stack`(): Unit =
+        withDeepTree { model, leaf ->
+            model.selectNodeAt(1, 1)
+            assertSame(leaf, model.selectedNode)
+        }
 }

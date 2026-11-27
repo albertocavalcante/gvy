@@ -111,10 +111,10 @@ class JenkinsPerFileMetadataTest {
     }
 
     @Test
-    fun `each Jenkinsfile sees only its own library steps when A compiles first`() = assertScopedSteps(true)
+    fun `each Jenkinsfile sees only its own library steps when A compiles first`(): Unit = assertScopedSteps(true)
 
     @Test
-    fun `each Jenkinsfile sees only its own library steps when B compiles first`() = assertScopedSteps(false)
+    fun `each Jenkinsfile sees only its own library steps when B compiles first`(): Unit = assertScopedSteps(false)
 
     @Test
     fun `an older compile of the same file that finishes last does not replace the newer classpath`() {
@@ -166,10 +166,10 @@ class JenkinsPerFileMetadataTest {
     }
 
     @Test
-    fun `each Jenkinsfile compiles against its own step stubs when A compiles first`() = assertScopedStubs(true)
+    fun `each Jenkinsfile compiles against its own step stubs when A compiles first`(): Unit = assertScopedStubs(true)
 
     @Test
-    fun `each Jenkinsfile compiles against its own step stubs when B compiles first`() = assertScopedStubs(false)
+    fun `each Jenkinsfile compiles against its own step stubs when B compiles first`(): Unit = assertScopedStubs(false)
 
     @Test
     fun `a stub set that cannot be written falls back to the bundled set, never another file's`() {

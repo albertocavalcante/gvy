@@ -32,7 +32,7 @@ class SemanticTokensHandlerTest {
     private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setup() = runBlocking {
+    fun setup(): Unit = runBlocking {
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         compilationService = GroovyCompilationService()
         documentProvider = DocumentProvider()

@@ -41,14 +41,14 @@ class DispatchNamesHierarchyTest {
     }
 
     @Test
-    fun `an interface hook on a class deeper than the hierarchy depth bound is found`() =
+    fun `an interface hook on a class deeper than the hierarchy depth bound is found`(): Unit =
         assertTimeoutPreemptively(Duration.ofSeconds(TIMEOUT_SECONDS)) {
             val leaf = leafWithDeepInterface(MAX_HIERARCHY_DEPTH + 44, withHook = true)
             assertTrue(DispatchNames.dispatchesDynamically(listOf(leaf)))
         }
 
     @Test
-    fun `the same deep chain without a hook does not dispatch dynamically`() =
+    fun `the same deep chain without a hook does not dispatch dynamically`(): Unit =
         assertTimeoutPreemptively(Duration.ofSeconds(TIMEOUT_SECONDS)) {
             val leaf = leafWithDeepInterface(MAX_HIERARCHY_DEPTH + 44, withHook = false)
             assertFalse(DispatchNames.dispatchesDynamically(listOf(leaf)))

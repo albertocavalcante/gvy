@@ -61,7 +61,7 @@ class ShadowedListedSpellingTest {
     private var reads = 0
 
     @AfterEach
-    fun tearDown() = scope.cancel()
+    fun tearDown(): Unit = scope.cancel()
 
     private fun start(caseInsensitive: Boolean = false) {
         compilation = GroovyCompilationService(

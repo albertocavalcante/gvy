@@ -25,7 +25,7 @@ class SimplifyExplicitHashMapInstantiationTest : RewriteTest {
     }
 
     @Test
-    fun `converts new HashMap to map literal`() = rewriteRun(
+    fun `converts new HashMap to map literal`(): Unit = rewriteRun(
         groovy(
             """
             def map = new HashMap()
@@ -37,7 +37,7 @@ class SimplifyExplicitHashMapInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `converts new LinkedHashMap to map literal`() = rewriteRun(
+    fun `converts new LinkedHashMap to map literal`(): Unit = rewriteRun(
         groovy(
             """
             def map = new java.util.LinkedHashMap()
@@ -49,7 +49,7 @@ class SimplifyExplicitHashMapInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `converts generic HashMap`() = rewriteRun(
+    fun `converts generic HashMap`(): Unit = rewriteRun(
         groovy(
             """
             def map = new HashMap<String, String>()
@@ -61,7 +61,7 @@ class SimplifyExplicitHashMapInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves with initial capacity`() = rewriteRun(
+    fun `preserves with initial capacity`(): Unit = rewriteRun(
         groovy(
             """
             def map = new HashMap(10)
@@ -70,7 +70,7 @@ class SimplifyExplicitHashMapInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves with map argument`() = rewriteRun(
+    fun `preserves with map argument`(): Unit = rewriteRun(
         groovy(
             """
             def other = [a: 1]

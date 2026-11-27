@@ -61,7 +61,7 @@ class AstTestExecutionTest {
     }
 
     @Test
-    fun `plain ASTTest on a class`() = assertNotExecuted(
+    fun `plain ASTTest on a class`(): Unit = assertNotExecuted(
         "plain",
         "@groovy.transform.ASTTest(phase=org.codehaus.groovy.control.CompilePhase.SEMANTIC_ANALYSIS," +
             " value=CLOSURE)\nclass A {}",
@@ -75,7 +75,7 @@ class AstTestExecutionTest {
     }
 
     @Test
-    fun `members, parameters and locals`() = assertNotExecuted(
+    fun `members, parameters and locals`(): Unit = assertNotExecuted(
         "members",
         """
         class A {
@@ -158,7 +158,7 @@ class AstTestExecutionTest {
     }
 
     @Test
-    fun `AnnotationCollector that carries ASTTest as a plain annotation`() = assertNotExecuted(
+    fun `AnnotationCollector that carries ASTTest as a plain annotation`(): Unit = assertNotExecuted(
         "collector-direct",
         "import groovy.transform.AnnotationCollector\nimport groovy.transform.ASTTest\n" +
             "@AnnotationCollector @ASTTest(value=CLOSURE) @interface Boom {}\n@Boom\nclass A {}",

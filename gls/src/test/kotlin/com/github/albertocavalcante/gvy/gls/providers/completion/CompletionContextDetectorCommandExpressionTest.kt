@@ -16,16 +16,16 @@ class CompletionContextDetectorCommandExpressionTest {
         CompletionContextDetector.isCommandExpression(line, 0, cursor, method)
 
     @Test
-    fun `detects after complete single-quoted argument`() = assertTrue(detect("sh 'ls'", "sh"))
+    fun `detects after complete single-quoted argument`(): Unit = assertTrue(detect("sh 'ls'", "sh"))
 
     @Test
-    fun `detects after complete double-quoted argument`() = assertTrue(detect("println \"x\"", "println"))
+    fun `detects after complete double-quoted argument`(): Unit = assertTrue(detect("println \"x\"", "println"))
 
     @Test
-    fun `detects with trailing whitespace after the argument`() = assertTrue(detect("sh 'ls' ", "sh"))
+    fun `detects with trailing whitespace after the argument`(): Unit = assertTrue(detect("sh 'ls' ", "sh"))
 
     @Test
-    fun `detects after indentation and extra spaces`() = assertTrue(detect("    echo   'foo'", "echo"))
+    fun `detects after indentation and extra spaces`(): Unit = assertTrue(detect("    echo   'foo'", "echo"))
 
     @Test
     fun `detects after triple-quoted argument`() {
@@ -34,10 +34,11 @@ class CompletionContextDetectorCommandExpressionTest {
     }
 
     @Test
-    fun `detects argument containing escaped quote`() = assertTrue(detect("echo 'it\\'s'", "echo"))
+    fun `detects argument containing escaped quote`(): Unit = assertTrue(detect("echo 'it\\'s'", "echo"))
 
     @Test
-    fun `detects triple-quoted argument containing a lone quote`() = assertTrue(detect("sh '''echo 'x' '''", "sh"))
+    fun `detects triple-quoted argument containing a lone quote`(): Unit =
+        assertTrue(detect("sh '''echo 'x' '''", "sh"))
 
     @Test
     fun `detects with a partially typed option name after the argument`() {
@@ -53,22 +54,22 @@ class CompletionContextDetectorCommandExpressionTest {
     }
 
     @Test
-    fun `does not match with cursor inside a closed string`() = assertFalse(detect("sh 'ls'", "sh", cursor = 6))
+    fun `does not match with cursor inside a closed string`(): Unit = assertFalse(detect("sh 'ls'", "sh", cursor = 6))
 
     @Test
-    fun `does not match when a comma already follows the argument`() = assertFalse(detect("sh 'ls',", "sh"))
+    fun `does not match when a comma already follows the argument`(): Unit = assertFalse(detect("sh 'ls',", "sh"))
 
     @Test
-    fun `does not match unquoted argument`() = assertFalse(detect("echo foo", "echo"))
+    fun `does not match unquoted argument`(): Unit = assertFalse(detect("echo foo", "echo"))
 
     @Test
-    fun `does not match parenthesised call`() = assertFalse(detect("sh('ls'", "sh"))
+    fun `does not match parenthesised call`(): Unit = assertFalse(detect("sh('ls'", "sh"))
 
     @Test
-    fun `does not match a different method name`() = assertFalse(detect("shell 'ls'", "sh"))
+    fun `does not match a different method name`(): Unit = assertFalse(detect("shell 'ls'", "sh"))
 
     @Test
-    fun `out of range position is false`() =
+    fun `out of range position is false`(): Unit =
         assertFalse(CompletionContextDetector.isCommandExpression("sh 'ls'", 5, 0, "sh"))
 
     @Test

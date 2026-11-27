@@ -27,11 +27,11 @@ class ScenarioValidationTest {
     }
 
     @Test
-    fun `invalid static JSONPath fails before workspace or server startup`() =
+    fun `invalid static JSONPath fails before workspace or server startup`(): Unit =
         assertInvalidBeforeStartup(JsonCheck("$[?(", JsonExpectation()))
 
     @Test
-    fun `invalid static regex fails before workspace or server startup`() = assertInvalidBeforeStartup(
+    fun `invalid static regex fails before workspace or server startup`(): Unit = assertInvalidBeforeStartup(
         JsonCheck("$", JsonExpectation(type = ExpectationType.MATCHES_REGEX, value = JsonPrimitive("("))),
     )
 

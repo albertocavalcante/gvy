@@ -29,7 +29,7 @@ class GlobalClassWorkspaceLookupTest {
     private val strategy = GlobalClassResolutionStrategy(compilation)
 
     @AfterEach
-    fun close() = compilation.clearCaches()
+    fun close(): Unit = compilation.clearCaches()
 
     @Test
     fun `a class in a closed workspace file resolves to that file`(): Unit = runBlocking {

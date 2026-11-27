@@ -21,7 +21,7 @@ class RemoveUnnecessaryNullCheckBeforeInstanceOfTest : RewriteTest {
     }
 
     @Test
-    fun `removes null check before instanceof`() = rewriteRun(
+    fun `removes null check before instanceof`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -45,7 +45,7 @@ class RemoveUnnecessaryNullCheckBeforeInstanceOfTest : RewriteTest {
     )
 
     @Test
-    fun `removes null check after instanceof`() = rewriteRun(
+    fun `removes null check after instanceof`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -69,7 +69,7 @@ class RemoveUnnecessaryNullCheckBeforeInstanceOfTest : RewriteTest {
     )
 
     @Test
-    fun `preserves null check with different variable`() = rewriteRun(
+    fun `preserves null check with different variable`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -84,7 +84,7 @@ class RemoveUnnecessaryNullCheckBeforeInstanceOfTest : RewriteTest {
     )
 
     @Test
-    fun `preserves null check without instanceof`() = rewriteRun(
+    fun `preserves null check without instanceof`(): Unit = rewriteRun(
         groovy(
             """
             class Example {

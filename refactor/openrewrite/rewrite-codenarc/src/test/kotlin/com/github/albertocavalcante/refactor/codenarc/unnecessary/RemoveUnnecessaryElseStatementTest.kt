@@ -20,7 +20,7 @@ class RemoveUnnecessaryElseStatementTest : RewriteTest {
     }
 
     @Test
-    fun `removes else when if returns`() = rewriteRun(
+    fun `removes else when if returns`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -47,7 +47,7 @@ class RemoveUnnecessaryElseStatementTest : RewriteTest {
     )
 
     @Test
-    fun `preserves else when if does not return`() = rewriteRun(
+    fun `preserves else when if does not return`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -64,7 +64,7 @@ class RemoveUnnecessaryElseStatementTest : RewriteTest {
     )
 
     @Test
-    fun `corrects indentation for multi-statement else`() = rewriteRun(
+    fun `corrects indentation for multi-statement else`(): Unit = rewriteRun(
         groovy(
             """
             class Example {

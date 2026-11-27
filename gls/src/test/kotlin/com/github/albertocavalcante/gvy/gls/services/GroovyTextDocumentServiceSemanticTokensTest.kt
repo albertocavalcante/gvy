@@ -31,7 +31,7 @@ class GroovyTextDocumentServiceSemanticTokensTest {
     private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setup() = runBlocking {
+    fun setup(): Unit = runBlocking {
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         // One DocumentProvider shared by both services, as GroovyLanguageServer wires them.
         val documentProvider = DocumentProvider()

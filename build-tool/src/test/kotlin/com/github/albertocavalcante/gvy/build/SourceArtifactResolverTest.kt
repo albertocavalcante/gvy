@@ -31,7 +31,7 @@ class SourceArtifactResolverTest {
     }
 
     @Test
-    fun `should return null for non-existent artifact`() = runBlocking {
+    fun `should return null for non-existent artifact`(): Unit = runBlocking {
         val result = resolver.resolveSourceJar(
             groupId = "com.nonexistent",
             artifactId = "nonexistent-artifact",
@@ -51,7 +51,7 @@ class SourceArtifactResolverTest {
     }
 
     @Test
-    fun `should resolve sources jar for known Jenkins plugin`() = runBlocking {
+    fun `should resolve sources jar for known Jenkins plugin`(): Unit = runBlocking {
         // This test may download from Maven Central - mark as integration test if too slow
         val result = resolver.resolveSourceJar(
             groupId = "org.jenkins-ci.plugins.workflow",
@@ -68,7 +68,7 @@ class SourceArtifactResolverTest {
     }
 
     @Test
-    fun `should cache resolved sources jar`() = runBlocking {
+    fun `should cache resolved sources jar`(): Unit = runBlocking {
         val groupId = "org.jenkins-ci.plugins.workflow"
         val artifactId = "workflow-step-api"
         val version = "2.24"

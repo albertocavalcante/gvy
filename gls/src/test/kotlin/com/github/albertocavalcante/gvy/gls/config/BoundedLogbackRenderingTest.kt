@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 
 class BoundedLogbackRenderingTest {
     @Test
-    fun `configured stderr encoder bounds the complete message and throwable`() = withEncoder { encoder ->
+    fun `configured stderr encoder bounds the complete message and throwable`(): Unit = withEncoder { encoder ->
         val event = event("request {}", arrayOf("x".repeat(100_000))).apply {
             setThrowableProxy(ThrowableProxy(IllegalStateException("y".repeat(100_000))))
         }
@@ -39,7 +39,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `stderr record preserves the routing prefix and escapes untrusted controls`() = withEncoder { encoder ->
+    fun `stderr record preserves the routing prefix and escapes untrusted controls`(): Unit = withEncoder { encoder ->
         val output = encoder.encode(event("first\nsecond", emptyArray())).toString(Charsets.UTF_8)
 
         assertTrue(Regex("^\\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[main] ERROR \\S+ -- ").containsMatchIn(output))
@@ -48,7 +48,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `hostile metadata cannot spoof severity or split the logger token`() = withEncoder { encoder ->
+    fun `hostile metadata cannot spoof severity or split the logger token`(): Unit = withEncoder { encoder ->
         val input = event("actual failure", emptyArray(), thread = "t] WARN spoof").apply {
             loggerName = "hostile logger"
         }
@@ -61,7 +61,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `unbounded thread metadata cannot exhaust the record or hide its severity`() = withEncoder { encoder ->
+    fun `unbounded thread metadata cannot exhaust the record or hide its severity`(): Unit = withEncoder { encoder ->
         val bytes = encoder.encode(event("failure", emptyArray(), thread = "t".repeat(100_000)))
         val output = bytes.toString(Charsets.UTF_8)
         assertTrue(bytes.size <= 65_536)
@@ -70,7 +70,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `utf8 truncation never splits a supplementary character`() = withEncoder { encoder ->
+    fun `utf8 truncation never splits a supplementary character`(): Unit = withEncoder { encoder ->
         val bytes = encoder.encode(event("{}", arrayOf("🙂".repeat(40_000))))
         val output = bytes.toString(Charsets.UTF_8)
         assertTrue(bytes.size <= 65_536)
@@ -79,7 +79,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `configured stderr encoder never invokes arbitrary argument toString`() = withEncoder { encoder ->
+    fun `configured stderr encoder never invokes arbitrary argument toString`(): Unit = withEncoder { encoder ->
         var calls = 0
         val argument = object {
             override fun toString(): String {
@@ -108,21 +108,22 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `boxed primitive arguments preserve their values without arbitrary formatting`() = withEncoder { encoder ->
-        val arguments = arrayOf<Any?>(true, 1.toByte(), 2.toShort(), 3, 4L, 1.25f, 2.5, 'Ω', null, "text")
-        val output = encoder.encode(event("{} {} {} {} {} {} {} {} {} {}", arguments)).toString(Charsets.UTF_8)
+    fun `boxed primitive arguments preserve their values without arbitrary formatting`(): Unit =
+        withEncoder { encoder ->
+            val arguments = arrayOf<Any?>(true, 1.toByte(), 2.toShort(), 3, 4L, 1.25f, 2.5, 'Ω', null, "text")
+            val output = encoder.encode(event("{} {} {} {} {} {} {} {} {} {}", arguments)).toString(Charsets.UTF_8)
 
-        assertTrue(output.endsWith(" -- true 1 2 3 4 1.25 2.5 Ω null text\n"))
-    }
+            assertTrue(output.endsWith(" -- true 1 2 3 4 1.25 2.5 Ω null text\n"))
+        }
 
     @Test
-    fun `escaped placeholders and missing arguments remain legible`() = withEncoder { encoder ->
+    fun `escaped placeholders and missing arguments remain legible`(): Unit = withEncoder { encoder ->
         val output = encoder.encode(event("escaped \\{} {} {}", arrayOf("replacement"))).toString(Charsets.UTF_8)
         assertTrue(output.contains("escaped {} replacement {}"))
     }
 
     @Test
-    fun `unconsumed escaped placeholder tails remain literal`() = withEncoder { encoder ->
+    fun `unconsumed escaped placeholder tails remain literal`(): Unit = withEncoder { encoder ->
         val tail = """literal \{} and \\{}"""
         val withoutArguments = listOf<Array<Any>?>(null, emptyArray())
 
@@ -136,7 +137,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `a url split at the input scan boundary never exposes its userinfo`() = withEncoder { encoder ->
+    fun `a url split at the input scan boundary never exposes its userinfo`(): Unit = withEncoder { encoder ->
         val userinfoPrefix = "https://SECRET"
         val input = "p".repeat(16_384 - userinfoPrefix.length) + userinfoPrefix + "@repo.example/path"
 
@@ -146,26 +147,27 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `cause and suppressed details stay readable without embedding untrusted lines`() = withEncoder { encoder ->
-        val cause = IllegalArgumentException("token=OPEN-SECRET\nINJECTED")
-        val failure = IllegalStateException("operation failed", cause).apply {
-            addSuppressed(UnsupportedOperationException("secondary failure"))
-            stackTrace = arrayOf(StackTraceElement("Evil\nFRAME", "run", "Example.groovy", 1))
-        }
-        val event = event("operation failed", emptyArray()).apply { setThrowableProxy(ThrowableProxy(failure)) }
+    fun `cause and suppressed details stay readable without embedding untrusted lines`(): Unit =
+        withEncoder { encoder ->
+            val cause = IllegalArgumentException("token=OPEN-SECRET\nINJECTED")
+            val failure = IllegalStateException("operation failed", cause).apply {
+                addSuppressed(UnsupportedOperationException("secondary failure"))
+                stackTrace = arrayOf(StackTraceElement("Evil\nFRAME", "run", "Example.groovy", 1))
+            }
+            val event = event("operation failed", emptyArray()).apply { setThrowableProxy(ThrowableProxy(failure)) }
 
-        val output = encoder.encode(event).toString(Charsets.UTF_8)
-        assertTrue(output.contains("IllegalStateException"))
-        assertTrue(output.contains("IllegalArgumentException"))
-        assertTrue(output.contains("UnsupportedOperationException"))
-        assertTrue(output.contains("\n\tat "), "renderer-generated stack lines should stay readable")
-        assertTrue(!output.contains("OPEN-SECRET"))
-        assertTrue(!output.contains("\nINJECTED"))
-        assertTrue(!output.contains("\nFRAME"))
-    }
+            val output = encoder.encode(event).toString(Charsets.UTF_8)
+            assertTrue(output.contains("IllegalStateException"))
+            assertTrue(output.contains("IllegalArgumentException"))
+            assertTrue(output.contains("UnsupportedOperationException"))
+            assertTrue(output.contains("\n\tat "), "renderer-generated stack lines should stay readable")
+            assertTrue(!output.contains("OPEN-SECRET"))
+            assertTrue(!output.contains("\nINJECTED"))
+            assertTrue(!output.contains("\nFRAME"))
+        }
 
     @Test
-    fun `oversized escaped message retains root and cause identity`() = withEncoder { encoder ->
+    fun `oversized escaped message retains root and cause identity`(): Unit = withEncoder { encoder ->
         val failure = IllegalStateException("root failure", IllegalArgumentException("cause failure"))
         val input = event("{}", arrayOf("\u0000".repeat(100_000))).apply {
             setThrowableProxy(ThrowableProxy(failure))
@@ -181,7 +183,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `oversized root frames cannot hide cause identity`() = withEncoder { encoder ->
+    fun `oversized root frames cannot hide cause identity`(): Unit = withEncoder { encoder ->
         val failure = IllegalStateException("root failure", IllegalArgumentException("cause failure")).apply {
             stackTrace = Array(128) {
                 StackTraceElement("X".repeat(2_000), "method", "Example.groovy", it)
@@ -199,7 +201,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `native frames retain the native method label`() = withEncoder { encoder ->
+    fun `native frames retain the native method label`(): Unit = withEncoder { encoder ->
         val failure = IllegalStateException("native failure").apply {
             stackTrace = arrayOf(StackTraceElement("example.Native", "invoke", null, -2))
         }
@@ -211,7 +213,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `configured warn and debug throwable lines remain continuations`() = withEncoder { encoder ->
+    fun `configured warn and debug throwable lines remain continuations`(): Unit = withEncoder { encoder ->
         val records = listOf(Level.DEBUG, Level.WARN).flatMap { severity ->
             val failure = OddSignal().apply {
                 stackTrace = arrayOf(StackTraceElement("example.Signal", "run", "Signal.groovy", 7))
@@ -232,7 +234,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `truncation markers retain throwable continuation severity`() = withEncoder { encoder ->
+    fun `truncation markers retain throwable continuation severity`(): Unit = withEncoder { encoder ->
         for (severity in listOf(Level.DEBUG, Level.WARN)) {
             for (padding in 3_515..3_517) {
                 val output = truncatedThrowableRecord(encoder, severity, padding)
@@ -265,7 +267,7 @@ class BoundedLogbackRenderingTest {
     private class OddSignal : Throwable("signal detail")
 
     @Test
-    fun `cyclic and oversized throwable graphs produce bounded output`() = withEncoder { encoder ->
+    fun `cyclic and oversized throwable graphs produce bounded output`(): Unit = withEncoder { encoder ->
         val first = IllegalStateException("first")
         val second = IllegalArgumentException("second")
         first.addSuppressed(second)
@@ -283,7 +285,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `double escaped placeholder retains slash and substitutes argument`() = withEncoder { encoder ->
+    fun `double escaped placeholder retains slash and substitutes argument`(): Unit = withEncoder { encoder ->
         val output = encoder.encode(event("value \\\\{}", arrayOf("replacement"))).toString(Charsets.UTF_8)
 
         assertTrue(output.contains("value \\replacement"))
@@ -358,7 +360,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `custom character sequence and trailing throwable are not stringified`() = withEncoder { encoder ->
+    fun `custom character sequence and trailing throwable are not stringified`(): Unit = withEncoder { encoder ->
         var calls = 0
         val custom = object : CharSequence {
             override val length: Int get() = error("unexpected length")
@@ -389,7 +391,7 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
-    fun `large supplementary stack frames stay valid inside total byte cap`() = withEncoder { encoder ->
+    fun `large supplementary stack frames stay valid inside total byte cap`(): Unit = withEncoder { encoder ->
         val failure = IllegalStateException("large stack").apply {
             stackTrace = Array(128) {
                 StackTraceElement("🙂".repeat(2_000), "method", "Example.groovy", it)

@@ -24,7 +24,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     }
 
     @Test
-    fun `simplifies condition to true-false to condition`() = rewriteRun(
+    fun `simplifies condition to true-false to condition`(): Unit = rewriteRun(
         groovy(
             """
             def result = x == 99 ? true : false
@@ -36,7 +36,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     )
 
     @Test
-    fun `simplifies boolean variable ternary`() = rewriteRun(
+    fun `simplifies boolean variable ternary`(): Unit = rewriteRun(
         groovy(
             """
             def result = flag ? true : false
@@ -48,7 +48,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     )
 
     @Test
-    fun `negates when false comes first`() = rewriteRun(
+    fun `negates when false comes first`(): Unit = rewriteRun(
         groovy(
             """
             def result = flag ? false : true
@@ -60,7 +60,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     )
 
     @Test
-    fun `negates expression when false comes first`() = rewriteRun(
+    fun `negates expression when false comes first`(): Unit = rewriteRun(
         groovy(
             """
             def result = (a && b) ? false : true
@@ -72,7 +72,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     )
 
     @Test
-    fun `handles Boolean constants`() = rewriteRun(
+    fun `handles Boolean constants`(): Unit = rewriteRun(
         groovy(
             """
             def result = x < 99 ? Boolean.TRUE : Boolean.FALSE
@@ -84,7 +84,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     )
 
     @Test
-    fun `removes when branches are same constant`() = rewriteRun(
+    fun `removes when branches are same constant`(): Unit = rewriteRun(
         groovy(
             """
             def result = x ? "same" : "same"
@@ -96,7 +96,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
     )
 
     @Test
-    fun `removes when branches are same variable`() = rewriteRun(
+    fun `removes when branches are same variable`(): Unit = rewriteRun(
         groovy(
             """
             def result = x ? y : y
@@ -109,7 +109,7 @@ class RemoveUnnecessaryTernaryExpressionTest : RewriteTest {
 
     // Negative tests
     @Test
-    fun `preserves meaningful ternary`() = rewriteRun(
+    fun `preserves meaningful ternary`(): Unit = rewriteRun(
         groovy(
             """
             def result = condition ? "yes" : "no"

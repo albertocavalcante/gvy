@@ -25,7 +25,7 @@ import kotlin.test.assertNotNull
 @OptIn(ExperimentalTestApi::class)
 class CodePanelInteractionTest {
     @Test
-    fun `caret and selection navigation preserve edits while tree clicks select source`() = runComposeUiTest {
+    fun `caret and selection navigation preserve edits while tree clicks select source`(): Unit = runComposeUiTest {
         val model = AstViewModel(InMemoryPreferences())
         model.updateSourceCode("def x = 1")
         model.parseCode()

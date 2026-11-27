@@ -44,7 +44,7 @@ class DependencyTargetObservationTest {
     private val published = CopyOnWriteArrayList<WorkspaceResolution>()
 
     @AfterEach
-    fun close() = scope.cancel()
+    fun close(): Unit = scope.cancel()
 
     private fun start(manager: DependencyManager, workspace: Path = root, done: CountDownLatch? = null) =
         manager.startAsyncResolution(
@@ -106,7 +106,7 @@ class DependencyTargetObservationTest {
     }
 
     @Test
-    fun `a superseded attempt cancels its observer and does not publish its observation`() = runBlocking {
+    fun `a superseded attempt cancels its observer and does not publish its observation`(): Unit = runBlocking {
         val first = CompletableDeferred<Unit>()
         val release = CompletableDeferred<TargetDependencyEvidence>()
         val exited = CompletableDeferred<Unit>()

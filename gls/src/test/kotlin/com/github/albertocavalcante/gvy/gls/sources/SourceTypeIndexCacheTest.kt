@@ -26,7 +26,7 @@ class SourceTypeIndexCacheTest {
     private val empty = SourceTypeIndex { null }
 
     @Test
-    fun `cold equivalent requests share a producer and warm requests reuse the detached index`() = runBlocking {
+    fun `cold equivalent requests share a producer and warm requests reuse the detached index`(): Unit = runBlocking {
         val server = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -53,7 +53,7 @@ class SourceTypeIndexCacheTest {
     }
 
     @Test
-    fun `cancelling one request after parse entry preserves another borrower and its producer`() = runBlocking {
+    fun `cancelling one request after parse entry preserves another borrower and its producer`(): Unit = runBlocking {
         val server = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -80,7 +80,7 @@ class SourceTypeIndexCacheTest {
     }
 
     @Test
-    fun `last borrower cancellation stops an entered parse and does not poison the next request`() = runBlocking {
+    fun `last borrower cancellation stops an entered parse and does not poison the next request`(): Unit = runBlocking {
         val server = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val entered = CompletableDeferred<Unit>()
         val stopped = CompletableDeferred<Unit>()

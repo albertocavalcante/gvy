@@ -25,7 +25,7 @@ class SimplifyExplicitArrayListInstantiationTest : RewriteTest {
     }
 
     @Test
-    fun `converts new ArrayList to list literal`() = rewriteRun(
+    fun `converts new ArrayList to list literal`(): Unit = rewriteRun(
         groovy(
             """
             def list = new ArrayList()
@@ -37,7 +37,7 @@ class SimplifyExplicitArrayListInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `converts fully qualified java util ArrayList`() = rewriteRun(
+    fun `converts fully qualified java util ArrayList`(): Unit = rewriteRun(
         groovy(
             """
             def list = new java.util.ArrayList()
@@ -49,7 +49,7 @@ class SimplifyExplicitArrayListInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `converts new ArrayList with generic type`() = rewriteRun(
+    fun `converts new ArrayList with generic type`(): Unit = rewriteRun(
         groovy(
             """
             def list = new ArrayList<String>()
@@ -61,7 +61,7 @@ class SimplifyExplicitArrayListInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves ArrayList with initial capacity`() = rewriteRun(
+    fun `preserves ArrayList with initial capacity`(): Unit = rewriteRun(
         groovy(
             """
             def list = new ArrayList(10)
@@ -70,7 +70,7 @@ class SimplifyExplicitArrayListInstantiationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves ArrayList with collection argument`() = rewriteRun(
+    fun `preserves ArrayList with collection argument`(): Unit = rewriteRun(
         groovy(
             """
             def other = [1, 2]

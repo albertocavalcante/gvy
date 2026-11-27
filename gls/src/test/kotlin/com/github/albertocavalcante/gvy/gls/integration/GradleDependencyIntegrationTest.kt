@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 class GradleDependencyIntegrationTest {
 
     @Test
-    fun `should initialize workspace and resolve dependencies for compilation`() =
+    fun `should initialize workspace and resolve dependencies for compilation`(): Unit =
         runTest(timeout = kotlin.time.Duration.parse("3m")) {
             val compilationService = GroovyCompilationService(GradleDependencyIntegrationTest::class.java.classLoader)
             val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
@@ -50,7 +50,7 @@ class GradleDependencyIntegrationTest {
         }
 
     @Test
-    fun `should compile groovy code with external dependencies`() =
+    fun `should compile groovy code with external dependencies`(): Unit =
         runTest(timeout = kotlin.time.Duration.parse("3m")) {
             val compilationService = GroovyCompilationService(GradleDependencyIntegrationTest::class.java.classLoader)
             val testProjectPath = Paths.get("src/test/resources/test-gradle-project")

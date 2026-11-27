@@ -95,11 +95,11 @@ class BoundedFailureEvidenceTest {
     }
 
     @Test
-    fun `interrupted IO getter propagates identity and restores interruption`() =
+    fun `interrupted IO getter propagates identity and restores interruption`(): Unit =
         assertInterruptingGetter(InterruptedIOException("interrupted"))
 
     @Test
-    fun `closed by interrupt getter propagates identity and restores interruption`() =
+    fun `closed by interrupt getter propagates identity and restores interruption`(): Unit =
         assertInterruptingGetter(ClosedByInterruptException())
 
     private fun assertInterruptingGetter(thrown: Exception) {

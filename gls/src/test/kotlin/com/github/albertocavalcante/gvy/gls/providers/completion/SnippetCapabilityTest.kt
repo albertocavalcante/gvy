@@ -49,13 +49,13 @@ class SnippetCapabilityTest {
     }
 
     @Test
-    fun `omitted snippet support selects plain method insertion`() = assertMethodInsertion(null)
+    fun `omitted snippet support selects plain method insertion`(): Unit = assertMethodInsertion(null)
 
     @Test
-    fun `false snippet support selects plain method insertion`() = assertMethodInsertion(false)
+    fun `false snippet support selects plain method insertion`(): Unit = assertMethodInsertion(false)
 
     @Test
-    fun `true snippet support selects snippet method insertion`() = assertMethodInsertion(true)
+    fun `true snippet support selects snippet method insertion`(): Unit = assertMethodInsertion(true)
 
     private fun assertMethodInsertion(support: Boolean?) {
         val server = GroovyLanguageServer()

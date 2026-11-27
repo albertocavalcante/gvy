@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class AstUnicodeDiagnosticTest {
     @Test
-    fun `native diagnostic coordinates are converted from zero based on ASCII source`() = runTest {
+    fun `native diagnostic coordinates are converted from zero based on ASCII source`(): Unit = runTest {
         val source = "def value = )"
         val diagnostic = GroovyParserFacade().parse(
             ParseRequest(uri = URI("file:///test.groovy"), content = source),
@@ -51,7 +51,7 @@ class AstUnicodeDiagnosticTest {
     }
 
     @Test
-    fun `native diagnostics after supplementary characters have no misleading location`() = runTest {
+    fun `native diagnostics after supplementary characters have no misleading location`(): Unit = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val viewModel =
             AstViewModel(

@@ -63,7 +63,7 @@ class RequestCancellationTest {
     private val compilation = spyk(GroovyCompilationService(documentProvider = documents))
 
     @AfterEach
-    fun tearDown() = scope.cancel()
+    fun tearDown(): Unit = scope.cancel()
 
     @Test
     fun `a cancelled document highlight ends cancelled instead of empty`(): Unit = runBlocking {

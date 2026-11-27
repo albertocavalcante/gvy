@@ -14,7 +14,7 @@ class UnusedImportSourceRangesTest {
     private val uri = URI.create("file:///ImportRanges.groovy")
 
     @Test
-    fun `unused diagnostic uses editor CR lines instead of Groovy compiler LF lines`() = runBlocking {
+    fun `unused diagnostic uses editor CR lines instead of Groovy compiler LF lines`(): Unit = runBlocking {
         val compilation = GroovyCompilationService(
             parentClassLoader = groovy.transform.CompileStatic::class.java.classLoader,
         )
@@ -36,7 +36,7 @@ class UnusedImportSourceRangesTest {
     }
 
     @Test
-    fun `supplementary characters and tabs before an import preserve exact UTF16 columns`() = runBlocking {
+    fun `supplementary characters and tabs before an import preserve exact UTF16 columns`(): Unit = runBlocking {
         val compilation = GroovyCompilationService(
             parentClassLoader = groovy.transform.CompileStatic::class.java.classLoader,
         )

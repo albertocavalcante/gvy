@@ -14,7 +14,7 @@ class UninvertIfElseTest : RewriteTest {
     }
 
     @Test
-    fun `uninvert if else with not operator`() = rewriteRun(
+    fun `uninvert if else with not operator`(): Unit = rewriteRun(
         groovy(
             """
             if (!x) {
@@ -34,7 +34,7 @@ class UninvertIfElseTest : RewriteTest {
     )
 
     @Test
-    fun `uninvert if else with not equal operator`() = rewriteRun(
+    fun `uninvert if else with not equal operator`(): Unit = rewriteRun(
         groovy(
             """
             if (x != y) {
@@ -54,7 +54,7 @@ class UninvertIfElseTest : RewriteTest {
     )
 
     @Test
-    fun `does not change if no else`() = rewriteRun(
+    fun `does not change if no else`(): Unit = rewriteRun(
         groovy(
             """
             if (!x) {
@@ -65,7 +65,7 @@ class UninvertIfElseTest : RewriteTest {
     )
 
     @Test
-    fun `uninvert complex negation`() = rewriteRun(
+    fun `uninvert complex negation`(): Unit = rewriteRun(
         groovy(
             """
             if (!(x && y)) {

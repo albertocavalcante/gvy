@@ -41,79 +41,77 @@ class ConcurrencyStressTest {
     }
 
     @Test
-    fun `test rapid concurrent modifications and completion requests`() {
-        runBlocking {
-            val runner = TestLanguageServerRunner()
-            serverHandle = runner.startInMemoryServer()
-            val server = serverHandle!!.server
-            val client = serverHandle!!.client
+    fun `test rapid concurrent modifications and completion requests`(): Unit = runBlocking {
+        val runner = TestLanguageServerRunner()
+        serverHandle = runner.startInMemoryServer()
+        val server = serverHandle!!.server
+        val client = serverHandle!!.client
 
-            // Initialize
-            server.initialize(
-                InitializeParams().apply {
-                    workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
-                },
-            ).get()
+        // Initialize
+        server.initialize(
+            InitializeParams().apply {
+                workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
+            },
+        ).get()
 
-            val uri = "file:///Concurrent.groovy"
-            val code = """
+        val uri = "file:///Concurrent.groovy"
+        val code = """
                 class Concurrent {
                     String value = "initial"
                     void process() {
                         println value
                     }
                 }
-            """.trimIndent()
+        """.trimIndent()
 
-            // Open document
-            server.textDocumentService.didOpen(
-                DidOpenTextDocumentParams().apply {
-                    textDocument = TextDocumentItem(uri, "groovy", 1, code)
-                },
-            )
+        // Open document
+        server.textDocumentService.didOpen(
+            DidOpenTextDocumentParams().apply {
+                textDocument = TextDocumentItem(uri, "groovy", 1, code)
+            },
+        )
 
-            client.awaitSuccessfulCompilation(uri)
+        client.awaitSuccessfulCompilation(uri)
 
-            // Launch concurrent jobs
-            val duration = 5000L
-            val startTime = System.currentTimeMillis()
+        // Launch concurrent jobs
+        val duration = 5000L
+        val startTime = System.currentTimeMillis()
 
-            // NOTE: Use Dispatchers.IO (not Dispatchers.Default) for these concurrent jobs
-            // because they make blocking .get() calls on CompletableFutures (line 133).
-            //
-            // WHY THIS MATTERS:
-            // - Dispatchers.Default has limited threads (~max(2, nCPU))
-            // - On 1-core machines (e.g., Magalu BV1-1-40): only ~2 threads available
-            // - This test spawns 6 coroutines (1 writer + 5 readers)
-            // - All 6 call .get() which blocks threads waiting for LSP server responses
-            // - If all Default threads are blocked, LSP server can't process requests
-            // - Result: Thread starvation deadlock → test hangs until JUnit timeout (20m)
-            //
-            // SOLUTION:
-            // - Dispatchers.IO is designed for blocking operations
-            // - IO pool scales dynamically (64+ threads) to handle blocking calls
-            // - Test works reliably on any machine size (1-core to 8-core)
-            //
-            // ALTERNATIVES CONSIDERED:
-            // 1. Replace .get() with .await() - More elegant but riskier refactor
-            // 2. Reduce concurrency (5→2 readers) - Weakens test coverage
-            // 3. Upgrade runner infrastructure - Masks architectural issue
-            coroutineScope {
-                val writer = async(Dispatchers.IO) {
-                    runWriter(server, uri, startTime, duration)
-                }
-
-                val readers = (1..5).map { id ->
-                    async(Dispatchers.IO) {
-                        runReader(server, uri, startTime, duration, id)
-                    }
-                }
-
-                awaitAll(writer, *readers.toTypedArray())
+        // NOTE: Use Dispatchers.IO (not Dispatchers.Default) for these concurrent jobs
+        // because they make blocking .get() calls on CompletableFutures (line 133).
+        //
+        // WHY THIS MATTERS:
+        // - Dispatchers.Default has limited threads (~max(2, nCPU))
+        // - On 1-core machines (e.g., Magalu BV1-1-40): only ~2 threads available
+        // - This test spawns 6 coroutines (1 writer + 5 readers)
+        // - All 6 call .get() which blocks threads waiting for LSP server responses
+        // - If all Default threads are blocked, LSP server can't process requests
+        // - Result: Thread starvation deadlock → test hangs until JUnit timeout (20m)
+        //
+        // SOLUTION:
+        // - Dispatchers.IO is designed for blocking operations
+        // - IO pool scales dynamically (64+ threads) to handle blocking calls
+        // - Test works reliably on any machine size (1-core to 8-core)
+        //
+        // ALTERNATIVES CONSIDERED:
+        // 1. Replace .get() with .await() - More elegant but riskier refactor
+        // 2. Reduce concurrency (5→2 readers) - Weakens test coverage
+        // 3. Upgrade runner infrastructure - Masks architectural issue
+        coroutineScope {
+            val writer = async(Dispatchers.IO) {
+                runWriter(server, uri, startTime, duration)
             }
 
-            server.shutdown().get()
+            val readers = (1..5).map { id ->
+                async(Dispatchers.IO) {
+                    runReader(server, uri, startTime, duration, id)
+                }
+            }
+
+            awaitAll(writer, *readers.toTypedArray())
         }
+
+        server.shutdown().get()
     }
 
     private suspend fun runWriter(server: GroovyLanguageServer, uri: String, startTime: Long, duration: Long) {

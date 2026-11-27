@@ -109,7 +109,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `passes the idle timeout so the daemon it may start does not live for hours`() = runBlocking {
+    fun `passes the idle timeout so the daemon it may start does not live for hours`(): Unit = runBlocking {
         builder.completes(model)
 
         producer().resolve(directory, provenance)
@@ -118,7 +118,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `leases the connection for the whole operation when the factory supports it`() = runBlocking {
+    fun `leases the connection for the whole operation when the factory supports it`(): Unit = runBlocking {
         val leasing = mockk<LeasingConnectionFactory>()
         var released = false
         every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { released = true }
@@ -135,21 +135,22 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `queries trusted packaged script forwards java home and cancellation and borrows connection`() = runBlocking {
-        builder.completes(model)
-        val javaHome = Path.of("java-home").toAbsolutePath()
+    fun `queries trusted packaged script forwards java home and cancellation and borrows connection`(): Unit =
+        runBlocking {
+            builder.completes(model)
+            val javaHome = Path.of("java-home").toAbsolutePath()
 
-        val result = producer(javaHome).resolve(directory, provenance)
+            val result = producer(javaHome).resolve(directory, provenance)
 
-        assertSame(provenance, assertIs<TargetDependencyEvidence.Scoped>(result).snapshots.single().provenance)
-        assertContentEquals(GradleScopedInitScript.content, Files.readAllBytes(scripts.single()))
-        assertEquals(1, tokens.size)
-        verify { builder.setJavaHome(javaHome.toFile()) }
-        verify(exactly = 0) { connection.close() }
-    }
+            assertSame(provenance, assertIs<TargetDependencyEvidence.Scoped>(result).snapshots.single().provenance)
+            assertContentEquals(GradleScopedInitScript.content, Files.readAllBytes(scripts.single()))
+            assertEquals(1, tokens.size)
+            verify { builder.setJavaHome(javaHome.toFile()) }
+            verify(exactly = 0) { connection.close() }
+        }
 
     @Test
-    fun `execution model uses the selected project Java without changing analysis Java`() = runBlocking {
+    fun `execution model uses the selected project Java without changing analysis Java`(): Unit = runBlocking {
         val executionBuilder = mockk<ModelBuilder<GradleExecutionModel>>()
         every { connection.model(GradleExecutionModel::class.java) } returns executionBuilder
         every { executionBuilder.withArguments(*anyVararg()) } returns executionBuilder
@@ -173,7 +174,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `cancelled execution model retains lease until callback`() = runBlocking {
+    fun `cancelled execution model retains lease until callback`(): Unit = runBlocking {
         val executionBuilder = mockk<ModelBuilder<GradleExecutionModel>>()
         val callbacks = CopyOnWriteArrayList<ResultHandler<in GradleExecutionModel>>()
         val releases = AtomicInteger()
@@ -197,7 +198,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `unexpected execution model failures propagate`() = runBlocking<Unit> {
+    fun `unexpected execution model failures propagate`(): Unit = runBlocking {
         val executionBuilder = mockk<ModelBuilder<GradleExecutionModel>>()
         every { connection.model(GradleExecutionModel::class.java) } returns executionBuilder
         every { executionBuilder.withArguments(*anyVararg()) } throws IllegalMonitorStateException("unexpected")
@@ -206,7 +207,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `reuses one content addressed script and repairs a tampered copy`() = runBlocking {
+    fun `reuses one content addressed script and repairs a tampered copy`(): Unit = runBlocking {
         builder.completes(model)
         val producer = producer()
 
@@ -220,7 +221,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `refuses a script directory other users can write`() = runBlocking {
+    fun `refuses a script directory other users can write`(): Unit = runBlocking {
         val shared = Files.createDirectories(temporary.resolve("init-scripts"))
         assumeTrue(Files.getFileAttributeView(shared, PosixFileAttributeView::class.java) != null)
         Files.setPosixFilePermissions(shared, PosixFilePermissions.fromString("rwxrwxrwx"))
@@ -231,14 +232,14 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `a build without source sets yields legacy rather than empty scoped evidence`() = runBlocking {
+    fun `a build without source sets yields legacy rather than empty scoped evidence`(): Unit = runBlocking {
         builder.completes(Model(emptyList()))
 
         assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
     }
 
     @Test
-    fun `malformed or missing models yield legacy`() = runBlocking {
+    fun `malformed or missing models yield legacy`(): Unit = runBlocking {
         builder.completes(Model(listOf(null)))
         assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
 
@@ -248,15 +249,16 @@ class GradleScopedDependencyProducerTest {
 
     @ParameterizedTest
     @MethodSource("buildFailures")
-    fun `failures raised by the user build yield legacy without walking causes`(failure: GradleConnectionException) =
-        runBlocking {
-            builder.fails(failure)
+    fun `failures raised by the user build yield legacy without walking causes`(
+        failure: GradleConnectionException,
+    ): Unit = runBlocking {
+        builder.fails(failure)
 
-            assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
-        }
+        assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
+    }
 
     @Test
-    fun `caller cancellation propagates and cancels the gradle operation`() = runBlocking {
+    fun `caller cancellation propagates and cancels the gradle operation`(): Unit = runBlocking {
         builder.neverCompletes()
         val pending = async { producer().resolve(directory, provenance) }
         withTimeout(5.seconds) { while (handlers.isEmpty()) yield() }
@@ -269,7 +271,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `cancelled operation retains lease until failure acknowledgement`() = runBlocking {
+    fun `cancelled operation retains lease until failure acknowledgement`(): Unit = runBlocking {
         val releases = AtomicInteger()
         val leasing = mockk<LeasingConnectionFactory>()
         every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
@@ -292,7 +294,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `cancel before launch releases lease without starting model fetch`() = runBlocking {
+    fun `cancel before launch releases lease without starting model fetch`(): Unit = runBlocking {
         val releases = AtomicInteger()
         val entered = CountDownLatch(1)
         val proceed = CountDownLatch(1)
@@ -317,7 +319,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `cancellation during launch retains lease until callback`() = runBlocking {
+    fun `cancellation during launch retains lease until callback`(): Unit = runBlocking {
         val releases = AtomicInteger()
         val entered = CountDownLatch(1)
         val proceed = CountDownLatch(1)
@@ -343,7 +345,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `synchronous launch failure releases lease`() = runBlocking {
+    fun `synchronous launch failure releases lease`(): Unit = runBlocking {
         val releases = AtomicInteger()
         val leasing = mockk<LeasingConnectionFactory>()
         every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
@@ -362,7 +364,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `duplicate callbacks after success do not resume twice or release twice`() = runBlocking {
+    fun `duplicate callbacks after success do not resume twice or release twice`(): Unit = runBlocking {
         val releases = AtomicInteger()
         val leasing = mockk<LeasingConnectionFactory>()
         every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { releases.incrementAndGet() }
@@ -381,7 +383,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `deadline cancels the gradle operation and yields legacy`() = runBlocking {
+    fun `deadline cancels the gradle operation and yields legacy`(): Unit = runBlocking {
         builder.neverCompletes()
 
         assertSame(
@@ -392,7 +394,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `init script failures yield legacy without an isolated gradle home retry`() = runBlocking {
+    fun `init script failures yield legacy without an isolated gradle home retry`(): Unit = runBlocking {
         builder.fails(BuildException("A problem occurred evaluating init script", RuntimeException("user init.d")))
 
         assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
@@ -401,7 +403,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `no absolute user home means no trusted script directory and legacy evidence`() = runBlocking {
+    fun `no absolute user home means no trusted script directory and legacy evidence`(): Unit = runBlocking {
         builder.completes(model)
 
         val producer = GradleScopedDependencyProducer(factory, initScriptDirectory = null)
@@ -411,7 +413,7 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `a jar replaced at the same path is observed as a different artifact`() = runBlocking {
+    fun `a jar replaced at the same path is observed as a different artifact`(): Unit = runBlocking {
         val jar = Files.write(temporary.resolve("lib.jar"), ByteArray(3))
         Files.setLastModifiedTime(jar, FileTime.fromMillis(1_000_000))
         val missing = temporary.resolve("missing.jar")

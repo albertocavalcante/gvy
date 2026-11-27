@@ -167,32 +167,30 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `rename operation updates variable references`() {
-        runBlocking {
-            val params = RenameParams().apply {
-                textDocument = TextDocumentIdentifier(documentUri)
-                position = Position(7, 4) // On "greeter" variable declaration
-                newName = "updatedGreeter"
-            }
-
-            val workspaceEdit = server.textDocumentService.rename(params).get()
-            assertNotNull(workspaceEdit)
-            assertNotNull(workspaceEdit.documentChanges)
-            assertTrue(workspaceEdit.documentChanges.isNotEmpty(), "Rename should produce document changes")
-
-            // Verify that the changes are for the correct document
-            val textEdits = workspaceEdit.documentChanges
-                .filter { it.isLeft }
-                .map { it.left }
-                .filter { it.textDocument.uri == documentUri }
-
-            assertTrue(textEdits.isNotEmpty(), "Should have text edits for the document")
-
-            // Verify that edits contain the new name
-            val allEdits = textEdits.flatMap { it.edits }
-            assertTrue(allEdits.all { it.newText == "updatedGreeter" }, "All edits should use the new name")
-            assertTrue(allEdits.size >= 3, "Should rename declaration and all usages")
+    fun `rename operation updates variable references`(): Unit = runBlocking {
+        val params = RenameParams().apply {
+            textDocument = TextDocumentIdentifier(documentUri)
+            position = Position(7, 4) // On "greeter" variable declaration
+            newName = "updatedGreeter"
         }
+
+        val workspaceEdit = server.textDocumentService.rename(params).get()
+        assertNotNull(workspaceEdit)
+        assertNotNull(workspaceEdit.documentChanges)
+        assertTrue(workspaceEdit.documentChanges.isNotEmpty(), "Rename should produce document changes")
+
+        // Verify that the changes are for the correct document
+        val textEdits = workspaceEdit.documentChanges
+            .filter { it.isLeft }
+            .map { it.left }
+            .filter { it.textDocument.uri == documentUri }
+
+        assertTrue(textEdits.isNotEmpty(), "Should have text edits for the document")
+
+        // Verify that edits contain the new name
+        val allEdits = textEdits.flatMap { it.edits }
+        assertTrue(allEdits.all { it.newText == "updatedGreeter" }, "All edits should use the new name")
+        assertTrue(allEdits.size >= 3, "Should rename declaration and all usages")
     }
 
     @Test

@@ -45,6 +45,15 @@ without type resolution (#2409), so every rule here must be purely syntactic (PS
   `kotlin.concurrent.atomics` outside `common/concurrent`, the one module that opts into it. Use the
   `:common:concurrent` types. It replaces a `ForbiddenImport` pattern that missed star imports and qualified uses.
   `common/concurrent` is its only exclude, and no exclude, baseline entry or unlisted suppression may be added (#2474).
+- `TestFunctionReturnType`: reports a JUnit test or lifecycle function that leaves the type of an expression body to
+  inference (`fun x() = runBlocking { }`), declares a return type other than exactly `Unit`, or declares `: Unit`
+  without an expression body. JUnit does not run a test that returns a value; declare `: Unit` on an expression body and
+  nothing on a block body. It guards every linted module; it has no excludes, and no exclude, baseline entry or unlisted
+  suppression may be added (#2507).
+- `CoroutineTestBody`: reports a JUnit test or lifecycle function that puts its return type on the coroutine builder
+  (`runBlocking<Unit> { }`) or wraps its whole body in one inside a block (`fun x() { runBlocking { } }`). Write
+  `fun name(): Unit = runBlocking { ... }`. It guards every linted module; it has no excludes, and no exclude, baseline
+  entry or suppression may be added (#2507).
 
 `tools/ci/detekt-gvy-guard.test.mjs` enforces these rules' configuration, detekt's `build:` block, the module builds'
 detekt settings, and a bound on the built-in rules' test excludes: a rule may exclude a pattern that reaches test code

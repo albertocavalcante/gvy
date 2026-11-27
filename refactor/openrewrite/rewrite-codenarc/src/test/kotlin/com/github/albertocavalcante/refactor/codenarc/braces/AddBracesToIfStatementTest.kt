@@ -24,7 +24,7 @@ class AddBracesToIfStatementTest : RewriteTest {
     }
 
     @Test
-    fun `adds braces to single-line if statement`() = rewriteRun(
+    fun `adds braces to single-line if statement`(): Unit = rewriteRun(
         groovy(
             """
             if (true) println("hello")
@@ -38,7 +38,7 @@ class AddBracesToIfStatementTest : RewriteTest {
     )
 
     @Test
-    fun `adds braces to if-else statement`() = rewriteRun(
+    fun `adds braces to if-else statement`(): Unit = rewriteRun(
         groovy(
             """
             if (true) println("yes")
@@ -56,7 +56,7 @@ class AddBracesToIfStatementTest : RewriteTest {
     )
 
     @Test
-    fun `adds braces to if with existing else block`() = rewriteRun(
+    fun `adds braces to if with existing else block`(): Unit = rewriteRun(
         groovy(
             """
             if (true) println("yes")
@@ -78,7 +78,7 @@ class AddBracesToIfStatementTest : RewriteTest {
     // Negative tests - should NOT add braces:
 
     @Test
-    fun `no change when braces already exist`() = rewriteRun(
+    fun `no change when braces already exist`(): Unit = rewriteRun(
         groovy(
             """
             if (true) {
@@ -89,7 +89,7 @@ class AddBracesToIfStatementTest : RewriteTest {
     )
 
     @Test
-    fun `no change for complete if-else with braces`() = rewriteRun(
+    fun `no change for complete if-else with braces`(): Unit = rewriteRun(
         groovy(
             """
             if (true) {

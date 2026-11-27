@@ -100,7 +100,7 @@ class DependencyRequestHandlerTest {
     }
 
     @Test
-    fun `getDependencies returns empty when build tool does not support metadata extraction`() =
+    fun `getDependencies returns empty when build tool does not support metadata extraction`(): Unit =
         runTest(testDispatcher) {
             // Given
             val params = GetDependenciesParams("file://$tempDir")

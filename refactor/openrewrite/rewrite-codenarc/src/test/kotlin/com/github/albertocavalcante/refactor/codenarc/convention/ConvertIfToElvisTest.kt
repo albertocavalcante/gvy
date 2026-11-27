@@ -16,7 +16,7 @@ class ConvertIfToElvisTest : RewriteTest {
 
     @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
-    fun `converts if not x then assign y`() = rewriteRun(
+    fun `converts if not x then assign y`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -39,7 +39,7 @@ class ConvertIfToElvisTest : RewriteTest {
 
     @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
-    fun `converts if x is null then assign default`() = rewriteRun(
+    fun `converts if x is null then assign default`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -66,7 +66,7 @@ class ConvertIfToElvisTest : RewriteTest {
 
     @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
-    fun `converts property assignment`() = rewriteRun(
+    fun `converts property assignment`(): Unit = rewriteRun(
         groovy(
             """
             class Example {
@@ -90,7 +90,7 @@ class ConvertIfToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `does not convert if x`() = rewriteRun(
+    fun `does not convert if x`(): Unit = rewriteRun(
         groovy(
             """
             if (x) {
@@ -101,7 +101,7 @@ class ConvertIfToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `preserves if when assignment target is different`() = rewriteRun(
+    fun `preserves if when assignment target is different`(): Unit = rewriteRun(
         groovy(
             """
             if (!x) {
@@ -112,7 +112,7 @@ class ConvertIfToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `preserves complex if body`() = rewriteRun(
+    fun `preserves complex if body`(): Unit = rewriteRun(
         groovy(
             """
             if (!x) {
@@ -125,7 +125,7 @@ class ConvertIfToElvisTest : RewriteTest {
 
     @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
-    fun `converts non-braced if body`() = rewriteRun(
+    fun `converts non-braced if body`(): Unit = rewriteRun(
         groovy(
             """
             if (!x) x = y

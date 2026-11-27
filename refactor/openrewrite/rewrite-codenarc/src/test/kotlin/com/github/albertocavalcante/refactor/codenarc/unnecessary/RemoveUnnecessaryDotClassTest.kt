@@ -24,7 +24,7 @@ class RemoveUnnecessaryDotClassTest : RewriteTest {
     }
 
     @Test
-    fun `removes dot class from String`() = rewriteRun(
+    fun `removes dot class from String`(): Unit = rewriteRun(
         groovy(
             """
             def x = String.class
@@ -36,7 +36,7 @@ class RemoveUnnecessaryDotClassTest : RewriteTest {
     )
 
     @Test
-    fun `removes dot class from custom type`() = rewriteRun(
+    fun `removes dot class from custom type`(): Unit = rewriteRun(
         groovy(
             """
             def type = MyCustomClass.class
@@ -48,7 +48,7 @@ class RemoveUnnecessaryDotClassTest : RewriteTest {
     )
 
     @Test
-    fun `removes dot class in method argument`() = rewriteRun(
+    fun `removes dot class in method argument`(): Unit = rewriteRun(
         groovy(
             """
             process(String.class)
@@ -61,7 +61,7 @@ class RemoveUnnecessaryDotClassTest : RewriteTest {
 
     // Negative tests
     @Test
-    fun `no change when class is accessed as property`() = rewriteRun(
+    fun `no change when class is accessed as property`(): Unit = rewriteRun(
         groovy(
             """
             def c = obj.class
@@ -70,7 +70,7 @@ class RemoveUnnecessaryDotClassTest : RewriteTest {
     )
 
     @Test
-    fun `no change when already without dot class`() = rewriteRun(
+    fun `no change when already without dot class`(): Unit = rewriteRun(
         groovy(
             """
             def x = String

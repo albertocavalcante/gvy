@@ -21,7 +21,7 @@ class ParseCoordinatorTest {
     private fun snapshot(value: String) = ParseSnapshot(value, ParserType.CORE, null)
 
     @Test
-    fun `debounce and conflation discard stale results from a noncooperative parser`() = runTest {
+    fun `debounce and conflation discard stale results from a noncooperative parser`(): Unit = runTest {
         val gate = CompletableDeferred<Unit>()
         val invoked = mutableListOf<String>()
         val published = mutableListOf<ParseOutput>()
@@ -50,7 +50,7 @@ class ParseCoordinatorTest {
     }
 
     @Test
-    fun `close fences a late completion`() = runTest {
+    fun `close fences a late completion`(): Unit = runTest {
         val gate = CompletableDeferred<Unit>()
         val published = mutableListOf<ParseOutput>()
         val worker = StandardTestDispatcher(testScheduler)
@@ -67,7 +67,7 @@ class ParseCoordinatorTest {
     }
 
     @Test
-    fun `stale parser failure cannot replace newer parser result`() = runTest {
+    fun `stale parser failure cannot replace newer parser result`(): Unit = runTest {
         val gate = CompletableDeferred<Unit>()
         val published = mutableListOf<ParseOutput>()
         val worker = StandardTestDispatcher(testScheduler)
@@ -91,7 +91,7 @@ class ParseCoordinatorTest {
     }
 
     @Test
-    fun `unexpected current cancellation publishes failure instead of remaining busy`() = runTest {
+    fun `unexpected current cancellation publishes failure instead of remaining busy`(): Unit = runTest {
         val published = mutableListOf<ParseOutput>()
         val worker = StandardTestDispatcher(testScheduler)
         val coordinator = ParseCoordinator(this, worker, { _, _ ->

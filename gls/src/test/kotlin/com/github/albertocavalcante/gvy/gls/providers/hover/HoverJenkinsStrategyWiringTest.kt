@@ -40,7 +40,7 @@ class HoverJenkinsStrategyWiringTest {
     private lateinit var provider: HoverProvider
 
     @BeforeEach
-    fun setUp() = runBlocking {
+    fun setUp(): Unit = runBlocking {
         scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         compilationService = GroovyCompilationService()
         workspace = Files.createTempDirectory("hover-jenkins-wiring")

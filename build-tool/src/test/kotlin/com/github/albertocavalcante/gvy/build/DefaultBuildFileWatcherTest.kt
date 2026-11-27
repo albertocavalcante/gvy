@@ -57,7 +57,7 @@ class DefaultBuildFileWatcherTest {
     }
 
     @Test
-    fun `should detect build gradle file creation`() = runBlocking {
+    fun `should detect build gradle file creation`(): Unit = runBlocking {
         val events = CopyOnWriteArrayList<Path>()
         val latch = CountDownLatch(1)
 
@@ -82,7 +82,7 @@ class DefaultBuildFileWatcherTest {
     }
 
     @Test
-    fun `should detect build gradle modification`() = runBlocking {
+    fun `should detect build gradle modification`(): Unit = runBlocking {
         // Create file first
         val buildFile = tempDir.resolve("build.gradle")
         buildFile.writeText("// initial")
@@ -128,7 +128,7 @@ class DefaultBuildFileWatcherTest {
     }
 
     @Test
-    fun `client and native build events coalesce while source changes are ignored`() = runBlocking {
+    fun `client and native build events coalesce while source changes are ignored`(): Unit = runBlocking {
         val events = CopyOnWriteArrayList<Path>()
         val changed = CountDownLatch(1)
         watcher = DefaultBuildFileWatcher(
@@ -193,7 +193,7 @@ class DefaultBuildFileWatcherTest {
     }
 
     @Test
-    fun `client events refresh after the native watch loop ends`() = runBlocking {
+    fun `client events refresh after the native watch loop ends`(): Unit = runBlocking {
         val root = Files.createDirectory(tempDir.resolve("watched"))
         val changed = CountDownLatch(1)
         watcher = DefaultBuildFileWatcher(
@@ -214,7 +214,7 @@ class DefaultBuildFileWatcherTest {
     }
 
     @Test
-    fun `should ignore non-build files`() = runBlocking {
+    fun `should ignore non-build files`(): Unit = runBlocking {
         val events = CopyOnWriteArrayList<Path>()
 
         watcher = DefaultBuildFileWatcher(
@@ -235,7 +235,7 @@ class DefaultBuildFileWatcherTest {
     }
 
     @Test
-    fun `should stop watching`() = runBlocking {
+    fun `should stop watching`(): Unit = runBlocking {
         val events = CopyOnWriteArrayList<Path>()
 
         watcher = DefaultBuildFileWatcher(

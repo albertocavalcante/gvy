@@ -151,7 +151,7 @@ class CrossFileRenameGuardTest {
     private val label = "class A {\n    String label = 'x'\n}\n"
 
     @Test
-    fun `a closed file the index never saw is refused (P9)`() = assertRenameRefused(
+    fun `a closed file the index never saw is refused (P9)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { new A().greet() }\n}\n"),
         "A.groovy",
         "greet",
@@ -159,28 +159,28 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `an untyped receiver in another file is refused (P2)`() = assertRenameRefused(
+    fun `an untyped receiver in another file is refused (P2)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run(x) { x.greet() }\n}\n"),
         "A.groovy",
         "greet",
     )
 
     @Test
-    fun `a getter call in another file is refused (P3)`() = assertRenameRefused(
+    fun `a getter call in another file is refused (P3)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to label, "B.groovy" to "class B {\n    def run() { new A().getLabel() }\n}\n"),
         "A.groovy",
         "label",
     )
 
     @Test
-    fun `a setter call in another file is refused (P4)`() = assertRenameRefused(
+    fun `a setter call in another file is refused (P4)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to label, "B.groovy" to "class B {\n    def run() { new A().setLabel('y') }\n}\n"),
         "A.groovy",
         "label",
     )
 
     @Test
-    fun `a boolean is-accessor in another file is refused`() = assertRenameRefused(
+    fun `a boolean is-accessor in another file is refused`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to "class A {\n    boolean flag = true\n}\n",
             "B.groovy" to "class B {\n    def run() { new A().isFlag() }\n}\n",
@@ -190,14 +190,14 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `a map constructor key in another file is refused (P5)`() = assertRenameRefused(
+    fun `a map constructor key in another file is refused (P5)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to label, "B.groovy" to "class B {\n    def run() { new A(label: 'y') }\n}\n"),
         "A.groovy",
         "label",
     )
 
     @Test
-    fun `a static import in another file is refused (P8)`() = assertRenameRefused(
+    fun `a static import in another file is refused (P8)`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to "class A {\n    static String helper() { 'h' }\n}\n",
             "B.groovy" to "import static A.helper\nclass B {\n    def run() { helper() }\n}\n",
@@ -207,21 +207,21 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `another file that does not compile but mentions the name is refused (P11)`() = assertRenameRefused(
+    fun `another file that does not compile but mentions the name is refused (P11)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { new A().greet() }\n    def broken( {\n}\n"),
         "A.groovy",
         "greet",
     )
 
     @Test
-    fun `a subclass override in another file is refused (P6)`() = assertRenameRefused(
+    fun `a subclass override in another file is refused (P6)`(): Unit = assertRenameRefused(
         mapOf("A.groovy" to a, "B.groovy" to "class B extends A {\n    def greet() { 'b' }\n}\n"),
         "A.groovy",
         "greet",
     )
 
     @Test
-    fun `an interface implementation in another file is refused (P7)`() = assertRenameRefused(
+    fun `an interface implementation in another file is refused (P7)`(): Unit = assertRenameRefused(
         mapOf(
             "I.groovy" to "interface I {\n    String greet()\n}\n",
             "C.groovy" to "class C implements I {\n    String greet() { 'c' }\n}\n",
@@ -231,7 +231,7 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `renaming an override whose base is in another file is refused (P10)`() = assertRenameRefused(
+    fun `renaming an override whose base is in another file is refused (P10)`(): Unit = assertRenameRefused(
         mapOf(
             "B.groovy" to "class B extends A {\n    def greet() { 'b' }\n}\n",
             "A.groovy" to a,
@@ -242,7 +242,7 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `a private member is not exempt from the text rule`() = assertRenameRefused(
+    fun `a private member is not exempt from the text rule`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to "class A {\n    private def total() { 1 }\n    def go() { total() }\n}\n",
             "B.groovy" to "class B {\n    def total() { 2 }\n}\n",
@@ -362,7 +362,7 @@ class CrossFileRenameGuardTest {
     }
 
     @Test
-    fun `a dollar name used in another file is refused`() = assertRenameRefused(
+    fun `a dollar name used in another file is refused`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to "class A {\n    def \$foo() { 1 }\n}\n",
             "B.groovy" to "class B {\n    def run(x) { x.\$foo() }\n}\n",
@@ -372,7 +372,7 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `a non-ASCII name used in another file is refused`() = assertRenameRefused(
+    fun `a non-ASCII name used in another file is refused`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to "class A {\n    def café() { 1 }\n}\n",
             "B.groovy" to "class B {\n    def run(x) { x.café() }\n}\n",
@@ -382,7 +382,7 @@ class CrossFileRenameGuardTest {
     )
 
     @Test
-    fun `a getter method used as a property in another file is refused`() = assertRenameRefused(
+    fun `a getter method used as a property in another file is refused`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to "class A {\n    def getLabel() { 'x' }\n}\n",
             "B.groovy" to "class B {\n    def run(A a) { a.label }\n}\n",
@@ -428,7 +428,7 @@ class CrossFileRenameGuardTest {
     }
 
     @Test
-    fun `a property whose second letter is uppercase is refused through its Groovy-capitalized accessor`() =
+    fun `a property whose second letter is uppercase is refused through its Groovy-capitalized accessor`(): Unit =
         assertRenameRefused(
             mapOf(
                 "A.groovy" to "class A {\n    String aB = 'x'\n}\n",
@@ -517,7 +517,7 @@ class CrossFileRenameGuardTest {
     }
 
     @Test
-    fun `a GString shorthand reference is refused`() = assertRenameRefused(
+    fun `a GString shorthand reference is refused`(): Unit = assertRenameRefused(
         mapOf(
             "A.groovy" to a,
             "B.groovy" to "println \"\$greet\"\nprintln \"\${1}-\$greet.length\"\n",

@@ -12,9 +12,11 @@
 //   but tests, benchmarks and its #2420 migration modules, a list that only shrinks; or one of the four is inactive;
 // - tools/detekt-rules' own config/config.yml, which detekt adds to its defaults, holds anything but the gvy rule set
 //   with `active: true` for it and each rule;
-// - a tracked detekt baseline holds a finding of one of the four rules;
-// - a .kt or .kts file under src/, resources included, suppresses VolatileProperty, JdkAtomics, StdlibAtomics, the gvy
-//   rule set or all rules outside sanctionedSuppressions, which lists each sanctioned site with its reason;
+// - TestFunctionReturnType or CoroutineTestBody (#2507) is inactive or excludes anything;
+// - a tracked detekt baseline holds a finding of one of the six rules;
+// - a .kt or .kts file under src/, resources included, suppresses VolatileProperty, JdkAtomics, StdlibAtomics,
+//   TestFunctionReturnType, CoroutineTestBody, the gvy rule set or all rules outside sanctionedSuppressions, which
+//   lists each sanctioned site with its reason;
 // - a *.gradle.kts other than the root build, outside resources, names detekt in code, or in a string that is a
 //   detekt task name or path or a name in detekt's package, for anything but a libs.detekt.* dependency outside the
 //   `detekt` configuration or the multiplatform `detekt.source` override;
@@ -25,7 +27,7 @@
 // It does not see the root build.gradle.kts, which configures detekt for every module; Kotlin build logic in .kt files
 // (buildSrc, included builds, convention plugins; gvy has none); Gradle code that reaches detekt without naming it or
 // unhooks `lint` from it; Groovy and init scripts, gradle.properties and flags such as `-x detekt`; RegexInFunctionBody
-// suppressions, which need only a comment; a suppression by a rule ID alias (concurrencySuppression writes the IDs
+// suppressions, which need only a comment; a suppression by a rule ID alias (guardedSuppression writes the IDs
 // out); or a test-set exclude spelled with a glob class or partial name, such as `**/*[Tt]est/**`. Kotlin outside
 // src/main and src/test, such as tests/e2e, is not linted unless its module sets detekt.source (#2480). Every git call
 // runs without the variables that point git at another repository, index, work tree or object store.
@@ -57,15 +59,21 @@ const regexMigration = [
   '**/semantics/core/src/**',
 ];
 // The rules whose findings no tracked detekt baseline may hold.
-const unbaselined = ['VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'RegexInFunctionBody'];
-// The suppression IDs that silence a gvy concurrency rule as detekt reads them: the rule ID, alone or after the rule
-// set's ID, the rule set's ID itself, or all rules. Case is ignored, which covers detekt's `ALL` and `All`. The rule
-// IDs are written out: none of these rules has an alias today, and a rule that gains one (an `aliases` override in its
-// class) or a new concurrency rule must be added here, or its suppression goes unseen.
-const concurrencySuppression = /^(?:all|gvy|(?:gvy[.:])?(?:VolatileProperty|JdkAtomics|StdlibAtomics))$/i;
+const unbaselined = [
+  'VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'RegexInFunctionBody', 'TestFunctionReturnType',
+  'CoroutineTestBody',
+];
+// The suppression IDs that silence a gvy concurrency rule (#2474) or test function rule (#2507) as detekt reads them:
+// the rule ID, alone or after the rule set's ID, the rule set's ID itself, or all rules. Case is ignored, which covers
+// detekt's `ALL` and `All`. The rule IDs are written out: none of these rules has an alias today, and a rule that
+// gains one (an `aliases` override in its class) or a new rule of either kind must be added here, or its suppression
+// goes unseen.
+const guardedRules = ['VolatileProperty', 'JdkAtomics', 'StdlibAtomics', 'TestFunctionReturnType', 'CoroutineTestBody'];
+const guardedSuppression = new RegExp(`^(?:all|gvy|(?:gvy[.:])?(?:${guardedRules.join('|')}))$`, 'i');
 // Every sanctioned suppression of that kind in tracked Kotlin, one entry per site, as { path, id, reason }. The
-// accepted reasons are a field that an Atomic*FieldUpdater updates and a measured hot path
-// (tools/detekt-rules/README.md), and each entry says which. There is none.
+// accepted reasons are, for a concurrency rule, a field that an Atomic*FieldUpdater updates and a measured hot path,
+// and for TestFunctionReturnType a base-class contract that must return a value; CoroutineTestBody has none
+// (tools/detekt-rules/README.md). Each entry says which. There is none.
 const sanctionedSuppressions = [];
 
 // The rules that detekt 1.23.8's default config excludes from every test source set, `**/test/**`, `**/commonTest/**`,
@@ -174,6 +182,14 @@ test('VolatileProperty is active and excludes nothing', () => {
   const { excludes } = configured('VolatileProperty');
   assert.deepEqual(excludes, [], 'suppress a sanctioned @Volatile at its site, with a reason (#2474)');
 });
+
+for (const rule of ['TestFunctionReturnType', 'CoroutineTestBody']) {
+  test(`${rule} is active and excludes nothing`, () => {
+    const { excludes } = configured(rule);
+    const message = `fix the test function that ${rule} reports; do not exclude its module or source set (#2507)`;
+    assert.deepEqual(excludes, [], message);
+  });
+}
 
 test('JdkAtomics is active and excludes only its permanent patterns, each naming a module', () => {
   const { excludes } = configured('JdkAtomics');
@@ -310,7 +326,7 @@ test('no tracked detekt baseline holds a finding of a gvy rule', () => {
   for (const baseline of trackedBaselines()) {
     const ids = read(baseline).match(finding) ?? [];
     const message = `${baseline} must not hold a finding of ${unbaselined.join(', ')}. Fix the code, or suppress a ` +
-      'sanctioned site with a reason (#2420, #2474)';
+      'sanctioned site with a reason (#2420, #2474, #2507)';
     assert.deepEqual(ids, [], message);
   }
 });
@@ -386,15 +402,23 @@ test('the suppression reader takes the IDs of annotations in code, as detekt rea
   ]);
   // An unterminated literal ends with its line, so it cannot hide the next one.
   assert.deepEqual(suppressions('val broken = "open\n@Suppress("all") class C'), [{ line: 2, id: 'all' }]);
-  for (const id of ['all', 'All', 'gvy', 'JdkAtomics', 'gvy:VolatileProperty', 'gvy.StdlibAtomics']) {
-    assert.match(id, concurrencySuppression);
+  const silencing = [
+    'all', 'All', 'gvy', 'JdkAtomics', 'gvy:VolatileProperty', 'gvy.StdlibAtomics', 'TestFunctionReturnType',
+    'gvy:CoroutineTestBody', 'gvy.TestFunctionReturnType', 'coroutinetestbody',
+  ];
+  for (const id of silencing) {
+    assert.match(id, guardedSuppression);
   }
-  for (const id of ['UNCHECKED_CAST', 'MagicNumber', 'RegexInFunctionBody', 'gvy:RegexInFunctionBody', 'allow']) {
-    assert.doesNotMatch(id, concurrencySuppression);
+  const others = [
+    'UNCHECKED_CAST', 'MagicNumber', 'RegexInFunctionBody', 'gvy:RegexInFunctionBody', 'allow',
+    'CoroutineTestBodyTest', 'TestFunction',
+  ];
+  for (const id of others) {
+    assert.doesNotMatch(id, guardedSuppression);
   }
 });
 
-test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or all rules only where sanctioned', () => {
+test('tracked Kotlin suppresses a guarded gvy rule, the gvy rule set or all rules only where sanctioned', () => {
   for (const { path, id, reason } of sanctionedSuppressions) {
     assert.ok(reason?.trim(), `the sanctioned @Suppress("${id}") in ${path} must give its reason`);
   }
@@ -405,14 +429,15 @@ test('tracked Kotlin suppresses the gvy concurrency rules, the gvy rule set or a
   const sites = tracked()
     .filter(scanned)
     .flatMap(path => suppressions(read(path)).map(site => ({ path, ...site })))
-    .filter(({ id }) => concurrencySuppression.test(id));
+    .filter(({ id }) => guardedSuppression.test(id));
   const key = ({ path, id }) => `${path} ${id}`;
   const where = ({ path, line, id }) => `${path}:${line} ${id}`;
   const unsanctioned = unmatched(sites, sanctionedSuppressions, key).map(where);
-  const message = 'Do not suppress VolatileProperty, JdkAtomics, StdlibAtomics, the gvy rule set or all rules: use ' +
-    'the :common:concurrent types. A sanctioned site (a field updater, or a measured hot path) suppresses only its ' +
-    'rule, with a reason, and gets an entry with that reason in sanctionedSuppressions. A fixture that needs such an ' +
-    'annotation holds it in a string literal, or gets an entry too (#2474)';
+  const message = `Do not suppress ${guardedRules.join(', ')}, the gvy rule set or all rules: use the ` +
+    ':common:concurrent types, and write a test function in the one form (tools/detekt-rules/README.md). A ' +
+    'sanctioned site (a field updater, a measured hot path, or a base-class contract that must return a value) ' +
+    'suppresses only its rule, with a reason, and gets an entry with that reason in sanctionedSuppressions. A ' +
+    'fixture that needs such an annotation holds it in a string literal, or gets an entry too (#2474, #2507)';
   assert.deepEqual(unsanctioned, [], message);
   const stale = unmatched(sanctionedSuppressions, sites, key).map(({ path, id }) => `${path} ${id}`);
   assert.deepEqual(stale, [], 'these sanctionedSuppressions entries match no suppression any more: remove them');

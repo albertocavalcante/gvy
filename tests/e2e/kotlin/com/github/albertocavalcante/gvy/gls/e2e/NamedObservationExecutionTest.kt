@@ -37,7 +37,7 @@ class NamedObservationExecutionTest {
         every { WorkspaceFixture.cleanup(workspace) } answers { callOriginal() }
     }
 
-    @AfterEach fun teardown() = unmockkObject(WorkspaceFixture)
+    @AfterEach fun teardown(): Unit = unmockkObject(WorkspaceFixture)
 
     @Test
     fun `known failing observation does not prevent later independent check`() {

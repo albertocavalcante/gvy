@@ -16,24 +16,25 @@ import java.util.concurrent.TimeoutException
 
 class StrictWaitPredicateTest {
     @Test
-    fun `optional wait propagates evaluator failure`() = assertPropagated(IllegalStateException("evaluator failed"))
+    fun `optional wait propagates evaluator failure`(): Unit =
+        assertPropagated(IllegalStateException("evaluator failed"))
 
     @Test
-    fun `optional wait propagates cancellation`() = assertPropagated(CancellationException("cancelled"))
+    fun `optional wait propagates cancellation`(): Unit = assertPropagated(CancellationException("cancelled"))
 
     @Test
-    fun `optional wait propagates fatal error`() = assertPropagated(LinkageError("fatal"))
+    fun `optional wait propagates fatal error`(): Unit = assertPropagated(LinkageError("fatal"))
 
     @Test
-    fun `optional wait reports evaluator timeout as a harness failure`() =
+    fun `optional wait reports evaluator timeout as a harness failure`(): Unit =
         assertXfailDoesNotHide(TimeoutException("product failed"))
 
     @Test
-    fun `wrapped cancellation propagates through a wait`() =
+    fun `wrapped cancellation propagates through a wait`(): Unit =
         assertWrappedCausePropagated(CancellationException("cancelled"))
 
     @Test
-    fun `wrapped fatal error propagates through a wait`() = assertWrappedCausePropagated(LinkageError("fatal"))
+    fun `wrapped fatal error propagates through a wait`(): Unit = assertWrappedCausePropagated(LinkageError("fatal"))
 
     @Test
     fun `nested wrapped cancellation propagates through a wait`() {
@@ -321,10 +322,12 @@ class StrictWaitPredicateTest {
     }
 
     @Test
-    fun `xfail cannot hide matching evaluator assertion`() = assertXfailDoesNotHide(AssertionError("product failed"))
+    fun `xfail cannot hide matching evaluator assertion`(): Unit =
+        assertXfailDoesNotHide(AssertionError("product failed"))
 
     @Test
-    fun `xfail cannot hide matching evaluator timeout`() = assertXfailDoesNotHide(TimeoutException("product failed"))
+    fun `xfail cannot hide matching evaluator timeout`(): Unit =
+        assertXfailDoesNotHide(TimeoutException("product failed"))
 
     @Test
     fun `xfail cannot hide payload conversion failure`() {

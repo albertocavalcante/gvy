@@ -22,7 +22,7 @@ import kotlin.io.path.name
 class PluginDownloaderTest {
 
     @Test
-    fun `download fetches plugin from releases`(@TempDir cacheDir: Path) = runTest {
+    fun `download fetches plugin from releases`(@TempDir cacheDir: Path): Unit = runTest {
         val mockEngine = MockEngine { request ->
             respond(
                 content = ByteReadChannel("mock-content"),

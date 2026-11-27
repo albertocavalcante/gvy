@@ -37,7 +37,7 @@ class MemberAccessScopeSuppressionTest {
     private lateinit var registry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setUp() = runBlocking {
+    fun setUp(): Unit = runBlocking {
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         compilationService = GroovyCompilationService()
         compilationService.workspaceManager.initializeWorkspace(tempDir)

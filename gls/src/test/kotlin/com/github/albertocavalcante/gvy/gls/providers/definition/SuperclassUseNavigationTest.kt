@@ -23,7 +23,7 @@ class SuperclassUseNavigationTest {
     private val compilation = GroovyCompilationService()
 
     @AfterEach
-    fun tearDown() = compilation.clearCaches()
+    fun tearDown(): Unit = compilation.clearCaches()
 
     private val sameFile = "class Base { }\nclass Child extends Base { }\n"
     private val onExtends = Position(1, 21)

@@ -44,7 +44,7 @@ import kotlin.test.assertTrue
 
 class DocumentAnalysisNotificationTest {
     @Test
-    fun `source model limitations share the terminal Problems and status snapshot`() = runTest {
+    fun `source model limitations share the terminal Problems and status snapshot`(): Unit = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val content = "class A {}"
         val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(3), "session") }
@@ -94,7 +94,7 @@ class DocumentAnalysisNotificationTest {
     @Test
     fun `config errors and provider failure produce one consistent notice while preserving both literals`(
         @TempDir root: Path,
-    ) = runTest {
+    ): Unit = runTest {
         val uri = root.resolve("Source.groovy").toUri()
         val content = "class Source {}"
         val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(3), "session") }
@@ -148,7 +148,7 @@ class DocumentAnalysisNotificationTest {
     }
 
     @Test
-    fun `reopened document reports its own session and monotonic run identity`() = runTest {
+    fun `reopened document reports its own session and monotonic run identity`(): Unit = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val content = "class A {}"
         val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(1), "old-session") }
@@ -191,7 +191,7 @@ class DocumentAnalysisNotificationTest {
     }
 
     @Test
-    fun `client capability gates notification`() = runTest {
+    fun `client capability gates notification`(): Unit = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val documents = DocumentProvider().apply { put(uri, "class A {}", DocumentVersion.of(1), "session") }
         val compilation = mockk<GroovyCompilationService>()
@@ -218,7 +218,7 @@ class DocumentAnalysisNotificationTest {
     }
 
     @Test
-    fun `legacy client can complete analysis when capability is enabled`() = runTest {
+    fun `legacy client can complete analysis when capability is enabled`(): Unit = runTest {
         val uri = URI.create("file:///workspace/A.groovy")
         val content = "class A {}"
         val documents = DocumentProvider().apply { put(uri, content, DocumentVersion.of(1), "session") }

@@ -24,7 +24,7 @@ class SelectionRangePrecisionTest {
     private lateinit var definitionProvider: DefinitionProvider
 
     @BeforeEach
-    fun setUp() = runBlocking {
+    fun setUp(): Unit = runBlocking {
         compilationService = GroovyCompilationService()
         compilationService.workspaceManager.initializeWorkspace(tempDir)
         definitionProvider = DefinitionProvider(compilationService)

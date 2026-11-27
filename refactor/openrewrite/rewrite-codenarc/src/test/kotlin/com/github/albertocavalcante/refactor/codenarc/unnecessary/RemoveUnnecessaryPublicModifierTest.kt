@@ -24,7 +24,7 @@ class RemoveUnnecessaryPublicModifierTest : RewriteTest {
     }
 
     @Test
-    fun `removes public from class`() = rewriteRun(
+    fun `removes public from class`(): Unit = rewriteRun(
         groovy(
             """
             public class Foo {}
@@ -36,7 +36,7 @@ class RemoveUnnecessaryPublicModifierTest : RewriteTest {
     )
 
     @Test
-    fun `removes public from method`() = rewriteRun(
+    fun `removes public from method`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -52,7 +52,7 @@ class RemoveUnnecessaryPublicModifierTest : RewriteTest {
     )
 
     @Test
-    fun `removes public from constructor`() = rewriteRun(
+    fun `removes public from constructor`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -68,7 +68,7 @@ class RemoveUnnecessaryPublicModifierTest : RewriteTest {
     )
 
     @Test
-    fun `preserves other modifiers`() = rewriteRun(
+    fun `preserves other modifiers`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -84,7 +84,7 @@ class RemoveUnnecessaryPublicModifierTest : RewriteTest {
     )
 
     @Test
-    fun `preserves private modifier`() = rewriteRun(
+    fun `preserves private modifier`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -95,7 +95,7 @@ class RemoveUnnecessaryPublicModifierTest : RewriteTest {
     )
 
     @Test
-    fun `preserves protected modifier`() = rewriteRun(
+    fun `preserves protected modifier`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {

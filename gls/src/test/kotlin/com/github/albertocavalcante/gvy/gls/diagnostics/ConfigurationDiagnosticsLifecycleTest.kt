@@ -41,7 +41,7 @@ import kotlin.test.assertTrue
 
 class ConfigurationDiagnosticsLifecycleTest {
     @Test
-    fun `shared configuration notices merge and clear on correction`(@TempDir root: Path) = runTest {
+    fun `shared configuration notices merge and clear on correction`(@TempDir root: Path): Unit = runTest {
         val config = root.resolve(".codenarc")
         val oldText = "ruleset { ruleset('rulesets/empty.xml') }"
         Files.writeString(config, oldText)
@@ -90,7 +90,7 @@ class ConfigurationDiagnosticsLifecycleTest {
     }
 
     @Test
-    fun `unsaved configuration edits never receive stale disk ranges`(@TempDir root: Path) = runTest {
+    fun `unsaved configuration edits never receive stale disk ranges`(@TempDir root: Path): Unit = runTest {
         val config = root.resolve(".codenarc")
         val text = "ruleset { ruleset('rulesets/empty.xml') }"
         Files.writeString(config, text)
@@ -132,7 +132,7 @@ class ConfigurationDiagnosticsLifecycleTest {
     }
 
     @Test
-    fun `changed closed configuration cannot publish an obsolete literal range`(@TempDir root: Path) = runTest {
+    fun `changed closed configuration cannot publish an obsolete literal range`(@TempDir root: Path): Unit = runTest {
         val config = root.resolve(".codenarc")
         val text = "ruleset { ruleset('rulesets/empty.xml') }"
         Files.writeString(config, text)
@@ -176,7 +176,7 @@ class ConfigurationDiagnosticsLifecycleTest {
     }
 
     @Test
-    fun `delayed obsolete run cannot republish configuration after invalidation`(@TempDir root: Path) = runTest {
+    fun `delayed obsolete run cannot republish configuration after invalidation`(@TempDir root: Path): Unit = runTest {
         val config = root.resolve(".codenarc")
         val text = "ruleset { ruleset('rulesets/empty.xml') }"
         Files.writeString(config, text)

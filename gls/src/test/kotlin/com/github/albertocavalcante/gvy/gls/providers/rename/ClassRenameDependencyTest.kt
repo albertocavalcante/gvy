@@ -76,11 +76,11 @@ class ClassRenameDependencyTest {
     }
 
     @Test
-    fun `a JDK type used as a type is refused as a dependency without scanning the workspace`() =
+    fun `a JDK type used as a type is refused as a dependency without scanning the workspace`(): Unit =
         assertDependency("String name", 0, "java.lang.String")
 
     @Test
-    fun `a JDK class named by a static call is refused the same way`() =
+    fun `a JDK class named by a static call is refused the same way`(): Unit =
         assertDependency("String.valueOf", 0, "java.lang.String")
 
     @Test
@@ -101,7 +101,7 @@ class ClassRenameDependencyTest {
     }
 
     @Test
-    fun `a nested JDK type is refused as a dependency and named by its binary name`() =
+    fun `a nested JDK type is refused as a dependency and named by its binary name`(): Unit =
         assertDependency("Map.Entry", "Map.".length, "java.util.Map\$Entry")
 
     @Test

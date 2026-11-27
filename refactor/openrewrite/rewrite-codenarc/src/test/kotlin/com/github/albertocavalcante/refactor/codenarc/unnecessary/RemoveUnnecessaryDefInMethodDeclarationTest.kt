@@ -25,7 +25,7 @@ class RemoveUnnecessaryDefInMethodDeclarationTest : RewriteTest {
     }
 
     @Test
-    fun `removes def with visibility modifier`() = rewriteRun(
+    fun `removes def with visibility modifier`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -41,7 +41,7 @@ class RemoveUnnecessaryDefInMethodDeclarationTest : RewriteTest {
     )
 
     @Test
-    fun `removes def with static modifier`() = rewriteRun(
+    fun `removes def with static modifier`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -57,7 +57,7 @@ class RemoveUnnecessaryDefInMethodDeclarationTest : RewriteTest {
     )
 
     @Test
-    fun `removes def with return type`() = rewriteRun(
+    fun `removes def with return type`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {
@@ -73,7 +73,7 @@ class RemoveUnnecessaryDefInMethodDeclarationTest : RewriteTest {
     )
 
     @Test
-    fun `preserves standalone def method`() = rewriteRun(
+    fun `preserves standalone def method`(): Unit = rewriteRun(
         groovy(
             """
             class Foo {

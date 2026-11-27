@@ -17,7 +17,7 @@ class DummyIdentifierLeakTest {
     private val resolver = SemanticTypeResolver(compilation.classpathService.getTypeSolver())
 
     @AfterEach
-    fun close() = compilation.clearCaches()
+    fun close(): Unit = compilation.clearCaches()
 
     @Test
     fun `class body completion does not offer the inserted placeholder`(): Unit = runBlocking {

@@ -40,15 +40,15 @@ import kotlin.test.assertSame
 @OptIn(ExperimentalTestApi::class)
 class EditorTreeNavigationTest {
     @Test
-    fun `Core filtered tree selection navigates and replaces the exact source span`() =
+    fun `Core filtered tree selection navigates and replaces the exact source span`(): Unit =
         verifyNavigation(ParserType.CORE)
 
     @Test
-    fun `Native filtered tree selection navigates and replaces the exact source span`() =
+    fun `Native filtered tree selection navigates and replaces the exact source span`(): Unit =
         verifyNavigation(ParserType.NATIVE)
 
     @Test
-    fun `Rewrite filtered tree selection navigates and replaces the exact source span`() =
+    fun `Rewrite filtered tree selection navigates and replaces the exact source span`(): Unit =
         verifyNavigation(ParserType.REWRITE)
 
     private fun find(root: AstNodeDto, predicate: (AstNodeDto) -> Boolean): AstNodeDto? {

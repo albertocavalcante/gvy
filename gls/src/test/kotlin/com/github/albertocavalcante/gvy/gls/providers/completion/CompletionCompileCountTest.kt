@@ -22,7 +22,7 @@ class CompletionCompileCountTest {
     private val resolver = SemanticTypeResolver(compilation.classpathService.getTypeSolver())
 
     @AfterEach
-    fun close() = compilation.clearCaches()
+    fun close(): Unit = compilation.clearCaches()
 
     @Test
     fun `an unrelated error elsewhere costs one compile when the dummy parsed as an expression`(): Unit = runBlocking {

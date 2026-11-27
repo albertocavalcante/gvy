@@ -110,7 +110,7 @@ class CrossFileDefinitionTest {
     }
 
     @Test
-    fun `should resolve cross-file constructor call in LocalStrategy - full DefinitionResolver integration`() =
+    fun `should resolve cross-file constructor call in LocalStrategy - full DefinitionResolver integration`(): Unit =
         runTest {
             // Arrange: Calculator.groovy defines Calculator class
             val calculatorUri = URI.create("file:///test/Calculator.groovy")

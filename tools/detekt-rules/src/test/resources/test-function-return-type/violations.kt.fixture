@@ -1,0 +1,193 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Every line ending in the FLAG marker must be reported, and nothing else.
+package fixtures
+
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestResult
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.RepeatedTest
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestTemplate
+import org.junit.jupiter.api.Test as Spec
+import org.junit.jupiter.api.Test as `Escaped Spec`
+import org.junit.jupiter.params.ParameterizedTest
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+
+class InferredReturnType {
+    @Test
+    fun `a coroutine test returns its last expression`() = runBlocking { // FLAG
+        checkNotNull(compute())
+    }
+
+    @Test
+    fun `a virtual-time test`() = runTest { // FLAG
+    }
+
+    @Test
+    fun `a builder with a context argument`() = runBlocking(context) { // FLAG
+    }
+
+    @Test
+    fun `a builder with a type argument still declares nothing on the function`() = runBlocking<Unit> { // FLAG
+    }
+
+    @Test
+    fun `a qualified builder`() = kotlinx.coroutines.runBlocking { // FLAG
+    }
+
+    @Test
+    fun `a builder on a receiver`() = scope.runTest { // FLAG
+    }
+
+    @Test
+    fun `a safe call`() = scope?.runTest { } // FLAG
+
+    @Test
+    fun `a lambda`() = { check(true) } // FLAG
+
+    @Test
+    suspend fun `a suspending test`() = coroutineScope { } // FLAG
+
+    @Test
+    fun `a body on the next line`() = // FLAG
+        runBlocking(context) {
+        }
+
+    @Test
+    fun `a call without a lambda`() = rewriteRun( // FLAG
+        spec,
+    )
+
+    @Test
+    fun `a plain expression`() = Unit // FLAG
+
+    @Test fun onOneLine() = check(true) // FLAG
+
+    @Test
+    fun `a signature split before the body`( // FLAG
+        value: Int,
+    ) = runBlocking {
+    }
+
+    @ParameterizedTest
+    fun `a parameterized test`(value: Int) = runBlocking { } // FLAG
+
+    @RepeatedTest(3)
+    fun `a repeated test`() = runBlocking { } // FLAG
+
+    @TestTemplate
+    fun `a test template`() = runBlocking { } // FLAG
+
+    @Spec
+    fun `an aliased annotation`() = runBlocking { } // FLAG
+
+    @`Escaped Spec`
+    fun `an escaped alias`() = runBlocking { } // FLAG
+
+    @org.junit.jupiter.api.Test
+    fun `a qualified annotation`() = runBlocking { } // FLAG
+
+    @org.junit.jupiter./* c */api.`Test`
+    fun `a qualified annotation with a comment and backticks`() = runBlocking { } // FLAG
+
+    @kotlin.test.Test
+    fun `a qualified kotlin-test annotation`() = runBlocking { } // FLAG
+
+    @org.junit.Test
+    fun `a qualified JUnit 4 annotation`() = runBlocking { } // FLAG
+
+    @[Test Deprecated("old")]
+    fun `an annotation list`() = runBlocking { } // FLAG
+
+    @Deprecated("old")
+    @Test
+    fun `after another annotation`() = runBlocking { } // FLAG
+
+    @Test()
+    fun `an annotation with parentheses`() = runBlocking { } // FLAG
+
+    @BeforeEach
+    fun setUp() = runBlocking { } // FLAG
+
+    @AfterEach
+    fun tearDown() = runBlocking { } // FLAG
+
+    @BeforeTest
+    fun before() = runBlocking { } // FLAG
+
+    @AfterTest
+    fun after() = runBlocking { } // FLAG
+
+    companion object {
+        @JvmStatic
+        @BeforeAll
+        fun setUpAll() = runBlocking { } // FLAG
+
+        @JvmStatic
+        @AfterAll
+        fun tearDownAll() = runBlocking { } // FLAG
+    }
+}
+
+class OtherDeclaredType {
+    @Test
+    fun `an alias of Unit`(): TestResult = runTest { } // FLAG
+
+    @Test
+    fun `a value`(): Job = launch() // FLAG
+
+    @Test
+    fun `a qualified Unit`(): kotlin.Unit = runBlocking { } // FLAG
+
+    @Test
+    fun `a nullable Unit`(): Unit? = runBlocking { } // FLAG
+
+    @Test
+    fun `an annotated Unit`(): @Marker Unit = runBlocking { } // FLAG
+
+    @Test
+    fun `a value from a block body`(): String { // FLAG
+        return "value"
+    }
+
+    @Test
+    fun `a type on its own line`():
+        Job = launch() // FLAG
+
+    @BeforeEach
+    fun setUp(): Any = runBlocking { } // FLAG
+}
+
+class RedundantUnit {
+    @Test
+    fun `a block body`(): Unit { // FLAG
+    }
+
+    @BeforeEach
+    fun setUp(): Unit { // FLAG
+    }
+}
+
+interface Contract {
+    @Test
+    fun `a function without a body`(): Unit // FLAG
+}
+
+fun nested() {
+    class Local {
+        @Test
+        fun `inside a local class`() = runBlocking { } // FLAG
+    }
+
+    val anonymous = object {
+        @Test
+        fun `inside an anonymous object`() = runBlocking { } // FLAG
+    }
+}

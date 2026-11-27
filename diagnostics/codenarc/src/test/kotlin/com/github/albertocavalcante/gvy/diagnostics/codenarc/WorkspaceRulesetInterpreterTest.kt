@@ -98,7 +98,7 @@ class WorkspaceRulesetInterpreterTest {
     }
 
     @Test
-    fun `missing bundled ruleset preserves a multiline literal range`() = runBlocking {
+    fun `missing bundled ruleset preserves a multiline literal range`(): Unit = runBlocking {
         val file = tempDir.resolve(".codenarc")
         val text = "ruleset { ruleset('rulesets/emp" + '\\' + "\nty.xml') }"
         Files.writeString(file, text)
@@ -144,7 +144,7 @@ class WorkspaceRulesetInterpreterTest {
     }
 
     @Test
-    fun `configuration notice survives an analyzer failure`() = runBlocking {
+    fun `configuration notice survives an analyzer failure`(): Unit = runBlocking {
         Files.writeString(tempDir.resolve(".codenarc"), "ruleset { ruleset('rulesets/empty.xml') }")
         val analyzer = mockk<CodeAnalyzer>()
         every { analyzer.analyze(any(), any(), any(), any()) } throws IllegalStateException("analyzer failed")
@@ -167,7 +167,7 @@ class WorkspaceRulesetInterpreterTest {
     }
 
     @Test
-    fun `invalid packaged ruleset is linked from affected source and clears after correction`() = runBlocking {
+    fun `invalid packaged ruleset is linked from affected source and clears after correction`(): Unit = runBlocking {
         val config = tempDir.resolve(".codenarc")
         Files.writeString(config, "ruleset { ruleset('rulesets/empty.xml') }")
         val provider = CodeNarcDiagnosticProvider(
@@ -194,7 +194,7 @@ class WorkspaceRulesetInterpreterTest {
     }
 
     @Test
-    fun `a declarative workspace ruleset is honoured end to end`() = runBlocking {
+    fun `a declarative workspace ruleset is honoured end to end`(): Unit = runBlocking {
         Files.writeString(tempDir.resolve("codenarc.groovy"), "ruleset { TrailingWhitespace }")
         val file = tempDir.resolve("A.groovy")
         val source = "class A {   \n}\n"

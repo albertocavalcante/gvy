@@ -76,10 +76,10 @@ class ClasspathLocalTransformTest {
     private val processorSource = "@probe.Boom\nclass A {}"
 
     @Test
-    fun `control - a plain compile that sees the jar does run its local transform`() = control(directSource)
+    fun `control - a plain compile that sees the jar does run its local transform`(): Unit = control(directSource)
 
     @Test
-    fun `control - a precompiled collector with a processor from the jar does run under a plain compile`() =
+    fun `control - a precompiled collector with a processor from the jar does run under a plain compile`(): Unit =
         control(processorSource)
 
     private fun control(source: String) {
