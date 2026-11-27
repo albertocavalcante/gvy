@@ -111,20 +111,23 @@ class GroovyGdkProviderIndexBuildTest {
     fun `a classpath change rebuilds the index from the new classpath`(@TempDir workspace: Path) {
         val classpath = ClasspathService()
         val provider = GroovyGdkProvider(classpath)
-        // A lookup before dependency resolution builds the index from the server's own Groovy, which lacks it
-        assertThat(provider.getMethodsForType(DATE).map { it.originClass }).doesNotContain("DateGroovyMethods")
+        try {
+            // A lookup before dependency resolution builds the index from the server's own Groovy, which lacks it
+            assertThat(provider.getMethodsForType(DATE).map { it.originClass }).doesNotContain("DateGroovyMethods")
 
-        val classFile = workspace.resolve(DATE_GDK.replace('.', '/') + ".class")
-        Files.createDirectories(classFile.parent)
-        Files.write(classFile, gdkClassBytes(DATE_GDK, WORKSPACE_ONLY, "(Ljava/util/Date;)V"))
-        classpath.updateClasspath(listOf(workspace))
-        provider.onClasspathChanged()
+            val classFile = workspace.resolve(DATE_GDK.replace('.', '/') + ".class")
+            Files.createDirectories(classFile.parent)
+            Files.write(classFile, gdkClassBytes(DATE_GDK, WORKSPACE_ONLY, "(Ljava/util/Date;)V"))
+            classpath.updateClasspath(listOf(workspace))
+            provider.onClasspathChanged()
 
-        val fromWorkspace = provider.getMethodsForType(DATE).filter { it.originClass == "DateGroovyMethods" }
-        assertThat(fromWorkspace.map { it.name })
-            .describedAs("$DATE_GDK from the workspace")
-            .containsExactly(WORKSPACE_ONLY)
-        classpath.close()
+            val fromWorkspace = provider.getMethodsForType(DATE).filter { it.originClass == "DateGroovyMethods" }
+            assertThat(fromWorkspace.map { it.name })
+                .describedAs("$DATE_GDK from the workspace")
+                .containsExactly(WORKSPACE_ONLY)
+        } finally {
+            classpath.close() // releases the loader over the workspace before @TempDir deletes it
+        }
     }
 
     @Test
@@ -170,13 +173,11 @@ class GroovyGdkProviderIndexBuildTest {
         }
     }
 
-    /** Defines [name] from [bytes] and loads every other class through the test's own loader. */
-    private class OneClassLoader(
-        private val name: String,
-        private val bytes: ByteArray,
-    ) : ClassLoader(GroovyGdkProviderIndexBuildTest::class.java.classLoader) {
+    /** Defines [definedName] from [bytes] and loads every other class through the test's own loader. */
+    private class OneClassLoader(private val definedName: String, private val bytes: ByteArray) :
+        ClassLoader(GroovyGdkProviderIndexBuildTest::class.java.classLoader) {
         override fun findClass(className: String): Class<*> =
-            if (className == name) defineClass(className, bytes, 0, bytes.size) else super.findClass(className)
+            if (className == definedName) defineClass(className, bytes, 0, bytes.size) else super.findClass(className)
     }
 }
 
