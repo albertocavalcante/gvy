@@ -4,7 +4,9 @@
 package com.github.albertocavalcante.gvy.gls.worker
 
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionSource
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.mockk
@@ -67,6 +69,19 @@ class WorkerSessionManagerTest {
         assertTrue(manager.select(null))
         assertNull(manager.selectedWorker)
         assertFalse(manager.select(null))
+    }
+
+    @Test
+    fun `a version selects with its worker and a worker alone keeps the version`() {
+        val manager = WorkerSessionManager(StubSession(mockk()), sessionFactory = { StubSession(mockk()) })
+        val version = GroovyVersionInfo(parseGroovyVersion("3.0.0"), GroovyVersionSource.RUNTIME)
+
+        assertTrue(manager.select(version, descriptor("worker")))
+        assertEquals(version, manager.selectedVersion)
+        assertTrue(manager.select(descriptor("other")))
+
+        assertEquals(version, manager.selectedVersion)
+        assertEquals(descriptor("other"), manager.selectedWorker)
     }
 
     private class StubSession(private val result: ParseResult) : WorkerSession {

@@ -261,19 +261,24 @@ class GroovyCompilationService internal constructor(
         }
     }
 
-    fun updateGroovyVersion(info: GroovyVersionInfo) = engineManager.updateGroovyVersion(info)
-
-    fun getGroovyVersionInfo(): GroovyVersionInfo? = engineManager.getGroovyVersionInfo()
+    fun getGroovyVersionInfo(): GroovyVersionInfo? = workerSessionManager.selectedVersion
 
     /**
-     * Selects [worker] for parsing and clears the compiled caches when that changed the selection. It runs on the
-     * listener thread (didChangeConfiguration) and on Default (the dependency callback). The worker and its session
-     * are one value in [workerSessionManager], so racing calls cannot leave [getSelectedWorker] and the parsing
-     * session apart, and every call that changed the selection clears after its own change, so the caches are
-     * cleared after the last one.
+     * Selects the project's Groovy [version] and the [worker] chosen for it in one step, and clears the compiled
+     * caches when the worker changed. Both callers make this one call: didChangeConfiguration on the listener thread
+     * and the dependency callback on Default. The version, the worker and its session are one value in
+     * [workerSessionManager], so racing calls cannot pair one call's version with the other's worker, or leave
+     * [getSelectedWorker] and the parsing session apart. Every call that changed the worker clears after its own
+     * change, so the caches are cleared after the last one.
      */
-    fun updateSelectedWorker(worker: WorkerDescriptor?): Boolean {
-        val changed = workerSessionManager.select(worker)
+    fun updateGroovySelection(version: GroovyVersionInfo, worker: WorkerDescriptor?): Boolean =
+        clearIfChanged(workerSessionManager.select(version, worker), worker)
+
+    /** Selects [worker] as [updateGroovySelection] does, keeping the selected Groovy version. */
+    fun updateSelectedWorker(worker: WorkerDescriptor?): Boolean =
+        clearIfChanged(workerSessionManager.select(worker), worker)
+
+    private fun clearIfChanged(changed: Boolean, worker: WorkerDescriptor?): Boolean {
         if (changed) {
             clearCaches()
             logger.info { "Worker changed to ${worker?.id}; cleared compilation caches" }

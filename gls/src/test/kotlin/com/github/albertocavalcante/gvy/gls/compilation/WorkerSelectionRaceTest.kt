@@ -4,7 +4,9 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionSource
 import com.github.albertocavalcante.gvy.gls.worker.WorkerCapabilities
 import com.github.albertocavalcante.gvy.gls.worker.WorkerConnector
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
@@ -12,6 +14,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.runBlocking
+import java.io.Closeable
 import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -19,25 +22,63 @@ import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
- * Two worker selections racing (didChangeConfiguration on the listener thread, the dependency callback on Default)
- * leave the worker the service reports and the session that parses in step.
+ * Two selections racing (didChangeConfiguration on the listener thread, the dependency callback on Default) leave
+ * the Groovy version, the worker the service reports and the session that parses in step.
  */
 class WorkerSelectionRaceTest {
+    private val first = worker("first")
+    private val second = worker("second")
+
     @Test
     fun `racing selections leave the reported worker and the parsing session in step`() {
-        val sessions = CopyOnWriteArrayList<CountingSession>() // the default session first, then one per worker
-        val buildingFirst = CountDownLatch(1)
-        val release = CountDownLatch(1)
+        RaceFixture().use { fixture ->
+            fixture.race({ updateSelectedWorker(first) }, { updateSelectedWorker(second) })
+
+            val reported = assertNotNull(fixture.compilation.getSelectedWorker())
+            assertSame(
+                fixture.sessionOf(reported),
+                fixture.parsingSession(),
+                "the service reports ${reported.id}, so its session must be the one that parses",
+            )
+        }
+    }
+
+    @Test
+    fun `racing selections pair the reported version with the reported worker`() {
+        val firstVersion = version("3.0.0")
+        val secondVersion = version("4.0.0")
+        RaceFixture().use { fixture ->
+            fixture.race(
+                { updateGroovySelection(firstVersion, first) },
+                { updateGroovySelection(secondVersion, second) },
+            )
+
+            val reported = assertNotNull(fixture.compilation.getSelectedWorker())
+            val versionOf = mapOf(first to firstVersion, second to secondVersion)
+            assertEquals(versionOf.getValue(reported), fixture.compilation.getGroovyVersionInfo())
+            assertSame(fixture.sessionOf(reported), fixture.parsingSession())
+        }
+    }
+
+    /**
+     * A compilation service whose first worker session is held while it is built, so a second selection can run in
+     * between. Sessions are decorated in the order they are built: the default session, then the first worker's,
+     * then the second's.
+     */
+    private inner class RaceFixture : Closeable {
+        private val sessions = CopyOnWriteArrayList<CountingSession>()
+        private val buildingFirst = CountDownLatch(1)
+        private val release = CountDownLatch(1)
         val compilation = GroovyCompilationService(
             workerSessionDecorator = { delegate ->
                 val session = CountingSession(delegate)
                 sessions += session
-                // The first worker's session is held while it is built, so the second selection runs meanwhile.
                 if (sessions.size == FIRST_WORKER_SESSION) {
                     buildingFirst.countDown()
                     check(release.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "the first selection was never released" }
@@ -45,29 +86,33 @@ class WorkerSelectionRaceTest {
                 session
             },
         )
-        val first = worker("first")
-        val second = worker("second")
-        try {
-            val selectingFirst = FutureTask<Boolean> { compilation.updateSelectedWorker(first) }
+
+        /** Runs [selectFirst] on its own thread, runs [selectSecond] to completion while it is held, then ends it. */
+        fun race(
+            selectFirst: GroovyCompilationService.() -> Boolean,
+            selectSecond: GroovyCompilationService.() -> Boolean,
+        ) {
+            val selectingFirst = FutureTask<Boolean> { compilation.selectFirst() }
             Thread(selectingFirst, "select-first").apply {
                 isDaemon = true
                 start()
             }
             assertTrue(buildingFirst.await(WAIT_SECONDS, TimeUnit.SECONDS), "the first selection never started")
-
-            assertTrue(compilation.updateSelectedWorker(second))
+            assertTrue(compilation.selectSecond())
             release.countDown()
             assertTrue(selectingFirst.get(WAIT_SECONDS, TimeUnit.SECONDS))
+        }
 
-            val sessionOf = mapOf(first to sessions[FIRST_WORKER_SESSION - 1], second to sessions[FIRST_WORKER_SESSION])
-            val reported = assertNotNull(compilation.getSelectedWorker())
+        fun sessionOf(worker: WorkerDescriptor): CountingSession =
+            sessions[if (worker == first) FIRST_WORKER_SESSION - 1 else FIRST_WORKER_SESSION]
+
+        /** The one session that parses a compile now. */
+        fun parsingSession(): CountingSession {
             runBlocking { compilation.compile(URI.create("file:///race/Probe.groovy"), "class Probe {}") }
-            assertSame(
-                sessionOf.getValue(reported),
-                sessions.single { it.parses.get() > 0 },
-                "the service reports ${reported.id}, so its session must be the one that parses",
-            )
-        } finally {
+            return sessions.single { it.parses.get() > 0 }
+        }
+
+        override fun close() {
             release.countDown()
             compilation.shutdown()
         }
@@ -79,6 +124,8 @@ class WorkerSelectionRaceTest {
         override fun parse(request: ParseRequest): ParseResult =
             delegate.parse(request).also { parses.incrementAndGet() }
     }
+
+    private fun version(raw: String) = GroovyVersionInfo(parseGroovyVersion(raw), GroovyVersionSource.RUNTIME)
 
     private fun worker(id: String) = WorkerDescriptor(
         id = id,

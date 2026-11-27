@@ -500,7 +500,6 @@ class ProjectStartupManager(
 
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
         val info = groovyVersionResolver.resolve(dependencies, config.groovyLanguageVersion)
-        compilationService.updateGroovyVersion(info)
         selectWorker(info, config)
     }
 
@@ -511,7 +510,8 @@ class ProjectStartupManager(
     ) {
         val router = resolveWorkerRouter(config)
         val selected = router.select(info, requiredFeatures)
-        compilationService.updateSelectedWorker(selected)
+        // One call for the version and its worker, so a racing selection cannot pair them with another's
+        compilationService.updateGroovySelection(info, selected)
     }
 
     private fun resolveWorkerRouter(config: ServerConfiguration): WorkerRouter {
