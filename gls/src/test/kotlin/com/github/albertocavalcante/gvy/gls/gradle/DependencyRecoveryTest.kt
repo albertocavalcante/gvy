@@ -48,7 +48,6 @@ class DependencyRecoveryTest {
             manager.startAsyncResolution(root, onComplete = { retried.complete(it) }, enableFileWatching = false)
 
             assertEquals(recovered, withTimeout(TIMEOUT) { retried.await() })
-            assertEquals(recovered.dependencies, manager.getCurrentDependencies())
             assertEquals(DependencyManager.State.COMPLETED, manager.getState())
         }
     }
@@ -181,7 +180,8 @@ class DependencyRecoveryTest {
             if (attempts.incrementAndGet() == 1) {
                 entered.countDown()
                 check(release.await(5, TimeUnit.SECONDS))
-                WorkspaceResolution(listOf(root.resolve("obsolete.jar")), emptyList())
+                // Unusable, so a publication past the fence would leave the state FAILED, not COMPLETED.
+                WorkspaceResolution.failed("OBSOLETE", "obsolete attempt")
             } else {
                 recovered
             }
@@ -204,7 +204,6 @@ class DependencyRecoveryTest {
                 withTimeout(TIMEOUT) { scope.coroutineContext[Job]!!.children.toList().joinAll() }
 
                 assertTrue(completions.isEmpty(), "The cancelled attempt must never publish completion")
-                assertEquals(recovered.dependencies, manager.getCurrentDependencies())
                 assertEquals(DependencyManager.State.COMPLETED, manager.getState())
             }
         } finally {

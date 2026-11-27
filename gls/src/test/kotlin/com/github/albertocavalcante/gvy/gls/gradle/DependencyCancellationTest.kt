@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DependencyCancellationTest {
@@ -125,6 +127,42 @@ class DependencyCancellationTest {
             assertEquals(1, detections.get(), "A detached watcher must not start another resolution")
         } finally {
             release.countDown()
+            manager.cancel()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `client event returns while a completion callback holds the manager lock`() {
+        val callbackEntered = CountDownLatch(1)
+        val releaseCallback = CountDownLatch(1)
+        val changed = root.resolve("build.gradle")
+        val watcher = mockk<BuildToolFileWatcher>(relaxed = true)
+        val tool = mockk<BuildTool>(relaxed = true)
+        every { tool.name } returns "Gradle"
+        every { tool.createWatcher(any(), any()) } returns watcher
+        every { tool.resolve(any(), any(), any()) } returns WorkspaceResolution(emptyList(), listOf(root))
+        val tools = mockk<BuildToolManager>()
+        every { tools.detectBuildTool(root) } returns tool
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val manager = DependencyManager(tools, scope)
+        try {
+            // The watcher is installed before resolving, so it is current while the callback holds the lock.
+            manager.startAsyncResolution(root, onComplete = {
+                callbackEntered.countDown()
+                check(releaseCallback.await(30, TimeUnit.SECONDS))
+            })
+            assertTrue(callbackEntered.await(5, TimeUnit.SECONDS))
+
+            // The LSP message thread delivers this; a blocked event would stall every later client message.
+            val event = Thread { manager.onWatchedFilesChanged(listOf(changed)) }
+            event.start()
+            event.join(5_000)
+
+            assertFalse(event.isAlive, "A client event must not wait for a completion callback")
+            verify(exactly = 1) { watcher.onFileChanged(changed) }
+        } finally {
+            releaseCallback.countDown()
             manager.cancel()
             scope.cancel()
         }
