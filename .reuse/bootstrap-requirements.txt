@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
-# Wheel hashes: https://pypi.org/pypi/uv/0.13.7/json
+# Wheel hashes: https://pypi.org/pypi/uv/0.13.9/json
 uv==0.13.9 \
     --hash=sha256:16963d19594e18d746a70c7fce82237bde4f2cac4cfcf0ca2b84796fe9d0c6e9 \
     --hash=sha256:2c45530751517d6c3bbc69a19473f6effe47cce047bede01ffd8af7ea7b36b25 \

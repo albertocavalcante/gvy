@@ -127,7 +127,7 @@ cross-platform cleanup remain unresolved in [#1928](https://github.com/albertoca
 120-second subprocess timeout and the nonempty-successful-stderr policy remain in effect.
 
 When updating uv, update the version and all wheel SHA-256 hashes in `.reuse/bootstrap-requirements.txt` from the
-[uv release metadata](https://pypi.org/pypi/uv/0.13.7/json), then validate the Linux, macOS, and Windows tooling jobs.
+[uv release metadata](https://pypi.org/pypi/uv/0.13.9/json), then validate the Linux, macOS, and Windows tooling jobs.
 
 Original maintained source files require leading SPDX copyright and Apache-2.0 license comments. Preserve existing
 copyright notices and attributed holders; use `Alberto Cavalcante and the gvy contributors` for original gvy source

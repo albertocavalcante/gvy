@@ -132,10 +132,10 @@ e2e-single:
 
 # Run the language server
 run-stdio: jar
-	java -jar build/libs/gls-*-all.jar
+	java -jar gls/build/libs/gls-*-all.jar
 
 run-socket: jar
-	java -jar build/libs/gls-*-all.jar socket 8080
+	java -jar gls/build/libs/gls-*-all.jar socket 8080
 
 # Version information
 version:
@@ -285,7 +285,7 @@ bazel-clean:
 	bazel clean --expunge
 
 bazel-jar:
-	bazel build //groovy-lsp:gls_deploy_deploy.jar
+	bazel build //gls:gls_deploy_deploy.jar
 
 bazel-sync:
 	bazel run @maven//:pin
@@ -294,8 +294,8 @@ bazel-sync:
 .PHONY: verify-builds
 verify-builds: jar bazel-jar
 	@echo "Comparing Gradle and Bazel outputs..."
-	@echo "Gradle JAR: $$(ls -la build/libs/*.jar 2>/dev/null || echo 'not found')"
-	@echo "Bazel JAR: $$(ls -la bazel-bin/groovy-lsp/*.jar 2>/dev/null || echo 'not found')"
+	@echo "Gradle JAR: $$(ls -la gls/build/libs/*.jar 2>/dev/null || echo 'not found')"
+	@echo "Bazel JAR: $$(ls -la bazel-bin/gls/*.jar 2>/dev/null || echo 'not found')"
 
 # Explicit source installation: build and verify both components from this checkout.
 .PHONY: ext-vscode-source ext-package-source ext-doctor
