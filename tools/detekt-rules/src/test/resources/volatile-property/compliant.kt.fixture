@@ -1,31 +1,39 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
-// Nothing here may be reported.
+// Nothing here may be reported. The file imports no other Volatile, so each spelling below names Kotlin's annotation.
 package fixtures
 
-import com.example.annotations.Volatile
-
-/** Mentions of @Volatile in KDoc, comments and strings are not annotations. */
+/**
+ * Mentions of @Volatile, @kotlin.jvm.Volatile and @kotlin.concurrent.Volatile in KDoc are not annotations, nor are
+ * the links [Volatile] and [kotlin.jvm.Volatile].
+ *
+ * @Volatile at the start of a KDoc line is a tag, not an annotation.
+ */
 class Mentions {
     // @Volatile in a line comment
+    // @kotlin.jvm.Volatile in a line comment
+
+    /* @kotlin.concurrent.Volatile in a block comment */
     val text = "@Volatile var flag = false"
+    val qualifiedText = "@kotlin.jvm.Volatile var flag = false"
+    val rawText = """@kotlin.concurrent.Volatile var flag = false"""
     val volatile = "a property named volatile"
+
+    /** The KDoc of a property that mentions @kotlin.jvm.Volatile. */
+    var documented = false
 }
 
 class OtherAnnotations {
     @Transient var transientField = false
     @JvmField var jvmField = 0
     @Synchronized fun synchronizedFunction() = Unit
-}
-
-/** This file imports a different annotation named Volatile, so the unqualified name refers to it. */
-class ImportedNamesake {
-    @Volatile var notKotlins = false
+    @kotlin.jvm.JvmField var qualifiedOther = 0
+    @com.example.annotations.Volatile var otherPackage = false
+    @VolatileLike var similarName = false
 }
 
 class Suppressed {
-    // Qualified, so only the suppression keeps it silent in a file that imports another Volatile.
     @Suppress("VolatileProperty") // A documented exception: a field updater needs a real volatile field.
-    @kotlin.jvm.Volatile
+    @Volatile
     var updatedThroughFieldUpdater = 0
 }

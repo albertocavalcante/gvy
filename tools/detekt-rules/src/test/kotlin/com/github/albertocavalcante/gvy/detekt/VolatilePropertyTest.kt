@@ -21,6 +21,11 @@ class VolatilePropertyTest {
     }
 
     @Test
+    fun `flags nothing in a file that imports another annotation named Volatile`() {
+        rule.assertReportsNothing("volatile-property/imports-other-volatile.kt.fixture")
+    }
+
+    @Test
     fun `an alias of another annotation is not reported`() {
         val source = """
             import com.example.annotations.Volatile as Marker

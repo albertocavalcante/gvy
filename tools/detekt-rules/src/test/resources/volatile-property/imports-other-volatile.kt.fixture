@@ -1,0 +1,19 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+// Nothing here may be reported. The file imports a different annotation named Volatile, so the unqualified name
+// refers to that one.
+package fixtures
+
+import com.example.annotations.Volatile
+
+class ImportedNamesake {
+    @Volatile var notKotlins = false
+    @field:Volatile var withUseSiteTarget = false
+}
+
+class Suppressed {
+    // Qualified, so only the suppression keeps it silent in a file that imports another Volatile.
+    @Suppress("VolatileProperty") // A documented exception: a field updater needs a real volatile field.
+    @kotlin.jvm.Volatile
+    var updatedThroughFieldUpdater = 0
+}
