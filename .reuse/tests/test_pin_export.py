@@ -111,7 +111,13 @@ class PinOriginTests(unittest.TestCase):
             (prefix + config).replace(b'ref = "main"', f'ref = "{REVISION}"'.encode()),
             pin_export.pin_origin_ref(prefix + config, WORKFLOW, REVISION),
         )
-        for bad_prefix in (b"", prefix + prefix, prefix + b'SOURCE_URL = "other"\n', b"SOURCE_URL = compute()\n"):
+        for bad_prefix in (
+            b"",
+            prefix + prefix,
+            prefix + b'SOURCE_URL = "other"\n',
+            b'SOURCE_URL = "other"\n',
+            b"SOURCE_URL = compute()\n",
+        ):
             with self.subTest(prefix=bad_prefix), self.assertRaises(ValueError):
                 pin_export.pin_origin_ref(bad_prefix + config, WORKFLOW, REVISION)
 

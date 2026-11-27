@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - '.reuse/**'
+      - 'infra/copybara/*.bara.sky'
       - 'LICENSES/**'
       - '.github/workflows/license-tooling.yml'
       - 'tools/ci/junit_contract.py'
@@ -23,6 +24,7 @@ on:
     branches: [main]
     paths:
       - '.reuse/**'
+      - 'infra/copybara/*.bara.sky'
       - 'LICENSES/**'
       - '.github/workflows/license-tooling.yml'
       - 'tools/ci/junit_contract.py'
