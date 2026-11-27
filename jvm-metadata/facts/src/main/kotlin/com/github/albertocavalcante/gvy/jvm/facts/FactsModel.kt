@@ -38,9 +38,13 @@ public data class PackageFact(val name: String, val module: String?)
  * A class of the input.
  *
  * [internalName] uses slashes (`java/util/Map$Entry`) and [packageName] uses dots (`java.util`, empty for the
- * unnamed package). [outerClass] is the internal name of the enclosing class. [release] is 0 for the base copy and
- * N for a copy under `META-INF/versions/N`. The model does not check that these fields agree with each other.
- * [accessFlags] must be within 0..[FactsFormat.MAX_ACCESS_FLAGS] and [release] within 0..[FactsFormat.MAX_RELEASE].
+ * unnamed package). [simpleName] is empty for an anonymous class. [outerClass] is the internal name of the enclosing
+ * class: for a member class its declaring class, and for a local or anonymous class the class its `EnclosingMethod`
+ * names. [release] is 0 for the base copy and N for a copy under `META-INF/versions/N`. The model does not check that
+ * these fields agree with each other. [accessFlags] must be within 0..[FactsFormat.MAX_ACCESS_FLAGS] and [release]
+ * within 0..[FactsFormat.MAX_RELEASE]. For a class with an `InnerClasses` entry for itself the flags are the ones of
+ * that entry, which is what `Class.getModifiers` reports, so `static`, `private` and `protected` are kept; a class
+ * without such an entry is top-level and has the flags of its class file.
  */
 public data class ClassFact(
     val internalName: String,
@@ -72,8 +76,10 @@ public enum class MemberKind(internal val code: Int) {
 /**
  * A field or method.
  *
- * [descriptor] is the JVM descriptor. [parameterNames] is null when the class file has no `MethodParameters`
- * attribute, which differs from an empty list. [genericSignature] is null when absent or not recorded.
+ * [descriptor] is the JVM descriptor. [parameterNames] is null when the class file has no usable `MethodParameters`
+ * attribute (missing, or with a count that differs from the descriptor's), which differs from an empty list. An empty
+ * name means the attribute names no parameter at that position. [genericSignature] is null when absent or not
+ * recorded.
  * [accessFlags] follows the rules of [ClassFact.accessFlags]; [FactsFormat.DEPRECATED_FLAG] marks deprecation.
  */
 public data class MemberFact(

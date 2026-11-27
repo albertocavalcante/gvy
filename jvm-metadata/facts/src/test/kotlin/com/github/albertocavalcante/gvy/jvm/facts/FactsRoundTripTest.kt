@@ -199,6 +199,22 @@ class FactsRoundTripTest {
     }
 
     @Test
+    fun `an anonymous class with an empty simple name and an empty parameter name round trip`() {
+        val method = MemberFact(MemberKind.METHOD, 1, "run", "(II)V", parameterNames = listOf("", "count"))
+        val facts = emptyFacts().copy(
+            names = NamesSection(
+                listOf(PackageFact("p", null)),
+                listOf(ClassFact("p/Outer\$1", "p", "", "p/Outer", 0x8)),
+            ),
+            types = TypesSection(listOf(ClassTypes("p/Outer\$1", 0, null, emptyList(), listOf(method)))),
+        )
+
+        for ((label, encoding) in encodings) {
+            assertEquals(facts, openFile(writeWith(facts, encoding)).loadAll().loaded(), label)
+        }
+    }
+
+    @Test
     fun `the largest access flags and release round trip`() {
         val member = MemberFact(MemberKind.FIELD, FactsFormat.MAX_ACCESS_FLAGS, "f", "I")
         val facts = emptyFacts().copy(

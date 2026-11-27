@@ -170,11 +170,13 @@ class count * ( internal name: string, package: varint, simple name: string, out
 
 - `package` is an index into the package table above. `name` of a package is dotted (`java.util`, empty for the unnamed
   package); `module` is set for the packages of a JDK image.
-- `internal name` and `outer class` use slashes (`java/util/Map$Entry`).
+- `internal name` and `outer class` use slashes (`java/util/Map$Entry`). The `simple name` is empty for an anonymous
+  class. The `outer class` is the declaring class of a member class, and for a local or anonymous class the class its
+  `EnclosingMethod` attribute names.
 - `access flags` are the 16 JVM bits plus bit 16 (`0x10000`), set when the class is deprecated. The largest value is
-  `0x1FFFF`. For a top-level class they are the flags of its class file. For a nested class they are the flags its
-  enclosing class's `InnerClasses` entry declares for it, so `static`, `private` and `protected`, which a class file
-  cannot hold, are kept.
+  `0x1FFFF`. For a class with an `InnerClasses` entry for itself they are the flags of that entry, which is what
+  `Class.getModifiers()` reports, so `static`, `private` and `protected`, which a class file cannot hold, are kept. A
+  class without such an entry is top-level and has the flags of its class file.
 - `release` is 0 for the base copy and N for a copy under `META-INF/versions/N`. The largest value is 255.
 - Keys: a package by its name's pool index; a class by (internal name pool index, release).
 
@@ -194,8 +196,9 @@ member = kind: u8, access flags: varint, name: string, descriptor: string,
 - `class` indexes the class table of the names section, which names the class (internal name and release) the entry
   describes. A class may have no entry.
 - Member `kind` is 0 for a field and 1 for a method; constructors and initializers are methods.
-- Parameter names are absent when the class file has no `MethodParameters` attribute; present and empty is a method with
-  no parameters.
+- Parameter names are absent when the class file has no usable `MethodParameters` attribute (missing, or with a count
+  that differs from the descriptor's); present and empty is a method with no parameters. An empty name is a valid pool
+  string and means the attribute names no parameter at that position.
 - `access flags` and `release` follow the names section: at most `0x1FFFF` and 255.
 - Interfaces and parameter names keep their declared order and have no key.
 - Keys: an entry by its `class` index; a member by (name pool index, descriptor pool index) within its class.
