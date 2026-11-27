@@ -16,6 +16,7 @@ import com.github.albertocavalcante.gvy.jvm.facts.Sha256
 import com.github.albertocavalcante.gvy.jvm.facts.TypesSection
 import org.junit.jupiter.api.Test
 import org.objectweb.asm.Opcodes
+import java.security.MessageDigest
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -120,8 +121,9 @@ class UnrepresentableStringsTest {
         val bytes = classFile(className) { method(PUBLIC, "a\u0000b", "()V") }
 
         val read = extractRead(bytes, className)
+        val digest = Sha256.of(MessageDigest.getInstance("SHA-256").digest(bytes))
         val facts = Facts(
-            header = FactsHeader("test", InputKind.JAR, null, Sha256.of(bytes), bytes.size.toLong()),
+            header = FactsHeader("test", InputKind.JAR, null, digest, bytes.size.toLong()),
             names = NamesSection(listOf(PackageFact("p", null)), listOf(read.fact)),
             types = TypesSection(listOfNotNull(read.types)),
             extensions = ExtensionsSection(emptyList()),
