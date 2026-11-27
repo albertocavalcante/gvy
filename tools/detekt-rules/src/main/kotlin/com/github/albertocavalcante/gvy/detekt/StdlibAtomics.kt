@@ -29,6 +29,16 @@ internal class StdlibAtomics(config: Config = Config.empty) : PackageUseRule(con
         debt = Debt.TEN_MINS,
     )
 
-    override fun message(name: String): String = "`$name` is experimental, and only :common:concurrent opts into it. " +
-        "Use OnceFlag, SharedValue or Counter from that module, or a plain field for state one thread owns (#2474)."
+    override fun message(name: String): String = if (name == OPT_IN_MARKER) {
+        "`$name` opts into the experimental stdlib atomics, which only :common:concurrent may do. Use OnceFlag, " +
+            "SharedValue or Counter from that module instead (#2474)."
+    } else {
+        "`$name` is part of the experimental stdlib atomics, which only :common:concurrent opts into. Use OnceFlag, " +
+            "SharedValue or Counter from that module, or a plain field for state one thread owns (#2474)."
+    }
+
+    private companion object {
+        /** The opt-in marker: using it opts in, so "use the facade instead" is the fix, not "this is experimental". */
+        const val OPT_IN_MARKER = "kotlin.concurrent.atomics.ExperimentalAtomicApi"
+    }
 }

@@ -24,7 +24,7 @@ class StdlibAtomicsTest {
     fun `a star import is reported by its path`() {
         val findings = rule.lint("import kotlin.concurrent.atomics.*")
         assertThat(findings).hasSize(1)
-        assertThat(findings.single().message).startsWith("`kotlin.concurrent.atomics.*` is experimental")
+        assertThat(findings.single().message).startsWith("`kotlin.concurrent.atomics.*` is part of the experimental ")
     }
 
     @Test
@@ -58,7 +58,27 @@ class StdlibAtomicsTest {
         val findings = rule.lint("val counter = kotlin.concurrent.atomics.AtomicInt(0)")
         assertThat(findings).hasSize(1)
         val message = findings.single().message
-        assertThat(message).startsWith("`kotlin.concurrent.atomics.AtomicInt` is experimental")
+        assertThat(message).startsWith("`kotlin.concurrent.atomics.AtomicInt` is part of the experimental ")
         assertThat(message).contains("OnceFlag").contains("SharedValue").contains("Counter")
+    }
+
+    @Test
+    fun `the opt-in marker gets a message about opting in, however it is named`() {
+        val sources = listOf(
+            "import kotlin.concurrent.atomics.ExperimentalAtomicApi",
+            "@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)\nclass A",
+            "@kotlin.concurrent.atomics.ExperimentalAtomicApi\nfun f() = Unit",
+        )
+        val expected = "`kotlin.concurrent.atomics.ExperimentalAtomicApi` opts into the experimental stdlib atomics"
+        for (source in sources) {
+            assertThat(rule.lint(source).single().message).describedAs(source).startsWith(expected)
+        }
+    }
+
+    @Test
+    fun `a file-wide suppression silences an import`() {
+        val import = "import kotlin.concurrent.atomics.AtomicInt"
+        assertThat(rule.lint(import)).hasSize(1)
+        assertThat(rule.lint("@file:Suppress(\"StdlibAtomics\")\n\n$import")).isEmpty()
     }
 }

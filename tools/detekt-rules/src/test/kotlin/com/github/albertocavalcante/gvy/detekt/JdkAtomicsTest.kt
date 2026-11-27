@@ -33,6 +33,13 @@ class JdkAtomicsTest {
     }
 
     @Test
+    fun `a file-wide suppression silences an import`() {
+        val import = "import java.util.concurrent.atomic.AtomicLong"
+        assertThat(rule.lint(import)).hasSize(1)
+        assertThat(rule.lint("@file:Suppress(\"JdkAtomics\")\n\n$import")).isEmpty()
+    }
+
+    @Test
     fun `a suppression silences only the declaration it annotates`() {
         val source = """
             class A {
