@@ -237,9 +237,12 @@ class GroovyLanguageServer(
         coroutineScope,
     )
 
-    // State. initialize writes this and the custom requests read it, all on the LSP4J listener thread, which delivers
-    // one message at a time, so it is a plain field.
+    // State
+
+    // A plain field: initialize writes it and the custom requests read it, all on the LSP4J listener thread, which
+    // delivers one message at a time.
     private var implementationRequestsReady = false
+
     private var savedInitParams: InitializeParams? = null
     private var clientCapabilities: ClientCapabilities? = null
     private var savedInitOptionsMap: Map<String, Any>? = null

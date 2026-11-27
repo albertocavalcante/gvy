@@ -157,9 +157,10 @@ class GroovyTextDocumentService(
     private val codeNarcRulesetResolver = SharedValue<HierarchicalRulesetResolver?>(null)
 
     /*
-     * The client's capabilities and [workspaceFolders] are plain fields. initialize sets them on the LSP4J listener
-     * thread before that thread dispatches any request, and they are read only by requests it launches afterwards,
-     * so each launch publishes them to its coroutine.
+     * The client's capabilities below are plain fields. The constructor sets [definitionLinkSupport]'s initial value,
+     * and initialize sets each one on the LSP4J listener thread before that thread dispatches any request. They are
+     * read by request handlers on that thread (documentSymbol reads its flag before launching) or in coroutines those
+     * handlers launch, and a launch publishes them to its coroutine.
      */
     private var definitionLinkSupport = options.definitionLinkSupport
 
@@ -177,6 +178,8 @@ class GroovyTextDocumentService(
     private val renameDiskText = WorkspaceTextCache()
     internal val renameWalks = WorkspaceWalkCache()
 
+    // A plain field, like the client capabilities above: set by initialize on the listener thread before any request,
+    // and read by the rename requests that thread launches afterwards.
     private var workspaceFolders: List<Path> = emptyList()
 
     /**

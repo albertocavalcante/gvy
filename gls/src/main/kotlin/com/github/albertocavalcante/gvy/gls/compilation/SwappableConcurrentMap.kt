@@ -15,6 +15,9 @@ import java.util.concurrent.ConcurrentMap
  * map, the current one or, for a caller that read it just before [swapEmpty], the one that call retired. A write that
  * races a swap can therefore land in the retired map and be dropped with it. Each owner says why that is harmless for
  * it: a lock that every write and the swap hold, or entries stamped with a ticket that the swap's caller retires.
+ *
+ * [empty] must return a new map on every call: a factory that returns a shared instance would make [swapEmpty]
+ * swap a map for itself, so it would empty nothing and return the live map as the retired one.
  */
 internal class SwappableConcurrentMap<M : ConcurrentMap<*, *>>(private val empty: () -> M) {
     private val current = SharedValue(empty())
