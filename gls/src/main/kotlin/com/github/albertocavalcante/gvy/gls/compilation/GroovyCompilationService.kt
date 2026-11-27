@@ -271,14 +271,8 @@ class GroovyCompilationService internal constructor(
      * [getSelectedWorker] and the parsing session apart. Every call that changed the worker clears after its own
      * change, so the caches are cleared after the last one.
      */
-    fun updateGroovySelection(version: GroovyVersionInfo, worker: WorkerDescriptor?): Boolean =
-        clearIfChanged(workerSessionManager.select(version, worker), worker)
-
-    /** Selects [worker] as [updateGroovySelection] does, keeping the selected Groovy version. */
-    fun updateSelectedWorker(worker: WorkerDescriptor?): Boolean =
-        clearIfChanged(workerSessionManager.select(worker), worker)
-
-    private fun clearIfChanged(changed: Boolean, worker: WorkerDescriptor?): Boolean {
+    fun updateGroovySelection(version: GroovyVersionInfo, worker: WorkerDescriptor?): Boolean {
+        val changed = workerSessionManager.select(version, worker)
         if (changed) {
             clearCaches()
             logger.info { "Worker changed to ${worker?.id}; cleared compilation caches" }

@@ -28,10 +28,6 @@ class WorkerSessionManager(
     private val sessions = ConcurrentHashMap<String, WorkerSession>()
     private val selection = SharedValue(Selection(null, null, defaultSession))
 
-    // Held only to read the selection and store its replacement, so each replacement derives from the one it
-    // replaces; readers never take it.
-    private val replacing = Any()
-
     /** The selected Groovy version, or null before any was selected. */
     val selectedVersion: GroovyVersionInfo? get() = selection.value.version
 
@@ -46,20 +42,12 @@ class WorkerSessionManager(
      * or worker with another call's. Racing calls each publish a whole selection and the last one stays; each reports
      * a change against the selection it replaced.
      */
-    fun select(version: GroovyVersionInfo?, worker: WorkerDescriptor?): Boolean = replace(worker) { version }
-
-    /** Selects [worker] as [select] does, keeping the selected version. */
-    fun select(worker: WorkerDescriptor?): Boolean = replace(worker) { it.version }
-
-    private fun replace(worker: WorkerDescriptor?, version: (Selection) -> GroovyVersionInfo?): Boolean {
+    fun select(version: GroovyVersionInfo?, worker: WorkerDescriptor?): Boolean {
         // Built before the swap. Two first uses of one id racing may each build a session: getOrPut keeps the one
         // stored first, both callers use it, and the other is discarded unused.
         val session = worker?.let { selected -> sessions.getOrPut(selected.id) { sessionFactory(selected) } }
             ?: defaultSession
-        val previous = synchronized(replacing) {
-            selection.value.also { current -> selection.set(Selection(version(current), worker, session)) }
-        }
-        return previous.worker != worker
+        return selection.exchange(Selection(version, worker, session)).worker != worker
     }
 
     internal fun current(): WorkerSession = selection.value.session

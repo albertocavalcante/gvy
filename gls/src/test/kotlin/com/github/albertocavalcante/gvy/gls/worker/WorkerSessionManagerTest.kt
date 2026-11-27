@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.gls.worker
 
+import com.github.albertocavalcante.gvy.gls.test.TEST_GROOVY_VERSION
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
@@ -32,7 +33,7 @@ class WorkerSessionManagerTest {
         )
         val request = ParseRequest(URI.create("file:///test.groovy"), "class Test {}")
 
-        manager.select(descriptor("worker"))
+        manager.select(TEST_GROOVY_VERSION, descriptor("worker"))
         val result = manager.parse(request)
 
         assertSame(workerResult, result)
@@ -51,8 +52,8 @@ class WorkerSessionManagerTest {
         )
         val request = ParseRequest(URI.create("file:///test.groovy"), "class Test {}")
 
-        manager.select(descriptor("worker"))
-        manager.select(null)
+        manager.select(TEST_GROOVY_VERSION, descriptor("worker"))
+        manager.select(TEST_GROOVY_VERSION, null)
         val result = manager.parse(request)
 
         assertSame(defaultResult, result)
@@ -63,24 +64,24 @@ class WorkerSessionManagerTest {
     fun `select reports a change only when the selected worker differs`() {
         val manager = WorkerSessionManager(StubSession(mockk()), sessionFactory = { StubSession(mockk()) })
 
-        assertTrue(manager.select(descriptor("worker")))
-        assertFalse(manager.select(descriptor("worker")))
+        assertTrue(manager.select(TEST_GROOVY_VERSION, descriptor("worker")))
+        assertFalse(manager.select(TEST_GROOVY_VERSION, descriptor("worker")))
         assertEquals(descriptor("worker"), manager.selectedWorker)
-        assertTrue(manager.select(null))
+        assertTrue(manager.select(TEST_GROOVY_VERSION, null))
         assertNull(manager.selectedWorker)
-        assertFalse(manager.select(null))
+        assertFalse(manager.select(TEST_GROOVY_VERSION, null))
     }
 
     @Test
-    fun `a version selects with its worker and a worker alone keeps the version`() {
+    fun `a version is selected together with its worker`() {
         val manager = WorkerSessionManager(StubSession(mockk()), sessionFactory = { StubSession(mockk()) })
-        val version = GroovyVersionInfo(parseGroovyVersion("3.0.0"), GroovyVersionSource.RUNTIME)
+        val groovy3 = GroovyVersionInfo(parseGroovyVersion("3.0.0"), GroovyVersionSource.RUNTIME)
 
-        assertTrue(manager.select(version, descriptor("worker")))
-        assertEquals(version, manager.selectedVersion)
-        assertTrue(manager.select(descriptor("other")))
+        assertTrue(manager.select(groovy3, descriptor("worker")))
+        assertEquals(groovy3, manager.selectedVersion)
+        assertTrue(manager.select(TEST_GROOVY_VERSION, descriptor("other")))
 
-        assertEquals(version, manager.selectedVersion)
+        assertEquals(TEST_GROOVY_VERSION, manager.selectedVersion)
         assertEquals(descriptor("other"), manager.selectedWorker)
     }
 

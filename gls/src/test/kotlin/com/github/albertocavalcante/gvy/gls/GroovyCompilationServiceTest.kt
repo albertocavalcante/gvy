@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.test.TEST_GROOVY_VERSION
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
 import com.github.albertocavalcante.gvy.gls.worker.WorkerCapabilities
@@ -139,7 +140,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `updateSelectedWorker clears cache when worker changes`(): Unit = runBlocking {
+    fun `updateGroovySelection clears cache when worker changes`(): Unit = runBlocking {
         val groovyContent = """
             class WorkerSwitch {
                 String name = "cache"
@@ -150,13 +151,13 @@ class GroovyCompilationServiceTest {
         compilationService.compile(uri, groovyContent)
         assertNotNull(compilationService.getParseResult(uri))
 
-        compilationService.updateSelectedWorker(workerDescriptor("worker-a"))
+        compilationService.updateGroovySelection(TEST_GROOVY_VERSION, workerDescriptor("worker-a"))
 
         assertNull(compilationService.getParseResult(uri))
     }
 
     @Test
-    fun `updateSelectedWorker keeps cache when worker unchanged`(): Unit = runBlocking {
+    fun `updateGroovySelection keeps cache when worker unchanged`(): Unit = runBlocking {
         val groovyContent = """
             class SameWorker {
                 String name = "cache"
@@ -165,11 +166,11 @@ class GroovyCompilationServiceTest {
         val uri = URI.create("file:///test/SameWorker.groovy")
         val worker = workerDescriptor("worker-a")
 
-        compilationService.updateSelectedWorker(worker)
+        compilationService.updateGroovySelection(TEST_GROOVY_VERSION, worker)
         compilationService.compile(uri, groovyContent)
         assertNotNull(compilationService.getParseResult(uri))
 
-        compilationService.updateSelectedWorker(worker)
+        compilationService.updateGroovySelection(TEST_GROOVY_VERSION, worker)
 
         assertNotNull(compilationService.getParseResult(uri))
     }

@@ -36,21 +36,7 @@ class WorkerSelectionRaceTest {
     private val second = worker("second")
 
     @Test
-    fun `racing selections leave the reported worker and the parsing session in step`() {
-        RaceFixture().use { fixture ->
-            fixture.race({ updateSelectedWorker(first) }, { updateSelectedWorker(second) })
-
-            val reported = assertNotNull(fixture.compilation.getSelectedWorker())
-            assertSame(
-                fixture.sessionOf(reported),
-                fixture.parsingSession(),
-                "the service reports ${reported.id}, so its session must be the one that parses",
-            )
-        }
-    }
-
-    @Test
-    fun `racing selections pair the reported version with the reported worker`() {
+    fun `racing selections keep the reported version, worker and parsing session in step`() {
         val firstVersion = version("3.0.0")
         val secondVersion = version("4.0.0")
         RaceFixture().use { fixture ->
@@ -62,7 +48,11 @@ class WorkerSelectionRaceTest {
             val reported = assertNotNull(fixture.compilation.getSelectedWorker())
             val versionOf = mapOf(first to firstVersion, second to secondVersion)
             assertEquals(versionOf.getValue(reported), fixture.compilation.getGroovyVersionInfo())
-            assertSame(fixture.sessionOf(reported), fixture.parsingSession())
+            assertSame(
+                fixture.sessionOf(reported),
+                fixture.parsingSession(),
+                "the service reports ${reported.id}, so its session must be the one that parses",
+            )
         }
     }
 

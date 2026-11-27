@@ -141,7 +141,7 @@ class GroovyWorkspaceService(
                 strategy.updateConfiguration(newConfig)
             }
             compilationService.updateCompilationCacheLimit(newConfig.compilationCacheMaxEntries)
-            updateGroovyVersion(newConfig)
+            selectGroovyRuntime(newConfig)
             logger.info { "Configuration updated for active strategies" }
         }
     }
@@ -336,7 +336,7 @@ class GroovyWorkspaceService(
         return FileType.fromPath(path)
     }
 
-    private fun updateGroovyVersion(config: ServerConfiguration) {
+    private fun selectGroovyRuntime(config: ServerConfiguration) {
         val resolver = GroovyVersionResolver()
         val dependencies = compilationService.workspaceManager.getDependencyClasspath()
         val info = resolver.resolve(dependencies, config.groovyLanguageVersion)
