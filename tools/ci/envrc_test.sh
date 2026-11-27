@@ -103,3 +103,59 @@ check_homebrew_fallback '' '' '' $'java=21.0.5-tem\n'
 check_homebrew_fallback libexec '' '@KEG@/libexec' $'java=21.0.5-tem\n' sdkman
 check_homebrew_fallback '' '' '' $'java=21.0.5-tem\n' sdkman
 printf '%s\n' 'The direnv profile falls back to a keg-only Homebrew JDK and respects JAVA_HOME.'
+
+# With SDKMAN holding the pinned JDK, that candidate becomes JAVA_HOME however .sdkmanrc is
+# spaced or line-ended, and an exported JAVA_VERSION in the caller's environment is untouched.
+check_sdkman_activation() {
+    local sdkmanrc=$1
+    local case_dir
+    case_dir=$(mktemp -d "${test_dir}/sdkman.XXXXXX")
+    printf '%s' "${sdkmanrc}" >"${case_dir}/.sdkmanrc"
+    mkdir -p "${case_dir}/sdkman/candidates/java/21.0.5-tem"
+    (
+        cd "${case_dir}"
+        GVY_ENVRC_TEST_HOME="${case_dir}/missing-home" GVY_ENVRC_TEST_SDKMAN_DIR="${case_dir}/sdkman" \
+            "${BASH}" -u -s -- "${test_dir}/no-sdk-profile" <<'PROFILE'
+unset JAVA_HOME
+SDKMAN_DIR="${GVY_ENVRC_TEST_SDKMAN_DIR}"
+export JAVA_VERSION='caller-value'
+PATH_add() { :; }
+brew() { printf '%s\n' "${PWD}/missing-brew"; }
+source "$1"
+expected="${GVY_ENVRC_TEST_SDKMAN_DIR}/candidates/java/21.0.5-tem"
+if [[ "${JAVA_HOME:-}" != "${expected}" ]]; then
+    printf 'expected JAVA_HOME=%s, got %s\n' "${expected}" "${JAVA_HOME:-<unset>}" >&2
+    exit 1
+fi
+if [[ "${JAVA_VERSION}" != 'caller-value' ]]; then
+    printf 'the profile overwrote JAVA_VERSION with %s\n' "${JAVA_VERSION}" >&2
+    exit 1
+fi
+PROFILE
+    ) >/dev/null
+}
+check_sdkman_activation $'java=21.0.5-tem\n'
+check_sdkman_activation $'java=21.0.5-tem\r\n'
+check_sdkman_activation $'java = 21.0.5-tem \n'
+printf '%s\n' 'The direnv profile activates the pinned SDKMAN JDK and leaves JAVA_VERSION alone.'
+
+# When no JDK is found, the advice names the Homebrew formula for the pinned major version.
+advice_dir=$(mktemp -d "${test_dir}/advice.XXXXXX")
+printf 'java=17.0.2-tem\n' >"${advice_dir}/.sdkmanrc"
+mkdir -p "${advice_dir}/sdkman/candidates/java"
+advice=$(
+    cd "${advice_dir}"
+    GVY_ENVRC_TEST_HOME="${advice_dir}/missing-home" GVY_ENVRC_TEST_SDKMAN_DIR="${advice_dir}/sdkman" \
+        "${BASH}" -u -s -- "${test_dir}/no-sdk-profile" <<'PROFILE'
+unset JAVA_HOME
+SDKMAN_DIR="${GVY_ENVRC_TEST_SDKMAN_DIR}"
+PATH_add() { :; }
+brew() { printf '%s\n' "${PWD}/missing-brew"; }
+source "$1"
+PROFILE
+)
+if [[ "${advice}" != *"openjdk@17."* ]]; then
+    printf 'expected advice to name openjdk@17, got: %s\n' "${advice}" >&2
+    exit 1
+fi
+printf '%s\n' 'The direnv profile advises the Homebrew formula for the pinned major version.'
