@@ -107,12 +107,15 @@ export const gvyRuleSetKeys = config =>
 /** The source set of [path], such as `main`, `test` or `commonTest`, when it lies under a `src/<set>/` folder. */
 export const sourceSet = path => path.match(/(?:^|\/)src\/([^/]+)\//)?.[1];
 
-// The variables that point git at another repository, index or work tree. A hook or `git rebase -x` exports GIT_DIR,
-// which in a linked worktree is `<repository>/.git/worktrees/<name>`, and a `git init` that inherits it rewrites the
-// shared config of that repository.
-const repositoryVariables = new Set(['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']);
+// The variables that point git at another repository, index, work tree or object store. A hook or `git rebase -x`
+// exports GIT_DIR, which in a linked worktree is `<repository>/.git/worktrees/<name>`, and a `git init` that inherits
+// it rewrites the shared config of that repository.
+const repositoryVariables = new Set([
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+]);
 
-/** [env] without the variables that point git at another repository, index or work tree. */
+/** [env] without the variables that point git at another repository, index, work tree or object store. */
 export const gitEnv = (env = process.env) =>
   Object.fromEntries(Object.entries(env).filter(([name]) => !repositoryVariables.has(name.toUpperCase())));
 

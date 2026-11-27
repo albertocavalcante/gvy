@@ -29,7 +29,7 @@
 
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { devNull, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -80,6 +80,10 @@ const defaultTestLenient = [
 const reachesTestSet = pattern =>
   pattern.split('/').filter((folder, index, folders) => index < folders.length - 1 || !folder.includes('.'))
     .some(folder => /test/i.test(folder) && folder !== 'test');
+
+// The environment for git calls on a scratch repository: no global or system config, so the user's settings (hooks,
+// signing, templates) cannot reach it. The real checkout keeps them, since CI may need safe.directory from there.
+const hermetic = { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' };
 
 let trackedCache;
 /** The tracked files of this checkout, listed once. */
@@ -295,7 +299,7 @@ test('the baseline listing ignores git variables that point at another index or 
   const expected = trackedBaselines();
   const scratch = mkdtempSync(join(tmpdir(), 'gvy-detekt-guard-'));
   try {
-    git(['-c', 'init.defaultBranch=main', 'init', '-q', scratch]);
+    git(['-c', 'init.defaultBranch=main', 'init', '-q', scratch], { env: hermetic });
     // Either one makes `git ls-files` list nothing, which would let the baseline check pass without reading a file.
     const elsewhere = { GIT_INDEX_FILE: join(scratch, 'missing-index'), GIT_DIR: join(scratch, '.git') };
     for (const [name, value] of Object.entries(elsewhere)) {
@@ -309,7 +313,10 @@ test('the baseline listing ignores git variables that point at another index or 
 
 test('git runs without the variables that point it elsewhere, so an exported GIT_DIR cannot be rewritten', () => {
   const kept = { HOME: '/home/a', GIT_CONFIG_GLOBAL: '/a/.gitconfig' };
-  const elsewhere = { GIT_DIR: 'a', GIT_WORK_TREE: 'b', GIT_INDEX_FILE: 'c', GIT_COMMON_DIR: 'd' };
+  const elsewhere = {
+    GIT_DIR: 'a', GIT_WORK_TREE: 'b', GIT_INDEX_FILE: 'c', GIT_COMMON_DIR: 'd', GIT_OBJECT_DIRECTORY: 'e',
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: 'f',
+  };
   assert.deepEqual(gitEnv({ ...kept, ...elsewhere }), kept);
   // A hook run in a linked worktree exports GIT_DIR=<repository>/.git/worktrees/<name>. A scratch `git init` that
   // inherited it reinitialised that repository and set its shared core.bare to true.
@@ -318,13 +325,13 @@ test('git runs without the variables that point it elsewhere, so an exported GIT
   const isolated = ['-c', 'init.defaultBranch=main', '-c', `core.hooksPath=${join(scratch, 'no-hooks')}`];
   const identity = ['-c', 'user.name=guard', '-c', 'user.email=guard@example.invalid', '-c', 'commit.gpgsign=false'];
   try {
-    git([...isolated, 'init', '-q', repository]);
-    git([...isolated, ...identity, 'commit', '-q', '--allow-empty', '-m', 'empty'], { cwd: repository });
-    git([...isolated, 'worktree', 'add', '-q', join(scratch, 'linked')], { cwd: repository });
-    const exported = { ...process.env, GIT_DIR: join(repository, '.git', 'worktrees', 'linked') };
+    git([...isolated, 'init', '-q', repository], { env: hermetic });
+    git([...isolated, ...identity, 'commit', '-q', '--allow-empty', '-m', 'empty'], { cwd: repository, env: hermetic });
+    git([...isolated, 'worktree', 'add', '-q', join(scratch, 'linked')], { cwd: repository, env: hermetic });
+    const exported = { ...hermetic, GIT_DIR: join(repository, '.git', 'worktrees', 'linked') };
     git([...isolated, 'init', '-q', join(scratch, 'fresh')], { env: exported });
-    assert.equal(git(['config', 'core.bare'], { cwd: repository }).trim(), 'false');
-    git(['status', '--porcelain'], { cwd: repository });
+    assert.equal(git(['config', 'core.bare'], { cwd: repository, env: hermetic }).trim(), 'false');
+    git(['status', '--porcelain'], { cwd: repository, env: hermetic });
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
