@@ -4,8 +4,8 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.minutes
@@ -143,10 +143,10 @@ class IdleReleasingCacheTest {
     }
 
     @Test
-    fun `after close get is rejected and creates nothing`() {
+    fun `after close get returns null and creates nothing`() {
         cache.close()
 
-        assertThrows(IllegalStateException::class.java) { cache.get("a") }
+        assertNull(cache.get("a"))
         assertEquals(emptyList<String>(), created)
     }
 

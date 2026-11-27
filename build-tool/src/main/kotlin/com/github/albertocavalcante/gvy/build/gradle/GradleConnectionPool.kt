@@ -121,7 +121,8 @@ internal class ProjectConnectionPool(
      */
     override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
         ensureSweeper()
-        return connections.get(keyOf(projectDir, gradleUserHomeDir))
+        val connection = connections.get(keyOf(projectDir, gradleUserHomeDir))
+        return checkNotNull(connection) { "Gradle connection pool is shut down" }
     }
 
     /**
@@ -143,9 +144,9 @@ internal class ProjectConnectionPool(
     )
 
     /**
-     * Starts the sweeper unless it runs or the cache is closed. [shutdown] closes the cache and only then takes this
-     * monitor to stop the sweeper, so a call that starts one does so before that stop, and any later call finds the
-     * cache closed.
+     * Starts the sweeper unless it runs or the cache is closed. [shutdown] closes the cache and then takes this
+     * monitor to stop the sweeper again, so a call that starts one does so before that stop, and any later call finds
+     * the cache closed.
      */
     @Synchronized
     private fun ensureSweeper() {
@@ -203,7 +204,9 @@ internal class ProjectConnectionPool(
     fun shutdown() {
         logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
-        // The cache first: once it is closed, nothing can start the sweeper again, so stopping it is final.
+        // Stop the sweep first, so a close that blocks on a leased connection does not keep it running. Stop it again
+        // after the close: a call that found the cache open may have started one meanwhile, and now none can start.
+        stopSweeper()
         connections.close()
         stopSweeper()
         logger.info { "Gradle connection pool shutdown complete" }

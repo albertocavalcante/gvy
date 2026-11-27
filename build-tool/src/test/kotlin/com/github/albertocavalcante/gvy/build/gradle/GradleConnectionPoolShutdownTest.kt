@@ -3,6 +3,7 @@
 
 package com.github.albertocavalcante.gvy.build.gradle
 
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.gradle.tooling.ProjectConnection
@@ -17,6 +18,7 @@ import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -30,6 +32,22 @@ class GradleConnectionPoolShutdownTest {
 
     private val pool = ProjectConnectionPool(connect = { _, _ -> mockk<ProjectConnection>(relaxed = true) })
 
+    /**
+     * A Gradle user home whose toPath() parks until [release] opens. The pool calls it to build the cache key on the
+     * way to the cache, holding no lock, so a call parked there is one preempted after it began, and the test can run
+     * the whole of shutdown before it resumes.
+     */
+    private class ParkingUserHome(path: Path) : File(path.toString()) {
+        val parked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+
+        override fun toPath(): Path {
+            parked.countDown()
+            check(release.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "The call was never released" }
+            return super.toPath()
+        }
+    }
+
     @AfterEach
     fun shutDown() {
         pool.shutdown()
@@ -39,7 +57,8 @@ class GradleConnectionPoolShutdownTest {
     fun `after shutdown getConnection is rejected`() {
         pool.shutdown()
 
-        assertThrows(IllegalStateException::class.java) { pool.getConnection(projectDir, null) }
+        val failure = assertThrows(IllegalStateException::class.java) { pool.getConnection(projectDir, null) }
+        assertEquals("Gradle connection pool is shut down", failure.message)
         assertEquals(0, pool.getActiveConnectionCount())
         assertFalse(pool.isSweeping, "a pool that is shut down must not restart its sweeper")
     }
@@ -80,25 +99,14 @@ class GradleConnectionPoolShutdownTest {
 
     @Test
     fun `an acquire that shutdown overtakes neither stays pooled nor stays open`() {
-        val parked = CountDownLatch(1)
-        val release = CountDownLatch(1)
-
-        // acquire turns the user home into a cache key before it reaches the cache, holding no lock. Parking there
-        // is a resolution thread preempted once acquire has begun, with all of shutdown running before it resumes.
-        val userHome = object : File(projectDir.resolve("gradle-home").toString()) {
-            override fun toPath(): Path {
-                parked.countDown()
-                check(release.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "acquire was never released" }
-                return super.toPath()
-            }
-        }
+        val userHome = ParkingUserHome(projectDir.resolve("gradle-home"))
         val resolution = Executors.newSingleThreadExecutor()
         try {
             val acquired = resolution.submit(Callable { pool.acquire(projectDir, userHome) })
-            assertTrue(parked.await(WAIT_SECONDS, TimeUnit.SECONDS), "acquire never reached the cache key")
+            assertTrue(userHome.parked.await(WAIT_SECONDS, TimeUnit.SECONDS), "acquire never reached the cache key")
 
             pool.shutdown()
-            release.countDown()
+            userHome.release.countDown()
             val lease = acquired.get(WAIT_SECONDS, TimeUnit.SECONDS)
             val connection = lease.connection
 
@@ -107,8 +115,51 @@ class GradleConnectionPoolShutdownTest {
             lease.close()
             verify(exactly = 1) { connection.close() }
         } finally {
-            release.countDown()
+            userHome.release.countDown()
             resolution.shutdownNow()
         }
+    }
+
+    @Test
+    fun `a getConnection that shutdown overtakes is rejected and pools nothing`() {
+        val userHome = ParkingUserHome(projectDir.resolve("gradle-home"))
+        val resolution = Executors.newSingleThreadExecutor()
+        try {
+            val connected = resolution.submit(Callable { pool.getConnection(projectDir, userHome) })
+            assertTrue(userHome.parked.await(WAIT_SECONDS, TimeUnit.SECONDS), "getConnection never reached the key")
+
+            pool.shutdown()
+            userHome.release.countDown()
+
+            val failure = assertThrows(ExecutionException::class.java) { connected.get(WAIT_SECONDS, TimeUnit.SECONDS) }
+            assertTrue(failure.cause is IllegalStateException, "expected the shut-down rejection, got ${failure.cause}")
+            assertEquals("Gradle connection pool is shut down", failure.cause?.message)
+            assertEquals(0, pool.getActiveConnectionCount(), "a pool that is shut down must not keep the connection")
+            assertFalse(pool.isSweeping, "a pool that is shut down must not restart its sweeper")
+        } finally {
+            userHome.release.countDown()
+            resolution.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `shutdown stops the sweeper before it closes the connections`() {
+        val sweepingWhileClosing = mutableListOf<Boolean>()
+        lateinit var observed: ProjectConnectionPool
+        observed = ProjectConnectionPool(
+            connect = { _, _ ->
+                mockk<ProjectConnection>(relaxed = true).also { connection ->
+                    every { connection.close() } answers { sweepingWhileClosing += observed.isSweeping }
+                }
+            },
+        )
+        observed.acquire(projectDir, null).close()
+        assertTrue(observed.isSweeping)
+
+        // A close can block on a connection still in use; the sweep must not outlive shutdown's wait for it.
+        observed.shutdown()
+
+        assertEquals(listOf(false), sweepingWhileClosing)
+        assertFalse(observed.isSweeping)
     }
 }

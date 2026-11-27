@@ -24,8 +24,9 @@ internal fun <K> selectIdleKeys(activity: Map<K, EntryActivity>, nowNanos: Long,
  * Time comes from [clockNanos] and sweeping is driven by calling [releaseIdle], so the policy is testable without
  * real time or threads; the owner decides how to schedule the sweep.
  *
- * [close] is final: the closed flag is set under the same lock that every insertion holds while it checks the flag,
- * so nothing is cached once close has begun, however a caller's thread is scheduled.
+ * [close] is final. It sets the closed flag under the lock that every insertion holds while it checks the flag, so
+ * nothing is inserted once the flag is set, and it then closes every entry inserted before. Nothing stays cached
+ * after close, however the callers' threads are scheduled.
  */
 internal class IdleReleasingCache<K : Any, V : Any>(
     private val create: (K) -> V,
@@ -47,11 +48,11 @@ internal class IdleReleasingCache<K : Any, V : Any>(
 
     val isClosed: Boolean get() = synchronized(lock) { closed }
 
-    /** Returns the cached value, creating it if absent, and marks it used now. Throws once the cache is closed. */
-    fun get(key: K): V = synchronized(lock) {
-        check(!closed) { "The cache is closed" }
-        touch(key).value
-    }
+    /**
+     * Returns the cached value, creating it if absent, and marks it used now. Returns null once the cache is closed,
+     * without creating anything.
+     */
+    fun get(key: K): V? = synchronized(lock) { if (closed) null else touch(key).value }
 
     /**
      * A borrowed value; closing it ends the borrow and restarts the idle clock. A lease without an [entry] was taken
