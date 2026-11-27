@@ -28,7 +28,7 @@ function gvyRuleConfig(config, rule) {
   const lines = config.replaceAll('\r\n', '\n').split('\n');
   const start = lines.indexOf(`  ${rule}:`);
   if (start < 0) return null;
-  if (lines.slice(0, start).reverse().find(line => /^\S/.test(line)) !== 'gvy:') return null;
+  if (lines.slice(0, start).reverse().find(line => /^[^\s#]/.test(line)) !== 'gvy:') return null;
   let active;
   const excludes = [];
   for (const line of lines.slice(start + 1)) {
@@ -44,9 +44,44 @@ function gvyRuleConfig(config, rule) {
   return { active, excludes };
 }
 
+/**
+ * The `gvy:` rule set's own keys (the lines indented two spaces, comments skipped), or null when it is missing. detekt
+ * applies a set-level `active`, `excludes` or `includes` to every rule in the set.
+ */
+function gvyRuleSetKeys(config) {
+  const lines = config.replaceAll('\r\n', '\n').split('\n');
+  const start = lines.indexOf('gvy:');
+  if (start < 0) return null;
+  const keys = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*(?:#.*)?$/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    if (/^ {2}\S/.test(line)) keys.push(line.slice(2));
+  }
+  return keys;
+}
+
+/** The directory of every Gradle project in settings.gradle.kts, relative to the root (which is `.`). */
+function projectDirs() {
+  const settings = readFileSync(join(root, 'settings.gradle.kts'), 'utf8');
+  const dirs = new Map([[':', '.']]);
+  for (const [, args] of settings.matchAll(/^\s*include\(([^)]*)\)/gm)) {
+    for (const [, name] of args.matchAll(/"([^"]+)"/g)) {
+      const path = name.replace(/^:/, '');
+      dirs.set(`:${path}`, path.replaceAll(':', '/'));
+    }
+  }
+  for (const [, name, dir] of settings.matchAll(/^\s*project\("([^"]+)"\)\.projectDir\s*=\s*file\("([^"]+)"\)/gm)) {
+    dirs.set(name, dir);
+  }
+  return [...dirs.values()];
+}
+
+const detektConfig = () => readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8');
+
 /** The active `gvy > <rule>` block of tools/lint/detekt.yml. */
 function configured(rule) {
-  const config = gvyRuleConfig(readFileSync(join(root, 'tools/lint/detekt.yml'), 'utf8'), rule);
+  const config = gvyRuleConfig(detektConfig(), rule);
   assert.ok(config, `tools/lint/detekt.yml must configure gvy > ${rule}`);
   assert.equal(config.active, true, `${rule} must stay active`);
   return config;
@@ -94,11 +129,52 @@ test('VolatileProperty is active and excludes nothing', () => {
 
 test('JdkAtomics is active and excludes only its permanent patterns, each naming a module', () => {
   const { excludes } = configured('JdkAtomics');
-  const message = 'JdkAtomics excludes only tests, :common:concurrent and the separately published modules; ' +
-    'suppress a sanctioned use at its site, with a reason (#2474)';
+  const message = 'JdkAtomics excludes exactly tests, :common:concurrent and the separately published modules. ' +
+    'Suppress a sanctioned use at its site, with a reason; when a module starts or stops being published on its ' +
+    'own, change jdkAtomicsPermanent here and tools/lint/detekt.yml together (#2474)';
   assert.deepEqual([...excludes].sort(), [...jdkAtomicsPermanent].sort(), message);
   for (const permanent of jdkAtomicsPermanent) {
     const module = permanent.match(/^\*\*\/(.+)\/src\/\*\*$/)?.[1];
     if (module) assert.ok(existsSync(join(root, module, 'src')), `${permanent} names no module`);
+  }
+});
+
+test('the gvy rule set reader takes only two-space keys, so set-wide excludes and includes show', () => {
+  const config = [
+    'style:',
+    '  active: false',
+    '# A comment before the rule set.',
+    'gvy:',
+    '  active: true',
+    '  # A comment.',
+    '  excludes:',
+    "  - '**/gls/src/**'",
+    '# A first-column comment does not end the rule set, nor hide it from a rule block.',
+    '  VolatileProperty:',
+    '    active: true',
+    'naming:',
+    '  active: false',
+  ].join('\n');
+  assert.deepEqual(gvyRuleSetKeys(config), ['active: true', 'excludes:', "- '**/gls/src/**'", 'VolatileProperty:']);
+  assert.equal(gvyRuleSetKeys('style:\n  active: true\n'), null);
+  assert.deepEqual(gvyRuleConfig(config, 'VolatileProperty'), { active: true, excludes: [] });
+});
+
+test('the gvy rule set is active and takes no set-wide excludes or includes', () => {
+  const keys = gvyRuleSetKeys(detektConfig());
+  assert.ok(keys, 'tools/lint/detekt.yml must configure the gvy rule set');
+  assert.ok(keys.includes('active: true'), 'the gvy rule set must stay active');
+  const unexpected = keys.filter(key => key !== 'active: true' && !/^[A-Z]\w*:$/.test(key));
+  assert.deepEqual(unexpected, [], 'a gvy rule-set key applies to every gvy rule; configure each rule instead (#2474)');
+});
+
+test('no detekt baseline holds a VolatileProperty or JdkAtomics finding', () => {
+  const dirs = projectDirs();
+  assert.ok(dirs.includes('gls') && dirs.includes('bsp/bsp-core'), 'settings.gradle.kts projects must be found');
+  for (const dir of dirs) {
+    const baseline = join(root, dir, 'detekt-baseline.xml');
+    if (!existsSync(baseline)) continue;
+    const ids = readFileSync(baseline, 'utf8').match(/<ID>(?:VolatileProperty|JdkAtomics):[^<]*<\/ID>/g) ?? [];
+    assert.deepEqual(ids, [], `${dir}/detekt-baseline.xml must not hold the gvy migration rules' findings (#2474)`);
   }
 });

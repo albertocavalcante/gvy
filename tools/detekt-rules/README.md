@@ -100,8 +100,9 @@ The rule cannot resolve names, so it errs in these documented ways:
 ### Coverage
 
 The rule guards every module the lint task reads: the migration in #2474 removed the last `excludes` line, and no
-baseline entry exists. `tools/ci/detekt-gvy-excludes.test.mjs` keeps it so: the rule must stay active and exclude
-nothing. A sanctioned `@Volatile` is suppressed at its site, with a reason.
+baseline entry exists. `tools/ci/detekt-gvy-excludes.test.mjs` keeps it so: the rule and the `gvy` rule set must stay
+active, neither may exclude anything, and no `detekt-baseline.xml` may hold its findings. A sanctioned `@Volatile` is
+suppressed at its site, with a reason.
 
 ## `JdkAtomics`
 
@@ -122,7 +123,7 @@ reports every import of `java.util.concurrent.atomic` and every qualified use of
 
 Permanent excludes in `tools/lint/detekt.yml`: test sources, `common/concurrent` itself, and the modules published on
 their own (`bsp/*`, `parser/core`), which must not depend on the unpublished `:common:concurrent`. No other module is
-excluded (#2474), and `tools/ci/detekt-gvy-excludes.test.mjs` rejects any other exclude.
+excluded (#2474). `tools/ci/detekt-gvy-excludes.test.mjs` requires exactly these excludes and no baseline entry.
 
 `Counter.increment()` returns the new count, like `incrementAndGet()`. Code that used `getAndIncrement()` needs the
 previous value (`increment() - 1`), or a counter that starts one lower.
