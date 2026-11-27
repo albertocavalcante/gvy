@@ -28,3 +28,4 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 - Agent CLI and packaging: [CLI first launcher and runtime research](CLI_DISTRIBUTION_RESEARCH.md)
 - Logging reliability: [PR delivery plan and Terra packets](LOGGING_DELIVERY_PLAN.md)
 - Incremental editing and parsing: [Core/Native evaluation and delivery plan](INCREMENTAL_REPARSE_DELIVERY_PLAN.md)
+- Prebuilt JVM artifact facts: [pre-registered experiment and decision thresholds](PREBUILT_FACTS_EXPERIMENT.md)
