@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Timeout
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -25,8 +26,9 @@ private const val SAMPLE_SIZE = 10
  *
  * Each test checks the results callers rely on, not only a final total: one winner per flag, and a distinct result
  * from every call. An implementation that reads and then writes in two steps can keep the total right and still hand
- * two callers the same result. Threads leave the start gate microseconds apart, so every thread repeats the operation
- * many times, and each test repeats the whole race on fresh state, to make such an overlap near certain.
+ * two callers the same result. Even threads released together overlap on any one call only rarely, so every thread
+ * repeats the operation many times, and each test repeats the whole race on fresh state, to make such an overlap near
+ * certain.
  */
 @Timeout(value = TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
 class ContentionTest {
@@ -86,15 +88,20 @@ class ContentionTest {
     /**
      * Runs [action] on [THREADS] threads released together, passing each its index, and returns what each thread's
      * action returned, in no particular order. Rethrows the first failure.
+     *
+     * The release waits until every thread is ready, and the threads spin on a flag rather than park on a latch, which
+     * would wake them one after another.
      */
     private fun <R : Any> race(action: (racer: Int) -> R): List<R> {
-        val startGate = CountDownLatch(1)
+        val ready = CountDownLatch(THREADS)
+        val released = AtomicBoolean(false)
         val results = ConcurrentLinkedQueue<R>()
         val failures = ConcurrentLinkedQueue<Throwable>()
         val threads = List(THREADS) { index ->
             val racer = Thread(
                 {
-                    startGate.await()
+                    ready.countDown()
+                    while (!released.get()) Thread.onSpinWait()
                     runCatching { action(index) }.onSuccess(results::add).onFailure(failures::add)
                 },
                 "racer-$index",
@@ -103,7 +110,8 @@ class ContentionTest {
             racer
         }
 
-        startGate.countDown()
+        ready.await()
+        released.set(true)
         threads.forEach(Thread::join)
 
         failures.firstOrNull()?.let { throw AssertionError("A racing thread failed", it) }
