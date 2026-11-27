@@ -13,6 +13,7 @@ import java.nio.file.Path
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
@@ -240,6 +241,67 @@ class ClasspathClassIndexRaceTest {
         }
     }
 
+    @Test
+    fun `a build claimed for a replaced classpath gives its lookups the current index`() {
+        val old = tempDir.resolve("old")
+        val new = tempDir.resolve("new")
+        val index = HeldIndex(
+            mapOf(old.toString() to widgets("com.old", 1), new.toString() to widgets("com.new", 1)),
+            hold = false,
+        )
+        val builds = QueuedExecutor()
+        val service = ClasspathService(index, reflectionProvider = null, buildExecutor = builds)
+        service.updateClasspath(listOf(old))
+        try {
+            runBlocking {
+                val stale = async { fullNames(service.findClassesByPrefix("Widget")) }
+                yield()
+                // The lookup claimed the old classpath's build, which is still queued when the update retires it.
+                service.updateClasspath(listOf(new))
+                builds.runNext()
+                builds.runNext()
+
+                assertEquals(sortedNames(widgets("com.new", 1)), stale.await())
+            }
+            assertEquals(listOf(listOf(new.toString())), index.builds.toList(), "only the new classpath is scanned")
+            assertTrue(builds.isEmpty(), "a build is left in the queue")
+        } finally {
+            service.close()
+        }
+    }
+
+    @Test
+    fun `an Error in the current build reaches the lookups of a build claimed for a replaced classpath`() {
+        val old = tempDir.resolve("old")
+        val new = tempDir.resolve("new")
+        val index = HeldIndex(
+            mapOf(old.toString() to widgets("com.old", 1), new.toString() to widgets("com.new", 1)),
+            hold = false,
+            failure = NoClassDefFoundError("com/example/Broken"),
+        )
+        val builds = QueuedExecutor()
+        val service = ClasspathService(index, reflectionProvider = null, buildExecutor = builds)
+        service.updateClasspath(listOf(old))
+        try {
+            runBlocking {
+                // Each lookup returns what it threw, so one failed lookup does not cancel the others.
+                val stale = List(WAITERS) {
+                    async { runCatching { service.findClassesByPrefix("Widget") }.exceptionOrNull() }
+                }
+                yield()
+                service.updateClasspath(listOf(new))
+                builds.runNext()
+                builds.runNext()
+
+                stale.forEach { assertIs<NoClassDefFoundError>(it.await()) }
+            }
+            assertEquals(listOf(listOf(new.toString())), index.builds.toList(), "only the new classpath is scanned")
+            assertTrue(builds.isEmpty(), "a build is left in the queue")
+        } finally {
+            service.close()
+        }
+    }
+
     /**
      * Holds a build that then throws [failure] while the lookup that started it and a second lookup wait for it.
      * [checkLookup] checks what each of them saw, and the next lookup builds again.
@@ -306,6 +368,24 @@ private class LookupThread<T>(body: suspend () -> T) {
     }
 
     fun get(): T = task.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+}
+
+/**
+ * Queues class-index builds until the test runs them, one at a time on its own thread. Every lookup in the tests that
+ * use it runs on that thread too, so the queue needs no lock.
+ */
+private class QueuedExecutor : Executor {
+    private val tasks = ArrayDeque<Runnable>()
+
+    override fun execute(command: Runnable) {
+        tasks.addLast(command)
+    }
+
+    fun runNext() {
+        tasks.removeFirst().run()
+    }
+
+    fun isEmpty(): Boolean = tasks.isEmpty()
 }
 
 /**

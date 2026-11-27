@@ -20,15 +20,24 @@ import java.util.Collections
 import java.util.TreeMap
 import java.util.TreeSet
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
 
 /**
  * Service to manage the classpath and load classes/methods from the user's project and the JDK.
  * Acts as the "Window to the World" for the LSP.
+ *
+ * @param buildExecutor Runs class-index builds: the IO dispatcher, or in tests an executor that runs them on demand.
  */
-class ClasspathService(
-    private val classpathIndex: ClasspathIndex = JvmClasspathIndex(),
-    private val reflectionProvider: ClasspathReflection? = null,
+class ClasspathService internal constructor(
+    private val classpathIndex: ClasspathIndex,
+    private val reflectionProvider: ClasspathReflection?,
+    private val buildExecutor: Executor,
 ) {
+    constructor(
+        classpathIndex: ClasspathIndex = JvmClasspathIndex(),
+        reflectionProvider: ClasspathReflection? = null,
+    ) : this(classpathIndex, reflectionProvider, Dispatchers.IO.asExecutor())
+
     private val logger = KotlinLogging.logger {}
 
     internal companion object {
@@ -104,11 +113,11 @@ class ClasspathService(
     }
 
     /**
-     * The build of [generation]'s index. The first caller claims the generation's slot and starts the build on the IO
-     * dispatcher, off the lookup threads; later callers get that future. A claim also replaces a future that completed
-     * exceptionally, so a failed or cancelled build cannot poison the slot. Nothing holds a monitor, so a classpath
-     * update or close never waits for a build. Each generation keeps its own index, so a build for a replaced classpath
-     * is never seen by lookups on the new one.
+     * The build of [generation]'s index. The first caller claims the generation's slot and starts the build on
+     * [buildExecutor], off the lookup threads; later callers get that future. A claim also replaces a future that
+     * completed exceptionally, so a failed or cancelled build cannot poison the slot. Nothing holds a monitor, so a
+     * classpath update or close never waits for a build. Each generation keeps its own index, so a build for a replaced
+     * classpath is never seen by lookups on the new one.
      */
     private fun classNamesBuild(generation: ClasspathGeneration): CompletableFuture<ClassNameIndex> {
         generation.classNames.value?.takeUnless { it.isCompletedExceptionally }?.let { return it }
@@ -116,7 +125,7 @@ class ClasspathService(
         val build = checkNotNull(
             generation.classNames.update { if (it == null || it.isCompletedExceptionally) candidate else it },
         )
-        if (build === candidate) Dispatchers.IO.asExecutor().execute { fillClassNames(generation, candidate) }
+        if (build === candidate) buildExecutor.execute { fillClassNames(generation, candidate) }
         return build
     }
 
@@ -161,6 +170,8 @@ class ClasspathService(
     /**
      * Finds classes by prefix for type parameter completion.
      * Returns list of ClassInfo with simple name and fully qualified name.
+     * Suspends while the class index builds. A build that fails with an exception gives no classes; one that fails with
+     * an [Error] rethrows that Error here, as in every lookup waiting on that build.
      */
     suspend fun findClassesByPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
@@ -169,6 +180,8 @@ class ClasspathService(
 
     /**
      * Finds classes by fully qualified prefix (e.g., "java.util.L").
+     * Suspends while the class index builds. A build that fails with an exception gives no classes; one that fails with
+     * an [Error] rethrows that Error here, as in every lookup waiting on that build.
      */
     suspend fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
