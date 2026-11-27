@@ -488,6 +488,37 @@ test('out-of-band Native download and codec events use emitter identity instead 
   }
 });
 
+// Main CI configures :launcher before :common:concurrent. Both run the same Kotlin plugin code, and Gradle logs each
+// distinct deprecation and stack once per build, so the shared call sites print under whichever project comes first.
+const concurrentVisibilityOrigins = [
+  'org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)',
+  'org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:64)',
+];
+const nativeVisibilityMessage = nativeLogs[0].split('\n').find(line => line.startsWith('The Configuration.setVisible'));
+const concurrentVisibilityEvents = concurrentVisibilityOrigins.map(origin => `${nativeVisibilityMessage}\n` +
+  '\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n' +
+  `\tat ${origin}\n`).join('');
+
+test('shared Kotlin plugin call sites keep their identity when another Kotlin project configures first', () => {
+  const exceptions = gradleExceptions();
+  for (const log of nativeLogs) {
+    const launcherFirst = `${log}> Configure project :common:concurrent\n${concurrentVisibilityEvents}`;
+    const concurrentFirst = log
+      .replace('> Configure project :launcher\n', `> Configure project :common:concurrent\n${concurrentVisibilityEvents}`)
+      .replace('> Configure project :viz:desktop\n', '> Configure project :launcher\n> Configure project :viz:desktop\n');
+    assert.ok(concurrentFirst.startsWith('> Configure project :common:concurrent\n'));
+    const expected = collectDiagnostics(launcherFirst);
+    const flipped = collectDiagnostics(concurrentFirst);
+    assert.deepEqual(flipped, expected);
+    assert.equal(flipped.some(line => /^\[project :(?:launcher|common:concurrent)\] /.test(line)), false);
+    for (const diagnostics of [expected, flipped]) {
+      const result = evaluate(diagnostics, exceptions, now);
+      assert.deepEqual(result.unexpected, []);
+      assert.equal(result.accepted.length, diagnostics.length);
+    }
+  }
+});
+
 test('Native debt has fourteen exact identities and rejects changed types, messages, origins and call sites', () => {
   const exceptions = gradleExceptions();
   const diagnostics = [...new Set(nativeLogs.flatMap(log => collectDiagnostics(log)))].sort();
