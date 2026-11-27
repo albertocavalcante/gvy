@@ -18,6 +18,7 @@ The following groups describe the components in the current checkout.
 | [fmt/](../fmt/)                                     | Groovy formatting using OpenRewrite                                  |
 | [indexer/](../indexer/)                             | Symbol indexing and SCIP/LSIF integrations                           |
 | [source/](../source/)                               | Language-neutral UTF-16 line indexing                                |
+| [jvm-metadata/facts/](../jvm-metadata/facts/)       | Facts file format for JVM artifacts (experimental)                   |
 | [common/](../common/) and [markdown/](../markdown/) | Shared utilities, thread-safe state and Markdown rendering           |
 
 ## Frameworks and build integration

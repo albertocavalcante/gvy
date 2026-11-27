@@ -48,6 +48,8 @@ include("common")
 // Thread-safe state primitives; the only module that opts into the stdlib's experimental atomics (#2474).
 include("common:concurrent")
 include("source")
+// Facts file format for JVM artifacts: model, writer and reader. Depends on the Kotlin stdlib and the JDK only.
+include("jvm-metadata:facts")
 include("gls")
 include("launcher")
 include("indexer:core")

@@ -159,3 +159,16 @@ harness lives in `gls/src/jmh`.
 
 Each needs its own issue after the result: a local facts cache, facts shipped with the server, any published feed. The
 experiment redistributes nothing; a review of OpenJDK and per-library terms is required before any facts are shipped.
+
+## 2026-11-27 amendment: two string pools, names and types
+
+Made while implementing slice 1, before any measurement run; no threshold, input or earlier text changes.
+
+The format has two sorted, unique string pools instead of one: a names pool, used by the names and extensions sections,
+and a type pool, used only by the types section. The types section names the class an entry describes by its position in
+the names section's class table. Reason: Q3 measures how long until a class-name lookup works. With one pool, loading
+names would also decode every descriptor, signature and parameter name that only the types need, which would charge the
+facts mechanism for work the names lookup does not use. A string both groups use, such as a superclass name that is also
+a class, now appears in each pool, which costs some size; Q1 measures that cost. The reader also bounds the objects it
+decodes, not only the bytes it inflates (one decoded-item budget per file). `jvm-metadata/facts/FORMAT.md` is the
+specification.
