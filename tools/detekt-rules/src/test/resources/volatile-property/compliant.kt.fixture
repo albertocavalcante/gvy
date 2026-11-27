@@ -37,3 +37,16 @@ class Suppressed {
     @Volatile
     var updatedThroughFieldUpdater = 0
 }
+
+// A typealias of anything else is not reported, nor is the annotation class used as a type or a class literal.
+typealias Marker = com.example.annotations.Volatile
+typealias Flags = List<Boolean>
+typealias Annotations = List<kotlin.jvm.Volatile>
+
+class TypeUses {
+    val marker: Volatile? = null
+    val type = kotlin.jvm.Volatile::class
+}
+
+@Suppress("VolatileProperty") // A suppression with a reason also covers a typealias.
+typealias SuppressedAlias = kotlin.jvm.Volatile

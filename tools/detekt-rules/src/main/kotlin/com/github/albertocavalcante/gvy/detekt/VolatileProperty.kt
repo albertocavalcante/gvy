@@ -13,10 +13,12 @@ import io.gitlab.arturbosch.detekt.api.Severity
 import org.jetbrains.kotlin.psi.KtAnnotationEntry
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtPsiUtil
+import org.jetbrains.kotlin.psi.KtTypeAlias
+import org.jetbrains.kotlin.psi.KtTypeReference
 import org.jetbrains.kotlin.psi.KtUserType
 
 /**
- * Reports `@Volatile` annotations.
+ * Reports `@Volatile` annotations, and a typealias of the annotation where it is declared.
  *
  * A volatile field makes single reads and writes visible to other threads, but `x++`, check-then-act and two related
  * fields read one after the other still race, without a compiler warning. Each field should use the type that says
@@ -26,7 +28,9 @@ import org.jetbrains.kotlin.psi.KtUserType
  * (#2409). It recognises the unqualified name, `kotlin.jvm.Volatile`, `kotlin.concurrent.Volatile` and import aliases
  * of either, with any use-site target. Names are read by PSI segment ([qualifiedName]), so backticks, comments and line
  * breaks inside them do not hide the annotation. When a file imports another annotation named `Volatile`, the
- * unqualified name refers to that one and is not reported. The known limits are in `tools/detekt-rules/README.md`.
+ * unqualified name refers to that one and is not reported. A typealias (`typealias V = kotlin.jvm.Volatile`) is
+ * reported at its declaration, not at each `@V`: removing it is the fix. The known limits are in
+ * `tools/detekt-rules/README.md`.
  */
 internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
     override val issue = Issue(
@@ -46,7 +50,7 @@ internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
 
     override fun visitAnnotationEntry(annotationEntry: KtAnnotationEntry) {
         super.visitAnnotationEntry(annotationEntry)
-        val name = (annotationEntry.typeReference?.typeElement as? KtUserType)?.qualifiedName() ?: return
+        val name = annotationEntry.typeReference?.userTypeName() ?: return
         if (name in volatileNames) {
             report(
                 CodeSmell(
@@ -58,6 +62,24 @@ internal class VolatileProperty(config: Config = Config.empty) : Rule(config) {
             )
         }
     }
+
+    override fun visitTypeAlias(typeAlias: KtTypeAlias) {
+        super.visitTypeAlias(typeAlias)
+        val name = typeAlias.getTypeReference()?.userTypeName() ?: return
+        if (name in volatileNames) {
+            report(
+                CodeSmell(
+                    issue,
+                    Entity.atName(typeAlias),
+                    "`typealias ${typeAlias.name} = $name` lets `@${typeAlias.name}` declare volatile fields that " +
+                        "this rule cannot see. Use OnceFlag, SharedValue or Counter from :common:concurrent, `lazy`, " +
+                        "or a lock (#2474).",
+                ),
+            )
+        }
+    }
+
+    private fun KtTypeReference.userTypeName(): String? = (typeElement as? KtUserType)?.qualifiedName()
 
     /** The spellings that name Kotlin's annotation in [file]: qualified names, import aliases and the plain name. */
     private fun volatileNamesIn(file: KtFile): Set<String> {

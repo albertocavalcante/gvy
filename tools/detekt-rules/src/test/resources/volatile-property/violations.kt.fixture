@@ -53,3 +53,14 @@ class Spellings {
     @EscapedAlias var viaEscapedAlias = false // FLAG
     @`EscapedAlias` var viaEscapedAliasEscaped = false // FLAG
 }
+
+// A typealias of Kotlin's annotation is reported where it is declared. Its uses look like any other annotation.
+typealias JvmVolatileAlias = kotlin.jvm.Volatile // FLAG
+typealias CommonVolatileAlias = kotlin.concurrent.Volatile // FLAG
+typealias PlainVolatileAlias = Volatile // FLAG
+typealias AliasOfImportAlias = JvmVolatile // FLAG
+typealias EscapedVolatileAlias = kotlin.jvm.`Volatile` // FLAG
+
+class WithAliasedField {
+    @JvmVolatileAlias var reportedAtTheTypealias = false
+}

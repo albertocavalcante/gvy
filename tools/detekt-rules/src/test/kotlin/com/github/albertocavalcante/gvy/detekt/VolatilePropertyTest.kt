@@ -11,7 +11,7 @@ class VolatilePropertyTest {
     private val rule = VolatileProperty()
 
     @Test
-    fun `flags every marked annotation in the violations fixture`() {
+    fun `flags every marked annotation and typealias in the violations fixture`() {
         rule.assertReportsMarkedLines("volatile-property/violations.kt.fixture")
     }
 
@@ -91,6 +91,13 @@ class VolatilePropertyTest {
         """.trimIndent()
 
         assertThat(rule.flaggedLines(source)).containsExactly(5)
+    }
+
+    @Test
+    fun `a typealias is reported at its name, with a message that names the alias`() {
+        val findings = rule.lint("/** Docs. */\ntypealias V = kotlin.jvm.Volatile")
+        assertThat(findings.map { it.entity.location.source.line }).containsExactly(2)
+        assertThat(findings.single().message).startsWith("`typealias V = kotlin.jvm.Volatile` lets `@V` declare ")
     }
 
     @Test
