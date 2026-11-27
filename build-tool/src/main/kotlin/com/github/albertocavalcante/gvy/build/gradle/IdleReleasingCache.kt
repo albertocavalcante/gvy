@@ -57,11 +57,8 @@ internal class IdleReleasingCache<K : Any, V : Any>(
      * A borrowed value; closing it ends the borrow and restarts the idle clock. A lease without an [entry] was taken
      * after [IdleReleasingCache.close]: its value was never cached, so closing the lease closes the value.
      */
-    inner class Lease internal constructor(
-        private val key: K,
-        val value: V,
-        private val entry: Entry<V>?,
-    ) : AutoCloseable {
+    inner class Lease internal constructor(private val key: K, val value: V, private val entry: Entry<V>?) :
+        AutoCloseable {
         private var open = true
 
         override fun close() {
