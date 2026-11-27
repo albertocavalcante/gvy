@@ -36,15 +36,18 @@ private const val PROGRESS_COMPLETE = 100
  * What one resolution request reports to its caller. Each callback runs under the manager's lock, serialized with
  * lifecycle transitions, and must follow [DependencyManager]'s rules for callbacks.
  *
- * [onCancelled] runs when the current attempt of the request stops before it delivered a completion or failure and
- * no later attempt carries the request on: [DependencyManager.cancel], [DependencyManager.reset], cancellation of the
- * owning scope, an attempt for another request taking over, a build-file refresh that found the watcher gone after
- * signalling the attempt, or an [Error] thrown out of the attempt. A build-file refresh carries the request on, so its
- * attempt's completion or failure ends the request instead.
+ * [onCancelled] runs when the current attempt of the request stops before a completion or failure was delivered in
+ * full and no later attempt carries the request on: [DependencyManager.cancel], [DependencyManager.reset],
+ * cancellation of the owning scope, an attempt for another request taking over, a build-file refresh that found the
+ * watcher gone after signalling the attempt, or an exception thrown out of the attempt (an [Error], or a delivery that
+ * threw). A build-file refresh carries the request on, so its attempt's completion or failure ends the request instead.
  *
- * Each attempt ends at most once, but a request can have several attempts: it may complete and then be cancelled
- * during a refresh, or be cancelled twice when a refresh races scope cancellation. [onCancelled] must therefore be
- * idempotent, and safe after [onComplete] or [onError].
+ * An attempt is marked as having ended its request at most once: by the first completion or failure delivered in full,
+ * or by [onCancelled]. That bounds the ends of the progress, not the callbacks. A watcher failure delivers [onError]
+ * and marks the attempt, yet resolution goes on and can later deliver [onComplete] or [onError] as well. A request can
+ * also have several attempts: it may complete and then be cancelled during a refresh, or be cancelled twice when a
+ * refresh races scope cancellation. [onCancelled] must therefore be idempotent, and safe after [onComplete] or
+ * [onError].
  */
 internal data class ResolutionCallbacks(
     val onProgress: ((Int, String) -> Unit)? = null,
@@ -204,10 +207,20 @@ class DependencyManager(
         StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher, replaced))
     }
 
-    @OptIn(InternalCoroutinesApi::class)
     private fun launchAttempt(effects: StartEffects) {
         cancelJob(effects.previousJob)
         stopWatcher(effects.previousWatcher)
+        try {
+            startAttempt(effects)
+        } finally {
+            // Ended last, even if starting threw: an attempt of another request was replaced and nothing follows it
+            effects.replaced?.let { replaced -> synchronized(lock) { cancelAttempt(replaced) } }
+        }
+    }
+
+    /** Registers [effects]' completion handlers, reports the start and starts the job. */
+    @OptIn(InternalCoroutinesApi::class)
+    private fun startAttempt(effects: StartEffects) {
         // Cancellation must signal the transport as soon as a parent starts cancelling, not after resolve returns.
         effects.job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
             if (cause != null) effects.attempt.cancellation.cancel()
@@ -217,9 +230,11 @@ class DependencyManager(
                 if (currentAttempt.value === effects.attempt) {
                     if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                     if (resolutionJob === effects.job) resolutionJob = null
-                    // An Error escaped resolve, or the owning scope was cancelled: no attempt can follow. Any other
-                    // cancellation of a current attempt comes from a refresh, which carries the request on, or from
-                    // stop(), which ends the request itself.
+                    // An exception escaped resolve (an Error, or a delivery that threw), or the owning scope was
+                    // cancelled. Nothing carries the request on, except in one narrow window: a refresh whose
+                    // prepareStart already signalled this attempt but has not yet taken the lock in installAttempt
+                    // still installs a successor after this end. Any other cancellation of a current attempt comes
+                    // from a refresh, which carries the request on, or from stop(), which ends the request itself.
                     if (cause != null && (cause !is CancellationException || !scope.isActive)) {
                         cancelAttempt(effects.attempt)
                     }
@@ -230,8 +245,6 @@ class DependencyManager(
             effects.attempt.request.callbacks.onProgress?.invoke(0, "Starting dependency resolution...")
         }
         effects.job.start()
-        // Ended last, once the new attempt runs: an attempt of another request was replaced and nothing follows it
-        effects.replaced?.let { replaced -> synchronized(lock) { cancelAttempt(replaced) } }
     }
 
     @Suppress("TooGenericExceptionCaught") // Build tool implementations expose failures as arbitrary exceptions.
@@ -316,10 +329,15 @@ class DependencyManager(
         }
     }
 
-    /** Delivers [attempt]'s completion or failure while it is current, recording that the attempt ended its request. */
+    /**
+     * Delivers [attempt]'s completion or failure while it is current, and only once [deliver] returns records that the
+     * attempt ended its request. A delivery that throws leaves the attempt unsettled, so the request still gets an end:
+     * the failure delivered in its place, or, when the exception escapes resolve, onCancelled from the completion
+     * handler.
+     */
     private fun settleCurrent(attempt: Attempt, deliver: () -> Unit) = notifyCurrent(attempt) {
-        attempt.settled.set()
         deliver()
+        attempt.settled.set()
     }
 
     /**
