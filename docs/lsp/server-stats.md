@@ -65,13 +65,17 @@ Each phase has a `status`:
 | `cancelled` | The step was stopped, for example by shutdown.                              | `startOffsetMs`, `durationMs` |
 | `skipped`   | The phase will not run: there was nothing to do or an earlier phase failed. | none                          |
 
-A workspace with no root skips all five workspace phases. A failed dependency resolution skips the three phases after
-it, because the server then neither publishes a model nor indexes the workspace. A workspace with no source files skips
+A workspace with no root skips all five workspace phases. An unsupported JDK, found before resolution starts, skips
+every phase from `dependencies.resolve` on. A failed dependency resolution skips the three phases after it, because the
+server then neither publishes a model nor indexes the workspace. A workspace with no source files skips
 `workspace.index` and `workspace.compile`; one over the file-count limit skips only `workspace.compile`. A failed index
 skips `workspace.compile`.
 
 ### How to read the numbers
 
+- **A skipped phase stays skipped.** The first outcome is final. If a later retry, such as a build-file refresh after a
+  failed resolution, does run the work, it is not recorded. A publish that throws, or an `Error` during indexing, can
+  also leave later phases `pending` instead of `skipped`.
 - **First run only.** Each phase records its first run after the server starts. A later build-file change repeats
   resolution, publishing, indexing and compiling, but those runs are not recorded here.
 - **Phases overlap and leave gaps.** Resolution ends on a background thread, and indexing runs after publishing. The
