@@ -18,8 +18,11 @@ export const moduleDetektLines = [
   new RegExp(`^add\\("(?:${configurations})", libs\\.detekt\\.\\w+\\)$`),
 ];
 export const moduleDetektSource = 'source.setFrom(fileTree("src") { include("**/*.kt") })';
-// A string literal that names a detekt task or configuration, such as "detekt", "detektMain" or "detektPlugins".
-const detektName = /^detekt\w*$/i;
+// Whether a string literal names detekt: a task or configuration name or path such as "detekt", "detektMain",
+// ":fmt:detekt" or "${project.path}:detekt", or a name from detekt's own package such as the plugin ID
+// "io.gitlab.arturbosch.detekt" or the class "io.gitlab.arturbosch.detekt.Detekt". A description or a package filter
+// that mentions detekt, such as "com.github.albertocavalcante.gvy.detekt", does not.
+const namesDetekt = literal => /(?:^|:)detekt\w*$/i.test(literal) || /arturbosch\.detekt/i.test(literal);
 // Plugin IDs that publish a module, as a string literal holds them in `id(...)` or `apply(plugin = ...)`.
 const publishingPluginId =
   /^(?:maven-publish|ivy-publish|com\.gradle\.plugin-publish|com\.vanniktech\.maven\.publish)$/i;
@@ -310,10 +313,10 @@ function scriptView(source) {
 /**
  * The lines of Gradle Kotlin script [source] that configure detekt beyond what a module build may, as `{ line, text }`.
  * A line counts when its code names detekt in any case (`detekt {}`, `tasks.withType<Detekt>()`,
- * `io.gitlab.arturbosch.detekt`) or a string literal on it is a detekt task or configuration name
- * (`tasks.named("detekt")`), unless it is one of [moduleDetektLines]. Other strings, such as a description or a package
- * filter that mentions detekt, and comments never count. In a `detekt {` block, every line but the source override
- * counts.
+ * `io.gitlab.arturbosch.detekt`) or a string literal on it does by [namesDetekt] (`tasks.named("detekt")`,
+ * `tasks.getByPath(":fmt:detekt")`, `Class.forName("io.gitlab.arturbosch.detekt.Detekt")`), unless it is one of
+ * [moduleDetektLines]. Other strings, such as a description or a package filter that mentions detekt, and comments
+ * never count. In a `detekt {` block, every line but the source override counts.
  */
 export function detektOverrides(source) {
   const { text, code, strings } = scriptView(source);
@@ -334,7 +337,7 @@ export function detektOverrides(source) {
       index = end;
       continue;
     }
-    const names = /detekt/i.test(code[index]) || strings[index].some(literal => detektName.test(literal));
+    const names = /detekt/i.test(code[index]) || strings[index].some(namesDetekt);
     if (names && !moduleDetektLines.some(form => form.test(line))) found.push({ line: index + 1, text: line });
   }
   return found;
