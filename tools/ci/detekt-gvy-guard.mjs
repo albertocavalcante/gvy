@@ -61,22 +61,30 @@ export function missingRule(config, rule) {
     `(two spaces, the rule ID and a colon) in the \`gvy:\` rule set. ${found}`;
 }
 
+/** The non-comment lines of [config]'s top-level `<key>:` block, as written, or null when it holds no such block. */
+export function topLevelBlock(config, key) {
+  const lines = yamlLines(config);
+  const start = lines.indexOf(`${key}:`);
+  if (start < 0) return null;
+  const block = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*(?:#.*)?$/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    block.push(line);
+  }
+  return block;
+}
+
+/** The first-column keys of [config], such as `build` and `gvy`, comments skipped. */
+export const topLevelKeys = config =>
+  yamlLines(config).filter(line => /^[^\s#]/.test(line)).map(line => line.replace(/:.*$/, ''));
+
 /**
  * The `gvy:` rule set's own keys (the lines indented two spaces, comments skipped), or null when it is missing. detekt
  * applies a set-level `active`, `excludes` or `includes` to every rule in the set.
  */
-export function gvyRuleSetKeys(config) {
-  const lines = yamlLines(config);
-  const start = lines.indexOf('gvy:');
-  if (start < 0) return null;
-  const keys = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^\s*(?:#.*)?$/.test(line)) continue;
-    if (/^\S/.test(line)) break;
-    if (/^ {2}\S/.test(line)) keys.push(line.slice(2));
-  }
-  return keys;
-}
+export const gvyRuleSetKeys = config =>
+  topLevelBlock(config, 'gvy')?.filter(line => /^ {2}\S/.test(line)).map(line => line.slice(2)) ?? null;
 
 /** The source set of [path], such as `main`, `test` or `commonTest`, when it lies under a `src/<set>/` folder. */
 export const sourceSet = path => path.match(/(?:^|\/)src\/([^/]+)\//)?.[1];

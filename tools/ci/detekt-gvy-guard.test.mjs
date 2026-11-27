@@ -30,7 +30,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   detektOverrides, git, gitEnv, gitFiles, gvyRuleConfig, gvyRuleSetKeys, missingRule, moduleDetektSource, publishes,
-  ruleExcludes, sourceSet, suppressions, unmatched,
+  ruleExcludes, sourceSet, suppressions, topLevelBlock, topLevelKeys, unmatched,
 } from './detekt-gvy-guard.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -216,6 +216,10 @@ test('the gvy rule set reader takes only two-space keys, so set-wide excludes an
   ].join('\n');
   assert.deepEqual(gvyRuleSetKeys(config), ['active: true', 'excludes:', "- '**/gls/src/**'", 'VolatileProperty:']);
   assert.equal(gvyRuleSetKeys('style:\n  active: true\n'), null);
+  assert.deepEqual(topLevelKeys(config), ['style', 'gvy', 'naming']);
+  assert.deepEqual(topLevelBlock('build:\n  maxIssues: 0\n  # A comment.\n  weights:\n    gvy: 0\nconfig:\n', 'build'),
+    ['  maxIssues: 0', '  weights:', '    gvy: 0']);
+  assert.equal(topLevelBlock('build: { maxIssues: 1000 }\n', 'build'), null);
   assert.deepEqual(gvyRuleConfig(config, 'VolatileProperty'), { active: true, excludes: [] });
 });
 
@@ -229,15 +233,23 @@ test('the gvy rule set is active and takes no set-wide excludes or includes', ()
   assert.deepEqual(unexpected, [], message);
 });
 
-test('the gvy plugin default config only activates the rule set and its rules', () => {
+test('detekt fails on any finding: build holds only maxIssues 0 and excludeCorrectable false', () => {
+  const message = 'tools/lint/detekt.yml keeps `build:` to exactly `  maxIssues: 0` and ' +
+    '`  excludeCorrectable: false`. A higher maxIssues, or `weights` that weigh a rule set such as gvy at 0, would ' +
+    'let its findings pass (#2474)';
+  const block = topLevelBlock(detektConfig(), 'build');
+  assert.deepEqual([...(block ?? [])].sort(), ['  excludeCorrectable: false', '  maxIssues: 0'], message);
+});
+
+test('the gvy plugin default config holds only the gvy rule set and activates it and its rules', () => {
   // detekt appends every plugin's config/config.yml to its default config, which tools/lint/detekt.yml builds upon. A
   // key there that detekt.yml leaves unset, such as VolatileProperty's excludes or any rule's includes, would apply.
   const path = 'tools/detekt-rules/src/main/resources/config/config.yml';
   const config = read(path);
+  const message = `${path} may hold only the gvy rule set, with \`active: true\` for it and each rule. Configure ` +
+    'detekt in tools/lint/detekt.yml, where this guard reads it (#2474)';
+  assert.deepEqual(topLevelKeys(config), ['gvy'], message);
   const keys = gvyRuleSetKeys(config);
-  assert.ok(keys, `${path} must configure the gvy rule set`);
-  const message = `${path} may hold only \`active: true\` for the gvy rule set and each rule. Configure a rule in ` +
-    'tools/lint/detekt.yml, where this guard reads it (#2474)';
   assert.deepEqual(keys.filter(key => key !== 'active: true' && !/^[A-Z]\w*:$/.test(key)), [], message);
   assert.ok(keys.includes('active: true'), message);
   for (const rule of keys.filter(key => key !== 'active: true').map(key => key.slice(0, -1))) {
