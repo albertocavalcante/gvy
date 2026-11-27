@@ -185,19 +185,27 @@ subprojects {
     }
 
     tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+        // One report per task, named after it: the type-resolved tasks (detektMain, detektTest) would otherwise write
+        // over the plain detekt task's report (#2409).
+        val reportName = name
         reports {
             html {
                 required.set(true)
-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.html"))
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.html"))
             }
             xml {
                 required.set(true)
-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.xml"))
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.xml"))
             }
             sarif {
                 required.set(true)
-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.sarif"))
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.sarif"))
             }
+        }
+        // Measurement for #2409: -Pgvy.detekt.debug prints the messages of detekt's embedded compiler, such as the
+        // class metadata it cannot read, which detekt otherwise hides.
+        if (providers.gradleProperty("gvy.detekt.debug").isPresent) {
+            debug = true
         }
     }
 

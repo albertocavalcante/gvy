@@ -100,8 +100,9 @@ concurrency:
 jobs:
   check-paths:
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    # 5 minutes for applicability, plus the Lint job's 10-minute budget for the pull-request lint gate.
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 5 }}
+    # 5 minutes for applicability, plus the Lint job's 10-minute budget for the pull-request lint gate, plus 60 minutes
+    # for the draft type-resolution measurement below (#2409).
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 75 || 5 }}
     permissions:
       contents: read
     outputs:
@@ -264,6 +265,34 @@ jobs:
         id: lint-gate
         if: github.event_name == 'pull_request' && steps.filter.outputs.run_main_ci == 'true' && steps.lint-run.outcome == 'success'
         run: echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      # Draft measurement for #2409, not for merge. After the unchanged gate above, run detekt with type resolution
+      # over the sources `lint` reads today: main and test of every JVM module, and common/concurrent's jvmTest. The
+      # same runner times both. --continue runs every module's task after one fails, so the reports count every module.
+      - name: Measure type-resolved detekt (#2409)
+        id: typed-detekt
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.filter.outputs.run_main_ci == 'true' }}
+        timeout-minutes: 40
+        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer lint-typed detektMain detektTest :common:concurrent:detektJvmTest --continue --parallel --max-workers=2 --build-cache --stacktrace
+
+      - name: Upload type-resolved detekt reports (#2409)
+        if: ${{ !cancelled() && steps.typed-detekt.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: detekt-typed-reports-${{ github.run_attempt }}
+          path: |
+            **/build/reports/detekt/*.xml
+            **/build/reports/detekt/*.sarif
+          if-no-files-found: error
+          retention-days: 14
+
+      # Same tasks again with compilation already done, so this times the analysis alone, and with detekt's debug
+      # output, which shows the compiler messages (such as unreadable Kotlin metadata) that the run above hides.
+      - name: Rerun type-resolved detekt with compiler messages (#2409)
+        id: typed-detekt-debug
+        if: ${{ !cancelled() && steps.typed-detekt.outcome != 'skipped' }}
+        timeout-minutes: 20
+        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer lint-typed-debug detektMain --rerun detektTest --rerun :common:concurrent:detektJvmTest --rerun --continue -Pgvy.detekt.debug --parallel --max-workers=2 --build-cache --stacktrace
 
       - name: Upload Gradle diagnostic evidence (pull-request lint gate)
         if: ${{ !cancelled() && steps.lint-run.outcome != 'skipped' }}
