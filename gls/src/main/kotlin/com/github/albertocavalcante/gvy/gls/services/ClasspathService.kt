@@ -14,8 +14,9 @@ import java.net.URLClassLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentSkipListSet
+import java.util.TreeMap
+import java.util.TreeSet
+import java.util.concurrent.CompletableFuture
 
 /**
  * Service to manage the classpath and load classes/methods from the user's project and the JDK.
@@ -47,11 +48,6 @@ class ClasspathService(
     private val reflection: ClasspathReflection =
         reflectionProvider ?: JvmClasspathReflection { generations.current().loader }
 
-    // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
-    private val classIndex = ClassIndex()
-    private val qualifiedNameIndex = QualifiedNameIndex()
-    private val isIndexed = SharedValue(false)
-
     /**
      * Updates the active classloader with the provided paths (JARs or directories).
      * Callers must not mutate [paths] during this call; the generation owns a detached copy afterward.
@@ -70,9 +66,6 @@ class ClasspathService(
             return
         }
         generations.replace(loader, configured)
-        isIndexed.set(false)
-        classIndex.clear()
-        qualifiedNameIndex.clear()
     }
 
     /**
@@ -89,36 +82,63 @@ class ClasspathService(
     fun close() = synchronized(this) { generations.shutdown() }
 
     /**
-     * Indexes all classes from the classpath.
-     * This is called lazily on first type parameter completion request.
+     * Indexes all classes from the current classpath unless that is done, waiting for a build already running.
+     * The class-name lookups call this lazily on first use.
      */
     fun indexAllClasses() {
-        if (isIndexed.value) return
+        classNamesOf(generations.current())
+    }
 
-        synchronized(this) {
-            if (isIndexed.value) return
+    /**
+     * The class-name index of [generation]. The first caller claims the generation's slot and fills it on its own
+     * thread; later callers wait for that future without holding a monitor, so a classpath update or close never waits
+     * for a build. Each generation keeps its own index, so a build for a replaced classpath is never seen by lookups on
+     * the new one.
+     */
+    private fun classNamesOf(generation: ClasspathGeneration): ClassNameIndex {
+        generation.classNames.value?.let { return it.join() }
+        val candidate = CompletableFuture<ClassNameIndex>()
+        val build = checkNotNull(generation.classNames.update { it ?: candidate })
+        if (build === candidate) fillClassNames(generation, candidate)
+        return build.join()
+    }
 
-            logger.info { "Indexing all classes from classpath..." }
-            val startTime = System.currentTimeMillis()
-
-            try {
-                classpathIndex.index(resolveClasspathEntries()).forEach { entry ->
-                    classIndex.add(entry.simpleName, entry.fullName)
-                    qualifiedNameIndex.add(entry.fullName)
-                }
-
-                isIndexed.set(true)
-                val elapsedMs = System.currentTimeMillis() - startTime
-                logger.info { "Indexed ${classIndex.size()} class names in ${elapsedMs}ms" }
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to index classes" }
+    /**
+     * Completes [build], which this caller claimed for [generation], even when the build fails. A generation that is no
+     * longer current when claimed is not scanned: an update retired it, so its lookups get the current index instead.
+     */
+    private fun fillClassNames(generation: ClasspathGeneration, build: CompletableFuture<ClassNameIndex>) {
+        try {
+            val current = generations.current()
+            if (current === generation) {
+                build.complete(scanClassNames(generation))
+            } else {
+                generation.classNames.update { if (it === build) null else it }
+                build.complete(classNamesOf(current))
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to index classes" }
+        } finally {
+            if (!build.isDone) {
+                // The next lookup retries; this build's waiters get no classes rather than waiting forever.
+                generation.classNames.update { if (it === build) null else it }
+                build.complete(ClassNameIndex.EMPTY)
             }
         }
     }
 
-    private fun resolveClasspathEntries(): List<String> {
-        val generation = generations.current()
-        return classpathEntriesFor(generation.loader, generation.paths, System.getProperty("java.class.path").orEmpty())
+    private fun scanClassNames(generation: ClasspathGeneration): ClassNameIndex {
+        logger.info { "Indexing all classes from classpath..." }
+        val startTime = System.currentTimeMillis()
+        val entries = classpathEntriesFor(
+            generation.loader,
+            generation.paths,
+            System.getProperty("java.class.path").orEmpty(),
+        )
+        val index = ClassNameIndex.of(classpathIndex.index(entries))
+        val elapsedMs = System.currentTimeMillis() - startTime
+        logger.info { "Indexed ${index.size} class names in ${elapsedMs}ms" }
+        return index
     }
 
     /**
@@ -127,30 +147,7 @@ class ClasspathService(
      */
     fun findClassesByPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
-
-        if (!isIndexed.value) {
-            indexAllClasses()
-        }
-
-        val results = mutableListOf<ClassInfo>()
-
-        // Find all simple names that start with the prefix (case-insensitive)
-        classIndex.snapshot()
-            .asSequence()
-            .filter { (simpleName, _) -> simpleName.startsWith(prefix, ignoreCase = true) }
-            .sortedWith(
-                compareBy<Map.Entry<String, List<String>>> { it.key },
-            )
-            .take(maxResults)
-            .forEach { (simpleName, fullNames) ->
-                // For each matching simple name, add all fully qualified variants
-                fullNames.forEach { fullName ->
-                    val packageName = fullName.substringBeforeLast('.', "")
-                    results.add(ClassInfo(simpleName, fullName, packageName))
-                }
-            }
-
-        return results.take(maxResults)
+        return classNamesOf(generations.current()).findBySimpleNamePrefix(prefix, maxResults)
     }
 
     /**
@@ -158,23 +155,7 @@ class ClasspathService(
      */
     fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
         if (prefix.isBlank()) return emptyList()
-
-        if (!isIndexed.value) {
-            indexAllClasses()
-        }
-
-        val results = mutableListOf<ClassInfo>()
-        qualifiedNameIndex.snapshot()
-            .asSequence()
-            .filter { it.startsWith(prefix, ignoreCase = true) }
-            .take(maxResults)
-            .forEach { fullName ->
-                val simpleName = fullName.substringAfterLast('.')
-                val packageName = fullName.substringBeforeLast('.', "")
-                results.add(ClassInfo(simpleName, fullName, packageName))
-            }
-
-        return results
+        return classNamesOf(generations.current()).findByQualifiedPrefix(prefix, maxResults)
     }
 
     /**
@@ -200,44 +181,55 @@ class ClasspathService(
      * per generation), so callers may keep it for the whole session.
      */
     fun getTypeSolver(): TypeSolver = typeSolverFacade
+}
 
-    internal class ClassIndex {
-        private val index = ConcurrentHashMap<String, MutableSet<String>>()
+/**
+ * The class names of one classpath, for type and import completion. It never changes after [of] builds it, so a lookup
+ * reads one whole index without a lock while the index of another classpath is built.
+ *
+ * @property bySimpleName Simple names in ascending order, each with its fully qualified names in ascending order.
+ * @property qualifiedNames Fully qualified names in ascending order.
+ */
+internal class ClassNameIndex private constructor(
+    private val bySimpleName: List<Pair<String, List<String>>>,
+    private val qualifiedNames: List<String>,
+) {
+    /** The number of distinct fully qualified names. */
+    val size: Int get() = qualifiedNames.size
 
-        fun add(simpleName: String, fullName: String) {
-            index.compute(simpleName) { _, existing ->
-                val entries = existing ?: linkedSetOf()
-                entries.add(fullName)
-                entries
+    /** The first [maxResults] simple names that start with [prefix] in any case, each with all its variants. */
+    fun findBySimpleNamePrefix(prefix: String, maxResults: Int): List<ClassInfo> = bySimpleName.asSequence()
+        .filter { (simpleName, _) -> simpleName.startsWith(prefix, ignoreCase = true) }
+        .take(maxResults)
+        .flatMap { (simpleName, fullNames) -> fullNames.asSequence().map { ClassInfo(simpleName, it, packageOf(it)) } }
+        .take(maxResults)
+        .toList()
+
+    /** The first [maxResults] fully qualified names that start with [prefix] in any case. */
+    fun findByQualifiedPrefix(prefix: String, maxResults: Int): List<ClassInfo> = qualifiedNames.asSequence()
+        .filter { it.startsWith(prefix, ignoreCase = true) }
+        .take(maxResults)
+        .map { ClassInfo(it.substringAfterLast('.'), it, packageOf(it)) }
+        .toList()
+
+    companion object {
+        val EMPTY = ClassNameIndex(emptyList(), emptyList())
+
+        /** Sorts and deduplicates [classes]. */
+        fun of(classes: List<IndexedClass>): ClassNameIndex {
+            val bySimpleName = TreeMap<String, TreeSet<String>>()
+            val qualifiedNames = TreeSet<String>()
+            classes.forEach { (simpleName, fullName) ->
+                bySimpleName.getOrPut(simpleName) { TreeSet() }.add(fullName)
+                qualifiedNames.add(fullName)
             }
+            return ClassNameIndex(
+                bySimpleName.map { (simpleName, fullNames) -> simpleName to fullNames.toList() },
+                qualifiedNames.toList(),
+            )
         }
 
-        fun snapshot(): Map<String, List<String>> = index.entries.associate { (simple, fullNames) ->
-            simple to fullNames.sorted()
-        }
-
-        fun size(): Int = index.size
-
-        fun clear() {
-            index.clear()
-        }
-    }
-
-    internal class QualifiedNameIndex {
-        /**
-         * Thread-safe index of fully qualified class names for prefix lookups.
-         */
-        private val index = ConcurrentSkipListSet<String>()
-
-        fun add(fullName: String) {
-            index.add(fullName)
-        }
-
-        fun snapshot(): List<String> = index.toList()
-
-        fun clear() {
-            index.clear()
-        }
+        private fun packageOf(fullName: String) = fullName.substringBeforeLast('.', "")
     }
 }
 
@@ -313,6 +305,8 @@ private class ClasspathGenerations {
     private fun retire(generation: ClasspathGeneration, gracePeriod: Boolean) {
         generation.retired = true
         generation.grace = gracePeriod
+        // Lookups use the current generation's index; a lookup already waiting on this one keeps its own reference.
+        generation.classNames.set(null)
         closeIfRetired(generation)
     }
 
@@ -345,6 +339,9 @@ private class ClasspathGeneration(val loader: ClassLoader, val solver: TypeSolve
     var retired: Boolean = false
     var grace: Boolean = false
     var closed: Boolean = false
+
+    /** This classpath's class-name index: null until a lookup starts building it, then that build. Lock-free. */
+    val classNames = SharedValue<CompletableFuture<ClassNameIndex>?>(null)
 }
 
 internal fun classpathEntriesFor(loader: ClassLoader, configured: List<Path>, systemClasspath: String): List<String> {
