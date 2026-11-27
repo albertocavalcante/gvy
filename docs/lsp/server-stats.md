@@ -75,8 +75,9 @@ server then neither publishes a model nor indexes the workspace. A model publish
 ### How to read the numbers
 
 - **A skipped phase is replaced by its first real run.** If the work of a skipped phase runs later, for example after a
-  watcher failure ended resolution early, the stats show that run. A phase that began is never replaced. Only a JVM
-  `Error`, such as running out of memory, can leave later phases `pending` after a failure.
+  watcher failure ended resolution early, the stats show that run. A phase that began is never replaced. After a
+  failure, later phases stay `pending` instead of `skipped` in two cases: a JVM `Error`, such as running out of memory,
+  and a failure in `workspace.setup`, which propagates out of the `initialized` notification before resolution starts.
 - **First run only.** Each phase records its first run after the server starts. A later build-file change repeats
   resolution, publishing, indexing and compiling, but those runs are not recorded here.
 - **Phases overlap and leave gaps.** Resolution ends on a background thread, and indexing runs after publishing. The
