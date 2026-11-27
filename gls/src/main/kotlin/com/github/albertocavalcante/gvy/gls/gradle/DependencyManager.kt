@@ -69,8 +69,6 @@ class DependencyManager(
     private val logger = KotlinLogging.logger {}
     private val lock = Any()
     private val state = SharedValue(State.NOT_STARTED)
-    private val dependencies = SharedValue<List<Path>>(emptyList())
-    private val sourceDirs = SharedValue<List<Path>>(emptyList())
     private var generation = AnalysisGeneration.INITIAL
 
     private val currentAttempt = SharedValue<Attempt?>(null)
@@ -165,11 +163,7 @@ class DependencyManager(
         // Invalidate the old watcher before publishing the new attempt, so a stale event cannot pair
         // its token with an attempt from another workspace.
         val watcher = if (currentWorkspaceRoot.value != request.workspaceRoot) detachWatcher() else null
-        if (currentWorkspaceRoot.value != request.workspaceRoot) {
-            dependencies.set(emptyList())
-            sourceDirs.set(emptyList())
-            currentBuildToolName.set(null)
-        }
+        if (currentWorkspaceRoot.value != request.workspaceRoot) currentBuildToolName.set(null)
         val previousJob = resolutionJob
         currentWorkspaceRoot.set(request.workspaceRoot)
         state.set(State.IN_PROGRESS)
@@ -225,13 +219,7 @@ class DependencyManager(
             checkCurrent(attempt)
             val resolution = legacy.withObservedTargets(targetObserver, tool, request.workspaceRoot, attempt.generation)
             checkCurrent(attempt)
-            notifyCurrent(attempt) {
-                if (resolution.isUsable) {
-                    dependencies.set(resolution.dependencies)
-                    sourceDirs.set(resolution.sourceDirectories)
-                }
-                state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED)
-            }
+            notifyCurrent(attempt) { state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED) }
             notifyCurrent(attempt) {
                 request.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
             }
@@ -354,8 +342,6 @@ class DependencyManager(
         return buildFileWatcher.exchange(null)
     }
 
-    fun getCurrentDependencies(): List<Path> = dependencies.value
-
     /**
      * Routes client notifications through the native watcher's debounce and filtering.
      *
@@ -368,7 +354,6 @@ class DependencyManager(
         paths.forEach { watcher.onFileChanged(it) }
     }
 
-    fun getCurrentSourceDirectories(): List<Path> = sourceDirs.value
     fun getState(): State = state.value
     fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot.value
     fun getCurrentBuildToolName(): String? = currentBuildToolName.value
@@ -391,8 +376,6 @@ class DependencyManager(
                 val watcher = detachWatcher()
                 if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                 if (reset) {
-                    dependencies.set(emptyList())
-                    sourceDirs.set(emptyList())
                     state.set(State.NOT_STARTED)
                     currentWorkspaceRoot.set(null)
                     currentBuildToolName.set(null)
@@ -405,9 +388,4 @@ class DependencyManager(
             return
         }
     }
-
-    fun getStatusSummary(): String =
-        "DependencyManager[state=${state.value}, tool=${currentBuildToolName.value ?: "none"}, " +
-            "dependencies=${dependencies.value.size}, sources=${sourceDirs.value.size}, " +
-            "workspace=${currentWorkspaceRoot.value?.fileName ?: "none"}]"
 }

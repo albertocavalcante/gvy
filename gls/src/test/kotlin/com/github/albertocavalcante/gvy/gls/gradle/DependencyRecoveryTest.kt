@@ -48,7 +48,6 @@ class DependencyRecoveryTest {
             manager.startAsyncResolution(root, onComplete = { retried.complete(it) }, enableFileWatching = false)
 
             assertEquals(recovered, withTimeout(TIMEOUT) { retried.await() })
-            assertEquals(recovered.dependencies, manager.getCurrentDependencies())
             assertEquals(DependencyManager.State.COMPLETED, manager.getState())
         }
     }
@@ -204,7 +203,6 @@ class DependencyRecoveryTest {
                 withTimeout(TIMEOUT) { scope.coroutineContext[Job]!!.children.toList().joinAll() }
 
                 assertTrue(completions.isEmpty(), "The cancelled attempt must never publish completion")
-                assertEquals(recovered.dependencies, manager.getCurrentDependencies())
                 assertEquals(DependencyManager.State.COMPLETED, manager.getState())
             }
         } finally {
