@@ -391,6 +391,8 @@ path = [
   "tools/ci/fixtures/gradle-spotless-retired.txt",
   "tools/ci/fixtures/gradle-tool-warnings.txt",
   "tools/ci/fixtures/gradle-wire-warnings.txt",
+  "tools/ci/fixtures/gradle-kotlin-compiler-warnings.txt",
+  "tools/ci/fixtures/gradle-kotlin-compiler-warnings-provenance.json",
   "tools/ci/fixtures/rustup-auto-install-warnings.provenance.md",
   "tools/ci/fixtures/rustup-auto-install-warnings.txt",
   "tools/ci/fixtures/native-windows-x64.txt",
