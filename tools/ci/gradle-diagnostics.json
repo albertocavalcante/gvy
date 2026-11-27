@@ -21,7 +21,7 @@
     "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
+    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. Upstream commit 421851fdfc8e skips these calls on Gradle 9 and later; 0.9.11, the latest release at renewal, does not contain it.",
     "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-18"
@@ -30,7 +30,7 @@
     "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asBucket(Configurations.kt:112)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
+    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. Upstream commit 421851fdfc8e skips these calls on Gradle 9 and later; 0.9.11, the latest release at renewal, does not contain it.",
     "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-18"
@@ -39,7 +39,7 @@
     "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asProducer(Configurations.kt:126)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
+    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. Upstream commit 421851fdfc8e skips these calls on Gradle 9 and later; 0.9.11, the latest release at renewal, does not contain it.",
     "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-18"
@@ -48,7 +48,7 @@
     "diagnostic": "[emitter kover] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asTransitiveDependencies(Configurations.kt:95)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
+    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. Upstream commit 421851fdfc8e skips these calls on Gradle 9 and later; 0.9.11, the latest release at renewal, does not contain it.",
     "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-18"
@@ -67,8 +67,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -76,8 +76,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -85,8 +85,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -94,8 +94,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -103,8 +103,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -112,8 +112,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -121,8 +121,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -130,8 +130,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -139,8 +139,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -148,8 +148,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -157,8 +157,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -166,8 +166,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -175,15 +175,15 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
     "diagnostic": "[emitter kover lazy configuration] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.artifacts.AbstractVariantArtifacts$2.execute(AbstractVariantArtifacts.kt:52)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
+    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. Upstream commit 421851fdfc8e skips these calls on Gradle 9 and later; 0.9.11, the latest release at renewal, does not contain it.",
     "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-18"
@@ -192,7 +192,7 @@
     "diagnostic": "[emitter kover lazy configuration] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. 0.9.11 is still the latest release (checked 2026-11-27); upstream commit 421851fdfc8e skips these calls on Gradle 9 and later but is not yet released.",
+    "reason": "Kover 0.9.11 uses obsolete configuration visibility in the traced Gradle 9.8.2 setup. The property has no resolution effect and will be removed in Gradle 11. Upstream commit 421851fdfc8e skips these calls on Gradle 9 and later; 0.9.11, the latest release at renewal, does not contain it.",
     "nextAction": "Coverage maintainers must test the first Kover release that contains upstream commit 421851fdfc8e with gvy coverage aggregation before adopting it.",
     "acceptance": "Coverage reports and verification retain their current inputs/results without any of these visibility call-site warnings; remove all inspected exact exceptions.",
     "expires": "2026-12-18"
@@ -201,7 +201,7 @@
     "diagnostic": "[project :viz:desktop] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.compose.reload.gradle.ComposeHotReloadRuntime._get_composeHotReloadRuntimeConfiguration_$lambda$0(runtimeConfiguration.kt:37)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Compose 1.10.0 resolves Hot Reload 1.0.0, whose traced runtime configuration sets obsolete visibility on Gradle 9.8.2; removal in Gradle 11 blocks that API. Released Hot Reload 1.3.0 (2026-11-20) no longer sets it; gvy has not validated adopting it.",
+    "reason": "Compose 1.10.0 resolves Hot Reload 1.0.0, whose traced runtime configuration sets obsolete visibility on Gradle 9.8.2; removal in Gradle 11 blocks that API. Released Hot Reload 1.3.0 no longer sets it; gvy has not validated adopting it.",
     "nextAction": "Desktop/build maintainers must evaluate Hot Reload 1.3.0 with a compatible Compose version and verify desktop packaging and reload configurations.",
     "acceptance": "Desktop configuration, JVM application packaging and reload integration pass without this exact visibility warning; remove the exception.",
     "expires": "2026-12-18"
@@ -210,7 +210,7 @@
     "diagnostic": "[project :viz:desktop] Using type 'org.jetbrains.compose.reload.gradle.HotReloadUsageType' as a value type for attribute 'org.jetbrains.compose.reload.usageType' has been deprecated. This will fail with an error in Gradle 10. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Using an unsupported type may cause failures during dependency resolution, publishing, or configuration cache serialization. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type [origin org.jetbrains.compose.reload.gradle.HotReloadUsageType.<clinit>(HotReloadUsage.kt:17)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Hot Reload 1.0.0 declares a plain enum Gradle attribute, rejected in Gradle 10. Released Hot Reload 1.3.0 (2026-11-20) implements Named for this type; gvy has not validated adopting it.",
+    "reason": "Hot Reload 1.0.0 declares a plain enum Gradle attribute, rejected in Gradle 10. Released Hot Reload 1.3.0 implements Named for this type; gvy has not validated adopting it.",
     "nextAction": "Desktop/build maintainers must evaluate Hot Reload 1.3.0, checking Compose version requirements and desktop packaging before adoption.",
     "acceptance": "The adopted Hot Reload plugin uses a supported attribute type and desktop build/reload checks pass without this exact diagnostic; remove the exception.",
     "expires": "2026-12-18"
@@ -337,8 +337,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -346,8 +346,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -355,8 +355,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {
@@ -364,8 +364,8 @@
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
     "reason": "Kotlin Gradle Plugin 2.3.0 sets obsolete configuration visibility at these traced call sites on Gradle 9.8.2; Gradle 11 removes the API. Inspected 2.3.20 source removes the compilation-factory and Native setup calls, but gvy has not integrated it; this is not a claim that later Kotlin releases are affected.",
-    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it.",
-    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings; remove each exception verified obsolete.",
+    "nextAction": "Kotlin/build maintainers must test released 2.3.20 across gvy JVM, KMP, Compose, generation, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity, before adopting it. The standalone JetBrains build pins its own kotlin(\"jvm\") 2.3.0 in editors/jetbrains/build.gradle.kts and emits these call sites too: validate it against both supported IDE lines and the standalone plugin, or move its remaining identities to gradle-jetbrains-diagnostics.json.",
+    "acceptance": "The adopted plugin passes those checks without these exact visibility warnings in every producer that emits them, including the JetBrains build; remove each exception verified obsolete.",
     "expires": "2026-12-18"
   },
   {

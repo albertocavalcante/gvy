@@ -66,7 +66,7 @@
     "diagnostic": "WARNING: //build-tool:build-tool_test: Test execution time (<elapsed>s excluding execution overhead) outside of range for MODERATE tests. Consider setting timeout=\"short\" or size=\"small\".",
     "owner": "build and test maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1607",
-    "reason": "Observed build-tool runtime is 52.6s on macOS vs 20.8s on Linux; a portable moderate budget avoids a fragile 60s timeout. Bazel emits this advice only when the target runs fast enough, so it depends on timing: main and daily Bazel runs from 2026-11-19 to 2026-11-27 (28 to 44 s on Linux) did not emit it.",
+    "reason": "Observed build-tool runtime is 52.6s on macOS vs 20.8s on Linux; a portable moderate budget avoids a fragile 60s timeout. Bazel emits this advice only when the target runs fast enough for a shorter timeout, so it depends on timing and a run may omit it.",
     "nextAction": "Measure representative cross-platform setup costs and split slow cases before shortening the portable timeout.",
     "acceptance": "A justified portable budget no longer emits sizing guidance across supported runners, and the exception is removed.",
     "expires": "2026-12-18"
