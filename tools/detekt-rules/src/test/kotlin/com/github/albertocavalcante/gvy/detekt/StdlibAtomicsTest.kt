@@ -63,13 +63,13 @@ class StdlibAtomicsTest {
     }
 
     @Test
-    fun `the opt-in marker gets a message about opting in, however it is named`() {
+    fun `the opt-in marker gets its own message, however it is used`() {
         val sources = listOf(
             "import kotlin.concurrent.atomics.ExperimentalAtomicApi",
             "@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)\nclass A",
             "@kotlin.concurrent.atomics.ExperimentalAtomicApi\nfun f() = Unit",
         )
-        val expected = "`kotlin.concurrent.atomics.ExperimentalAtomicApi` opts into the experimental stdlib atomics"
+        val expected = "`kotlin.concurrent.atomics.ExperimentalAtomicApi` is the opt-in marker of the experimental "
         for (source in sources) {
             assertThat(rule.lint(source).single().message).describedAs(source).startsWith(expected)
         }
@@ -77,8 +77,8 @@ class StdlibAtomicsTest {
 
     @Test
     fun `a file-wide suppression silences an import`() {
-        val import = "import kotlin.concurrent.atomics.AtomicInt"
-        assertThat(rule.lint(import)).hasSize(1)
-        assertThat(rule.lint("@file:Suppress(\"StdlibAtomics\")\n\n$import")).isEmpty()
+        val importLine = "import kotlin.concurrent.atomics.AtomicInt"
+        assertThat(rule.lint(importLine)).hasSize(1)
+        assertThat(rule.lint("@file:Suppress(\"StdlibAtomics\")\n\n$importLine")).isEmpty()
     }
 }

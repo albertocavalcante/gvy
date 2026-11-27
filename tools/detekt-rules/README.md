@@ -166,18 +166,22 @@ or `@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)`. It shares i
 backticks, comments and line breaks inside a name do not hide it, and mentions in comments, strings and KDoc are not
 uses.
 
-| The stdlib API was used as                                      | Use                                                                           |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `AtomicBoolean` claimed with `compareAndSet(false, true)`       | `OnceFlag.trySet()`                                                           |
-| `AtomicBoolean` set with `store(true)`, never cleared           | `OnceFlag.set()`                                                              |
-| `AtomicBoolean` stored and cleared                              | `SharedValue<Boolean>`                                                        |
-| `AtomicReference<T>`: `load()`, `store(v)`, `exchange(v)`       | `SharedValue<T>`: `value`, `set(v)`, `exchange(v)`                            |
-| `AtomicReference.updateAndFetch {}`                             | `SharedValue.update {}`, which returns the new value; keep the transform pure |
-| `AtomicReference.compareAndSet(null, value)` (first value wins) | `update { it ?: value }`                                                      |
-| `AtomicInt`, `AtomicLong` counters: `incrementAndFetch()`       | `Counter.increment()` (convert with `toInt()` where an `Int` is needed)       |
-| `fetchAndIncrement()`                                           | `Counter.increment() - 1`                                                     |
-| `@OptIn(ExperimentalAtomicApi::class)`                          | Nothing: remove it with the last use it allowed                               |
-| Any of these, used by one thread only                           | A plain `var`; an atomic there claims the state is shared                     |
+| The stdlib API was used as                                                           | Use                                                                                           |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `AtomicBoolean` claimed with `compareAndSet(false, true)`                            | `OnceFlag.trySet()`                                                                           |
+| `AtomicBoolean` set with `store(true)`, never cleared                                | `OnceFlag.set()`                                                                              |
+| `AtomicBoolean.load()` of such a one-way flag                                        | `OnceFlag.isSet`                                                                              |
+| `AtomicBoolean` stored and cleared                                                   | `SharedValue<Boolean>`, read with `value`                                                     |
+| `AtomicReference<T>`: `load()`, `store(v)`, `exchange(v)`                            | `SharedValue<T>`: `value`, `set(v)`, `exchange(v)`                                            |
+| `AtomicReference.update {}`, `updateAndFetch {}`                                     | `SharedValue.update {}`, which returns the new value; keep the transform pure                 |
+| `AtomicReference.fetchAndUpdate {}`, which returns the old value                     | `update {}` cannot return it: `exchange(v)` if the new value ignores the old one, else a lock |
+| `AtomicReference.compareAndSet(null, value)` (first value wins)                      | `update { it ?: value }`                                                                      |
+| `AtomicInt`, `AtomicLong` counters: `incrementAndFetch()`                            | `Counter.increment()` (convert with `toInt()` where an `Int` is needed)                       |
+| `fetchAndIncrement()`                                                                | `Counter.increment() - 1`                                                                     |
+| A counter's `load()`                                                                 | `Counter.value`, a `Long`                                                                     |
+| `addAndFetch`, `fetchAndAdd`, `decrementAndFetch`, `compareAndExchange`              | No equivalent: use a lock, or extend the facade in `:common:concurrent`                       |
+| `@OptIn(ExperimentalAtomicApi::class)`, or `@ExperimentalAtomicApi` on a declaration | Nothing: remove it with the uses it covered                                                   |
+| Any of these, used by one thread only                                                | A plain `var`; an atomic there claims the state is shared                                     |
 
 The compiler's opt-in requirement already stops accidental use. The rule is the second fence, and it also reports a
 module that adds the opt-in on purpose. It replaces a detekt `ForbiddenImport` pattern, which matched import paths only

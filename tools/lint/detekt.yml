@@ -146,6 +146,7 @@ gvy:
     excludes:
     # Permanent: the stdlib atomics are experimental (KT-82228), and the facade is the only module that opts into them,
     # behind gvy's own OnceFlag, SharedValue and Counter. Tests are not excluded: none needs the package (#2474).
+    # tools/ci/detekt-gvy-excludes.test.mjs requires exactly this exclude.
     - '**/common/concurrent/src/**'
 naming:
   active: true

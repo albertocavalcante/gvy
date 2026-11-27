@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// gvy's migration rules have finished (#2474): VolatileProperty excludes nothing, JdkAtomics only its permanent set
-// (tests, :common:concurrent and the modules published as their own artifacts), and StdlibAtomics only
-// :common:concurrent, the one module that opts into the experimental stdlib atomics. The gvy rule set itself stays
+// gvy's concurrency confinement rules (#2474): VolatileProperty excludes nothing now that its migration has finished,
+// JdkAtomics excludes only its permanent set (tests, :common:concurrent and the modules published as their own
+// artifacts), and StdlibAtomics only :common:concurrent, the one module that opts into the experimental stdlib atomics.
+// StdlibAtomics never had a migration: it replaced a detekt ForbiddenImport pattern. The gvy rule set itself stays
 // active with no set-wide excludes or includes, and no tracked detekt baseline holds these rules' findings. A use one
 // of them reports is suppressed at its site with a reason. Kotlin outside src/main and src/test, such as tests/e2e, is
 // not linted unless its module sets detekt.source (#2480).
