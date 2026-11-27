@@ -114,6 +114,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.asm)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.mockk)
     testRuntimeOnly(libs.junit.platform.launcher)

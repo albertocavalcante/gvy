@@ -5,9 +5,12 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Opcodes
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -20,6 +23,13 @@ private const val SAFETY_NET_SECONDS = 30L
 
 /** Indexed after `DefaultGroovyMethods`; it holds the String extensions such as `takeAfter`. */
 private const val HELD = "org.codehaus.groovy.runtime.StringGroovyMethods"
+
+/** In Groovy 3 but not in the server's Groovy 4, so only a workspace classpath can provide it. */
+private const val DATE_GDK = "org.codehaus.groovy.runtime.DateGroovyMethods"
+private const val ENCODING_GDK = "org.codehaus.groovy.runtime.EncodingGroovyMethods"
+
+/** A GDK-shaped class whose one method takes a type that exists nowhere, so reflecting on it fails to link. */
+private const val UNLINKABLE = "gvy.test.UnlinkableGdkMethods"
 private const val STRING = "java.lang.String"
 
 /**
@@ -80,6 +90,32 @@ class GroovyGdkProviderIndexBuildTest {
         assertThat(gdkLoads).isEqualTo(GDK_CLASSES.associateWith { 1 })
     }
 
+    @Test
+    fun `a GDK class that fails to link drops only itself`() {
+        val bytes = gdkClassBytes(UNLINKABLE, "broken", "(Ljava/lang/String;Lgvy/test/Missing;)V")
+        val unlinkable = OneClassLoader(UNLINKABLE, bytes).loadClass(UNLINKABLE)
+        assertThatThrownBy { unlinkable.methods }.isInstanceOf(NoClassDefFoundError::class.java)
+        val failing = object : ClasspathReflection by delegate {
+            override fun loadClass(className: String): Class<*>? = when (className) {
+                DATE_GDK -> unlinkable
+                ENCODING_GDK -> throw IncompatibleClassChangeError(className)
+                else -> delegate.loadClass(className)
+            }
+        }
+        val provider = GroovyGdkProvider(ClasspathService(reflectionProvider = failing))
+
+        provider.initialize()
+
+        val origins = listOf(STRING, "java.io.File", "java.util.List").flatMap { type ->
+            provider.getMethodsForType(type).map { it.originClass }
+        }
+        assertThat(origins)
+            .describedAs("GDK classes indexed before and after the two that fail")
+            .contains("DefaultGroovyMethods", "StringGroovyMethods", "ResourceGroovyMethods")
+            .contains("PluginDefaultGroovyMethods")
+            .doesNotContain("UnlinkableGdkMethods", "EncodingGroovyMethods")
+    }
+
     /**
      * Waits until [reader] has returned or is blocked on a monitor [builder] holds: while the build is held, those are
      * the only places it can stop. It waits on thread state, so no sleep or timeout decides the outcome. It reads
@@ -90,4 +126,26 @@ class GroovyGdkProviderIndexBuildTest {
         val threads = ManagementFactory.getThreadMXBean()
         while (reader.isAlive && threads.getThreadInfo(reader.id)?.lockOwnerId != builder.id) Thread.onSpinWait()
     }
+
+    /** Defines [name] from [bytes] and loads every other class through the test's own loader. */
+    private class OneClassLoader(
+        private val name: String,
+        private val bytes: ByteArray,
+    ) : ClassLoader(GroovyGdkProviderIndexBuildTest::class.java.classLoader) {
+        override fun findClass(className: String): Class<*> =
+            if (className == name) defineClass(className, bytes, 0, bytes.size) else super.findClass(className)
+    }
 }
+
+/** A public class [name] with one empty `public static void` [method] of [descriptor], e.g. `(Ljava/util/Date;)V`. */
+private fun gdkClassBytes(name: String, method: String, descriptor: String): ByteArray =
+    ClassWriter(ClassWriter.COMPUTE_MAXS).apply {
+        visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name.replace('.', '/'), null, "java/lang/Object", null)
+        visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, method, descriptor, null, null).apply {
+            visitCode()
+            visitInsn(Opcodes.RETURN)
+            visitMaxs(0, 0)
+            visitEnd()
+        }
+        visitEnd()
+    }.toByteArray()
