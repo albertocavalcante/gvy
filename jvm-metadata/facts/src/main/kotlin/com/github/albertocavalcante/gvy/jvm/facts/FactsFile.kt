@@ -57,14 +57,16 @@ public sealed interface LoadResult<out T> {
 public class ReadLimits(
     public val maxFileBytes: Int = DEFAULT_MAX_FILE_BYTES,
     public val maxSectionBytes: Int = DEFAULT_MAX_SECTION_BYTES,
+    public val maxDecodedItems: Int = DEFAULT_MAX_DECODED_ITEMS,
 ) {
     init {
-        require(maxFileBytes > 0 && maxSectionBytes > 0) { "Limits must be positive" }
+        require(maxFileBytes > 0 && maxSectionBytes > 0 && maxDecodedItems > 0) { "Limits must be positive" }
     }
 }
 
 internal const val DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024
-internal const val DEFAULT_MAX_SECTION_BYTES = 128 * 1024 * 1024
+internal const val DEFAULT_MAX_SECTION_BYTES = 64 * 1024 * 1024
+internal const val DEFAULT_MAX_DECODED_ITEMS = 3_000_000
 
 /**
  * A facts file whose header and section table were checked and whose sections are decoded on demand. Opening reads

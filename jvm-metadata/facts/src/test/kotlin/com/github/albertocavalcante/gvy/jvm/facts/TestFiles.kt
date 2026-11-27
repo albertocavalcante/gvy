@@ -14,10 +14,11 @@ import kotlin.test.assertIs
 import kotlin.test.fail
 
 /** Section ids and codecs as FORMAT.md states them, repeated here so the tests do not share code with the module. */
-internal const val STRINGS = 1
+internal const val NAME_STRINGS = 1
 internal const val NAMES = 2
-internal const val TYPES = 3
-internal const val EXTENSIONS = 4
+internal const val EXTENSIONS = 3
+internal const val TYPE_STRINGS = 4
+internal const val TYPES = 5
 internal const val STORED = 0
 internal const val ZLIB = 1
 
@@ -110,8 +111,17 @@ internal fun shuffled(facts: Facts, random: Random): Facts = Facts(
     extensions = ExtensionsSection(facts.extensions.entries.shuffled(random)),
 )
 
+/** The class names of [classes] listed in the names section, in package `p`, so that their types can be written. */
+internal fun factsWithTypes(vararg classes: ClassTypes): Facts = emptyFacts().copy(
+    names = NamesSection(
+        packages = listOf(PackageFact("p", null)),
+        classes = classes.map { fact -> ClassFact(fact.internalName, "p", "C", null, 1, fact.release) },
+    ),
+    types = TypesSection(classes.toList()),
+)
+
 internal fun writeWith(facts: Facts, encoding: SectionEncoding): ByteArray =
-    FactsWriter.write(facts, WriteOptions(encoding, encoding, encoding, encoding))
+    FactsWriter.write(facts, WriteOptions(encoding, encoding, encoding, encoding, encoding))
 
 internal fun <T> LoadResult<T>.loaded(): T = when (this) {
     is LoadResult.Loaded -> value
@@ -193,27 +203,97 @@ internal class TestSection(val id: Int, val codec: Int, val stored: ByteArray, v
 internal fun plain(id: Int, raw: ByteArray): TestSection = TestSection(id, STORED, raw, raw.size, crcOf(raw))
 
 /** A DEFLATE section whose table row declares [declaredRawLength], which may differ from the truth. */
-internal fun deflated(id: Int, raw: ByteArray, declaredRawLength: Int = raw.size): TestSection =
-    TestSection(id, ZLIB, zlib(raw), declaredRawLength, crcOf(raw))
+internal fun deflated(id: Int, raw: ByteArray, declaredRawLength: Int = raw.size, crc: Int = crcOf(raw)): TestSection =
+    TestSection(id, ZLIB, zlib(raw), declaredRawLength, crc)
 
-private val emptyNames = bytes {
-    varint(0)
-    varint(0)
-}
-private val emptyCount = bytes { varint(0) }
-
-/** The four known sections, each empty unless given. */
+/** The sections of a valid file: pool string "A" in both pools, one package "A", one class "A", nothing else. */
 internal fun sections(
-    pool: ByteArray = poolOf(),
-    names: ByteArray = emptyNames,
-    types: ByteArray = emptyCount,
-    extensions: ByteArray = emptyCount,
+    nameStrings: ByteArray = poolOf("A"),
+    names: ByteArray = namesSection(),
+    extensions: ByteArray = extensionsSection(),
+    typeStrings: ByteArray = poolOf("A"),
+    types: ByteArray = typesSection(),
 ): List<TestSection> = listOf(
-    plain(STRINGS, pool),
+    plain(NAME_STRINGS, nameStrings),
     plain(NAMES, names),
-    plain(TYPES, types),
     plain(EXTENSIONS, extensions),
+    plain(TYPE_STRINGS, typeStrings),
+    plain(TYPES, types),
 )
+
+/** The fields of one class row of a names section: pool indices, or values to break. */
+internal class ClassRow(
+    val internalName: Int = 0,
+    val packageIndex: Int = 0,
+    val simpleName: Int = 0,
+    val outer: Int = 0,
+    val flags: Int = 1,
+    val release: Int = 0,
+)
+
+/** The fields of one member of a types section: a method named by type string 0 unless told otherwise. */
+internal class MemberRow(
+    val kind: Int = 1,
+    val flags: Int = 1,
+    val name: Int = 0,
+    val descriptor: Int = 0,
+    val parameterNames: List<Int>? = null,
+    val signature: Int = 0,
+)
+
+/** One class of a types section: an index into the names section's classes, then its supertypes and members. */
+internal class TypesRow(
+    val classIndex: Int = 0,
+    val superField: Int = 0,
+    val interfaces: List<Int> = emptyList(),
+    val members: List<ByteArray> = listOf(memberBytes()),
+)
+
+/** One entry of an extensions section, as name pool indices and codes. */
+internal class ExtensionRow(
+    val holder: Int = 0,
+    val kind: Int = 1,
+    val source: Int = 2,
+    val moduleName: Int = 0,
+    val moduleVersion: Int = 0,
+)
+
+/** A names section: packages named by the given pool indices without a module, then [classes]. */
+internal fun namesSection(packages: List<Int> = listOf(0), classes: List<ClassRow> = listOf(ClassRow())): ByteArray =
+    bytes {
+        varint(packages.size)
+        packages.forEach { name -> varint(name).varint(0) }
+        varint(classes.size)
+        classes.forEach { row ->
+            varint(row.internalName).varint(row.packageIndex).varint(row.simpleName)
+            varint(row.outer).varint(row.flags).varint(row.release)
+        }
+    }
+
+internal fun memberBytes(row: MemberRow = MemberRow()): ByteArray = bytes {
+    u8(row.kind).varint(row.flags).varint(row.name).varint(row.descriptor)
+    val parameterNames = row.parameterNames
+    if (parameterNames == null) varint(0) else varint(parameterNames.size + 1)
+    parameterNames?.forEach { varint(it) }
+    varint(row.signature)
+}
+
+internal fun typesSection(vararg rows: TypesRow): ByteArray = bytes {
+    varint(rows.size)
+    rows.forEach { row ->
+        varint(row.classIndex).varint(row.superField).varint(row.interfaces.size)
+        row.interfaces.forEach { varint(it) }
+        varint(row.members.size)
+        row.members.forEach { raw(it) }
+    }
+}
+
+internal fun extensionsSection(vararg rows: ExtensionRow): ByteArray = bytes {
+    varint(rows.size)
+    rows.forEach { row ->
+        varint(row.holder).u8(row.kind).u8(row.source).varint(row.moduleName).varint(row.moduleVersion)
+    }
+}
 
 internal fun buildFile(
     sections: List<TestSection>,
@@ -242,13 +322,14 @@ internal fun buildFile(
 }
 
 /** Where a section's table row and stored bytes are in a written file. */
-internal class SectionLocation(
+internal data class SectionLocation(
     val id: Int,
     val entryOffset: Int,
     val offset: Int,
     val codec: Int,
     val stored: Int,
     val raw: Int,
+    val crc: Int,
 )
 
 private class Cursor(val bytes: ByteArray, var position: Int) {
@@ -286,8 +367,8 @@ internal fun sectionLocations(file: ByteArray): List<SectionLocation> {
         val codec = cursor.u8()
         val stored = cursor.le(4).toInt()
         val raw = cursor.le(4).toInt()
-        cursor.le(4)
-        SectionLocation(id, entryOffset, offset, codec, stored, raw).also { offset += stored }
+        val crc = cursor.le(4).toInt()
+        SectionLocation(id, entryOffset, offset, codec, stored, raw, crc).also { offset += stored }
     }
 }
 
@@ -307,9 +388,9 @@ internal fun assertSameRawSections(expected: ByteArray, actual: ByteArray) {
     }
 }
 
-/** The pooled strings of a file whose strings section is stored without compression. */
-internal fun readPool(file: ByteArray): List<String> {
-    val location = sectionLocations(file).single { it.id == STRINGS }
+/** The pooled strings of pool section [id] of a file whose sections are stored without compression. */
+internal fun readPool(file: ByteArray, id: Int): List<String> {
+    val location = sectionLocations(file).single { it.id == id }
     val cursor = Cursor(file, location.offset)
     return List(cursor.varint()) {
         val length = cursor.varint()
@@ -320,3 +401,18 @@ internal fun readPool(file: ByteArray): List<String> {
 internal fun ByteArray.withByte(index: Int, value: Int): ByteArray = copyOf().also { it[index] = value.toByte() }
 
 internal fun ByteArray.withFlippedByte(index: Int): ByteArray = withByte(index, this[index].toInt() xor 0xFF)
+
+/** The decoded items [FactsFile.names] charges for [facts]: both counts and the name pool of a stored [file]. */
+internal fun namesItems(facts: Facts, file: ByteArray): Int =
+    readPool(file, NAME_STRINGS).size + facts.names.packages.size + facts.names.classes.size
+
+internal fun extensionItems(facts: Facts): Int = facts.extensions.entries.size
+
+/** The items types charge beyond the names: the type pool, classes, interfaces, members and parameter names. */
+internal fun typesItems(facts: Facts, file: ByteArray): Int {
+    val classes = facts.types.classes
+    val interfaces = classes.sumOf { it.interfaces.size }
+    val members = classes.sumOf { it.members.size }
+    val parameterNames = classes.sumOf { fact -> fact.members.sumOf { member -> member.parameterNames?.size ?: 0 } }
+    return readPool(file, TYPE_STRINGS).size + classes.size + interfaces + members + parameterNames
+}

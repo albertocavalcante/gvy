@@ -55,6 +55,7 @@ class FactsFileRejectionTest {
     fun `limits must be positive`() {
         assertFailsWith<IllegalArgumentException> { ReadLimits(maxFileBytes = 0) }
         assertFailsWith<IllegalArgumentException> { ReadLimits(maxSectionBytes = 0) }
+        assertFailsWith<IllegalArgumentException> { ReadLimits(maxDecodedItems = 0) }
     }
 
     @Test
@@ -76,24 +77,44 @@ class FactsFileRejectionTest {
     }
 
     @Test
-    fun `a damaged types section does not stop names or extensions from loading`() {
-        val types = sectionLocations(storedFile).single { it.id == TYPES }
-        val file = openFile(storedFile.withFlippedByte(types.offset))
+    fun `a damaged types section or type pool does not stop names or extensions from loading`() {
+        for (damagedId in listOf(TYPES, TYPE_STRINGS)) {
+            val section = sectionLocations(storedFile).single { it.id == damagedId }
+            val file = openFile(storedFile.withFlippedByte(section.offset))
 
-        assertEquals(sampleFacts().names, file.names().loaded())
-        assertEquals(sampleFacts().extensions, file.extensions().loaded())
-        file.types().assertRejected(RejectReason.CORRUPT)
-        file.loadAll().assertRejected(RejectReason.CORRUPT)
+            assertEquals(sampleFacts().names, file.names().loaded(), "section $damagedId")
+            assertEquals(sampleFacts().extensions, file.extensions().loaded(), "section $damagedId")
+            file.types().assertRejected(RejectReason.CORRUPT)
+            file.loadAll().assertRejected(RejectReason.CORRUPT)
+        }
     }
 
     @Test
-    fun `names load while a compressed types section is garbage and types is rejected when requested`() {
-        val types = sectionLocations(deflatedFile).single { it.id == TYPES }
-        val damaged = deflatedFile.copyOf().also { it.fill(0x5A, types.offset, types.offset + types.stored) }
-        val file = openFile(damaged)
+    fun `names and extensions load while compressed types and type pool are garbage`() {
+        for (damagedId in listOf(TYPES, TYPE_STRINGS)) {
+            val section = sectionLocations(deflatedFile).single { it.id == damagedId }
+            val damaged = deflatedFile.copyOf().also { it.fill(0x5A, section.offset, section.offset + section.stored) }
+            val file = openFile(damaged)
 
-        assertEquals(sampleFacts().names, file.names().loaded())
-        file.types().assertRejected(RejectReason.CORRUPT)
+            assertEquals(sampleFacts().names, file.names().loaded(), "section $damagedId")
+            assertEquals(sampleFacts().extensions, file.extensions().loaded(), "section $damagedId")
+            file.types().assertRejected(RejectReason.CORRUPT)
+        }
+    }
+
+    @Test
+    fun `a damaged names pool stops everything and a damaged names section stops types too`() {
+        val pool = sectionLocations(storedFile).single { it.id == NAME_STRINGS }
+        val names = sectionLocations(storedFile).single { it.id == NAMES }
+
+        val poolDamaged = openFile(storedFile.withFlippedByte(pool.offset))
+        val namesDamaged = openFile(storedFile.withFlippedByte(names.offset))
+
+        poolDamaged.names().assertRejected(RejectReason.CORRUPT)
+        poolDamaged.extensions().assertRejected(RejectReason.CORRUPT)
+        namesDamaged.names().assertRejected(RejectReason.CORRUPT)
+        namesDamaged.types().assertRejected(RejectReason.CORRUPT)
+        assertEquals(sampleFacts().extensions, namesDamaged.extensions().loaded())
     }
 
     @Test
@@ -128,35 +149,60 @@ class FactsFileRejectionTest {
         }
     }
 
+    // Each stream test below has a checksum and content that are valid for the bytes the reader would keep if the
+    // check under test were missing, so only that check can reject the section.
+    private val emptyNames = byteArrayOf(0, 0)
+
     @Test
     fun `a stream that inflates beyond its declared length is corrupt`() {
-        val section = deflated(NAMES, ByteArray(100) { 1 }, declaredRawLength = 50)
+        val raw = emptyNames + ByteArray(98) { 1 }
+        val section = deflated(NAMES, raw, declaredRawLength = emptyNames.size, crc = crcOf(emptyNames))
 
         openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
     fun `a stream shorter than its declared length is corrupt`() {
-        val section = deflated(NAMES, ByteArray(10) { 1 }, declaredRawLength = 50)
+        // The section is a package named by string 0 and no classes; it ends with a zero byte the stream lacks.
+        val padded = byteArrayOf(1, 0, 0, 0)
+        val section = TestSection(NAMES, ZLIB, zlib(padded.copyOf(3)), padded.size, crcOf(padded))
 
         openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
     fun `a stream followed by unread input is corrupt`() {
-        val raw = ByteArray(20) { 1 }
-        val section = TestSection(NAMES, ZLIB, zlib(raw) + byteArrayOf(0), raw.size, crcOf(raw))
+        val section = TestSection(NAMES, ZLIB, zlib(emptyNames) + byteArrayOf(0), emptyNames.size, crcOf(emptyNames))
 
         openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
-    fun `a stream that ends before its data is complete is corrupt`() {
-        val raw = ByteArray(200) { index -> (index * 7).toByte() }
-        val whole = zlib(raw)
-        val section = TestSection(NAMES, ZLIB, whole.copyOf(whole.size / 2), raw.size, crcOf(raw))
+    fun `a stream without its Adler-32 trailer is corrupt even when all data is present`() {
+        val whole = zlib(emptyNames)
+        val section = TestSection(NAMES, ZLIB, whole.copyOf(whole.size - 4), emptyNames.size, crcOf(emptyNames))
 
         openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
+    }
+
+    @Test
+    fun `a stream that asks for a preset dictionary is corrupt`() {
+        // A zlib header with the FDICT flag, a dictionary id, a final empty fixed-Huffman block and the Adler-32 of
+        // empty output: valid except for the dictionary, which the reader cannot supply.
+        val stream = byteArrayOf(0x78, 0xBB.toByte(), 0, 0, 0, 1, 0x03, 0x00, 0, 0, 0, 1)
+        val section = TestSection(EXTENSIONS, ZLIB, stream, rawLength = 0, crc = crcOf(ByteArray(0)))
+
+        openFile(buildFile(withSection(section))).extensions().assertRejected(RejectReason.CORRUPT)
+    }
+
+    @Test
+    fun `a section with a wrong checksum is corrupt even when its content is valid`() {
+        val stored = TestSection(NAMES, STORED, emptyNames, emptyNames.size, crcOf(emptyNames) + 1)
+        val deflated = deflated(NAMES, emptyNames, crc = crcOf(emptyNames) + 1)
+
+        openFile(buildFile(withSection(stored))).names().assertRejected(RejectReason.CORRUPT)
+        openFile(buildFile(withSection(deflated))).names().assertRejected(RejectReason.CORRUPT)
+        openFile(buildFile(withSection(plain(NAMES, emptyNames)))).names().loaded()
     }
 
     @Test
@@ -189,14 +235,15 @@ class FactsFileRejectionTest {
 
     @Test
     fun `a stored section whose stored and raw lengths differ is corrupt`() {
-        val section = TestSection(NAMES, STORED, ByteArray(3), rawLength = 4, crc = 0)
+        // Read as its raw length, the first two bytes are a valid section with a matching checksum.
+        val section = TestSection(NAMES, STORED, byteArrayOf(0, 0, 9, 9), rawLength = 2, crc = crcOf(emptyNames))
 
         openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
     fun `an unknown codec on a known section is corrupt`() {
-        val section = TestSection(NAMES, codec = 9, stored = ByteArray(2), rawLength = 2, crc = 0)
+        val section = TestSection(NAMES, codec = 9, stored = emptyNames, rawLength = 2, crc = crcOf(emptyNames))
 
         openFile(buildFile(withSection(section))).names().assertRejected(RejectReason.CORRUPT)
     }
@@ -204,17 +251,22 @@ class FactsFileRejectionTest {
     @Test
     fun `a missing section is corrupt only for what needs it`() {
         val withoutTypes = openFile(buildFile(sections().filter { it.id != TYPES }))
-        val withoutStrings = openFile(buildFile(sections().filter { it.id != STRINGS }))
+        val withoutTypePool = openFile(buildFile(sections().filter { it.id != TYPE_STRINGS }))
+        val withoutNamePool = openFile(buildFile(sections().filter { it.id != NAME_STRINGS }))
 
         withoutTypes.names().loaded()
+        withoutTypes.extensions().loaded()
         withoutTypes.types().assertRejected(RejectReason.CORRUPT)
         withoutTypes.loadAll().assertRejected(RejectReason.CORRUPT)
-        withoutStrings.names().assertRejected(RejectReason.CORRUPT)
+        withoutTypePool.names().loaded()
+        withoutTypePool.types().assertRejected(RejectReason.CORRUPT)
+        withoutNamePool.names().assertRejected(RejectReason.CORRUPT)
+        withoutNamePool.extensions().assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
     fun `a section id that appears twice is corrupt`() {
-        FactsFile.open(buildFile(sections() + plain(NAMES, ByteArray(2)))).assertRejected(RejectReason.CORRUPT)
+        FactsFile.open(buildFile(sections() + plain(NAMES, emptyNames))).assertRejected(RejectReason.CORRUPT)
     }
 
     @Test
@@ -253,7 +305,7 @@ class FactsFileRejectionTest {
         val largest = Int.MAX_VALUE.toLong()
         val file = header {
             utf8("p").varint(0).varint(2)
-            u8(STRINGS).u8(STORED).le(largest, 4).le(largest, 4).le(0, 4)
+            u8(NAME_STRINGS).u8(STORED).le(largest, 4).le(largest, 4).le(0, 4)
             u8(NAMES).u8(STORED).le(largest, 4).le(largest, 4).le(0, 4)
         }
 

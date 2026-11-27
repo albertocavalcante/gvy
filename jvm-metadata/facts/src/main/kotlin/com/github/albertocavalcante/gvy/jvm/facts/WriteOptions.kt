@@ -33,13 +33,14 @@ internal val DEFAULT_ENCODING: SectionEncoding = SectionEncoding.deflate(DEFAULT
 
 /** The encoding of each section; each defaults to DEFLATE at level 6. */
 public class WriteOptions(
-    public val strings: SectionEncoding = DEFAULT_ENCODING,
+    public val nameStrings: SectionEncoding = DEFAULT_ENCODING,
     public val names: SectionEncoding = DEFAULT_ENCODING,
-    public val types: SectionEncoding = DEFAULT_ENCODING,
     public val extensions: SectionEncoding = DEFAULT_ENCODING,
+    public val typeStrings: SectionEncoding = DEFAULT_ENCODING,
+    public val types: SectionEncoding = DEFAULT_ENCODING,
 ) {
     internal fun encodingOf(sectionId: Int): SectionEncoding = when (sectionId) {
-        SECTION_STRINGS -> strings
+        SECTION_STRINGS -> nameStrings
         SECTION_NAMES -> names
         SECTION_TYPES -> types
         SECTION_EXTENSIONS -> extensions
