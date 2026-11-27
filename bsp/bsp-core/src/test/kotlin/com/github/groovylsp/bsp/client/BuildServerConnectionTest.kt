@@ -23,6 +23,7 @@ import ch.epfl.scala.bsp4j.TestResult
 import ch.epfl.scala.bsp4j.WorkspaceBuildTargetsResult
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -355,6 +356,22 @@ class BuildServerConnectionTest {
                 connection.workspaceBuildTargets()
             }
         }
+    }
+
+    @Test
+    fun `a close on another thread fails the next request at once without reaching the server`(): Unit = runTest {
+        val mockServer = mockk<BuildServer>(relaxed = true)
+        val capabilities = BspCapabilities(BuildServerCapabilities())
+        val connection = BuildServerConnection(mockServer, capabilities)
+
+        val closer = Thread { connection.close() }
+        closer.start()
+        closer.join()
+
+        assertTrue(connection.isClosed())
+        val failure = runCatching { connection.workspaceBuildTargets() }.exceptionOrNull()
+        assertIs<IllegalStateException>(failure)
+        verify(exactly = 0) { mockServer.workspaceBuildTargets() }
     }
 
     @Test

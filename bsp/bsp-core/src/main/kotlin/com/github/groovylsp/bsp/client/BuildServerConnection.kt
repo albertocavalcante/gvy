@@ -32,6 +32,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withTimeout
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val COMPILE_TIMEOUT_MS = 300_000L // 5 minutes
 private const val TEST_TIMEOUT_MS = 300_000L // 5 minutes
@@ -60,7 +61,11 @@ class BuildServerConnection(
 ) : Closeable {
 
     private val logger = KotlinLogging.logger {}
-    private var closed = false
+
+    // Read by requests on coroutine threads and set by close() on whichever thread closes, so a request after a close
+    // fails at once instead of going to a server that is gone. This published module keeps java.util.concurrent
+    // rather than depending on :common:concurrent (#2474).
+    private val closed = AtomicBoolean(false)
 
     /**
      * Execute an action only if the server supports a capability.
@@ -263,7 +268,7 @@ class BuildServerConnection(
     /**
      * Check if this connection has been closed.
      */
-    fun isClosed(): Boolean = closed
+    fun isClosed(): Boolean = closed.get()
 
     /**
      * Close the connection.
@@ -272,8 +277,7 @@ class BuildServerConnection(
      * Note: This does NOT send shutdown/exit requests. Use lifecycle management for that.
      */
     override fun close() {
-        if (!closed) {
-            closed = true
+        if (closed.compareAndSet(false, true)) {
             logger.debug { "BuildServerConnection closed" }
         }
     }
@@ -300,7 +304,7 @@ class BuildServerConnection(
     }
 
     private fun checkNotClosed() {
-        check(!closed) { "BuildServerConnection is closed" }
+        check(!closed.get()) { "BuildServerConnection is closed" }
     }
 }
 
