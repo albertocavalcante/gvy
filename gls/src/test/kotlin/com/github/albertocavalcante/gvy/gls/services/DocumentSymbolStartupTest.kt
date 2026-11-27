@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.test.TEST_GROOVY_VERSION
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.gvy.source.DocumentVersion
@@ -74,7 +75,7 @@ class DocumentSymbolStartupTest {
             assertTrue(parsing.await(WAIT_SECONDS, TimeUnit.SECONDS), "Symbol request did not begin parsing")
 
             // Startup selects the worker asynchronously, after didOpen and requests are already accepted.
-            assertTrue(compilation.updateSelectedWorker(defaultWorkerDescriptors().first()))
+            assertTrue(compilation.updateGroovySelection(TEST_GROOVY_VERSION, defaultWorkerDescriptors().first()))
             release.countDown()
 
             val symbols = response.get(WAIT_SECONDS, TimeUnit.SECONDS)
@@ -123,7 +124,7 @@ class DocumentSymbolStartupTest {
             assertTrue(parsing.await(WAIT_SECONDS, TimeUnit.SECONDS))
             RequestDispatchGate(executor).use { gate ->
                 assertTrue(gate.entered.await(WAIT_SECONDS, TimeUnit.SECONDS))
-                assertTrue(compilation.updateSelectedWorker(defaultWorkerDescriptors().first()))
+                assertTrue(compilation.updateGroovySelection(TEST_GROOVY_VERSION, defaultWorkerDescriptors().first()))
                 compilation.clearCaches()
             }
             release.countDown()

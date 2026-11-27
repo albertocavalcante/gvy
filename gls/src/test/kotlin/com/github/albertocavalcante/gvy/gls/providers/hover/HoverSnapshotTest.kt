@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentServiceOptions
+import com.github.albertocavalcante.gvy.gls.test.TEST_GROOVY_VERSION
 import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.gvy.source.DocumentVersion
 import io.mockk.coEvery
@@ -148,7 +149,8 @@ class HoverSnapshotTest {
             }
             coEvery { fixture.compilation.compileTransient(fixture.uri, any(), any()) } coAnswers {
                 fixture.compileTransient(secondArg<String>()).also {
-                    assertTrue(fixture.compilation.updateSelectedWorker(defaultWorkerDescriptors().first()))
+                    val worker = defaultWorkerDescriptors().first()
+                    assertTrue(fixture.compilation.updateGroovySelection(TEST_GROOVY_VERSION, worker))
                 }
             }
 

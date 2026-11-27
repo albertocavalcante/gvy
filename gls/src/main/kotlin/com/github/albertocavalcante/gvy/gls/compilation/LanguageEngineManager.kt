@@ -4,7 +4,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.engine.EngineFactory
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
@@ -12,8 +11,6 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.verification.HoverEngineObservation
-import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
-import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URLClassLoader
 
@@ -39,9 +36,6 @@ class LanguageEngineManager(
     private val documentProvider: DocumentProvider? = options.documentProvider
     private val sourceNavigator: SourceNavigator? = options.sourceNavigator
     private var engineConfig: EngineConfiguration = options.engineConfig
-
-    private val groovyVersionInfo = SharedValue<GroovyVersionInfo?>(null)
-    private val selectedWorker = SharedValue<WorkerDescriptor?>(null)
 
     private var activeEngineInstance: LanguageEngine? = null
     private val activeEngineLock = Any()
@@ -90,18 +84,6 @@ class LanguageEngineManager(
             sourceNavigator = sourceNavigator,
         )
     }
-
-    fun updateGroovyVersion(info: GroovyVersionInfo) {
-        groovyVersionInfo.set(info)
-    }
-
-    fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.value
-
-    fun updateSelectedWorker(worker: WorkerDescriptor?) {
-        selectedWorker.set(worker)
-    }
-
-    fun getSelectedWorker(): WorkerDescriptor? = selectedWorker.value
 
     fun getOrCreateClassLoader(): ClassLoader {
         synchronized(classLoaderLock) {

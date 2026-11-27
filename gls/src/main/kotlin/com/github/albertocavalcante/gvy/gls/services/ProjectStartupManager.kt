@@ -198,14 +198,14 @@ class ProjectStartupManager(
 
         if (initParams == null) {
             logger.warn { "No saved initialization parameters - skipping dependency resolution" }
-            updateGroovyVersion(config, emptyList())
+            selectGroovyRuntime(config, emptyList())
             onStatusUpdate(Health.Ok, true, "Ready (no workspace)", null, null, null, null)
             return
         }
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
             logger.info { "No workspace root found - running in light mode without dependencies" }
-            updateGroovyVersion(config, emptyList())
+            selectGroovyRuntime(config, emptyList())
             onStatusUpdate(Health.Ok, true, "Ready (light mode)", null, null, null, null)
             return
         }
@@ -370,7 +370,7 @@ class ProjectStartupManager(
                             "${resolution.sourceDirectories.size} source directories"
                     }
 
-                    updateGroovyVersion(context.config, resolution.dependencies)
+                    selectGroovyRuntime(context.config, resolution.dependencies)
 
                     compilationService.updateWorkspaceModel(
                         workspaceRoot = context.workspaceRoot,
@@ -412,7 +412,7 @@ class ProjectStartupManager(
         onStatusUpdate: StatusUpdateCallback,
     ): (Exception) -> Unit = { error ->
         logger.error(error) { "Failed to resolve dependencies" }
-        updateGroovyVersion(config, emptyList())
+        selectGroovyRuntime(config, emptyList())
         progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
         client?.showMessage(
             MessageParams().apply {
@@ -430,8 +430,8 @@ class ProjectStartupManager(
     private fun handleFailedResolution(context: CompletionCallbackContext, status: ResolutionStatus.Failed) {
         logger.error { "Dependency resolution failed: ${status.code} - ${status.message}" }
 
-        // Update Groovy version with empty dependencies
-        updateGroovyVersion(context.config, emptyList())
+        // Select the Groovy version for no dependencies, together with its worker
+        selectGroovyRuntime(context.config, emptyList())
 
         // Complete progress with error
         context.progressReporter.completeWithError(status.message)
@@ -498,9 +498,8 @@ class ProjectStartupManager(
         suggestions = detail?.suggestions ?: emptyList(),
     )
 
-    private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
+    private fun selectGroovyRuntime(config: ServerConfiguration, dependencies: List<Path>) {
         val info = groovyVersionResolver.resolve(dependencies, config.groovyLanguageVersion)
-        compilationService.updateGroovyVersion(info)
         selectWorker(info, config)
     }
 
@@ -511,7 +510,8 @@ class ProjectStartupManager(
     ) {
         val router = resolveWorkerRouter(config)
         val selected = router.select(info, requiredFeatures)
-        compilationService.updateSelectedWorker(selected)
+        // One call for the version and its worker, so a racing selection cannot pair them with another's
+        compilationService.updateGroovySelection(info, selected)
     }
 
     private fun resolveWorkerRouter(config: ServerConfiguration): WorkerRouter {

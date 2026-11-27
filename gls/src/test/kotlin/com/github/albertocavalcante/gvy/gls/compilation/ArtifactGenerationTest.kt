@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.test.TEST_GROOVY_VERSION
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
 import com.github.albertocavalcante.gvy.gls.worker.WorkerCapabilities
@@ -72,7 +73,9 @@ class ArtifactGenerationTest {
 
     @Test
     fun `a compile retired by a worker change repopulates neither cache nor symbols`(): Unit = runBlocking {
-        assertRetiredCompileDoesNotPublish { assertTrue(service.updateSelectedWorker(worker("other"))) }
+        assertRetiredCompileDoesNotPublish {
+            assertTrue(service.updateGroovySelection(TEST_GROOVY_VERSION, worker("other")))
+        }
     }
 
     @Test

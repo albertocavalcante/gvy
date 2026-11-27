@@ -37,9 +37,10 @@ class ProjectStartupManagerWorkerSelectionTest {
             workerRouter = WorkerRouter(listOf(worker)),
         )
 
-        manager.selectWorker(groovyInfo("3.0.0"), ServerConfiguration())
+        val info = groovyInfo("3.0.0")
+        manager.selectWorker(info, ServerConfiguration())
 
-        verify(exactly = 1) { compilationService.updateSelectedWorker(worker) }
+        verify(exactly = 1) { compilationService.updateGroovySelection(info, worker) }
     }
 
     @Test
@@ -57,9 +58,10 @@ class ProjectStartupManagerWorkerSelectionTest {
             workerRouter = WorkerRouter(listOf(worker)),
         )
 
-        manager.selectWorker(groovyInfo("4.0.0"), ServerConfiguration())
+        val info = groovyInfo("4.0.0")
+        manager.selectWorker(info, ServerConfiguration())
 
-        verify(exactly = 1) { compilationService.updateSelectedWorker(null) }
+        verify(exactly = 1) { compilationService.updateGroovySelection(info, null) }
     }
 
     private fun groovyInfo(raw: String) = GroovyVersionInfo(parseGroovyVersion(raw), GroovyVersionSource.RUNTIME)

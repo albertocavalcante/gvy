@@ -141,7 +141,7 @@ class GroovyWorkspaceService(
                 strategy.updateConfiguration(newConfig)
             }
             compilationService.updateCompilationCacheLimit(newConfig.compilationCacheMaxEntries)
-            updateGroovyVersion(newConfig)
+            selectGroovyRuntime(newConfig)
             logger.info { "Configuration updated for active strategies" }
         }
     }
@@ -336,11 +336,10 @@ class GroovyWorkspaceService(
         return FileType.fromPath(path)
     }
 
-    private fun updateGroovyVersion(config: ServerConfiguration) {
+    private fun selectGroovyRuntime(config: ServerConfiguration) {
         val resolver = GroovyVersionResolver()
         val dependencies = compilationService.workspaceManager.getDependencyClasspath()
         val info = resolver.resolve(dependencies, config.groovyLanguageVersion)
-        compilationService.updateGroovyVersion(info)
         selectWorker(info, config)
     }
 
@@ -351,7 +350,8 @@ class GroovyWorkspaceService(
     ) {
         val router = resolveWorkerRouter(config)
         val selected = router.select(info, requiredFeatures)
-        val changed = compilationService.updateSelectedWorker(selected)
+        // One call for the version and its worker, so a racing selection cannot pair them with another's
+        val changed = compilationService.updateGroovySelection(info, selected)
         if (changed) {
             val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
             if (sourceUris.isEmpty()) {
