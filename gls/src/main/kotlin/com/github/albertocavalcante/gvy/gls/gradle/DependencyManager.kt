@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.build.maven.MavenFailureAnalyzer
+import com.github.albertocavalcante.gvy.concurrent.OnceFlag
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.source.AnalysisGeneration
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -22,6 +23,7 @@ import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
@@ -29,6 +31,31 @@ import java.nio.file.Path
 private const val PROGRESS_CONNECTING = 25
 private const val PROGRESS_RESOLVING = 75
 private const val PROGRESS_COMPLETE = 100
+
+/**
+ * What one resolution request reports to its caller. Each callback runs under the manager's lock, serialized with
+ * lifecycle transitions, and must follow [DependencyManager]'s rules for callbacks.
+ *
+ * [onCancelled] runs when the current attempt of the request stops before a completion or failure was delivered in
+ * full and no later attempt carries the request on: [DependencyManager.cancel], [DependencyManager.reset],
+ * cancellation of the owning scope, an attempt for another request taking over, a build-file refresh that found the
+ * watcher gone after signalling the attempt, or an exception thrown out of the attempt (an [Error], a delivery that
+ * threw, or a cancellation that nothing signalled). A build-file refresh carries the request on, so its attempt's
+ * completion or failure ends the request instead.
+ *
+ * An attempt is marked as having ended its request at most once: by the first completion or failure delivered in full,
+ * or by [onCancelled]. That bounds the ends of the progress, not the callbacks. A watcher failure delivers [onError]
+ * and marks the attempt, yet resolution goes on and can later deliver [onComplete] or [onError] as well. A request can
+ * also have several attempts: it may complete and then be cancelled during a refresh, or be cancelled twice when a
+ * refresh races scope cancellation. [onCancelled] must therefore be idempotent, and safe after [onComplete] or
+ * [onError].
+ */
+internal data class ResolutionCallbacks(
+    val onProgress: ((Int, String) -> Unit)? = null,
+    val onComplete: (WorkspaceResolution) -> Unit,
+    val onError: ((Exception) -> Unit)? = null,
+    val onCancelled: (() -> Unit)? = null,
+)
 
 /**
  * Asynchronous dependency resolution with retryable failures and publication fenced by attempt identity.
@@ -52,19 +79,17 @@ class DependencyManager(
         FAILED,
     }
 
-    private data class Request(
-        val workspaceRoot: Path,
-        val onProgress: ((Int, String) -> Unit)?,
-        val onComplete: (WorkspaceResolution) -> Unit,
-        val onError: ((Exception) -> Unit)?,
-    )
+    private data class Request(val workspaceRoot: Path, val callbacks: ResolutionCallbacks)
 
     private data class Attempt(
         val generation: AnalysisGeneration,
         val request: Request,
         val enableFileWatching: Boolean,
         val cancellation: ResolutionCancellation = ResolutionCancellation(),
-    )
+    ) {
+        /** Set under the manager's lock once this attempt ended its request: completed, failed or cancelled. */
+        val settled = OnceFlag()
+    }
 
     /** A watcher and the token its refreshes carry, published as one value so a reader sees both or neither. */
     private class InstalledWatcher(val watcher: BuildToolFileWatcher, val token: Any)
@@ -86,18 +111,17 @@ class DependencyManager(
     private val currentBuildToolName = SharedValue<String?>(null)
 
     /**
-     * Starts a new attempt after failure, or for a changed workspace.
-     * Duplicate active/successful requests are ignored.
+     * Starts a new attempt after failure, or for a changed workspace, reporting to [callbacks].
+     * A duplicate of the active or successful request for the same workspace is ignored, and none of its [callbacks]
+     * ever runs. When this request replaces another one, the replaced request's onCancelled can arrive after this
+     * request's progress has already ended, so callers must not share one onCancelled target between requests.
      */
-    fun startAsyncResolution(
+    internal fun startAsyncResolution(
         workspaceRoot: Path,
-        onProgress: ((Int, String) -> Unit)? = null,
-        onComplete: (WorkspaceResolution) -> Unit,
-        onError: ((Exception) -> Unit)? = null,
+        callbacks: ResolutionCallbacks,
         enableFileWatching: Boolean = true,
     ) {
-        val request = Request(workspaceRoot, onProgress, onComplete, onError)
-        start(request, enableFileWatching, expectedWatcher = null)
+        start(Request(workspaceRoot, callbacks), enableFileWatching, expectedWatcher = null)
     }
 
     private data class StartEffects(
@@ -105,6 +129,8 @@ class DependencyManager(
         val job: Job,
         val previousJob: Job?,
         val previousWatcher: BuildToolFileWatcher?,
+        /** The attempt of another request this one replaced; nothing else would end that request. */
+        val replaced: Attempt? = null,
     )
 
     private sealed interface StartDecision {
@@ -160,7 +186,11 @@ class DependencyManager(
     ): StartDecision = synchronized(lock) {
         if (currentAttempt.value !== expected) return@synchronized StartDecision.Retry
         val staleWatcher = expectedWatcher != null && installedWatcher.value?.token !== expectedWatcher
-        if (staleWatcher) return@synchronized StartDecision.Stop
+        if (staleWatcher) {
+            // prepareStart already signalled the current attempt, which therefore delivers nothing; no attempt follows
+            expected?.let(::cancelAttempt)
+            return@synchronized StartDecision.Stop
+        }
         // Bumped before any mutation: next() throws on overflow, which must not leave the attempt half-installed.
         generation = generation.next()
         val rootChanged = currentWorkspaceRoot.value != request.workspaceRoot
@@ -173,36 +203,73 @@ class DependencyManager(
         state.set(State.IN_PROGRESS)
         val attempt = Attempt(generation, request, enableFileWatching)
         currentAttempt.set(attempt)
-        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { resolve(attempt) }
+        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { runAttempt(attempt) }
         resolutionJob = job
-        StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher))
+        val replaced = expected?.takeIf { it.request !== request }
+        StartDecision.Ready(StartEffects(attempt, job, previousJob, watcher, replaced))
     }
 
-    @OptIn(InternalCoroutinesApi::class)
     private fun launchAttempt(effects: StartEffects) {
-        cancelJob(effects.previousJob)
-        stopWatcher(effects.previousWatcher)
+        try {
+            cancelJob(effects.previousJob)
+            stopWatcher(effects.previousWatcher)
+            startAttempt(effects)
+        } finally {
+            // Ended last, even if anything above threw: another request's attempt was replaced and nothing follows it
+            effects.replaced?.let { replaced -> synchronized(lock) { cancelAttempt(replaced) } }
+        }
+    }
+
+    /** Registers [effects]' completion handlers, reports the start and starts the job. */
+    @OptIn(InternalCoroutinesApi::class)
+    private fun startAttempt(effects: StartEffects) {
         // Cancellation must signal the transport as soon as a parent starts cancelling, not after resolve returns.
         effects.job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
             if (cause != null) effects.attempt.cancellation.cancel()
         }
-        effects.job.invokeOnCompletion {
+        effects.job.invokeOnCompletion { cause ->
             synchronized(lock) {
                 if (currentAttempt.value === effects.attempt) {
                     if (state.value == State.IN_PROGRESS) state.set(State.NOT_STARTED)
                     if (resolutionJob === effects.job) resolutionJob = null
+                    // An exception escaped resolve (an Error, or a delivery that threw), or the owning scope was
+                    // cancelled. Nothing carries the request on, except in one narrow window: a refresh whose
+                    // prepareStart already signalled this attempt but has not yet taken the lock in installAttempt
+                    // still installs a successor after this end. Any other cancellation of a current attempt comes
+                    // from a refresh, which carries the request on, or from stop(), which ends the request itself.
+                    if (cause != null && (cause !is CancellationException || !scope.isActive)) {
+                        cancelAttempt(effects.attempt)
+                    }
                 }
             }
         }
         notifyCurrent(effects.attempt) {
-            effects.attempt.request.onProgress?.invoke(0, "Starting dependency resolution...")
+            effects.attempt.request.callbacks.onProgress?.invoke(0, "Starting dependency resolution...")
         }
         effects.job.start()
+    }
+
+    /**
+     * Runs [attempt], and ends its request when a cancellation escapes that nothing signalled. Every real stop
+     * (stop(), a refresh, a superseding attempt, the owning scope) signals the attempt's token or supersedes the
+     * attempt first, while a stray cancellation (a delivery joining a cancelled future, a build tool's own) leaves both
+     * untouched. The completion handler cannot tell the two apart, because a cancelling job signals the token whatever
+     * the cause. A cancelled scope seen just before its handler signals the token ends the request here, as the
+     * completion handler would.
+     */
+    private suspend fun runAttempt(attempt: Attempt) {
+        try {
+            resolve(attempt)
+        } catch (e: CancellationException) {
+            notifyCurrent(attempt) { cancelAttempt(attempt) }
+            throw e
+        }
     }
 
     @Suppress("TooGenericExceptionCaught") // Build tool implementations expose failures as arbitrary exceptions.
     private suspend fun resolve(attempt: Attempt) {
         val request = attempt.request
+        val callbacks = request.callbacks
         var tool: BuildTool? = null
         try {
             checkCurrent(attempt)
@@ -212,12 +279,12 @@ class DependencyManager(
             // Install before resolving: an initially broken build must still be able to recover on an edit.
             if (tool != null && attempt.enableFileWatching) startWatching(attempt, tool)
             notifyCurrent(attempt) {
-                request.onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${tool?.name ?: "workspace"}...")
+                callbacks.onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${tool?.name ?: "workspace"}...")
             }
             checkCurrent(attempt)
             val legacy = tool?.resolve(
                 request.workspaceRoot,
-                { message -> notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_CONNECTING, message) } },
+                { message -> notifyCurrent(attempt) { callbacks.onProgress?.invoke(PROGRESS_CONNECTING, message) } },
                 attempt.cancellation,
             ) ?: WorkspaceResolution(emptyList(), listOf(request.workspaceRoot))
             checkCurrent(attempt)
@@ -225,11 +292,11 @@ class DependencyManager(
             checkCurrent(attempt)
             notifyCurrent(attempt) { state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED) }
             notifyCurrent(attempt) {
-                request.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
+                callbacks.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
             }
-            notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished") }
+            notifyCurrent(attempt) { callbacks.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished") }
             withContext(Dispatchers.Default) {
-                notifyCurrent(attempt) { request.onComplete(resolution) }
+                settleCurrent(attempt) { callbacks.onComplete(resolution) }
             }
         } catch (e: CancellationException) {
             notifyCurrent(attempt) {
@@ -242,11 +309,11 @@ class DependencyManager(
                 state.set(State.FAILED)
             }
             withContext(Dispatchers.Default) {
-                notifyCurrent(attempt) {
+                settleCurrent(attempt) {
                     if (tool != null) {
-                        request.onComplete(classifyFailure(tool, e))
+                        callbacks.onComplete(classifyFailure(tool, e))
                     } else {
-                        request.onError?.invoke(e)
+                        callbacks.onError?.invoke(e)
                             ?: logger.warn { "No error handler for dependency resolution failure" }
                     }
                 }
@@ -281,6 +348,31 @@ class DependencyManager(
         }
     }
 
+    /**
+     * Delivers [attempt]'s completion or failure while it is current, and only once [deliver] returns records that the
+     * attempt ended its request. A delivery that throws leaves the attempt unsettled, so the request still gets an end:
+     * the failure delivered in its place; or, when the exception escapes resolve, onCancelled from the completion
+     * handler for an exception, and from [runAttempt] for a cancellation that nothing signalled.
+     */
+    private fun settleCurrent(attempt: Attempt, deliver: () -> Unit) = notifyCurrent(attempt) {
+        deliver()
+        attempt.settled.set()
+    }
+
+    /**
+     * Ends [attempt]'s request as cancelled unless the attempt already ended it. Called under [lock], like every
+     * other callback; a failing callback is logged, since it must not break the transition that ends the attempt.
+     */
+    @Suppress("TooGenericExceptionCaught") // Callbacks may throw anything; the lifecycle transition must finish.
+    private fun cancelAttempt(attempt: Attempt) {
+        if (!attempt.settled.trySet()) return
+        try {
+            attempt.request.callbacks.onCancelled?.invoke()
+        } catch (failure: Exception) {
+            logger.warn(failure) { "Dependency cancellation callback failed" }
+        }
+    }
+
     @Suppress("TooGenericExceptionCaught") // Watching failure should not prevent dependency resolution.
     private fun startWatching(attempt: Attempt, tool: BuildTool) {
         val token = Any()
@@ -308,7 +400,7 @@ class DependencyManager(
         } catch (e: Exception) {
             discardWatcher(token, watcher)
             logger.warn(e) { "Failed to watch build files" }
-            notifyCurrent(attempt) { attempt.request.onError?.invoke(e) }
+            settleCurrent(attempt) { attempt.request.callbacks.onError?.invoke(e) }
         }
     }
 
@@ -380,6 +472,8 @@ class DependencyManager(
                     currentBuildToolName.set(null)
                     currentAttempt.set(null)
                 }
+                // Stopped, last in the transition: no later attempt carries its request on
+                expected?.let(::cancelAttempt)
                 oldJob to watcher
             } ?: continue
             cancelJob(effects.first)

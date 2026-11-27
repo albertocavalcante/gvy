@@ -53,15 +53,8 @@ class GradleCallerCancellationTest {
             while (!token.isCancellationRequested && System.nanoTime() < deadline) Thread.onSpinWait()
             throw BuildCancelledException("Build cancelled")
         }
-        val environment = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
-        every { environment.withCancellationToken(any()) } returns environment
-        every { environment.withArguments(*anyVararg()) } returns environment
-        every { environment.setJvmArguments(*anyVararg()) } returns environment
-        val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
-        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
-        every { environment.get() } returns buildEnvironment
         val connection = mockk<ProjectConnection>()
-        every { connection.model(BuildEnvironment::class.java) } returns environment
+        every { connection.model(BuildEnvironment::class.java) } returns gradleEnvironment()
         every { connection.model(IdeaProject::class.java) } returns idea
         val factory = GradleConnectionFactory { _, _ ->
             connections.incrementAndGet()
@@ -74,8 +67,10 @@ class GradleCallerCancellationTest {
         try {
             manager.startAsyncResolution(
                 root,
-                onComplete = { callbacks.incrementAndGet() },
-                onError = { callbacks.incrementAndGet() },
+                callbacks = ResolutionCallbacks(
+                    onComplete = { callbacks.incrementAndGet() },
+                    onError = { callbacks.incrementAndGet() },
+                ),
                 enableFileWatching = false,
             )
             assertTrue(fetching.await(5, TimeUnit.SECONDS))
@@ -90,5 +85,17 @@ class GradleCallerCancellationTest {
             manager.cancel()
             scope.cancel()
         }
+    }
+
+    /** The build environment model of a Gradle 8.5 build, whatever it is asked. */
+    private fun gradleEnvironment(): ModelBuilder<BuildEnvironment> {
+        val environment = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+        every { environment.withCancellationToken(any()) } returns environment
+        every { environment.withArguments(*anyVararg()) } returns environment
+        every { environment.setJvmArguments(*anyVararg()) } returns environment
+        val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
+        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
+        every { environment.get() } returns buildEnvironment
+        return environment
     }
 }

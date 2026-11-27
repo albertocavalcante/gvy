@@ -17,6 +17,10 @@ import java.util.UUID
 /**
  * Handles LSP progress reporting to show dependency resolution progress to users.
  * Provides a clean API for starting, updating, and completing progress notifications.
+ *
+ * Not thread-safe: its state is a plain field, so calls must not overlap and each must happen before the next, as on
+ * one coroutine or in callbacks a lock serializes. An update or end before the begin is dropped, so begin before
+ * starting the work that reports.
  */
 class ProgressReporter(private val client: LanguageClient?) {
     private val logger = KotlinLogging.logger {}

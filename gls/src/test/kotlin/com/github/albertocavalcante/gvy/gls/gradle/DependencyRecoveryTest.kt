@@ -40,12 +40,20 @@ class DependencyRecoveryTest {
         every { tool.resolve(any(), any(), any()) } throws IllegalStateException("offline") andThen recovered
         withManager(tool) { manager, _ ->
             val failed = CompletableDeferred<WorkspaceResolution>()
-            manager.startAsyncResolution(root, onComplete = { failed.complete(it) }, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { failed.complete(it) }),
+                enableFileWatching = false,
+            )
             withTimeout(TIMEOUT) { failed.await() }
             assertEquals(DependencyManager.State.FAILED, manager.getState())
             val retried = CompletableDeferred<WorkspaceResolution>()
 
-            manager.startAsyncResolution(root, onComplete = { retried.complete(it) }, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { retried.complete(it) }),
+                enableFileWatching = false,
+            )
 
             assertEquals(recovered, withTimeout(TIMEOUT) { retried.await() })
             assertEquals(DependencyManager.State.COMPLETED, manager.getState())
@@ -66,7 +74,10 @@ class DependencyRecoveryTest {
         withManager(tool) { manager, _ ->
             val first = CompletableDeferred<WorkspaceResolution>()
             val second = CompletableDeferred<WorkspaceResolution>()
-            manager.startAsyncResolution(root, onComplete = { if (!first.complete(it)) second.complete(it) })
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { if (!first.complete(it)) second.complete(it) }),
+            )
             withTimeout(TIMEOUT) { first.await() }
 
             assertNotNull(change, "Watching must be installed even if the first resolve fails")(root)
@@ -91,8 +102,10 @@ class DependencyRecoveryTest {
             val callbacks = AtomicInteger()
             manager.startAsyncResolution(
                 root,
-                onComplete = { callbacks.incrementAndGet() },
-                onError = { callbacks.incrementAndGet() },
+                callbacks = ResolutionCallbacks(
+                    onComplete = { callbacks.incrementAndGet() },
+                    onError = { callbacks.incrementAndGet() },
+                ),
                 enableFileWatching = false,
             )
             assertTrue(detected.await(5, TimeUnit.SECONDS))
@@ -116,8 +129,10 @@ class DependencyRecoveryTest {
             val callbacks = AtomicInteger()
             manager.startAsyncResolution(
                 root,
-                onComplete = { callbacks.incrementAndGet() },
-                onError = { callbacks.incrementAndGet() },
+                callbacks = ResolutionCallbacks(
+                    onComplete = { callbacks.incrementAndGet() },
+                    onError = { callbacks.incrementAndGet() },
+                ),
             )
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             withTimeout(TIMEOUT) { scope.coroutineContext[Job]!!.children.toList().joinAll() }
@@ -141,7 +156,10 @@ class DependencyRecoveryTest {
         }
         withManager(tool) { manager, scope ->
             val completed = CompletableDeferred<WorkspaceResolution>()
-            manager.startAsyncResolution(root, onComplete = { completed.complete(it) })
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { completed.complete(it) }),
+            )
             assertEquals(recovered, withTimeout(TIMEOUT) { completed.await() })
             withTimeout(TIMEOUT) { scope.coroutineContext[Job]!!.children.toList().joinAll() }
 
@@ -158,12 +176,20 @@ class DependencyRecoveryTest {
             WorkspaceResolution.failed("OFFLINE", "offline") andThen recovered
         withManager(tool) { manager, _ ->
             val first = CompletableDeferred<WorkspaceResolution>()
-            manager.startAsyncResolution(root, onComplete = { first.complete(it) }, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { first.complete(it) }),
+                enableFileWatching = false,
+            )
             withTimeout(TIMEOUT) { first.await() }
             assertEquals(DependencyManager.State.FAILED, manager.getState())
             val second = CompletableDeferred<WorkspaceResolution>()
 
-            manager.startAsyncResolution(root, onComplete = { second.complete(it) }, enableFileWatching = false)
+            manager.startAsyncResolution(
+                root,
+                callbacks = ResolutionCallbacks(onComplete = { second.complete(it) }),
+                enableFileWatching = false,
+            )
 
             assertEquals(recovered, withTimeout(TIMEOUT) { second.await() })
         }
@@ -191,13 +217,17 @@ class DependencyRecoveryTest {
                 val completions = mutableListOf<WorkspaceResolution>()
                 manager.startAsyncResolution(
                     root,
-                    onComplete = { synchronized(completions) { completions.add(it) } },
+                    callbacks = ResolutionCallbacks(onComplete = { synchronized(completions) { completions.add(it) } }),
                     enableFileWatching = false,
                 )
                 assertTrue(entered.await(5, TimeUnit.SECONDS))
                 manager.reset()
                 val retried = CompletableDeferred<WorkspaceResolution>()
-                manager.startAsyncResolution(root, onComplete = { retried.complete(it) }, enableFileWatching = false)
+                manager.startAsyncResolution(
+                    root,
+                    callbacks = ResolutionCallbacks(onComplete = { retried.complete(it) }),
+                    enableFileWatching = false,
+                )
                 assertEquals(recovered, withTimeout(TIMEOUT) { retried.await() })
 
                 release.countDown()

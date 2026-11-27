@@ -8,7 +8,6 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
-import com.github.albertocavalcante.gvy.concurrent.Counter
 import com.github.albertocavalcante.gvy.concurrent.SharedValue
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
@@ -167,8 +166,11 @@ class SymbolIndexingService(
     }
 
     /**
-     * Indexes all workspace source files in the background.
-     * Reports progress via callback function.
+     * Indexes all workspace source files in the background, in parallel batches.
+     *
+     * [onProgress] receives (files done, total) once after each batch, from the calling coroutine: calls never
+     * overlap, each happens after the previous one, and the counts only grow, ending at the total. A caller may
+     * therefore keep plain state between calls and send each count straight to the client.
      *
      * @param uris List of URIs to index
      * @param onProgress Callback invoked with (indexed, total) progress
@@ -181,7 +183,7 @@ class SymbolIndexingService(
 
         logger.info { "Starting workspace indexing: ${uris.size} files" }
         val total = uris.size
-        val indexed = Counter()
+        var indexed = 0
 
         // Index files in parallel batches
         // NOTE: Batch size balances parallelism with resource usage
@@ -191,13 +193,17 @@ class SymbolIndexingService(
                 batch.forEach { uri ->
                     @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
                     launch(ioDispatcher) {
-                        indexFileWithProgress(uri, indexed, total, onProgress)
+                        indexFileContained(uri)
                     }
                 }
             }
+            // Reported here, after the batch joined, rather than from its workers: a count taken by one worker
+            // could otherwise reach the client after a larger count taken by another.
+            indexed += batch.size
+            onProgress(indexed, total)
         }
 
-        logger.info { "Workspace indexing complete: ${indexed.value}/$total files indexed" }
+        logger.info { "Workspace indexing complete: $indexed/$total files indexed" }
     }
 
     /**
@@ -298,16 +304,9 @@ class SymbolIndexingService(
         null
     }
 
-    /**
-     * Indexes a single file and reports progress atomically.
-     */
+    /** Indexes one file of a batch; a failure is logged so it cannot stop the rest of the batch. */
     @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
-    private suspend fun indexFileWithProgress(
-        uri: URI,
-        indexed: Counter,
-        total: Int,
-        onProgress: (Int, Int) -> Unit,
-    ) {
+    private suspend fun indexFileContained(uri: URI) {
         try {
             indexFile(uri)
         } catch (e: CancellationException) {
@@ -315,9 +314,6 @@ class SymbolIndexingService(
         } catch (e: Exception) {
             // Catch all to prevent batch failure from stopping entire indexing
             logger.warn(e) { "Failed to index file: $uri" }
-        } finally {
-            val currentCount = indexed.increment().toInt()
-            onProgress(currentCount, total)
         }
     }
 }

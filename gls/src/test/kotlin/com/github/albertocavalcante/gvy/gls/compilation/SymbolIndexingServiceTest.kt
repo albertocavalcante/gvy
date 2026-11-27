@@ -11,12 +11,17 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createFile
 import kotlin.io.path.writeText
 import kotlin.test.BeforeTest
@@ -214,14 +219,12 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexAllWorkspaceSources reports progress`(): Unit = runBlocking {
-        val file1 = tempDir.resolve("test1.groovy").apply {
-            createFile()
-            writeText("class Test1 {}")
-        }
-        val file2 = tempDir.resolve("test2.groovy").apply {
-            createFile()
-            writeText("class Test2 {}")
+    fun `indexAllWorkspaceSources reports progress after each batch`(): Unit = runBlocking {
+        // One full batch of ten and a partial one of two
+        val uris = (1..12).map { n ->
+            val file = tempDir.resolve("test$n.groovy")
+            file.writeText("class Test$n {}")
+            file.toUri()
         }
 
         val parseResult = createMockParseResult()
@@ -229,15 +232,40 @@ class SymbolIndexingServiceTest {
 
         val progressUpdates = mutableListOf<Pair<Int, Int>>()
         indexingService.indexAllWorkspaceSources(
-            uris = listOf(file1.toUri(), file2.toUri()),
+            uris = uris,
             onProgress = { indexed, total ->
                 progressUpdates.add(indexed to total)
             },
         )
 
-        assertEquals(2, progressUpdates.size)
-        assertEquals(1 to 2, progressUpdates[0])
-        assertEquals(2 to 2, progressUpdates[1])
+        assertEquals(listOf(10 to 12, 12 to 12), progressUpdates)
+    }
+
+    @Test
+    fun `indexAllWorkspaceSources never reports an earlier count after a later one`(): Unit = runBlocking {
+        val uris = (1..2).map { n ->
+            val file = tempDir.resolve("order$n.groovy")
+            file.writeText("class Order$n {}")
+            file.toUri()
+        }
+        coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns createMockParseResult()
+        val reported = CopyOnWriteArrayList<Int>()
+        val finalReported = CountDownLatch(1)
+
+        val pool = Executors.newFixedThreadPool(uris.size).asCoroutineDispatcher()
+        pool.use {
+            val parallel = SymbolIndexingService(pool, workerSessionManager, workspaceManager, ownership)
+            parallel.indexAllWorkspaceSources(uris) { indexed, total ->
+                // A report of an earlier count that is slow to reach the client (a blocking write) must not be
+                // overtaken by the final one: wait until the final count was reported, then record this one.
+                if (indexed < total) finalReported.await(WAIT_SECONDS, TimeUnit.SECONDS)
+                reported += indexed
+                if (indexed == total) finalReported.countDown()
+            }
+        }
+
+        assertEquals(reported.sorted(), reported.toList(), "progress went backwards: $reported")
+        assertEquals(uris.size, reported.last())
     }
 
     @Test
@@ -350,5 +378,9 @@ class SymbolIndexingServiceTest {
             compilationUnit = mockk(relaxed = true),
             sourceUnit = mockk(relaxed = true),
         )
+    }
+
+    private companion object {
+        const val WAIT_SECONDS = 10L
     }
 }

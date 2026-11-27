@@ -20,6 +20,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.gradle.DependencyManager
 import com.github.albertocavalcante.gvy.gls.gradle.GradleTargetObserver
+import com.github.albertocavalcante.gvy.gls.gradle.ResolutionCallbacks
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -215,20 +216,7 @@ class ProjectStartupManager(
             "Client connection status: ${if (client != null) "connected" else "NULL - notifications will not be sent"}"
         }
 
-        // Send resolving deps status
-        onStatusUpdate(Health.Ok, false, "Resolving build dependencies...", null, null, null, null)
-
-        if (client != null) {
-            logger.info { "Sending 'Resolving build dependencies' notification to client" }
-            client.showMessage(
-                MessageParams().apply {
-                    type = MessageType.Info
-                    message = "Resolving build dependencies..."
-                },
-            )
-        } else {
-            logger.warn { "Cannot send showMessage - client is null" }
-        }
+        announceResolution(client, onStatusUpdate)
 
         val progressReporter = ProgressReporter(client)
         initializeWorkspaces(workspaceRoot, config)
@@ -242,23 +230,47 @@ class ProjectStartupManager(
 
         val dependencyManager = setupDependencyManager(config)
 
+        // Begin before resolution starts. Its callbacks run on other threads and can finish at once (no build tool);
+        // the reporter drops an end that comes before its begin, so a later begin would stay open in the client.
+        // Starting the attempt publishes the active reporter to those callbacks, which the manager serializes.
+        progressReporter.startDependencyResolution()
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
-            onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
-            onComplete = createCompletionCallback(
-                CompletionCallbackContext(
-                    workspaceRoot = workspaceRoot,
-                    config = config,
-                    textDocumentServiceRefresh = textDocumentServiceRefresh,
-                    progressReporter = progressReporter,
-                    client = client,
-                    onStatusUpdate = onStatusUpdate,
+            callbacks = ResolutionCallbacks(
+                onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
+                onComplete = createCompletionCallback(
+                    CompletionCallbackContext(
+                        workspaceRoot = workspaceRoot,
+                        config = config,
+                        textDocumentServiceRefresh = textDocumentServiceRefresh,
+                        progressReporter = progressReporter,
+                        client = client,
+                        onStatusUpdate = onStatusUpdate,
+                    ),
                 ),
+                onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
+                // Stopped with no completion or failure (shutdown, scope cancellation, an Error): end the progress.
+                // cancel() does nothing once the progress has ended, as onCancelled must allow.
+                onCancelled = progressReporter::cancel,
             ),
-            onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
         )
+    }
 
-        progressReporter.startDependencyResolution()
+    /** Tells the client that dependency resolution is starting: a status update and, when connected, a message. */
+    private fun announceResolution(client: LanguageClient?, onStatusUpdate: StatusUpdateCallback) {
+        onStatusUpdate(Health.Ok, false, "Resolving build dependencies...", null, null, null, null)
+
+        if (client != null) {
+            logger.info { "Sending 'Resolving build dependencies' notification to client" }
+            client.showMessage(
+                MessageParams().apply {
+                    type = MessageType.Info
+                    message = "Resolving build dependencies..."
+                },
+            )
+        } else {
+            logger.warn { "Cannot send showMessage - client is null" }
+        }
     }
 
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {

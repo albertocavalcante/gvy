@@ -49,10 +49,12 @@ class DependencyTargetObservationTest {
     private fun start(manager: DependencyManager, workspace: Path = root, done: CountDownLatch? = null) =
         manager.startAsyncResolution(
             workspaceRoot = workspace,
-            onComplete = {
-                published.add(it)
-                done?.countDown()
-            },
+            callbacks = ResolutionCallbacks(
+                onComplete = {
+                    published.add(it)
+                    done?.countDown()
+                },
+            ),
             enableFileWatching = false,
         )
 
